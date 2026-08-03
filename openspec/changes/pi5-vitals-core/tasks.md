@@ -373,10 +373,38 @@ Not in Docker, not on the microSD.
    sudo -u postgres createuser --createdb vitals
    sudo -u postgres createdb -O vitals vitals
    ```
-6. `sudo systemctl restart postgresql`.
+6. **Install extensions** (see Amendment 01 §3). arm64/bookworm/PG16 packages are published:
+   ```sh
+   curl -s https://packagecloud.io/install/repositories/timescale/timescaledb/script.deb.sh | sudo bash
+   sudo apt-get update
+   sudo apt-get install -y timescaledb-2-postgresql-16 timescaledb-toolkit-postgresql-16 postgresql-16-cron
+   ```
+7. Append to `vitals.conf`:
+   ```
+   shared_preload_libraries = 'timescaledb,pg_stat_statements,pg_cron'
+   cron.database_name = 'vitals'
+   timezone = 'UTC'
+   timescaledb.max_background_workers = 4
+   ```
+   Optionally run `sudo timescaledb-tune --quiet --yes` first — but it assumes it owns the machine,
+   and it does not: `vitalsd`, the collectors, and the klaxon share this box. **Re-assert
+   `shared_buffers = 2GB` after running it** and re-check `work_mem`.
+8. `sudo systemctl restart postgresql`, then enable the extensions in the `vitals` database:
+   ```sh
+   sudo -u postgres psql -d vitals -c "CREATE EXTENSION IF NOT EXISTS timescaledb;"
+   sudo -u postgres psql -d vitals -c "CREATE EXTENSION IF NOT EXISTS timescaledb_toolkit;"
+   sudo -u postgres psql -d vitals -c "CREATE EXTENSION IF NOT EXISTS pg_cron;"
+   sudo -u postgres psql -d vitals -c "CREATE EXTENSION IF NOT EXISTS pg_stat_statements;"
+   ```
 
-**Verify:** `ssh chris@minidude 'sudo -u postgres psql -tAc "SHOW shared_buffers" | grep -q 2GB && sudo -u postgres psql -tAc "SHOW data_directory" | xargs findmnt -no SOURCE -T | grep -q nvme'`
-**Expect:** exit 0.
+**Verify:** `ssh chris@minidude 'sudo -u postgres psql -tAc "SHOW shared_buffers" | grep -q 2GB && sudo -u postgres psql -tAc "SHOW data_directory" | xargs findmnt -no SOURCE -T | grep -q nvme && sudo -u postgres psql -d vitals -tAc "SELECT count(*) FROM pg_extension WHERE extname IN ((chr(39)||chr(39)))" >/dev/null && test $(sudo -u postgres psql -d vitals -tAc "SELECT count(*) FROM pg_extension WHERE extname = ANY(ARRAY[chr(116)||chr(105)||chr(109)||chr(101)||chr(115)||chr(99)||chr(97)||chr(108)||chr(101)||chr(100)||chr(98)])") -eq 1'`
+**Expect:** exit 0 — `shared_buffers=2GB`, `PGDATA` on NVMe, `timescaledb` installed.
+
+**Simpler equivalent** if the quoting above is awkward to run by hand:
+```sh
+ssh chris@minidude 'sudo -u postgres psql -d vitals -tAc "SELECT extname FROM pg_extension ORDER BY 1" | tr "\n" " "'
+```
+Expect: `pg_cron pg_stat_statements plpgsql timescaledb timescaledb_toolkit`
 
 ---
 
