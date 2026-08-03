@@ -110,9 +110,6 @@ def generate_c_header(registry, output_path):
         for source_name, data in sorted_sources:
             if isinstance(data, dict) and 'id' in data:
                 enum_entry = f'    VITALS_SOURCE_{source_name.upper()} = {data["id"]}'
-                # Handle special case for ad_ua651ble
-                if source_name == 'ad_ua651ble':
-                    enum_entry = f'    VITALS_SOURCE_AD_UA651BLE = {data["id"]}'
                 source_entries.append(enum_entry)
     lines.append(',\n'.join(source_entries))
     lines.append('} vitals_source_t;')
@@ -155,9 +152,8 @@ def generate_sql(registry, output_path):
     ]
     
     # Generate type INSERT statements
-    for name, data in registry.items():
-        if name.startswith('type.'):
-            type_name = name.split('.')[1]
+    if 'type' in registry:
+        for type_name, data in sorted(registry['type'].items(), key=lambda item: item[1]['id']):
             range_lo, range_hi = data['range']
             lines.append(f"INSERT OR REPLACE INTO vitals_type (id, name, unit, range_lo, range_hi, precision)")
             lines.append(f"VALUES ({data['id']}, '{type_name}', '{data['unit']}', {range_lo}, {range_hi}, {data['precision']});")
@@ -174,9 +170,8 @@ def generate_sql(registry, output_path):
     ])
     
     # Generate source INSERT statements
-    for name, data in registry.items():
-        if name.startswith('source.'):
-            source_name = name.split('.')[1]
+    if 'source' in registry:
+        for source_name, data in sorted(registry['source'].items(), key=lambda item: item[1]['id']):
             transport = data['transport']
             lines.append(f"INSERT OR REPLACE INTO vitals_source (id, name, transport)")
             lines.append(f"VALUES ({data['id']}, '{source_name}', '{transport}');")
@@ -191,14 +186,17 @@ def generate_sql(registry, output_path):
         '    source INTEGER NOT NULL,',
         '    value REAL NOT NULL,',
         '    FOREIGN KEY(type) REFERENCES vitals_type(id),',
-        '    FOREIGN KEY(source) REFERENCES vitals_source(id),',
-        '    CHECK(type IN (SELECT id FROM vitals_type)),',
-        '    CHECK(source IN (SELECT id FROM vitals_source))',
+        '    FOREIGN KEY(source) REFERENCES vitals_source(id)',
         ');'
     ])
     
     with open(output_path, 'w') as f:
         f.write('\n'.join(lines) + '\n')
+
+def _to_lower_camel(s):
+    """Convert snake_case to lowerCamelCase."""
+    parts = s.split('_')
+    return parts[0] + ''.join(word.capitalize() for word in parts[1:])
 
 def generate_swift(registry, output_path):
     lines = [
@@ -211,12 +209,9 @@ def generate_swift(registry, output_path):
     
     # Generate type cases
     if 'type' in registry:
-        for type_name, data in registry['type'].items():
+        for type_name, data in sorted(registry['type'].items(), key=lambda item: item[1]['id']):
             if isinstance(data, dict) and 'id' in data:
-                swift_name = type_name.upper()
-                # Special handling for bp_* types
-                if type_name.startswith('bp_'):
-                    swift_name = ''.join(word.capitalize() for word in type_name.split('_'))
+                swift_name = _to_lower_camel(type_name)
                 lines.append(f'    case {swift_name} = {data["id"]}')
     
     lines.extend([
@@ -227,12 +222,9 @@ def generate_swift(registry, output_path):
     
     # Generate source cases
     if 'source' in registry:
-        for source_name, data in registry['source'].items():
+        for source_name, data in sorted(registry['source'].items(), key=lambda item: item[1]['id']):
             if isinstance(data, dict) and 'id' in data:
-                swift_name = source_name.upper()
-                # Special handling for ad_ua651ble
-                if source_name == 'ad_ua651ble':
-                    swift_name = 'AD_UA651BLE'
+                swift_name = _to_lower_camel(source_name)
                 lines.append(f'    case {swift_name} = {data["id"]}')
     
     lines.extend([
