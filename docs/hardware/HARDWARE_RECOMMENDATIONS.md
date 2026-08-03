@@ -188,7 +188,78 @@ tiers would live on one disk.
 
 ---
 
-## 7. What I would skip
+## 7. Physical fit
+
+**You cannot have the Pi bolted to the back of the screen *and* an under-mounting UPS *and* an
+under-mounting NVMe base.** All three want the Pi's underside, and only one can have it.
+
+### The dimensions
+
+| | Size |
+|---|---|
+| Hosyond 7" DSI panel | 164.89 × 102.00 × 12.25 mm (from the listing) |
+| Raspberry Pi 5 | 85 × 56 mm, mounting holes 58 × 49 mm |
+| Geekworm X1200-C1 case (Pi + UPS + cooler + top M.2) | 90.8 × 69 × 62.8 mm |
+
+### What mounts where
+
+| Add-on | Mounts | Uses |
+|---|---|---|
+| Official M.2 HAT+ | **top** | PCIe FFC + GPIO. **2230/2242 only — a standard 2280 SSD does not fit** |
+| Geekworm X1001 / X1004 | **top** | PCIe FFC, supports 2280 |
+| Pimoroni NVMe Base | **bottom** | PCIe FFC. Frees the whole GPIO header and allows a taller cooler |
+| Geekworm X1200 UPS | **bottom**, pogo pins | Does **not** use the 40-pin header, so it stacks well with top HATs |
+| TPM module | **top**, GPIO SPI | Physically sits over the first ~10 pins |
+| Screen standoffs | **bottom** | The Pi bolts flat to the panel |
+
+### The resolution: do not bolt the Pi to the screen
+
+The DSI ribbon is flexible and the screen came with one. Treat the panel as a **separate bedside
+display on a ribbon** and keep the Pi in a case that can stack. That buys back the Pi's underside for
+the UPS, which is the add-on with no top-mounting alternative.
+
+Working stack, bottom to top:
+
+```
+X1200 UPS          (pogo pins, no GPIO)
+  └─ Pi 5
+       └─ active cooler        (fits between Pi and a top HAT)
+            └─ X1001 M.2 HAT   (PCIe FFC, takes 2280)
+                 └─ TPM        (GPIO — needs a riser, see below)
+```
+
+The **Geekworm X1200-C1 metal case** is built for exactly this combination — Pi 5 + X1200 + active
+cooler + a top PCIe-to-M.2 HAT. If you go this route, buy the case with the UPS.
+
+**The TPM still needs a home.** A top M.2 HAT sits over the GPIO header even when it does not
+electrically use it. Options:
+
+- A **GPIO stacking header / riser** (~$5) raising the pins above the M.2 HAT, TPM on top.
+- A **GPIO ribbon breakout** taking SPI0 off to a small board mounted elsewhere in the case.
+- Skip the M.2 HAT's physical footprint problem entirely by using the **Pimoroni NVMe Base
+  underneath** — but that costs you the UPS, and the UPS matters more.
+
+### Two things to measure before ordering
+
+I could not verify these remotely:
+
+1. **The CanaKit "Mega Heat Sink" height.** The kit ships a large heatsink plus a fan rather than the
+   official Active Cooler. Top-mounting HATs are designed around the *official* cooler's height, and
+   a taller aftermarket heatsink may not fit underneath one. Measure it, or plan to swap to the
+   official Active Cooler (~$5).
+2. **The Hosyond standoff height**, if you do decide to screen-mount. It determines whether anything
+   at all fits between the Pi and the panel.
+
+### Simplest configuration that works
+
+If the stack is more trouble than it is worth: **Pimoroni NVMe Base underneath, screen on its ribbon,
+TPM on the free GPIO header, no UPS.** Everything fits, nothing conflicts, and you give up only the
+power-loss protection — which can be added later with an external 5 V UPS on the mains side instead
+of a HAT.
+
+---
+
+## 8. What I would skip
 
 | | Why |
 |---|---|
@@ -201,7 +272,7 @@ tiers would live on one disk.
 
 ---
 
-## 8. Suggested order
+## 9. Suggested order
 
 **Now — unblocks the plan (~$100):**
 M.2 HAT + NVMe · USB DAC + speaker · RTC battery · ethernet cable

@@ -91,14 +91,41 @@ something other than a Pi, you may already have this and not know it. The probe 
 All of these are Infineon OPTIGA parts on SPI and all use the same kernel driver (`tpm_tis_spi`) and
 the same device-tree overlay. The differences are packaging, price and availability.
 
-| Board | Chip | Notes |
+| Board | Chip | Where |
 |---|---|---|
-| **[LetsTrust TPM](https://pi3g.com/products/industrial/letstrust-tpm/)** (pi3g) | SLB9672 | **Recommended.** Current-generation chip, explicitly claims all Pi models, the most widely used board in this niche so community answers exist. Stocked by [The Pi Hut](https://thepihut.com/products/letstrust-tpm-for-raspberry-pi) and Cytron. Small board over the first ~10 GPIO pins |
-| **[ANAVI TPM 2.0](https://www.crowdsupply.com/anavi-technology/anavi-tpm-2-0-for-raspberry-pi)** | SLB9672 | Same chip, open hardware, Crowd Supply. Equally good; pick on availability |
-| **GeeekPi TPM9670** | SLB9670 | Cheapest, older chip. Works — the overlay is literally named after it — but buy the 9672 if the price gap is small |
-| Infineon SLB9673 boards | SLB9673 | **I2C**, not SPI. Kernel ≥ 6.0 supports it but it may need enabling at compile time. Avoid unless you specifically want the I2C bus free of SPI |
+| **LetsTrust TPM** (pi3g) | SLB9672 | Best board, mostly **European** stock — see §US below |
+| **ANAVI TPM 2.0** | SLB9672 | [Crowd Supply](https://www.crowdsupply.com/anavi-technology/anavi-tpm-2-0-for-raspberry-pi) — US-friendly, open hardware |
+| **GeeekPi TPM9670** | SLB9670 | Amazon, ASIN **`B09G2BZQT5`** — cheapest, older chip, in US stock |
+| Infineon Iridium eval board | SLB9670 | DigiKey / Mouser, US stock, but $57–64 |
+| Infineon SLB9673 boards | SLB9673 | **I2C, not SPI.** Kernel ≥ 6.0 supports it but may need enabling at compile time. Skip unless you specifically want SPI free |
 
-**Get an SLB9672 board — LetsTrust or ANAVI.** Same driver as the 9670, newer silicon, no downside.
+#### Buying from the US
+
+LetsTrust is the best board but is sold mainly through European and APAC retailers, so shipping and
+lead time are the deciding factor rather than the hardware.
+
+**Search terms that work:** `LetsTrust TPM Raspberry Pi` · `TPM 2.0 module Raspberry Pi SLB9670` ·
+`Infineon OPTIGA TPM Raspberry Pi SPI`
+
+| Route | Part / link | Notes |
+|---|---|---|
+| **Amazon (fastest)** | GeeekPi TPM9670, ASIN [`B09G2BZQT5`](https://www.amazon.com/dp/B09G2BZQT5) | SLB9670. Ships now, cheap, works with the standard overlay. **This is the pragmatic pick if you want it this week.** |
+| **Crowd Supply** | [ANAVI TPM 2.0](https://www.crowdsupply.com/anavi-technology/anavi-tpm-2-0-for-raspberry-pi) | SLB9672, open hardware, US fulfilment. Check whether it is in stock or in a campaign window |
+| **DigiKey** | `IRIDIUMSLM9670TPM20TOBO1` (~$64) · `IRIDIUMSLI9670TPM20TOBO1` | Infineon's own eval board. Guaranteed genuine, guaranteed US stock, roughly 2.5× the price of the Amazon board for the same chip |
+| **Mouser** | `IRID9670TPM20LINUXTOBO1` | Same board, "Iridium 9670 TPM2.0 Linux" |
+| **LetsTrust direct** | [pi3g](https://pi3g.com/products/industrial/letstrust-tpm/) · [The Pi Hut](https://thepihut.com/products/letstrust-tpm-for-raspberry-pi) (UK) · [Cytron](https://www.cytron.io/p-letstrust-tpm-for-raspberry-pi) (MY) · [BerryBase](https://www.berrybase.de/en/letstrust-tpm-cryptography-module-for-raspberry-pi) (DE) · Core Electronics `CE10600` (AU) | The SLB9672 board. Worth the wait if you are not in a hurry |
+
+**Bare chips**, if you are building your own board: `SLB9670VQ20FW785XTMA1` (Mouser),
+`SLB9670VQ20FW760XUMA1` (DigiKey). Note the Infineon variant letters — **SLB** is the standard part;
+**SLM** and **SLI** are mobile and industrial/automotive grades of the same silicon and are equally
+fine here.
+
+**Recommendation for a US buyer: the GeeekPi board from Amazon.** It is the SLB9670 rather than the
+9672, which changes nothing that matters — same `tpm_tis_spi` driver, same `dtoverlay=tpm-slb9670`,
+same TPM 2.0 feature set including PCR sealing and monotonic counters. Spend the difference on the
+UPS HAT instead.
+
+Prices and stock move; verify before ordering.
 
 #### Setup
 
