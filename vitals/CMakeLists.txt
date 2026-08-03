@@ -25,6 +25,17 @@ target_include_directories(vitals_core PUBLIC
     ${CMAKE_SOURCE_DIR}/vitals/include
     ${CMAKE_SOURCE_DIR}/vitals/generated)
 
+# sfloat.c calls pow(). On glibc libm is a separate shared object and must be
+# linked explicitly; on macOS it lives inside libSystem and links implicitly.
+# Without this the Linux build fails at link with "DSO missing from command
+# line" while macOS builds clean — the exact shape of bug the portable/Linux
+# source split does NOT catch, because the source is portable and only the
+# link is not.
+find_library(M_LIBRARY m)
+if(M_LIBRARY)
+    target_link_libraries(vitals_core PUBLIC ${M_LIBRARY})
+endif()
+
 # ── vitals_linux · Linux only ────────────────────────────────────────────────
 # BlueZ over D-Bus, epoll, sd_notify, getrandom(2), /sys reads. None of this
 # compiles on macOS, and none of it should be faked there — a mock BlueZ would
