@@ -14,8 +14,8 @@ are marked as such.
 | | Count |
 |---|---|
 | Fixed in amendments 01–04 | 9 |
-| **Wrong fix — needs redesign** | **2** |
-| Open, not yet written | 11 |
+| **Wrong fix — corrected in A05** | **2** |
+| Open — now specified in A05 §4 | 11 |
 | Rejected with reason | 2 |
 | Deferred with reason | 2 |
 
@@ -23,7 +23,7 @@ are marked as such.
 
 ## A. Critical — blocking implementation
 
-### A1. The repo describes three different systems · **OPEN**
+### A1. The repo describes three different systems · **FIXED** (commit 9604aeb)
 
 *Found independently by gpt-5.6-sol and deepseek-v4-pro.*
 
@@ -53,7 +53,7 @@ invariant the unconditional version held.
 
 ---
 
-### A2. Amendment 04 §1's RR fix is wrong · **WRONG FIX — REDESIGN**
+### A2. Amendment 04 §1's RR fix is wrong · **CORRECTED IN A05 §1**
 
 *gpt-5.6-sol, and it is right.*
 
@@ -95,7 +95,7 @@ sequences after reconnect; RR counts *exceeding* expected beat count rather than
 
 ---
 
-### A3. The dead-man switch monitors the wrong thing · **WRONG FIX — REDESIGN**
+### A3. The dead-man switch monitors the wrong thing · **CORRECTED IN A05 §2**
 
 *Two independent failures, from gpt-5.6-sol and deepseek.*
 
@@ -147,19 +147,21 @@ switch proves only that one process is scheduled.
 
 ## C. Open — accepted, not yet written
 
-| # | Finding | Source |
-|---|---|---|
-| C1 | Drain *progress* liveness — `systemctl is-active` lies | all three r1 |
-| C2 | Disk-full entirely unspecified; ~250 MB/night of RR | deepseek |
-| C3 | BLE MAC randomisation breaks static-MAC trust; use IRK | gemini |
-| C4 | Off-box backup deferred — all tiers on one disk | grok |
-| C5 | Spool format version detection and hard failure | kimi |
-| C6 | Advisory locking on the spool offset file | kimi + deepseek |
-| C7 | No mechanism to detect a stuck `cns-engine` | kimi |
-| C8 | Gap-fill policy not enforced at the query layer | kimi |
-| C9 | No end-to-end latency SLO | kimi |
-| C10 | `vitalsd` restart leaves detection blind with no warm replay | grok |
-| C11 | Subscriber backpressure undefined — slow consumer drops or blocks | grok |
+All eleven are specified in amendment 05 §4. Specified is not implemented.
+
+| # | Finding | Source | Spec |
+|---|---|---|---|
+| C1 | Drain *progress* liveness — `systemctl is-active` lies | all three r1 | A05 §4.1 |
+| C2 | Disk-full entirely unspecified; ~250 MB/night of RR | deepseek | A05 §4.2 |
+| C3 | BLE MAC randomisation breaks static-MAC trust; use IRK | gemini | A05 §4.3 |
+| C4 | Off-box backup deferred — all tiers on one disk | grok | A05 §4.4 |
+| C5 | Spool format version detection and hard failure | kimi | A05 §4.5 |
+| C6 | Advisory locking on the spool offset file | kimi + deepseek | A05 §4.6 |
+| C7 | No mechanism to detect a stuck `cns-engine` | kimi | A05 §4.7 |
+| C8 | Gap-fill policy not enforced at the query layer | kimi | A05 §4.8 |
+| C9 | No end-to-end latency SLO | kimi | A05 §4.9 |
+| C10 | `vitalsd` restart leaves detection blind with no warm replay | grok | A05 §4.10 |
+| C11 | Subscriber backpressure undefined — slow consumer drops or blocks | grok | A05 §4.11 |
 
 ---
 

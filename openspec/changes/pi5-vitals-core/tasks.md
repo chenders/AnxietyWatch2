@@ -276,7 +276,7 @@ Rationale: with one adapter, a collector binding the wrong radio stops being a p
 ### T-B1 — Eight-hour Polar H10 capture
 
 **Tier:** implement-complex · **Host:** pi · **Context budget:** ~5k · **Depends:** T-A4
-**Amends:** 04 (§1 RR beat-time reconstruction) · 03 (§1 tactile evidence)
+**Amends:** 04 (§1 RR beat-time reconstruction) · 03 (§1 tactile evidence) · 05 (§1.4 clock drift, §4.3 IRK pairing)
 **Review required:** yes
 
 The entire project rests on the Pi holding a BLE connection all night. **Measure this before
@@ -698,7 +698,7 @@ git commit -m "feat(T-D2): IEEE-11073 SFLOAT decoder with sentinel handling and 
 ### T-D3 — COPY-binary encoder and spool
 
 **Tier:** implement-complex · **Host:** either · **Context budget:** ~7k · **Depends:** T-D1
-**Amends:** 01 (§2, spool replaces the embedded store) · 02 (§2.2, reserve columns) · 04 (§1, identity)
+**Amends:** 01 (§2, spool replaces the embedded store) · 02 (§2.2, reserve columns) · 04 (§1, identity) · 05 (§1 session_id/seq derivation)
 **Review required:** yes
 
 **Replaces the embedded store entirely.** There is no on-Pi embedded database and no WAL tail. Read
@@ -775,7 +775,7 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 ### T-D4 — `vitalsd` daemon and socket protocol
 
 **Tier:** implement-complex · **Host:** pi · **Context budget:** ~6k · **Depends:** T-D3
-**Amends:** 01 (§2 spool) · 02 (§2 signed ingest) · 04 (§2 OOM, §8 liveness)
+**Amends:** 01 (§2 spool) · 02 (§2 signed ingest) · 04 (§2 OOM, §8 liveness) · 05 (§2.1 heartbeat condition, §4.11 backpressure)
 **Review required:** yes
 
 Single writer. Every collector connects; `vitalsd` alone touches the database.
@@ -838,7 +838,7 @@ Single writer. Every collector connects; `vitalsd` alone touches the database.
 ### T-D5 — spool drainer
 
 **Tier:** implement-complex · **Host:** pi · **Context budget:** ~6k · **Depends:** T-D4, T-C3
-**Amends:** 01 (§2.2 drain protocol) · 04 (§6 staging table, §7 migration guard, §8 liveness)
+**Amends:** 01 (§2.2 drain protocol) · 04 (§6 staging table, §7 migration guard, §8 liveness) · 05 (§4.1 liveness, §4.2 watermarks)
 **Review required:** yes
 
 **GATE G3:** requires T-C3 green. No sample worth keeping is written before a restore works.
@@ -884,7 +884,7 @@ and asserts exactly 10 000 rows with no duplicates and the offset at EOF.
 ### T-D6 — `bp-collector` end to end
 
 **Tier:** implement-complex · **Host:** pi · **Context budget:** ~6k · **Depends:** T-D2, T-D4, T-D5
-**Amends:** 04 (§1 identity model) · 02 (§2 batch signing)
+**Amends:** 04 (§1 identity model) · 02 (§2 batch signing) · 05 (§1 identity from the cuff's own sequence)
 **Review required:** yes
 
 **GATE G3:** requires T-C3 green. No sample worth keeping is written before a restore works.
