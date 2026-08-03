@@ -28,3 +28,4 @@ fuzz/coverage/
 
 __pycache__/
 *.pyc
+.idea/deployment.xml
