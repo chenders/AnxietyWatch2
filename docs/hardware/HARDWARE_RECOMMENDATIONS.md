@@ -113,9 +113,37 @@ it the primary channel rather than the backup.
 Sonic Alert, Bellman & Symfon, or a generic 12 V shaker. Drive it from GPIO through a relay — not a
 smart plug, which would add a radio and a hub to the dependency chain of the most important channel.
 
-### GPIO relay HAT + 12 V PSU — ~$20
+### 4-channel logic-level MOSFET module + 12 V PSU — ~$20
 
-Drives the siren, the shaker, and a strobe from one board. 2–4 channels is plenty.
+Drives the siren, shaker and strobe from one board. **MOSFET, not a relay HAT:**
+
+- **Relays click.** A daily self-test that goes *clack* at 22:00 in a bedroom is noise you will come
+  to resent, and the alarm should not announce itself before the siren does.
+- **The shaker needs PWM.** The evidence is specifically about an *intermittent pulse*. A MOSFET
+  generates that natively; a relay would chatter and wear its contacts out doing it.
+- **Contact wear.** Daily self-test plus every alarm is 400+ cycles a year on a mechanical part.
+
+Relays win on galvanic isolation and AC loads. Neither applies — 12 V DC, short wires, same room.
+
+**Buy a logic-level part.** The common cheap "IRF520 MOSFET driver module" is **not** logic-level:
+IRF520 needs ~10 V of gate drive and will not fully turn on from a 3.3 V GPIO. It conducts
+partially, runs hot, and degrades — silently, in an alarm circuit. Search **IRLZ44N**, **IRL540N**,
+or listings that state *"logic level"* / *"3.3V compatible"*. The `L` is the marker.
+
+Optional: an **INA219** current sensor (~$5, I2C) inline with the siren, for the current-sense
+self-test in amendment 03 §6 — the closest thing to physical proof that a sound occurred.
+
+**Pin allocation**, clear of SPI0 which the TPM occupies:
+
+| Load | BCM | Physical |
+|---|---|---|
+| Piezo siren | GPIO5 | 29 |
+| Bed shaker | GPIO6 | 31 |
+| Strobe | GPIO13 | 33 |
+| 555 heartbeat | GPIO16 | 36 |
+
+If a HAT is preferred, the Waveshare RPi Relay Board has jumper-selectable control pins so it can
+avoid SPI0 — but it is still relays, with the clicking and the lack of PWM.
 
 > **~$65 covers siren + shaker + relay + PSU** — the largest single reliability improvement available
 > to this system, and it gives two alert channels whose dependencies are disjoint from everything
