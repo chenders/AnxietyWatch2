@@ -125,10 +125,31 @@ Drives the siren, shaker and strobe from one board. **MOSFET, not a relay HAT:**
 
 Relays win on galvanic isolation and AC loads. Neither applies — 12 V DC, short wires, same room.
 
-**Buy a logic-level part.** The common cheap "IRF520 MOSFET driver module" is **not** logic-level:
-IRF520 needs ~10 V of gate drive and will not fully turn on from a 3.3 V GPIO. It conducts
-partially, runs hot, and degrades — silently, in an alarm circuit. Search **IRLZ44N**, **IRL540N**,
-or listings that state *"logic level"* / *"3.3V compatible"*. The `L` is the marker.
+**Buy loose transistors, not a module.** Searching Amazon for a 4-channel logic-level module returns
+almost entirely loose IRLZ44N; the one assembled board sits at 3.9 stars and does not name its
+MOSFET, which is exactly the uncertainty to avoid in an alarm circuit. The common cheap "IRF520
+MOSFET driver module" is **not** logic-level — IRF520 needs ~10 V of gate drive, so from a 3.3 V GPIO
+it conducts partially, runs hot, and degrades silently.
+
+Get a listing that states the **gate-source threshold voltage** (1.0–2.0 V) and says genuine
+Infineon. ~$9 for five. The `L` in IRLZ/IRL is the logic-level marker.
+
+**Three components per channel, and two of them are not optional:**
+
+| Part | Value | Why |
+|---|---|---|
+| IRLZ44N | — | the switch |
+| Gate series resistor | 150–220 Ω | limits GPIO inrush into gate capacitance |
+| **Gate pulldown** | **10 kΩ, gate→source** | **holds the load OFF during boot** |
+| Flyback diode | 1N4007 or Schottky | across the shaker — it is a motor |
+
+Pi GPIO floats from power-on until the pin is configured. **Without the pulldown the gate can float
+high and the siren sounds at every boot** — a false alarm on every reboot, which is the failure mode
+two reviewers flagged in other forms. Without the flyback diode, switching an inductive load puts a
+reverse spike across the MOSFET and eventually destroys it.
+
+Add a screw-terminal prototyping board (~$8). If soldering is unappealing, Adafruit and Pololu sell
+single-channel logic-level MOSFET breakouts with the gate resistor and pulldown already fitted.
 
 Optional: an **INA219** current sensor (~$5, I2C) inline with the siren, for the current-sense
 self-test in amendment 03 §6 — the closest thing to physical proof that a sound occurred.
