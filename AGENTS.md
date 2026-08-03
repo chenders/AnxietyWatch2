@@ -17,6 +17,22 @@ Work one task at a time. Read **only** the files in that task's `Reads:` list �
 Every task declares a context budget; if you find yourself reading far beyond the list, the task is
 mis-scoped. Say so rather than proceeding.
 
+### Always in scope, regardless of `Reads:`
+
+**`docs/specs/AMENDMENTS.md`** is mandatory reading for every task. It is the index of decisions that
+supersede the original design, and a task brief that contradicts an accepted amendment is **wrong —
+the amendment wins.** Report the contradiction rather than implementing either version.
+
+This exists because the rule above once caused a real defect. Four amendments changed the
+implementation language, the storage engine, the schema and the primary key, while every task brief
+still described the superseded system. No `Reads:` list referenced an amendment, so a worker obeying
+the scoping rule *correctly* could not see them — and the committed SQL proved it had already
+happened. The optimisation that keeps context small silently broke the invariant that a task brief
+describes the current system.
+
+Each task header also carries an `**Amends:**` field naming the amendments that touch it. Read those
+in full before starting.
+
 ## Git
 
 - **Never commit to `main`.** Branch first: `git checkout -b <name> main`.
