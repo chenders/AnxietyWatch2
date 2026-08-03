@@ -184,23 +184,26 @@ these turn up refurbished.
 |---|---|
 | **Seeed MR60BHA2** (60 GHz) | **The only one of these that measures respiration.** ~5 mm wavelength resolves sub-1 mm chest displacement; tested within 3 BPM of a medical pulse oximeter. **Breathing/heartbeat range is only 1.5 m** (6 m presence-only), so it mounts above or beside the bed |
 
-**Two versions of the MR60BHA2, and the choice is architectural:**
+**There is no bare module — the MR60BHA1 is discontinued.** The MR60BHA2 ships pre-assembled with a
+XIAO ESP32C6, and that is the only way to buy it.
 
-| | Kit — XIAO ESP32C6 (~$25) | Bare module (~$20) |
-|---|---|---|
-| Connection | **WiFi via ESPHome** | **UART straight to the Pi** |
-| Also needs | ESP32, WiFi, an MQTT broker or Home Assistant | nothing |
-| Driver | works out of the box | a Rust serial driver, a T-K-sized task |
-| Extras | BH1750 light sensor, RGB LED, Grove connector, 3D-printable case | — |
+That is not a lock-in. Seeed's documentation states the BHA2 module is compatible with other
+microcontrollers, and a standalone module datasheet exists — **the sensor board detaches from the
+XIAO and wires to the Pi's UART.** Use the XIAO with ESPHome first if you want it working quickly,
+and rewire to UART later to drop the WiFi hop and the ESP32 from the dependency chain, per the
+failure-domain reasoning in amendment 03.
 
-**Prefer the bare module.** Amendment 03 is built on minimising shared failure domains, and the
-Zigbee coordinator was chosen specifically to avoid a bridge — putting a WiFi hop and an ESP32
-between the Pi and a sensor two feet away contradicts both. The kit is the right pick only if the
-driver work is not worth it to you.
+**Buy it from the Seeed Studio Official storefront on Amazon (~$25).** That is the manufacturer, not
+a marketplace reseller, and it ships domestically. Avoid: The Pi Hut (£28.80 *incl. VAT* plus
+international shipping — more money, and VAT you do not owe), and any "Generic"-branded listing at
+$89, which is the discontinued BHA1 at four times its price.
 
-Whichever: buy from **Seeed Studio Official**, not a marketplace reseller. The listing sits at 3.0
-stars from 19 ratings, so read the one-stars first — the vendor claims sub-millimetre chest
-displacement at 1.5 m through bedding, and that deserves verification rather than trust.
+The BHA2 also beats the BHA1 on specs: 80° × 80° coverage against 40° × 40°, and 0.4–2 m against
+0.4–1.5 m.
+
+**Two constraints worth knowing before it becomes a signal the detection engine trusts:** breathing
+and heartbeat work to ~2 m (presence to 6 m), so it mounts above or beside the bed; and it is
+specified for **one person in range** — a second body degrades accuracy.
 | ~~LD2410 / LD2450 (24 GHz)~~ | **Not respiration sensors.** The LD2450 is a *tracking* radar — it outputs distance, angle and velocity for moving targets, i.e. where people are. The LD2410 does presence and micro-motion. Neither measures breathing. An earlier draft of this document listed them for respiration; that was wrong |
 | CO₂ sensor (SCD40/SCD41) | Bedroom CO₂ correlates with sleep quality and can be genuinely high in a closed room |
 | Temperature / humidity (SHT41, BME280) | Environmental context, and it protects the box: alarms on enclosure temperature |
