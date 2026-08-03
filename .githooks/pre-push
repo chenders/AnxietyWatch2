@@ -44,8 +44,11 @@ if [[ -n "$ADDED" ]]; then
   if grep -qE '(API_KEY|SECRET|PASSWORD|TOKEN|MASTER_KEY)[[:space:]]*[:=][[:space:]]*["'"'"']?[A-Za-z0-9_\-]{16,}' <<<"$ADDED"; then
     fail "a credential value appears in the diff"
   fi
-  grep -qE 'sk-[A-Za-z0-9_-]{20,}'                    <<<"$ADDED" && fail "an sk- API key appears in the diff"
-  grep -qE '-----BEGIN [A-Z ]*PRIVATE KEY-----'       <<<"$ADDED" && fail "a private key appears in the diff"
+  grep -qE -- 'sk-[A-Za-z0-9_-]{20,}'                 <<<"$ADDED" && fail "an sk- API key appears in the diff"
+  # `--` is required: the pattern starts with dashes and grep would otherwise
+  # parse it as options, error out, match nothing, and silently pass. A gate
+  # that cannot fail verifies nothing.
+  grep -qE -- '-----BEGIN [A-Z ]*PRIVATE KEY-----'    <<<"$ADDED" && fail "a private key appears in the diff"
   # Phone numbers outside the reserved fictional range.
   grep -qE '\b(\(?[0-9]{3}\)?[ .-]?)[0-9]{3}[ .-][0-9]{4}\b' <<<"$ADDED" \
     && ! grep -qE '555-01[0-9]{2}' <<<"$ADDED" \
