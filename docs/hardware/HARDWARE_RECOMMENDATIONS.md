@@ -79,13 +79,20 @@ Check stacking clearance against the M.2 HAT before ordering; both want the same
 
 ### RTC battery — ~$5 · *cheapest real fix on this list*
 
-The Pi 5 has a dedicated RTC connector (J5) and **ships without a battery**. Without one, the clock
-resets on every power loss and the system boots believing it is some default date until NTP
-corrects it.
+The Pi 5 **already has RTC hardware**; it ships without the battery that keeps it running when power
+is off. This is not an add-on module — it is a coin cell for the **J5** connector.
 
-In a time-series system where `timestamp` is the primary key and gap detection drives the alarm, a
-few minutes of samples stamped with a wrong clock is a data-integrity problem, not an inconvenience.
-Buy the rechargeable cell for the J5 connector.
+**Buy the official Raspberry Pi RTC Battery** — a rechargeable **ML2020** lithium-manganese cell
+pre-fitted with the 2-pin JST-SH plug. Search `Raspberry Pi RTC battery` or `ML2020 JST-SH`.
+
+**It must be rechargeable.** The Pi 5 trickle-charges J5. A standard CR2032 is a *primary* cell and
+putting one on a charging circuit risks rupture and fire. Do not substitute one.
+
+Without it the clock resets to 1970 on any power loss, and the failure compounds three ways: 1970
+timestamps enter the spool, `TIMESTAMPTZ` chunking breaks, and **TLS certificate validation fails** —
+so the APNs and Twilio out-of-band alerts stop working at the same moment everything else does.
+
+A TPM does not substitute for this. Its monotonic counter counts; it does not tell time.
 
 ### 12 V piezo siren + MOSFET/relay — ~$10
 
