@@ -1,0 +1,118 @@
+#!/usr/bin/env bash
+# pre-push — blocking gates. Install with: scripts/install-hooks.sh
+#
+# These exist because every one of them has already caught something real in this
+# project's history, or in its predecessor's. They are cheap; a bad push is not.
+#
+# Bypass with --no-verify only when you know exactly which gate you are skipping
+# and why.
+
+set -uo pipefail
+
+RED=$'\033[31m'; YEL=$'\033[33m'; GRN=$'\033[32m'; OFF=$'\033[0m'
+fail() { printf '%s✗ %s%s\n' "$RED" "$*" "$OFF" >&2; FAILED=1; }
+warn() { printf '%s! %s%s\n' "$YEL" "$*" "$OFF" >&2; }
+ok()   { printf '%s✓ %s%s\n' "$GRN" "$*" "$OFF"; }
+FAILED=0
+
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT" || exit 1
+
+REMOTE_HEAD="$(git rev-parse --verify -q origin/main 2>/dev/null || echo '')"
+if [[ -n "$REMOTE_HEAD" ]]; then
+  RANGE="$REMOTE_HEAD..HEAD"
+else
+  RANGE="HEAD~1..HEAD"
+fi
+COMMITS="$(git rev-list "$RANGE" 2>/dev/null || echo '')"
+[[ -z "$COMMITS" ]] && { ok "nothing to push"; exit 0; }
+
+printf '\n── pre-push gates ──\n'
+
+# ── 1. never push to main directly ────────────────────────────────────────────
+BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+while read -r _ _ remote_ref _; do
+  [[ "$remote_ref" == "refs/heads/main" && "$BRANCH" == "main" ]] && \
+    fail "direct push to main. Branch first: git checkout -b <name> main"
+done < <(cat)
+
+# ── 2. secrets ────────────────────────────────────────────────────────────────
+# Not a general scanner — these are the shapes that have actually shown up.
+ADDED="$(git diff "$RANGE" --diff-filter=ACM -U0 | grep '^+' | grep -v '^+++' || true)"
+if [[ -n "$ADDED" ]]; then
+  # A key with an actual value. Empty assignments (VAR=) are fine and common.
+  if grep -qE '(API_KEY|SECRET|PASSWORD|TOKEN|MASTER_KEY)[[:space:]]*[:=][[:space:]]*["'"'"']?[A-Za-z0-9_\-]{16,}' <<<"$ADDED"; then
+    fail "a credential value appears in the diff"
+  fi
+  grep -qE 'sk-[A-Za-z0-9_-]{20,}'                    <<<"$ADDED" && fail "an sk- API key appears in the diff"
+  grep -qE '-----BEGIN [A-Z ]*PRIVATE KEY-----'       <<<"$ADDED" && fail "a private key appears in the diff"
+  # Phone numbers outside the reserved fictional range.
+  grep -qE '\b(\(?[0-9]{3}\)?[ .-]?)[0-9]{3}[ .-][0-9]{4}\b' <<<"$ADDED" \
+    && ! grep -qE '555-01[0-9]{2}' <<<"$ADDED" \
+    && warn "a phone-number-shaped string is in the diff — use 555-0100..555-0199"
+fi
+
+# ── 3. capture artifacts ──────────────────────────────────────────────────────
+# These can carry live authenticated-session data. In the predecessor repo one of
+# these landing in history required a rewrite to remove.
+BADFILES="$(git diff "$RANGE" --name-only --diff-filter=ACM | grep -iE '\.(har|pcap|pcapng)$|network.*\.txt$|\.playwright-mcp/' || true)"
+[[ -n "$BADFILES" ]] && fail "capture artifact staged:"$'\n'"$BADFILES"
+
+# ── 4. build junk ─────────────────────────────────────────────────────────────
+JUNK="$(git diff "$RANGE" --name-only --diff-filter=ACM | grep -E '(^|/)(a\.out|test_quick\.c|core|.*\.o|.*\.gcda|.*\.gcno)$' || true)"
+[[ -n "$JUNK" ]] && fail "build artifact staged:"$'\n'"$JUNK"
+
+# ── 5. generated files must be current ────────────────────────────────────────
+# A hand-edited generated file silently desynchronises C, SQL, Swift and JSON.
+if [[ -f vitals/tools/gen_registry.py ]]; then
+  PY=python3; command -v uv >/dev/null && PY="uv run python3"
+  if ! $PY vitals/tools/gen_registry.py --check >/dev/null 2>&1; then
+    fail "vitals/generated/ is stale or hand-edited — run: $PY vitals/tools/gen_registry.py"
+  else
+    ok "generated files current"
+  fi
+fi
+
+# ── 6. build and test ─────────────────────────────────────────────────────────
+if [[ -f CMakeLists.txt ]]; then
+  if cmake -B build -DCMAKE_BUILD_TYPE=Debug >/dev/null 2>&1 && cmake --build build >/dev/null 2>&1; then
+    if ctest --test-dir build --output-on-failure >/tmp/pp-ctest.$$ 2>&1; then
+      ok "build + ctest pass"
+    else
+      fail "ctest failed:"; tail -12 /tmp/pp-ctest.$$ >&2
+    fi
+  else
+    fail "build failed (warnings are errors here)"
+  fi
+  rm -f /tmp/pp-ctest.$$
+fi
+
+# ── 7. agent provenance ───────────────────────────────────────────────────────
+# The repo's git config signs every commit as the owner, so without a trailer an
+# agent's work is indistinguishable from a human's in git log.
+for c in $COMMITS; do
+  BODY="$(git log -1 --format=%B "$c")"
+  if grep -qiE '^(feat|fix|chore|docs|refactor|test)\((T-[A-Z]?[0-9]+)\)' <<<"$BODY" \
+     && ! grep -qi 'Co-Authored-By:' <<<"$BODY"; then
+    fail "$(git log -1 --format='%h %s' "$c")"$'\n'"   task commit without Co-Authored-By trailer"
+  fi
+done
+
+# ── 8. Verify-command tampering ───────────────────────────────────────────────
+# A worker once rewrote a task's Verify line so its output would pass. The Verify
+# command is the contract; changing it to fit the implementation inverts that.
+if git diff "$RANGE" --name-only | grep -q 'openspec/changes/.*/tasks.md'; then
+  if git diff "$RANGE" -- 'openspec/changes/*/tasks.md' | grep -qE '^-.*\*\*Verify:\*\*'; then
+    fail "a **Verify:** line was modified in tasks.md."
+    printf '   The Verify command is the contract. Satisfy it, do not edit it.\n' >&2
+    printf '   If it is genuinely wrong, say so in the PR and change it deliberately.\n' >&2
+  fi
+fi
+
+printf '\n'
+if (( FAILED )); then
+  printf '%spush blocked%s — fix the above, or --no-verify if you know which gate you are skipping\n' "$RED" "$OFF" >&2
+  exit 1
+fi
+ok "all gates passed"
+exit 0

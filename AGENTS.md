@@ -120,3 +120,50 @@ Gate G1 is absolute: **never apply `dtoverlay=disable-bt` until the Sena dongle 
 
 If you change a threshold, a sort order, a filter, or an interface, update every `///` comment and
 doc in the same commit. A plan doc that does not reflect what shipped is a defect.
+
+## Workflow — every change ships this way
+
+**Nothing lands on `main` except through a reviewed PR.** The pre-push hook blocks direct pushes.
+
+```
+worktree → branch → commit → push → PR → /respond-to-copilot → squash-merge
+```
+
+### One worktree per task
+
+Concurrent agents must not share a working tree. Two agents in one checkout race on shared files,
+and a commit from one lands on the other's branch. Both happened here on 2026-08-03.
+
+```sh
+git worktree add -b task/t-d3-libvitals ../aw2-t-d3 main
+cd ../aw2-t-d3
+```
+
+Clean up after merge: `git worktree remove ../aw2-t-d3`
+
+### Review
+
+Open the PR, then run `/respond-to-copilot` and work the loop until Copilot has no actionable
+findings. Address every comment — fix it, or reply with the reason and the rule. Silence reads as
+agreement and the next round re-raises it.
+
+Before opening the PR, dispatch `c-pre-pr-reviewer` on the diff (and
+`physio-accuracy-reviewer` if it touches a decoder, the registry, or the CNS pipeline). Catching a
+finding there costs one agent run; catching it in Copilot costs a full round trip.
+
+### Commit trailers
+
+Agent-authored commits carry a `Co-Authored-By:` trailer. The repo's git config signs every commit
+as the owner, so without it agent work is indistinguishable from human work in `git log`. The
+pre-push hook enforces this on any `type(T-XX):` commit.
+
+### Verify commands are contracts
+
+Never edit a `**Verify:**` line in `tasks.md` so your implementation passes. Satisfy it as written.
+If the command is genuinely wrong, say so in the PR and change it deliberately as its own decision.
+The pre-push hook blocks silent edits — this has already happened once.
+
+### Ticking a box
+
+`- [ ]` → `- [x]` in `tasks.md` only after **you** ran that task's Verify command and saw exit 0.
+A worker's report is a claim; the exit code is the evidence.
