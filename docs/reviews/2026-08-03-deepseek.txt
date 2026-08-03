@@ -1,0 +1,998 @@
+ /Users/chris/Source/AnxietyWatch2/db/sqitch.plan
+
+ Took 0.0s
+
+
+ Let me read the sqitch plan and the deploy/verify/revert files to understand the
+ migration structure.
+
+
+ read ~/Source/AnxietyWatch2/db/sqitch.plan
+
+
+
+ read ~/Source/AnxietyWatch2/db/sqitch.conf
+
+
+
+ read ~/Source/AnxietyWatch2/db/deploy/extensions.sql
+
+
+
+ read ~/Source/AnxietyWatch2/db/deploy/registry_tables.sql
+
+
+
+ read ~/Source/AnxietyWatch2/db/deploy/samples.sql
+
+
+
+ read ~/Source/AnxietyWatch2/db/deploy/samples_hypertable.sql
+
+
+
+ read ~/Source/AnxietyWatch2/db/deploy/samples_compression.sql
+
+
+
+ read ~/Source/AnxietyWatch2/db/deploy/samples_1min.sql
+
+
+
+ read ~/Source/AnxietyWatch2/db/deploy/retention.sql
+
+
+ Now let me read the verify and revert scripts to complete the picture.
+
+
+ read ~/Source/AnxietyWatch2/db/verify/extensions.sql
+
+
+
+ read ~/Source/AnxietyWatch2/db/verify/samples.sql
+
+
+
+ read ~/Source/AnxietyWatch2/db/verify/samples_hypertable.sql
+
+
+
+ read ~/Source/AnxietyWatch2/db/revert/samples_hypertable.sql
+
+
+
+ read ~/Source/AnxietyWatch2/db/revert/extensions.sql
+
+
+
+ read ~/Source/AnxietyWatch2/db/revert/samples.sql
+
+
+ Now let me also check if there's a vitals-registry TOML or generated directory
+ already.
+
+
+ $ ls /Users/chris/Source/AnxietyWatch2/vitals/registry.toml 2>/dev/null; ls
+ /Users/chris/Source/AnxietyWatch2/vitals/generated/ 2>/dev/null; ls
+ /Users/chris/Source/AnxietyWatch2/crates/ 2>/dev/null
+
+ vitals-core
+ vitals-decode
+ vitals-registry
+
+ Took 0.0s
+
+
+ Let me also look at the crates to understand the workspace structure since the
+ code has moved to Rust.
+
+
+ $ find /Users/chris/Source/AnxietyWatch2/crates -type f -name '*.rs' -o -name
+ '*.toml' -o -name '*.md' | sort
+
+ ... (4 earlier lines, ctrl+o to expand)
+ /Users/chris/Source/AnxietyWatch2/crates/vitals-decode/src/hr.rs
+ /Users/chris/Source/AnxietyWatch2/crates/vitals-decode/src/lib.rs
+ /Users/chris/Source/AnxietyWatch2/crates/vitals-decode/src/sfloat.rs
+ /Users/chris/Source/AnxietyWatch2/crates/vitals-registry/Cargo.toml
+ /Users/chris/Source/AnxietyWatch2/crates/vitals-registry/src/lib.rs
+
+ Took 0.0s
+
+
+
+ $ find /Users/chris/Source/AnxietyWatch2/vitals -type f | sort
+
+ /Users/chris/Source/AnxietyWatch2/vitals/CMakeLists.txt
+ /Users/chris/Source/AnxietyWatch2/vitals/include/vitals.h
+ /Users/chris/Source/AnxietyWatch2/vitals/src/version.c
+ /Users/chris/Source/AnxietyWatch2/vitals/tests/test_toolchain.c
+
+ Took 0.0s
+
+
+ Let me also check the crate files for more context on what's been implemented so
+ far.
+
+
+ read ~/Source/AnxietyWatch2/crates/vitals-decode/src/lib.rs
+
+
+
+ read ~/Source/AnxietyWatch2/crates/vitals-decode/Cargo.toml
+
+
+
+ read ~/Source/AnxietyWatch2/crates/vitals-registry/src/lib.rs
+
+
+
+ read ~/Source/AnxietyWatch2/crates/vitals-registry/Cargo.toml
+
+
+
+ read ~/Source/AnxietyWatch2/crates/vitals-core/Cargo.toml
+
+
+ Now let me check the workspace Cargo.toml and the bp/hr decoders to see what else
+ exists.
+
+
+ $ ls /Users/chris/Source/AnxietyWatch2/Cargo.toml 2>/dev/null && cat
+ /Users/chris/Source/AnxietyWatch2/Cargo.toml
+
+ ... (37 earlier lines, ctrl+o to expand)
+ # A panic in a life-safety daemon should terminate the process so systemd
+ # restarts it, not unwind into an unknown state. This also makes a Rust panic
+ # and a C crash the same event, which was the last thing C had going for it.
+ panic = "abort"
+ strip = true
+
+ Took 0.0s
+
+
+
+ read ~/Source/AnxietyWatch2/crates/vitals-decode/src/bp.rs
+
+
+
+ read ~/Source/AnxietyWatch2/crates/vitals-decode/src/hr.rs
+
+
+
+ read ~/Source/AnxietyWatch2/crates/vitals-core/src/lib.rs
+
+
+ Now I have a comprehensive picture. Let me analyze the design carefully before
+ writing the review. Let me think through each of the four questions
+ systematically.
+
+ 1. What is missing that will hurt?
+
+ Let me think about what's truly missing — not nice-to-haves but gaps that will
+ cause failures:
+
+ - The COPY-binary spool drainer has no liveness monitoring. The design says
+   "vitals-spool-drain" streams bytes from the spool into Postgres, but there's no
+   mention of monitoring whether the drainer is actually making progress. If it
+   dies silently, the spool grows unbounded until the disk fills. The offset file
+   may show progress stopped, but there's nothing monitoring that. This is a real
+   gap.
+
+ - The staging-table drain (samples_staging is UNLOGGED) has a correctness issue
+   under concurrent drainers. The design says the drainer uses CREATE TEMP TABLE
+   staging (amendment §2.2), but the sqitch deploy creates samples_staging as
+   UNLOGGED (not TEMP). If there's ever more than one drainer (accidentally, due
+   to a systemd misconfiguration or a runaway process), they'd both write to the
+   same UNLOGGED table and cause chaos. Even with one drainer, the TEMP vs
+   UNLOGGED mismatch between amendment text and sqitch deploy is concerning.
+
+ - There's no mention of what happens when the spool rotation happens and segments
+   pile up. The drainer reads from the active segment — but after rotation, there
+   are seg-<epoch>.copybin files. The drainer needs to drain those too, in order.
+   The design mentions rotated segments but doesn't specify the ordering/draining
+   discipline for them.
+
+ - The design mentions that the drainer advances the byte offset and fsyncs it,
+   but the offset file (cur.offset) maps to the active segment. After rotation,
+   there are multiple segment files. How does the offset work across rotations?
+   This seems underspecified.
+
+ - There's no handling of the edge case where Postgres is down for an extended
+   period and the spool grows to fill the disk. What happens? The collectors will
+   fail to write to the spool. Do they drop data? Crash? Back-pressure? None of
+   this is specified.
+
+ - Missing: the registry codegen for Rust. The design amendment says registry.sql
+   must emit hypertable/compression/retention SQL, but the tasks still reference
+   old C artifacts. The Rust workspace has vitals-registry but it's just a
+   skeleton.
+
+ - The samples_hypertable deploy uses migrate_data => TRUE — but since it deploys
+   right after samples table creation, there is never any data to migrate. This is
+   fine now but is a latent trap: if someone later adds the hypertable migration
+   after data exists, it will try to migrate potentially huge amounts of data in a
+   single transaction. The by_range partitioning with migrate_data => TRUE can be
+   catastrophically slow with existing data.
+
+ - No mention of how cns-engine receives data. The design says it holds ~60s ring
+   buffers and is a pure fold, but how does it subscribe to vitalsd? Through the
+   subscribe mechanism? The tasks don't cover this at all (Stage 5 is out of scope
+   for the current change set).
+
+ - The sqitch config references a database URI that uses localhost — but what
+   about the Unix socket? Postgres on localhost uses TCP which is slower than Unix
+   sockets. Minor, but on a constrained Pi, worth noting.
+
+ - The design says klaxond does a daily self-test through ALSA. But there is no
+   mention of how klaxond gets power to the amp/speaker. USB DACs can go to sleep,
+   and waking them introduces latency. Does the self-test also verify that the
+   speaker actually produced sound, or just that ALSA accepted the write? ALSA
+   accepting a write is not the same as sound coming out of the speaker.
+
+ - The design says the alarm path should work with the iPhone powered off. But how
+   does klaxond handle the case where the amp is off, the speaker is unplugged, or
+   the USB DAC has disconnected? The self-test catches this daily, but what about
+   mid-night failure?
+
+ - There's no health check on the spool drainer's progress rate. If the drainer is
+   alive but is processing at 1 row/second when 1000/second are arriving, the
+   spool fills. Process liveness ≠ progress.
+
+ 2. What tool, library, protocol or platform feature should this be using?
+
+ - systemd WatchdogSec= is mentioned for vitalsd but not for the spool drainer or
+   collectors. Every daemon on the safety path should use sd_notify with watchdog
+   pings. The spool drainer specifically needs this.
+
+ - BlueR / bluer is the right choice — already identified. Good.
+
+ - tokio-postgres with binary_copy — the design mentions it as the Rust
+   equivalent. Good.
+
+ - sqlx wasn't considered. It's the most popular async Rust Postgres driver and
+   has compile-time query checking against a live database. This would catch
+   schema mismatches at build time. tokio-postgres is lower-level and doesn't have
+   this.
+
+ - tracing crate — the design has no observability story. No structured logging,
+   no metrics. For a system that must not fail silently, this is a critical gap.
+   tracing + tracing-subscriber with journald integration is the standard Rust
+   observability stack.
+
+ - rustls — if there's ever TLS between the Pi and phone, but this is out of
+   scope.
+
+ - Prometheus + Grafana are mentioned in the Docker convenience layer, but there's
+   no mention of what metrics to expose. The health endpoint returns JSON, but
+   Prometheus needs a specific format. metrics crate + metrics-exporter-prometheus
+    would be appropriate.
+
+ - jq is relied upon in verify commands but isn't in the install list for the Pi.
+   It's probably already there, but worth checking.
+
+ - Nothing about CI. The design describes tests but has no CI pipeline. GitHub
+   Actions for aarch64 cross-compilation, running tests on the Pi, etc. Not
+   specified.
+
+ - bluez-async or btleplug — the Rust BLE ecosystem has multiple options beyond
+   bluer. btleplug is cross-platform and more active. Worth evaluating.
+
+ 3. Where is the design wrong, not just incomplete?
+
+ Let me interrogate the specific candidates:
+
+ - HLC justification: The design says "An HLC exists to merge writes from multiple
+   independent nodes without a coordinator." But who actually writes concurrently
+   to the same (source, type, timestamp) key? The Pi is the single writer for
+   Polar, EMAY, BP. The phone pushes HealthKit data. A watch might arrive later.
+   But different sources write different source values, so they never conflict on
+   the primary key (source, type, timestamp). The only conflict scenario is if two
+   nodes write the same (source, type, timestamp) — but source is per-device, so
+   this can't happen unless two devices claim to be the same source. The HLC adds
+   complexity (3 columns, a merge algorithm, a node_id file that must never be
+   regenerated) for a problem that doesn't exist. The total order argument ("the
+   one HealthKit never had") is weak — you can get total order from a simple
+   sequence number per source plus the source's own timestamp. The HLC feels like
+   elegant engineering for a non-problem.
+
+ - COPY-binary spool vs alternatives: The spool design is genuinely clever but has
+   real problems. (1) The format is not portable across Postgres major versions,
+   so upgrades require draining the spool — the upgrade runbook must remember
+   this. (2) The format is architecture-dependent (network byte order but the data
+   is still architecture-tied). (3) If a schema change to samples happens while
+   there's data in the spool, the drainer must refuse to drain (the --verify
+   flag). But what if the schema change added a column? The spool rows have the
+   old column count. This is unrecoverable — those rows can never be drained.
+   You'd need to drain to empty BEFORE any schema migration. The sqitch plan has
+   no check for this. (4) The spool is a binary format that can't be inspected
+   with standard tools. If something goes wrong, debugging requires a custom tool.
+
+ - Sqitch + generated SQL split: The "two owners" split (sqitch for structure,
+   generated registry.sql for reference rows) is clean in theory. In practice: (1)
+   The generated SQL must be run AFTER sqitch, on every deploy. What ensures this
+   ordering? (2) If a registry change adds a new type that a new sqitch
+   migration's CHECK constraint references, you need the registry row to exist
+   before the sqitch migration runs. This creates a circular dependency. (3) The
+   generator currently emits both structure and rows — amendment says it must be
+   trimmed to rows only, but this hasn't been done. (4) There's no verification
+   that the generated rows and sqitch-deployed tables are compatible (same column
+   names, same types). If vitals_type table changes in sqitch, the generated
+   INSERTs could break silently.
+
+ - One process per collector vs supervised process: The original C design used one
+   process per collector. The Rust evaluation argues you could merge them into one
+   supervised process with tasks. The tasks still reflect the C design (T-D6 is
+   one collector). This is fine — process-per-collector has blast-radius
+   advantages. But the design documents vacillate between the two approaches
+   without settling. The tasks.md still says "one process per collector"
+   implicitly. If switching to Rust, the argument for merging them gets stronger,
+   but the tasks don't reflect this.
+
+ - Staging-table drain correctness under concurrency: Amendment §2.2 says CREATE
+   TEMP TABLE staging — a TEMP table is per-session, so concurrent drainers can't
+   interfere. But the sqitch deploy creates samples_staging as a permanent
+   UNLOGGED table. If a second drainer accidentally starts, or if systemd respawns
+   before the old one dies, both would write to the same table. The design doesn't
+   address this. The fix is either: use TEMP tables (as the amendment says), or
+   take an advisory lock, or use a single drainer with a systemd socket activation
+   that ensures only one instance.
+
+ - The WITH NO DATA on the continuous aggregate: This is correct — it prevents an
+   initial full scan. But the refresh policy with start_offset => INTERVAL '3
+   hours' means there's a 3-hour window where the aggregate is stale. For the
+   bedside panel showing current status, this is fine. But if any detection logic
+   queries the aggregate (which it shouldn't — it uses the ring buffer), this
+   could be a problem.
+
+ - The compression policy INTERVAL '7 days' — the comment says "a night under
+   review is still uncompressed." But if you're reviewing a night from 6 days ago,
+   it's still uncompressed. On day 8, it gets compressed. That's fine for the use
+   case. However, TimescaleDB compression is not free — it rewrites chunks. If a
+   chunk is being compressed while the drainer is COPYing into it, there could be
+   contention. TimescaleDB handles this, but on a Pi 5 with limited I/O, this
+   matters.
+
+ - The samples_hypertable migration has no BEGIN/COMMIT — the comment says
+   create_hypertable manages its own transaction. But this means if the migration
+   fails partway through, the sqitch transaction is already committed by the
+   function. This breaks sqitch's atomicity guarantee. It also means the verify
+   script could run in a state where only part of the migration applied.
+
+ - The samples_staging UNLOGGED table + COPY: COPY into an UNLOGGED table is fast,
+   but UNLOGGED tables are not WAL-logged. If Postgres crashes between the COPY
+   and the INSERT...ON CONFLICT, the staging data is lost. But this is OK because
+   the spool offset hasn't been advanced — the drainer replays from the last
+   committed offset. However: what if Postgres crashes AFTER the INSERT commits
+   but BEFORE the drainer fsyncs the offset? The drainer replays rows that already
+   exist, and ON CONFLICT DO NOTHING makes it safe. This is correct. But what if
+   Postgres crashes after fsyncing the offset but the drainer hasn't recorded that
+   it's safe to truncate the spool? The drainer replays from the offset, but the
+   spool segment might have been partially truncated. Wait, the design says the
+   offset advances after commit, then it's fsynced, then the segment is unlinked.
+   So if we crash between offset fsync and unlink, the segment is still there and
+   the offset is past it. The drainer would skip the segment... but the offset
+   file only tracks position within the current segment, not which segment. This
+   is a gap in the spool format spec.
+
+ Actually, I realize the spool format spec is ambiguous. §2.1 says:
+ - cur.copybin — active segment
+ - cur.offset — last durably-drained byte offset
+ - seg-<epoch>.copybin — rotated segments awaiting drain
+
+ So there are multiple segments in play. The drainer needs to drain seg-*.copybin
+ files in order, then the current segment. But cur.offset only tracks position
+ within the current segment. For rotated segments, the drainer must process them
+ completely (they're whole files). But how does it know which ones it has already
+ drained? Does it delete them after draining? The text says "rotated segments
+ awaiting drain" and "fsynced before the segment is unlinked" — so deletion after
+ drain is the mechanism. But then if we crash after draining a rotated segment but
+ before deleting it, the drainer replays it. ON CONFLICT handles duplicates. OK,
+ that works. But the drainer needs to sort segments by epoch to drain in order —
+ not specified but straightforward.
+
+ More importantly: what happens if a new segment is rotated while the drainer is
+ working on an old one? The drainer should drain in order, so it would drain the
+ old segment first, then move to the new one, then the current. If the drainer is
+ slow, segments pile up. This is fine, but the drainer must handle the directory
+ listing changing while it's running.
+
+ OK, I think I have enough to write a thorough review. Let me also consider the
+ code quality issues in the existing Rust code.
+
+ The sfloat.rs is actually quite good. The exhaustive test over u16 domain is
+ smart. The libm_powi10 lookup table is a nice no_std solution. One potential nit:
+ the POW10 array uses values like 1e-8 which is 0.00000001 — a f64 representation.
+ These have floating point rounding. 1e-8 as f64 is not exactly representable. But
+ since the SFLOAT spec defines the exponent range, and the results are compared
+ with fabs(a-b) < 1e-9, this is probably fine. The C version uses pow(10.0,
+ exponent) which has similar issues. Not a real problem.
+
+ A real issue in sfloat.rs: the libm_powi10 function comment says "SFLOAT's
+ exponent is 4-bit signed, so -8..=7 is the whole domain" — but the C version
+ sign-extends differently. In C: if (exponent >= 0x08) exponent -= 0x10. The high
+ nibble of the u16 raw is shifted right 12 bits to get a 4-bit value. If the high
+ bit of the nibble is set (>= 0x8), it's negative. So the exponent range is -8 to
+ 7. The lookup table has 16 entries: indices 0-15 map to exponents -8 to 7. The
+ index calculation is exp + 8. So exp=-8 → idx=0 → 1e-8. exp=7 → idx=15 → 1e7.
+ This is correct.
+
+ But wait — the comment says 1e-8 at index 0 and 1e7 at index 15. Let me verify:
+ POW10[0] = 1e-8 = 10^-8, which is correct for exponent -8. POW10[15] = 1e7 =
+ 10^7, which is correct for exponent 7. This checks out.
+
+ One small issue: 1e-8 as f64 literal is 0.00000001, which is not exactly
+ representable in binary floating point. It's approximately 1.0000000000000001e-8
+ or similar. But for medical sensor values with precision of 0.1 or 1.0, this is
+ far below the noise floor. Not a real problem.
+
+ Now let me also think about what I checked and found genuinely fine:
+
+ - The append-only design with ON CONFLICT DO NOTHING is correct and
+   well-thought-through.
+ - The COPY-binary spool as an ingest buffer with no translation layer is
+   genuinely clever.
+ - The cursor discipline (offset advances only in the same transaction that
+   committed rows) correctly prevents data loss.
+ - The SFLOAT decoder correctly handles all sentinel values and the exhaustive
+   test is excellent.
+ - The registry-as-single-source-of-truth with codegen is the right pattern.
+ - The TimescaleDB choice for time-series on Postgres is correct — you get
+   time-series performance without a second database.
+ - The sqitch verify scripts are good practice.
+ - The revert-on-data-loss-refusal (extensions and samples_hypertable) is correct.
+ - The UTC-only rule enforced at the database level is correct.
+ - The "unknown ≠ OK" invariant with gapfill is well-designed.
+ - The life-safety path outside Docker is the right call.
+ - Using systemd with hardware watchdog is appropriate.
+
+ Now let me structure the review.
+
+ Now let me check the remaining revert/verify files and the TOML-based registry:
+
+
+ $ ls /Users/chris/Source/AnxietyWatch2/vitals/registry.toml 2>/dev/null && cat
+ /Users/chris/Source/AnxietyWatch2/vitals/registry.toml 2>/dev/null || echo "No
+ registry.toml yet"
+
+ No registry.toml yet
+
+ Took 0.0s
+
+
+
+ read ~/Source/AnxietyWatch2/db/revert/retention.sql
+
+
+
+ read ~/Source/AnxietyWatch2/db/verify/retention.sql
+
+
+
+ read ~/Source/AnxietyWatch2/db/verify/registry_tables.sql
+
+
+ Now I have all the pieces. Let me write the review.
+
+ Let me synthesize my findings:
+
+ Most severe findings (3 sentences each):
+
+ 1. Spool drainer has no liveness monitoring. If vitals-spool-drain silently stops
+    making progress — the process is alive but stuck, or draining at 1 row/sec
+    while 1000/sec arrive — the spool grows until the NVMe fills. The design
+    monitors vitalsd liveness (watchdog) and Postgres liveness (health endpoint),
+    but never checks whether the spool drainer's offset is actually advancing. A
+    frozen drainer that systemd considers "running" would take days to fill 104
+    GB, so discovery would come at 3am when collectors fail to write. Add a
+    WatchdogSec= on the drainer with sd_notify pings that only fire after a batch
+    is successfully committed, plus a staleness alert when cur.offset hasn't moved
+    in >N drain cycles.
+
+ 2. The staging table is UNLOGGED in sqitch but TEMP in the amendment — these have
+    different concurrency semantics. Amendment §2.2 specifies CREATE TEMP TABLE
+    staging which is per-session and safe if a second drainer accidentally starts.
+    The sqitch deploy creates samples_staging as a permanent UNLOGGED table shared
+    across all sessions. If systemd respawns the drainer before the old one exits
+    (common during a hung Postgres connection), two drainers will COPY into the
+    same staging table simultaneously. Result: interleaved row fragments, COPY
+    failures with opaque Postgres errors, or — worst case — half of each drainer's
+    batch inserted and the other half silently lost when the table is dropped.
+    Either use TEMP tables (as the text says) or acquire a pg_advisory_lock in the
+    drainer. This is a latent dual-writer bug that will only surface under load.
+
+ 3. The spool's COPY-binary format ties Postgres schema versions to buffer data
+    with no escape hatch. A schema change to samples (add/remove/reorder columns)
+    with rows in the spool is unrecoverable — those rows can never be drained
+    because their field count and order are baked in. The --verify flag catches
+    the mismatch and refuses to drain (§2.3), but then what? You can't drain, and
+    you can't change the schema. The only path is: drain the spool to empty BEFORE
+    the migration. But neither the sqitch migrations nor the tasks enforce this
+    ordering. If a schema migration runs (via sqitch deploy) with spool data
+    present, you have a permanent wedge: the drainer refuses to process old-format
+    rows, and the new schema can't receive them. This will bite the first time
+    samples is altered — and every table gets altered eventually. The fix: sqitch
+    deploy scripts that touch samples schema must assert the spool is empty first,
+    and the drainer must fully drain before allowing schema changes.
+
+ Now let me organize the full response.
+
+ Here is the review.
+
+ ────────────────────────────────────────────────────────────────────────────────
+
+ Three most severe findings
+
+ 1. No spool-drainer liveness monitoring. Systemd watches vitalsd via
+ WatchdogSec=30 but vitals-spool-drain.service — which is on the durability path —
+ gets no watchdog in the tasks or spec. Worse, process liveness is insufficient: a
+ drainer that is alive but blocked on a hung Postgres connection will keep systemd
+ happy while the spool fills the NVMe. The design has Restart=always on collectors
+ but never defines the drainer unit at all. Under this design, if the drainer
+ wedges, you discover it when collectors fail to write() because the filesystem is
+ full — possibly days later with 104 GB of headroom, but inevitably during a
+ monitoring session. What breaks: the spool fills, vitalsd's O_APPEND writes
+ return ENOSPC, samples are lost. How you'd know: you wouldn't, until the disk
+ fills or a collector crashes. Fix: WatchdogSec= on the drainer with sd_notify
+ pings that fire only after a batch successfully commits, plus a staleness alert
+ when cur.offset has not advanced in N seconds read from the health endpoint.
+
+ 2. The staging table is UNLOGGED and shared in sqitch but TEMP and private in the
+ amendment — these are not the same thing and the difference is a dual-writer bug
+ waiting to surface. Amendment §2.2 says CREATE TEMP TABLE staging (LIKE samples
+ INCLUDING DEFAULTS) ON COMMIT DROP. The sqitch deploy creates CREATE UNLOGGED
+ TABLE samples_staging (LIKE samples INCLUDING DEFAULTS) — a permanent, unlogged,
+ shared table. If systemd respawns vitals-spool-drain before the old process exits
+ (exactly what happens with a hung Postgres connection and Restart=always), two
+ drainers COPY into the same staging table simultaneously. Postgres binary COPY
+ into a shared table from two sessions will interleave or fail with protocol
+ errors, and the INSERT ... ON CONFLICT DO NOTHING will commit a partial batch
+ while the other drainer's rows are silently lost. Fix: use an actual CREATE TEMP
+ TABLE (per the amendment's own text) or take pg_advisory_lock(42) on drainer
+ start. This is a latent bug that will only fire under the exact condition —
+ Postgres flaky, drainer restarted — that the system is already designed to
+ survive.
+
+ 3. The COPY-binary spool format permanently wedges schema migrations. Amendment
+ §2.3 correctly notes that binary COPY format is tied to column count and order.
+ It says drain before migration and adds --verify to refuse draining a mismatch.
+ But neither sqitch nor the tasks enforce the ordering. The sqitch migrations for
+ samples deploy with no assertion that the spool is empty. The first time samples
+ gets a new column or reordering — which every table eventually does — the
+ sequence will almost certainly be: developer writes migration, runs sqitch
+ deploy, migration succeeds, drainer restarts, drainer hits --verify failure,
+ drainer refuses all remaining spool rows. Those rows are now unrecoverable —
+ they're in the old format and the table is in the new format, with no downgrade
+ path. This will bite. The fix: every sqitch deploy that touches samples schema
+ must SELECT count(*) FROM spool_segments or equivalent and raise if nonzero, and
+ the drainer must be drained+stopped before sqitch deploy is allowed to proceed.
+ Document this as a migration precondition in the sqitch plan header.
+
+ ────────────────────────────────────────────────────────────────────────────────
+
+ 1. What is missing that will hurt?
+
+ Ranked by severity:
+
+ ### 1a. Disk-full behavior is entirely unspecified
+
+ The draft is detailed about the happy path — spool rotates at 64 MB or hourly,
+ drainer streams into Postgres, offset advances. Zero words on what happens when
+ the NVMe fills. A one-night Polar H10 capture at RR-interval granularity is ~250
+ MB. If the drainer is down for four nights, the spool reaches ~1 GB. If Postgres
+ samples table grows (uncompressed) for months, the database itself fills the
+ disk. There is no df check, no ENOSPC handler, no alarm, no backpressure on
+ collectors. When it fills — and it will, because the retention policy only ages
+ out at 2 years and the compression policy lags 7 days — the first thing that
+ fails is random: a collector write(), a Postgres COMMIT, pgBackRest's archive.
+ What breaks: the system fails nondeterministically at the worst possible moment
+ (mid-night, mid-backup). Fix: disk watermark checks in the health endpoint; a
+ dedicated vitals-disk-watch timer that fires an alert at 80% and refuses new
+ spool segments (not new samples — spool segments) at 95%.
+
+ ### 1b. ALSA write acceptance ≠ sound produced
+
+ The klaxond self-test (§5.1) "confirms via ALSA that the device accepted the
+ write and the expected sample count was consumed." This tests the software stack.
+ It does not test that the amp has power, the speaker cone hasn't torn, or the USB
+ DAC hasn't silently reset to a different output. A USB DAC that disappears and
+ reappears gets a new card number; the /etc/asound.conf from T-A2 points to a card
+ number N that may now be wrong. ALSA will still accept writes — to the wrong
+ device. What breaks: klaxond self-test passes nightly while the physical speaker
+ is dead. Fix: the self-test must include a loopback path (mic near speaker
+ confirming SPL) or at minimum read back the DAC's hardware mixer state and
+ compare against the expected card identifier (USB VID/PID, not card number).
+
+ ### 1c. No spool segment ordering or partial-drain discipline
+
+ Amendment §2.1 lists seg-<epoch>.copybin as "rotated segments awaiting drain" but
+ never specifies: (a) the drain order across segments (must be chronological), (b)
+ what happens when a new segment is rotated while the drainer is mid-drain on an
+ old one, (c) how the drainer resumes after crash when cur.offset is mid-segment
+ but a rotated segment also exists (does cur.offset apply to the active segment
+ only or to a global position?), (d) the exact mechanism by which a fully-drained
+ segment is deleted. These are all implementable, but the spec undersells the
+ complexity. A drained segment that isn't deleted gets replayed on restart (safe,
+ ON CONFLICT handles it), but the offset file semantics are underspecified enough
+ that a wrong implementation could skip segments.
+
+ ### 1d. The drainer's cur.offset is a single file — what does it mean across
+ segment rotations?
+
+ If cur.offset tracks the byte offset within cur.copybin, and that file is rotated
+ at 64 MB, the offset resets to 0 on rotation. But the drainer might be mid-drain
+ on the old segment when rotation happens. The drained offset for the old segment
+ is somewhere in seg-<epoch>.copybin, not in cur.copybin. There needs to be either
+ a per-segment offset file or a global offset. The spec says "the byte offset
+ advances only after that transaction commits, and it is fsynced before the
+ segment is unlinked" — but which byte offset? The drainer needs to know where it
+ was in each segment. This is a spec gap that will produce an incorrect
+ implementation.
+
+ ### 1e. No observability layer at all
+
+ The design has a health endpoint returning JSON. That is the entirety of the
+ observability story. There is no structured logging, no metrics (counters for
+ samples ingested/drained/rejected, histograms for drain latency, gauges for spool
+ size), no alerting rules, no way to answer "is the system degrading?" without a
+ human reading health JSON. The design is for a system that operates unattended
+ through the night. What breaks: slow degradations — a BLE connection taking 4
+ seconds to reconnect when it used to take 1, a drain batch that now takes 30
+ seconds instead of 5 — are invisible until they become failures. Fix: adopt
+ tracing with journald output and Prometheus metrics exposed from vitalsd. The
+ health endpoint is a snapshot; metrics are a history.
+
+ ### 1f. The generated registry.rs does not exist yet; the codegen TOML does not
+ exist yet
+
+ The Rust workspace crate vitals-registry is a skeleton: #![no_std] with no code.
+ The TOML file at vitals/registry.toml does not exist. The T-D1 task still
+ describes emitting vitals_types.h (a C header) and makes no mention of generating
+ generated.rs. This is acknowledged as "follow-up on the T-D1 branch" but the
+ tasks haven't been reworked. Since T-D2 (SFLOAT decoder) is done and the decoder
+ references types by integer ID, this isn't blocking — but every subsequent task
+ that needs source/type constants will be blocked until the generator emits Rust.
+ The C/Rust language decision document won; the tasks lost.
+
+ ### 1g. The samples_hypertable migration uses migrate_data => TRUE but runs
+ immediately after samples table creation
+
+ This is currently harmless — the table is empty. But the migration is
+ unrepeatable: if someone runs sqitch rebase after data exists, migrate_data =>
+ TRUE on a large samples table will lock it for the duration of a full table scan
+ + rewrite. On a Pi 5 with 8 GB RAM and a 1 TB NVMe, this could take hours and
+ block all ingest. Fix: either use migrate_data => FALSE (the table is empty at
+ deploy time, so nothing to migrate), or document the "must be empty" precondition
+ in the sqitch plan.
+
+ ### 1h. The cns-engine data path is undefined
+
+ The design says cns-engine subscribes to vitalsd and holds ~60s ring buffers. But
+ how does it subscribe? Through the vitals_subscribe() API? What selectors? Does
+ it get every sample or only the types it cares about? The subscribe API is
+ specified (unfiltered fan-out per selector), but the connection between vitalsd →
+ cns-engine → klaxond is a box in the diagram with no wire protocol. Tasks D4
+ specifies subscribe but doesn't specify how cns-engine uses it. This is Stage 5,
+ so not in the current change scope, but the API that cns-engine depends on is
+ being built now.
+
+ ### 1i. Node ID resilience is underspecified
+
+ hlc.c reads /var/lib/vitals/node_id "generated on first run from getrandom(2),
+ never regenerated." If that file is lost (filesystem corruption, accidental
+ deletion, migration to new hardware), the node effectively becomes a new writer.
+ HLC-merge semantics handle this — different node_id means different clock lineage
+ — but all existing data stamped with the old node_id has a different "clock."
+ This isn't necessarily wrong (the HLC design handles multiple writers), but the
+ implication that a node identity loss is silent and unrecoverable should be
+ explicit. A node that regenerates its ID silently looks like a different node
+ that happened to write the same source values — the HLC comparison between old
+ and new stamps still works but you've lost the "this is the same physical Pi"
+ property.
+
+ ────────────────────────────────────────────────────────────────────────────────
+
+ 2. What tool, library, protocol, or platform feature should this be using and
+ isn't?
+
+ sd_notify / libsystemd for EVERY daemon, not just vitalsd. vitalsd.service has
+ Type=notify and WatchdogSec=30. vitals-spool-drain.service isn't even defined yet
+ and needs both. Every collector service needs at minimum WatchdogSec= with a
+ main-loop ping so a wedged BLE stack reboots the collector. The Rust sd-notify
+ crate is already identified. Cost: trivial — one sd_notify::notify(false,
+ &[sd_notify::NotifyState::Watchdog]) call per main-loop iteration.
+
+ tracing + tracing-subscriber with journald. The design has no logging story.
+ tracing is the Rust ecosystem standard for structured, async-aware logging and
+ integrates with journald via tracing-journald. This replaces: fprintf(stderr,
+ ...) (which is what a C daemon would do, and what the Rust port will inherit by
+ default). Cost: two crate dependencies, a few lines of subscriber setup in each
+ binary's main(). This is not optional — a life-safety daemon that runs unattended
+ must leave evidence of everything it decided.
+
+ metrics crate + Prometheus exporter. The health endpoint returns a JSON snapshot.
+ A snapshot cannot tell you the drain rate over the last hour, or whether
+ reconnect latency is trending up. The metrics crate (zero-cost when not
+ recording) with a Prometheus scrape endpoint gives this for ~3 crate
+ dependencies. Cost: defining ~10 metrics (samples_appended, samples_drained,
+ spool_bytes, drain_batch_seconds, ble_reconnects, etc.) and one new HTTP endpoint
+ on the API server. Replace: JSON health snapshot as the only quantitative view.
+
+ btleplug should be evaluated alongside bluer. The language choice doc (§2 in
+ language-choices.md) recommends bluer because it's the official BlueZ Rust
+ binding. btleplug is a cross-platform BLE library with a higher-level async API,
+ more active development, and the same BlueZ backend on Linux. The cross-platform
+ property matters: you can develop and CI-test collector logic on macOS against a
+ simulator. bluer is Linux-only and adds friction to the edit/test cycle. The
+ design already calls out compile times as a Rust cost — cross-platform
+ development partially offsets this. Cost: a second dependency to evaluate;
+ btleplug is a larger abstraction with more moving parts.
+
+ sqlx in addition to (or instead of) tokio-postgres for the drainer.
+ tokio-postgres does binary COPY and is the right low-level choice. sqlx offers
+ compile-time query checking against a live database — if the spool drain query
+ references a column that was renamed, the build fails rather than the drainer
+ crashing at 3am. Since the drainer runs one query pattern (COPY staging,
+ INSERT...ON CONFLICT, advance cursor), this can be verified at compile time.
+ Cost: one more dependency; sqlx can sit beside tokio-postgres for the few
+ query-shaped operations while COPY uses the raw driver.
+
+ serde + serde_json for the health endpoint and config. The health endpoint spec
+ says "CBOR" but does not commit to a serialization library. CBOR is fine for the
+ wire protocol but JSON is more debuggable for health. Either way, serde is the
+ Rust serialization framework and should be named explicitly. Cost: already a
+ transitive dependency of nearly everything.
+
+ rustls (not needed). No TLS in the current design. Correct — Cloudflare Tunnel
+ terminates TLS. This is the right call.
+
+ TimescaleDB + pgBackRest + sqitch — all correct. No argument with any of these.
+ TimescaleDB on a Pi 5 for single-user time-series is overprovisioned but gains
+ you compression, continuous aggregates, and gapfill — all three would otherwise
+ be hand-written bugs waiting to happen. pgBackRest's WAL archival and
+ point-in-time recovery is the right backup story. Sqitch's verify scripts per
+ migration are the right discipline. Each is the best-in-class choice for its
+ role.
+
+ Rust no_std for decoders — correct and well-executed. The vitals-decode crate
+ with #![no_std], #![forbid(unsafe_code)], and exhaustive u16 domain test is the
+ gold standard for this class of code.
+
+ ────────────────────────────────────────────────────────────────────────────────
+
+ 3. Where is the design wrong, not just incomplete?
+
+ ### HLC is solving a problem this system does not have
+
+ The design claims (§2.1) "An HLC exists to merge writes from multiple independent
+ nodes without a coordinator. It was over-engineering for a single phone. It is
+ exactly right for a Pi, a phone, and a watch that each observe reality
+ independently and reconcile later."
+
+ This is a category error. Multiple writers does not mean multiple writers to the
+ same key. The primary key is (source, type, timestamp). source is per-device: the
+ Polar H10 writes source=1, the phone writes source=2, the watch (if it ever
+ arrives) writes source N. These are disjoint by construction — two nodes never
+ contend for the same primary key. The only conflict scenario is two nodes writing
+ with the same source value, which means they're impersonating each other and the
+ system is already broken at a protocol level.
+
+ What HLC actually provides here is a total order across sources — "did the Polar
+ record HR 72 before or after the phone recorded sleep stage 3?" This is a real
+ question, but it's answered adequately by: the Pi's monotonic clock stamps each
+ append. Since vitalsd is the single writer (design §4.1: "Single writer. Stamps
+ HLC."), every sample already gets stamped in order by one process. The phone
+ pushes to hk-receiver which writes through vitalsd — the same single writer. The
+ HLC's multi-writer merge (hlc_merge) is dead code: vitalsd never receives a
+ remote HLC, because all writes go through vitalsd.
+
+ The design conflates "multiple systems observe reality" with "multiple systems
+ write to the store." The former is true. The latter is designed away — that's the
+ whole point of vitalsd as the single writer. If the single-writer property holds,
+ HLC degenerates to a monotonic sequence number. If it doesn't hold (e.g., the
+ phone writes directly to Postgres someday), then the single-writer design has
+ been violated and there are bigger problems than clock merge.
+
+ Severity: not a correctness bug — HLC with a single writer is just a fancier
+ sequence number — but it adds 3 columns, a merge algorithm, a node-id persistence
+ requirement, and a WAL-tail cursor that must be an HLC position rather than a
+ simple integer. That complexity has already consumed design attention that should
+ have gone to the spool drainer's operational behavior. Recommendation: either (a)
+ make the multi-writer scenario real by having the phone write directly rather
+ than through hk-receiver/vitalsd, or (b) replace HLC with a BIGSERIAL generated
+ by vitalsd. If (a), the HLC merge is load-bearing and must be tested with two
+ concurrent writers. If (b), you shed an entire module.
+
+ ### The COPY-binary spool is clever but its operational failure modes are worse
+ than the problem it solves
+
+ The spool replaces SQLite-as-ingest-buffer. The stated problem with SQLite was
+ "dialect mismatch" — every row crossed a translation layer because SQLite and
+ Postgres have different SQL, types, NULL semantics. This is a real concern but
+ it's a developer-convenience concern, not a correctness one. A translation layer
+ from SQLite C types to Postgres binary COPY fields is ~50 lines of code that
+ changes rarely (only when samples schema changes, which is rare in an append-only
+ table). That 50-line translation layer, written once and tested once, has the
+ following advantages over the spool design:
+
+ 1. You can query the buffer during development/debugging (SELECT * FROM samples
+    WHERE ...).
+ 2. You get SQL-level idempotency (ON CONFLICT) natively rather than through a
+    staging table dance.
+ 3. The buffer survives schema changes — SQLite's STRICT type is weaker than
+    Postgres types but the translation layer is versioned with the table schema,
+    and old rows in the buffer are still readable and drainable.
+ 4. You don't need a separate drainer daemon — vitalsd can tail its own WAL
+    (single process, one less moving part to monitor).
+ 5. Crash recovery: SQLite WAL is battle-tested; a custom binary spool with fsync
+    discipline and dual daemon crash-recovery semantics is new code with new bugs.
+
+ The spool's headline win — "no translation layer" — is real but it trades a
+ small, testable, versioned translation for an operational surface area (drainer
+ daemon, segment management, offset tracking, schema-version locking) that is
+ larger, harder to test, and has already produced a spec-level bug (UNLOGGED vs
+ TEMP staging table). The libpglite alternative was rejected as "WIP," but the
+ spool design is also WIP — just custom WIP instead of someone else's.
+
+ I'm not saying the spool design will fail. It can be made to work. But it is more
+ complex than the problem required, and the complexity is concentrated in the part
+ of the system (durability path, crash recovery, operational monitoring) where
+ complexity is most expensive.
+
+ ### The sqitch/generated split will drift silently
+
+ Amendment §7 describes "Two owners, split explicitly": sqitch owns structure,
+ generated registry.sql owns reference rows. The sqitch deploy creates vitals_type
+  and vitals_source as empty tables with id INTEGER PRIMARY KEY. The generated SQL
+ is supposed to INSERT ... ON CONFLICT DO UPDATE. This split has four failure
+ modes:
+
+ 1. Ordering: what runs registry.sql after sqitch? Not sqitch — sqitch doesn't
+    know about generated SQL. If the generated SQL is applied by vitalsd on
+    startup, then a new source added to registry.toml requires a vitalsd restart,
+    not just a sqitch deploy. This is never stated.
+
+ 2. Column drift: if a sqitch migration adds a column to vitals_type (e.g.,
+    display_order INTEGER), the generated INSERT statements now fail because they
+    don't include the new column. Conversely, if the generator changes a column
+    name but sqitch hasn't, the inserts fail. There is no automated test that
+    sqitch-deployed table shapes match the generator's expected shape.
+
+ 3. The generator hasn't been trimmed yet. The amendment says "The generator
+    currently emits both structure and rows. It must be trimmed to rows only."
+    This is marked as follow-up on T-D1. Until it's done, the generator and sqitch
+    are both emitting structure — which means the current state of the codebase
+    has the split on paper but not in practice.
+
+ 4. sqitch verify scripts don't check reference data. registry_tables verify only
+    checks that the tables exist and have CHECK constraints. It doesn't verify
+    that the expected rows are present. So if the generator fails to run, sqitch
+    verify passes and no one knows the reference data is stale.
+
+ Fix: generate registry.sql as a sqitch migration (a new one on each registry
+ change with a timestamped tag) rather than as a side channel. This puts it in
+ sqitch's dependency graph and makes it subject to sqitch's verify discipline. The
+ "reference data is reconciled on service start" idea is fragile compared to
+ "reference data is migrated like everything else."
+
+ ### The process topology diagram implies vitalsd replays to Postgres but the
+ spool design puts a separate daemon in that path
+
+ The architecture diagram (§3) shows:
+
+ ```
+   collectors → vitalsd → cns-engine → klaxond
+                   │
+                   ▼ WAL-tail replication
+              PostgreSQL
+ ```
+
+ With the spool amendment, the actual path is:
+
+ ```
+   collectors → vitalsd → spool.copybin
+                            │
+                            ▼ vitals-spool-drain
+                         PostgreSQL
+ ```
+
+ vitalsd no longer touches Postgres. The drainer is a separate daemon, with its
+ own systemd unit, its own crash semantics, and its own monitoring surface. The
+ diagram is wrong in a way that matters: a reader of the architecture doc thinks
+ vitalsd owns replication; in reality a process not shown on the diagram owns it.
+ The health endpoint lives on vitalsd — but vitalsd has no visibility into drainer
+ progress, spool size, or drain latency. The component that needs the most
+ monitoring has no health endpoint.
+
+ ────────────────────────────────────────────────────────────────────────────────
+
+ 4. What I would do differently at the architecture level
+
+ Keep the architecture but fix the data path. The core insight — Postgres with
+ TimescaleDB as the system of record, vitalsd as a single-writer Unix socket
+ server, decoders as pure functions, the registry as generated code, the
+ life-safety path outside Docker — is correct and well-reasoned. I would not
+ change any of it. I would change how data gets from vitalsd to Postgres.
+
+ Replace the COPY-binary spool + drainer daemon with the simpler thing: vitalsd
+ writes directly to Postgres. The original design had it writing to SQLite and
+ tailing WAL — that was the wrong indirection. But going from vitalsd → spool →
+ drainer → Postgres is also an indirection, just a different one. The right
+ indirection is none at all: vitalsd opens a tokio-postgres connection, writes
+ samples via COPY ... FROM STDIN (FORMAT binary) in batches (every 250ms or every
+ N samples), and commits. If Postgres is unreachable, buffer in memory with a
+ bounded ring (up to e.g. 60 seconds of data) and drop on overflow — better to
+ lose old samples than stop collecting. vitalsd is already the single writer;
+ making it also the single writer to Postgres eliminates the drainer daemon, the
+ spool segment management, the offset tracking, the UNLOGGED-vs-TEMP staging table
+ ambiguity, the schema-version locking problem, and the monitoring gap where
+ vitalsd's health endpoint can't see the drainer.
+
+ This is one process instead of two, one place to monitor instead of two, and zero
+ custom on-disk formats instead of one. The cost is that vitalsd now depends on a
+ Postgres connection — but it already depended on the spool drainer maintaining
+ one, so the dependency exists either way, just in a different process.
+
+ Drop the HLC for now, add it when you have a second writer. The single-writer
+ design makes HLC a sequence number. A BIGSERIAL or a monotonic counter in vitalsd
+  gives the same total order with none of the infrastructure. If the phone later
+ writes directly to Postgres (the scenario HLC exists for), add HLC then — it's a
+ migration to add three columns, and the existing data gets stamped with the
+ node's HLC at migration time. You lose nothing by deferring it, and you gain back
+ design attention for the things that are currently underspecified (spool drainer
+ semantics, disk-full behavior, observability).
+
+ ────────────────────────────────────────────────────────────────────────────────
+
+ What I checked and found genuinely fine
+
+ - The SFLOAT decoder (crates/vitals-decode/src/sfloat.rs). Correct handling of
+   all sentinel values (NaN, NRes, ±INFINITY, Reserved — all return None). The
+   0x0FFF ≠ 0x07FF distinction is right. The libm_powi10 lookup table is a smart
+   no_std solution. The exhaustive for raw in 0u16..=u16::MAX test over the entire
+   16-bit domain is stronger than any fuzzer — it proves every input produces
+   either Some(finite) or None. The crate attributes (#![no_std],
+   #![forbid(unsafe_code)], panic = "deny", indexing_slicing = "deny") enforce
+   exactly the right invariants at compile time. No notes.
+
+ - The workspace-level lints (Cargo.toml). cast_possible_truncation = "deny",
+   cast_precision_loss = "deny", cast_sign_loss = "deny" — these are exactly the
+   right lints for medical data processing. unsafe_code = "forbid" at workspace
+   level. panic = "abort" in release. This is the strictest reasonable Rust
+   configuration and it matches the C build's -Wall -Wextra -Werror -Wshadow
+   -Wconversion discipline.
+
+ - The sqitch verify scripts. The 1 / count(*) trick to turn "zero rows" into a
+   division-by-zero error is idiomatic and correct. The samples_hypertable
+   revert's refusal to destroy data (RAISE EXCEPTION 'refusing to revert
+   samples_hypertable: samples has rows') is exactly right. The extensions
+   revert's refusal to drop timescaledb is similarly correct.
+
+ - The retention dependency ordering. retention depends on samples_1min in the
+   sqitch plan, and the verify script checks that the continuous aggregate exists
+   before allowing retention to proceed. This prevents the exact failure mode the
+   design calls out: dropping raw data before the rollup exists.
+
+ - The append-only + ON CONFLICT DO NOTHING design. This is the simplest possible
+   idempotency mechanism and it's correct. Combined with the cursor discipline
+   (offset advances only in the transaction that wrote the rows), it makes the
+   drainer crash-safe without distributed transactions.
+
+ - The TimescaleDB time_bucket_gapfill enforcement of "unknown ≠ OK." Using the
+   database's native gap-fill to return explicit NULL rows rather than silently
+   absent buckets makes the invariant structural rather than conventional. The ban
+   on locf() and interpolate() for physiological series is correctly reasoned —
+   gap-filling a missing SpO₂ is lying.
+
+ - The WITH NO DATA on the continuous aggregate. Prevents a full table scan at
+   creation time. Correct.
+
+ - The performace governor and watchdog being armed before any daemon runs. Stage
+   0 gets the hardware right before software depends on it. This ordering
+   discipline is the right instinct and it's applied consistently.
+
+───────────────────────────────────────────────────────────────────────────────────
+
+───────────────────────────────────────────────────────────────────────────────────
+~/Source/AnxietyWatch2 (refactor/rust-workspace)
+↑42k ↓14k R354k CH99.5% 42.9%/128k (auto)        (litellm) deepseek/deepseek-v4-pro
