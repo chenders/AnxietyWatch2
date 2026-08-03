@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="CMakeSharedSettings">
+    <configurations>
+      <configuration PROFILE_NAME="Debug" ENABLED="true" CONFIG_NAME="Debug"
+                     GENERATION_OPTIONS="-DVITALS_SANITIZE=ON" />
+      <configuration PROFILE_NAME="Coverage" ENABLED="true" CONFIG_NAME="Debug"
+                     GENERATION_DIR="build-coverage"
+                     GENERATION_OPTIONS="-DVITALS_COVERAGE=ON -DVITALS_SANITIZE=OFF" />
+      <configuration PROFILE_NAME="Fuzz" ENABLED="false" CONFIG_NAME="Debug"
+                     GENERATION_DIR="build-fuzz"
+                     GENERATION_OPTIONS="-DVITALS_FUZZ=ON -DVITALS_SANITIZE=OFF -DCMAKE_C_COMPILER=clang" />
+    </configurations>
+  </component>
+</project>

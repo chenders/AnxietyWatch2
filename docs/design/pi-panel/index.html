@@ -1,0 +1,366 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=800, height=480, initial-scale=1, user-scalable=no">
+<title>AnxietyWatch — Bedside Panel 800×480</title>
+<style>
+/* ============================================================================
+   AnxietyWatch bedside panel · Hosyond 7" DSI · 800×480 · capacitive touch
+   Viewed from ~3 ft in a fully dark room. Glanceable in under 2 s.
+
+   ── PALETTE ───────────────────────────────────────────────────────────────
+   Cool-neutral base. Deliberately not warm — a warm/parchment base reads as a
+   document, not an instrument.
+
+   WCAG contrast vs surface #06080A (computed, not estimated):
+     #E8EDF1 ink            17.02:1   AA normal · AAA
+     #9DAAB4 ink-2           8.45:1   AA normal · AAA
+     #7C8A94 ink-3           5.66:1   AA normal
+     #8B95DB indeterminate   7.09:1   AA normal · AAA
+     #D9B93C warn           10.46:1   AA normal · AAA
+     #E5484D critical        5.13:1   AA normal
+   Every text color clears AA (4.5:1) for normal-size text; most clear AAA (7:1).
+
+   CVD (dataviz validate_palette.js, --pairs all, dark, surface #06080A):
+     PASS chroma floor · PASS CVD separation (deutan ΔE 16.9, tritan 17.2)
+     PASS normal-vision floor (ΔE 25.1) · PASS contrast
+   The categorical lightness-band check does not apply: these are STATUS
+   colors, whose governing check is WCAG contrast, and that passes.
+
+   THERE IS NO GREEN, and normal state carries no status color at all — it is
+   neutral ink. Color appears only when it means something. In a dark bedroom
+   that is both the accessible choice and the humane one.
+
+   ── TOUCH ─────────────────────────────────────────────────────────────────
+   All interactive targets ≥ 44×44 px (WCAG 2.5.5 AAA; AA 2.5.8 needs 24).
+   Silencing the alarm is press-and-HOLD for 3 s, never a tap: a half-asleep
+   hand must not be able to dismiss a life-safety alarm by brushing the panel.
+   ========================================================================= */
+
+:root {
+  --surface:      #06080A;
+  --tile:         #0B1014;
+  --tile-raised:  #111820;
+  --rule:         #1B242B;      /* decorative separator; no contrast duty */
+
+  --ink:          #E8EDF1;
+  --ink-2:        #9DAAB4;
+  --ink-3:        #7C8A94;
+
+  --indeterminate:#8B95DB;
+  --warn:         #D9B93C;
+  --critical:     #E5484D;
+
+  --trace:        #6E7C86;
+
+  --pad: 16px;
+  --touch: 44px;                /* minimum interactive dimension */
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+html, body {
+  width: 800px; height: 480px; overflow: hidden;
+  background: var(--surface); color: var(--ink);
+  font: 400 16px/1.25 ui-sans-serif, "Inter", "Helvetica Neue", system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;   /* values must not reflow as they tick */
+  -webkit-font-smoothing: antialiased;
+  user-select: none; touch-action: manipulation;
+}
+
+/* Resting dim. The panel idles at low luminance and lifts on touch — except
+   when escalated, where it lifts itself and stays lifted. */
+.panel {
+  display: grid; grid-template-rows: 112px 1fr 76px 52px; height: 480px;
+  filter: brightness(.62); transition: filter .5s ease;
+}
+.panel.awake,
+.panel[data-tier="watch"], .panel[data-tier="confirm"], .panel[data-tier="klaxon"] { filter: brightness(1); }
+
+/* ─────────────────────────────────────────────────────────────── tier band */
+.tier { display: flex; align-items: center; gap: 20px; padding: 0 var(--pad); border-bottom: 1px solid var(--rule); }
+.tier__glyph { font-size: 42px; line-height: 1; width: 46px; text-align: center; color: var(--ink-3); }
+.tier__text  { flex: 1; min-width: 0; }
+.tier__state { font-size: 42px; font-weight: 600; letter-spacing: .005em; line-height: 1.02; }
+.tier__since { font-size: 15px; color: var(--ink-3); margin-top: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tier__clock { font-size: 32px; font-weight: 300; color: var(--ink-3); font-feature-settings: "tnum"; }
+
+[data-tier="watch"]   .tier__state, [data-tier="watch"]   .tier__glyph { color: var(--warn); }
+[data-tier="confirm"] .tier__state, [data-tier="confirm"] .tier__glyph { color: var(--warn); }
+[data-tier="klaxon"]  .tier__state, [data-tier="klaxon"]  .tier__glyph { color: var(--critical); }
+[data-tier="unknown"] .tier__state, [data-tier="unknown"] .tier__glyph { color: var(--indeterminate); }
+[data-tier="klaxon"]  .tier { background: color-mix(in oklab, var(--critical) 15%, var(--surface)); }
+[data-tier="unknown"] .tier { background: color-mix(in oklab, var(--indeterminate) 9%, var(--surface)); }
+
+/* ─────────────────────────────────────────────────────── hold-to-silence */
+/* Only appears at klaxon. A tap does nothing but wake the screen. */
+.silence {
+  position: relative; flex: none;
+  min-width: 168px; height: var(--touch); padding: 0 18px;
+  display: none; align-items: center; justify-content: center;
+  border: 2px solid var(--critical); border-radius: 6px;
+  background: transparent; color: var(--critical);
+  font: 600 15px/1 inherit; letter-spacing: .06em; overflow: hidden;
+}
+[data-tier="klaxon"] .silence { display: flex; }
+.silence__fill {
+  position: absolute; inset: 0; width: 0%;
+  background: color-mix(in oklab, var(--critical) 30%, transparent);
+  transition: width .1s linear;
+}
+.silence__label { position: relative; }
+
+/* ────────────────────────────────────────────────────────── metric tiles */
+.metrics { display: grid; grid-template-columns: 1fr 1fr 1fr; }
+.tile {
+  position: relative; display: flex; flex-direction: column;
+  padding: 16px var(--pad) 12px; border-right: 1px solid var(--rule);
+  min-height: var(--touch);
+}
+.tile:last-child { border-right: 0; }
+.tile:active { background: var(--tile-raised); }   /* touch feedback */
+
+.tile__label { font-size: 14px; letter-spacing: .10em; text-transform: uppercase; color: var(--ink-3); }
+.tile__row   { display: flex; align-items: baseline; gap: 8px; margin-top: 8px; }
+.tile__value { font-size: 66px; font-weight: 300; line-height: 1; letter-spacing: -.022em; }
+.tile__unit  { font-size: 18px; color: var(--ink-3); }
+.tile__sub   { font-size: 14px; color: var(--ink-3); margin-top: auto; }
+
+/* Indeterminate: dashed frame + slate + an explicit reason and duration.
+   Never a number, never a calm blank. The tile must read as a QUESTION. */
+.tile[data-state="indeterminate"] { background: color-mix(in oklab, var(--indeterminate) 7%, var(--surface)); }
+.tile[data-state="indeterminate"]::after {
+  content: ""; position: absolute; inset: 8px; border-radius: 4px; pointer-events: none;
+  border: 1px dashed color-mix(in oklab, var(--indeterminate) 60%, transparent);
+}
+.tile[data-state="indeterminate"] .tile__value,
+.tile[data-state="indeterminate"] .tile__label { color: var(--indeterminate); }
+.tile[data-state="indeterminate"] .tile__sub   { color: var(--indeterminate); font-weight: 600; }
+.tile[data-state="warn"]     .tile__value { color: var(--warn); }
+.tile[data-state="critical"] .tile__value { color: var(--critical); }
+
+/* Sparkline — 2px stroke. Gaps are drawn as gaps; the path terminates where
+   data stopped and does not bridge it. */
+.spark { margin-top: 10px; height: 36px; width: 100%; display: block; }
+.spark path { fill: none; stroke: var(--trace); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.tile[data-state="indeterminate"] .spark path { stroke: color-mix(in oklab, var(--indeterminate) 65%, transparent); }
+.tile[data-state="warn"]     .spark path { stroke: var(--warn); }
+.tile[data-state="critical"] .spark path { stroke: var(--critical); }
+
+/* ───────────────────────────────────────────────────────── sensor strip */
+.sensors { display: flex; align-items: center; padding: 0 var(--pad);
+           border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); }
+.sensors__label { font-size: 13px; letter-spacing: .10em; text-transform: uppercase; color: var(--ink-3); width: 80px; flex: none; }
+.sensor { flex: 1; display: flex; align-items: center; gap: 9px; height: var(--touch); padding: 0 6px; }
+.sensor__dot { width: 12px; height: 12px; border-radius: 50%; flex: none; background: var(--ink-3); }
+.sensor__name { font-size: 16px; color: var(--ink-2); }
+.sensor__age  { font-size: 14px; color: var(--ink-3); margin-left: auto; padding-right: 12px; }
+
+/* Live = filled. Stale/down = hollow ring. Fill-vs-ring survives both
+   colorblindness and a dimmed screen — identity is never hue alone. */
+.sensor[data-state="stale"] .sensor__dot { background: transparent; border: 2px solid var(--indeterminate); }
+.sensor[data-state="stale"] .sensor__name,
+.sensor[data-state="stale"] .sensor__age { color: var(--indeterminate); }
+.sensor[data-state="down"]  .sensor__dot { background: transparent; border: 2px solid var(--critical); }
+.sensor[data-state="down"]  .sensor__name,
+.sensor[data-state="down"]  .sensor__age { color: var(--critical); }
+
+/* ────────────────────────────────────────────────────────── system row */
+/* "Will it work tonight?" — most monitors only answer "what happened?" */
+.system { display: flex; align-items: center; padding: 0 var(--pad); }
+.system__label { font-size: 13px; letter-spacing: .10em; text-transform: uppercase; color: var(--ink-3); width: 80px; flex: none; }
+.sys { flex: 1; display: flex; align-items: baseline; gap: 8px; font-size: 14px; color: var(--ink-3); }
+.sys__mark { font-size: 14px; }
+.sys[data-state="warn"] { color: var(--warn); }
+.sys[data-state="bad"]  { color: var(--critical); }
+
+/* ──────────────────────────────────────────── demo-only scene switcher */
+/* Not shipped. Present so the design can be reviewed without a live vitalsd. */
+.demo { position: fixed; bottom: 4px; right: 6px; display: flex; gap: 6px; opacity: .38; }
+.demo button {
+  min-height: 30px; padding: 5px 11px; font: 500 11px/1 inherit;
+  background: var(--tile); color: var(--ink-2);
+  border: 1px solid var(--rule); border-radius: 4px;
+}
+.demo button[aria-pressed="true"] { color: var(--ink); border-color: var(--ink-3); }
+</style>
+
+<div class="panel" id="panel" data-tier="clear">
+
+  <header class="tier">
+    <div class="tier__glyph" id="tierGlyph">–</div>
+    <div class="tier__text">
+      <div class="tier__state" id="tierState">CLEAR</div>
+      <div class="tier__since" id="tierSince">stable 6h 12m · all primary signals present</div>
+    </div>
+    <button class="silence" id="silence" aria-label="Hold three seconds to silence alarm">
+      <span class="silence__fill" id="silenceFill"></span>
+      <span class="silence__label" id="silenceLabel">HOLD TO SILENCE</span>
+    </button>
+    <div class="tier__clock" id="clock">03:42</div>
+  </header>
+
+  <section class="metrics">
+    <div class="tile" id="tileSpo2" data-state="normal">
+      <div class="tile__label">SpO₂</div>
+      <div class="tile__row"><span class="tile__value" id="spo2Val">96</span><span class="tile__unit">%</span></div>
+      <svg class="spark" viewBox="0 0 240 36" preserveAspectRatio="none" aria-hidden="true">
+        <path id="spo2Spark" d="M0,18 L20,16 L40,19 L60,15 L80,17 L100,21 L120,18 L140,14 L160,17 L180,16 L200,19 L220,17 L240,16"/>
+      </svg>
+      <div class="tile__sub" id="spo2Sub">nadir 93 · 6h</div>
+    </div>
+
+    <div class="tile" id="tileHr" data-state="normal">
+      <div class="tile__label">Heart rate</div>
+      <div class="tile__row"><span class="tile__value" id="hrVal">58</span><span class="tile__unit">bpm</span></div>
+      <svg class="spark" viewBox="0 0 240 36" preserveAspectRatio="none" aria-hidden="true">
+        <path id="hrSpark" d="M0,21 L20,19 L40,22 L60,18 L80,20 L100,16 L120,19 L140,21 L160,18 L180,20 L200,17 L220,19 L240,20"/>
+      </svg>
+      <div class="tile__sub" id="hrSub">RMSSD 42 ms</div>
+    </div>
+
+    <div class="tile" id="tileBp" data-state="normal">
+      <div class="tile__label">Blood pressure</div>
+      <div class="tile__row"><span class="tile__value" id="bpVal" style="font-size:54px">118/74</span></div>
+      <div class="tile__sub" style="margin-top:14px" id="bpSub">MAP 89 · 2h 14m ago</div>
+      <div class="tile__sub" style="margin-top:auto" id="bpSub2">regular pulse</div>
+    </div>
+  </section>
+
+  <section class="sensors">
+    <div class="sensors__label">Sensors</div>
+    <div class="sensor" data-state="live"><span class="sensor__dot"></span><span class="sensor__name">Polar H10</span><span class="sensor__age">2s</span></div>
+    <div class="sensor" data-state="live"><span class="sensor__dot"></span><span class="sensor__name">EMAY</span><span class="sensor__age">4s</span></div>
+    <div class="sensor" data-state="live"><span class="sensor__dot"></span><span class="sensor__name">A&amp;D cuff</span><span class="sensor__age">2h</span></div>
+    <div class="sensor" data-state="stale" id="sensorHk"><span class="sensor__dot"></span><span class="sensor__name">HealthKit</span><span class="sensor__age">14m</span></div>
+  </section>
+
+  <footer class="system">
+    <div class="system__label">System</div>
+    <div class="sys" data-state="ok"><span class="sys__mark">✓</span><span>Alarm tested 22:00</span></div>
+    <div class="sys" data-state="ok"><span class="sys__mark">✓</span><span>Backup 6h</span></div>
+    <div class="sys" data-state="ok"><span class="sys__mark">✓</span><span>Restore verified 12d</span></div>
+    <div class="sys" data-state="ok"><span class="sys__mark">✓</span><span>NVMe 8%</span></div>
+  </footer>
+</div>
+
+<div class="demo">
+  <button aria-pressed="true"  onclick="setScene('clear',this)">clear</button>
+  <button aria-pressed="false" onclick="setScene('unknown',this)">can't assess</button>
+  <button aria-pressed="false" onclick="setScene('watch',this)">watch</button>
+  <button aria-pressed="false" onclick="setScene('klaxon',this)">klaxon</button>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+
+const SCENES = {
+  clear: {
+    tier:'clear', glyph:'–', state:'CLEAR',
+    since:'stable 6h 12m · all primary signals present',
+    spo2:{s:'normal',v:'96',sub:'nadir 93 · 6h'},
+    hr:{s:'normal',v:'58',sub:'RMSSD 42 ms'},
+    bp:{s:'normal',v:'118/74',sub:'MAP 89 · 2h 14m ago'}, hk:'stale'
+  },
+  /* The load-bearing scene. A missing primary signal is NOT "clear": the tier
+     degrades to CAN'T ASSESS, the tile goes dashed slate with an explicit
+     reason and duration, and the trace stops where the data stopped. */
+  unknown: {
+    tier:'unknown', glyph:'?', state:"CAN'T ASSESS",
+    since:'SpO₂ absent 14m · tier held, not cleared',
+    spo2:{s:'indeterminate',v:'—',sub:'NO DATA · 14m'},
+    hr:{s:'normal',v:'57',sub:'RMSSD 39 ms'},
+    bp:{s:'normal',v:'118/74',sub:'MAP 89 · 2h 14m ago'}, hk:'down'
+  },
+  watch: {
+    tier:'watch', glyph:'▲', state:'WATCH',
+    since:'SpO₂ 4.1% below your baseline · 3m 20s',
+    spo2:{s:'warn',v:'89',sub:'baseline 94 · onset 3m'},
+    hr:{s:'normal',v:'71',sub:'RMSSD 24 ms'},
+    bp:{s:'normal',v:'118/74',sub:'MAP 89 · 2h 14m ago'}, hk:'stale'
+  },
+  klaxon: {
+    tier:'klaxon', glyph:'▲', state:'KLAXON',
+    since:'sustained desaturation 9m 40s · alarm sounding',
+    spo2:{s:'critical',v:'81',sub:'baseline 94 · 9m 40s'},
+    hr:{s:'warn',v:'46',sub:'RMSSD 11 ms · falling'},
+    bp:{s:'normal',v:'118/74',sub:'MAP 89 · 2h 14m ago'}, hk:'down'
+  }
+};
+
+const SPARKS = {
+  normal:        'M0,18 L20,16 L40,19 L60,15 L80,17 L100,21 L120,18 L140,14 L160,17 L180,16 L200,19 L220,17 L240,16',
+  indeterminate: 'M0,18 L20,16 L40,19 L60,15 L80,17 L100,21 L120,18 L140,14',   /* terminates at the gap */
+  warn:          'M0,16 L20,15 L40,17 L60,16 L80,18 L100,20 L120,22 L140,23 L160,24 L180,25 L200,25 L220,26 L240,26',
+  critical:      'M0,15 L20,16 L40,17 L60,19 L80,21 L100,24 L120,26 L140,28 L160,30 L180,31 L200,32 L220,32 L240,33'
+};
+
+function setScene(name, btn) {
+  const s = SCENES[name];
+  $('panel').dataset.tier = s.tier;
+  $('tierGlyph').textContent = s.glyph;
+  $('tierState').textContent = s.state;
+  $('tierSince').textContent = s.since;
+
+  for (const [k, el] of [['spo2','Spo2'], ['hr','Hr'], ['bp','Bp']]) {
+    $('tile'+el).dataset.state = s[k].s;
+    $(k+'Val').textContent = s[k].v;
+    $(k+'Sub').textContent = s[k].sub;
+  }
+  $('spo2Spark').setAttribute('d', SPARKS[s.spo2.s]);
+
+  $('sensorHk').dataset.state = s.hk;
+  $('sensorHk').querySelector('.sensor__age').textContent = s.hk === 'down' ? '31m' : '14m';
+
+  resetHold();
+  document.querySelectorAll('.demo button').forEach(b => b.setAttribute('aria-pressed','false'));
+  if (btn) btn.setAttribute('aria-pressed','true');
+}
+
+/* ── Hold-to-silence ──────────────────────────────────────────────────────
+   Three seconds of continuous contact. Releasing early resets to zero — no
+   partial credit, no accumulating taps. A hand brushing the panel while
+   half-asleep cannot silence a life-safety alarm, and the progress fill makes
+   the requirement legible the instant contact starts. */
+const HOLD_MS = 3000;
+let holdStart = null, holdRAF = null;
+
+function resetHold() {
+  holdStart = null;
+  if (holdRAF) cancelAnimationFrame(holdRAF), holdRAF = null;
+  $('silenceFill').style.width = '0%';
+  $('silenceLabel').textContent = 'HOLD TO SILENCE';
+}
+function tickHold() {
+  const pct = Math.min(100, (performance.now() - holdStart) / HOLD_MS * 100);
+  $('silenceFill').style.width = pct + '%';
+  if (pct >= 100) {
+    $('silenceLabel').textContent = 'SILENCED · 10 MIN';
+    holdStart = null;
+    setTimeout(() => setScene('unknown'), 900);   /* silencing never returns to CLEAR */
+    return;
+  }
+  holdRAF = requestAnimationFrame(tickHold);
+}
+const sil = $('silence');
+['pointerdown','touchstart'].forEach(e => sil.addEventListener(e, ev => {
+  ev.preventDefault();
+  if (holdStart) return;
+  holdStart = performance.now();
+  $('silenceLabel').textContent = 'KEEP HOLDING…';
+  holdRAF = requestAnimationFrame(tickHold);
+}));
+['pointerup','pointerleave','pointercancel','touchend','touchcancel'].forEach(e =>
+  sil.addEventListener(e, () => { if (holdStart) resetHold(); }));
+
+/* Touch anywhere lifts the panel out of its resting dim for 20 s. */
+let wakeTimer = null;
+document.addEventListener('pointerdown', () => {
+  $('panel').classList.add('awake');
+  clearTimeout(wakeTimer);
+  wakeTimer = setTimeout(() => $('panel').classList.remove('awake'), 20000);
+});
+
+setInterval(() => {
+  const d = new Date();
+  $('clock').textContent = String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+}, 1000);
+</script>
