@@ -109,21 +109,50 @@ lead time are the deciding factor rather than the hardware.
 
 | Route | Part / link | Notes |
 |---|---|---|
-| **Amazon (fastest)** | GeeekPi TPM9670, ASIN [`B09G2BZQT5`](https://www.amazon.com/dp/B09G2BZQT5) | SLB9670. Ships now, cheap, works with the standard overlay. **This is the pragmatic pick if you want it this week.** |
-| **Crowd Supply** | [ANAVI TPM 2.0](https://www.crowdsupply.com/anavi-technology/anavi-tpm-2-0-for-raspberry-pi) | SLB9672, open hardware, US fulfilment. Check whether it is in stock or in a campaign window |
-| **DigiKey** | `IRIDIUMSLM9670TPM20TOBO1` (~$64) · `IRIDIUMSLI9670TPM20TOBO1` | Infineon's own eval board. Guaranteed genuine, guaranteed US stock, roughly 2.5× the price of the Amazon board for the same chip |
+| **DigiKey** | `IRIDIUMSLM9670TPM20TOBO1` (~$64) · `IRIDIUMSLI9670TPM20TOBO1` | **Recommended.** Infineon's own board through an authorised distributor. Guaranteed genuine, US stock |
 | **Mouser** | `IRID9670TPM20LINUXTOBO1` | Same board, "Iridium 9670 TPM2.0 Linux" |
-| **LetsTrust direct** | [pi3g](https://pi3g.com/products/industrial/letstrust-tpm/) · [The Pi Hut](https://thepihut.com/products/letstrust-tpm-for-raspberry-pi) (UK) · [Cytron](https://www.cytron.io/p-letstrust-tpm-for-raspberry-pi) (MY) · [BerryBase](https://www.berrybase.de/en/letstrust-tpm-cryptography-module-for-raspberry-pi) (DE) · Core Electronics `CE10600` (AU) | The SLB9672 board. Worth the wait if you are not in a hurry |
+| **Crowd Supply** | [ANAVI TPM 2.0](https://www.crowdsupply.com/anavi-technology/anavi-tpm-2-0-for-raspberry-pi) | SLB9672, open hardware, named designer, US fulfilment |
+| **LetsTrust direct** | [pi3g](https://pi3g.com/products/industrial/letstrust-tpm/) · [The Pi Hut](https://thepihut.com/products/letstrust-tpm-for-raspberry-pi) (UK) · [Cytron](https://www.cytron.io/p-letstrust-tpm-for-raspberry-pi) (MY) · [BerryBase](https://www.berrybase.de/en/letstrust-tpm-cryptography-module-for-raspberry-pi) (DE) · Core Electronics `CE10600` (AU) | The SLB9672 board. Worth the wait |
+| ~~Amazon marketplace TPM boards~~ | — | **Avoid — see below** |
 
-**Bare chips**, if you are building your own board: `SLB9670VQ20FW785XTMA1` (Mouser),
-`SLB9670VQ20FW760XUMA1` (DigiKey). Note the Infineon variant letters — **SLB** is the standard part;
-**SLM** and **SLI** are mobile and industrial/automotive grades of the same silicon and are equally
-fine here.
+**Bare chips**, if building your own board: `SLB9670VQ20FW785XTMA1` (Mouser),
+`SLB9670VQ20FW760XUMA1` (DigiKey). The Infineon variant letters — **SLB** standard, **SLM** mobile,
+**SLI** industrial/automotive — are all fine here.
 
-**Recommendation for a US buyer: the GeeekPi board from Amazon.** It is the SLB9670 rather than the
-9672, which changes nothing that matters — same `tpm_tis_spi` driver, same `dtoverlay=tpm-slb9670`,
-same TPM 2.0 feature set including PCR sealing and monotonic counters. Spend the difference on the
-UPS HAT instead.
+#### Do not buy a TPM from an Amazon marketplace seller
+
+The GeeekPi TPM9670 listing (ASIN `B09G2BZQT5`) sits at **3.5 stars with roughly 20% one-star
+reviews**, and the complaints are specifically about the one attribute that matters:
+
+- *"FALSE ADVERTISING"*
+- *"tpm 1.2 shipped as 2.0"* — with a reviewer reporting *"the first bunch I got all work; the last 4
+  I've received were all tpm 1.2 only"*
+- Multiple complaints about documentation not specifying which CS pin is used
+
+**TPM 1.2 is not a lesser TPM 2.0, it is a different specification.** No SHA-256 PCR bank, different
+command API, and `systemd-cryptenroll --tpm2-device` will not work with it at all. Neither will the
+monotonic-counter design in amendment 02 §5.2. Everything this module was being bought for depends on
+it genuinely being 2.0.
+
+The batch-to-batch inconsistency is worse than a uniformly bad product: mixed reviews stay mixed, and
+you cannot tell from the listing which version you will receive.
+
+**For a security component, provenance is the product.** A part whose entire value is "this key
+cannot be extracted" is not something to buy from a marketplace where the chip on the board is not
+guaranteed. Buy from Infineon through DigiKey or Mouser, from Crowd Supply, or direct from pi3g —
+the ~$40 difference buys a supply chain, which is the thing being paid for.
+
+#### Verify what you actually received
+
+Regardless of source, confirm the spec version before designing around it:
+
+```sh
+sudo tpm2_getcap properties-fixed | grep -A2 TPM2_PT_FAMILY_INDICATOR   # expect "2.0"
+sudo tpm2_getcap properties-fixed | grep -i manufacturer                # expect IFX (Infineon)
+sudo tpm2_pcrread sha256:0,7,11        # a TPM 1.2 has no SHA-256 bank and this fails
+```
+
+If `tpm2_getcap` errors out entirely, or the SHA-256 PCR read fails, you have a 1.2 part. Return it.
 
 Prices and stock move; verify before ordering.
 

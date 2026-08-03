@@ -120,9 +120,16 @@ Drives the siren, the shaker, and a strobe from one board. 2–4 channels is ple
 
 ### TPM 2.0 module — ~$25
 
-**LetsTrust TPM** or **ANAVI TPM 2.0** (both Infineon SLB9672, SPI). Non-extractable signing keys, a
-monotonic counter that makes history rewriting detectable, and PCR-sealed LUKS unlock through the
-standard `systemd-cryptenroll` path.
+**Buy from an authorised distributor** — Infineon `IRIDIUMSLM9670TPM20TOBO1` via DigiKey,
+`IRID9670TPM20LINUXTOBO1` via Mouser, ANAVI via Crowd Supply, or LetsTrust direct from pi3g.
+
+**Do not buy a TPM from an Amazon marketplace seller.** The popular GeeekPi listing has ~20% one-star
+reviews reporting TPM **1.2** parts shipped as 2.0. TPM 1.2 is a different specification — no SHA-256
+PCR bank, different API, and `systemd-cryptenroll --tpm2-device` does not work with it. For a
+component whose entire value is provenance, the ~$40 premium buys the supply chain.
+
+Gives you non-extractable signing keys, a monotonic counter that makes history rewriting detectable,
+and PCR-sealed LUKS unlock through the standard `systemd-cryptenroll` path.
 
 Full detail, alternatives, setup and the Pi 5 early-boot caveat: [`HSM-RECOMMENDATIONS.md`](HSM-RECOMMENDATIONS.md).
 
