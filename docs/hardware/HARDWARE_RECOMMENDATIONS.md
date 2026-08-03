@@ -133,7 +133,8 @@ or listings that state *"logic level"* / *"3.3V compatible"*. The `L` is the mar
 Optional: an **INA219** current sensor (~$5, I2C) inline with the siren, for the current-sense
 self-test in amendment 03 §6 — the closest thing to physical proof that a sound occurred.
 
-**Pin allocation**, clear of SPI0 which the TPM occupies:
+**Pin allocation.** The ANAVI TPM occupies physical pins **17–26** (per its product page), so
+everything below is verified clear of it:
 
 | Load | BCM | Physical |
 |---|---|---|

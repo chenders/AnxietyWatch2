@@ -123,8 +123,9 @@ vertical one mounts it at 90°.
 Cooler, which is the exact clearance problem a top-mounted M.2 HAT creates. The horizontal variant
 is the right pick only if your enclosure is short and wide rather than tall.
 
-Because it occupies only 10 of the 40 pins, the alerting relay board from amendment 03 can share the
-header — no stacking riser needed, which was an open item in §4.
+It occupies **physical pins 17–26 exactly** (verified on the product page), so the amendment 03
+MOSFET board on physical 29/31/33/36 is clear of it. No stacking riser needed — that was an open
+item in §4 and is now closed.
 
 #### Do not buy a TPM from an Amazon marketplace seller
 
