@@ -1,0 +1,57 @@
+name: CI
+on: [push, pull_request]
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Debug
+      - name: Build
+        run: cmake --build build
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+  registry-is-generated:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      # A hand-edited generated file must not survive. gen_registry.py --check
+      # regenerates to a temp dir and diffs.
+      - name: Registry codegen is current
+        run: |
+          if [ -f vitals/tools/gen_registry.py ]; then
+            python3 vitals/tools/gen_registry.py --check
+          else
+            echo "T-D1 not landed yet — skipping"
+          fi
+
+  fuzz-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Every radio decoder gets 60s of fuzzing per push. Decoders are the only
+      # code here that sees hostile input.
+      - name: Build fuzz targets
+        run: |
+          if ls vitals/fuzz/fuzz_*.c >/dev/null 2>&1; then
+            cmake -B build-fuzz -DVITALS_FUZZ=ON -DVITALS_SANITIZE=OFF -DCMAKE_C_COMPILER=clang
+            cmake --build build-fuzz
+            for f in build-fuzz/vitals/fuzz_*; do "$f" -max_total_time=60 || exit 1; done
+          else
+            echo "no fuzz targets yet — skipping"
+          fi
+
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install lcov
+        run: sudo apt-get update && sudo apt-get install -y lcov
+      # Differentiated gates — see scripts/coverage.sh for why a single flat
+      # number is the wrong shape for this codebase.
+      - name: Coverage gate
+        run: scripts/coverage.sh --check
