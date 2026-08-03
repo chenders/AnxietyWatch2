@@ -91,20 +91,15 @@ something other than a Pi, you may already have this and not know it. The probe 
 All of these are Infineon OPTIGA parts on SPI and all use the same kernel driver (`tpm_tis_spi`) and
 the same device-tree overlay. The differences are packaging, price and availability.
 
-| Board | Chip | Where |
+| Board | Chip | Verdict |
 |---|---|---|
-| **LetsTrust TPM** (pi3g) | SLB9672 | Best board, mostly **European** stock — see §US below |
-| **ANAVI TPM 2.0** | SLB9672 | [Crowd Supply](https://www.crowdsupply.com/anavi-technology/anavi-tpm-2-0-for-raspberry-pi) — US-friendly, open hardware |
-| **GeeekPi TPM9670** | SLB9670 | Amazon, ASIN **`B09G2BZQT5`** — cheapest, older chip, in US stock |
-| Infineon Iridium eval board | SLB9670 | DigiKey / Mouser, US stock, but $57–64 |
+| **ANAVI TPM 2.0 (vertical)** | SLB9672 | **Buy this.** $28 delivered, in stock, open hardware, 10 pins only |
+| LetsTrust TPM (pi3g) | SLB9672 | Equally good board; European/APAC shipping |
+| Infineon Iridium eval board | SLB9670 | DigiKey / Mouser fallback, ~$64 |
+| GeeekPi TPM9670 | SLB9670 *(allegedly)* | **Avoid** — see the marketplace warning below |
 | Infineon SLB9673 boards | SLB9673 | **I2C, not SPI.** Kernel ≥ 6.0 supports it but may need enabling at compile time. Skip unless you specifically want SPI free |
 
-#### Buying from the US
-
-LetsTrust is the best board but is sold mainly through European and APAC retailers, so shipping and
-lead time are the deciding factor rather than the hardware.
-
-**Search terms that work:** `LetsTrust TPM Raspberry Pi` · `TPM 2.0 module Raspberry Pi SLB9670` ·
+**Search terms that work:** `ANAVI TPM 2.0 Raspberry Pi` · `LetsTrust TPM Raspberry Pi` ·
 `Infineon OPTIGA TPM Raspberry Pi SPI`
 
 | Route | Part / link | Notes |
