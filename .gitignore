@@ -41,3 +41,8 @@ night*.log
 # The personal denylist the pre-push PHI gate reads. Never committed — the
 # repo must not contain the strings the guard exists to keep out.
 .githooks/pii-denylist.local.txt
+
+# python tooling
+.venv/
+uv.lock
+.pytest_cache/
