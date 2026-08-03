@@ -3,7 +3,7 @@
 **Date:** 2026-08-03
 **Status:** Proposed
 **Amends:** design §2 (the core), amendment 01 §2 (spool), T-C1, T-D3, T-D4
-**Adds tasks:** T-C4 (LUKS), T-D7 (signed ingest), T-C5 (role separation)
+**Adds tasks:** T-C4 (LUKS) · T-C5 (audit trail + roles) · T-C6 (reserve schema) · T-D7 (signed ingest) · T-H1 (HSM)
 
 Three requested properties, which are three different threat models. Treating them as one produces
 security theatre, so each is stated with what it actually defends against and — more importantly —
@@ -20,14 +20,22 @@ what it does not.
 | Answering "is this reading real?" years later, in a clinical context | **Yes** — §2 |
 | NVMe removed and read on another machine; drive RMA or disposal | **Yes** — §4 LUKS |
 | Backup media read by someone else | Already covered — pgBackRest AES-256-CBC |
-| **Someone with root on the running Pi** | **No.** Not defensible. Root reads the keys, the plaintext volume is mounted, and the signing keys are on the box. |
-| **The owner deciding to insert a row by hand** | **No, and deliberately so.** Single-user system; he is root. |
+| Root **extracting** the signing key to forge elsewhere or later | **Yes, with an HSM** — §5 |
+| Root **rewriting or deleting** existing history undetectably | **Yes, with an HSM monotonic counter** — §5.2 |
+| Root obtained by **tampering with the boot chain** | **Yes, with PCR sealing** — §5.3 |
+| Root on a **running, correctly-booted** box fabricating *new* signed rows | **No.** The key stays in the chip, but the signing oracle is reachable. |
+| **The owner deciding to correct a row by hand** | **No, and deliberately so** — see §1. Changes are allowed; unrecorded changes are not. |
 
-The last two matter. "Only system-created data is *allowed*" cannot be enforced on a box where you
-are root — you can always `INSERT`. What is achievable, and more useful, is that non-system data is
-**detectable**: unsigned rows are visibly unsigned, forever, and a verification pass says so.
+An earlier draft of this section said root was simply "not defensible." That was wrong, and lazily
+so — it collapsed "cannot prevent everything" into "cannot prevent anything." With a hardware
+security module the boundary moves in three specific, valuable places, detailed in §5. The honest
+summary:
 
-Prevention where possible, detection where not, and never confuse the two.
+> An HSM converts **"root can silently rewrite history"** into **"root can add new signed rows, but
+> cannot alter or delete existing ones undetectably, and cannot take the key anywhere else."**
+
+For a clinical record that difference is most of the value. Prevention where possible, detection
+where not, and never confuse the two.
 
 ---
 
@@ -118,16 +126,6 @@ Retention is unaffected: TimescaleDB's `drop_chunks` operates at the chunk level
 and does not fire row triggers — which is correct. Dropping a whole expired chunk by policy is not a
 correction and should not fill the audit log with two years of rows.
 
-### 1.1 Role separation
-
-| Role | Grants on `samples` | Used by |
-|---|---|---|
-| `vitals_writer` | `INSERT` only | `vitals-spool-drain` |
-| `vitals_reader` | `SELECT` only | API, admin console, analysis, panel |
-| `vitals_owner` | DDL; no routine login | sqitch deploys |
-
-Today a single `vitals` role does everything. A read-only API cannot leak write access it does not
-have, and the drainer cannot accidentally `DELETE`.
 
 ---
 
@@ -282,20 +280,101 @@ life-safety device before the device works is the wrong order.
 
 ---
 
-## 5. What this does not change
+## 5. Hardware security module — what it actually moves
+
+The Pi has a GPIO header and USB. Both take a security element, and doing so changes the threat model
+rather than decorating it.
+
+### 5.1 Key non-extraction
+
+The Ed25519 private key is generated **inside** the chip and never leaves it. Signing is a request:
+the host sends a digest, the chip returns a signature.
+
+Root can therefore *use* the key while the box runs. Root cannot *take* it. That removes:
+
+- forging signatures on another machine, at leisure, with better tooling;
+- forging anything after the module is removed, revoked, or the box is powered off;
+- a stolen NVMe yielding any signing capability at all — the disk holds ciphertext and no key.
+
+### 5.2 Monotonic counters — the mechanism that catches history rewriting
+
+This is the part the earlier draft missed. A TPM 2.0 or secure element exposes counters held in
+internal NV storage that **can only be incremented, never decremented or set**, and that cannot be
+manipulated from outside the chip.
+
+Bind one to ingest: every `ingest_batch` row carries the counter value at signing time, and the
+counter is included in the signed digest.
+
+| Attack | Result |
+|---|---|
+| Delete a batch | Gap in the counter sequence. Root cannot renumber the survivors — signatures cover the counter value. |
+| Reorder batches | Counter order contradicts `received_at` order. |
+| Backdate fabricated history | Would need a counter value below the current one. The chip will not issue it. |
+| Replay an old batch | Duplicate counter value against a monotonic sequence. |
+
+Root can still append genuinely-new signed rows going forward. Root cannot make the past look
+different. That is precisely the property a clinical record needs, and it is achievable.
+
+This is not novel — it is the construction in *Continuous Tamper-proof Logging Using TPM 2.0* (CMU,
+TRUST 2014), whose stated result is that TPM-backed logging detects tampering by adversaries **with
+privileged access on the machine generating the logs**.
+
+### 5.3 PCR sealing — closing the offline-tamper path
+
+Sealing the LUKS key and the signing key's authorisation to TPM PCRs means they are released only
+when the measured boot state — firmware, bootloader, kernel, initramfs, command line — matches what
+was sealed. A modified kernel or an initramfs with an added shell does not get the key.
+
+This closes the realistic route to root on a device you physically hold: boot it into something you
+control. It also replaces §4.3 option A entirely, so the disk-encryption and data-provenance problems
+are solved by the same component.
+
+TPM 2.0 additionally locks after 32 authorisation failures, forgetting one per 10 minutes, which
+makes brute-forcing the authorisation value impractical.
+
+### 5.4 Options
+
+| Module | Interface | Gives | Cost |
+|---|---|---|---|
+| **[Zymbit ZYMKEY 5](https://www.zymbit.com/zymkey5/)** | GPIO / I2C, Pi-specific | 640 key slots, secure key generation and storage, filesystem encryption, **and two independent perimeter circuits with configurable policy including key destruction on breach** | ~$100 |
+| **TPM 2.0 module** (Infineon SLB967x, LetsTrust) | GPIO / SPI | PCR sealing, monotonic counters, NV storage, attestation, command auditing | ~$25 |
+| **ATECC608B breakout** | I2C | Key storage, ECDSA, monotonic counters | ~$5 |
+
+**Recommendation: ZYMKEY 5.** It is the only option that does all three jobs — key custody, tamper
+response, and the LUKS unattended-unlock problem from §4.3 — with one part designed for this board.
+The physical tamper response matters more here than it would elsewhere: this is a device sitting
+beside a bed, and a perimeter breach zeroising keys is a meaningful control rather than a datasheet
+bullet.
+
+A TPM 2.0 module at a quarter of the price gets sealing and counters but no tamper detection and no
+Pi-specific integration. The ATECC608B is the minimum that delivers §5.1 and §5.2 and nothing else.
+
+### 5.5 Honest limits
+
+- A running, correctly-booted box with root can request signatures on fabricated data. The key is
+  safe; the oracle is not. Rate-limiting and logging every signing request narrows this but does not
+  close it.
+- Plaintext on a mounted volume is readable by root. Encryption at rest protects the disk, not the
+  running system.
+- Tamper response protects against opening the case, not against someone using the machine.
+
+### 5.6 Effect on sequencing
+
+An HSM is **hardware that must be present before keys are generated**, because the entire point is
+that keys are born inside it and never exist outside. Generating software keys now and "moving them
+to the HSM later" is not possible — it would mean the key had once existed in software, which
+forfeits §5.1 permanently.
+
+So: if an HSM is wanted, order it before T-D7, and generate no production signing keys until it
+arrives. The audit trail (§1) and role separation are unaffected and can proceed either way.
+
+## 6. What this does not change
 
 - The spool stays raw COPY bytes. Signatures are at the ingest boundary, not in the format.
 - `samples` stays append-only — now enforced by grants rather than by convention.
 - The registry remains the single source of truth for sources, types and units.
 - No change to the detection or alarm logic.
 
-## 6. Tasks
-
-| Task | Tier | Host | Depends |
-|---|---|---|---|
-| **T-C4** — LUKS2 on the data volume, keyfile unlock, failed-unlock alarm path, overhead measured | implement-complex | pi | T-A1 |
-| **T-C5** — role separation, `REVOKE UPDATE/DELETE/TRUNCATE`, verify retention still works | implement-standard | pi | T-C1 |
-| **T-D7** — Ed25519 signed ingest: producer keys, batch signing, `vitalsd` verification, `ingest_batch`, monthly integrity verification | implement-complex | either | T-D4 |
 
 ## 7. Can this be deferred to the end?
 
@@ -327,4 +406,5 @@ since it is a few dozen lines and attaches to a table that already exists.
 | **T-C4** — LUKS2, keyfile unlock, failed-unlock alarm path, measured overhead | implement-complex | pi | T-A1 | **Before Stage 3** |
 | **T-C6** — reserve `batch_id`, `ingest_batch`, `vitals_producer`, `audit_log` in the schema | mechanical | pi | T-C1 | **With the RR primary-key fix** |
 | **T-C5** — role separation + audit triggers + hash chain | implement-standard | pi | T-C6 | Early, cheap |
-| **T-D7** — Ed25519 signing, `vitalsd` verification, integrity verification job | implement-complex | either | T-D4, T-C6 | Deferrable to the end |
+| **T-D7** — Ed25519 signing, `vitalsd` verification, integrity verification job | implement-complex | either | T-D4, T-C6, T-H1 | Deferrable to the end |
+| **T-H1** — HSM: fit the module, generate keys **inside** it, bind the monotonic counter to ingest, seal the LUKS key to PCRs | implement-complex | pi | hardware | **Before T-D7 — see §5.6** |
