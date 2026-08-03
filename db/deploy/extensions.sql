@@ -1,0 +1,9 @@
+-- Deploy vitals:extensions to pg
+BEGIN;
+
+CREATE EXTENSION IF NOT EXISTS timescaledb;
+CREATE EXTENSION IF NOT EXISTS timescaledb_toolkit;
+CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
+CREATE EXTENSION IF NOT EXISTS pg_cron;
+
+COMMIT;

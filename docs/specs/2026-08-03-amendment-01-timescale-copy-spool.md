@@ -299,3 +299,64 @@ generator fix already in review is not entangled with this amendment.
 - The life-safety path still runs as static C binaries under systemd, outside Docker.
 - The phone keeps its own SQLite store. It replicates over HTTP; the engines were never required to
   match, and this amendment makes that explicit rather than accidental.
+
+---
+
+## 7. Migrations — Sqitch, and the two-owner split
+
+**Not Alembic**, despite v1 using it. Alembic's value is autogenerating revisions from SQLAlchemy
+models, and there are none here — the C/Rust daemon writes via `COPY` and the API reads. Without
+models every revision is `op.execute("raw sql")`, which is Sqitch with a Python dependency attached.
+
+**Sqitch**, for one reason that outweighs the rest: **every change carries a verify script.** Other
+tools record *that* a migration ran; Sqitch makes *proving it produced the intended schema* a
+first-class artifact that runs on every deploy. That is the same discipline as the rest of this
+project — acceptance is a command that exits 0, not an assertion.
+
+Secondary: it rides directly on `psql`, so `create_hypertable`, `add_compression_policy` and
+continuous aggregates work with no tool-side schema model to choke on them. Dependency ordering
+rather than a linear counter matters here because `retention` must not deploy before `samples_1min`
+exists — dropping raw data before the rollup exists loses it permanently, and that constraint is
+expressed in the plan rather than in a comment.
+
+Rejected: **dbmate** (simpler, no verify scripts), **Atlas** (declarative diffing fights generated
+DDL), **Flyway/Liquibase** (JVM).
+
+### 7.1 Two owners, split explicitly
+
+The schema has two sources of truth. Left implicit, they drift.
+
+| Owner | Owns | Applied |
+|---|---|---|
+| `db/` (Sqitch) | **Structure** — `samples`, hypertable, compression, aggregates, retention, domain tables, indexes | Versioned changes with deploy/revert/verify |
+| `registry.sql` (generated) | **Reference data** — the `vitals_type` / `vitals_source` rows | Idempotent `ON CONFLICT DO UPDATE`, reconciled on service start |
+
+Structure is *migrated*; reference data is *generated and reconciled*. Sqitch creates the lookup
+tables empty; the generator fills them and keeps them current as `registry.toml` evolves. Neither
+can silently claim the other's objects.
+
+**Follow-up on T-D1:** the generator currently emits both structure and rows. It must be trimmed to
+rows only.
+
+### 7.2 The initial change set
+
+Seven changes in `db/`, each with deploy, revert and verify:
+
+```
+extensions            timescaledb, toolkit, pg_cron, pg_stat_statements
+registry_tables       [extensions]           lookup table structure only
+samples               [registry_tables]      the table + unlogged staging table
+samples_hypertable    [samples]              1-day chunks
+samples_compression   [samples_hypertable]   columnar, after 7 days
+samples_1min          [samples_hypertable]   continuous aggregate, carries min/max
+retention             [samples_1min]         raw drops at 2 years
+```
+
+Two reverts deliberately refuse rather than proceed:
+
+- `extensions` does **not** drop `timescaledb` — that would destroy every hypertable in the database.
+  That is data loss, not a schema revert.
+- `samples_hypertable` raises if `samples` has rows, because a hypertable cannot be converted back in
+  place and reverting would discard them.
+
+A revert that silently destroys data is worse than one that refuses. Both say why.
