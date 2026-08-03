@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="PublishConfigData" autoUpload="Always"
+             serverName="minidude" remoteFilesAllowedToDisappearOnAutoupload="false">
+    <serverData>
+      <paths name="minidude">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/home/chris/AnxietyWatch2" local="$PROJECT_DIR$" web="/" />
+          </mappings>
+          <excludedPaths>
+            <excludedPath path="$PROJECT_DIR$/build" local="true" />
+            <excludedPath path="$PROJECT_DIR$/build-coverage" local="true" />
+            <excludedPath path="$PROJECT_DIR$/build-fuzz" local="true" />
+            <excludedPath path="$PROJECT_DIR$/.idea" local="true" />
+            <excludedPath path="$PROJECT_DIR$/.git" local="true" />
+          </excludedPaths>
+        </serverdata>
+      </paths>
+    </serverData>
+  </component>
+</project>
