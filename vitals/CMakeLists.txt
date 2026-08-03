@@ -15,7 +15,7 @@
 # struct packing agree — these produce identical results on both.
 set(VITALS_CORE_SOURCES
     src/version.c
-    # src/sfloat.c        # T-D2 · IEEE-11073 SFLOAT
+    src/sfloat.c        # T-D2 · IEEE-11073 SFLOAT
     # src/hlc.c           # T-D3 · hybrid logical clock
     # src/bp_decode.c     # T-D6 · 0x2A35 blood pressure measurement
 )
@@ -62,7 +62,7 @@ function(vitals_test name)
 endfunction()
 
 vitals_test(toolchain)          # proves the build works end to end
-# vitals_test(sfloat)           # T-D2
+vitals_test(sfloat)           # T-D2
 # vitals_test(bp_decode)        # T-D6
 # vitals_test(hlc)              # T-D3
 
@@ -80,6 +80,6 @@ if(VITALS_FUZZ)
         target_link_options(fuzz_${name}    PRIVATE -fsanitize=fuzzer,address,undefined)
     endfunction()
 
-    # vitals_fuzz(sfloat)       # T-D2
+    vitals_fuzz(sfloat)       # T-D2
     # vitals_fuzz(bp_decode)    # T-D6
 endif()
