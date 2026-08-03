@@ -1,7 +1,5 @@
 {
-  "meta": {
-    "version": 1
-  },
+  "_generated_from": "registry.toml \u2014 DO NOT EDIT",
   "type": {
     "hr": {
       "id": 1,
@@ -88,11 +86,11 @@
     "polar_h10": {
       "id": 1,
       "transport": "ble",
-      "service": "0x180D",
       "provides": [
         "hr",
         "rr_interval"
-      ]
+      ],
+      "service": "0x180D"
     },
     "healthkit": {
       "id": 2,
@@ -112,14 +110,14 @@
     "ad_ua651ble": {
       "id": 6,
       "transport": "ble",
-      "service": "0x1810",
-      "indication": true,
       "provides": [
         "bp_systolic",
         "bp_diastolic",
         "bp_map",
         "hr"
-      ]
+      ],
+      "service": "0x1810",
+      "indication": true
     }
   }
 }

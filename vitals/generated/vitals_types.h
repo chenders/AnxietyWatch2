@@ -2,11 +2,12 @@
 #ifndef VITALS_TYPES_H
 #define VITALS_TYPES_H
 
+#include <stdbool.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-// Vitals types
 typedef enum {
     VITALS_TYPE_HR = 1,
     VITALS_TYPE_SPO2 = 2,
@@ -18,8 +19,6 @@ typedef enum {
     VITALS_TYPE_BP_MAP = 8
 } vitals_type_t;
 
-
-// Vitals sources
 typedef enum {
     VITALS_SOURCE_EMAY = 0,
     VITALS_SOURCE_POLAR_H10 = 1,
@@ -28,17 +27,24 @@ typedef enum {
     VITALS_SOURCE_AD_UA651BLE = 6
 } vitals_source_t;
 
-// Type information functions
+#define VITALS_TYPE_COUNT   8
+#define VITALS_SOURCE_COUNT 5
+
 typedef struct {
     double lo;
     double hi;
 } vitals_range_t;
 
-vitals_range_t vitals_type_range(int type_id);
-const char* vitals_type_unit(int type_id);
+/* Valid range for a type, from registry.toml. Returns false for an unknown id;
+ * *out is untouched. Values outside the range are quarantined, never clamped. */
+bool vitals_type_range(int type_id, vitals_range_t *out);
+
+/* Canonical unit for a type. NULL for an unknown id. Conversion happens once,
+ * at the decoder — the store holds exactly one unit per type. */
+const char *vitals_type_unit(int type_id);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif // VITALS_TYPES_H
+#endif /* VITALS_TYPES_H */
