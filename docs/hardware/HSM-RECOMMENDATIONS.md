@@ -109,15 +109,27 @@ lead time are the deciding factor rather than the hardware.
 
 | Route | Part / link | Notes |
 |---|---|---|
-| **DigiKey** | `IRIDIUMSLM9670TPM20TOBO1` (~$64) · `IRIDIUMSLI9670TPM20TOBO1` | **Recommended.** Infineon's own board through an authorised distributor. Guaranteed genuine, US stock |
-| **Mouser** | `IRID9670TPM20LINUXTOBO1` | Same board, "Iridium 9670 TPM2.0 Linux" |
-| **Crowd Supply** | [ANAVI TPM 2.0](https://www.crowdsupply.com/anavi-technology/anavi-tpm-2-0-for-raspberry-pi) | SLB9672, open hardware, named designer, US fulfilment |
-| **LetsTrust direct** | [pi3g](https://pi3g.com/products/industrial/letstrust-tpm/) · [The Pi Hut](https://thepihut.com/products/letstrust-tpm-for-raspberry-pi) (UK) · [Cytron](https://www.cytron.io/p-letstrust-tpm-for-raspberry-pi) (MY) · [BerryBase](https://www.berrybase.de/en/letstrust-tpm-cryptography-module-for-raspberry-pi) (DE) · Core Electronics `CE10600` (AU) | The SLB9672 board. Worth the wait |
+| **Crowd Supply** | [ANAVI TPM 2.0 **Vertical**](https://www.crowdsupply.com/anavi-technology/anavi-tpm-2-0-for-raspberry-pi) — $20 + $8 US shipping | **Buy this.** In stock, ships in 3 business days. SLB**9672**, OSHWA-certified open hardware, TRNG per NIST SP 800-90A/B. **Uses only 10 header pins (2×5), leaving the rest of GPIO free**, and the vertical variant is stated not to interfere with the Pi 5 Active Cooler. Crowd Supply ships from Portland |
+| **DigiKey** | `IRIDIUMSLM9670TPM20TOBO1` (~$64) · `IRIDIUMSLI9670TPM20TOBO1` | Fallback if ANAVI goes out of stock. Infineon's own eval board, older SLB9670, 2× the price |
+| **Mouser** | `IRID9670TPM20LINUXTOBO1` | Same board as DigiKey's |
+| **LetsTrust direct** | [pi3g](https://pi3g.com/products/industrial/letstrust-tpm/) · [The Pi Hut](https://thepihut.com/products/letstrust-tpm-for-raspberry-pi) (UK) · [Cytron](https://www.cytron.io/p-letstrust-tpm-for-raspberry-pi) (MY) · [BerryBase](https://www.berrybase.de/en/letstrust-tpm-cryptography-module-for-raspberry-pi) (DE) · Core Electronics `CE10600` (AU) | Also SLB9672. European/APAC shipping |
 | ~~Amazon marketplace TPM boards~~ | — | **Avoid — see below** |
 
 **Bare chips**, if building your own board: `SLB9670VQ20FW785XTMA1` (Mouser),
 `SLB9670VQ20FW760XUMA1` (DigiKey). The Infineon variant letters — **SLB** standard, **SLM** mobile,
 **SLI** industrial/automotive — are all fine here.
+
+#### Horizontal or vertical?
+
+ANAVI ships two variants at the same price. The header is 2×5 (2.54 mm) female either way; the
+vertical one mounts it at 90°.
+
+**Take the vertical.** Crowd Supply states it does not interfere with the Raspberry Pi 5 Active
+Cooler, which is the exact clearance problem a top-mounted M.2 HAT creates. The horizontal variant
+is the right pick only if your enclosure is short and wide rather than tall.
+
+Because it occupies only 10 of the 40 pins, the alerting relay board from amendment 03 can share the
+header — no stacking riser needed, which was an open item in §4.
 
 #### Do not buy a TPM from an Amazon marketplace seller
 

@@ -118,10 +118,14 @@ Drives the siren, the shaker, and a strobe from one board. 2–4 channels is ple
 
 ## 3. Security
 
-### TPM 2.0 module — ~$25
+### TPM 2.0 module — ~$28 delivered
 
-**Buy from an authorised distributor** — Infineon `IRIDIUMSLM9670TPM20TOBO1` via DigiKey,
-`IRID9670TPM20LINUXTOBO1` via Mouser, ANAVI via Crowd Supply, or LetsTrust direct from pi3g.
+**[ANAVI TPM 2.0 Vertical](https://www.crowdsupply.com/anavi-technology/anavi-tpm-2-0-for-raspberry-pi)
+from Crowd Supply — $20 + $8 shipping, in stock.** Infineon SLB9672, open hardware, and it uses only
+10 of the 40 GPIO pins so the alerting relay board can share the header. The vertical variant is
+stated not to interfere with the Pi 5 Active Cooler.
+
+Fallback if it goes out of stock: Infineon `IRIDIUMSLM9670TPM20TOBO1` via DigiKey (~$64).
 
 **Do not buy a TPM from an Amazon marketplace seller.** The popular GeeekPi listing has ~20% one-star
 reviews reporting TPM **1.2** parts shipped as 2.0. TPM 1.2 is a different specification — no SHA-256
