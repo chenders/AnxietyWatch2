@@ -611,7 +611,7 @@ possible failure in a medical value: 118/74 and 141/92 are both believable.
 3. Write `vitals/tests/test_sfloat.c` covering, at minimum:
    - `0x0076` → 118.0 (systolic, exponent 0)
    - `0x004A` → 74.0
-   - `0xF14A` → 7.4 (exponent −1)
+   - `0xF04A` → 7.4 (exponent −1, mantissa 74). NOTE: an earlier draft of this brief said `0xF14A`, which is 33.0 — mantissa 0x14A is 330. Verify test vectors by hand.
    - `0x07FF`, `0x0800`, `0x07FE`, `0x0802`, `0x0801` → all return `false`
    - `0x0FFF` is *not* a sentinel (mantissa 0xFFF ≠ 0x7FF) → returns true
    - Compare doubles with `fabs(a-b) < 1e-9`, never `==`.

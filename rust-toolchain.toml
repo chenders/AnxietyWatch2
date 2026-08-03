@@ -1,0 +1,6 @@
+# Pinned so the Mac (dev) and the Pi (build/test/deploy) cannot drift.
+# Observed drift before pinning: Mac 1.88.0, Pi 1.97.1.
+[toolchain]
+channel = "1.97.1"
+components = ["rustfmt", "clippy", "llvm-tools-preview"]
+targets = ["aarch64-unknown-linux-gnu"]
