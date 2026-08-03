@@ -1,0 +1,125 @@
+{
+  "meta": {
+    "version": 1
+  },
+  "type": {
+    "hr": {
+      "id": 1,
+      "unit": "bpm",
+      "range": [
+        20.0,
+        250.0
+      ],
+      "precision": 1.0
+    },
+    "spo2": {
+      "id": 2,
+      "unit": "percent",
+      "range": [
+        50.0,
+        100.0
+      ],
+      "precision": 0.1
+    },
+    "accel": {
+      "id": 3,
+      "unit": "g",
+      "range": [
+        -16.0,
+        16.0
+      ],
+      "precision": 0.001
+    },
+    "hrv_rmssd": {
+      "id": 4,
+      "unit": "ms",
+      "range": [
+        1.0,
+        500.0
+      ],
+      "precision": 0.1
+    },
+    "rr_interval": {
+      "id": 5,
+      "unit": "seconds",
+      "range": [
+        0.2,
+        3.0
+      ],
+      "precision": 0.001
+    },
+    "bp_systolic": {
+      "id": 6,
+      "unit": "mmHg",
+      "range": [
+        50.0,
+        260.0
+      ],
+      "precision": 1.0
+    },
+    "bp_diastolic": {
+      "id": 7,
+      "unit": "mmHg",
+      "range": [
+        30.0,
+        160.0
+      ],
+      "precision": 1.0
+    },
+    "bp_map": {
+      "id": 8,
+      "unit": "mmHg",
+      "range": [
+        40.0,
+        200.0
+      ],
+      "precision": 1.0
+    }
+  },
+  "source": {
+    "emay": {
+      "id": 0,
+      "transport": "ble",
+      "provides": [
+        "spo2",
+        "hr"
+      ]
+    },
+    "polar_h10": {
+      "id": 1,
+      "transport": "ble",
+      "service": "0x180D",
+      "provides": [
+        "hr",
+        "rr_interval"
+      ]
+    },
+    "healthkit": {
+      "id": 2,
+      "transport": "push",
+      "provides": [
+        "hr",
+        "hrv_rmssd"
+      ]
+    },
+    "derived": {
+      "id": 3,
+      "transport": "internal",
+      "provides": [
+        "hrv_rmssd"
+      ]
+    },
+    "ad_ua651ble": {
+      "id": 6,
+      "transport": "ble",
+      "service": "0x1810",
+      "indication": true,
+      "provides": [
+        "bp_systolic",
+        "bp_diastolic",
+        "bp_map",
+        "hr"
+      ]
+    }
+  }
+}
