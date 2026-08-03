@@ -86,6 +86,65 @@ anti-hammering (locks after 32 auth failures, forgets one per 10 minutes) and TP
 Note that many x86 machines already have a TPM on the motherboard — if you are running this on
 something other than a Pi, you may already have this and not know it. The probe will find it.
 
+#### Which TPM board, specifically, for a Raspberry Pi 5
+
+All of these are Infineon OPTIGA parts on SPI and all use the same kernel driver (`tpm_tis_spi`) and
+the same device-tree overlay. The differences are packaging, price and availability.
+
+| Board | Chip | Notes |
+|---|---|---|
+| **[LetsTrust TPM](https://pi3g.com/products/industrial/letstrust-tpm/)** (pi3g) | SLB9672 | **Recommended.** Current-generation chip, explicitly claims all Pi models, the most widely used board in this niche so community answers exist. Stocked by [The Pi Hut](https://thepihut.com/products/letstrust-tpm-for-raspberry-pi) and Cytron. Small board over the first ~10 GPIO pins |
+| **[ANAVI TPM 2.0](https://www.crowdsupply.com/anavi-technology/anavi-tpm-2-0-for-raspberry-pi)** | SLB9672 | Same chip, open hardware, Crowd Supply. Equally good; pick on availability |
+| **GeeekPi TPM9670** | SLB9670 | Cheapest, older chip. Works — the overlay is literally named after it — but buy the 9672 if the price gap is small |
+| Infineon SLB9673 boards | SLB9673 | **I2C**, not SPI. Kernel ≥ 6.0 supports it but it may need enabling at compile time. Avoid unless you specifically want the I2C bus free of SPI |
+
+**Get an SLB9672 board — LetsTrust or ANAVI.** Same driver as the 9670, newer silicon, no downside.
+
+#### Setup
+
+```sh
+# /boot/firmware/config.txt
+dtparam=spi=on
+dtoverlay=tpm-slb9670        # correct for 9670 AND 9672 — same SPI TIS interface
+```
+
+```sh
+sudo apt install tpm2-tools
+sudo reboot
+
+ls -l /dev/tpm0 /dev/tpmrm0          # both should exist
+sudo tpm2_getcap properties-fixed | grep -i manufacturer
+sudo tpm2_pcrread sha256:7,11        # PCRs populated
+```
+
+#### Verify before relying on it — Pi 5 caveat
+
+There is a
+[reported Pi 5 issue](https://github.com/raspberrypi/linux/issues/6217) where IMA logged
+*"No TPM chip found, activating TPM-bypass!"* at boot. That is **early-boot** detection, and
+userspace access via `tpm2-tools` was unaffected — but PCR-sealed LUKS unlock happens in the
+initramfs, which is exactly the window in question.
+
+So confirm the whole path before trusting it, on a **scratch volume**, not on `PGDATA`:
+
+```sh
+sudo truncate -s 64M /tmp/tpmtest.img
+sudo cryptsetup luksFormat /tmp/tpmtest.img
+sudo systemd-cryptenroll /tmp/tpmtest.img --tpm2-device=auto --tpm2-pcrs=7+11
+sudo reboot
+# after reboot, confirm it unlocks with no passphrase prompt
+sudo /usr/lib/systemd/systemd-cryptsetup attach tpmtest /tmp/tpmtest.img - tpm2-device=auto
+```
+
+If unlock works unattended across a reboot, the initramfs path is good and T-C4 can seal the real
+volume. **If it does not**, the TPM is still fully useful for §5.1 and §5.2 — non-extractable signing
+keys and the monotonic counter, which is the larger half of the value — and disk unlock falls back to
+the keyfile approach. Confirm which before committing the design either way.
+
+One more Pi 5 note: PCR 7 measures secure-boot state, which the Pi handles differently from a PC.
+If sealing to `7+11` proves flaky, `--tpm2-pcrs=11` alone still binds to the kernel and initramfs
+and is a meaningful control.
+
 ### ZYMKEY 5 — the one with physical tamper response
 
 Two independent perimeter circuits with configurable policy including **key destruction on breach**,
@@ -131,12 +190,25 @@ heatsink and fan.
 - Multi-modal alerting (amendment 03) also wants GPIO for the piezo siren and bed-shaker relay. Plan
   the header allocation once rather than discovering a conflict twice.
 
+**Concrete allocation for this build**, so the three things do not collide:
+
+| Consumer | Pins |
+|---|---|
+| TPM (SPI0) | 19 MOSI, 21 MISO, 23 SCLK, 24 CE0, 22 reset, plus 3V3 + GND |
+| Relay board (siren, shaker, strobe) | any free GPIO — 5, 6, 13, 16 are clear of SPI0 |
+| Free | I2C (2, 3) stays open for a future ATECC or ZYMKEY |
+
+The LetsTrust board sits over roughly the first ten pins, so a relay HAT wanting the far end of the
+header can coexist. Check it against the M.2 HAT's own stacking height before ordering both.
+
 ---
 
 ## 5. If you are reading this to decide
 
 - **Already own a TPM, or running on x86?** Use it. The probe will find it.
-- **Buying one thing for a Pi?** TPM 2.0 module, ~$25, for the `systemd-cryptenroll` path.
+- **Buying one thing for a Pi 5?** A **LetsTrust TPM** or **ANAVI TPM 2.0** — both Infineon
+  SLB9672 on SPI, ~$25. Set `dtparam=spi=on` + `dtoverlay=tpm-slb9670`, then run the scratch-volume
+  unlock test in §2 before sealing anything real.
 - **Want tamper response?** ZYMKEY 5, alone or alongside a TPM.
 - **Want the cheap real improvement?** ATECC608B, ~$5.
 - **Want to run it today with nothing extra?** Do that. The system will tell you what you have.
