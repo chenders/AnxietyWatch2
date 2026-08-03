@@ -149,6 +149,33 @@ cannot be extracted" is not something to buy from a marketplace where the chip o
 guaranteed. Buy from Infineon through DigiKey or Mouser, from Crowd Supply, or direct from pi3g —
 the ~$40 difference buys a supply chain, which is the thing being paid for.
 
+#### A spare module is not a key backup
+
+Keys are non-extractable *per module* — that is the whole point of the part. A second TPM does not
+hold copies of the first one's keys and cannot be made to.
+
+**Consequences, both of which must be designed for:**
+
+**LUKS — always enroll a recovery passphrase alongside the TPM.** If the volume is sealed to the TPM
+only and the module fails, the chip desolders, or a firmware update shifts the PCR values, the data
+is unrecoverable. Not difficult — gone.
+
+```sh
+sudo systemd-cryptenroll /dev/nvme0n1p2 --recovery-key         # FIRST. Store it offline.
+sudo systemd-cryptenroll /dev/nvme0n1p2 --tpm2-device=auto --tpm2-pcrs=7+11
+```
+
+PCR sealing is *designed* to break when the measured boot state changes, so a kernel or firmware
+update will legitimately invalidate the seal. Expect to use the recovery key during ordinary
+maintenance, not only in a disaster. `systemd-cryptenroll --wipe-slot=tpm2` then re-enrolling is the
+normal post-update flow.
+
+**Signing keys — the spare enrolls as a new producer, and nothing is lost.** Past batches stay
+verifiable because the public key is stored in `vitals_producer`. A replacement module generates a
+fresh key, gets a new producer row with its own `added_at`, and the old row gets `revoked_at`.
+History remains checkable against the key that actually signed it, and new batches carry the new one.
+This is exactly why that table is a log rather than a single current key.
+
 #### Verify what you actually received
 
 Regardless of source, confirm the spec version before designing around it:
