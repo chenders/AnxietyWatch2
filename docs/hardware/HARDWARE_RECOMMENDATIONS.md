@@ -182,7 +182,8 @@ these turn up refurbished.
 
 | Item | Buys |
 |---|---|
-| mmWave presence + respiration module (LD2410, LD2450) | Respiration and presence with nothing worn. Redundant to the chest strap, and works on nights nothing is worn |
+| **Seeed MR60BHA2** (60 GHz) ~$35 | **The only one of these that measures respiration.** ~5 mm wavelength resolves sub-1 mm chest displacement; tested within 3 BPM of a medical pulse oximeter. **Breathing/heartbeat range is only 1.5 m** (6 m presence-only), so it mounts above or beside the bed, not across the room. ESPHome has a `seeed_mr60bha2` component |
+| ~~LD2410 / LD2450 (24 GHz)~~ | **Not respiration sensors.** The LD2450 is a *tracking* radar — it outputs distance, angle and velocity for moving targets, i.e. where people are. The LD2410 does presence and micro-motion. Neither measures breathing. An earlier draft of this document listed them for respiration; that was wrong |
 | CO₂ sensor (SCD40/SCD41) | Bedroom CO₂ correlates with sleep quality and can be genuinely high in a closed room |
 | Temperature / humidity (SHT41, BME280) | Environmental context, and it protects the box: alarms on enclosure temperature |
 | Barometric (BMP390) | v1 tracked barometric pressure against symptoms; a local sensor beats a weather API |
