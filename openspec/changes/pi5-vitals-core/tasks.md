@@ -711,7 +711,7 @@ possible failure in a medical value: 118/74 and 141/92 are both believable.
    - `0x004A` → 74.0
    - `0xF04A` → 7.4 (exponent −1, mantissa 74). **NOTE:** an earlier draft of this brief said
      `0xF14A`, which is 33.0 — mantissa `0x14A` is 330. That error survived because the check was
-     "did `ctest` exit 0", not "is the expected value right". Verify every vector by hand.
+     "did the test command exit 0", not "is the expected value right". Verify every vector by hand.
    - `0x07FF`, `0x0800`, `0x07FE`, `0x0802`, `0x0801` → all return `None`
    - `0x0FFF` is *not* a sentinel (mantissa `0xFFF` ≠ `0x7FF`) → returns `Some`
    - An exhaustive sweep of all 2^16 inputs asserting no panic and that every `Some` is finite.
