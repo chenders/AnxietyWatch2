@@ -1348,3 +1348,57 @@ same payload anonymity amendment 06 §1 documents for the cuff.
 **Still required, and it needs you:** pair the H10 (`bluetoothctl pair` + `btmgmt add-device -a 2`),
 wear it overnight with a moist strap, and run the capture under `systemd-run --pipe`. The strap must
 be damp or the H10 does not advertise at all.
+
+### T-B1 substitute — EMAY `SleepO2` capture, tooling verified live 2026-08-03
+
+The H10 strap could not be found, so the thesis spike moves to the oximeter. This is a substitution,
+not a downgrade:
+
+- **It answers the same question.** T-B1 measures whether the Pi can hold a BLE link all night.
+- **It carries the primary signal.** Amendment 05 §2.1 permits only SpO₂ and respiratory rate to
+  raise a tier past watch or clear a raised one. The H10's HR and RR are corroborating.
+- **It is a harder test.** The device stops streaming unless the host writes a keepalive about every
+  1.5 s, so this exercises bidirectional traffic for eight hours rather than passive notifications.
+- **It cannot hit the SMP failure.** No pairing, no bonding, no encryption — so amendment 06 §3's
+  bonded-but-unusable state is structurally impossible here.
+
+Output is the format `tools/gap_histogram.py` already reads, so the acceptance gate is unchanged.
+Drift will correctly report "not estimable": the EMAY sends no interval data, and saying so is better
+than inventing a number.
+
+**Live-verified on the device**: 68 records in 40 s, zero undecodable, PR 76–80, SpO₂ 91–94.
+
+**Four defects found, three of them by the device rather than by reading.**
+
+1. **A 50% SpO₂ floor, invented from a summary note.** It would have silently discarded a
+   desaturation to 45% — a severe, alarm-worthy event — on a monitor whose entire purpose is
+   detecting desaturation. Caught by cross-checking `EMAYRealtimeService.swift`, which documents the
+   correct rule: *"A plausibility range is deliberately NOT used: narrowing it would [drop genuine
+   extremes]."*
+
+   This also makes the published spec's 30–220 bpm pulse floor **wrong for this application**. A
+   pulse of 25 during severe CNS depression is the event the system exists to catch. The asymmetry
+   settles it: a dropped reading is silent and permanent, while a corrupt byte must still pass a
+   checksum, a fixed header and a fixed trailer, and is caught downstream by cross-signal agreement.
+   Now sentinels plus one genuine impossibility (SpO₂ > 100%), no floors.
+
+2. **`response_opcode` is XOR `0x70`, not plus.** They agree for every `0x8x` command and diverge
+   only on `0x9B` — START_REALTIME, whose reply carries every reading. "+" predicts `0x0B`; the
+   device answered `0xEB`.
+
+3. **BLE notifications are not frame-aligned.** First run: one 8-byte record per notification, looked
+   perfect. Second run: 20-byte notifications carrying 2.5 records each, and a length-checking
+   decoder silently lost **~45%**. Which behaviour you get depends on the MTU the connection happens
+   to negotiate, so **a single successful run cannot distinguish them**. Replaced with a
+   self-synchronising scanner, tested against the exact captured bytes. The published spec says to
+   ignore non-8-byte notifications, which is wrong on BlueZ/Linux.
+
+4. **The checksum mask cannot be verified from an awake subject.** `0x7F` and `0xFF` agree unless bit
+   7 of the payload sum is set, which for this frame layout means they disagree across 43% of the
+   physiologically possible space — and the disagreement region is **PR 40–48 with SpO₂ 95–100**,
+   i.e. sleep. An `0xFF`-masked decoder works perfectly during setup and begins rejecting frames as
+   the wearer's heart rate drops. Both the reference frame in the notes (PR 62) and tonight's live
+   capture (PR 85) sit in the agreeing region. `0x7F` is correct because it came from the vendor-app
+   decompile, not because any frame demonstrated it.
+
+**Still requires you:** wear the oximeter overnight and run the capture under `systemd-run --pipe`.

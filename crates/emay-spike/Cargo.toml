@@ -1,0 +1,19 @@
+[package]
+name = "emay-spike"
+description = "T-B1 substitute: overnight EMAY SleepO2 capture. SpO2 is the primary signal."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+vitals-decode = { path = "../vitals-decode" }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+bluer = { version = "0.17", features = ["bluetoothd"] }
+tokio = { version = "1", features = ["rt", "macros", "time", "signal"] }
+futures = "0.3"
+
+[lints]
+workspace = true
