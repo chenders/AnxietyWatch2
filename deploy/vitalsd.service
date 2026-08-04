@@ -1,0 +1,52 @@
+[Unit]
+# The single writer. Collectors append here; vitalsd alone touches the store.
+Description=vitals core daemon
+Documentation=openspec/changes/pi5-vitals-core/tasks.md T-D4
+After=network.target
+
+[Service]
+# Type=simple, not notify: the daemon does not link libsystemd, and claiming
+# Type=notify without calling sd_notify() makes systemd wait for a readiness
+# signal that never arrives, then kill the unit as failed-to-start. A readiness
+# protocol that is declared but not implemented is worse than none — it turns a
+# working daemon into a boot failure. Switch to notify in the same change that
+# adds the sd_notify call, not before.
+Type=simple
+ExecStart=/usr/local/bin/vitalsd --spool /var/lib/vitals/spool --socket /run/vitals/vitalsd.sock --state /var/lib/vitals
+
+# Amendment 04 §2. Without this the kernel kills the alarm path to save the
+# database. Docker and Postgres take POSITIVE adjustments (see T-A5, T-C1).
+OOMScoreAdjust=-1000
+MemoryMin=64M
+MemoryHigh=192M
+
+Restart=always
+RestartSec=1
+
+User=vitals
+Group=vitals
+# 0770 so the socket's parent is traversable by the vitals group and nothing
+# else; the socket itself is chmod 0660 by the daemon at bind time.
+RuntimeDirectory=vitals
+RuntimeDirectoryMode=0770
+StateDirectory=vitals
+StateDirectoryMode=0770
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+
+[Install]
+# multi-user.target, NOT graphical.target: this must survive the compositor
+# dying. The bedside panel is a viewer, never a dependency.
+WantedBy=multi-user.target

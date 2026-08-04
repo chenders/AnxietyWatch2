@@ -4,6 +4,8 @@ members = [
     "crates/vitals-registry",   # generated types from registry.toml
     "crates/vitals-decode",     # pure wire decoders — no_std, no alloc
     "crates/vitals-core",       # shared value types, COPY encoder, spool
+    "crates/vitals-proto",      # socket wire format — pure, no I/O
+    "crates/vitalsd",           # the single-writer daemon (Linux)
 ]
 
 [workspace.package]
