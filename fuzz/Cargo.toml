@@ -21,3 +21,10 @@ doc = false
 bench = false
 
 [workspace]
+
+[[bin]]
+name = "fuzz_hr"
+path = "fuzz_targets/fuzz_hr.rs"
+test = false
+doc = false
+bench = false
