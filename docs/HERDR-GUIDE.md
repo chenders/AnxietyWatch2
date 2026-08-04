@@ -143,7 +143,7 @@ the only way to debug a BLE collector, because the bug needs the hardware.
 ### 4.2 Command line
 
 ```sh
-scripts/sync-to-pi.sh --test        # sync, build, ctest
+scripts/sync-to-pi.sh --test        # sync, build, cargo test
 ssh chris@minidude
 cd ~/AnxietyWatch2 && gdb ./build/vitals/test_bp_decode
 ```
