@@ -54,9 +54,9 @@ pane renders (`grep -n '^- \[' tasks.md`).
 - [ ] T-C1 — PostgreSQL 16 bare metal on NVMe · implement-standard · pi · **blocked by G2**
 - [ ] T-C2 — pgBackRest, three tiers · implement-standard · pi · **review**
 - [ ] T-C3 — Scheduled restore verification · implement-complex · pi · **review · gate G3 owner**
-- [ ] T-D1 — Registry TOML and codegen · implement-standard · mac
-- [ ] T-D2 — IEEE-11073 SFLOAT decoder with fuzz target · implement-complex · either · **review**
-- [ ] T-D3 — COPY-binary encoder and spool · implement-complex · either · **review**
+- [x] T-D1 — Registry TOML and codegen · implement-standard · mac
+- [x] T-D2 — IEEE-11073 SFLOAT decoder with fuzz target · implement-complex · either · **review**
+- [x] T-D3 — COPY-binary encoder and spool · implement-complex · either · **review**
 - [ ] T-D4 — vitalsd daemon and socket protocol · implement-complex · pi · **review**
 - [ ] T-D5 — spool drainer · implement-complex · pi · **review · blocked by G3**
 - [ ] T-D6 — bp-collector end to end · implement-complex · pi · **review · blocked by G3**
@@ -1192,3 +1192,52 @@ than absorbing the error. A bring-up that cannot fail is the same as no bring-up
 sudo cp /boot/firmware/config.txt.pre-disable-bt /boot/firmware/config.txt
 sudo systemctl enable hciuart && sudo reboot
 ```
+
+### T-D3 — COPY-binary encoder and spool · PASSED 2026-08-03
+
+`cargo test --workspace` 40 passed · `cargo clippy --workspace --all-targets -- -D warnings` clean ·
+round-trip verified against PostgreSQL 16.
+
+**Reference bytes earned their keep immediately.** The brief insists tests assert against output
+captured from a real server rather than the encoder's own. That caught the format's sharpest edge:
+
+```
+'2000-01-01 00:00:00+00'  →  00 00 00 00 00 00 00 00
+```
+
+`TIMESTAMPTZ` in binary `COPY` is **microseconds since 2000-01-01**, not the Unix epoch. An encoder
+written from the specification alone would very plausibly emit Unix-epoch microseconds — every
+timestamp thirty years off, and `Postgres` accepts it without a word. Self-consistent tests would
+have agreed with the bug.
+
+Confirmed by mutation: setting the offset to zero fails 4 unit tests and flags all 1001 round-trip
+rows.
+
+**Scope deltas.**
+
+1. **`encode_row(out, &sample)` as published could not produce a valid row.** `Sample` carries no
+   `node_id` and the column is `NOT NULL`. The signature is now
+   `encode_row(out, &sample, &node_id)` — `node_id` is constant for the life of the process, so
+   carrying it per sample would waste 16 bytes each for a value that never varies. **T-D4 consumes
+   this signature.**
+
+2. **`Spool::append` gained the `node_id` parameter** for the same reason:
+   `append(&mut self, rows, node_id, sync)`.
+
+3. **The advisory lock did not lock.** `fs4::try_lock_exclusive` returns `io::Result<bool>`, where
+   `Ok(false)` means the lock was *not* acquired. The first version only handled `Err`, so `Ok(false)`
+   passed and the spool ran unlocked — a guard against undetectable interleaved writes that silently
+   did not guard. Caught by `a_second_writer_is_refused`, which is the only reason it is known.
+
+4. **`session_id` restart-uniqueness is implemented and tested**, per amendment 06. The counter is
+   fsynced *before* the id is returned; returning first would reuse an id across a crash. A corrupt
+   counter is an error, never a reset to zero — resetting would re-issue ids already in the store.
+
+5. **The round-trip skipped in CI.** `build-test` now runs a `postgres:16` service container, and a
+   `SKIPPED:` line in the test output **fails the job**. A database test that quietly skips is worth
+   less than no test, and this repo has produced that shape five separate times.
+
+**Also implemented beyond the brief:** a per-segment schema fingerprint (FNV-1a over column names,
+order and type OIDs) with tests proving reordering, retyping, renaming and name-boundary ambiguity
+all change it. Binary `COPY` is positional, so transposing `source` and `type` — both `INTEGER` —
+would otherwise be undetectable.

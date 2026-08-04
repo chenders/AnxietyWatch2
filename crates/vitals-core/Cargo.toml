@@ -8,6 +8,14 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+# Advisory locks on the spool segment and offset file: a second writer must fail
+# rather than interleave. Amendment 05 §4.6.
+fs4 = "0.13"
+# node_id is provenance and is generated exactly once, ever.
+getrandom = "0.3"
+
+[dev-dependencies]
+tempfile = "3"
 
 [lints]
 workspace = true
