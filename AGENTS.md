@@ -135,7 +135,7 @@ Concurrent agents must not share a working tree. Two agents in one checkout race
 and a commit from one lands on the other's branch. Both happened here on 2026-08-03.
 
 ```sh
-git worktree add -b task/t-d3-libvitals ../aw2-t-d3 main
+git worktree add -b task/t-d3-spool ../aw2-t-d3 main
 cd ../aw2-t-d3
 ```
 
