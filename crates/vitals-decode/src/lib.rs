@@ -25,8 +25,10 @@
 )]
 
 pub mod bp;
+pub mod emay;
 pub mod hr;
 pub mod sfloat;
 
+pub use emay::decode_data;
 pub use hr::decode_2a37;
 pub use sfloat::decode_sfloat;

@@ -7,6 +7,7 @@ members = [
     "crates/vitals-proto",      # socket wire format — pure, no I/O
     "crates/vitalsd",           # the single-writer daemon (Linux)
     "crates/hr-spike",          # T-B1 overnight capture (Linux)
+    "crates/emay-spike",        # T-B1 substitute: SpO2 capture (Linux)
 ]
 
 [workspace.package]
