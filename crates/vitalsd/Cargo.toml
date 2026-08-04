@@ -1,0 +1,24 @@
+[package]
+name = "vitalsd"
+description = "The single writer. Collectors append here; vitalsd alone touches the store."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+vitals-core = { path = "../vitals-core" }
+vitals-proto = { path = "../vitals-proto" }
+ciborium = "0.2"
+serde = { version = "1", features = ["derive"] }
+# Current-thread runtime only: a single writer needs no locking, and that is the
+# whole reason for the design.
+tokio = { version = "1", features = ["rt", "net", "io-util", "macros", "time", "signal", "sync"] }
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { version = "1", features = ["rt", "net", "io-util", "macros", "time", "sync"] }
+
+[lints]
+workspace = true

@@ -57,7 +57,7 @@ pane renders (`grep -n '^- \[' tasks.md`).
 - [x] T-D1 — Registry TOML and codegen · implement-standard · mac
 - [x] T-D2 — IEEE-11073 SFLOAT decoder with fuzz target · implement-complex · either · **review**
 - [x] T-D3 — COPY-binary encoder and spool · implement-complex · either · **review**
-- [ ] T-D4 — vitalsd daemon and socket protocol · implement-complex · pi · **review**
+- [x] T-D4 — vitalsd daemon and socket protocol · implement-complex · pi · **review**
 - [ ] T-D5 — spool drainer · implement-complex · pi · **review · blocked by G3**
 - [ ] T-D6 — bp-collector end to end · implement-complex · pi · **review · blocked by G3**
 
@@ -1241,3 +1241,51 @@ rows.
 order and type OIDs) with tests proving reordering, retyping, renaming and name-boundary ambiguity
 all change it. Binary `COPY` is positional, so transposing `source` and `type` — both `INTEGER` —
 would otherwise be undetectable.
+
+### T-D4 — `vitalsd` daemon and socket protocol · PASSED 2026-08-03
+
+69 tests · clippy clean at the workspace deny levels · 10 of those exercise a real Unix socket
+against a spawned daemon.
+
+**Scope deltas.**
+
+1. **`Type=notify` would have made the unit fail to start.** The brief specifies it, but the daemon
+   does not link `libsystemd` and never calls `sd_notify()`. systemd waits for a `READY=1` that never
+   arrives, then kills the unit as failed-to-start after `TimeoutStartSec`. A readiness protocol
+   declared but not implemented is worse than none: it turns a working daemon into a boot failure.
+   `Type=simple` until the same change adds the call.
+
+2. **`vitals-cli` was in the Verify line but not the Creates list.** Added as a second binary — a
+   daemon with no client cannot be checked in production. `health` prints JSON so `jq` can gate on
+   it, and **exits nonzero when any degraded state is present**, so a shell check notices trouble
+   without parsing.
+
+3. **`query` returns `Unavailable` naming its blocker**, not an empty result set. An empty result and
+   "there is no store yet" are different claims, and answering the first would be a lie. The detail
+   names T-C1/T-C2/T-C3.
+
+4. **`spool_bytes` reports from startup**, not from the first append. A new segment already carries a
+   37-byte header, so reporting zero would describe a file that does not exist.
+
+**Amendment work the header claimed and the body had never specified** (the same header-vs-body gap
+review found earlier):
+
+- **Heartbeat condition (A05 §2.1)** — the four facts, with **every unknown counting as a failure**.
+  `None` for either age means the evidence is missing, and missing evidence is never a pass.
+  Outside a monitoring window the heartbeat is unconditional, and the window **defaults to
+  inactive** — defaulting it active would arm the dead-man switch before anything is expected to
+  report and fire on an idle box, which is the false-alarm-on-boot shape this project has designed
+  in three times.
+- **A corroborating source cannot satisfy the primary requirement.** Tested: HR alone leaves the
+  heartbeat blocked; adding SpO₂ releases it.
+- **Subscriber backpressure (A05 §4.11)** — bounded queues, drop-and-count, and the subscriber
+  **named** in `degraded`. Verified by mutation: replacing `try_send` with a blocking `send` makes
+  `a_subscriber_that_never_reads_does_not_stall_ingest` fail, so the test genuinely holds the
+  property rather than passing by construction.
+- **Per-source liveness** — `Live` / `Stale` / `NeverSeen`, and `Stale` names its age *and* the limit
+  it exceeded. Silence is never reassurance.
+
+**Verified rather than assumed:** the backpressure mutation above, plus the socket tests covering a
+malformed payload (answered, connection survives), an oversized length prefix (refused before
+allocation, daemon survives), a disconnected subscriber (forgotten, not leaked), and four concurrent
+clients.
