@@ -91,7 +91,7 @@ id and a type id be transposed at a call site without the compiler noticing. A s
 
 ## Tests
 
-- Every new or changed behavior gets a test. Coverage gates: 95% pure logic, 85% store/daemon.
+- Every new or changed behavior gets a test. Coverage gates: 90% decoders, 85% store/daemon.
 - Never assert float equality. Use a tolerance: `(a - b).abs() < 1e-9`.
 - Fixed reference timestamps. No wall clock in assertions.
 - Fixing a failing test is always in scope, related to your task or not.

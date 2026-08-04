@@ -122,7 +122,7 @@ All IDs below were live-tested end to end from the Mac through the Pi's gateway 
 |---|---|---|
 | `mechanical` | `deepseek/deepseek-v4-flash` | Config files, systemd units, codegen. Cheapest thing that reliably follows a literal spec. |
 | `implement-standard` | `openrouter/qwen/qwen3-coder` | Normal coding against a written spec with tests supplied. This was AUTHOR-Swift on the prior redesign — proven on this codebase. |
-| `implement-complex` | `gemini/gemini-3.1-pro-preview` | Binary decode, HLC ordering, single-writer discipline. Your pi default. |
+| `implement-complex` | `gemini/gemini-3.1-pro-preview` | Binary decode, identity/ordering, single-writer discipline. Your pi default. |
 | `review` | `claude` (CLI, not gateway) | Adversarial verification. `anthropic/*` is commented out of the gateway config, so this runs on the CLI subscription and costs nothing against metered credits. |
 | `human` | — | Screwdrivers. |
 
@@ -206,7 +206,7 @@ herdr pane run <pane-id> "srt pi --model deepseek/deepseek-chat"
 the task in the shell pane before ticking its box:
 
 ```sh
-ssh chris@minidude 'meson test -C ~/vitals/build sfloat --print-errorlogs'
+ssh chris@minidude 'cd ~/AnxietyWatch2 && cargo test -p vitals-decode sfloat'
 echo "exit=$?"
 ```
 
@@ -273,7 +273,7 @@ herdr agent wait worker-2 --status idle
 
 # verify both yourself
 python3 vitals/tools/gen_registry.py --check                       ; echo "D1 exit=$?"
-meson test -C vitals/build sfloat --print-errorlogs                ; echo "D2 exit=$?"
+cargo test -p vitals-decode sfloat                                 ; echo "D2 exit=$?"
 
 # T-D3 consumes D1's generated header — dispatch after D1 is green
 send_task T-D3 worker-3 gemini/gemini-3.1-pro-preview

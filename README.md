@@ -23,7 +23,7 @@ CREATE TABLE samples (
   source       INTEGER          NOT NULL REFERENCES vitals_source(id),
   type         INTEGER          NOT NULL REFERENCES vitals_type(id),
   session_id   BIGINT           NOT NULL,
-  seq          BIGINT           NOT NULL,   -- from the sensor's own data
+  seq          BIGINT           NOT NULL,   -- stable across retransmission
   timestamp    TIMESTAMPTZ      NOT NULL,   -- best-estimate event time, UTC
   value        DOUBLE PRECISION NOT NULL,   -- canonical unit for `type`. Always.
   extra        BYTEA,
@@ -35,9 +35,10 @@ CREATE TABLE samples (
 
 **`timestamp` is not the key.** Several RR intervals arrive in one BLE notification, so keying on
 arrival time makes them collide and `ON CONFLICT DO NOTHING` silently discards real measurements
-while every health metric reads normal. `seq` is a monotonic per-session index derived from the
-sensor's own data, so a retransmission dedupes correctly and a reconnect mints a new `session_id`
-rather than faking continuity. `max(seq) - count(*)` per session is the lost-beat count, which makes
+while every health metric reads normal. `seq` is a monotonic per-session index derived from whatever
+the source makes stable across retransmission — the sensor's own data for a streaming source, the
+delivery index for a confirmed store-and-forward one — so a retransmission dedupes correctly and a
+reconnect mints a new `session_id` rather than faking continuity. `max(seq) - count(*)` per session is the lost-beat count, which makes
 packet loss a measurable quantity instead of an invisible one.
 
 HealthKit's real contribution was never storage — it was a type registry, a provenance model, and an

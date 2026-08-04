@@ -29,7 +29,10 @@ jobs:
           # `cargo test` on a workspace with no tests exits 0. That is the same
           # vacuous pass the jobs above used to give, one layer down, so assert
           # the run did work rather than trusting the exit code.
-          passed=$(grep -oE '[0-9]+ passed' /tmp/test.out | awk '{s+=$1} END{print s+0}')
+          # `|| true`: grep exits 1 on no match, pipefail propagates it, and
+          # bash -e kills the step BEFORE the ::error:: below can print -- the
+          # same fail-closed-silently defect fixed in specs-are-reconciled.
+          passed=$(grep -oE '[0-9]+ passed' /tmp/test.out | awk '{s+=$1} END{print s+0}' || true)
           echo "tests passed: $passed"
           if [ "$passed" -lt 5 ]; then
             echo "::error::only $passed tests ran -- sfloat.rs alone has 6, so the suite is not executing"
@@ -46,7 +49,13 @@ jobs:
       # regenerates to a temp dir and diffs.
       - name: Registry codegen is current
         run: |
-          GEN=vitals/tools/gen_registry.py
+          # The generator moved with the Rust migration. Pointing GEN at
+          # vitals/tools/ made the --check branch dead by construction: this same
+          # workflow asserts vitals/CMakeLists.txt must not survive, so the tree
+          # it lived in is gone. Check both paths so the job works before and
+          # after T-D1 lands.
+          GEN=tools/gen_registry.py
+          [ -f "$GEN" ] || GEN=vitals/tools/gen_registry.py
           OUT=crates/vitals-registry/src/generated.rs
           if [ -f "$GEN" ]; then
             python3 "$GEN" --check
@@ -141,9 +150,29 @@ jobs:
           #
           # Anything a worker reads is in scope.
           CONTEXT="$BRIEFS AGENTS.md README.md Cargo.toml"
+          # Everything else a worker actually reads. AGENTS.md sends every Linux
+          # task through sync-to-pi.sh; HERDR-GUIDE links RUNBOOK; the OpenSpec
+          # design/proposal carry Verify and acceptance lines a conductor runs.
+          # All of them were outside the guard and all of them still drove the
+          # deleted C build.
           for extra in docs/HERDR-GUIDE.md docs/STAGE-DELIVERABLES.md \
-                       crates/vitals-core/src/lib.rs .github/copilot-instructions.md; do
+                       crates/vitals-core/src/lib.rs .github/copilot-instructions.md \
+                       scripts/sync-to-pi.sh \
+                       openspec/changes/pi5-vitals-core/RUNBOOK.md \
+                       openspec/changes/pi5-vitals-core/design.md \
+                       openspec/changes/pi5-vitals-core/proposal.md; do
             [ -f "$extra" ] && CONTEXT="$CONTEXT $extra"
+          done
+          # AMENDMENTS.md and the amendment files are mandatory reading for every
+          # task, so they belong in scope -- but they legitimately DISCUSS the
+          # superseded design ("Rust, not C11", "SQLite is gone"). A regex cannot
+          # tell a mention from an instruction, so they are checked for the
+          # narrower thing that is never legitimate there: a code fence in C.
+          for spec in docs/specs/AMENDMENTS.md docs/specs/*amendment*.md; do
+            [ -f "$spec" ] || continue
+            if grep -inE '^```[Cc][[:space:]]*$' "$spec"; then
+              echo "::error::$spec contains a C code fence"; fail=1
+            fi
           done
 
           # Test for a match directly, never via a count. `grep -c` over a glob
@@ -177,16 +206,22 @@ jobs:
           #   #include <vitals/registry.h>      (no include clause)
           # A pattern is only as good as the phrasings it was tested against, so
           # the self-test below asserts one probe line per clause.
-          C_PATTERN='^```[Cc][[:space:]]*$|[A-Za-z0-9_/.-]+\.([ch]|cpp|hpp)\b|VITALS_(TYPE|SOURCE|KIND)_|LLVMFuzzerTestOneInput|__builtin_|\bC11\b|VitalsRegistry\.swift|\bepoll\b|\bfabs\(|\bHLC\b|hr_capture|libFuzzer target|#include[[:space:]]*<|\b(in|pure|plain) C\b|\bC (header|binar|code|source)'
+          C_PATTERN='^```[Cc][[:space:]]*$|[A-Za-z0-9_/.-]+\.([ch]|cpp|hpp)\b|VITALS_(TYPE|SOURCE|KIND)_|LLVMFuzzerTestOneInput|__builtin_|\bC11\b|VitalsRegistry\.swift|\bepoll\b|\bfabs\(|\bHLC\b|hr_capture|libFuzzer target|#include[[:space:]]*<|\b(in|pure|plain) C\b|\bC (header|binar|code|source)|\bSQLite\b|\bmeson\b|CMakeLists|cmake -B|ctest |libvitals|hlc_(physical|logical)|samples_staging|PRIMARY KEY \(source, type, timestamp\)|:memory:'
           # Refuse to report clean on a file that was never read. The guard
           # previously exited 0 for a missing path -- grep says 2, the `if` reads
           # it as false, and set -e does not catch a condition.
           for f in $CONTEXT; do
             [ -r "$f" ] || { echo "::error::guard target unreadable: $f"; fail=1; }
           done
+          # -i, matching the self-test below. These two invocations were
+          # different: the self-test ran -iE and the gate ran -nE, so the
+          # self-test certified `bp_decode.C`, `proto.CPP` and "written in c11"
+          # as covered while the gate could not fire on any of them. A self-test
+          # that validates a more permissive invocation than the check it
+          # guards is worse than none -- it launders the gap as proof.
           # shellcheck disable=SC2086
-          if grep -nE "$C_PATTERN" $CONTEXT; then
-            echo "::error::worker-visible context still specifies C/SQLite/HLC -- this project is Rust (docs/specs/AMENDMENTS.md)"
+          if grep -inE "$C_PATTERN" $CONTEXT; then
+            echo "::error::worker-visible context still specifies superseded architecture -- this project is Rust (docs/specs/AMENDMENTS.md)"
             fail=1
           fi
           # The C build system must not outlive the C code.
@@ -233,17 +268,61 @@ jobs:
             printf 'assert fabs(a - b) < 1e-9\n'
             printf 'the HLC stamp orders writers\n'
           } >> "$probe"
-          # One probe line per clause. A corrupted branch in a 15-way regex is
-          # invisible if only one branch is ever exercised.
-          for want in 'bp_decode\.c' 'sfloat\.c' '```C' 'VITALS_SOURCE_' 'VITALS_TYPE_' \
-                      'LLVMFuzzerTestOneInput' '__builtin_' 'C11' 'VitalsRegistry\.swift' \
-                      '#include' 'in C for speed' 'C header' 'proto\.cpp' 'epoll' \
-                      'fabs' 'HLC'; do
-            if ! grep -iE "$C_PATTERN" "$probe" | grep -qF "$(printf '%s' "$want" | tr -d '\\\\')"; then
-              echo "::error::guard self-test FAILED -- C_PATTERN does not catch '$want'"
+          # PER-CLAUSE ISOLATION. The previous loop asked "does some matching
+          # line contain this substring", which lets overlapping clauses cover
+          # for each other: the `#include <vitals/registry.h>` probe also matched
+          # the filename clause via `registry.h`, so deleting the #include clause
+          # entirely still passed. Mutation testing found three clauses
+          # (hr_capture, "libFuzzer target", #include) whose removal the
+          # self-test did not notice -- the exact defect this block exists to
+          # prevent, one level up.
+          #
+          # Each clause is now tested ALONE against a line only it should match.
+          probe_clause() {
+            if ! printf '%s\n' "$2" | grep -qiE "$1"; then
+              echo "::error::guard self-test FAILED -- clause does not match its probe: $1"
               fail=1
             fi
-          done
+            # And the clause must be present in the pattern that actually runs.
+            case "$C_PATTERN" in
+              *"$1"*) ;;
+              *) echo "::error::guard self-test FAILED -- clause missing from C_PATTERN: $1"; fail=1 ;;
+            esac
+          }
+          probe_clause '^```[Cc][[:space:]]*$'                    '```C'
+          probe_clause '[A-Za-z0-9_/.-]+\.([ch]|cpp|hpp)\b'       'port the decoder from sfloat.C'
+          probe_clause 'VITALS_(TYPE|SOURCE|KIND)_'               'source = VITALS_SOURCE_AD_UA651BLE'
+          probe_clause 'LLVMFuzzerTestOneInput'                   'int LLVMFuzzerTestOneInput(const uint8_t *d)'
+          probe_clause '__builtin_'                               '__builtin_trap();'
+          probe_clause '\bC11\b'                                  'written in c11 throughout'
+          probe_clause 'VitalsRegistry\.swift'                    'emits VitalsRegistry.swift'
+          probe_clause '\bepoll\b'                                'an EPOLL loop over the socket'
+          probe_clause '\bfabs\('                                 'assert fabs(a - b) < 1e-9'
+          probe_clause '\bHLC\b'                                  'the hlc stamp orders writers'
+          probe_clause 'hr_capture'                               'run hr_capture overnight'
+          probe_clause 'libFuzzer target'                         'gets a libfuzzer target'
+          probe_clause '#include[[:space:]]*<'                    '#include <stdint>'
+          probe_clause '\b(in|pure|plain) C\b'                    'implement this in c for speed'
+          probe_clause '\bC (header|binar|code|source)'           'the generated c header lands here'
+          probe_clause '\bSQLite\b'                               'the sqlite store it replaces'
+          probe_clause '\bmeson\b'                                'meson test -C build sfloat'
+          probe_clause 'CMakeLists'                               'see vitals/CMakeLists.txt'
+          probe_clause 'cmake -B'                                 'cmake -B build -DCMAKE_BUILD_TYPE=Debug'
+          probe_clause 'ctest '                                   'ctest --test-dir build'
+          probe_clause 'libvitals'                                'task/t-d3-libvitals'
+          probe_clause 'hlc_(physical|logical)'                   'hlc_physical INTEGER NOT NULL'
+          probe_clause 'samples_staging'                          'INSERT INTO samples_staging'
+          probe_clause ':memory:'                                 'testable against :memory: SQLite'
+
+          # The whole-file test stays: it proves $BRIEFS itself was readable,
+          # which a separate temp file cannot (the null-byte incident).
+          probe=$(mktemp)
+          cp "$BRIEFS" "$probe"
+          printf '1. Write `vitals/src/bp_decode.c`:\n' >> "$probe"
+          if ! grep -iE "$C_PATTERN" "$probe" | grep -qF 'bp_decode.c'; then
+            echo "::error::guard self-test FAILED -- cannot match a known-bad line appended to \$BRIEFS itself"
+            fail=1
+          fi
           rm -f "$probe"
           # Every task must declare which amendments touch it.
           #

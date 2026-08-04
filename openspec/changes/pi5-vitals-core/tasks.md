@@ -347,8 +347,13 @@ script the acceptance check runs was never version-controlled.
    (encryption could not resume — looks exactly like a quiet night, and is not one).
 5. Run the capture overnight under systemd-run so it survives your SSH session:
    ```sh
-   systemd-run --user --unit=hrspike --setenv=H10_MAC=<mac> \
-     ./target/release/hr-spike > ~/vitals/spike/night1.log
+   # --pipe, an ABSOLUTE ExecStart, and the redirect on systemd-run itself.
+   # Without --pipe the child's stdout goes to the journal and the shell
+   # redirect captures only "Running as unit: hrspike.service" -- an 8-hour
+   # capture into a one-line file, which the Verify then happily reads.
+   # A relative path resolves against the unit's WorkingDirectory, not yours.
+   systemd-run --user --pipe --unit=hrspike --setenv=H10_MAC=<mac> \
+     "$PWD/target/release/hr-spike" > ~/vitals/spike/night1.log
    ```
 6. In the morning, compute the gap histogram with `tools/gap_histogram.py`: read the log, diff
    consecutive timestamps, and print count of gaps in each bucket `<2s, 2-10s, 10-60s, 60s-5m, >5m`,
@@ -356,12 +361,19 @@ script the acceptance check runs was never version-controlled.
    Also report, per A05 §1.4 and §5:
    - **observed clock drift** — fit cumulative RR sum against host arrival time; a rate outside
      ±0.5% is a sensor or host clock fault, not normal. Nothing else in this system will measure it.
-   - **`seq` gap count** — `max(seq) - count(*)` per session, the lost-beat count.
+   - **Dropped-notification count**, not a `seq` gap count. A05 §1.3 offers `max(seq) - count(*)`
+     as the lost-beat metric, but A05 §1.1 defines RR `seq` as the count of intervals *received*,
+     which is dense by construction — so that expression is identically zero and cannot detect
+     anything. The H10 transmits no beat counter (the same payload anonymity amendment 06 §1
+     documents for the cuff). Estimate drops instead from the ratio of elapsed wall time to summed
+     RR duration per connection, and report it as an estimate.
 7. Record the histogram verbatim in `## Implementation notes`. **This number is the project's
    foundation — if the longest gap exceeds 5 minutes, stop and report before proceeding.**
 
 **Verify:** `ssh chris@minidude 'cd ~/AnxietyWatch2 && python3 tools/gap_histogram.py ~/vitals/spike/night1.log --require-duration-hours 8 --max-gap-seconds 300 --require-drift-report'`
-**Expect:** exit 0. The script must exit nonzero if duration < 8 h or longest gap > 300 s.
+**Expect:** exit 0. The script must exit nonzero if duration < 8 h, if longest gap > 300 s, or if
+`--require-drift-report` was passed and no drift figure could be computed. A flag a script may
+accept and ignore is a check that cannot fail.
 
 **Commit:**
 ```sh
@@ -737,7 +749,7 @@ git commit -m "feat(T-D2): IEEE-11073 SFLOAT decoder with sentinel handling and 
 ### T-D3 — COPY-binary encoder and spool
 
 **Tier:** implement-complex · **Host:** either · **Context budget:** ~7k · **Depends:** T-D1
-**Amends:** 01 (§2, spool replaces the embedded store) · 02 (§2.2, reserve columns) · 04 (§1, identity) · 05 (§1 session_id/seq derivation)
+**Amends:** 06 (§2.1 sync flag, §1.2 seq scope) · 01 (§2, spool replaces the embedded store) · 02 (§2.2, reserve columns) · 04 (§1, identity) · 05 (§1 session_id/seq derivation)
 **Review required:** yes
 
 **Replaces the embedded store entirely.** There is no on-Pi embedded database and no WAL tail. Read
@@ -773,7 +785,12 @@ pub fn copy_trailer() -> [u8; 2];
 pub struct Spool { /* … */ }
 impl Spool {
     pub fn open(dir: &Path) -> io::Result<Self>;
-    pub fn append(&mut self, rows: &[Sample]) -> io::Result<()>;
+    /// `sync: true` fsyncs the segment before returning (amendment 06 §2.1).
+    /// Without this parameter T-D4 was told to "fsync before replying" through
+    /// an API that exposed no fsync, forcing it to either reach into a crate it
+    /// does not own or invent an extension -- the exact ownership break
+    /// amendment 06 diagnosed one layer up.
+    pub fn append(&mut self, rows: &[Sample], sync: bool) -> io::Result<()>;
     pub fn rotate_if_due(&mut self) -> io::Result<()>;
 }
 ```
@@ -789,15 +806,36 @@ impl Spool {
    - Field order is fixed by `vitals/generated/registry.json` and must match the table exactly.
    - **Tests assert against byte arrays captured from a real server** (`COPY … TO STDOUT (FORMAT
      binary)`), not against the encoder's own output. Self-consistency is not correctness.
-2. `session.rs` — session and sequence management. A `session_id` is minted when a collector
-   connects; `seq` is a monotonic per-session counter. For RR intervals `seq` derives from the
-   cumulative RR sum so it is unaffected by packet arrival jitter or retransmission (amendment 04
-   §1). `node_id` is 16 bytes from `/var/lib/vitals/node_id`, generated once via `getrandom`, and
+2. `session.rs` — session and sequence management.
+
+   **`session_id` must be unique across process restarts, and this is load-bearing.** A per-process
+   counter starting at 0 is the obvious implementation and it silently destroys data: `bp-collector`
+   restarts, re-mints `session_id = 0`, and its next reading lands on `(6, 6, 0, 0)` — the same key
+   as the first reading of a previous run — where `ON CONFLICT DO NOTHING` drops it without a trace.
+   For RR the collision surface is narrow because `seq` is a beat index into the thousands; for BP
+   `seq` is 0–3 every single time, so it is near-total, on the one source amendment 06 §2 says is
+   reconstructible from nothing.
+
+   Mint it from a monotonically increasing persisted counter (`/var/lib/vitals/session_seq`,
+   incremented and fsynced before use) or from a UUID-derived 64-bit value. **Not** from a
+   process-local counter, and **not** from wall-clock time — the RTC can be wrong at boot, which is
+   the whole reason T-A5 exists.
+
+   A `session_id` is minted per **upstream connection** — for `bp-collector` that is the BLE
+   connection to the cuff, not the collector's socket connection to `vitalsd` (amendment 06 §1.1).
+   `seq` is a monotonic per-session counter; for RR intervals it derives from the cumulative RR sum
+   so it is unaffected by arrival jitter or retransmission (amendment 05 §1).
+
+   `node_id` is 16 bytes from `/var/lib/vitals/node_id`, generated once via `getrandom`, and
    **never regenerated** — it is provenance and survives a store rebuild.
 3. `spool.rs` — Linux side. `O_APPEND` writes, `fs4::FileExt::lock_exclusive` on the segment and the
    offset file, `fsync` per batch or every 250 ms, rotate at 64 MB or hourly.
    - The spool header carries a **schema fingerprint**: a hash of column names, order and types.
-   - A collector must never block on disk to deliver a sample; batching bounds loss at 250 ms.
+   - A collector must never block on disk **unless it asked to**. Batching bounds loss at 250 ms
+     for streaming sources; `append(rows, sync: true)` opts a caller into durability-before-return
+     (amendment 06 §2.1). Only `bp-collector` sets it — a BP frame is deleted by the device on the
+     kernel's ATT confirmation and is reconstructible from nothing, while a night of RR is ~250 MB
+     and ~100k appends that per-append fsync would destroy.
 
 **Verify:** `cargo test -p vitals-core && cargo clippy -p vitals-core --all-targets`
 **Expect:** exit 0. Includes a round-trip test: encode 1000 samples, drain into a scratch database,

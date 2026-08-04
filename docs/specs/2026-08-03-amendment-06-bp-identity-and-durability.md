@@ -2,7 +2,8 @@
 
 **Date:** 2026-08-03
 **Status:** Proposed
-**Supersedes:** amendment 05 §5 (the T-D6 row) and extends §4.3
+**Supersedes:** amendment 05 §5 (the T-D6 row) and **§1.1's identity rule, which it narrows** ·
+extends §4.3 · restates the durability policy A01 set for the spool
 **Evidence:** `docs/research/2026-08-03-ua651ble-ble-capture.md` — a live capture from the hardware
 **Affects:** T-D3, T-D4, T-D6, T-B1
 
@@ -31,10 +32,23 @@ to derive `seq` from.**
 
 ### 1.1 Identity comes from the transport, and that is sound here
 
-`0x2A35` is an **indication**, which requires an ATT Handle Value Confirmation. The cuff deletes a
-stored record only once confirmed — the snoop shows four indications and four confirmations, after
-which the cuff's buffer was empty. Delivery is therefore exactly-once at the protocol layer, and
-identity does not need to be in the payload because the transport already provides it.
+`0x2A35` is an **indication**, which requires an ATT Handle Value Confirmation. The snoop shows four
+indications and four confirmations. A&D's documented behaviour is that a record is cleared once
+confirmed; the capture is consistent with that but does not prove it, because proving it requires
+observing an *unconfirmed* indication and its later redelivery.
+
+**This is at-least-once, not exactly-once.** An earlier draft of this section claimed exactly-once
+and that was wrong — the confirmation PDU can itself be lost to a supervision timeout, or the kernel
+can confirm and the link drop before the peripheral processes it, leaving the cuff holding a record
+it redelivers on the next connection. Because `session_id` is minted per connection, that redelivery
+lands under a *different* key, so `ON CONFLICT DO NOTHING` cannot collapse it. And §1 has already
+established that two identical readings are byte-identical, so post-hoc dedup is impossible in
+principle and would drop legitimately repeated readings if attempted.
+
+The consequence is bounded and must be stated rather than hidden: **a lost confirmation produces a
+duplicate BP row, not a lost one.** For this signal that is the right direction to fail — a
+duplicated reading is visible and correctable, a dropped one is neither — but the health endpoint
+must surface same-value-adjacent-session pairs so the rate is measurable rather than assumed.
 
 This is why the profile mandates indication rather than notification, and it is a better reason than
 the one previously recorded: `0x0001` would not merely deliver nothing — even if it delivered, the
@@ -65,8 +79,16 @@ and must not be ingested** until it can. Say so rather than inventing one.
 The confirmation is emitted by the **kernel**, before the application has stored anything. Between
 the ACK and a durable write the record exists nowhere else — the cuff has already deleted it. See §2.
 
-Two claims that must not both be made loosely: the transport guarantees exactly-once *delivery to the
-host stack*; it guarantees nothing about *durability in the application*. T-D6 must state both.
+**There are two holes at the ACK boundary, not one**, and they point in opposite directions:
+
+| Direction | Hole |
+|---|---|
+| Toward the application | The kernel confirms before this process has stored anything. A crash in that window loses the reading, and the cuff has already deleted it. |
+| Back toward the device | The confirmation PDU can be lost, so the cuff may retain and redeliver a record the host already has (§1.1). |
+
+An earlier draft named only the first, which let the ACK be treated as a weak signal when reasoning
+about loss and a strong one when reasoning about identity, two paragraphs apart. It is weak in both
+directions. T-D6 must state both.
 
 ### 1.4 Timestamps: unresolved, and worth resolving
 
@@ -94,13 +116,15 @@ upstream to rebuild it.
 
 ### 2.1 The interface, because T-D6 could not have built this
 
-A05 and the T-D6 rewrite required `bp-collector` to "fsync the spool segment on every frame." That
-instruction is unbuildable against the current design:
+The T-D6 brief and the research doc's finding 2 required `bp-collector` to "fsync the spool segment
+on every frame" — note that **A05 itself contains no such instruction**; an earlier draft of this
+section attributed it there. That instruction is unbuildable against the current design:
 
 - `vitalsd` is the single writer and owns the spool (T-D4). A collector's only channel is the CBOR
   socket, whose verbs are `append`, `query`, `subscribe`, `health` — none carrying a durability flag.
 - T-D3 sets the opposite policy: *"fsync per batch or every 250 ms"* and *"a collector must never
-  block on disk to deliver a sample."*
+  block on disk to deliver a sample."* That policy originates in **amendment 01 §5**, not in T-D3,
+  so this amendment restates A01's durability rule rather than merely amending a brief.
 
 A worker following the brief would either write the spool directly from the collector — breaking the
 single-writer property that T-D4 calls "the whole reason for the design" — or invent a protocol
@@ -166,7 +190,8 @@ collector that is bonded and connecting is **not** evidence that data is arrivin
 
 | Task | Change |
 |---|---|
-| **T-D3** | `sync` flag on the append path; default false, per-append override |
+| **T-D3** | `Spool::append(rows, sync)` — the API had no fsync to call, so T-D4's instruction was unbuildable through it. Also: `session_id` unique across restarts |
+| **A01 §5** | Its "never block on disk" rule gains the `sync: true` exception. Unchanged for streaming sources |
 | **T-D4** | `append` gains `sync: bool`; `vitalsd` fsyncs before replying when set. Document it in `Interfaces produced` |
 | **T-D6** | `seq` = drain index (§1.1); `sync: true` on append (§2.1); raw-frame journal (§2.2); bonded-but-unencrypted degraded state (§3); clock-set investigation (§1.4) |
 | **T-B1** | A05 §4.3 unchanged; add the §3 state to its connection handling |

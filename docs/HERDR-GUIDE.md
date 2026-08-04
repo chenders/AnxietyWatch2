@@ -22,7 +22,7 @@ This project targets Linux on arm64. Your Mac can compile and test a meaningful 
 subset is worth having, because it iterates in seconds — but a Mac build produces Mach-O, which will
 not execute on the Pi at all.
 
-The split is encoded in `vitals/CMakeLists.txt` as two libraries, and it maps exactly onto the
+The split is encoded in `Cargo.toml` as workspace members, and it maps exactly onto the
 `host:` tag already on every task:
 
 | Library | Contains | Builds on | Task tag |
@@ -78,12 +78,12 @@ Running that on the Mac edits a `.env` no gateway reads. It reports success and 
 
 ```sh
 cd ~/Source/AnxietyWatch2
-cmake -B build -DCMAKE_BUILD_TYPE=Debug
-cmake --build build && ctest --test-dir build --output-on-failure
+cargo build --workspace
+cargo test --workspace
 ```
 
 The `toolchain` test exists to prove exactly this before any real task runs: the pinned Rust toolchain builds,
-warnings-as-errors passes, sanitizers link, CTest reports an exit code. If it fails, no task result
+clippy's deny levels pass, the workspace links, cargo reports an exit code. If it fails, no task result
 can be trusted.
 
 ### 2.4 Build on the Pi, once
@@ -174,7 +174,7 @@ So the bar is highest exactly where testing is cheapest and the consequences are
 | Layer | Gate | Why |
 |---|---|---|
 | Decoders | **90%** | Pure functions. No excuse, and hostile input lands here. |
-| Store, daemon logic | **85%** | Testable against `:memory:` SQLite. |
+| Store, daemon logic | **85%** | Testable against a scratch Postgres. |
 | BLE / systemd glue | measured only | Needs real radios. Covered by the T-B1 overnight run instead. |
 
 **Coverage is a floor, not the goal.** Every byte-parsing function also gets a `cargo-fuzz` target,
@@ -298,9 +298,9 @@ AnxietyWatch2/
 
 ```sh
 # local
-cmake -B build -DCMAKE_BUILD_TYPE=Debug && cmake --build build
-ctest --test-dir build --output-on-failure
-ctest --test-dir build -R sfloat            # one task's suite
+cargo build --workspace
+cargo test --workspace
+cargo test -p vitals-decode sfloat          # one task's suite
 
 # on the Pi
 scripts/sync-to-pi.sh --test
@@ -309,7 +309,7 @@ scripts/sync-to-pi.sh --test
 scripts/coverage.sh --check
 
 # fuzz
-cmake -B build-fuzz -DVITALS_FUZZ=ON -DVITALS_SANITIZE=OFF -DCMAKE_C_COMPILER=clang
+cargo +nightly fuzz run fuzz_sfloat -- -max_total_time=60
 cmake --build build-fuzz && build-fuzz/vitals/fuzz_sfloat -max_total_time=60
 
 # gates

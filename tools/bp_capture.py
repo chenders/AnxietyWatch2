@@ -19,6 +19,7 @@ success and then delivers nothing, forever.
 import json
 import os
 import re
+import signal
 import sys
 import time
 import traceback
@@ -61,15 +62,25 @@ CUFF_PATH_FRAG = "dev_" + CUFF.upper().replace(":", "_")
 # sees it, and the cuff deletes its stored copy on that ACK. stdout is not
 # storage -- a closed pipe or a full disk raises inside the handler, D-Bus
 # swallows it, and the measurement is gone. Write durably BEFORE pretty-printing.
-LOG_PATH = os.environ.get("BP_CAPTURE_LOG", "/var/lib/vitals/bp-capture.jsonl")
+# Default to a path an unprivileged operator can actually write. /var/lib/vitals
+# is where the systemd unit will put it, but hardcoding that default made the
+# documented working procedure -- the recipe that produced the first capture --
+# abort with PermissionError before the D-Bus loop even started. The systemd
+# unit sets BP_CAPTURE_LOG explicitly.
+LOG_PATH = os.environ.get(
+    "BP_CAPTURE_LOG",
+    "/var/lib/vitals/bp-capture.jsonl" if os.access("/var/lib/vitals", os.W_OK)
+    else os.path.expanduser("~/bp-capture.jsonl"))
 try:
-    os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
+    os.makedirs(os.path.dirname(os.path.abspath(LOG_PATH)), exist_ok=True)
     LOG = open(LOG_PATH, "a", encoding="utf-8")
 except OSError as exc:
     sys.exit(f"cannot open durable log {LOG_PATH}: {exc}. Refusing to run — "
              f"a capture with nowhere to land is worse than no capture.")
 
-CAPTURED = 0
+CAPTURED = 0     # frames received off the radio
+PERSISTED = 0    # frames actually on disk. Not the same number, and the
+                 # difference is exactly what a caller needs to know.
 
 
 def persist(record):
@@ -125,11 +136,25 @@ def decode_2a35(b):
             val *= KPA_TO_MMHG
         out[name] = val
 
+    def finish(err):
+        """Single exit. Every truncation return used to jump past the _absent
+        and _implausible folding below, so a frame truncated at the timestamp
+        reported systolic 900.0 with no _implausible flag and a NaN systolic
+        with no _absent entry -- exactly the two confusions this function's
+        docstring claims to prevent, on the paths most likely to hit them."""
+        if absent:
+            out["_absent"] = absent
+        implausible = {k: out[k] for k, (lo, hi) in PLAUSIBLE.items()
+                       if isinstance(out.get(k), float) and not lo <= out[k] <= hi}
+        if implausible:
+            out["_implausible"] = implausible
+        return out, err
+
     for name in ("systolic", "diastolic", "map"):
         put(name, b[off] | (b[off + 1] << 8)); off += 2
     if flags & 0x02:                                    # timestamp, 7 bytes
         if len(b) < off + 7:
-            return out, "truncated timestamp"
+            return finish("truncated timestamp")
         yr = b[off] | (b[off + 1] << 8)
         out["timestamp"] = (f"{yr:04d}-{b[off+2]:02d}-{b[off+3]:02d} "
                             f"{b[off+4]:02d}:{b[off+5]:02d}:{b[off+6]:02d}")
@@ -139,28 +164,20 @@ def decode_2a35(b):
         off += 7
     if flags & 0x04:                                    # pulse rate, SFLOAT
         if len(b) < off + 2:
-            return out, "truncated pulse"
+            return finish("truncated pulse")
         put("pulse_bpm", b[off] | (b[off + 1] << 8)); off += 2
     if flags & 0x08:                                    # user id
         if len(b) < off + 1:
-            return out, "truncated user id"
+            return finish("truncated user id")
         out["user_id"] = b[off]; off += 1
     if flags & 0x10:                                    # measurement status
         if len(b) < off + 2:
-            return out, "truncated status"
+            return finish("truncated status")
         st = b[off] | (b[off + 1] << 8); off += 2
         out["status"] = f"0x{st:04X}"
         out["irregular_pulse"] = bool(st & 0x0004)
         out["body_movement"] = bool(st & 0x0001)
         out["cuff_too_loose"] = bool(st & 0x0002)
-    if absent:
-        out["_absent"] = absent
-
-    # Flag values outside physiological range rather than clamping or dropping.
-    implausible = {k: out[k] for k, (lo, hi) in PLAUSIBLE.items()
-                   if isinstance(out.get(k), float) and not lo <= out[k] <= hi}
-    if implausible:
-        out["_implausible"] = implausible
 
     # Unconsumed bytes mean the flags byte did not describe the payload, so at
     # least one field was read from an offset the device never intended. This
@@ -169,8 +186,8 @@ def decode_2a35(b):
     trailing = len(b) - off
     if trailing:
         out["_trailing_bytes"] = trailing
-        return out, f"desync: {trailing} unconsumed bytes for flags 0x{flags:02X}"
-    return out, None
+        return finish(f"desync: {trailing} unconsumed bytes for flags 0x{flags:02X}")
+    return finish(None)
 
 # Established before the handlers are defined so `bus` is never None when they
 # run. DBusGMainLoop must be installed before SystemBus() or signals never fire.
@@ -182,6 +199,7 @@ bus = dbus.SystemBus()
 # away from a mid-inflation pressure reading becoming a "real_5" fixture.
 subscribed: dict = {}
 HANDLER_FAULTED = False
+RETRY_SOURCE = None   # at most one retry timer in flight
 
 def dump_gatt():
     """Print the whole GATT tree, including the vendor service.
@@ -221,7 +239,7 @@ def try_subscribe():
     previously produced byte-identical silence -- and silence is also what a
     correctly-working watcher prints while waiting for a measurement.
     """
-    matched = skipped = 0
+    matched = skipped = newly = 0
     om = dbus.Interface(bus.get_object(BLUEZ, "/"), OM)
     for path, ifaces in om.GetManagedObjects().items():
         if CHRC not in ifaces or CUFF_PATH_FRAG not in path:
@@ -237,12 +255,27 @@ def try_subscribe():
         try:
             dbus.Interface(bus.get_object(BLUEZ, path), CHRC).StartNotify()
             subscribed[path] = WANT[uuid]
+            newly += 1
             print(f">>> SUBSCRIBED {WANT[uuid]}  flags={flags}", flush=True)
         except dbus.DBusException as e:
             print(f"!!! StartNotify failed on {WANT[uuid]}: {e}", flush=True)
-    print(f">>> try_subscribe: {matched} matched, {len(subscribed)} subscribed, "
-          f"{skipped} already", flush=True)
-    return bool(subscribed)
+    print(f">>> try_subscribe: {matched} matched, {newly} newly subscribed, "
+          f"{skipped} already, {len(subscribed)} total", flush=True)
+    # Whether THIS call established something, not whether the global dict is
+    # non-empty. Returning bool(subscribed) meant a stale entry from a previous
+    # connection reported success after matching zero characteristics: no retry
+    # armed, and the heartbeat stayed silent because its check was also
+    # `not subscribed`. Connected, deaf, and quiet until the final frame count.
+    return newly > 0 or (matched > 0 and skipped == matched)
+
+
+def arm_retry():
+    """At most one retry timer. Arming unconditionally on every failing
+    ServicesResolved accumulated one 1 Hz GetManagedObjects round trip per
+    reconnect, unbounded across a long Restart=always run on a flapping link."""
+    global RETRY_SOURCE
+    if RETRY_SOURCE is None:
+        RETRY_SOURCE = GLib.timeout_add_seconds(1, retry_subscribe)
 
 
 def retry_subscribe():
@@ -250,14 +283,21 @@ def retry_subscribe():
     (InProgress / NotConnected) inside a 5-second radio window is precisely the
     case this tool exists to survive, and it was the one path that logged and
     gave up."""
+    global RETRY_SOURCE
     if subscribed:
+        RETRY_SOURCE = None
         return False                        # stop the timer
     print("!!! NOT SUBSCRIBED — retrying", flush=True)
     try:
         try_subscribe()
-    except dbus.DBusException as e:
-        print(f"!!! retry failed: {e}", flush=True)
-    return not subscribed                   # keep firing until subscribed
+    except Exception as e:                  # noqa: BLE001
+        # Anything escaping here returns None to GLib, which removes the source
+        # silently and ends retries for the rest of the run.
+        print(f"!!! retry failed: {e!r}", flush=True)
+    if subscribed:
+        RETRY_SOURCE = None
+        return False
+    return True                             # keep firing
 
 def on_props(*args, **kwargs):
     """Outermost guard. D-Bus swallows every exception a handler raises and
@@ -270,6 +310,13 @@ def on_props(*args, **kwargs):
     global HANDLER_FAULTED
     try:
         _on_props(*args, **kwargs)
+    except (KeyboardInterrupt, SystemExit):
+        # Not a capture fault. PyGObject's SIGINT fallback only installs when no
+        # other SIGINT handler exists, so a Ctrl-C CAN land inside the handler --
+        # most likely during the fsync, the slowest point in the program. Without
+        # this, an operator interrupting a clean run gets "HANDLER FAULTED" and
+        # exit 1.
+        raise
     except BaseException:                                   # noqa: BLE001
         HANDLER_FAULTED = True
         print("!!! HANDLER FAULTED — capture may be dead:", flush=True)
@@ -307,7 +354,7 @@ def _on_props(iface, changed, _invalidated, path=None):
                 # Arm a retry rather than logging and giving up. ServicesResolved
                 # does not re-fire for an already-resolved device, so without
                 # this there is no second chance for the whole run.
-                GLib.timeout_add_seconds(1, retry_subscribe)
+                arm_retry()
             try:
                 dump_gatt()
             except Exception as e:                      # noqa: BLE001
@@ -320,18 +367,31 @@ def _on_props(iface, changed, _invalidated, path=None):
         src = subscribed.get(path, f"UNKNOWN {path}")
         dec, err = decode_2a35(raw)
 
-        # DURABLE FIRST, print second. The kernel already ACKed this frame and
-        # the cuff has already deleted it; a BrokenPipeError or ENOSPC on the
-        # first print would otherwise destroy it with nothing left to recover.
-        # Raw hex goes in regardless of decode outcome -- the bytes are the
-        # irreplaceable part, the interpretation can be redone.
-        global CAPTURED
+        # DURABLE FIRST, print second -- but never durable INSTEAD OF. An earlier
+        # version put persist() ahead of the print block unguarded, so an ENOSPC
+        # destroyed the frame in both places at once: nothing on disk AND no hex
+        # on stdout. That is strictly worse than the stdout-only loss it was
+        # written to fix, because the kernel has already ACKed and the cuff has
+        # already deleted its copy. Two independent chances, never zero.
+        global CAPTURED, PERSISTED
         CAPTURED += 1
-        persist({"seq": CAPTURED, "wall_clock": time.time(), "source": src,
-                 "hex": raw.hex(), "decoded": dec, "error": err})
+        persisted_ok = False
+        try:
+            persist({"seq": CAPTURED, "wall_clock": time.time(), "source": src,
+                     "hex": raw.hex(), "decoded": dec, "error": err})
+            PERSISTED += 1
+            persisted_ok = True
+        except OSError as exc:
+            # Get the irreplaceable bytes onto stdout before anything else can
+            # fail, then make the fault loud.
+            print(f"\n!!! PERSIST FAILED ({exc}) — RAW FRAME, COPY THIS:", flush=True)
+            print(f"!!! {raw.hex()}", flush=True)
+            global HANDLER_FAULTED
+            HANDLER_FAULTED = True
 
         print("\n" + "=" * 62, flush=True)
-        print(f"INDICATION from {src}  --  {len(raw)} bytes  [saved to {LOG_PATH}]", flush=True)
+        saved = LOG_PATH if persisted_ok else "NOT SAVED — see error above"
+        print(f"INDICATION from {src}  --  {len(raw)} bytes  [{saved}]", flush=True)
         print(f"  hex: {raw.hex()}", flush=True)
         print(f"  arr: [{', '.join(f'0x{x:02X}' for x in raw)}]", flush=True)
         if err:
@@ -362,6 +422,8 @@ def heartbeat():
         print("!!! handler has faulted — capture is NOT running", flush=True)
     elif not subscribed:
         print("!!! still not subscribed", flush=True)
+    elif CAPTURED != PERSISTED:
+        print(f"!!! {CAPTURED - PERSISTED} frame(s) received but NOT persisted", flush=True)
     return True
 
 
@@ -374,7 +436,23 @@ print(f">>> durable log: {LOG_PATH}")
 print(">>> TAKE A MEASUREMENT NOW. Ctrl-C"
       + (f" or {TIMEOUT}s timeout to stop." if TIMEOUT
          else " to stop (set BP_CAPTURE_TIMEOUT for a deadline)."), flush=True)
-try_subscribe()   # in case it is already connected
+# In case it is already connected -- the common case for a bonded cuff with
+# kernel auto-connect. Discarding this result meant a transient StartNotify
+# failure here had no retry at all, because ServicesResolved does not re-fire
+# for an already-resolved device.
+try:
+    if not try_subscribe():
+        arm_retry()
+except Exception as exc:                    # noqa: BLE001
+    print(f"!!! initial subscribe raised: {exc!r}", flush=True)
+    arm_retry()
+
+# SIGTERM is how `systemctl stop|restart` arrives, and T-D6 step 6 specifies a
+# Restart=always unit. Without this the default handler terminates immediately,
+# so the finally block, the summary line and the exit code never run -- and
+# "persisted 4" vs "persisted 0" become indistinguishable again.
+signal.signal(signal.SIGTERM, lambda *_: loop.quit())
+
 try:
     loop.run()
 except KeyboardInterrupt:
@@ -385,5 +463,7 @@ finally:
 # Exit code carries the outcome. A run that captured four irreplaceable
 # measurements and one that captured none were previously indistinguishable to
 # any wrapper or systemd unit -- and T-D6 step 6 makes this shape Restart=always.
-print(f">>> captured {CAPTURED} frame(s) to {LOG_PATH}", flush=True)
-sys.exit(0 if CAPTURED and not HANDLER_FAULTED else 1)
+print(f">>> received {CAPTURED} frame(s), persisted {PERSISTED} to {LOG_PATH}", flush=True)
+if CAPTURED != PERSISTED:
+    print(f"!!! {CAPTURED - PERSISTED} frame(s) were NOT written to disk", flush=True)
+sys.exit(0 if PERSISTED and PERSISTED == CAPTURED and not HANDLER_FAULTED else 1)

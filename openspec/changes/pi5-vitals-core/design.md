@@ -64,7 +64,7 @@ which model ran it. It also means the conductor verifies by running, not by read
 Task acceptance blocks are literal:
 
 ```
-**Verify:** `ssh chris@minidude 'meson test -C ~/vitals/build sfloat --print-errorlogs'`
+**Verify:** `ssh chris@minidude 'cd ~/AnxietyWatch2 && cargo test -p vitals-decode sfloat'`
 **Expect:** exit 0, "Ok: 12" in output
 ```
 

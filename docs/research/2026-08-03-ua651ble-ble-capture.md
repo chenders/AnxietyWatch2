@@ -163,8 +163,11 @@ bluetoothctl remove 00:09:1F:XX:XX:XX
 btmgmt add-device -a 2 -t 1 00:09:1F:XX:XX:XX
 
 # 3. Watch via the BlueZ D-Bus API; StartNotify() picks the CCCD bit from
-#    the characteristic's own flags
-python3 -u tools/bp_capture.py 00:09:1F:XX:XX:XX
+#    the characteristic's own flags. Frames are fsynced per frame to
+#    BP_CAPTURE_LOG (default ~/bp-capture.jsonl unprivileged) BEFORE printing --
+#    the kernel has already ACKed and the cuff has already deleted its copy, so
+#    stdout is not storage.
+BP_CAPTURE_LOG=~/bp-capture.jsonl python3 -u tools/bp_capture.py 00:09:1F:XX:XX:XX
 
 # 4. Take a measurement. Readings drain automatically.
 ```
