@@ -20,7 +20,7 @@ mod reserved {
 
 /// Decodes an IEEE-11073 SFLOAT.
 ///
-/// Returns `None` for NaN, NRes, ±INFINITY and Reserved — all of which mean the
+/// Returns `None` for `NaN`, `NRes`, ±INFINITY and Reserved — all of which mean the
 /// measurement is absent.
 ///
 /// # Examples
