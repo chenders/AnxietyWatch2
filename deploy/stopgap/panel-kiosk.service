@@ -1,0 +1,56 @@
+[Unit]
+# cage is a one-window Wayland compositor: no desktop, no panel, no window
+# management, and nothing that can take the screen away from the panel.
+#
+# wayfire would not honour `chromium --kiosk` on this machine -- the window came
+# up roughly 500x45 in the top-left corner, both from a systemd user service and
+# from a manual launch, so it was chromium-under-wayfire and not the service. A
+# bedside monitor cannot depend on a window manager choosing to co-operate.
+#
+# Reversible. To get the Raspberry Pi OS desktop back exactly as it was:
+#   sudo systemctl disable --now panel-kiosk
+#   sudo systemctl enable --now lightdm
+Description=AnxietyWatch bedside panel - kiosk (cage)
+# plymouth-quit-wait matters: with no display manager installed there is
+# nothing else to make plymouth release the DRM master, and it was still
+# active while cage sat with no display.
+After=systemd-user-sessions.service plymouth-quit-wait.service panel-http.service getty@tty1.service
+Wants=panel-http.service
+Conflicts=getty@tty1.service
+
+[Service]
+Type=simple
+User=chris
+# PAMName + TTYPath make logind open a real session on seat0, which is what
+# grants cage the DRM device and the touchscreen. Without them cage exits
+# immediately unable to open a backend.
+PAMName=login
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+TTYVTDisallocate=yes
+StandardInput=tty-fail
+StandardOutput=journal
+StandardError=journal
+UtmpIdentifier=tty1
+UtmpMode=user
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+Environment=XDG_SESSION_TYPE=wayland
+# --disable-pinch: a two-finger touch otherwise zooms a fixed-size 800x480
+#   appliance, which has no meaning and no way back without a keyboard.
+# --overscroll-history-navigation=0: Chromium treats a horizontal drag as
+#   back/forward navigation and consumes it BEFORE the page sees it, which is
+#   why finger swipes were being dropped while synthetic ones worked.
+# --password-store=basic: without it gnome-keyring raises a modal password
+# prompt over the panel on first run. It is not a chromium dialog, so
+# --noerrdialogs never had a chance at it, and a modal over a bedside monitor
+# is exactly what that flag list exists to prevent.
+# The launcher waits for the DSI connector and resolves which DRM card holds
+# it before exec-ing cage. See the script for the two cold-boot failures that
+# made both steps necessary.
+ExecStart=/usr/local/bin/panel-kiosk-launch /usr/bin/chromium-browser --kiosk --noerrdialogs --disable-infobars --incognito --disable-session-crashed-bubble --password-store=basic --disable-features=Translate --check-for-update-interval=31536000 --ozone-platform=wayland --disable-pinch --overscroll-history-navigation=0 --disable-features=TouchpadOverscrollHistoryNavigation "http://127.0.0.1:8975/index.html?kiosk=1&live&demo"
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=graphical.target
