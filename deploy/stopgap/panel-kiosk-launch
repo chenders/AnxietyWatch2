@@ -1,0 +1,97 @@
+#!/bin/sh
+# Launch cage on the DRM card that has the DSI panel, and refuse to pretend a
+# black screen is a running kiosk.
+#
+# Three cold-boot failures produced this script, in order:
+#
+# 1. RACE. cage started before the vc4 driver had the DSI connector ready and
+#    came up with no output.
+#
+# 2. WRONG CARD. The Pi 5 exposes three DRM cards and the numbering is not
+#    stable across boots — the connector was card0-DSI-2 on one boot and
+#    card1-DSI-2 on the next. Auto-detection can open a card with no connectors.
+#
+# 3. THE ONE THAT MATTERS. Whatever the cause, cage does not exit when it fails
+#    to get a display. It sits there with no DRM fds, no wayland socket, and the
+#    screen showing a blinking tty cursor — while systemd reports the unit
+#    active and Restart=always never fires, because nothing crashed. A unit that
+#    is "active" with a black screen is the same defect as a green check over a
+#    deleted test suite: the status is not measuring the thing it claims to.
+#
+# So this waits for the connector, names the card explicitly, and then VERIFIES
+# that a wayland socket actually appeared. If it did not, it kills cage and
+# exits non-zero so systemd restarts it — which has always succeeded on retry,
+# because by then the boot has settled. Failing loudly and recovering beats
+# being right about the ordering.
+
+set -eu
+
+CONNECTOR_DEADLINE=60   # half-second ticks -> 30s to find a connected DSI
+DISPLAY_DEADLINE=40     # half-second ticks -> 20s for cage to open a display
+: "${XDG_RUNTIME_DIR:=/run/user/$(id -u)}"
+
+# plymouth holds the DRM master and, with no display manager installed to tell
+# it otherwise, has nothing to make it let go. Harmless when it is not running.
+if command -v plymouth >/dev/null 2>&1; then
+    plymouth quit >/dev/null 2>&1 || true
+fi
+
+# ---- 1. find a connected DSI connector and the card that owns it ------------
+card=""
+i=0
+while [ "$i" -lt "$CONNECTOR_DEADLINE" ]; do
+    for status in /sys/class/drm/card*-DSI-*/status; do
+        [ -r "$status" ] || continue
+        [ "$(cat "$status")" = "connected" ] || continue
+        connector=$(basename "$(dirname "$status")")   # card1-DSI-2
+        candidate=${connector%%-*}                     # card1
+        if [ -e "/dev/dri/$candidate" ]; then
+            card=$candidate
+            break
+        fi
+    done
+    [ -n "$card" ] && break
+    i=$((i + 1))
+    sleep 0.5
+done
+
+if [ -z "$card" ]; then
+    echo "panel-kiosk: no connected DSI connector with a DRM node after 30s. Connectors:" >&2
+    for s in /sys/class/drm/card*/status; do
+        [ -r "$s" ] && echo "  $s = $(cat "$s")" >&2
+    done
+    exit 1
+fi
+
+WLR_DRM_DEVICES="/dev/dri/$card"
+export WLR_DRM_DEVICES
+echo "panel-kiosk: $connector connected; WLR_DRM_DEVICES=$WLR_DRM_DEVICES" >&2
+
+# ---- 2. start cage, then prove it actually opened a display ----------------
+/usr/bin/cage -- "$@" &
+cage_pid=$!
+
+j=0
+while [ "$j" -lt "$DISPLAY_DEADLINE" ]; do
+    for sock in "$XDG_RUNTIME_DIR"/wayland-*; do
+        case "$sock" in *.lock) continue ;; esac
+        if [ -S "$sock" ]; then
+            echo "panel-kiosk: compositor up on $(basename "$sock")" >&2
+            # Hand the rest of the run back to cage; its exit status is ours.
+            wait "$cage_pid"
+            exit $?
+        fi
+    done
+    if ! kill -0 "$cage_pid" 2>/dev/null; then
+        echo "panel-kiosk: cage exited before opening a display" >&2
+        exit 1
+    fi
+    j=$((j + 1))
+    sleep 0.5
+done
+
+echo "panel-kiosk: cage opened no wayland display in 20s — killing it so systemd retries." >&2
+echo "panel-kiosk: this is the black-screen-with-a-cursor case; the unit must not sit in it." >&2
+kill "$cage_pid" 2>/dev/null || true
+wait "$cage_pid" 2>/dev/null || true
+exit 1
