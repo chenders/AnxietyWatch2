@@ -69,6 +69,111 @@ jobs:
             exit 1
           fi
 
+  # The two design gates (docs/design/**/{palette,panel}-check.mjs) verify the
+  # colour, contrast, CVD-separation and layout claims that the imported designs
+  # originally stated as prose -- three of which were measurably false. Until
+  # this job existed they ran only when somebody remembered to type `node`,
+  # which is the same as not being enforced.
+  #
+  # A gate is only worth running if it can fail, and this repo has shipped four
+  # green checks over a deleted tree, a --check comparing a generator to its own
+  # empty output, and a self-test probing a different file than the guard. So
+  # every gate here is MUTATION-TESTED on each run: the step below breaks each
+  # design on purpose and requires the gate to notice. If a mutated page still
+  # passes, that gate is decoration and this job says so.
+  design-gates:
+    runs-on: ubuntu-latest
+    # "<gate>:<a token the gate must be checking>", shared by both steps. Job
+    # level rather than a YAML anchor: GitHub Actions' parser does not support
+    # anchors, and an unloadable workflow is a gate that never runs at all.
+    #
+    # The token is named rather than discovered because the obvious generic
+    # choice -- mutate the first colour in :root -- picks --bg on the panel,
+    # which is deliberately EXEMPT there. Mutating an exempt token proves
+    # nothing, and would have certified a vacuous self-test as thorough.
+    env:
+      GATES: >-
+        docs/design/web-dashboard/palette-check.mjs:--spo2
+        docs/design/pi-panel/direction-a-clinical/panel-check.mjs:--klaxon
+    steps:
+      - uses: actions/checkout@v4
+      # Pinned rather than inherited: these gates are plain ESM with no deps, so
+      # the only way they break is the runner image's default node moving.
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+
+      - name: Design gates pass
+        run: |
+          fail=0
+          for spec in $GATES; do
+            g=${spec%%:*}
+            # Never skip. A gate whose file vanished must fail the build rather
+            # than quietly stop being enforced -- see this workflow's opening
+            # comment for what that costs.
+            [ -f "$g" ] || { echo "::error::$g is missing -- a design gate is no longer enforced"; fail=1; continue; }
+            echo "── $g"
+            node "$g" || fail=1
+          done
+          exit $fail
+
+      - name: Each gate can actually fail
+        run: |
+          fail=0
+          # Requires the gate to exit non-zero. A gate that passes a broken page
+          # is worse than no gate: it is a green check certifying a defect.
+          must_fail() {
+            if node "$1" "$2" >/dev/null 2>&1; then
+              echo "::error::$1 PASSED on $3 -- this gate cannot fail and is decoration"
+              fail=1
+            else
+              echo "  ✓ fails on $3"
+            fi
+          }
+          for spec in $GATES; do
+            g=${spec%%:*}; tok=${spec##*:}
+            html=$(dirname "$g")/index.html
+            [ -f "$html" ] || { echo "::error::$html missing"; fail=1; continue; }
+            echo "── $g (mutating $tok)"
+            tmp=$(mktemp -d)
+
+            # 1. A gated token drifts from the page. This is the failure mode
+            #    the source-sync check exists for: the gate validating hexes the
+            #    browser never renders.
+            node -e '
+              const fs = require("fs");
+              // Sliced from the END: `node -e` puts the first user argument at
+              // argv[1] (there is no script path to occupy it), so the usual
+              // argv[2]-onward destructure silently reads the wrong file.
+              const [src, dst, tok] = process.argv.slice(-3);
+              const s = fs.readFileSync(src, "utf8");
+              const re = new RegExp("(" + tok + "\\s*:\\s*#)([0-9a-fA-F]{6})");
+              const m = re.exec(s);
+              if (!m) { console.error("token " + tok + " not found in " + src); process.exit(2); }
+              // Flip the last nibble to something it certainly is not.
+              const to = m[2].slice(0, 5) + (m[2].slice(5).toLowerCase() === "f" ? "e" : "f");
+              fs.writeFileSync(dst, s.replace(re, m[1] + to));
+            ' "$html" "$tmp/drift.html" "$tok"
+            must_fail "$g" "$tmp/drift.html" "a drifted $tok"
+
+            # 2. A new colour token nobody gated. Without this, the way around
+            #    the gate is to add a colour it was never taught to look at.
+            node -e '
+              const fs = require("fs");
+              const [src, dst] = process.argv.slice(-2);
+              const s = fs.readFileSync(src, "utf8");
+              const m = /:root\s*\{/.exec(s);
+              if (!m) { console.error("no :root block in " + src); process.exit(2); }
+              const at = m.index + m[0].length;
+              fs.writeFileSync(dst, s.slice(0, at) + "--ci-smuggled:#ff00ff;" + s.slice(at));
+            ' "$html" "$tmp/newtok.html"
+            must_fail "$g" "$tmp/newtok.html" "an ungated new token"
+
+            # 3. The page is gone. A gate that cannot read what it gates must
+            #    not report that the thing is fine.
+            must_fail "$g" "$tmp/absent.html" "a missing page"
+          done
+          exit $fail
+
   registry-is-generated:
     runs-on: ubuntu-latest
     steps:
