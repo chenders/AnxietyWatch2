@@ -133,17 +133,32 @@ if [[ -f vitals/tools/gen_registry.py ]]; then
 fi
 
 # ── 6. build and test ─────────────────────────────────────────────────────────
-if [[ -f CMakeLists.txt ]]; then
-  if cmake -B build -DCMAKE_BUILD_TYPE=Debug >/dev/null 2>&1 && cmake --build build >/dev/null 2>&1; then
-    if ctest --test-dir build --output-on-failure >/tmp/pp-ctest.$$ 2>&1; then
-      ok "build + ctest pass"
-    else
-      fail "ctest failed:"; tail -12 /tmp/pp-ctest.$$ >&2
-    fi
+# This gate was conditioned on CMakeLists.txt, which the Rust migration deleted
+# — so it silently did nothing from that commit onward. A conditional whose
+# subject no longer exists is a check that cannot fail.
+if [[ -f Cargo.toml ]]; then
+  if cargo test --workspace >/tmp/pp-test.$$ 2>&1; then
+    ok "cargo test --workspace passes"
   else
-    fail "build failed (warnings are errors here)"
+    fail "cargo test failed:"; tail -15 /tmp/pp-test.$$ >&2
   fi
-  rm -f /tmp/pp-ctest.$$
+  if cargo clippy --workspace --all-targets --all-features -- -D warnings >/tmp/pp-clippy.$$ 2>&1; then
+    ok "clippy clean at deny levels"
+  else
+    fail "clippy failed:"; tail -15 /tmp/pp-clippy.$$ >&2
+  fi
+  # fuzz/ declares its own [workspace], so `cargo test --workspace` does NOT
+  # compile it. A fuzz target referencing a removed constant therefore builds
+  # green locally and fails only in CI — which is exactly what happened when the
+  # EMAY plausibility ranges were removed.
+  if [[ -f fuzz/Cargo.toml ]]; then
+    if (cd fuzz && cargo check --bins >/tmp/pp-fuzz.$$ 2>&1); then
+      ok "fuzz targets compile"
+    else
+      fail "fuzz targets do not compile:"; tail -12 /tmp/pp-fuzz.$$ >&2
+    fi
+  fi
+  rm -f /tmp/pp-test.$$ /tmp/pp-clippy.$$ /tmp/pp-fuzz.$$
 fi
 
 # ── 7. agent provenance ───────────────────────────────────────────────────────
