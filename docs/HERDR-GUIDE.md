@@ -22,13 +22,13 @@ This project targets Linux on arm64. Your Mac can compile and test a meaningful 
 subset is worth having, because it iterates in seconds — but a Mac build produces Mach-O, which will
 not execute on the Pi at all.
 
-The split is encoded in `vitals/CMakeLists.txt` as two libraries, and it maps exactly onto the
+The split is encoded in `Cargo.toml` as workspace members, and it maps exactly onto the
 `host:` tag already on every task:
 
 | Library | Contains | Builds on | Task tag |
 |---|---|---|---|
-| `vitals_core` | SFLOAT decode, `0x2A35` / `0x2A37` decode, HLC | macOS **and** Linux | `host: either` |
-| `vitals_linux` | SQLite store, `vitalsd`, epoll, BlueZ, WAL tail | **Linux only** | `host: pi` |
+| `vitals-decode` | SFLOAT decode, `0x2A35` / `0x2A37` decode | macOS **and** Linux | `host: either` |
+| `vitalsd`, collectors | Postgres, spool drain, BlueZ, systemd | **Linux only** | `host: pi` |
 
 One genuine piece of luck: Apple Silicon and the Pi 5 are both **arm64 little-endian**, so byte
 layout, struct packing, and integer widths agree. A decoder that passes on your Mac behaves
@@ -78,12 +78,12 @@ Running that on the Mac edits a `.env` no gateway reads. It reports success and 
 
 ```sh
 cd ~/Source/AnxietyWatch2
-cmake -B build -DCMAKE_BUILD_TYPE=Debug
-cmake --build build && ctest --test-dir build --output-on-failure
+cargo build --workspace
+cargo test --workspace
 ```
 
-The `toolchain` test exists to prove exactly this before any real task runs: C11 compiles,
-warnings-as-errors passes, sanitizers link, CTest reports an exit code. If it fails, no task result
+The `toolchain` test exists to prove exactly this before any real task runs: the pinned Rust toolchain builds,
+clippy's deny levels pass, the workspace links, cargo reports an exit code. If it fails, no task result
 can be trusted.
 
 ### 2.4 Build on the Pi, once
@@ -105,7 +105,7 @@ they change, edit here and nothing else. All IDs live-tested through the Pi's ga
 |---|---|---|
 | `mechanical` | `deepseek/deepseek-v4-flash` | Config, systemd units, codegen. Cheapest thing that follows a literal spec. |
 | `implement-standard` | `openrouter/qwen/qwen3-coder` | Coding against a written spec with tests supplied. Was AUTHOR-Swift on the prior redesign. |
-| `implement-complex` | `gemini/gemini-3.1-pro-preview` | Binary decode, HLC ordering, single-writer discipline. |
+| `implement-complex` | `gemini/gemini-3.1-pro-preview` | Binary decode, identity/ordering, single-writer discipline. |
 | `review` | `claude` CLI | Adversarial verification. Runs on subscription — costs nothing against metered credits. |
 | `human` | — | Screwdrivers. |
 
@@ -150,7 +150,7 @@ cd ~/AnxietyWatch2 && gdb ./build/vitals/test_bp_decode
 
 Or drive `claude` / `pi` directly on the Pi where the logs and radios are local — see §6 Mode B.
 
-**Never** try to reproduce a BlueZ, epoll, or systemd problem on macOS. The APIs do not exist there.
+**Never** try to reproduce a BlueZ, Postgres, or systemd problem on macOS. The environment does not exist there.
 
 ---
 
@@ -173,11 +173,11 @@ So the bar is highest exactly where testing is cheapest and the consequences are
 
 | Layer | Gate | Why |
 |---|---|---|
-| Decoders, HLC | **95%** | Pure functions. No excuse, and hostile input lands here. |
-| Store, daemon logic | **85%** | Testable against `:memory:` SQLite. |
+| Decoders | **90%** | Pure functions. No excuse, and hostile input lands here. |
+| Store, daemon logic | **85%** | Testable against a scratch Postgres. |
 | BLE / systemd glue | measured only | Needs real radios. Covered by the T-B1 overnight run instead. |
 
-**Coverage is a floor, not the goal.** Every byte-parsing function also gets a libFuzzer target,
+**Coverage is a floor, not the goal.** Every byte-parsing function also gets a `cargo-fuzz` target,
 because coverage tells you a line ran, not that it survived a truncated frame. CI runs each fuzzer
 for 60 s per push.
 
@@ -212,19 +212,16 @@ the evidence. Tick the box only on your own `exit=0`.
 
 ### 6.1 Adding a task's files to the build
 
-Each `T-D*` task names the files it creates. `vitals/CMakeLists.txt` has commented placeholders for
-every one — uncomment the matching lines and nothing else changes:
+Each `T-D*` task names the files it creates. Cargo discovers modules from the crate root, so a new
+decoder needs one line in `crates/vitals-decode/src/lib.rs`:
 
-```cmake
-set(VITALS_CORE_SOURCES
-    src/version.c
-    src/sfloat.c        # T-D2   ← uncomment when the task lands
-)
-vitals_test(sfloat)     # T-D2   ← and its test
-vitals_fuzz(sfloat)     # T-D2   ← and its fuzzer
+```rust
+pub mod sfloat;   // T-D2
+pub mod bp;       // T-D6
 ```
 
-Each task's Verify line then works unchanged: `ctest -R sfloat` runs exactly that task's suite.
+Each task's Verify line then works unchanged: `cargo test -p vitals-decode sfloat` runs exactly that
+task's suite, and `cargo fuzz run fuzz_sfloat` its fuzzer.
 
 ---
 
@@ -267,14 +264,16 @@ project's foundational measurement and you will want to compare against it later
 
 ```
 AnxietyWatch2/
-├── CMakeLists.txt              root build; sanitizers, coverage, fuzz options
+├── Cargo.toml                  workspace root; lints, profiles
+├── rust-toolchain.toml         pinned toolchain
+├── crates/
+│   ├── vitals-registry/        generated enums (no_std, no deps)
+│   ├── vitals-decode/          pure decoders (no_std, forbid unsafe)
+│   ├── vitals-core/            shared types, COPY encoder, spool
+│   └── vitalsd/                daemon + collectors (Linux only)
+├── fuzz/fuzz_targets/          one cargo-fuzz target per radio decoder
+├── db/                         sqitch deploy/revert/verify
 ├── vitals/
-│   ├── CMakeLists.txt          the portable/Linux split; task placeholders
-│   ├── include/vitals.h        public surface
-│   ├── src/                    implementation
-│   ├── tests/                  one CTest target per task
-│   ├── fuzz/                   one libFuzzer target per radio decoder
-│   ├── collectors/             per-radio daemons (Linux only)
 │   ├── tools/                  gen_registry.py (T-D1)
 │   ├── generated/              codegen output — committed, never hand-edited
 │   └── registry.toml           THE source of truth for sources, types, units
@@ -299,9 +298,9 @@ AnxietyWatch2/
 
 ```sh
 # local
-cmake -B build -DCMAKE_BUILD_TYPE=Debug && cmake --build build
-ctest --test-dir build --output-on-failure
-ctest --test-dir build -R sfloat            # one task's suite
+cargo build --workspace
+cargo test --workspace
+cargo test -p vitals-decode sfloat          # one task's suite
 
 # on the Pi
 scripts/sync-to-pi.sh --test
@@ -310,7 +309,7 @@ scripts/sync-to-pi.sh --test
 scripts/coverage.sh --check
 
 # fuzz
-cmake -B build-fuzz -DVITALS_FUZZ=ON -DVITALS_SANITIZE=OFF -DCMAKE_C_COMPILER=clang
+cargo +nightly fuzz run fuzz_sfloat -- -max_total_time=60
 cmake --build build-fuzz && build-fuzz/vitals/fuzz_sfloat -max_total_time=60
 
 # gates

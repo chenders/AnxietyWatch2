@@ -20,3 +20,11 @@ corpus/
 .idea/httpRequests/
 target/
 Cargo.lock
+
+# cargo-fuzz
+fuzz/target/
+fuzz/artifacts/
+fuzz/coverage/
+
+__pycache__/
+*.pyc

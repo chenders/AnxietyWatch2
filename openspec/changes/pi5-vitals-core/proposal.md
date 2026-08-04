@@ -25,7 +25,7 @@ backup.
 | 0 | Hardware floor: NVMe root, audio out, Sena dongle, watchdog, governor |
 | 1 | Thesis spike: 8-hour uninterrupted Polar H10 capture with a measured gap histogram |
 | 2 | Storage floor: Postgres 16 bare metal on NVMe, pgBackRest, verified restore |
-| 3 | `vitals` core: registry codegen, `libvitals`, `vitalsd`, WAL tail, `bp-collector` |
+| 3 | `vitals` core: registry codegen, decoder crates, `vitalsd`, spool drain, `bp-collector` |
 
 ### Out of scope (follow-on changes)
 
@@ -50,7 +50,7 @@ Two documents it amends:
 3. `pgbackrest check` passes and the monthly restore-verification timer has completed once green.
 4. A BP measurement taken on the cuff appears in `samples` within 60 s of the cuff being in range,
    with `source = ad_ua651ble` and values in canonical units.
-5. `meson test -C build` passes, including the `0x2A35` decoder fuzz target at 60 s with zero crashes.
+5. `cargo test --workspace` passes, including the `0x2A35` decoder fuzz target at 60 s with zero crashes.
 
 ## Non-goals
 
