@@ -330,6 +330,64 @@ mod linux {
         undecodable: u64,
     }
 
+    /// Decode everything a notification carried, then say so.
+    ///
+    /// Extracted from `capture` because that function crossed clippy's
+    /// too-many-lines threshold once status publishing was added — and a
+    /// select! arm that has grown past a screen is worth splitting on its own
+    /// merits, not just to satisfy the lint.
+    fn drain_notification(
+        buf: &[u8],
+        pending: &mut Vec<u8>,
+        t: &mut Totals,
+        snap: &mut Snapshot,
+        publish: &impl Fn(&mut Snapshot, &Totals, Link),
+    ) {
+        // BLE notifications are NOT frame-aligned: at a larger MTU the device's
+        // 8-byte records arrive coalesced and straddle notification boundaries.
+        // Observed live -- one connection delivered one record per notification
+        // and looked perfect, the next delivered 20-byte notifications carrying
+        // 2.5 records each, and a length-checking decoder silently lost about
+        // 45% of that run. Buffer and scan.
+        pending.extend_from_slice(buf);
+        let mut consumed = 0usize;
+        while let Some((r, used)) = pending.get(consumed..).and_then(scan_frame) {
+            consumed += used;
+            t.frames += 1;
+            if r.is_measurement() {
+                t.measurements += 1;
+            } else {
+                // A valid frame reporting no finger. Recorded, not discarded:
+                // it is evidence the link was up, which is what this measures.
+                t.no_finger += 1;
+            }
+            emit(r.pulse_bpm, r.spo2);
+            // Absent stays absent here too. A no-finger frame clears the
+            // readings rather than leaving the last good ones on screen
+            // pretending to be current.
+            snap.sample_at = Some(now_secs());
+            snap.spo2 = r.spo2;
+            snap.pulse_bpm = r.pulse_bpm;
+            snap.finger = r.is_measurement();
+            publish(snap, t, Link::Up);
+        }
+        pending.drain(..consumed);
+
+        // A partial record at the tail is normal and waits for the next
+        // notification. Anything larger is garbage accumulating, which is a
+        // different problem and must be visible rather than growing quietly.
+        if pending.len() > FRAME_LEN * 4 {
+            t.undecodable += 1;
+            eprintln!(
+                "emay-spike: {} unparsed bytes buffered ({} so far); dropping: {:02x?}",
+                pending.len(),
+                t.undecodable,
+                pending.as_slice()
+            );
+            pending.clear();
+        }
+    }
+
     async fn capture(
         write: bluer::gatt::remote::Characteristic,
         notify: bluer::gatt::remote::Characteristic,
@@ -398,54 +456,7 @@ mod linux {
                     };
                     last_frame = tokio::time::Instant::now();
 
-                    // BLE notifications are NOT frame-aligned: at a larger MTU
-                    // the device's 8-byte records arrive coalesced and straddle
-                    // notification boundaries. Observed live -- one connection
-                    // delivered one record per notification and looked perfect,
-                    // the next delivered 20-byte notifications carrying 2.5
-                    // records each, and a length-checking decoder silently lost
-                    // about 45% of that run. Buffer and scan.
-                    pending.extend_from_slice(&buf);
-                    let mut consumed = 0usize;
-                    while let Some((r, used)) =
-                        pending.get(consumed..).and_then(scan_frame)
-                    {
-                        consumed += used;
-                        t.frames += 1;
-                        if r.is_measurement() {
-                            t.measurements += 1;
-                        } else {
-                            // A valid frame reporting no finger. Recorded, not
-                            // discarded: it is evidence the link was up, which
-                            // is exactly what this run measures.
-                            t.no_finger += 1;
-                        }
-                        emit(r.pulse_bpm, r.spo2);
-                        // Absent stays absent here too. A no-finger frame
-                        // clears the readings rather than leaving the last
-                        // good ones on screen pretending to be current.
-                        snap.sample_at = Some(now_secs());
-                        snap.spo2 = r.spo2;
-                        snap.pulse_bpm = r.pulse_bpm;
-                        snap.finger = r.is_measurement();
-                        publish(&mut snap, &t, Link::Up);
-                    }
-                    pending.drain(..consumed);
-
-                    // A partial record at the tail is normal and waits for the
-                    // next notification. Anything larger than that is garbage
-                    // accumulating, which is a different problem and must be
-                    // visible rather than growing quietly.
-                    if pending.len() > FRAME_LEN * 4 {
-                        t.undecodable += 1;
-                        eprintln!(
-                            "emay-spike: {} unparsed bytes buffered ({} so far); dropping: {:02x?}",
-                            pending.len(),
-                            t.undecodable,
-                            pending.as_slice()
-                        );
-                        pending.clear();
-                    }
+                    drain_notification(&buf, &mut pending, &mut t, &mut snap, &publish);
                 }
                 _ = keepalive.tick() => {
                     // The device stops streaming without this. A write failure
