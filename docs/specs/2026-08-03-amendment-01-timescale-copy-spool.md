@@ -244,20 +244,26 @@ klaxon share this box. Re-assert `shared_buffers = 2GB` after running it.
 
 No longer a SQLite store. Now the COPY-binary encoder plus the spool writer.
 
-**Creates:** `vitals/src/copybin.c`, `vitals/src/copybin.h`, `vitals/src/spool.c`,
-`vitals/src/spool.h`, `vitals/src/hlc.c`, `vitals/src/hlc.h`, and tests for each.
+> **Superseded in part.** This amendment predates the Rust decision, so the signatures below were
+> written in C and the clock fields were later removed (amendment 04 §8). The *storage* argument —
+> COPY-binary spool, TimescaleDB, portable encoder — stands unchanged and is what this amendment is
+> for. **T-D3 in `tasks.md` is authoritative for the interface.** Do not implement from this section.
 
-`copybin.c` is **pure and portable** — it belongs to `vitals_core` and is unit-tested on both hosts.
-That is a real gain over the SQLite design, where the store could only be tested on Linux:
+**Creates:** the COPY-binary encoder and spool writer in `crates/vitals-core`, and tests for each.
 
-```c
-/* Encodes one sample as a Postgres binary COPY row. Returns bytes written,
- * or -ENOSPC if cap is insufficient. No allocation, no I/O. */
-ssize_t copybin_encode_sample(uint8_t *out, size_t cap, const vitals_sample *s);
+The encoder is **pure and portable** — no database handle, no I/O — so it unit-tests on macOS as
+well as on the Pi. That is a real gain over the SQLite design, where the store could only be tested
+on Linux:
 
-/* The 19-byte file header and the 2-byte trailer. */
-size_t  copybin_header(uint8_t out[19]);
-size_t  copybin_trailer(uint8_t out[2]);
+```rust
+/// Encodes one sample as a Postgres binary COPY row into `out`.
+/// Returns the number of bytes written, or `None` if `out` is too small.
+/// No allocation, no I/O.
+pub fn encode_sample(out: &mut [u8], s: &Sample) -> Option<usize>;
+
+/// The 19-byte file header and the 2-byte trailer.
+pub fn header(out: &mut [u8; 19]) -> usize;
+pub fn trailer(out: &mut [u8; 2]) -> usize;
 ```
 
 Byte-order note: all COPY binary integers are **network byte order**. Both hosts are little-endian
@@ -265,14 +271,14 @@ arm64, so every field needs an explicit `htonl`/`htobe64` — a memcpy of a nati
 silently wrong value that Postgres will accept. Tests assert against byte arrays captured from
 `COPY … TO STDOUT (FORMAT binary)` on a real server, not against the encoder's own output.
 
-`spool.c` is Linux-side: `O_APPEND` writes, batched `fsync`, rotation, offset file.
+The spool writer is Linux-side: `O_APPEND` writes, batched `fsync`, rotation, offset file.
 
-**Verify:** `ctest -R "copybin|spool|hlc"` and a round-trip test that encodes 1000 samples, drains
+**Verify:** `cargo test -p vitals-core` and a round-trip test that encodes 1000 samples, drains
 them into a scratch database, and asserts every value matches within 1e-9.
 
 ### T-D5 — WAL tail → **spool drainer** (**reworked**)
 
-**Creates:** `vitals/src/spool_drain.c`, `/etc/systemd/system/vitals-spool-drain.service`
+**Creates:** the spool drainer binary, `/etc/systemd/system/vitals-spool-drain.service`
 
 Replaces the SQLite-WAL-tailing design with the staging-table drain in §2.2. Retains the parent
 design's cursor discipline unchanged: the offset advances only in the transaction that committed the

@@ -113,13 +113,13 @@ A&D UA-651BLE  ──BLE indication 0x2A35──▶  bp_collector
    systolic 118 mmHg · diastolic 74 · MAP 89 · pulse 62
         │ vitals_append → range check against registry
         ▼
-   SQLite  (source=6, type=6, ts=…, value=118.0, hlc=…)
-        │ WAL tail
+   spool   (COPY-binary row: source=6, type=6, session_id, seq, ts, 118.0)
+        │ vitals-spool-drain
         ▼
    PostgreSQL  samples · 1 row
 ```
 
-Plus the registry entry that governed it (canonical unit, valid range) and the HLC stamp with node
+Plus the registry entry that governed it (canonical unit, valid range) and the provenance stamp with node
 id. Every hop shown, so when something is wrong later you know what a *correct* trace looks like.
 
 **Why this one matters:** it is the first proof that the narrow waist works — that a real

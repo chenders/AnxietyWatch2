@@ -16,6 +16,7 @@ wins**. If you find a contradiction, report it rather than implementing either v
 | **03** | [Multi-modal alerting](2026-08-03-amendment-03-multimodal-alerting.md) | design §5, T-A2 | Stage 5, + T-K1…T-K6 |
 | **04** | [Multi-model review findings](2026-08-03-amendment-04-review-findings.md) | design §3–§5, amendments 01–03 | most of Group D |
 | **05** | [Corrections and runtime safety](2026-08-03-amendment-05-corrections-and-runtime-safety.md) | **amendment 04 §1 and §3.2 — both were wrong** | T-B1, T-D3…D6, T-K2, T-K6 |
+| **06** | [BP identity and durability](2026-08-03-amendment-06-bp-identity-and-durability.md) | **amendment 05 §5 (T-D6 row) — the hardware disproved it**, and **§1.1's identity rule, which it narrows**; extends §4.3; restates A01 §5's durability rule | T-B1, T-D3, T-D4, T-D6 |
 | — | [C vs Rust evaluation](2026-08-03-c-vs-rust-evaluation.md) | the C11 decision | all code tasks |
 | — | [Review synthesis and fix tracker](../reviews/SYNTHESIS.md) | — | status of every finding |
 
@@ -55,13 +56,34 @@ batch_id    BIGINT REFERENCES ingest_batch(id) -- NULL = did not arrive signed
 ```
 
 - **`hlc_physical` and `hlc_logical` are removed.** `node_id` stays, as provenance.
-- `seq` is a monotonic per-session index derived from the **sensor's own data**, never host timing.
-  A retransmission reuses the same `seq` and dedupes correctly; a reconnect mints a **new
+- `seq` is a monotonic per-session index derived from whatever the source makes **stable across
+  retransmission** — for a *streaming* source that is the sensor's own data, never host timing
+  (amendment 05 §1.1). For a **confirmed store-and-forward** source it is the delivery index
+  (amendment 06 §1.2). A source that is neither cannot be given a correct identity and must not be
+  ingested. A retransmission reuses the same `seq` and dedupes correctly; a reconnect mints a **new
   `session_id`**, so there is no false dedup across a discontinuity.
+- **`session_id` must be unique across process restarts.** A per-process counter from 0 makes a
+  restarted collector's first rows collide with a previous run's and `ON CONFLICT DO NOTHING` drops
+  them silently. Near-total for BP, where `seq` is 0–3 every time.
 - `max(seq) - count(*)` per session is the **lost-beat count** — packet loss becomes measurable.
 - **Never key on packet arrival time.** Several RR intervals arrive in one notification; anchoring
   them to arrival either collides (dropping real data) or shifts on retransmit (admitting
   duplicates). See amendment 04 §1 and `SYNTHESIS.md` A2.
+- **`seq` derives from whatever the source makes stable across retransmission** (amendment 06 §1.2).
+  For a streaming source that is the sensor's own data. For a **confirmed store-and-forward** source
+  — the A&D cuff, which sends no timestamp, user id or counter — it is the delivery index, because
+  the ATT confirmation makes redelivery impossible. A source that is neither confirmed nor
+  payload-identifiable cannot be given a correct identity and **must not be ingested**.
+
+### Durability
+
+**`append { sync: true }` fsyncs before `vitalsd` replies** (amendment 06 §2). Used by
+`bp-collector` and nothing else: BP frames are deleted by the device on the kernel's ATT
+confirmation and are reconstructible from nothing, while a night of RR is ~250 MB and would be
+destroyed by per-append fsync. Durability cost is paid only where loss is unrecoverable.
+
+Every synced source also keeps a **raw-frame journal** written before decode, so a decoder bug is
+replayable. A lost frame never is.
 
 ### Migrations
 
