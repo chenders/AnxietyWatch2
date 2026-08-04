@@ -55,3 +55,28 @@ jobs:
       # number is the wrong shape for this codebase.
       - name: Coverage gate
         run: scripts/coverage.sh --check
+
+  specs-are-reconciled:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # The repo once described three different systems: four amendments changed
+      # the language, storage engine, schema and key while every task brief still
+      # described the superseded design. A worker obeying AGENTS.md could not see
+      # the amendments, because no Reads: list referenced one. This makes the
+      # divergence fail the build instead of shipping.
+      - name: No superseded architecture in task briefs
+        run: |
+          fail=0
+          for term in SQLite meson hlc_physical hlc_logical samples_staging libvitals; do
+            n=$(grep -ci "$term" openspec/changes/*/tasks.md || true)
+            if [ "${n:-0}" -ne 0 ]; then echo "::error::tasks.md still references '$term' ($n)"; fail=1; fi
+          done
+          # Every task must declare which amendments touch it.
+          heads=$(grep -c '^### T-' openspec/changes/pi5-vitals-core/tasks.md)
+          amends=$(grep -c '^\*\*Amends:\*\*' openspec/changes/pi5-vitals-core/tasks.md)
+          if [ "$heads" -ne "$amends" ]; then
+            echo "::error::$heads tasks but $amends Amends: fields"; fail=1
+          fi
+          test -f docs/specs/AMENDMENTS.md || { echo "::error::AMENDMENTS.md missing"; fail=1; }
+          exit $fail

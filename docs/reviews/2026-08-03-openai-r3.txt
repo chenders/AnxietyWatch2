@@ -1,0 +1,829 @@
+
+ You are an independent adversarial reviewer. Be specific. Do not be agreeable. If
+ an area is sound,
+ say so in one line and move on.
+
+ System
+
+ ~/Source/AnxietyWatch2 — a Raspberry Pi 5 beside a bed. Collects physiological
+ data from Bluetooth
+ sensors all night, detects CNS-depression events, sounds an alarm. One user, who
+ is also the
+ engineer. Worst defects: the alarm not sounding when it should, and a missing
+ signal being treated
+ as healthy.
+
+ Read, in this order
+
+ 1. docs/specs/2026-08-03-pi5-vitals-core-design.md
+ 2. docs/specs/2026-08-03-amendment-01-timescale-copy-spool.md
+ 3. docs/specs/2026-08-03-amendment-02-integrity-and-encryption.md
+ 4. docs/specs/2026-08-03-amendment-03-multimodal-alerting.md
+ 5. docs/specs/2026-08-03-amendment-04-review-findings.md — responses to a
+    previous review round
+ 6. openspec/changes/pi5-vitals-core/tasks.md · db/ ·
+    crates/vitals-decode/src/sfloat.rs
+ 7. AGENTS.md · docs/STAGE-DELIVERABLES.md
+
+ Your job
+
+ Amendment 04 answers findings from an earlier round. Your primary task is to
+ check whether those
+ answers are actually correct, then find what everyone has still missed.
+
+ ### 1. Audit amendment 04's fixes — are they right?
+
+ Interrogate each. Several are plausible-sounding and may be wrong:
+
+ - §1: it claims deriving beat times by accumulating RR durations backward from
+   packet arrival
+   makes timestamps distinct, so PRIMARY KEY (source, type, timestamp) can stay.
+   Does that hold?
+   What about clock drift between the sensor and the host, retransmitted packets,
+   connection-interval
+   batching, or two RR values that genuinely round to the same microsecond? Is the
+   PK still wrong?
+ - §2: OOMScoreAdjust=-1000 plus MemoryMin/MemoryHigh. Does this actually prevent
+   the
+   failure, or move it? What happens when the protected daemon is the one leaking?
+ - §3.2: a 555 monostable retriggered by a 1 Hz GPIO heartbeat, firing the siren
+   if pulses stop.
+   Does this work? What are its false-positive and false-negative modes? What
+   happens during a
+   deliberate reboot, a klaxond restart, or an acknowledged alarm?
+ - §4: the revised LUKS behaviour — chime, then escalate after 15 minutes only
+   inside a monitoring
+   window. Does that leave a hole?
+ - §6/§7: advisory locks plus a schema fingerprint in the spool header.
+   Sufficient?
+ - §10: publishing the audit chain head off-box hourly. Does that actually defeat
+   a root attacker,
+   or just narrow the window?
+
+ ### 2. What has everyone still missed?
+
+ Four reviewers have been over this. Find what none of them caught. Rank by
+ severity, and for each say
+ what breaks, under what conditions, and how you would know.
+
+ ### 3. Where is the architecture wrong, not merely incomplete?
+
+ ### 4. What tool, library or platform feature should this use and does not?
+
+ Rust ecosystem specifically. Already adopted: kani, rppal, fs4, sqlx, metrics,
+ tokio,
+ bluer, tokio-postgres binary COPY, cargo-fuzz.
+
+ Rules
+
+ - Quote file and section.
+ - Distinguish will bite / might bite / taste.
+ - Say when you are unsure rather than asserting.
+ - Do not restate the design. Tell me what is wrong with it.
+ - Do not re-report anything already covered in amendment 04 unless amendment 04's
+   fix is wrong — in
+   which case say precisely why.
+
+ Output
+
+ Markdown. Three most severe findings first, three sentences each, then detail.
+ End with what you
+ checked and found genuinely fine.
+
+
+
+ read docs/specs/2026-08-03-pi5-vitals-core-design.md:1-2000
+
+
+
+ read docs/specs/2026-08-03-amendment-01-timescale-copy-spool.md:1-2000
+
+
+
+ read docs/specs/2026-08-03-amendment-02-integrity-and-encryption.md:1-2000
+
+
+
+ read docs/specs/2026-08-03-amendment-03-multimodal-alerting.md:1-2000
+
+
+
+ read docs/specs/2026-08-03-amendment-04-review-findings.md:1-2000
+
+
+
+ read openspec/changes/pi5-vitals-core/tasks.md:1-2000
+
+
+
+ $ find db -type f -maxdepth 3 -print | sort
+
+ ... (18 earlier lines, ctrl+o to expand)
+ db/verify/retention.sql
+ db/verify/samples.sql
+ db/verify/samples_1min.sql
+ db/verify/samples_compression.sql
+ db/verify/samples_hypertable.sql
+
+ Took 0.0s
+
+
+
+ read crates/vitals-decode/src/sfloat.rs:1-2000
+
+
+
+ read resource AGENTS.md:1-2000 (ctrl+o to expand)
+
+
+
+ read docs/STAGE-DELIVERABLES.md:1-2000
+
+
+
+ read db/deploy/extensions.sql:1-500
+
+
+
+ read db/deploy/registry_tables.sql:1-500
+
+
+
+ read db/deploy/samples.sql:1-500
+
+
+
+ read db/deploy/samples_hypertable.sql:1-500
+
+
+
+ read db/deploy/samples_compression.sql:1-500
+
+
+
+ read db/deploy/samples_1min.sql:1-500
+
+
+
+ read db/deploy/retention.sql:1-500
+
+
+
+ read db/sqitch.plan:1-500
+
+
+
+ read db/sqitch.conf:1-500
+
+
+
+ read db/verify/samples.sql:1-500
+
+
+
+ read db/verify/samples_hypertable.sql:1-500
+
+
+
+ read db/verify/samples_compression.sql:1-500
+
+
+
+ read db/verify/samples_1min.sql:1-500
+
+
+
+ read db/verify/retention.sql:1-500
+
+
+
+ read db/verify/registry_tables.sql:1-500
+
+
+
+ read db/revert/samples.sql:1-500
+
+
+
+ read db/revert/samples_hypertable.sql:1-500
+
+
+
+ read db/revert/extensions.sql:1-500
+
+
+ Adversarial review
+
+ Three most severe findings
+
+ ### 1. Will bite — the executable plan still builds the superseded architecture
+
+ openspec/changes/pi5-vitals-core/tasks.md still mandates C11, SQLite, HLC
+ replication, samples_staging, and (source,type,timestamp) idempotency, while
+ AGENTS.md orders workers to read only each task’s Reads: list—which does not
+ include amendments 01–04. An agent following the repository’s own rules will
+ implement T-D3 through T-D5 without ever seeing the accepted spool/Rust/schema
+ changes, and the checked-in db/deploy/samples.sql confirms that this has already
+ happened. You will know when “completed” tasks pass their obsolete Verify:
+ commands while the resulting system contains SQLite, HLC columns, the shared
+ unlogged staging table, and the invalid primary key.
+
+ ### 2. Will bite — the dead-man monitors klaxond, not the safety function
+
+ Amendment 04 §3.2 says a 1 Hz heartbeat provides tier-2 independence, but a
+ healthy klaxond can continue pulsing while vitalsd, cns-engine, every BLE
+ collector, or the live subscription path is dead. That is the worst false
+ negative available: the hardware watchdog sees a healthy heartbeat while no
+ physiological event can reach the alarm. You will know only from fault injection
+ that kills or wedges each upstream component while leaving klaxond running; the
+ present proposed test—stopping the heartbeat—does not exercise this failure.
+
+ ### 3. Will bite — Amendment 04 §1 preserves the wrong identity model
+
+ Reconstructing RR times backward from packet arrival makes intervals within one
+ packet distinct, but it does not make packet arrival a stable event identity:
+ connection batching and scheduler latency move reconstructed beats,
+ retransmission creates a second set at new times, and adjacent packets can
+ reconstruct overlapping or reversed timelines. Clock drift between the H10
+ interval clock and host clock further ensures packet-by-packet arrival anchoring
+ produces discontinuities, although two valid 200–2000 ms intervals within one
+ packet will not genuinely round to the same microsecond. You will know from
+ captures showing negative/inter-packet timing residuals, duplicate interval
+ sequences after reconnect/retransmit, or RR counts exceeding rather than merely
+ falling below the expected beat count.
+
+ ────────────────────────────────────────────────────────────────────────────────
+
+ Detailed findings
+
+ Audit of Amendment 04
+
+ §1 — RR timestamps and primary key
+
+ Verdict: wrong fix; severity: will bite.
+
+ │ Amendment 04 §1.1: “The fix is the timestamp, not the key.”
+
+ No. There are three separate concepts that the schema is still conflating:
+
+ 1. Measurement/event time — when the beat occurred.
+ 2. Observation/arrival time — when the host received the packet.
+ 3. Stable ingest identity — whether this is the same observation being replayed.
+
+ Backward accumulation can estimate the first, but packet arrival is not a
+ sufficiently stable anchor to supply the third.
+
+ Specific failures:
+
+ - Connection-interval batching: two adjacent notifications may have different
+   queuing delays. Anchoring every packet’s newest beat to its arrival introduces
+   a discontinuity at every packet boundary.
+ - Retransmission/replay after reconnect: the same RR payload anchored to a later
+   arrival receives entirely new timestamps, so the PK accepts duplicates.
+ - Host scheduling stalls: a delayed callback shifts the whole packet even though
+   the sensor intervals are valid.
+ - Sensor oscillator drift: RR durations come from the H10’s clock while the
+   anchor comes from the host clock. Re-anchoring each packet rather than
+   maintaining a fitted sensor-to-host clock makes the resulting series jump.
+ - Cross-packet overlap: the earliest beat reconstructed from packet N can precede
+   or collide with a beat reconstructed from packet N−1 if packet latency varies
+   enough.
+ - Microsecond collision within one valid packet: not credible under the
+   registry’s 0.2 s lower bound; this part of Amendment 04 is sound.
+ - Collision across packets or sources after timestamp conversion: still possible
+   because the anchor and conversion are not identity.
+
+ Use separate columns such as:
+
+ ```text
+   event_at          estimated physiological time
+   received_at       host CLOCK_REALTIME timestamp
+   producer_epoch    changes on collector restart/reconnect
+   producer_sequence monotonic observation sequence
+ ```
+
+ The database identity should use a generated immutable sample_id, or (producer,
+ producer_epoch, producer_sequence, item_index). If the H10 protocol provides no
+ retransmission sequence, exact radio-level deduplication is impossible; say so
+ and use conservative overlap detection rather than pretending timestamp equality
+ supplies it.
+
+ The proposed dedup counter in §1.2 is useful observability, but it detects only
+ collisions. It cannot detect retransmissions accepted under shifted timestamps.
+
+ ────────────────────────────────────────────────────────────────────────────────
+
+ §2 — OOM protection
+
+ Verdict: moves the failure; severity: will bite.
+
+ │ Amendment 04 §2: OOMScoreAdjust=-1000, MemoryMin=64M, MemoryHigh=192M.
+
+ OOMScoreAdjust=-1000 protects a process from selection; it does not bound
+ allocation or guarantee CPU progress. MemoryHigh is throttling pressure, not a
+ hard ceiling, and MemoryMin reserves reclaim protection that can become
+ counterproductive when applied to every collector, vitalsd, cns-engine, and
+ klaxond.
+
+ If one protected daemon leaks:
+
+ - it can consume memory beyond MemoryHigh;
+ - the kernel kills Postgres, Wayfire, SSH, and administrative tooling first;
+ - reclaim and swap thrash can starve the detector without killing it;
+ - if klaxond is the leaking process, it can continue generating the dead-man
+   heartbeat while becoming unable to process alarm commands;
+ - if all remaining kill candidates are exhausted, the host can still panic, hang,
+   or invoke the OOM killer ineffectively.
+
+ Use per-unit MemoryMax, bounded queues and ring buffers, allocation-failure
+ handling, and a restart policy. MemoryMax must be chosen from measured worst-case
+ memory plus margin, and klaxond should have a minimal fixed-memory design rather
+ than merely privileged OOM status.
+
+ Also test cgroup-v2 behavior under actual pressure. Assertions that the
+ properties are configured do not prove the system remains schedulable.
+
+ ────────────────────────────────────────────────────────────────────────────────
+
+ §3.2 — 555 dead-man
+
+ Verdict: underspecified electronics and wrong monitored invariant; severity: will
+ bite.
+
+ │ Amendment 04 §3.2: “A 555 monostable retriggers on each pulse; if pulses stop
+ │ for ~10 s it times out and drives the siren directly.”
+
+ A generic 555 monostable is not automatically a reliable retriggerable
+ missing-pulse detector. The exact trigger polarity, timing-capacitor discharge
+ circuit, reset pin behavior, output inversion, power-on state, and whether
+ triggers received during the active timing period extend it must be specified and
+ bench-tested; I am not confident every commodity “555 monostable module” behaves
+ as claimed.
+
+ False negatives:
+
+ - klaxond continues heartbeat while upstream detection is dead.
+ - A GPIO or output driver sticks in the retriggering state.
+ - A hardware PWM peripheral continues autonomously after the user-space process
+   wedges.
+ - The heartbeat loop remains alive while command handling, GPIO alarm output, or
+   the Tokio executor task carrying alarms is dead.
+ - The siren’s shared 12 V supply fails.
+ - The 555 or MOSFET fails open.
+ - A stuck maintenance/reset input inhibits the circuit indefinitely.
+
+ False positives:
+
+ - deliberate reboot or shutdown;
+ - klaxond upgrade/restart;
+ - scheduler stalls exceeding the timeout;
+ - GPIO reconfiguration during boot;
+ - acknowledged alarms if acknowledgment also suppresses or restarts alarm
+   control;
+ - transient loss of Pi power while the siren supply remains live;
+ - startup before the heartbeat service is ready.
+
+ The heartbeat must represent an end-to-end safety lease, not process existence.
+ Renew it only after fresh sensor liveness, detector progress, command-path
+ health, and alarm-driver health have all advanced within bounded ages; preferably
+ put the safety supervisor and alarm policy on a small independent MCU/watchdog
+ rather than a 555.
+
+ A deliberate reboot needs a physical or cryptographically authenticated
+ maintenance inhibit with a hard timeout. A software “clean shutdown” flag on the
+ same Pi is not independent and can remain set after an abnormal failure.
+
+ ────────────────────────────────────────────────────────────────────────────────
+
+ §4 — LUKS behavior
+
+ Verdict: leaves a monitoring hole; severity: will bite.
+
+ │ Amendment 04 §4: “If still locked after 15 minutes and it is within a
+ │ monitoring window, then the alarm.”
+
+ The machine cannot monitor while the volume containing the spool and collector
+ state is locked. Giving it 15 minutes is therefore a deliberate 15-minute
+ false-negative interval at exactly the moment the system has booted into a known
+ nonfunctional state.
+
+ Further holes:
+
+ - Who establishes the monitoring window if its configuration or last state is on
+   the encrypted volume?
+ - A bad RTC can place the machine outside the window; Amendment 04 §8 itself says
+   the clock can be 1970.
+ - A clean-reboot marker can suppress escalation even when the reboot completes
+   into a broken state.
+ - A reboot started shortly before the window can consume most or all of the grace
+   period.
+ - A user asleep during the short chime may never know monitoring failed.
+ - APNs is explicitly degraded when time or networking is unavailable.
+
+ A clean shutdown may justify suppressing the immediate chime during a bounded
+ maintenance lease, but it cannot justify suppressing failure to resume
+ monitoring. The system needs a durable, unencrypted, fail-closed expectation such
+ as “monitoring must be operational by deadline X,” with RTC sanity explicitly
+ represented as unknown rather than interpreted as outside the window.
+
+ ────────────────────────────────────────────────────────────────────────────────
+
+ §6/§7 — Advisory locks and schema fingerprint
+
+ Verdict: insufficient; severity: will bite during migration or crash recovery.
+
+ │ Amendment 04 §6: PostgreSQL advisory lock plus fs4 locks.
+ │ Amendment 04 §7: spool_status, service conflict, and schema fingerprint.
+
+ Advisory locks protect only cooperative participants.
+ Conflicts=sqitch-deploy.service does not stop direct sqitch deploy, psql, package
+ scripts, or another migration service, and a spool_status row is a stale
+ observation rather than an atomic freeze of writers.
+
+ There is an unavoidable TOCTOU unless migration does this sequence:
+
+ 1. Acquire the same global maintenance lock used by every writer and drainer.
+ 2. Prevent new append sessions.
+ 3. Flush and fsync the active writer.
+ 4. Rotate and close the active segment.
+ 5. Drain all closed segments.
+ 6. Verify no writer can have produced old-format bytes.
+ 7. Apply migration.
+ 8. Start a fresh segment with the new fingerprint.
+ 9. Release the maintenance lock.
+
+ The fingerprint prevents mis-decoding; it does not make old rows drainable.
+ Refusal is safe corruption-wise but remains an ingest outage with stranded data
+ and needs a versioned converter or an explicit old-schema drain environment.
+
+ The raw COPY spool has additional unaddressed framing hazards:
+
+ - an offset must always land on a complete row boundary;
+ - a crash can leave a partial final row;
+ - a concurrently observed append can expose a partial batch;
+ - restarting COPY from an arbitrary offset requires synthesizing a COPY header
+   and trailer;
+ - the file offset and committed database transaction cannot be atomically
+   committed together.
+
+ Replay after “DB commit, offset not fsynced” is acceptable only if row identity
+ is correct—which §1 does not provide.
+
+ Finally, the checked-in implementation has not received the fix:
+
+ │ db/deploy/samples.sql: CREATE UNLOGGED TABLE samples_staging
+
+ It still uses the exact shared staging table Amendment 04 §6 rejects.
+
+ ────────────────────────────────────────────────────────────────────────────────
+
+ §10 — Off-box chain head
+
+ Verdict: useful anchoring, not defeat of root; severity: might bite if
+ represented as stronger.
+
+ │ Amendment 04 §10: “publish the chain head—hash plus TPM monotonic
+ │ counter—off-box hourly.”
+
+ This narrows undetectable retrospective rewriting to the interval since the last
+ independently accepted anchor. It does not prevent:
+
+ - fabrication of new signed samples through the live signing oracle;
+ - deletion or denial of service;
+ - suppression of future anchor publication;
+ - compromise of remote-log credentials held by the Pi;
+ - rewriting within the unanchored hour;
+ - producing a fork after the last anchored head;
+ - patching local health output to claim publication succeeded.
+
+ APNs payloads are not a durable append-only transparency log. The remote service
+ must acknowledge and independently retain each anchor, reject counter
+ rollback/forks, and allow a verifier to compare retained anchors against supplied
+ history without trusting the Pi.
+
+ There is also a likely hardware feasibility problem in Amendment 02 §5.2:
+ incrementing a TPM NV monotonic counter for every 250 ms ingest batch may exceed
+ TPM rate or endurance limits. I am unsure for the proposed module because no
+ exact part is selected, but this must be measured against that part’s NV write
+ limits; batching counter commitments into periodic signed checkpoints is more
+ plausible.
+
+ ────────────────────────────────────────────────────────────────────────────────
+
+ Findings the earlier reviews still missed
+
+ 4. Will bite — upstream silence can coexist with a healthy alarm heartbeat
+
+ Quoted above under Amendment 04 §3.2. The architecture needs an end-to-end lease,
+ not a klaxond liveness pulse.
+
+ How to detect it:
+
+ ```text
+   kill/wedge collector       while klaxond remains alive
+   kill/wedge vitalsd         while klaxond remains alive
+   pause cns-engine           while klaxond remains alive
+   break subscribe delivery   while all processes remain alive
+   fill/drop command channel  while heartbeat continues
+ ```
+
+ Every case must expire the hardware lease or produce a separate fail-safe alarm.
+
+ ────────────────────────────────────────────────────────────────────────────────
+
+ 5. Will bite — detector state and live samples disappear on restart
+
+ │ Design §5.1: “cns-engine is a pure fold.”
+ │ Amendment 01 §2: “cns-engine holds its own ~60 s ring buffers.”
+
+ A pure fold is replayable only if its state or input cursor is recoverable. The
+ design does not specify transactional persistence of detector state, replay from
+ the durable spool after restart, or how subscription gaps are closed.
+
+ A restart near a threshold can erase accumulated evidence and reset the tier to
+ an apparently benign initial state. This is especially dangerous because
+ AGENTS.md says missing data “holds state” and “never escalates on its own,” but a
+ process restart may lose the state that was supposed to be held.
+
+ Use a monotonic sample sequence and restart protocol:
+
+ 1. Persist detector checkpoint plus last consumed sequence.
+ 2. On reconnect, replay durable samples after that sequence.
+ 3. Do not report measured-good until replay reaches the live edge.
+ 4. Enter explicit UNAVAILABLE/RECOVERING state if the gap cannot be closed.
+
+ Test by killing cns-engine at every point in a historical alarm-producing trace
+ and requiring the same eventual alarm, within a specified maximum delay.
+
+ ────────────────────────────────────────────────────────────────────────────────
+
+ 6. Will bite — the continuous aggregate permanently misses late data
+
+ │ Amendment 01 §3.2 and db/deploy/samples_1min.sql:
+ │ start_offset => INTERVAL '3 hours'.
+
+ If Postgres or the drainer is unavailable for more than three hours, subsequently
+ drained rows have old event timestamps outside the refresh window. Their raw rows
+ exist, but the scheduled continuous aggregate may never materialize those
+ invalidated historical buckets; retention can eventually delete the raw rows and
+ make the omission permanent.
+
+ This breaks historical completeness under a routine outage rather than an exotic
+ event. Detect it by holding the spool for four hours, draining it, and comparing
+ raw time_bucket results against samples_1min.
+
+ Use a second backfill policy or explicit refresh over the actual timestamp range
+ of every drained batch. The drainer already knows ts_first and ts_last; enqueue
+ those ranges for aggregate refresh rather than assuming all ingest is near real
+ time.
+
+ ────────────────────────────────────────────────────────────────────────────────
+
+ 7. Will bite — the checked-in schema contradicts Amendment 04 in multiple ways
+
+ db/deploy/samples.sql still contains:
+
+ - PRIMARY KEY (source, type, timestamp);
+ - hlc_physical and hlc_logical, which Amendment 04 §8 removes;
+ - shared samples_staging, which Amendment 04 §6 removes;
+ - no batch_id, despite Amendment 02 §7 saying it must be reserved now.
+
+ The verify script reinforces the stale design:
+
+ │ db/verify/samples.sql: selects HLC columns and requires samples_staging.
+
+ This is not documentation lag; Sqitch verification will actively reject the
+ amended schema. The task plan, schema, generated SQL, stage deliverables, and
+ acceptance commands need one coordinated rewrite before another implementation
+ task is dispatched.
+
+ ────────────────────────────────────────────────────────────────────────────────
+
+ 8. Will bite — append-only semantics are internally contradictory
+
+ │ AGENTS.md: “No UPDATE, no DELETE against samples.”
+ │ Amendment 02 §1.4: vitals_writer receives INSERT, UPDATE, DELETE.
+ │ Amendment 02 §6: “samples stays append-only—now enforced by grants.”
+
+ Those statements cannot all be true. Audit-triggered mutation is auditable
+ mutability, not append-only storage, and granting the routine drainer role UPDATE
+  and DELETE unnecessarily expands the blast radius of its credentials.
+
+ Use separate roles:
+
+ - ingest role: INSERT only;
+ - correction role: no routine login, explicit audited function;
+ - retention owner: chunk policy only;
+ - reader role: SELECT.
+
+ Prefer correction/tombstone rows over mutating measurements. If direct correction
+ remains supported, stop calling samples append-only and specify how signatures,
+ batch digests, aggregates, and cold exports represent corrected history.
+
+ ────────────────────────────────────────────────────────────────────────────────
+
+ 9. Might bite — the audit hash chain can fork under concurrency
+
+ │ Amendment 02 §1.1: “Each entry hashes the previous entry’s hash.”
+
+ No serialization mechanism is specified for selecting the previous hash. Two
+ concurrent corrections can read the same head and create two valid children,
+ after which “a single sequential scan” has no unique chain to verify.
+
+ A trigger needs a locked singleton head row or a transaction-scoped advisory lock
+ around head allocation. Canonical serialization must also be specified
+ byte-for-byte; “canonical JSONB” is not enough for independent verification
+ unless field order, null encoding, timestamp representation, and bytea encoding
+ are fixed.
+
+ ────────────────────────────────────────────────────────────────────────────────
+
+ 10. Might bite — effective_cache_size was counted as allocated memory
+
+ │ Amendment 04 §2: “Postgres is tuned to use up to 6 GB.”
+
+ effective_cache_size=4GB is a planner estimate, not a 4 GB allocation. The
+ original reviewer’s arithmetic is wrong, although the overall memory-risk
+ conclusion remains valid because work_mem=32MB can be allocated per operation,
+ per parallel worker, across many connections, while Timescale workers,
+ maintenance memory, containers, and page cache remain unbounded.
+
+ Fix the reasoning before setting limits. Measure cgroup RSS, anonymous memory,
+ page cache, query concurrency, and worst-case work_mem multiplication rather than
+ treating configuration labels as additive reservations.
+
+ ────────────────────────────────────────────────────────────────────────────────
+
+ 11. Might bite — current sensing still does not prove an audible or tactile alarm
+
+ │ Amendment 04 §5: “Current flowed or it did not.”
+
+ Current proves that a load consumed power. It does not prove that a siren
+ diaphragm moved, a shaker remained mechanically coupled to the bed, or sound
+ pressure reached the sleeper.
+
+ A microphone or accelerometer provides stronger end-to-end evidence, although it
+ creates calibration and ambient-noise problems. Current sensing is still
+ worthwhile as a wiring/open-circuit check; it just must not be described as proof
+ that the human-facing modality worked.
+
+ ────────────────────────────────────────────────────────────────────────────────
+
+ 12. Taste — the database stack is disproportionate to the archive workload
+
+ TimescaleDB, toolkit, pg_cron, Sqitch, pgBackRest, a raw binary COPY queue,
+ custom drain recovery, audit triggers, signing, and TPM anchoring create a large
+ operational surface on the same host as a life-safety loop. This is tolerable
+ only if the archive path is strictly resource-contained and incapable of blocking
+ detection; that boundary is not currently demonstrated.
+
+ The safety path should not need the database, schema fingerprint, spool drainer,
+ or encryption volume to detect and alarm. Durable clinical history can be
+ sophisticated, but none of its failure modes should consume the same unbounded
+ memory, disk, or scheduler budget as detection.
+
+ ────────────────────────────────────────────────────────────────────────────────
+
+ Where the architecture is wrong
+
+ 1. The independent supervisor belongs off the Pi
+
+ A 555 is too weak to understand whether the safety function is healthy, while
+ another Linux process is not independent enough. Use a small MCU or dedicated
+ safety/watchdog controller that:
+
+ - receives a short-lived health lease;
+ - requires advancing sensor and detector sequence numbers, not a static pulse;
+ - controls at least one siren/shaker directly;
+ - has a bounded maintenance inhibit;
+ - alarms on Pi power loss, hang, stale sensing, or stale detection;
+ - records reset/alarm reasons;
+ - has an independently powered or battery-backed alarm channel if host power loss
+   is in scope.
+
+ That is actual host-level independence. Everything else remains one Pi pretending
+ peripherals are fault domains.
+
+ 2. Event identity must not be derived from wall-clock time
+
+ Timestamps describe events; they should not be primary identities. Use immutable
+ observation IDs and preserve both event and receipt time.
+
+ This applies beyond RR: two legitimate measurements can share a timestamp after
+ source rounding, imports can replay a measurement with revised metadata, and host
+ clock correction can move observations backward. A surrogate ID plus explicit
+ producer sequence makes replay, audit, and dedup behavior representable instead
+ of heuristic.
+
+ 3. Detector recovery must be part of the data protocol
+
+ Live fan-out alone is an unreliable message bus. Subscriptions require a
+ sequence/cursor and a catch-up operation, or they cannot distinguish “nothing
+ happened” from “I missed messages while disconnected.”
+
+ The detector should consume an ordered local safety log with bounded retention,
+ checkpoint its fold state, and reconnect by sequence. PostgreSQL can remain the
+ historical sink, but it should not define the detector’s recovery semantics.
+
+ 4. Storage unavailability must not disable sensing
+
+ Amendment 02 places spool and collector state on the locked volume, then
+ Amendment 04 delays escalation when that volume is absent. Detection should be
+ able to run in a bounded volatile mode while storage is unavailable, with an
+ explicit data-loss state and immediate end-to-end safety lease behavior.
+
+ If collector state includes BLE bonds or device identity, putting all of it
+ behind LUKS also risks preventing reconnection. Separate minimal
+ safety-operational state from protected historical data.
+
+ ────────────────────────────────────────────────────────────────────────────────
+
+ Rust and platform features that should be used
+
+ heapless or equivalent bounded containers — high value
+
+ Use bounded queues, vectors, and ring buffers in collectors, vitalsd, cns-engine,
+ and klaxond. This directly addresses OOM behavior rather than trying to make
+ leaking processes immune to termination.
+
+ Every queue must specify overflow semantics. For safety samples, “drop oldest,”
+ “drop newest,” and “raise unavailable” have materially different consequences.
+
+ loom or Shuttle — high value
+
+ Model the drainer, rotation, shutdown, reconnect, and command-channel state
+ machines under adversarial interleavings. fs4 proves a lock primitive exists; it
+ does not prove the protocol around the lock is race-free.
+
+ Filesystem crash consistency still needs kill/power-failure testing, but
+ concurrency model checking will catch session, task, and channel races before
+ hardware testing.
+
+ proptest — high value
+
+ Use state-machine/property testing for:
+
+ - alarm acknowledgment and re-escalation;
+ - monitoring-window boundaries;
+ - missing-data state transitions;
+ - detector restart and replay;
+ - RR reconstruction across arbitrary packet boundaries;
+ - spool row framing and partial tails.
+
+ kani is appropriate for bounded decoder properties; it is not a replacement for
+ generated long state-machine traces.
+
+ tss-esapi — required if TPM claims remain
+
+ Do not shell out to tpm2-tools for signing, PCR policy, or counter handling on
+ the routine path. Use tss-esapi, select a concrete TPM, and benchmark NV-counter
+ endurance and latency before committing to per-batch counters.
+
+ tracing with monotonic sequence fields — useful
+
+ metrics supplies counters but not causal incident reconstruction. Structured
+ spans should carry producer epoch, observation sequence, batch ID, detector input
+ sequence, alarm command ID, and acknowledgment ID.
+
+ Do not rely on timestamps alone when the RTC and wall clock are already
+ acknowledged failure sources.
+
+ systemd watchdog notifications tied to real progress — required platform use
+
+ WatchdogSec should be renewed only after each service has made semantic progress,
+ not merely because its event loop timer fired. For cns-engine, that means
+ consuming or explicitly classifying current liveness; for klaxond, processing
+ command input and proving the output task remains responsive.
+
+ This still does not replace the external supervisor, but it closes ordinary
+ process-wedge cases quickly.
+
+ ────────────────────────────────────────────────────────────────────────────────
+
+ What I checked and found genuinely fine
+
+ - crates/vitals-decode/src/sfloat.rs correctly treats all five IEEE-11073
+   reserved mantissas as absent and exhaustively checks all u16 inputs.
+ - Amendment 04 §9 correctly retracts the unsupported claim that tactile
+   stimulation penetrates CNS depression better than sound.
+ - Stable DAC identity, disabling autosuspend, and enforcing a volume floor in
+   Amendment 04 §5 are sound improvements; current sensing is useful as an
+   electrical test, not acoustic proof.
+ - TIMESTAMPTZ with the PostgreSQL session timezone pinned to UTC is sound; it
+   stores an instant rather than a local timezone.
+ - WITH NO DATA in db/deploy/samples_1min.sql is correct.
+ - The Sqitch dependency placing retention after the continuous aggregate is
+   correct, though the three-hour refresh window remains wrong for delayed ingest.
+ - Range rejection and quarantine rather than clamping are correct.
+ - The panel’s pure-subscriber dependency direction is sound.
+ - Pairing BLE devices with stored IRKs rather than trusting a rotating MAC
+   address is correct.
+ - Publishing an audit-chain head to an independently retained off-box log is
+   genuinely useful for retrospective tamper detection, provided it is not
+   represented as prevention of root fabrication or denial of service.
+
+───────────────────────────────────────────────────────────────────────────────────
+
+───────────────────────────────────────────────────────────────────────────────────
+~/Source/AnxietyWatch2 (refactor/rust-workspace)
+↑30 ↓8.7k R231k W48k CH97.6% 43.1%/128k (auto)         (litellm) openai/gpt-5.6-sol

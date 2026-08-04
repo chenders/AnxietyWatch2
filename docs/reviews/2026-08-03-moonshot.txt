@@ -1,0 +1,511 @@
+
+ You are an independent reviewer of a system design. Be adversarial and specific.
+ Do not be
+ agreeable. If the design is sound in an area, say so in one line and move on —
+ spend your effort on
+ what is wrong or missing.
+
+ The system
+
+ ~/Source/AnxietyWatch2 — a Raspberry Pi 5 beside a bed that collects
+ physiological data from
+ body-worn Bluetooth sensors all night, detects CNS-depression events, and sounds
+ an alarm. One user,
+ who is also the engineer. The alarm failing to sound when it should, or a missing
+ signal being
+ treated as a healthy one, are the worst possible defects.
+
+ Read these, in this order
+
+ 1. docs/specs/2026-08-03-pi5-vitals-core-design.md — architecture
+ 2. docs/specs/2026-08-03-amendment-01-timescale-copy-spool.md — supersedes the
+    storage design
+ 3. docs/specs/2026-08-03-c-vs-rust-evaluation.md — language decision (Rust was
+    chosen)
+ 4. docs/specs/2026-08-03-language-choices.md
+ 5. openspec/changes/pi5-vitals-core/tasks.md — the 15 implementation tasks
+ 6. db/ — the sqitch migration change set
+ 7. crates/vitals-decode/src/sfloat.rs — the only real code so far
+ 8. AGENTS.md, docs/STAGE-DELIVERABLES.md
+
+ Answer these four questions
+
+ 1. What is missing that will hurt?
+ Not "you could also add X." Things whose absence will cause a real failure, data
+ loss, or a silent
+ wrong result. Rank by severity. For each: what breaks, under what conditions, and
+ how you would know
+ it had happened.
+
+ 2. What tool, library, protocol or platform feature should this be using and
+ isn't?
+ Be concrete and current. Name the thing, say what it replaces, and say what it
+ costs. Areas worth
+ checking: time-series storage and query, Bluetooth on Linux, crash-safe local
+ buffering, audio
+ alerting reliability, observability, backup verification, embedded/edge
+ deployment, testing and
+ fuzzing, schema management, and anything in the Rust ecosystem specifically. If
+ the design already
+ picked the right thing, say so briefly rather than padding.
+
+ 3. Where is the design wrong, not just incomplete?
+ Decisions that look reasonable but will not survive contact with reality. Argue
+ the specific
+ failure. Candidates worth interrogating hard:
+ - Is the Hybrid Logical Clock justified? Who actually writes concurrently to the
+   same key?
+ - Is the append-only COPY-binary spool better than the alternatives, or is it
+   clever for its own
+   sake?
+ - Does splitting schema ownership between sqitch (structure) and generated SQL
+   (reference rows)
+   actually work, or does it drift?
+ - Is one process per collector right, or should they be one supervised process?
+ - Is the staging-table drain correct under concurrent drainers, or does it need a
+   lock?
+
+ 4. What would you do differently at the architecture level?
+ One or two paragraphs. If you would keep the architecture, say that plainly
+ instead of inventing
+ disagreement.
+
+ Rules
+
+ - Be specific. "Consider adding monitoring" is worthless; "there is no way to
+   detect that
+   vitals-spool-drain has silently stopped, so the spool grows until the disk
+   fills — add a
+   liveness check on drain progress, not process liveness" is useful.
+ - Quote file and section when you criticise something.
+ - Distinguish will bite from might bite from taste.
+ - If you are unsure whether something is a real problem, say so rather than
+   asserting.
+ - Do not restate the design back at me. I wrote it. Tell me what is wrong with
+   it.
+
+ Output
+
+ Markdown. Start with the three most severe findings in three sentences each, then
+ the detail.
+ Finish with anything you checked and found genuinely fine, so I know what you
+ covered.
+
+
+
+ read ~/Source/AnxietyWatch2/docs/specs/2026-08-03-pi5-vitals-core-design.md
+
+
+
+ read
+ ~/Source/AnxietyWatch2/docs/specs/2026-08-03-amendment-01-timescale-copy-spool.md
+
+
+
+ read ~/Source/AnxietyWatch2/docs/specs/2026-08-03-c-vs-rust-evaluation.md
+
+
+
+ read ~/Source/AnxietyWatch2/docs/specs/2026-08-03-language-choices.md
+
+
+
+ read ~/Source/AnxietyWatch2/openspec/changes/pi5-vitals-core/tasks.md
+
+
+
+ read resource AGENTS.md (ctrl+o to expand)
+
+
+
+ read ~/Source/AnxietyWatch2/docs/STAGE-DELIVERABLES.md
+
+
+
+ $ ls -la /path/to/AnxietyWatch2/db/
+
+ ... (3 earlier lines, ctrl+o to expand)
+ drwxr-xr-x   9 chris  staff   288 Aug  3 04:05 deploy
+ drwxr-xr-x   9 chris  staff   288 Aug  3 04:05 revert
+ -rw-r--r--   1 chris  staff   204 Aug  3 04:05 sqitch.conf
+ -rw-r--r--   1 chris  staff  1106 Aug  3 04:05 sqitch.plan
+ drwxr-xr-x   9 chris  staff   288 Aug  3 04:05 verify
+
+ Took 0.0s
+
+
+
+ read ~/Source/AnxietyWatch2/crates/vitals-decode/src/sfloat.rs
+
+
+
+ $ ls -la /path/to/AnxietyWatch2/db/deploy/ && ls -la
+ /path/to/AnxietyWatch2/db/verify/
+
+ ... (15 earlier lines, ctrl+o to expand)
+ -rw-r--r--  1 chris  staff  321 Aug  3 04:05 retention.sql
+ -rw-r--r--  1 chris  staff  641 Aug  3 04:05 samples.sql
+ -rw-r--r--  1 chris  staff  486 Aug  3 04:05 samples_1min.sql
+ -rw-r--r--  1 chris  staff  285 Aug  3 04:05 samples_compression.sql
+ -rw-r--r--  1 chris  staff  133 Aug  3 04:05 samples_hypertable.sql
+
+ Took 0.0s
+
+
+
+ read ~/Source/AnxietyWatch2/db/sqitch.plan
+
+
+
+ read ~/Source/AnxietyWatch2/db/deploy/samples.sql
+
+
+
+ read ~/Source/AnxietyWatch2/db/deploy/samples_hypertable.sql
+
+
+
+ read ~/Source/AnxietyWatch2/db/deploy/samples_1min.sql
+
+
+ Now I have a complete picture. Let me provide the adversarial review.
+
+ ────────────────────────────────────────────────────────────────────────────────
+
+ Three Most Severe Findings
+
+ 1. The COPY-binary spool format is architecture-dependent and the design has no
+    defense against a Pi OS upgrade with buffered data. Amendment 01 §2.3 says
+    "drain to empty before any major Postgres upgrade," but there is no mechanism
+    to enforce this — a vitals-spool-drain --verify check exists, but nothing
+    stops a system upgrade from happening while cur.copybin is non-empty. When the
+    spool is read back on a different architecture or PG version, the drainer will
+    either corrupt data or fail silently depending on how the header check is
+    written. This is a data loss path disguised as a deployment detail.
+
+ 2. The HLC is unnecessary complexity that will silently fail on clock skew. The
+    design claims the HLC exists to "merge writes from multiple independent nodes
+    without a coordinator," but the actual system has exactly one writer: vitalsd
+    on the Pi. The phone pushes via HTTP to an API that writes through vitalsd;
+    there is no concurrent writer to the same key. The HLC adds a 16-byte node ID
+    and two extra columns to every row, but the real danger is hlc_merge's
+    60-second forward-drift bound — if the Pi clock jumps forward (NTP step,
+    manual correction), the HLC will reject legitimate future samples as "too far
+    ahead," causing a silent ingest stall that the health endpoint may not
+    distinguish from "no new data."
+
+ 3. The staging-table drain is not safe under concurrent drainers, and the design
+    implies it is. Amendment 01 §2.2 shows a transaction that CREATE TEMP TABLE,
+    COPY into it, then INSERT ... ON CONFLICT. But temp tables are per-session,
+    and if two drainers run concurrently (a deployment error, a systemd restart
+    overlap, a manual systemctl start while one is running), they will both
+    attempt to drain the same spool segments. The offset file is supposed to
+    prevent this, but there is no advisory lock or flock() shown — the race window
+    between "read offset" and "write new offset" is unprotected. Duplicate rows
+    are the best-case outcome; split-brain offset advancement is worse.
+
+ ────────────────────────────────────────────────────────────────────────────────
+
+ 1. What is missing that will hurt?
+
+ ### 1.1 Spool format version detection and hard failure
+
+ Severity: High
+ What breaks: After any Postgres major version upgrade or architecture change
+ (ARMv8 → ARMv9, or 32-bit compatibility mode), the binary COPY format may change
+ field alignment or header version. The spool drainer will read the old-format
+ file and either corrupt data or fail with an opaque error.
+ How you know: You don't, until queries return garbage or the drainer logs
+ "unexpected EOF" at 3am.
+ Fix: Add a 4-byte format version magic to the spool header. vitals-spool-drain
+ must refuse to drain if the magic mismatches, and the service must exit non-zero
+ so systemd restart logic surfaces it immediately.
+
+ ### 1.2 Clock jump detection and HLC self-healing
+
+ Severity: High
+ What breaks: The Pi has no RTC battery. On first boot after power loss, the clock
+ starts at epoch. NTP steps it forward. The HLC's 60-second drift bound will
+ reject samples until the physical clock catches up to the last HLC stamp, causing
+ an ingest stall that looks like sensor failure.
+ How you know: The health endpoint shows "stale source" for all sources, but the
+ sensors are fine.
+ Fix: Detect clock jumps in hlc_now. If physical time has moved backwards or
+ jumped forward >60s, write a tombstone row with a special type and reset the
+ logical counter. Document that HLC is for causal ordering, not wall-clock
+ accuracy.
+
+ ### 1.3 Advisory locking on the spool offset file
+
+ Severity: Medium-High
+ What breaks: Concurrent drainers (accidental or from a systemd restart loop) race
+ on the offset file. One reads offset 0, drains 1000 rows, crashes before writing
+ offset. Second starts at offset 0 again, drains same 1000 rows, writes offset
+ 1000. First recovers, writes offset 1000. 1000 duplicates in Postgres, or worse,
+ partial transaction commits with mismatched offsets.
+ How you know: Duplicate key exceptions in Postgres logs (if you're looking), or
+ silent duplicate rows in samples (if you're not).
+ Fix: flock() on the offset file. The drainer must hold the lock for the entire
+ duration of segment processing.
+
+ ### 1.4 No liveness check on drain progress
+
+ Severity: Medium
+ What breaks: vitals-spool-drain could stop draining (deadlock, Postgres
+ connection hung, disk full on spool partition) while the process remains running.
+ systemd sees "active" and does nothing. The spool grows until the disk fills,
+ then vitalsd blocks on fsync, then collectors block on vitalsd.
+ How you know: The disk fills.
+ Fix: Export "last successful drain timestamp" and "bytes behind" to the health
+ endpoint. Alert when bytes behind exceeds a threshold or when drain timestamp is
+ older than 2× the expected drain interval.
+
+ ### 1.5 No mechanism to detect a stuck cns-engine
+
+ Severity: Medium
+ What breaks: cns-engine is a pure fold that emits commands. If it wedges
+ (infinite loop, memory pressure, bug), it emits no commands. klaxond sees no
+ command and assumes "no alarm needed." A desaturation goes unalarmed.
+ How you know: You die.
+ Fix: cns-engine must emit a heartbeat command (NOP to klaxond) every N seconds.
+ klaxond alarms if heartbeat missed.
+
+ ### 1.6 Missing gap-fill policy enforcement
+
+ Severity: Medium
+ What breaks: Amendment 01 §3.3 says locf() and interpolate() are "banned on
+ physiological series," but there is no mechanism to enforce this. A future query
+ author (or an AI code generator) uses time_bucket_gapfill(..., locf => true) and
+ the chart now lies.
+ How you know: A user notices the SpO₂ trace never shows gaps.
+ Fix: Add a query linter in CI that rejects SQL containing locf or interpolate in
+ the same file as samples or samples_1min.
+
+ ### 1.7 No end-to-end latency SLO
+
+ Severity: Medium
+ What breaks: The design has timing expectations (250ms batching, 1-minute
+ aggregate refresh) but no measurement. When the alarm fails to fire, you cannot
+ distinguish "detector missed it" from "sample arrived late" from "alarm path was
+ slow."
+ How you know: You can't.
+ Fix: Add ingest_latency_ms and alarm_path_latency_ms histograms to the health
+ endpoint. Assert in tests that p99 ingest latency < 500ms.
+
+ ────────────────────────────────────────────────────────────────────────────────
+
+ 2. What tool, library, protocol or platform feature should this be using and
+ isn't?
+
+ ### 2.1 systemd watchdog for vitals-spool-drain
+
+ Current: The design mentions WatchdogSec=30 for vitalsd but not for the drainer.
+ Should use: sd_notify watchdog in the drainer too. If it blocks on Postgres for
+ >30s, systemd restarts it.
+ Cost: One libsystemd call per drain cycle; trivial.
+
+ ### 2.2 flock() or O_EXCL for spool segment locking
+
+ Current: No locking shown.
+ Should use: Advisory lock on the offset file, or exclusive create on segment
+ files.
+ Cost: One syscall.
+
+ ### 2.3 prometheus-client or metrics crate for metrics
+
+ Current: Health endpoint is custom CBOR.
+ Should use: Prometheus exposition format. The Pi runs Grafana in Docker;
+ Prometheus metrics are free dashboards and alerting.
+ Cost: Small dependency; can be no_std with metrics crate.
+
+ ### 2.4 tokio::time::Interval with MissedTickBehavior::Delay for collectors
+
+ Current: C code with manual timing.
+ Should use: If collectors are Rust (as recommended), tokio::time handles clock
+ jumps and missed ticks correctly.
+ Cost: Runtime dependency; already paid if using tokio.
+
+ ### 2.5 sqlx compile-time checked queries for the API layer
+
+ Current: Python API layer.
+ Should use: If the API were Rust, sqlx verifies queries against the schema at
+ compile time.
+ Cost: Not applicable while API is Python; but Python has no equivalent, which is
+ a risk.
+
+ ### 2.6 zstd streaming compression for cold export
+
+ Current: Cold export is mentioned but not specified.
+ Should use: zstd streaming, not gzip. 3× faster, better compression.
+ Cost: python-zstandard package.
+
+ ### 2.7 bluer's Device::connect with tokio::time::timeout
+
+ Current: BlueZ D-Bus in C.
+ Should use: If collectors are Rust, bluer with explicit timeouts on every call.
+ Cost: Already chosen in the Rust recommendation.
+
+ ### 2.8 systemd RuntimeDirectoryPreserve=yes for spool
+
+ Current: StateDirectory=vitals.
+ Should use: RuntimeDirectoryPreserve=yes so the spool survives a service restart
+ but is cleaned on reboot.
+ Cost: One line in unit file.
+
+ ### 2.9 pg_isready in drainer health check
+
+ Current: Not shown.
+ Should use: Check Postgres connectivity before attempting drain; fail fast with a
+ clear error.
+ Cost: One subprocess call or libpq equivalent.
+
+ ### 2.10 criterion for Rust benchmarks
+
+ Current: No benchmarking shown.
+ Should use: For the COPY encoder and HLC, prove they meet latency budgets.
+ Cost: Dev dependency only.
+
+ ────────────────────────────────────────────────────────────────────────────────
+
+ 3. Where is the design wrong, not just incomplete?
+
+ ### 3.1 The Hybrid Logical Clock is unjustified
+
+ From 2026-08-03-pi5-vitals-core-design.md §2.1: "An HLC exists to merge writes
+ from multiple independent nodes without a coordinator."
+ Reality: The Pi is the single system of record. The phone pushes to an API that
+ writes through vitalsd. There is no concurrent writer. The HLC adds complexity
+ (node ID persistence, clock drift bounds, merge logic) for a scenario that does
+ not exist.
+ What fails: Clock skew causes ingest rejection; node ID file corruption causes
+ identity loss; the merge code path is untested because there is never anything to
+ merge.
+ Verdict: Remove HLC, use auto-incrementing BIGINT for ordering, or use Postgres's
+ pg_current_xact_id() if you need a logical timestamp. The HLC is clever for its
+ own sake.
+
+ ### 3.2 The COPY-binary spool is worse than newline-delimited JSON
+
+ From Amendment 01 §2: "No dialect mismatch... The buffer format is Postgres's
+ format."
+ Reality: The spool is unqueryable, unportable, and requires a custom drainer. A
+ newline-delimited JSON spool would be: human-readable for debugging, queryable
+ with jq, portable across architectures, and drainable with psql \copy or COPY
+ directly without a staging table.
+ What fails: Debugging a stuck drainer requires hex dumps of binary COPY format.
+ The "no dialect mismatch" argument is false — the COPY encoder is still custom
+ code that can be wrong.
+ Verdict: Use NDJSON. The performance difference is irrelevant at 1-10
+ samples/sec.
+
+ ### 3.3 The two-owner schema split will drift
+
+ From Amendment 01 §7.1: "Structure is migrated; reference data is generated and
+ reconciled."
+ Reality: Sqitch owns the table structure; registry.sql owns the lookup rows. But
+ samples has foreign keys to vitals_source and vitals_type. If Sqitch creates the
+ tables empty and the generator hasn't run, inserts fail. If the generator adds a
+ row that Sqitch hasn't created the table for, it fails. The "neither can silently
+ claim the other's objects" assertion is false — they are tightly coupled.
+ What fails: Deployment ordering bugs that only appear in fresh installs.
+ Verdict: Generate the full schema from the registry, including CREATE TABLE, and
+ make Sqitch a thin wrapper that runs the generated SQL. One source of truth, not
+ two.
+
+ ### 3.4 One process per collector is wrong for Bluetooth
+
+ From 2026-08-03-c-vs-rust-evaluation.md §4: "In Rust, Send/Sync make shared state
+ safe... The four collectors could be one supervised process."
+ Reality: The design keeps C for collectors, so this advantage is discarded. But
+ even in C, one process per adapter is wrong. BlueZ is a global daemon; the
+ processes compete for the same D-Bus bus, and one misbehaving collector can
+ starve the others of CPU or D-Bus bandwidth.
+ What fails: Priority inversion — the BP collector (rare, important) is blocked by
+ the Polar collector (frequent, less urgent) on D-Bus.
+ Verdict: One process per adapter, but with a single D-Bus connection and priority
+ scheduling. Or, accept the Rust recommendation and use tokio::task with explicit
+ priorities.
+
+ ### 3.5 The staging table drain is not idempotent under crash
+
+ From Amendment 01 §2.2: "The byte offset advances only after that transaction
+ commits."
+ Reality: The offset is in a separate file, not in the same transaction as the
+ COPY. If the drainer crashes between COMMIT and fsync of the offset file, it will
+ re-drain the same rows on restart. ON CONFLICT DO NOTHING saves you from
+ duplicates, but if the schema changes between crash and restart (a deployment),
+ the re-drain may fail with a type mismatch.
+ What fails: A crash during a deployment window (common) causes permanent drain
+ failure.
+ Verdict: Store the offset in Postgres, in the same table as the data, or use a
+ two-phase commit.
+
+ ### 3.6 The language choice document contradicts itself
+
+ From 2026-08-03-language-choices.md §2: "C for everything currently specified as
+ C11" and "Recommendation: write the collectors in Rust."
+ From 2026-08-03-c-vs-rust-evaluation.md §7: "Rust for everything currently
+ specified as C11."
+ Reality: The tasks.md still specifies C11 for T-D2 through T-D6. The Rust
+ recommendation was accepted but not applied to the task definitions. A worker
+ reading only tasks.md will build C, while the design documents say Rust.
+ What fails: Mixed codebase, ABI boundaries, build system complexity, and the
+ safety benefits are lost.
+ Verdict: Rewrite tasks.md to match the accepted Rust recommendation, or revert
+ the Rust decision explicitly.
+
+ ────────────────────────────────────────────────────────────────────────────────
+
+ 4. What would you do differently at the architecture level?
+
+ I would keep the architecture — the narrow waist of vitalsd, the append-only
+ store, the split between life-safety path and convenience Docker — but I would
+ make three surgical changes:
+
+ First, replace the COPY-binary spool with newline-delimited JSON. The "no dialect
+ mismatch" argument is a mirage; the encoder is still custom code, and binary COPY
+ is unportable and undebuggable. NDJSON is human-readable, jq-queryable, and can
+ be drained with standard tools. The performance difference is negligible at
+ physiological data rates.
+
+ Second, remove the HLC. There is one writer. Use a simple auto-incrementing
+ BIGINT or Postgres's built-in transaction ID for ordering. The HLC's complexity
+ (node ID file, clock drift bounds, merge logic) is justified for distributed
+ systems, not for a single Pi.
+
+ Third, commit to Rust for the collectors and cns-engine. The C vs Rust evaluation
+ correctly identified that the collectors are where stateful bugs live, and that
+ Swift→C porting loses type-level invariants. The tasks.md should be updated to
+ reflect this decision, not left in contradiction. The vitalsd spool writer can
+ remain in C or Rust — either is fine — but the BLE state machines and the
+ detection fold benefit from Send/Sync and exhaustive pattern matching.
+
+ The architecture is sound; the implementation details are where the risk lies.
+
+ ────────────────────────────────────────────────────────────────────────────────
+
+ What I checked and found genuinely fine
+
+ - SFLOAT decoder (crates/vitals-decode/src/sfloat.rs): Correct handling of
+   sentinels, exhaustive test coverage, no_std compatible. The comment about
+   0xF14A vs 0xF04A shows the error was caught and documented.
+ - Sqitch migration ordering (db/sqitch.plan): Correct dependency chain
+   (extensions → registry_tables → samples → samples_hypertable →
+   samples_compression/samples_1min → retention). The retention dependency on
+   samples_1min is correct — raw data must not be dropped before the aggregate
+   exists.
+ - TimescaleDB continuous aggregate (db/deploy/samples_1min.sql): Correct use of
+   WITH NO DATA followed by add_continuous_aggregate_policy. The
+   min_value/max_value columns are clinically correct — averages hide nadirs.
+ - AGENTS.md rules: The "Acceptance is a shell command's exit code" rule is the
+   correct discipline. The "Never clamp an out-of-range value" and "Invalid or
+   absent data contributes nothing" invariants are properly enforced.
+ - Stage deliverables concept (docs/STAGE-DELIVERABLES.md): The progression from
+   static HTML artifacts to live console is the right way to de-risk. Each stage
+   produces something visible and verifiable.
+
+───────────────────────────────────────────────────────────────────────────────────
+
+───────────────────────────────────────────────────────────────────────────────────
+~/Source/AnxietyWatch2 (refactor/rust-workspace)
+↑170k ↓4.4k 32.8%/128k (auto)               (litellm) openrouter/moonshotai/kimi-k2
