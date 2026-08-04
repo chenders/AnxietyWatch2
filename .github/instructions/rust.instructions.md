@@ -1,8 +1,8 @@
 ---
-applyTo: "**/*.{c,h}"
+applyTo: "**/*.rs"
 ---
 
-# C review rules — AnxietyWatch2
+# Rust review rules — AnxietyWatch2
 
 This code runs unattended all night and is the only thing standing between a desaturation and an
 alarm. Review it that way.
@@ -15,92 +15,119 @@ indication is not hypothetical — it is what BlueZ hands you when a device brow
 
 Required shape, flag any deviation:
 
-```c
-bool decode_x(const uint8_t *buf, size_t len, result_t *out);
+```rust
+pub fn decode_x(buf: &[u8]) -> Option<Measurement>;
 ```
 
 - **Pure.** No allocation, no I/O, no global or static state, no logging.
-- **Every read bounds-checked against `len` before it happens.** Flag any indexing that assumes a
-  minimum length without checking it first, including the flags byte.
-- **Length checks before each optional field**, not just once at the top. Optional-field layouts
-  mean the required length depends on the flags byte.
-- **Returns `false` on malformed input** and leaves `*out` untouched. Never partially populated.
-- **Has a libFuzzer target** in `vitals/fuzz/`. A new decoder without one is incomplete.
+- **`get()` / `get(a..b)`, never `buf[i]` or `buf[a..b]`.** `indexing_slicing` is denied; an index
+  that panics in a collector takes the collector down and the alarm with it.
+- **Length checks before each optional field**, not just once at the top. Optional-field layouts mean
+  the required length depends on the flags byte.
+- **Returns `None` on malformed input.** `Option`/`Result` rather than a `bool` plus an out-parameter
+  is the whole reason this project is in Rust — a caller cannot read a value that is not there.
+- **Has a `cargo-fuzz` target** in `fuzz/fuzz_targets/`. A new decoder without one is incomplete.
+- Decoder crates are `#![no_std]` and `#![forbid(unsafe_code)]`. Flag any `std` dependency that
+  creeps in, and any `unsafe` block anywhere in the workspace.
 
 ## Numeric hazards
 
 **IEEE-11073 SFLOAT is not IEEE-754 half-float.** 4-bit signed exponent in the high nibble, 12-bit
-signed mantissa below. Flag any `_Float16` cast, `memcpy` into a float, or bit-reinterpretation — it
+signed mantissa below. Flag any `f16` cast, `from_bits`, `transmute`, or byte reinterpretation — it
 produces plausible-looking wrong numbers, and 118/74 versus 141/92 are both believable.
 
-**Sign-extension.** 4-bit and 12-bit signed fields must be explicitly sign-extended. Flag arithmetic
-on a raw masked field without it.
+**Sign-extension.** 4-bit and 12-bit signed fields must be explicitly sign-extended (`<< 4 >> 4` at
+the right width, or an equivalent). Flag arithmetic on a raw masked field without it.
 
 **Reserved sentinels are absent, not zero.** `0x07FF` NaN, `0x0800` NRes, `0x07FE`/`0x0802` ±INF,
-`0x0801` Reserved. Flag any path where one reaches `*out` as a value.
+`0x0801` Reserved. Flag any path where one becomes `Some(value)`.
 
-**Never compare floats with `==`.** Tests use `fabs(a - b) < 1e-9`. Flag exact equality on `double`.
+**Never compare floats with `==`.** Tests use `(a - b).abs() < 1e-9`. Flag exact equality on `f64`.
 
-**`-Wconversion` is on.** Flag implicit narrowing that was silenced with a cast rather than fixed.
+**Integer overflow wraps in release** unless `overflow-checks` is on. Flag arithmetic on
+wire-derived values that could overflow; prefer `checked_*` / `saturating_*` and say which you meant.
 
-## Integer and pointer safety
+**`as` casts are lint-denied** (`cast_possible_truncation`, `cast_sign_loss`, `cast_precision_loss`).
+Flag an `as` added to silence a lint rather than to state an intent, and any
+`#[allow(clippy::cast_*)]` with no comment justifying it.
 
-- Flag `int` where the value comes from a wire field. Use sized types.
-- Flag arithmetic on `size_t` that could underflow — `len - 2` when `len` might be 0 or 1.
-- Flag any `strcpy`, `sprintf`, `strcat`, `alloca`, or unbounded `scanf`.
-- Flag missing `NULL` checks on out-parameters in public functions.
+## Panics are the memory-safety equivalent here
+
+Rust removed the buffer overrun. The remaining way to kill a collector is to panic.
+
+- Flag `unwrap()`, `expect()`, `panic!`, `unreachable!`, `todo!`, `unimplemented!` in non-test code.
+  `unwrap_used` and `panic` are denied — an `#[allow]` needs a written reason.
+- Flag slicing, indexing, integer division and `%` on any value derived from the wire.
+- `panic = "abort"` in release: a panic is not recoverable, it is a process death.
+- Decoders should carry a `kani` proof harness for panic-freedom where practical (amendment 04 §11);
+  fuzzing approximates what kani proves.
 
 ## Concurrency
 
-`vitalsd` is a **single-writer, single-threaded epoll loop**. That is the design, and it is why
+`vitalsd` is a **single-writer, single-threaded `tokio` runtime**. That is the design, and it is why
 there is no locking. Flag:
 
-- Any thread creation in the daemon.
+- `tokio::spawn` of work that touches store state (use `spawn_local` on the `LocalSet`).
+- A multi-threaded runtime flavor in the daemon.
 - Any shared mutable state introduced between collectors and the store.
 - Any assumption that two collectors can write the database directly — they append through the
-  socket; `vitalsd` alone touches SQLite.
+  socket; `vitalsd` alone touches PostgreSQL.
+- `.await` while holding a lock or an open transaction.
+- **Blocking calls in async context** — `std::fs`, `std::net`, a contended `std::sync::Mutex`. One
+  blocking call on a current-thread runtime stalls every collector at once.
 
-## Portability
+## Crate boundaries
 
-Two libraries, and the boundary is load-bearing:
-
-| Library | Contains | Builds on |
+| Crate | Contains | Constraint |
 |---|---|---|
-| `vitals_core` | decoders, HLC — pure C11 | macOS **and** Linux |
-| `vitals_linux` | SQLite, `vitalsd`, epoll, BlueZ, systemd | Linux only |
+| `vitals-registry` | generated types and sources | `no_std`, no dependencies |
+| `vitals-decode` | pure decoders | `no_std`, `forbid(unsafe_code)`, no I/O |
+| `vitals-core` | shared value types | no BlueZ, no SQL, no systemd |
+| `vitalsd`, collectors | Linux-only: BlueZ, tokio, postgres, systemd | Pi only |
 
-Flag any Linux header (`sys/epoll.h`, `systemd/sd-daemon.h`, `sys/random.h`, `dbus/`) reaching a
-`vitals_core` source. Flag any `#ifdef __APPLE__` shim that fakes a Linux API — a mocked BlueZ tests
-the mock. Linux-only work belongs in `vitals_linux` and runs on the Pi.
+Flag any BlueZ, systemd, or SQL dependency reaching `vitals-decode` or `vitals-registry`. Flag a
+mocked BlueZ used as test evidence — a mocked radio tests the mock.
 
 ## Storage
 
 - No `UPDATE` or `DELETE` against `samples`. Append-only; removal is a tombstone.
-- `INSERT ... ON CONFLICT DO NOTHING` so append is idempotent on `(source, type, timestamp)`.
+- `INSERT ... ON CONFLICT DO NOTHING` so append is idempotent on
+  **`(source, type, session_id, seq)`** — not on `timestamp`. Flag any code or comment still keying
+  identity on time (amendment 05 §1).
 - Range validation against the registry happens **before** insert. Out-of-range goes to quarantine
   with a reason, never clamped, never dropped silently.
-- Flag any SQL string built by concatenation. Prepared statements with bound parameters only.
+- Flag any SQL built by string concatenation. Use `sqlx` with bound parameters and compile-time
+  checking.
+- **Binary COPY freezes column count and order.** Flag any change to the spool row layout not paired
+  with a schema-fingerprint bump and a drained-spool guard.
 
 ## Time
 
-- `timestamp` is a `double` holding **UTC epoch seconds**. Flag `time_t` arithmetic assuming local
-  time, `localtime()`, or any timezone conversion below presentation.
-- Flag monotonic and wall clocks being mixed. HLC physical time is wall-clock milliseconds;
-  durations use a monotonic source.
+- `timestamp` is `TIMESTAMPTZ`, an absolute instant; the cluster is pinned to UTC. Flag
+  `chrono::Local`, naive datetimes crossing a boundary, or any timezone conversion below
+  presentation.
+- Flag monotonic and wall clocks being mixed. Durations use `Instant`; event times use the wire value
+  or a documented estimate.
+- **`timestamp` is not identity.** It may be an estimate and may be revised. Flag any dedup, cursor,
+  or primary-key logic depending on it.
 
 ## Error handling
 
-- Flag any ignored return value from `sqlite3_*`, `read`, `write`, `close`, or `malloc`.
+- Flag `let _ = ...` on a fallible call, and any `.ok()` discarding an error silently.
 - Flag a caught-and-logged error that then proceeds as though it succeeded.
-- Flag `assert()` used for runtime validation of external input — asserts compile out in release.
-  Validate and return an error instead.
+- Flag `debug_assert!` validating external input — it compiles out in release. Validate and return
+  an error.
+- **A guard that blocks a user-visible action must name its blocker.** Flag a `bool` return where the
+  caller cannot say *which* condition failed, and any `Result<_, ()>`.
+- Prefer typed errors (`thiserror`) at library boundaries; `anyhow` is fine inside binaries.
 
 ## Style
 
-`.clang-format` handles layout; do not flag it. Do flag:
+`rustfmt` handles layout; do not flag it. Do flag:
 
-- Comments that explain *what* rather than *why*.
-- A doc comment that no longer matches the code — especially after a threshold, filter, or sort
-  order changes.
-- Magic numbers used in two or more places. They belong in `vitals/registry.toml` and reach C
-  through generated constants.
+- Comments explaining *what* rather than *why*.
+- A doc comment that no longer matches the code — especially after a threshold, filter, or sort order
+  changes.
+- Magic numbers used in two or more places. They belong in `vitals/registry.toml` and reach Rust
+  through `vitals-registry`'s generated enums.
+- A source label as a string literal (`"polar_h10"`). Use the generated enum variant.
