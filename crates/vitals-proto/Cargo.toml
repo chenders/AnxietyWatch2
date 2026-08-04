@@ -1,0 +1,20 @@
+[package]
+name = "vitals-proto"
+description = "vitalsd socket wire format: framing and message types"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+# CBOR: self-describing, compact, and every field is optional-by-construction,
+# so adding a verb does not break an older peer.
+ciborium = "0.2"
+serde = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+vitals-core = { path = "../vitals-core" }
+
+[lints]
+workspace = true
