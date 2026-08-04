@@ -8,6 +8,7 @@ point is the failure modes.
 from __future__ import annotations
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -17,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from gen_registry import (
     Registry,
+    emit_rust,
     emit_sql,
     main,
     sql_literal,
@@ -107,22 +109,61 @@ def _executable_sql(sql: str) -> str:
     return "\n".join(line for line in sql.splitlines() if not line.lstrip().startswith("--"))
 
 
-def test_no_check_constraint_subqueries(registry: Registry) -> None:
-    """PostgreSQL and SQLite both prohibit subqueries in CHECK constraints; such
-    a table fails at CREATE time. The REFERENCES clauses already enforce it.
+def test_sql_contains_no_ddl(registry: Registry) -> None:
+    """Sqitch owns structure. An earlier generator also emitted `CREATE TABLE
+    samples` — with the pre-amendment-05 primary key — so two systems declared
+    the same table and disagreed about its key. Whichever ran last won.
     """
-    statements = _executable_sql(emit_sql(registry)).upper()
-    assert "CHECK" in statements, "sanity: the DDL should still contain a CHECK"
-    assert "IN (SELECT" not in statements
+    sql = emit_sql(registry).upper()
+    for forbidden in ("CREATE TABLE", "CREATE EXTENSION", "CREATE_HYPERTABLE",
+                      "ADD_COMPRESSION_POLICY", "CREATE MATERIALIZED VIEW",
+                      "ALTER TABLE"):
+        assert forbidden not in sql, f"registry.sql emits DDL: {forbidden}"
+    assert "INSERT INTO VITALS_TYPE" in sql, "sanity: reference data is still emitted"
 
 
-def test_samples_matches_the_spec_shape(registry: Registry) -> None:
-    sql = emit_sql(registry)
-    for col in ("hlc_physical", "hlc_logical", "node_id", "extra"):
-        assert col in sql, f"samples is missing {col}"
-    assert "PRIMARY KEY (source, type, timestamp)" in sql
-    assert "TIMESTAMPTZ" in sql
-    assert "create_hypertable" in sql
+def test_sql_carries_no_superseded_schema(registry: Registry) -> None:
+    """The inverse of a test that used to ASSERT this shape was present. It
+    pinned `hlc_physical`, `hlc_logical` and `PRIMARY KEY (source, type,
+    timestamp)` — the schema amendments 04 §8 and 05 §1 replaced — so the test
+    suite was holding the superseded design in place.
+    """
+    sql = emit_sql(registry).lower()
+    for gone in ("hlc_physical", "hlc_logical",
+                 "primary key (source, type, timestamp)"):
+        assert gone not in sql, f"registry.sql still carries {gone}"
+
+
+def test_rust_enums_use_the_ids_the_briefs_depend_on() -> None:
+    """T-D6 emits `VitalsSource::AdUa651ble` with `BpSystolic`/`BpDiastolic`/
+    `BpMap`, and its Verify greps `source = 6 AND type = 6`. A renumbering here
+    would leave that query silently matching nothing.
+    """
+    # The REAL registry, not the minimal fixture: these ids are the contract
+    # T-D6's Verify query depends on.
+    real = Registry.load(Path(__file__).resolve().parents[2] / "registry.toml")
+    rust = emit_rust(real)
+    for expected in ("AdUa651ble = 6,", "BpSystolic = 6,", "BpDiastolic = 7,",
+                     "BpMap = 8,", "Hr = 1,", "PolarH10 = 1,"):
+        assert expected in rust, f"generated.rs missing {expected}"
+    # snake_case must not leak into variant names -- the TOML uses it, Rust
+    # does not, and a mismatch here is a compile error at every use site.
+    # Enum bodies only: `X = N,`. Excludes match arms (`_ => None,`) and the
+    # ALL_* array entries.
+    variant_lines = [ln.strip() for ln in rust.splitlines()
+                     if re.fullmatch(r" {4}[A-Za-z][A-Za-z0-9_]* = -?\d+,", ln)]
+    assert variant_lines, "sanity: no enum variants found to check"
+    for ln in variant_lines:
+        name = ln.split("=")[0].strip()
+        assert "_" not in name, f"variant {name!r} is not PascalCase"
+
+
+def test_rust_rejects_unknown_ids(registry: Registry) -> None:
+    """`from_id` returning a variant for an unknown integer would let a wire or
+    database value name a type that does not exist."""
+    rust = emit_rust(registry)
+    assert "_ => None," in rust
+    assert "pub const fn from_id(id: i32) -> Option<Self>" in rust
 
 
 def test_duplicate_ids_are_rejected(tmp_path: Path) -> None:
@@ -170,8 +211,9 @@ def test_no_swift_artifact(registry: Registry, tmp_path: Path) -> None:
     out = tmp_path / "gen"
     write_all(registry, out)
     assert not (out / "VitalsRegistry.swift").exists()
+    assert not (out / "vitals_types.h").exists(), "the C header is superseded"
     assert {p.name for p in out.iterdir()} == {
-        "vitals_types.h",
+        "generated.rs",
         "registry.sql",
         "registry.json",
     }
@@ -190,19 +232,43 @@ def test_json_round_trips(registry: Registry, tmp_path: Path) -> None:
 # ── CLI ──────────────────────────────────────────────────────────────────────
 
 
-def test_check_detects_drift(tmp_path: Path) -> None:
+def test_check_detects_drift(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A hand-edited generated file must not survive CI. `--out` no longer
+    exists: artifacts go to fixed homes (the crate source tree for the Rust
+    one), so the test redirects those homes rather than a single directory.
+    """
+    import gen_registry as gr
+
     reg_path = tmp_path / "registry.toml"
     reg_path.write_text(MINIMAL, encoding="utf-8")
-    out = tmp_path / "gen"
+    dests = {
+        "generated.rs": tmp_path / "crate" / "generated.rs",
+        "registry.sql": tmp_path / "gen" / "registry.sql",
+        "registry.json": tmp_path / "gen" / "registry.json",
+    }
+    monkeypatch.setattr(gr, "ARTIFACT_DESTS", dests)
+    monkeypatch.setattr(gr, "ARTIFACTS", tuple(dests))
 
-    assert main(["--registry", str(reg_path), "--out", str(out)]) == 0
-    assert main(["--check", "--registry", str(reg_path), "--out", str(out)]) == 0
+    assert main(["--registry", str(reg_path)]) == 0
+    assert main(["--check", "--registry", str(reg_path)]) == 0
 
-    (out / "vitals_types.h").write_text("/* hand-edited */\n", encoding="utf-8")
-    assert main(["--check", "--registry", str(reg_path), "--out", str(out)]) == 1
+    dests["generated.rs"].write_text("// hand-edited\n", encoding="utf-8")
+    assert main(["--check", "--registry", str(reg_path)]) == 1
 
 
-def test_check_fails_when_artifacts_absent(tmp_path: Path) -> None:
+def test_check_fails_when_artifacts_absent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """--check must fail on missing artifacts, not report clean. A check that
+    compares a generator against nothing is the vacuous-pass shape this repo has
+    now produced five times.
+    """
+    import gen_registry as gr
+
     reg_path = tmp_path / "registry.toml"
     reg_path.write_text(MINIMAL, encoding="utf-8")
-    assert main(["--check", "--registry", str(reg_path), "--out", str(tmp_path / "none")]) == 1
+    dests = {name: tmp_path / "absent" / name
+             for name in ("generated.rs", "registry.sql", "registry.json")}
+    monkeypatch.setattr(gr, "ARTIFACT_DESTS", dests)
+    monkeypatch.setattr(gr, "ARTIFACTS", tuple(dests))
+    assert main(["--check", "--registry", str(reg_path)]) == 1

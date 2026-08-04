@@ -1,21 +1,26 @@
 #!/usr/bin/env python3
-"""Generate C, SQL and JSON artifacts from vitals/registry.toml.
+"""Generate Rust, SQL and JSON artifacts from vitals/registry.toml.
 
 `registry.toml` is the single source of truth for every source, type, canonical
 unit and valid range in the system. Everything downstream is generated from it,
 so a source label like "polar_h10" exists in exactly one file and is an integer
 everywhere else.
 
-    gen_registry.py            regenerate vitals/generated/
+    gen_registry.py            regenerate every artifact in place
     gen_registry.py --check    regenerate to a temp dir and diff; nonzero on drift
 
 Artifacts:
-    vitals_types.h   C enums + range/unit accessors
-    registry.sql     PostgreSQL 16 + TimescaleDB DDL
-    registry.json    the parsed model, for the API layer and any client
+    crates/vitals-registry/src/generated.rs   #[repr(i32)] enums + range/unit
+    vitals/generated/registry.sql            reference-data INSERTs only
+    vitals/generated/registry.json           the parsed model, for the API layer
 
 No Swift artifact: the phone is a thin client that reads registry.json over
 HTTP. It does not link a generated enum.
+
+Structure is NOT generated. `db/deploy/` (sqitch) owns every CREATE TABLE, the
+hypertable, compression and the continuous aggregate. An earlier version emitted
+`CREATE TABLE samples` here too — with the pre-amendment-05 primary key — so the
+two systems disagreed about the schema and whichever ran last won.
 """
 
 from __future__ import annotations
@@ -33,9 +38,23 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 REGISTRY = REPO_ROOT / "vitals" / "registry.toml"
 GENERATED = REPO_ROOT / "vitals" / "generated"
 
-ARTIFACTS = ("vitals_types.h", "registry.sql", "registry.json")
-BANNER_C = "/* GENERATED FROM registry.toml — DO NOT EDIT */"
+# Each artifact's real home. generated.rs is a crate source file, not a data
+# artifact, so it lives with the crate that compiles it -- Cargo has no notion
+# of an out-of-tree module and `include!` would hide it from rustfmt and clippy.
+ARTIFACT_DESTS = {
+    "generated.rs": REPO_ROOT / "crates" / "vitals-registry" / "src" / "generated.rs",
+    "registry.sql": GENERATED / "registry.sql",
+    "registry.json": GENERATED / "registry.json",
+}
+ARTIFACTS = tuple(ARTIFACT_DESTS)
+BANNER_RS = "// GENERATED FROM registry.toml — DO NOT EDIT"
 BANNER_SQL = "-- GENERATED FROM registry.toml — DO NOT EDIT"
+
+
+def _pascal(name: str) -> str:
+    """snake_case -> PascalCase. `bp_systolic` -> `BpSystolic`,
+    `ad_ua651ble` -> `AdUa651ble`, `polar_h10` -> `PolarH10`."""
+    return "".join(part.capitalize() for part in name.split("_"))
 
 
 # ── model ────────────────────────────────────────────────────────────────────
@@ -51,8 +70,8 @@ class SampleType:
     precision: float
 
     @property
-    def c_enum(self) -> str:
-        return f"VITALS_TYPE_{self.name.upper()}"
+    def rust_variant(self) -> str:
+        return _pascal(self.name)
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,8 +84,8 @@ class Source:
     indication: bool = False
 
     @property
-    def c_enum(self) -> str:
-        return f"VITALS_SOURCE_{self.name.upper()}"
+    def rust_variant(self) -> str:
+        return _pascal(self.name)
 
 
 @dataclass(frozen=True, slots=True)
@@ -153,67 +172,152 @@ def sql_literal(value: str) -> str:
     return f"'{escaped}'"
 
 
-def emit_c_header(reg: Registry) -> str:
-    types = ",\n".join(f"    {t.c_enum} = {t.id}" for t in reg.types)
-    sources = ",\n".join(f"    {s.c_enum} = {s.id}" for s in reg.sources)
-    return f"""{BANNER_C}
-#ifndef VITALS_TYPES_H
-#define VITALS_TYPES_H
+def emit_rust(reg: Registry) -> str:
+    """`#[repr(i32)]` enums, not integer constants.
 
-#include <stdbool.h>
+    An `i32` that can hold any value is exactly what lets a source id and a type
+    id be transposed at a call site without the compiler noticing — and both are
+    small integers drawn from overlapping ranges, so the mistake is invisible in
+    a debugger too. A real enum makes it a compile error.
 
-#ifdef __cplusplus
-extern "C" {{
-#endif
+    `no_std`, no allocation: this crate is a dependency of the decoders.
+    """
+    # A doc comment per variant: the workspace sets missing_docs, and the unit
+    # and range are the two things a reader needs at the use site anyway.
+    types = "\n".join(
+        f"    /// `{t.name}` — `{t.unit}`, valid {t.range_lo}..{t.range_hi}\n"
+        f"    {t.rust_variant} = {t.id},"
+        for t in reg.types)
+    sources = "\n".join(
+        f"    /// `{s.name}` — `{s.transport}`"
+        + (f", service `{s.service}`" if s.service else "")
+        + (" (indication)" if s.indication else "")
+        + f"\n    {s.rust_variant} = {s.id},"
+        for s in reg.sources)
+    type_ranges = "\n".join(
+        f"            Self::{t.rust_variant} => ({t.range_lo!r}, {t.range_hi!r}),"
+        for t in reg.types)
+    type_units = "\n".join(
+        f'            Self::{t.rust_variant} => "{t.unit}",' for t in reg.types)
+    type_from = "\n".join(
+        f"            {t.id} => Some(Self::{t.rust_variant})," for t in reg.types)
+    source_from = "\n".join(
+        f"            {s.id} => Some(Self::{s.rust_variant})," for s in reg.sources)
+    return f"""{BANNER_RS}
+//! Types and sources generated from `vitals/registry.toml`.
+//!
+//! Ids are permanent: never reuse, never renumber. A reused id silently
+//! reinterprets every historical row that carries it.
 
-typedef enum {{
+/// A measurement type. The canonical unit and valid range come from the
+/// registry, never from a literal at the call site.
+#[repr(i32)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum VitalsType {{
 {types}
-}} vitals_type_t;
-
-typedef enum {{
-{sources}
-}} vitals_source_t;
-
-#define VITALS_TYPE_COUNT   {len(reg.types)}
-#define VITALS_SOURCE_COUNT {len(reg.sources)}
-
-typedef struct {{
-    double lo;
-    double hi;
-}} vitals_range_t;
-
-/* Valid range for a type, from registry.toml. Returns false for an unknown id;
- * *out is untouched. Values outside the range are quarantined, never clamped. */
-bool vitals_type_range(int type_id, vitals_range_t *out);
-
-/* Canonical unit for a type. NULL for an unknown id. Conversion happens once,
- * at the decoder — the store holds exactly one unit per type. */
-const char *vitals_type_unit(int type_id);
-
-#ifdef __cplusplus
 }}
-#endif
 
-#endif /* VITALS_TYPES_H */
+/// Where a sample came from. Provenance, and it must survive aggregation.
+#[repr(i32)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum VitalsSource {{
+{sources}
+}}
+
+impl VitalsType {{
+    /// Valid range from `registry.toml`. Values outside it are **quarantined
+    /// with a reason, never clamped** — a clamped reading is indistinguishable
+    /// from a real one downstream.
+    #[must_use]
+    // Arms are one-per-variant on purpose. Several types share a unit or a
+    // range, and collapsing them would make it non-obvious which type maps
+    // where -- exactly the ambiguity this enum exists to remove.
+    #[allow(clippy::match_same_arms)]
+    pub const fn range(self) -> (f64, f64) {{
+        match self {{
+{type_ranges}
+        }}
+    }}
+
+    /// Canonical unit. Conversion happens once, at the decoder, so the store
+    /// holds exactly one unit per type.
+    #[must_use]
+    // Arms are one-per-variant on purpose. Several types share a unit or a
+    // range, and collapsing them would make it non-obvious which type maps
+    // where -- exactly the ambiguity this enum exists to remove.
+    #[allow(clippy::match_same_arms)]
+    pub const fn unit(self) -> &'static str {{
+        match self {{
+{type_units}
+        }}
+    }}
+
+    /// Rejects an unknown id rather than transmuting it. The wire and the
+    /// database both hand us plain integers.
+    #[must_use]
+    pub const fn from_id(id: i32) -> Option<Self> {{
+        match id {{
+{type_from}
+            _ => None,
+        }}
+    }}
+
+    /// The stable integer id. Permanent — see the module docs.
+    #[must_use]
+    pub const fn id(self) -> i32 {{
+        self as i32
+    }}
+}}
+
+impl VitalsSource {{
+    /// Rejects an unknown id rather than transmuting it.
+    #[must_use]
+    pub const fn from_id(id: i32) -> Option<Self> {{
+        match id {{
+{source_from}
+            _ => None,
+        }}
+    }}
+
+    /// The stable integer id. Permanent — see the module docs.
+    #[must_use]
+    pub const fn id(self) -> i32 {{
+        self as i32
+    }}
+}}
+
+/// Every type, for exhaustive iteration in tests and admin views.
+pub const ALL_TYPES: [VitalsType; {len(reg.types)}] = [
+{chr(10).join(f"    VitalsType::{t.rust_variant}," for t in reg.types)}
+];
+
+/// Every source.
+pub const ALL_SOURCES: [VitalsSource; {len(reg.sources)}] = [
+{chr(10).join(f"    VitalsSource::{s.rust_variant}," for s in reg.sources)}
+];
 """
 
 
 def emit_sql(reg: Registry) -> str:
-    out: list[str] = [
+    """Reference data ONLY — `INSERT`s into the lookup tables.
+
+    **Sqitch owns structure** (`db/deploy/`). An earlier version of this
+    generator also emitted `CREATE TABLE samples` with `hlc_physical`,
+    `hlc_logical` and `PRIMARY KEY (source, type, timestamp)` — the schema
+    amendments 04 §8 and 05 §1 replaced — plus the hypertable, compression and
+    continuous-aggregate DDL that `db/deploy/` now owns.
+
+    Two systems creating the same table is how a migration diverges from the
+    schema it is migrating, and here they disagreed on the primary key: sqitch's
+    is `(source, type, session_id, seq)`. Whichever ran last would have won,
+    silently.
+    """
+    out = [
         BANNER_SQL,
-        "-- Target: PostgreSQL 16 + TimescaleDB. See amendment 01.",
-        "",
-        "CREATE EXTENSION IF NOT EXISTS timescaledb;",
-        "",
-        "CREATE TABLE IF NOT EXISTS vitals_type (",
-        "    id        INTEGER PRIMARY KEY,",
-        "    name      TEXT             NOT NULL UNIQUE,",
-        "    unit      TEXT             NOT NULL,",
-        "    range_lo  DOUBLE PRECISION NOT NULL,",
-        "    range_hi  DOUBLE PRECISION NOT NULL,",
-        "    precision DOUBLE PRECISION NOT NULL,",
-        "    CHECK (range_lo < range_hi)",
-        ");",
+        "-- Reference data for the registry lookup tables.",
+        "-- Structure lives in db/deploy/registry_tables.sql — sqitch owns it.",
+        "-- Ids are permanent: ON CONFLICT UPDATE so a renamed unit or widened",
+        "-- range propagates, but an id is never reused or renumbered.",
         "",
     ]
     for t in reg.types:
@@ -225,16 +329,7 @@ def emit_sql(reg: Registry) -> str:
             "    range_lo = EXCLUDED.range_lo, range_hi = EXCLUDED.range_hi,",
             "    precision = EXCLUDED.precision;",
         ]
-
-    out += [
-        "",
-        "CREATE TABLE IF NOT EXISTS vitals_source (",
-        "    id        INTEGER PRIMARY KEY,",
-        "    name      TEXT    NOT NULL UNIQUE,",
-        "    transport TEXT    NOT NULL",
-        ");",
-        "",
-    ]
+    out.append("")
     for s in reg.sources:
         out += [
             "INSERT INTO vitals_source (id, name, transport)",
@@ -242,59 +337,6 @@ def emit_sql(reg: Registry) -> str:
             "ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name,",
             "    transport = EXCLUDED.transport;",
         ]
-
-    out += [
-        "",
-        "-- Append-only. No UPDATE, no DELETE; removal is a tombstone row.",
-        "-- TIMESTAMPTZ rather than epoch REAL: hypertable partitioning and every",
-        "-- hyperfunction expect a real timestamp type. This does not weaken the",
-        "-- UTC-only rule — TIMESTAMPTZ stores an absolute instant and the cluster",
-        "-- timezone is pinned to UTC.",
-        "CREATE TABLE IF NOT EXISTS samples (",
-        "    source       INTEGER          NOT NULL REFERENCES vitals_source(id),",
-        "    type         INTEGER          NOT NULL REFERENCES vitals_type(id),",
-        "    timestamp    TIMESTAMPTZ      NOT NULL,",
-        "    value        DOUBLE PRECISION NOT NULL,",
-        "    extra        BYTEA,",
-        "    hlc_physical BIGINT           NOT NULL,",
-        "    hlc_logical  INTEGER          NOT NULL,",
-        "    node_id      BYTEA            NOT NULL,",
-        "    PRIMARY KEY (source, type, timestamp)",
-        ");",
-        "",
-        "-- The REFERENCES clauses above enforce referential integrity. A",
-        "-- CHECK (... IN (SELECT ...)) would be redundant and illegal: PostgreSQL",
-        "-- and SQLite both prohibit subqueries in CHECK, so such a table fails at",
-        "-- CREATE time rather than at insert time.",
-        "",
-        "SELECT create_hypertable('samples', by_range('timestamp', INTERVAL '1 day'),",
-        "                         if_not_exists => TRUE);",
-        "",
-        "ALTER TABLE samples SET (",
-        "    timescaledb.compress,",
-        "    timescaledb.compress_segmentby = 'source, type',",
-        "    timescaledb.compress_orderby   = 'timestamp DESC'",
-        ");",
-        "SELECT add_compression_policy('samples', INTERVAL '7 days', if_not_exists => TRUE);",
-        "",
-        "-- min/max are carried because an average hides a desaturation nadir, and",
-        "-- the nadir is the clinically interesting number.",
-        "CREATE MATERIALIZED VIEW IF NOT EXISTS samples_1min",
-        "WITH (timescaledb.continuous) AS",
-        "SELECT source, type,",
-        "       time_bucket(INTERVAL '1 minute', timestamp) AS bucket,",
-        "       avg(value) AS value, count(*) AS sample_count,",
-        "       min(value) AS min_value, max(value) AS max_value",
-        "FROM samples",
-        "GROUP BY source, type, bucket",
-        "WITH NO DATA;",
-        "",
-        "SELECT add_continuous_aggregate_policy('samples_1min',",
-        "    start_offset      => INTERVAL '3 hours',",
-        "    end_offset        => INTERVAL '1 minute',",
-        "    schedule_interval => INTERVAL '1 minute',",
-        "    if_not_exists     => TRUE);",
-    ]
     return "\n".join(out) + "\n"
 
 
@@ -340,23 +382,26 @@ def validate(reg: Registry, out_dir: Path) -> None:
     """
     problems: list[str] = []
     sql = (out_dir / "registry.sql").read_text(encoding="utf-8")
-    header = (out_dir / "vitals_types.h").read_text(encoding="utf-8")
+    rust = (out_dir / "generated.rs").read_text(encoding="utf-8")
     doc = json.loads((out_dir / "registry.json").read_text(encoding="utf-8"))
 
     for t in reg.types:
         if sql_literal(t.name) not in sql:
             problems.append(f"registry.sql: no INSERT for type {t.name}")
-        if f"{t.c_enum} = {t.id}" not in header:
-            problems.append(f"vitals_types.h: no enum member {t.c_enum}")
+        if f"{t.rust_variant} = {t.id}," not in rust:
+            problems.append(f"generated.rs: no enum variant {t.rust_variant}")
     for s in reg.sources:
         if sql_literal(s.name) not in sql:
             problems.append(f"registry.sql: no INSERT for source {s.name}")
-        if f"{s.c_enum} = {s.id}" not in header:
-            problems.append(f"vitals_types.h: no enum member {s.c_enum}")
+        if f"{s.rust_variant} = {s.id}," not in rust:
+            problems.append(f"generated.rs: no enum variant {s.rust_variant}")
 
-    for kw in ("create_hypertable", "samples_1min", "add_compression_policy"):
-        if kw not in sql:
-            problems.append(f"registry.sql: missing {kw}")
+    # The inverse of the old check. Structure here would collide with sqitch,
+    # and the two disagreed on the primary key.
+    for kw in ("CREATE TABLE", "create_hypertable", "add_compression_policy",
+               "CREATE MATERIALIZED VIEW", "hlc_physical"):
+        if kw in sql:
+            problems.append(f"registry.sql: contains DDL ({kw}) — sqitch owns structure")
 
     if len(doc.get("type", {})) != len(reg.types):
         problems.append("registry.json: type count does not match registry.toml")
@@ -367,9 +412,16 @@ def validate(reg: Registry, out_dir: Path) -> None:
         raise ValueError("generated output is incomplete:\n  " + "\n  ".join(problems))
 
 
+def install(staged: Path) -> None:
+    """Copy staged artifacts to their real homes, creating parents."""
+    for name, dest in ARTIFACT_DESTS.items():
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes((staged / name).read_bytes())
+
+
 def write_all(reg: Registry, out_dir: Path) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
-    (out_dir / "vitals_types.h").write_text(emit_c_header(reg), encoding="utf-8")
+    (out_dir / "generated.rs").write_text(emit_rust(reg), encoding="utf-8")
     (out_dir / "registry.sql").write_text(emit_sql(reg), encoding="utf-8")
     (out_dir / "registry.json").write_text(emit_json(reg), encoding="utf-8")
     validate(reg, out_dir)
@@ -386,7 +438,6 @@ def main(argv: list[str] | None = None) -> int:
         help="regenerate to a temp dir and diff; nonzero exit on drift",
     )
     parser.add_argument("--registry", type=Path, default=REGISTRY)
-    parser.add_argument("--out", type=Path, default=GENERATED)
     args = parser.parse_args(argv)
 
     try:
@@ -396,12 +447,19 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     if not args.check:
-        try:
-            write_all(reg, args.out)
-        except ValueError as exc:
-            print(exc, file=sys.stderr)
-            return 1
-        print(f"generated {len(ARTIFACTS)} artifacts in {args.out}")
+        with TemporaryDirectory() as tmp:
+            try:
+                write_all(reg, Path(tmp))
+            except ValueError as exc:
+                print(exc, file=sys.stderr)
+                return 1
+            install(Path(tmp))
+        for name, dest in ARTIFACT_DESTS.items():
+            try:
+                shown = dest.relative_to(REPO_ROOT)
+            except ValueError:      # redirected (tests), or outside the repo
+                shown = dest
+            print(f"  {name} -> {shown}")
         return 0
 
     with TemporaryDirectory() as tmp:
@@ -413,9 +471,9 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         drifted = [
             name
-            for name in ARTIFACTS
-            if not (args.out / name).is_file()
-            or not filecmp.cmp(tmp_dir / name, args.out / name, shallow=False)
+            for name, dest in ARTIFACT_DESTS.items()
+            if not dest.is_file()
+            or not filecmp.cmp(tmp_dir / name, dest, shallow=False)
         ]
         if drifted:
             print(
