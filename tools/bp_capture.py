@@ -87,7 +87,11 @@ def decode_2a35(b):
 # run. DBusGMainLoop must be installed before SystemBus() or signals never fire.
 dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
 bus = dbus.SystemBus()
-subscribed = set()
+# path -> human label, so an indication can name the characteristic it came
+# from. 2A36 Intermediate Cuff Pressure shares 2A35's layout and decodes as a
+# measurement with NaN diastolic/MAP; an unlabelled log is one transcription
+# away from a mid-inflation pressure reading becoming a "real_5" fixture.
+subscribed: dict = {}
 
 def dump_gatt():
     """Print the whole GATT tree, including the vendor service.
@@ -130,7 +134,7 @@ def try_subscribe():
         flags = [str(f) for f in ifaces[CHRC].get("Flags", [])]
         try:
             dbus.Interface(bus.get_object(BLUEZ, path), CHRC).StartNotify()
-            subscribed.add(path)
+            subscribed[path] = WANT[uuid]
             print(f">>> SUBSCRIBED {WANT[uuid]}  flags={flags}", flush=True)
         except dbus.DBusException as e:
             print(f"!!! StartNotify failed on {WANT[uuid]}: {e}", flush=True)
@@ -149,12 +153,28 @@ def on_props(iface, changed, _invalidated, path=None):
                 subscribed.clear()
         if changed.get("ServicesResolved"):
             print(">>> ServicesResolved -- subscribing", flush=True)
-            dump_gatt()
-            try_subscribe()
+            # Subscribe FIRST. dump_gatt() is a diagnostic and it makes
+            # unguarded D-Bus calls; a NoReply or timeout there would abort the
+            # handler before the subscription that is this tool's entire
+            # purpose. The cuff's radio window is 5-10s and then it disconnects
+            # with the reading still stored, so one transient fault costs a
+            # measurement. Diagnostics never run ahead of the functional path.
+            try:
+                try_subscribe()
+            except Exception as e:                      # noqa: BLE001
+                print(f"!!! subscribe raised: {e!r}", flush=True)
+            try:
+                dump_gatt()
+            except Exception as e:                      # noqa: BLE001
+                print(f"!!! dump_gatt raised (non-fatal): {e!r}", flush=True)
     if iface == CHRC and "Value" in changed and CUFF_PATH_FRAG in path:
         raw = bytes(bytearray(changed["Value"]))
+        # Name the source characteristic. 2A36 frames decode as a measurement
+        # with NaN diastolic/MAP -- plausible enough to be mistaken for a real
+        # reading when transcribed into a fixture file.
+        src = subscribed.get(path, f"UNKNOWN {path}")
         print("\n" + "=" * 62, flush=True)
-        print(f"INDICATION  {len(raw)} bytes", flush=True)
+        print(f"INDICATION from {src}  --  {len(raw)} bytes", flush=True)
         print(f"  hex: {raw.hex()}", flush=True)
         print(f"  arr: [{', '.join(f'0x{x:02X}' for x in raw)}]", flush=True)
         dec, err = decode_2a35(raw)
@@ -165,8 +185,7 @@ def on_props(iface, changed, _invalidated, path=None):
                 print(f"  {k:>18}: {v}", flush=True)
         print("=" * 62 + "\n", flush=True)
 
-dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
-bus = dbus.SystemBus()
+# bus and the main loop are established above, before the handlers are defined.
 bus.add_signal_receiver(on_props, dbus_interface=PROPS,
                         signal_name="PropertiesChanged",
                         path_keyword="path")

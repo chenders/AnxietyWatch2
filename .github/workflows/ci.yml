@@ -2,16 +2,39 @@ name: CI
 on: [push, pull_request]
 
 jobs:
+  # Every job below once targeted the C tree that the Rust decision deleted.
+  # `cmake -B build` ran against a version.c stub, the fuzz job globbed
+  # vitals/fuzz/fuzz_*.c and printed "skipping", the registry job was gated on a
+  # file that no longer exists, and coverage measured the stub while reporting a
+  # "vitals_core 95% HARD GATE". Four green checks, zero Rust compiled, and
+  # sfloat.rs's six tests had never once executed.
+  #
+  # A conditional that skips when its target is missing does not report a gap --
+  # it reports success. Every gate here now either runs or fails; none skip.
   build-test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Configure
-        run: cmake -B build -DCMAKE_BUILD_TYPE=Debug
-      - name: Build
-        run: cmake --build build
+      - uses: dtolnay/rust-toolchain@stable
+        with: { components: rustfmt, clippy }
+      - uses: Swatinem/rust-cache@v2
+      - name: Format
+        run: cargo fmt --all --check
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
       - name: Test
-        run: ctest --test-dir build --output-on-failure
+        run: |
+          set -o pipefail
+          cargo test --workspace --all-features --no-fail-fast 2>&1 | tee /tmp/test.out
+          # `cargo test` on a workspace with no tests exits 0. That is the same
+          # vacuous pass the jobs above used to give, one layer down, so assert
+          # the run did work rather than trusting the exit code.
+          passed=$(grep -oE '[0-9]+ passed' /tmp/test.out | awk '{s+=$1} END{print s+0}')
+          echo "tests passed: $passed"
+          if [ "$passed" -lt 5 ]; then
+            echo "::error::only $passed tests ran -- sfloat.rs alone has 6, so the suite is not executing"
+            exit 1
+          fi
 
   registry-is-generated:
     runs-on: ubuntu-latest
@@ -23,38 +46,71 @@ jobs:
       # regenerates to a temp dir and diffs.
       - name: Registry codegen is current
         run: |
-          if [ -f vitals/tools/gen_registry.py ]; then
-            python3 vitals/tools/gen_registry.py --check
+          GEN=vitals/tools/gen_registry.py
+          OUT=crates/vitals-registry/src/generated.rs
+          if [ -f "$GEN" ]; then
+            python3 "$GEN" --check
+          elif [ -f "$OUT" ]; then
+            # Generated output with no generator is worse than neither: nothing
+            # can prove the checked-in file still matches registry.toml.
+            echo "::error::$OUT exists but $GEN does not -- codegen is unverifiable"
+            exit 1
           else
-            echo "T-D1 not landed yet — skipping"
+            echo "::warning::T-D1 has not landed; registry codegen is unverified"
           fi
 
   fuzz-smoke:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
       # Every radio decoder gets 60s of fuzzing per push. Decoders are the only
       # code here that sees hostile input.
-      - name: Build fuzz targets
+      #
+      # The old version globbed `vitals/fuzz/fuzz_*.c`, which could never match a
+      # Rust target -- so it would have kept reporting green even after T-D6
+      # landed its mandated fuzz_bp_decode.rs.
+      - name: Every decoder has a fuzz target
         run: |
-          if ls vitals/fuzz/fuzz_*.c >/dev/null 2>&1; then
-            cmake -B build-fuzz -DVITALS_FUZZ=ON -DVITALS_SANITIZE=OFF -DCMAKE_C_COMPILER=clang
-            cmake --build build-fuzz
-            for f in build-fuzz/vitals/fuzz_*; do "$f" -max_total_time=60 || exit 1; done
+          # Name the undefended decoders rather than skipping quietly.
+          missing=0
+          for src in crates/vitals-decode/src/*.rs; do
+            base=$(basename "$src" .rs)
+            case "$base" in lib|mod) continue ;; esac
+            grep -q 'pub fn decode_' "$src" || continue
+            if [ ! -f "fuzz/fuzz_targets/fuzz_${base}.rs" ]; then
+              echo "::error::$src exports a decoder with no fuzz/fuzz_targets/fuzz_${base}.rs"
+              missing=1
+            fi
+          done
+          exit $missing
+      - name: Run fuzz targets
+        run: |
+          if [ -d fuzz/fuzz_targets ] && ls fuzz/fuzz_targets/*.rs >/dev/null 2>&1; then
+            cargo install cargo-fuzz --locked
+            for t in fuzz/fuzz_targets/*.rs; do
+              cargo fuzz run "$(basename "$t" .rs)" -- -max_total_time=60 || exit 1
+            done
           else
-            echo "no fuzz targets yet — skipping"
+            echo "::warning::no fuzz targets exist yet; the gate above passed only because no decoder is implemented"
           fi
 
   coverage:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install lcov
-        run: sudo apt-get update && sudo apt-get install -y lcov
-      # Differentiated gates — see scripts/coverage.sh for why a single flat
-      # number is the wrong shape for this codebase.
-      - name: Coverage gate
-        run: scripts/coverage.sh --check
+      - uses: dtolnay/rust-toolchain@stable
+        with: { components: llvm-tools-preview }
+      - uses: taiki-e/install-action@cargo-llvm-cov
+      - uses: Swatinem/rust-cache@v2
+      # Decoders are the highest-value and most testable code here, so they carry
+      # the hard gate. A flat workspace number would let untested decoder paths
+      # hide behind well-covered glue.
+      - name: Coverage gate — vitals-decode
+        run: cargo llvm-cov --package vitals-decode --fail-under-lines 90 --summary-only
+      - name: Coverage report — workspace
+        run: cargo llvm-cov --workspace --summary-only
 
   specs-are-reconciled:
     runs-on: ubuntu-latest
@@ -70,9 +126,18 @@ jobs:
           fail=0
           BRIEFS=openspec/changes/pi5-vitals-core/tasks.md
 
+          # Test for a match directly, never via a count. `grep -c` over a glob
+          # prefixes each result with its filename once more than one file
+          # matches, so `n` becomes "path:count" text and `[ "$n" -ne 0 ]` errors
+          # with "integer expression expected" -- and because it is an `if`
+          # condition, `set -e` does not catch it. The body is skipped and the
+          # check passes silently. openspec/changes/ is by construction
+          # multi-change, so this was one directory away from disabling the
+          # entire superseded-terms guard.
           for term in SQLite meson hlc_physical hlc_logical samples_staging libvitals; do
-            n=$(grep -ci "$term" openspec/changes/*/tasks.md || true)
-            if [ "${n:-0}" -ne 0 ]; then echo "::error::tasks.md still references '$term' ($n)"; fail=1; fi
+            if grep -rniE -- "$term" openspec/changes/*/tasks.md; then
+              echo "::error::tasks.md still references '$term'"; fail=1
+            fi
           done
 
           # The language decision. The first version of this guard checked only the
@@ -96,12 +161,33 @@ jobs:
           # secret-scan grep that parsed its pattern as flags, and a null byte that
           # made tasks.md binary so grep silently matched nothing. Prove the pattern
           # matches a known-bad line before trusting a clean run.
+          # The probe is a COPY OF $BRIEFS with known-bad lines appended, not a
+          # fresh temp file. Probing a separate file proves the regex compiles;
+          # it does not prove $BRIEFS was readable. The null-byte incident cited
+          # above is exactly that case -- tasks.md went binary, grep matched
+          # nothing, and a separate-file self-test would still have passed.
+          # Same file, same encoding, same invocation, or the test is theatre.
           probe=$(mktemp)
-          printf '1. Write `vitals/src/bp_decode.c`:\n' > "$probe"
-          if ! grep -qE "$C_PATTERN" "$probe"; then
-            echo "::error::guard self-test FAILED -- C_PATTERN matches nothing, so a clean run proves nothing"
-            fail=1
-          fi
+          cp "$BRIEFS" "$probe"
+          {
+            printf '1. Write `vitals/src/bp_decode.c`:\n'
+            printf '```c\n'
+            printf 'source = VITALS_SOURCE_AD_UA651BLE\n'
+            printf 'VITALS_TYPE_HR\n'
+            printf 'int LLVMFuzzerTestOneInput(const uint8_t *d, size_t n)\n'
+            printf '__builtin_trap();\n'
+            printf 'written in C11 throughout\n'
+            printf 'emits VitalsRegistry.swift\n'
+          } >> "$probe"
+          # One probe line per alternation: a corrupted branch in a 7-way regex
+          # is invisible if only one branch is ever exercised.
+          for want in 'bp_decode\.c' '```c$' 'VITALS_SOURCE_' 'VITALS_TYPE_' \
+                      'LLVMFuzzerTestOneInput' '__builtin_' 'C11' 'VitalsRegistry\.swift'; do
+            if ! grep -E "$C_PATTERN" "$probe" | grep -qE "$want"; then
+              echo "::error::guard self-test FAILED -- C_PATTERN does not catch '$want'"
+              fail=1
+            fi
+          done
           rm -f "$probe"
           # Every task must declare which amendments touch it.
           #
