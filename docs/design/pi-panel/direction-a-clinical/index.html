@@ -705,11 +705,109 @@ function renderPenumbra(st) {
   </div>`;
 }
 
+
+/* ══ Direction C — "Semaphore" ═════════════════════════════════════════════
+   A grayscale instrument with no colour code at all. The tier is carried by an
+   abstract FORM on the left — one mass, two bars, three bars, a full field, or
+   a hollow outline — and the right side is nothing but type: one family, two
+   weights, no boxes, no rules, no chrome.
+
+   Its position on the brightness problem is the sharpest of the three: make
+   display brightness a hardware dial rather than a design variable. Nothing
+   depends on hue, and the state ladder is also a luminance ladder (3.17 : 1 at
+   the calm end, 13.94 at confirm), so the panel keeps its full meaning at 25%
+   backlight where a colour-coded design collapses.
+
+   Shape is read faster than a word and survives what a word does not: blur,
+   defocus, a wrong pair of glasses, grayscale, a photograph, every dichromacy.
+
+   ── ONE ADDITION TO THE LADDER ──────────────────────────────────────────────
+   The designed ladder covers physiological tiers. "NOT MONITORING" is not one:
+   the data is real, it is the judgement that is absent, and neither the solid
+   mass (which reads as fine) nor the dashed hollow (which means not measured)
+   is honest for it. So it gets the third distinguishable form — hollow with a
+   SOLID outline. Filled = assessed and calm; solid-hollow = present but not
+   judged; dashed-hollow = not measured at all. Three states, three silhouettes,
+   still no hue. */
+const SEM = { calm:"#585F52", watch:"#9A948C", confirm:"#D6D2CB", quiet:"#7F7A72",
+              slate:"#8B97A3", hi:"#B9C0C7", klaxon:"#E2453C", hair:"#262A25" };
+
+function semGlyph(st) {
+  const box = "width:176px;display:flex;flex-direction:column;gap:18px;align-items:flex-start";
+  if (st.indeterminate) {
+    return `<div style="${box}"><div style="width:150px;height:150px;border:5px dashed ${SEM.slate};display:flex;align-items:center;justify-content:center;font-size:86px;font-weight:700;color:${SEM.slate};line-height:1">?</div></div>`;
+  }
+  if (st.tier === "NOT MONITORING") {
+    // Present but not judged: hollow, but solidly outlined. See the note above.
+    return `<div style="${box}"><div style="width:150px;height:150px;border:5px solid ${SEM.calm}"></div></div>`;
+  }
+  const solid = (w, h, c, flash) =>
+    `<div class="${flash ? "flash" : ""}" style="width:${w}px;height:${h}px;background:${c};flex:0 0 auto"></div>`;
+  switch (st.tier) {
+    case "WATCH":   return `<div style="${box}">${solid(176,62,SEM.watch)}${solid(176,62,SEM.watch)}</div>`;
+    case "CONFIRM": return `<div style="${box}">${solid(176,40,SEM.confirm)}${solid(176,40,SEM.confirm)}${solid(176,40,SEM.confirm)}</div>`;
+    case "KLAXON":  return `<div style="${box}">${solid(176,176,SEM.klaxon,true)}</div>`;
+    default:        return `<div style="${box}">${solid(150,150,SEM.calm)}</div>`;
+  }
+}
+
+function renderSemaphore(st) {
+  const p = st.params || [];
+  const bp = p[2] || {};
+  const sil = st.silence || {};
+  const tierColor = st.indeterminate ? SEM.slate
+    : st.tier === "KLAXON" ? SEM.klaxon
+    : st.tier === "CONFIRM" ? SEM.confirm
+    : st.tier === "WATCH" ? SEM.watch : SEM.calm;
+
+  const fig = (x) => {
+    if (!x) return "";
+    const stale = x.stale;
+    return `<div style="display:flex;flex-direction:column;gap:2px">
+      <span style="font-size:15px;letter-spacing:3px;color:${stale ? SEM.hi : SEM.quiet}">${esc(x.name)}</span>
+      <div style="display:flex;align-items:flex-end;gap:8px">
+        <span class="lim" style="font-size:90px;font-weight:700;letter-spacing:-3px;line-height:.88;color:${stale ? SEM.slate : SEM.confirm};${stale ? `border-bottom:3px dashed ${SEM.slate}` : ""}">${stale ? "?" : esc(x.val)}</span>
+        <span style="font-size:15px;color:${stale ? SEM.hi : SEM.quiet};padding-bottom:9px">${esc(stale ? String(x.note).split("\n")[0] : x.unit)}</span>
+      </div>
+    </div>`;
+  };
+
+  return `<div style="width:800px;height:480px;box-sizing:border-box;background:#000;padding:30px 38px 22px;display:flex;flex-direction:column;font-family:var(--sans);overflow:hidden">
+    <div style="display:flex;gap:44px;flex:1 1 auto;min-height:0">
+      ${semGlyph(st)}
+      <div style="flex:1 1 auto;display:flex;flex-direction:column;min-width:0">
+        <div style="display:flex;align-items:baseline;gap:16px">
+          <span style="font-size:${String(st.tier).length > 12 ? 40 : 58}px;font-weight:700;letter-spacing:-1px;line-height:1;color:${tierColor}">${esc(st.tier)}</span>
+          <span class="lim" style="margin-left:auto;font-size:15px;color:${SEM.quiet}">${esc(st.clock)}</span>
+        </div>
+        <span style="font-size:15px;letter-spacing:1.6px;color:${st.indeterminate ? SEM.hi : SEM.quiet};margin-top:8px">${esc(st.chanLabel || st.prio || "")}</span>
+        <div style="display:flex;gap:44px;margin-top:auto">${fig(p[0])}${fig(p[1])}</div>
+        <div style="border-top:1px solid ${SEM.hair};margin-top:14px;padding-top:8px;display:flex;align-items:baseline;gap:12px">
+          <span style="font-size:15px;letter-spacing:3px;color:${SEM.quiet}">${esc(bp.name || "")}</span>
+          <span class="lim" style="font-size:30px;color:${bp.stale ? SEM.slate : SEM.confirm};${bp.stale ? `border-bottom:2px dashed ${SEM.slate}` : ""}">${esc(bp.stale ? "?" : (bp.val || ""))}</span>
+          <span class="lim" style="font-size:14px;color:${bp.stale ? SEM.hi : SEM.quiet}">${esc(String(bp.note || "").split("\n").join(" · "))}</span>
+        </div>
+      </div>
+    </div>
+
+    <span class="lim" style="font-size:14px;color:${SEM.quiet};margin-top:10px;line-height:1.5">${
+      (st.sensors || []).map(d => `${d.name} ${d.age}`).join("  ·  ")}</span>
+    <span class="lim" style="font-size:14px;color:${SEM.quiet};line-height:1.5">${
+      (st.sys || []).map(y => `${y.name} ${y.val}`).join("  ·  ")}</span>
+
+    <div style="height:56px;margin-top:10px;border-top:3px ${sil.active ? "solid" : "dashed"} ${sil.color || SEM.calm};display:flex;align-items:center;gap:16px">
+      <span style="font-size:25px;font-weight:700;color:${sil.textColor || sil.color || SEM.calm};white-space:nowrap">${esc(sil.text || "")}</span>
+      <span class="lim" style="margin-left:auto;font-size:14px;color:${SEM.quiet};white-space:nowrap">${esc(sil.sub || "")}</span>
+    </div>
+  </div>`;
+}
+
 /* The directions the user can swipe between. Ordered quietest-first so a swipe
    left from the default always lights less, never more. */
 const PANELS = [
-  { id: "clinical", name: "CLINICAL" },
-  { id: "penumbra", name: "PENUMBRA" },
+  { id: "clinical",  name: "CLINICAL",  render: null },              // built inline below
+  { id: "penumbra",  name: "PENUMBRA",  render: renderPenumbra },
+  { id: "semaphore", name: "SEMAPHORE", render: renderSemaphore },
 ];
 
 function render() {
@@ -739,8 +837,9 @@ function render() {
     `border:2px ${st.indeterminate ? "dashed" : "solid"} ${st.accent}`,
   ].join(";");
 
-  if (PANELS[S.panel].id === "penumbra") {
-    document.getElementById("panel").innerHTML = renderPenumbra(st) + viewIndicator();
+  const alt = PANELS[S.panel].render;
+  if (alt) {
+    document.getElementById("panel").innerHTML = alt(st) + viewIndicator();
     afterRender(st);
     return;
   }
