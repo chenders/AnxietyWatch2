@@ -886,16 +886,28 @@ const HZ = {
 /* Tint for a bubble carrying `bpm`: bright and translucent when calm, dark and
    faint as it approaches the limit. */
 function hzTint(bpm) {
-  const t = Math.max(0, Math.min(1, (bpm - HZ.CALM) / (HZ.LIMIT - HZ.CALM)));
+  const raw = Math.max(0, Math.min(1, (bpm - HZ.CALM) / (HZ.LIMIT - HZ.CALM)));
+  /* Eased rather than linear, so the water is already visibly deeper by 80 and
+     still reaches full depth exactly at the 110 alarm limit. Moving the
+     endpoint down instead would have made 110 stop meaning the limit the
+     clinical view prints; bending the curve keeps both thresholds honest and
+     just spends the darkening earlier. At 80 this reads ~0.55 of the way down
+     where a straight ramp gave 0.38. */
+  const t = Math.pow(raw, 0.6);
   const mix = (a, b) => Math.round(a + (b - a) * t);
   return {
     t,
-    stroke: `rgba(${mix(150, 58)},${mix(225, 92)},${mix(235, 108)},${(0.55 - t * 0.34).toFixed(3)})`,
-    hi: `rgba(${mix(200, 90)},${mix(245, 130)},${mix(250, 145)},${(0.45 - t * 0.30).toFixed(3)})`,
+    // Bright and translucent when calm; DARK and solid as the rate climbs, so
+    // a fast field reads as dark objects against lighter water rather than as
+    // everything fading together.
+    stroke: `rgba(${mix(160, 12)},${mix(230, 30)},${mix(240, 52)},${(0.55 + t * 0.30).toFixed(3)})`,
+    hi: `rgba(${mix(205, 34)},${mix(248, 62)},${mix(252, 88)},${(0.45 - t * 0.22).toFixed(3)})`,
+    fill: `rgba(${mix(10, 4)},${mix(34, 12)},${mix(44, 26)},${(t * 0.55).toFixed(3)})`,
   };
 }
 
-const hzState = { raf: 0, last: 0, bubbles: [], pops: [], nextBeat: 0, st: null, ctx: null };
+const hzState = { raf: 0, last: 0, bubbles: [], pops: [], nextBeat: 0, st: null, ctx: null,
+                  sh: null, nextSh: 8 };
 
 function renderHorizon(st) {
   // The scene is a canvas so it can animate across polls; the text is DOM so
@@ -972,11 +984,17 @@ function hzDraw(dt) {
          means the right thing — the field sinks into deeper, colder water as
          the heart works harder, and it is legible from across the room without
          reading a number. */
+      /* The water LIGHTENS as the rate climbs while the bubbles darken, so
+         the two move apart and the field gains contrast exactly when there is
+         more to see. The previous version darkened both together, which made
+         a fast heart merely muddier. Kept deliberately restrained at the top
+         end: this is still a panel in a dark bedroom, so "lighter" is a shift
+         from near-black to a dim teal, not to a lit screen. */
       const wt = hzTint(bpm).t;
       const wmix = (a, b) => Math.round(a + (b - a) * wt);
-      g.addColorStop(0, `rgba(${wmix(24, 8)},${wmix(96, 32)},${wmix(114, 78)},${(0.30 + wt * 0.26).toFixed(3)})`);
-      g.addColorStop(0.35, `rgba(${wmix(10, 5)},${wmix(44, 18)},${wmix(58, 44)},${(0.12 + wt * 0.20).toFixed(3)})`);
-      g.addColorStop(1, `rgba(${wmix(4, 2)},${wmix(18, 8)},${wmix(26, 24)},${(0.02 + wt * 0.10).toFixed(3)})`);
+      g.addColorStop(0, `rgba(${wmix(20, 58)},${wmix(84, 150)},${wmix(100, 172)},${(0.26 + wt * 0.20).toFixed(3)})`);
+      g.addColorStop(0.35, `rgba(${wmix(9, 26)},${wmix(40, 78)},${wmix(52, 96)},${(0.11 + wt * 0.13).toFixed(3)})`);
+      g.addColorStop(1, `rgba(${wmix(4, 10)},${wmix(18, 32)},${wmix(26, 44)},${(0.02 + wt * 0.05).toFixed(3)})`);
       c.beginPath();
       c.moveTo(start, surf[start]);
       for (let i = start + 1; i <= end; i++) c.lineTo(i, surf[i]);
@@ -987,7 +1005,7 @@ function hzDraw(dt) {
       for (let i = start + 1; i <= end; i++) c.lineTo(i, surf[i]);
       const stint = hzTint(bpm).t;
       const smix = (a, b) => Math.round(a + (b - a) * stint);
-      c.strokeStyle = `rgb(${smix(127, 62)},${smix(212, 122)},${smix(222, 176)})`;
+      c.strokeStyle = `rgb(${smix(127, 178)},${smix(212, 236)},${smix(222, 244)})`;
       c.lineWidth = 2; c.globalAlpha = 0.9;
       c.stroke(); c.globalAlpha = 1;
     }
@@ -996,6 +1014,18 @@ function hzDraw(dt) {
   for (let i = 1; i < 800; i++) {
     if (surf[i] == null && surf[i - 1] != null) hzWall(c, i);
     else if (surf[i] != null && surf[i - 1] == null) hzWall(c, i);
+  }
+
+  // ── the seahorse ─────────────────────────────────────────────────────────
+  hzState.nextSh -= dt;
+  if (!hzState.sh && hzState.nextSh <= 0) hzState.sh = hzSeahorseSpawn(performance.now());
+  if (hzState.sh) {
+    if (!hzSeahorseStep(hzState.sh, dt, surf)) {
+      hzState.sh = null;
+      hzState.nextSh = SEA.MIN_GAP + Math.random() * (SEA.MAX_GAP - SEA.MIN_GAP);
+    } else {
+      hzDrawSeahorse(c, hzState.sh);
+    }
   }
 
   // ── bubbles ──────────────────────────────────────────────────────────────
@@ -1057,7 +1087,8 @@ function hzDraw(dt) {
 
     if (s != null && b.y - b.r <= s) {
       // Reached the surface above its own column: pop, sized to the bubble.
-      hzState.pops.push({ x: bx, y: s, r: b.r, age: 0 });
+      // A burped bubble carries its number all the way up and shows it there.
+      hzState.pops.push({ x: bx, y: s, r: b.r, age: 0, label: b.burp || null });
       hzState.bubbles.splice(i, 1);
       continue;
     }
@@ -1071,6 +1102,7 @@ function hzDraw(dt) {
     b.sx = bx;                       // remembered so a tap can hit where it is drawn
     c.beginPath();
     c.arc(bx, b.y, b.r, 0, Math.PI * 2);
+    if (tint.fill) { c.fillStyle = tint.fill; c.fill(); }
     c.strokeStyle = tint.stroke;
     c.stroke();
     // A single highlight is what makes it read as a bubble rather than a ring.
@@ -1151,6 +1183,11 @@ function hzTap(ev) {
   const r = cv.getBoundingClientRect();
   const x = (ev.clientX - r.left) * (800 / r.width);
   const y = (ev.clientY - r.top) * (480 / r.height);
+  // The seahorse is checked first: it is bigger and slower than a bubble, so a
+  // finger aimed at it should not catch a bubble drifting past.
+  const sh = hzState.sh;
+  if (sh && Math.hypot(sh.x - x, sh.y - y) < 34 + SEA.TAP_SLOP) { hzSeahorseBurp(sh); return; }
+
   let best = -1, bestD = Infinity;
   for (let i = 0; i < hzState.bubbles.length; i++) {
     const b = hzState.bubbles[i];
@@ -1161,6 +1198,164 @@ function hzTap(ev) {
   const b = hzState.bubbles[best];
   hzState.pops.push({ x: b.sx ?? b.x, y: b.y, r: b.r, age: 0, label: b.bpm });
   hzState.bubbles.splice(best, 1);
+}
+
+/* ── the seahorse ───────────────────────────────────────────────────────────
+   Pure ornament, and labelled as such: it encodes nothing, so it must never be
+   mistaken for something that does. That is why it is drawn in a muted sand
+   tone that appears nowhere else in this view — the water is teal, the bubbles
+   are cyan-to-dark, the gaps are slate — and why it is the only thing here
+   that moves for reasons unrelated to the data.
+
+   It appears on its own schedule and picks one of two lives:
+     TRANSIT — crosses and leaves, never stopping.
+     LINGER  — swims in, hovers a while bobbing on the spot, then moves on.
+   Which one is chosen at random, so the panel is not the same every night.
+
+   It stays under the surface: it hunts for the waterline above its own x and
+   keeps a respectful distance below it. Where there is no water — a gap in
+   SpO2 — there is nothing to swim in, so it fades out rather than gliding
+   through the hole as if the night were continuous. Even the decoration is not
+   allowed to paper over missing data. */
+
+const SEA = {
+  MIN_GAP: 22, MAX_GAP: 70,   // seconds between visits; it should feel like luck
+  SCALE: 1.25,   // ~90px tall; smaller than this and it stops reading as a seahorse
+  SPEED: 26,                  // px/s cruising
+  TAP_SLOP: 30,
+};
+
+function hzSeahorseSpawn(now) {
+  const dir = Math.random() < 0.5 ? 1 : -1;
+  const linger = Math.random() < 0.45;
+  return {
+    dir,
+    x: dir > 0 ? -40 : 840,
+    y: 150 + Math.random() * 220,
+    bob: Math.random() * Math.PI * 2,
+    linger,
+    // A lingering visit picks somewhere to hang about, and how long for.
+    stopX: 200 + Math.random() * 400,
+    stopFor: 6 + Math.random() * 12,
+    stopped: 0,
+    state: "swim",
+    alpha: 0,
+    born: now,
+  };
+}
+
+function hzSeahorseStep(sh, dt, surf) {
+  sh.bob += dt * 1.6;
+  sh.alpha = Math.min(1, sh.alpha + dt * 0.8);
+
+  if (sh.state === "swim") {
+    const reached = sh.dir > 0 ? sh.x >= sh.stopX : sh.x <= sh.stopX;
+    if (sh.linger && reached) { sh.state = "hover"; }
+    else sh.x += sh.dir * SEA.SPEED * dt;
+  } else if (sh.state === "hover") {
+    // Hovering is not standing still: it drifts a little, as they do.
+    sh.x += Math.sin(sh.bob * 0.4) * 6 * dt;
+    sh.stopped += dt;
+    if (sh.stopped >= sh.stopFor) sh.state = "leave";
+  } else {
+    sh.x += sh.dir * SEA.SPEED * dt;
+  }
+
+  // Keep it under the surface above its own column, and fade out where there
+  // is no water at all.
+  const sx = Math.max(0, Math.min(799, Math.round(sh.x)));
+  const s = surf[sx];
+  if (s == null) { sh.alpha = Math.max(0, sh.alpha - dt * 1.6); }
+  else if (sh.y < s + 46) sh.y += (s + 46 - sh.y) * Math.min(1, dt * 1.5);
+
+  const gone = sh.dir > 0 ? sh.x > 880 : sh.x < -80;
+  return !gone && sh.alpha > 0.02;
+}
+
+/* Drawn rather than lifted from a font: a glyph would not curl its tail or
+   carry a dorsal fin, and at this size the silhouette is most of what sells
+   it. The first attempt was ~40px and read as a comma — a seahorse is
+   recognised by three things and it needs the room for all of them: a long
+   tubular SNOUT, a crowned head set back from it, and a tail that spirals
+   FORWARD. Everything else is body. */
+function hzDrawSeahorse(c, sh) {
+  const k = SEA.SCALE, sway = Math.sin(sh.bob) * 3;
+  c.save();
+  c.translate(sh.x, sh.y + sway);
+  c.scale(sh.dir * k, k);
+  c.globalAlpha = sh.alpha * 0.9;
+
+  const body = "rgba(198,168,118,0.62)";
+  const edge = "rgba(232,206,158,0.55)";
+
+  // Head, body and the spiral tail, in one stroke.
+  c.beginPath();
+  c.moveTo(4, -30);                         // crown, behind the snout
+  c.quadraticCurveTo(12, -32, 15, -27);     // brow forward
+  c.lineTo(27, -23);                        // snout, upper edge
+  c.quadraticCurveTo(30, -21, 27, -19);     // blunt tip
+  c.lineTo(15, -20);                        // snout, lower edge
+  c.quadraticCurveTo(11, -19, 10, -14);     // throat
+  c.quadraticCurveTo(8, -4, 9, 6);          // chest, bulging forward
+  c.quadraticCurveTo(10, 15, 6, 21);        // belly falling away
+  c.quadraticCurveTo(12, 25, 12, 32);       // tail sweeping forward
+  c.quadraticCurveTo(12, 40, 4, 40);        // outer curl
+  c.quadraticCurveTo(-3, 40, -3, 33);       // round the bottom
+  c.quadraticCurveTo(-3, 28, 2, 27);        // inner curl closing
+  c.quadraticCurveTo(6, 27, 5, 31);         // the eye of the spiral
+  c.quadraticCurveTo(4, 34, 1, 33);         // and back out
+  c.quadraticCurveTo(-6, 32, -5, 24);       // tail root, rear edge
+  c.quadraticCurveTo(-4, 14, -6, 4);        // lower back
+  c.quadraticCurveTo(-8, -8, -5, -18);      // upper back
+  c.quadraticCurveTo(-3, -27, 4, -30);      // nape into the crown
+  c.closePath();
+  c.fillStyle = body;
+  c.fill();
+  c.strokeStyle = edge;
+  c.lineWidth = 1.1;
+  c.stroke();
+
+  // Dorsal fin, fluttering: what makes it read as swimming rather than
+  // drifting sideways.
+  const f = Math.sin(sh.bob * 2.2) * 2;
+  c.beginPath();
+  c.moveTo(-6, -2);
+  c.quadraticCurveTo(-14 - f, 6, -6, 14);
+  c.closePath();
+  c.fillStyle = "rgba(232,206,158,0.34)";
+  c.fill();
+
+  // The crown spines a seahorse is named for.
+  c.beginPath();
+  c.moveTo(0, -30); c.lineTo(-2, -36);
+  c.moveTo(-4, -27); c.lineTo(-8, -32);
+  c.strokeStyle = edge;
+  c.lineWidth = 1.4;
+  c.stroke();
+
+  c.beginPath();
+  c.arc(7, -25, 1.8, 0, Math.PI * 2);
+  c.fillStyle = "rgba(8,22,28,0.9)";
+  c.fill();
+  c.restore();
+}
+
+/* Touch it and it burps: one bubble, rising from the snout, carrying the last
+   pulse the ring actually reported. If there is no current reading it burps a
+   "?" — the seahorse does not get to invent a number either. */
+function hzSeahorseBurp(sh) {
+  const hr = (hzState.st && hzState.st.params && hzState.st.params[1]) || {};
+  const label = hr.stale ? "?" : String(hr.val);
+  hzState.bubbles.push({
+    x: sh.x + sh.dir * 9,
+    y: sh.y - 20,
+    r: 7,
+    v: 26,
+    phase: 0,
+    wob: 1.1,
+    bpm: hr.stale ? null : Math.round(Number(hr.val) || 0),
+    burp: label,
+  });
 }
 
 function hzWall(c, x) {
@@ -1193,7 +1388,7 @@ function hzText(st) {
   const leg = document.getElementById("hzLegend");
   if (leg) leg.textContent = hr.stale
     ? "no pulse · no bubbles"
-    : `1 bubble = 1 beat · ${hr.val} bpm · darker toward ${HZ.LIMIT} · tap one to read it`;
+    : `1 bubble = 1 beat · ${hr.val} bpm · deepening from 80 · tap one to read it`;
 }
 
 function mountHorizon(st) {
@@ -1204,6 +1399,8 @@ function mountHorizon(st) {
   hzState.bubbles = [];
   hzState.pops = [];
   hzState.nextBeat = 0;
+  hzState.sh = null;
+  hzState.nextSh = 6 + Math.random() * 10;
   hzState.last = performance.now();
   hzText(st);
   // Bound to the panel, not the canvas: the readouts, legend and footer are
@@ -1235,6 +1432,7 @@ function unmountHorizon() {
   hzState.ctx = null;
   hzState.bubbles = [];
   hzState.pops = [];
+  hzState.sh = null;
 }
 
 /* ── PULSE ──────────────────────────────────────────────────────────────────
