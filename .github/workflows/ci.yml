@@ -13,8 +13,25 @@ jobs:
   # it reports success. Every gate here now either runs or fails; none skip.
   build-test:
     runs-on: ubuntu-latest
+    # A real PostgreSQL, because the COPY-binary round-trip cannot be trusted
+    # without one. The unit tests assert against captured bytes; only a server
+    # proves the bytes actually load. Without this service the round-trip skips,
+    # and a test that skips in CI is a test that does not run.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: scratch
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    env:
+      VITALS_TEST_PG: postgres://postgres:scratch@localhost:5432/postgres
     steps:
       - uses: actions/checkout@v4
+      - name: Install psql
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
       - uses: dtolnay/rust-toolchain@stable
         with: { components: rustfmt, clippy }
       - uses: Swatinem/rust-cache@v2
@@ -36,6 +53,15 @@ jobs:
           echo "tests passed: $passed"
           if [ "$passed" -lt 5 ]; then
             echo "::error::only $passed tests ran -- sfloat.rs alone has 6, so the suite is not executing"
+            exit 1
+          fi
+          # The round-trip announces itself when it skips. Treat that as a
+          # failure here: VITALS_TEST_PG is set above, so a skip means the
+          # service container did not come up, and a silently-skipped
+          # database test is worth less than no test at all.
+          if grep -q "SKIPPED:" /tmp/test.out; then
+            grep "SKIPPED:" /tmp/test.out
+            echo "::error::a test skipped in CI -- the Postgres service did not come up"
             exit 1
           fi
 
