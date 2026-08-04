@@ -47,8 +47,8 @@ pane renders (`grep -n '^- \[' tasks.md`).
 
 - [ ] T-A1 — Migrate root filesystem to NVMe · human · pi
 - [ ] T-A2 — Audio output path · human · pi
-- [x] T-A3 — Bring up the Sena UD100-G03 as hci1 · implement-standard · pi · **gate G1 owner**
-- [ ] T-A4 — Disable onboard Bluetooth · mechanical · pi · **blocked by G1**
+- [x] T-A3 — Bring up the Sena UD100-G03 · implement-standard · pi · **gate G1 owner**
+- [x] T-A4 — Disable onboard Bluetooth · mechanical · pi · **blocked by G1**
 - [ ] T-A5 — Watchdog, governor, update policy · mechanical · pi
 - [ ] T-B1 — Eight-hour Polar H10 capture · implement-complex · pi · **review**
 - [ ] T-C1 — PostgreSQL 16 bare metal on NVMe · implement-standard · pi · **blocked by G2**
@@ -149,7 +149,7 @@ is Stage 5.
 
 ---
 
-### T-A3 — Bring up the Sena UD100-G03 as `hci1`
+### T-A3 — Bring up the Sena UD100-G03
 
 **Tier:** implement-standard · **Host:** pi · **Context budget:** ~3k · **Depends:** none
 **Amends:** none
@@ -1111,3 +1111,46 @@ No Polar H10 — expected, it only advertises when worn with a moist strap.
 
 Finding 2 matters more than it looks: it is the same shape as every other silent failure in this
 project — the service is `active`, the adapter is dead, and nothing says so.
+
+### T-A4 — Disable onboard Bluetooth · PASSED 2026-08-03
+
+Verify exited 0: exactly one controller, and it is the USB one. A 20 s LE scan on the surviving
+adapter still finds the AirSense 11 and the EMAY oximeter.
+
+```
+hci0    BD Address 00:01:95:C9:AF:00   Bus: USB   UP RUNNING     (the Sena)
+        1 controller total; the onboard UART radio is gone
+config.txt:50  dtoverlay=disable-bt
+backup         /boot/firmware/config.txt.pre-disable-bt
+hciuart        disabled
+```
+
+**The Sena renumbered from `hci1` to `hci0`** once the onboard adapter was removed — adapter indices
+are assigned in registration order, not fixed to a device. `vitals-bt-up` handled it because it
+selects the first adapter rather than hardcoding an index, which is why it is written that way.
+
+**Every remaining reference to `hci1` in this repo is now wrong.** Collectors must select the adapter
+by **BD address or by "the only adapter"**, never by index — an index that changed once can change
+again when a second radio is added.
+
+### Order of operations, and why it mattered
+
+T-A3 passed but only proved `hci1` worked *at that moment*. It did not prove the adapter survives a
+reboot — and nothing brought it up at boot, so `bluetooth.service` would have reported `active` with
+a dead radio. Disabling the onboard adapter first would have left the box with no working Bluetooth
+and no complaint.
+
+So `vitals-bt-up.service` went in first and was **proven across a real reboot while `hci0` was still
+present as a fallback**, and only then was the onboard radio disabled. There was never a moment where
+a reboot could have produced a Bluetooth-less box.
+
+The unit retries with backoff because the dongle returned `RF-kill (132)` when addressed before
+`btusb` finished binding, and it **fails loudly** — `Restart=on-failure` plus a nonzero exit — rather
+than absorbing the error. A bring-up that cannot fail is the same as no bring-up.
+
+### Rollback
+
+```sh
+sudo cp /boot/firmware/config.txt.pre-disable-bt /boot/firmware/config.txt
+sudo systemctl enable hciuart && sudo reboot
+```
