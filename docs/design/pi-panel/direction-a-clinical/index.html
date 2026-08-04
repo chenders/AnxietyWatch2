@@ -1035,6 +1035,20 @@ function hzDraw(dt) {
   hzNoteStep(dt);
   hzNotesDraw(c);
 
+  // ?debug=1 — a temporary read-out of the seahorse state machine, so "he
+  // never appears" can be diagnosed from a screenshot rather than guessed at.
+  if (live.debug) {
+    const sh2 = hzState.sh;
+    c.save();
+    c.font = "13px ui-monospace,Menlo,monospace";
+    c.fillStyle = "#7FD4DE";
+    c.fillText(sh2
+      ? `sh x=${sh2.x.toFixed(0)} y=${sh2.y.toFixed(0)} dir=${sh2.dir} st=${sh2.state} a=${sh2.alpha.toFixed(2)} linger=${sh2.linger}`
+      : `sh NONE · next in ${hzState.nextSh.toFixed(1)}s`, 34, 452);
+    c.fillText(`surf[0]=${hzSurface()[0] == null ? "null" : "ok"} hist=${live.hist.length} notes=${hzState.notes.length}`, 34, 468);
+    c.restore();
+  }
+
   // ── bubbles ──────────────────────────────────────────────────────────────
   // Spawned on the beat. With no measured pulse there is no beat, so nothing
   // is released at all.
@@ -1314,7 +1328,7 @@ function hzNoteStep(dt) {
           x: sh.x + sh.dir * 20,
           y: sh.y - 34,
           glyph: HZ_NOTES[(Math.random() * HZ_NOTES.length) | 0],
-          size: 12 + Math.random() * 8,
+          size: 24 + Math.random() * 16,   // twice the original: at 12-20px they read as specks
           v: 16 + Math.random() * 12,
           drift: (Math.random() - 0.5) * 14,
           phase: Math.random() * Math.PI * 2,
@@ -1339,7 +1353,7 @@ function hzNotesDraw(c) {
     const t = n.age / n.life;
     // Fades in quickly, lingers, then goes: a note that vanished abruptly would
     // read as a glitch on a panel where everything else changes slowly.
-    const a = (t < 0.12 ? t / 0.12 : Math.min(1, (1 - t) / 0.45)) * 0.55;
+    const a = (t < 0.12 ? t / 0.12 : Math.min(1, (1 - t) / 0.45)) * 0.95;
     if (a <= 0) continue;
     c.save();
     c.globalAlpha = a;
@@ -1348,7 +1362,17 @@ function hzNotesDraw(c) {
     c.font = `${n.size.toFixed(1)}px "Helvetica Neue",Helvetica,Arial,sans-serif`;
     c.textAlign = "center";
     c.textBaseline = "middle";
-    c.fillStyle = "rgba(240,205,150,0.95)";
+    /* Drawn against a lit teal ground, so a single flat fill washes out. A dark
+       outline underneath gives the glyph its own edge and lets it stay legible
+       wherever it drifts — over dark water, over the pale surface line, or
+       across a bubble. The fill is near-white warm rather than the previous
+       muted amber, which was only ~0.55 alpha over water of a similar value
+       and effectively camouflaged. */
+    c.lineWidth = Math.max(2, n.size * 0.14);
+    c.lineJoin = "round";
+    c.strokeStyle = "rgba(4,16,22,0.85)";
+    c.strokeText(n.glyph, 0, 0);
+    c.fillStyle = "rgba(255,232,190,0.98)";
     c.fillText(n.glyph, 0, 0);
     c.restore();
   }
@@ -1363,7 +1387,7 @@ function hzSeahorseSpawn(now) {
   const linger = Math.random() < 0.45;
   return {
     dir,
-    x: dir > 0 ? -40 : 840,
+    x: dir > 0 ? -18 : 818,
     y: 150 + Math.random() * 220,
     bob: Math.random() * Math.PI * 2,
     linger,
@@ -1409,12 +1433,21 @@ function hzSeahorseStep(sh, dt, surf) {
     sh.x += sh.dir * SEA.SPEED * hzSurge(sh) * dt;
   }
 
-  // Keep it under the surface above its own column, and fade out where there
-  // is no water at all.
-  const sx = Math.max(0, Math.min(799, Math.round(sh.x)));
-  const s = surf[sx];
-  if (s == null) { sh.alpha = Math.max(0, sh.alpha - dt * 1.6); }
-  else if (sh.y < s + 46) sh.y += (s + 46 - sh.y) * Math.min(1, dt * 1.5);
+  /* Keep him under the surface above his own column, and fade him where there
+     is genuinely no water.
+
+     The off-screen guard is not cosmetic — it was killing him at birth. He
+     enters from x=-40, which clamps to surf[0]; the oldest history entries are
+     nulls from before the first reading arrived, so surf[0] is null, so the
+     fade fired on his very first frame, cancelled his fade-in, and left alpha
+     at 0 — and the cull test at the bottom of this function is `alpha > 0.02`.
+     He was spawning and being removed in the same frame, every time, which is
+     why he stopped appearing at all. A position outside the water's x-range is
+     not a gap in the data; it is simply not on screen yet. */
+  const onScreen = sh.x >= 0 && sh.x <= 799;
+  const s = onScreen ? surf[Math.round(sh.x)] : null;
+  if (onScreen && s == null) { sh.alpha = Math.max(0, sh.alpha - dt * 1.6); }
+  else if (s != null && sh.y < s + 46) sh.y += (s + 46 - sh.y) * Math.min(1, dt * 1.5);
 
   // Real velocity, not the nominal cruise speed: a hovering seahorse should
   // barely stir the water while a transiting one pushes bubbles aside.
@@ -1432,7 +1465,11 @@ function hzSeahorseStep(sh, dt, surf) {
   }
 
   const gone = sh.dir > 0 ? sh.x > 880 : sh.x < -80;
-  return !gone && sh.alpha > 0.02;
+  // A grace period, so a seahorse can never be culled before he has had time
+  // to fade in. Belt and braces against the class of bug above rather than
+  // just the one instance of it.
+  const settling = performance.now() - sh.born < 2000;
+  return !gone && (settling || sh.alpha > 0.02);
 }
 
 /* Drawn, not lifted from a font — a glyph has no coronet, no ring armour and
@@ -2547,6 +2584,7 @@ if (qs.has("live")) {
   const v = qs.get("live");
   live.url = v && v !== "1" && v !== "" ? v : "status.json";
   live.demo = qs.has("demo");
+  live.debug = qs.has("debug");
   // ?view=<id> picks a direction directly; otherwise fall back to whatever was
   // last chosen on this device.
   let want = qs.get("view");
