@@ -1,0 +1,41 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/vitals-registry",   # generated types from registry.toml
+    "crates/vitals-decode",     # pure wire decoders — no_std, no alloc
+    "crates/vitals-core",       # HLC, COPY encoder, spool
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97"
+license = "MIT"
+repository = "https://github.com/chenders/AnxietyWatch2"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+# Warnings are failures here, same as the C build's -Werror.
+all = { level = "deny", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+# A physiological value must never be silently truncated or wrapped.
+cast_possible_truncation = "deny"
+cast_precision_loss = "deny"
+cast_sign_loss = "deny"
+indexing_slicing = "deny"   # decoders index attacker-controlled buffers
+unwrap_used = "deny"
+expect_used = "warn"
+panic = "deny"
+
+[profile.release]
+opt-level = 2
+lto = true
+codegen-units = 1
+# A panic in a life-safety daemon should terminate the process so systemd
+# restarts it, not unwind into an unknown state. This also makes a Rust panic
+# and a C crash the same event, which was the last thing C had going for it.
+panic = "abort"
+strip = true

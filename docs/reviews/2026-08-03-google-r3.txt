@@ -1,0 +1,282 @@
+
+ You are an independent adversarial reviewer. Be specific. Do not be agreeable. If
+ an area is sound,
+ say so in one line and move on.
+
+ System
+
+ ~/Source/AnxietyWatch2 — a Raspberry Pi 5 beside a bed. Collects physiological
+ data from Bluetooth
+ sensors all night, detects CNS-depression events, sounds an alarm. One user, who
+ is also the
+ engineer. Worst defects: the alarm not sounding when it should, and a missing
+ signal being treated
+ as healthy.
+
+ Read, in this order
+
+ 1. docs/specs/2026-08-03-pi5-vitals-core-design.md
+ 2. docs/specs/2026-08-03-amendment-01-timescale-copy-spool.md
+ 3. docs/specs/2026-08-03-amendment-02-integrity-and-encryption.md
+ 4. docs/specs/2026-08-03-amendment-03-multimodal-alerting.md
+ 5. docs/specs/2026-08-03-amendment-04-review-findings.md — responses to a
+    previous review round
+ 6. openspec/changes/pi5-vitals-core/tasks.md · db/ ·
+    crates/vitals-decode/src/sfloat.rs
+ 7. AGENTS.md · docs/STAGE-DELIVERABLES.md
+
+ Your job
+
+ Amendment 04 answers findings from an earlier round. Your primary task is to
+ check whether those
+ answers are actually correct, then find what everyone has still missed.
+
+ ### 1. Audit amendment 04's fixes — are they right?
+
+ Interrogate each. Several are plausible-sounding and may be wrong:
+
+ - §1: it claims deriving beat times by accumulating RR durations backward from
+   packet arrival
+   makes timestamps distinct, so PRIMARY KEY (source, type, timestamp) can stay.
+   Does that hold?
+   What about clock drift between the sensor and the host, retransmitted packets,
+   connection-interval
+   batching, or two RR values that genuinely round to the same microsecond? Is the
+   PK still wrong?
+ - §2: OOMScoreAdjust=-1000 plus MemoryMin/MemoryHigh. Does this actually prevent
+   the
+   failure, or move it? What happens when the protected daemon is the one leaking?
+ - §3.2: a 555 monostable retriggered by a 1 Hz GPIO heartbeat, firing the siren
+   if pulses stop.
+   Does this work? What are its false-positive and false-negative modes? What
+   happens during a
+   deliberate reboot, a klaxond restart, or an acknowledged alarm?
+ - §4: the revised LUKS behaviour — chime, then escalate after 15 minutes only
+   inside a monitoring
+   window. Does that leave a hole?
+ - §6/§7: advisory locks plus a schema fingerprint in the spool header.
+   Sufficient?
+ - §10: publishing the audit chain head off-box hourly. Does that actually defeat
+   a root attacker,
+   or just narrow the window?
+
+ ### 2. What has everyone still missed?
+
+ Four reviewers have been over this. Find what none of them caught. Rank by
+ severity, and for each say
+ what breaks, under what conditions, and how you would know.
+
+ ### 3. Where is the architecture wrong, not merely incomplete?
+
+ ### 4. What tool, library or platform feature should this use and does not?
+
+ Rust ecosystem specifically. Already adopted: kani, rppal, fs4, sqlx, metrics,
+ tokio,
+ bluer, tokio-postgres binary COPY, cargo-fuzz.
+
+ Rules
+
+ - Quote file and section.
+ - Distinguish will bite / might bite / taste.
+ - Say when you are unsure rather than asserting.
+ - Do not restate the design. Tell me what is wrong with it.
+ - Do not re-report anything already covered in amendment 04 unless amendment 04's
+   fix is wrong — in
+   which case say precisely why.
+
+ Output
+
+ Markdown. Three most severe findings first, three sentences each, then detail.
+ End with what you
+ checked and found genuinely fine.
+
+
+
+ $ cat docs/specs/2026-08-03-pi5-vitals-core-design.md
+ docs/specs/2026-08-03-amendment-01-timescale-copy-spool.md
+ docs/specs/2026-08-03-amendment-02-integrity-and-encryption.md
+ docs/specs/2026-08-03-amendment-03-multimodal-alerting.md
+ docs/specs/2026-08-03-amendment-04-review-findings.md
+
+ ... (1346 earlier lines, ctrl+o to expand)
+   serves history, the admin console and analysis, while detection runs on
+ in-memory ring buffers.
+   §2's memory limits address the resource competition. Not a wrong architecture,
+ but the reviewer is
+   right that it must be justified rather than assumed.
+
+ [Full output:
+ /var/folders/bz/3_rh3pwj4wz0bkln3p6w6tzh0000gn/T/pi-bash-47fc12c7f0e7254d.log.
+ Truncated: 990 lines shown (50.0KB limit)]
+
+ Took 0.0s
+
+
+
+ $ cat AGENTS.md
+
+ ... (124 earlier lines, ctrl+o to expand)
+
+ If you change a threshold, a sort order, a filter, or an interface, update every
+ `///` comment and
+ doc in the same commit. A plan doc that does not reflect what shipped is a
+ defect.
+
+ Took 0.0s
+
+
+
+ $ cat docs/specs/2026-08-03-pi5-vitals-core-design.md | head -n 100
+
+ ... (131 earlier lines, ctrl+o to expand)
+ ### 2.2 The inversion
+
+ Spec §1.7 currently forbids HealthKit-owned types (HR, HRV, resting HR,
+ respiratory rate) from
+ entering `samples`, because HealthKit was authoritative.
+
+ Took 0.0s
+
+
+
+ $ cat docs/specs/2026-08-03-amendment-01-timescale-copy-spool.md | head -n 100
+
+ ... (127 earlier lines, ctrl+o to expand)
+   tier 3) stays newline-delimited JSON.
+ - **Drain to empty before any major Postgres upgrade.** The upgrade runbook must
+ assert
+   `spool/` is empty and the offset file is at EOF, and refuse to proceed
+ otherwise.
+
+ Took 0.0s
+
+
+ Here are the findings from Amendment 04, ranked by severity.
+
+ ### 1. The RR timestamp fix destroys cross-device deduplication (Will bite)
+
+ In Amendment 04 §1, deriving beat timestamps backward from host packet arrival
+ time injects network and BLE stack jitter directly into the physiological
+ timeline. An identical heartbeat received by two hosts, or retransmitted with a
+ latency difference, yields two entirely different UTC timestamps, meaning ON
+ CONFLICT will insert duplicates instead of dropping them. Furthermore, resetting
+ the accumulation at each packet boundary introduces false gaps between packets,
+ completely invalidating the HRV continuity it claims to save.
+
+ ### 2. batch_id destroys the offline spool architecture (Will bite)
+
+ Amendments 02 and 04 §7 demand that vitalsd write batches and link them to
+ samples rows via batch_id, but define batch_id as a Postgres-generated BIGINT
+ IDENTITY. Because vitalsd writes to an offline binary COPY spool (Amendment 01)
+ to avoid Postgres on the hot path, it cannot know this ID without making the
+ exact synchronous database round-trip the spool was designed to prevent. To make
+ this work, the drainer would have to parse and mutate the raw binary stream to
+ inject the ID, destroying the "needs no framing" advantage.
+
+ ### 3. The Pi 5 lacks the hardware to execute the piezo self-test (Will bite)
+
+ Amendment 04 §5 mandates "Current-sense on the piezo siren" using GPIO to ensure
+ physical sound production. The Raspberry Pi 5’s BCM2712 SoC has no
+ analog-to-digital converter (ADC) exposed on its GPIO header, meaning a bare pin
+ cannot measure current draw. Without explicitly adding an external I2C ADC or a
+ digital load switch to the BOM, this self-test is physically impossible to
+ implement.
+
+ ────────────────────────────────────────────────────────────────────────────────
+
+ ### Detailed Findings
+
+ 4. The 555 dead-man's switch sounds on every clean shutdown (Will bite)
+ - Location: Amendment 04 §3.2
+ - What breaks: The 555 monostable retriggers on a heartbeat and fires if pulses
+   stop. However, pulses naturally stop when the Pi is deliberately shut down,
+   rebooted, or during a software update. Because the siren is powered by an
+   independent 12V supply, it will blare at full volume for 10+ seconds every time
+   you reboot the system.
+ - Fix: The hardware circuit must include a software-driven DISABLE line that
+   klaxond asserts during clean SIGTERM handling, which latches until the next
+   boot.
+
+ 5. Schema fingerprint corrupts the Postgres binary stream (Will bite)
+ - Location: Amendment 04 §7
+ - What breaks: The Postgres binary COPY format strictly requires an 11-byte
+   signature (PGCOPY\n\377\r\n\0) at the absolute start of the file. If you
+   prepend a schema fingerprint header, Postgres will reject the COPY FROM STDIN
+   command. If you place it in the COPY header extension area, Postgres simply
+   ignores it, meaning the drainer would have to parse the binary framing itself
+   to check the mismatch.
+ - Fix: Write the schema fingerprint to a separate companion file (e.g.,
+   cur.schema) alongside cur.copybin.
+
+ 6. TPM-signed local verification is an unchecked oracle (Will bite)
+ - Location: Amendment 04 §10
+ - What breaks: Claiming that a TPM signature defeats a local root attacker
+   modifying the verification script relies on a fundamental misunderstanding. The
+   TPM does not know what it is signing; it is a blind oracle. If root replaces
+   the verifier binary with a script that outputs {"status": "Verification
+   Passed"} and passes it to the TPM, the TPM will happily sign the lie, and the
+   remote log will receive a mathematically valid attestation of a fabricated
+   result.
+ - Fix: Acknowledge that local root cannot be prevented from forging verification
+   logs on a standalone system.
+
+ 7. OOMScoreAdjust=-1000 causes OS lockups if the daemon leaks (Might bite)
+ - Location: Amendment 04 §2
+ - What breaks: If vitalsd leaks memory, MemoryHigh will throttle it, causing
+   processing stalls. But because OOMScoreAdjust=-1000 makes it immune to the OOM
+   killer, the kernel will kill sshd, Postgres, and wayfire to feed the leak. The
+   Pi will eventually lock up, silently dropping monitoring.
+ - Fix: You must set a hard MemoryMax=256M. If a life-safety daemon leaks
+   uncontrollably, systemd must be allowed to kill and cleanly restart it.
+
+ ────────────────────────────────────────────────────────────────────────────────
+
+ ### 3. Where the architecture is wrong, not merely incomplete
+
+ The architecture insists on the Pi being the isolated, single system of record
+ while simultaneously attempting to provide cryptographic non-repudiation and
+ history-tamper evidence against a local root attacker using a local TPM. This is
+ conceptually incoherent.
+
+ A TPM can attest boot state (PCRs) and protect keys from extraction, but it
+ cannot stop local root from using the signing oracle to fabricate new history or
+ to sign forged verification logs. Introducing a hash-chain and a TPM to defend
+ against an attacker who already controls the attestation oracle is pure security
+ theatre. Meaningful integrity against a root compromise requires an external,
+ independent log server that challenges the TPM, which the design's "standalone
+ appliance" philosophy explicitly rejects.
+
+ ────────────────────────────────────────────────────────────────────────────────
+
+ ### 4. What Rust ecosystem tool should this use?
+
+ uuid (specifically the v7 feature)
+ If the system needs globally unique, time-sortable IDs that can link samples to
+ ingest_batch inside an offline COPY spool (resolving finding #2), it should drop
+ the Postgres BIGINT IDENTITY entirely. uuid::Uuid::now_v7() generates
+ monotonically sortable IDs entirely on the client side. vitalsd can write this
+ UUID into the offline spool layout without requiring a single database
+ round-trip.
+
+ ────────────────────────────────────────────────────────────────────────────────
+
+ ### Checked and found genuinely fine
+
+ - GPIO Piezo siren abstraction (Amendment 03 §2.1): Bypassing ALSA, USB, and the
+   DAC completely for the secondary alarm is structurally excellent. It removes
+   massive amounts of kernel and userland state from the life-safety path.
+ - Dropping samples_staging (Amendment 04 §6): Moving from an UNLOGGED shared
+   table to a genuinely private, session-bound TEMP table is the correct Postgres
+   idiom and closes the race condition flawlessly.
+ - The HLC node_id preservation (Amendment 04 §8): Keeping node_id while dropping
+   the unused logical clocks maintains data provenance without paying the storage
+   cost for an unused replication primitive.
+ - Dropping OOMScoreAdjust for the DB: Acknowledging that the life-safety daemons
+   matter more than the database surviving an OOM event is exactly the right
+   prioritization.
+
+───────────────────────────────────────────────────────────────────────────────────
+
+───────────────────────────────────────────────────────────────────────────────────
+~/Source/AnxietyWatch2 (refactor/rust-workspace)
+↑38k ↓14k R57k CH79.8% 28.2%/128k (auto)    (litellm) gemini/gemini-3.1-pro-preview

@@ -1,0 +1,13 @@
+[package]
+name = "vitals-decode"
+description = "Pure wire decoders for physiological sensor protocols. no_std, no alloc."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+
+[lints]
+workspace = true

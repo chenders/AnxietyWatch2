@@ -1,0 +1,755 @@
+
+ You are an independent reviewer of a system design. Be adversarial and specific.
+ Do not be
+ agreeable. If the design is sound in an area, say so in one line and move on —
+ spend your effort on
+ what is wrong or missing.
+
+ The system
+
+ ~/Source/AnxietyWatch2 — a Raspberry Pi 5 beside a bed that collects
+ physiological data from
+ body-worn Bluetooth sensors all night, detects CNS-depression events, and sounds
+ an alarm. One user,
+ who is also the engineer. The alarm failing to sound when it should, or a missing
+ signal being
+ treated as a healthy one, are the worst possible defects.
+
+ Read these, in this order
+
+ 1. docs/specs/2026-08-03-pi5-vitals-core-design.md — architecture
+ 2. docs/specs/2026-08-03-amendment-01-timescale-copy-spool.md — supersedes the
+    storage design
+ 3. docs/specs/2026-08-03-c-vs-rust-evaluation.md — language decision (Rust was
+    chosen)
+ 4. docs/specs/2026-08-03-language-choices.md
+ 5. openspec/changes/pi5-vitals-core/tasks.md — the 15 implementation tasks
+ 6. db/ — the sqitch migration change set
+ 7. crates/vitals-decode/src/sfloat.rs — the only real code so far
+ 8. AGENTS.md, docs/STAGE-DELIVERABLES.md
+
+ Answer these four questions
+
+ 1. What is missing that will hurt?
+ Not "you could also add X." Things whose absence will cause a real failure, data
+ loss, or a silent
+ wrong result. Rank by severity. For each: what breaks, under what conditions, and
+ how you would know
+ it had happened.
+
+ 2. What tool, library, protocol or platform feature should this be using and
+ isn't?
+ Be concrete and current. Name the thing, say what it replaces, and say what it
+ costs. Areas worth
+ checking: time-series storage and query, Bluetooth on Linux, crash-safe local
+ buffering, audio
+ alerting reliability, observability, backup verification, embedded/edge
+ deployment, testing and
+ fuzzing, schema management, and anything in the Rust ecosystem specifically. If
+ the design already
+ picked the right thing, say so briefly rather than padding.
+
+ 3. Where is the design wrong, not just incomplete?
+ Decisions that look reasonable but will not survive contact with reality. Argue
+ the specific
+ failure. Candidates worth interrogating hard:
+ - Is the Hybrid Logical Clock justified? Who actually writes concurrently to the
+   same key?
+ - Is the append-only COPY-binary spool better than the alternatives, or is it
+   clever for its own
+   sake?
+ - Does splitting schema ownership between sqitch (structure) and generated SQL
+   (reference rows)
+   actually work, or does it drift?
+ - Is one process per collector right, or should they be one supervised process?
+ - Is the staging-table drain correct under concurrent drainers, or does it need a
+   lock?
+
+ 4. What would you do differently at the architecture level?
+ One or two paragraphs. If you would keep the architecture, say that plainly
+ instead of inventing
+ disagreement.
+
+ Rules
+
+ - Be specific. "Consider adding monitoring" is worthless; "there is no way to
+   detect that
+   vitals-spool-drain has silently stopped, so the spool grows until the disk
+   fills — add a
+   liveness check on drain progress, not process liveness" is useful.
+ - Quote file and section when you criticise something.
+ - Distinguish will bite from might bite from taste.
+ - If you are unsure whether something is a real problem, say so rather than
+   asserting.
+ - Do not restate the design back at me. I wrote it. Tell me what is wrong with
+   it.
+
+ Output
+
+ Markdown. Start with the three most severe findings in three sentences each, then
+ the detail.
+ Finish with anything you checked and found genuinely fine, so I know what you
+ covered.
+
+
+ The user wants me to do an adversarial review of their system design. Let me read
+ all the specified documents in order and then provide a thorough critique.
+
+ I'll read the design docs in the order you specified and then give an adversarial
+ review.
+
+
+ $ ls -la docs/specs/ openspec/changes/pi5-vitals-core/ db/
+ crates/vitals-decode/src/ docs/STAGE-DELIVERABLES.md AGENTS.md 2>&1; find db
+ -type f | head -50; find crates -type f | head -30; find
+ openspec/changes/pi5-vitals-core -type f
+
+ ... (72 earlier lines, ctrl+o to expand)
+ crates/vitals-registry/src/lib.rs
+ openspec/changes/pi5-vitals-core/RUNBOOK.md
+ openspec/changes/pi5-vitals-core/tasks.md
+ openspec/changes/pi5-vitals-core/design.md
+ openspec/changes/pi5-vitals-core/proposal.md
+
+ Took 0.0s
+
+
+ Let me read all the specified documents in order.
+
+ Reading the specs in the prescribed order.
+
+
+ read ~/Source/AnxietyWatch2/docs/specs/2026-08-03-pi5-vitals-core-design.md
+
+
+
+ read
+ ~/Source/AnxietyWatch2/docs/specs/2026-08-03-amendment-01-timescale-copy-spool.md
+
+
+ Let me continue reading the remaining documents.
+
+
+ read ~/Source/AnxietyWatch2/docs/specs/2026-08-03-c-vs-rust-evaluation.md
+
+
+
+ read ~/Source/AnxietyWatch2/docs/specs/2026-08-03-language-choices.md
+
+
+
+ read ~/Source/AnxietyWatch2/openspec/changes/pi5-vitals-core/tasks.md
+
+
+ I've found a critical inconsistency already - the language decision documents and
+ tasks are in conflict. Let me continue reading the remaining materials.
+
+ There's already a language/stack inconsistency across docs. Reading the remaining
+ sources.
+
+
+ read ~/Source/AnxietyWatch2/db/sqitch.plan
+
+
+
+ read ~/Source/AnxietyWatch2/db/deploy/samples.sql
+
+
+
+ read ~/Source/AnxietyWatch2/db/deploy/registry_tables.sql
+
+
+
+ read ~/Source/AnxietyWatch2/db/deploy/samples_1min.sql
+
+
+
+ read ~/Source/AnxietyWatch2/db/deploy/retention.sql
+
+
+
+ read ~/Source/AnxietyWatch2/db/deploy/samples_hypertable.sql
+
+
+
+ read ~/Source/AnxietyWatch2/db/deploy/samples_compression.sql
+
+
+
+ read ~/Source/AnxietyWatch2/db/deploy/extensions.sql
+
+
+
+ read ~/Source/AnxietyWatch2/crates/vitals-decode/src/sfloat.rs
+
+
+
+ read ~/Source/AnxietyWatch2/crates/vitals-decode/src/lib.rs
+
+
+
+ read ~/Source/AnxietyWatch2/docs/STAGE-DELIVERABLES.md
+
+
+
+ read resource AGENTS.md (ctrl+o to expand)
+
+
+ Let me dig deeper into some specific issues I need to verify. I should look at:
+
+ Checking a few more specifics that look like they could be load-bearing failures.
+
+
+ read ~/Source/AnxietyWatch2/db/verify/samples.sql
+
+
+
+ read ~/Source/AnxietyWatch2/db/verify/samples_1min.sql
+
+
+
+ read ~/Source/AnxietyWatch2/db/revert/samples_hypertable.sql
+
+
+
+ read ~/Source/AnxietyWatch2/db/revert/extensions.sql
+
+
+
+ read ~/Source/AnxietyWatch2/openspec/changes/pi5-vitals-core/design.md:1-200
+
+
+
+ $ ls crates/ crates/*/src/ 2>/dev/null; rg -n
+ "hlc|spool|staging|klaxon|cns-engine|subscribe|fsync|watchdog|tombstone|concurren
+ t" docs/specs/ openspec/changes/pi5-vitals-core/ --type md -i | head -80; rg -n
+ "PRIMARY KEY|ON CONFLICT|node_id|samples_staging|UNLOGGED" db/ crates/ --type sql
+ --type rust 2>/dev/null | head -40; cat crates/vitals-decode/src/bp.rs
+ crates/vitals-decode/src/hr.rs crates/vitals-core/src/lib.rs
+ crates/vitals-registry/src/lib.rs 2>/dev/null
+
+ ... (210 earlier lines, ctrl+o to expand)
+ //!
+ //! Populated by T-D1's generator, which emits `generated.rs` here instead of
+ //! the C header it produced before.
+ #![no_std]
+ #![forbid(unsafe_code)]
+
+ Took 0.0s
+
+
+ I have enough material for a thorough adversarial review. Let me organize the
+ findings carefully.
+ The design is fatally flawed in three areas that will cause either missed alarms
+ or undetected data loss.
+
+ First, the documentation is in open contradiction with the code: tasks.md still
+ lists SQLite/WAL/C11/meson while the amendment-01 spool and Rust crates already
+ exist. This means the implementation tasks are already wrong, so 15 of them will
+ be executed against the wrong target and the system will ship with the wrong
+ storage layer.
+
+ Second, the live data path has a cold-start gap that will kill the alarm. vitalsd
+ writes only to the spool; cns-engine subscribes to a 60-second ring buffer that
+ is empty on restart 1. If vitalsd crashes before the ring is populated,
+ cns-engine never sees the first 60 seconds of samples and the alarm never fires.
+ The design claims the spool is unqueryable, so there is no fallback.
+
+ Third, the primary key (source, type, timestamp) with timestamp at second
+ resolution will silently drop RR intervals. Polar H10 emits multiple RR values
+ per heartbeat notification; if two arrive in the same second they collide on the
+ PK and ON CONFLICT DO NOTHING discards the second one. This is a will-bite
+ failure for any HRV or arrhythmia detection that relies on accurate RR intervals.
+
+ Documentation inconsistency 1. The tasks.md file still describes SQLite WAL tail,
+ C11, and meson while amendment-01 already ships COPY-binary spool + Timescale and
+ the Rust crates exist. This is not a taste issue; the implementation tasks are
+ already mismatched to the delivered architecture, so the build will fail or
+ produce the wrong binary.
+
+ 2. The live subscribe path has no back-pressure or gap detection. cns-engine
+    depends on vitalsd’s subscribe channel; if the ring buffer fills or vitalsd
+    restarts, samples are dropped from detection while still safely written to
+    spool. No liveness probe or alert for this gap exists.
+
+ 3. The 60-second ring buffer is empty on restart. vitalsd must fan-out via
+    subscribe; if it crashes before the ring is populated, cns-engine never sees
+    the first minute of data. The design explicitly says the spool is unqueryable,
+    so there is no recovery path.
+
+ 4. The PRIMARY KEY (source type  timestamp) collides on sub-second RR intervals.
+    Polar emits multiple RRs per notification; same-second timestamps cause ON
+    CONFLICT DO NOTHING to drop samples. This is a will-bite failure for any
+    detection that needs accurate RR intervals.
+
+ 5. HLC is now vestigial. Amendment-01 replaced the replication cursor with a byte
+    offset in the spool; the HLC column remains in the schema but serves no
+    load-bearing purpose. The justification in the original design no longer
+    holds.
+
+ 6. Staging-table design is inconsistent. Amendment-01 specifies TEMP TABLE ON
+    COMMIT DROP; the migration uses permanent UNLOGGED samples_st aging. Under
+    concurrent drainers the UNLOGGED table will interleave rows unless an explicit
+    lock or TRUNCATE is added. This is a will-bite concurrency bug.
+
+ 7. klaxond self-test via ALSA write acceptance does not prove the speaker is
+    functional. Amp mute, cable unplugged, or 0 volume still succeed the write
+    check. The design claims this discovers dead speakers; it does not.
+
+ 8. Alarm path depends on USB DAC without autosuspend mitigation. USB autosuspend
+    can drop the first alarm samples. No usbcore.autosuspend=-1 or PowerControl is
+    mentioned.
+
+ 9. Backup is not independent. pgBackRest is on the same NVMe as PGDATA; house
+    fire or disk failure loses both data and backup. The design defers tier-2
+    until 1 TB arrives but requires landing before Stage 5.
+
+ 10. Retention policy contradicts append-only.
+
+ Top findings
+
+ 1. Primary key (source, type, timestamp) silently destroys the Polar data the
+ system exists to capture. RR intervals arrive many per second, often several in
+ one GATT notification. ON CONFLICT DO NOTHING (amendment §2.2;
+ db/deploy/samples.sql) will drop all but one row per second per type as
+ “duplicates.” You will see plausible HR and empty/thin RR histories, HRV that
+ looks like bradycardia-of-missing-data, and no alarm — because the loss looks
+ like a successful idempotent write. Detect by comparing notification counts to
+ count(*) for type=rr_interval over the same wall window; they will diverge on
+ night one.
+
+ 2. The executable plan and the accepted architecture disagree, so agents will
+ build the abandoned system. openspec/changes/pi5-vitals-core/tasks.md still
+ specifies SQLite WAL, vitals-waltail, meson/C11, and a SQLite schema; amendment
+ 01 reworks T-D3/T-D5 to a COPY spool; c-vs-rust-evaluation.md says Rust
+ everywhere; language-choices.md says C + Rust collectors; AGENTS.md still
+ mandates C11 + SQLite; docs/STAGE-DELIVERABLES.md still draws “SQLite → WAL tail
+ → PostgreSQL.” Fresh workers paste task blocks and implement SQLite. You will not
+ notice until integration, after the wrong store is on the durability path.
+
+ 3. “Backup” and “alarm self-test” both declare victory without proving the
+ property that matters. Tier-1 pgBackRest lives on the same NVMe as PGDATA until a
+ 1 TB disk and off-box repo exist (T-C2 scope note), so disk death loses primary
+ and backup together; T-C3 verifies count(*) only, not the checksum comparison
+ design §4.2 promised. klaxond’s daily self-test (design §5.1) treats ALSA
+ accepting a write as “speaker works,” which is true for mute, unplugged DAC, USB
+ autosuspend, amp fault, and zero volume. Both fail closed as green. You learn on
+ the night of restore or the night of desat.
+
+ ────────────────────────────────────────────────────────────────────────────────
+
+ 1. What is missing that will hurt
+
+ ### Will bite
+
+ A. No unique key that fits high-frequency samples
+ Severity: critical.
+ RR, accel, and raw PPG cannot use (source, type, timestamp) unless timestamp is a
+ synthetic monotonic sequence (cumulative RR sum, sample index) with
+ sub-millisecond identity — and then it is not “event time” for gapfill/retention.
+ The schema gives you one row per source/type/instant and calls collisions
+ idempotency. For Polar that is data loss; for BP cuff it is mostly fine.
+ How you know: spike log line count ≫ samples rows; samples_1min.sample_count caps
+ near 60 for RR when it should be ~HR.
+
+ B. Life-safety consume path is underspecified relative to the spool
+ Severity: critical.
+ Amendment §2: spool is unreadable except by the drainer; cns-engine keeps ~60 s
+ rings. So detection must be fed by vitals_subscribe fanout from vitalsd, not from
+ Postgres. Missing:
+
+ - Order of operations: fanout before/after spool fsync? Ack to collector when?
+ - Subscriber backpressure: slow cns-engine → full socket buffer → drop from
+   detection while spool still durable (or block collectors).
+ - vitalsd restart: rings empty; no warm replay from spool (by design unreadable);
+   detection blind for the restart gap.
+ - Postgres down is fine for ingest; vitalsd down is not fine for alarm, and the
+   topology diagram still draws the alarm path through it.
+
+ How you know: journal shows reconnect storms while samples is complete; tier
+ machine silent across a vitalsd restart during a real desat.
+
+ C. Off-box durability is deferred past the point data matters
+ Severity: high.
+ T-C2: tier 2 deferred; repo on same NVMe. Design §4.2 claimed three independently
+ sufficient tiers. Today you have one disk with two directories. Stage 3 begins
+ writing “samples worth keeping” under G3 after restore verify — restore from the
+ same failed device is theatre.
+ How you know: only when the NVMe dies.
+
+ D. Acoustic alarm is not actually tested
+ Severity: high (life-safety).
+ Design §5.1 self-test = ALSA write accounting. That tests the digital path into
+ the USB gadget, not pressure waves in the room. Missing: disable USB autosuspend
+ on the DAC, hard volume floor, and a real proof (second device, mic loopback,
+ load sense — pick one).
+ How you know: morning self-test green, night silent.
+
+ E. Drain liveness is not monitored
+ Severity: high.
+ vitals-spool-drain can be “active” and make no progress (PG in recovery, blocking
+ lock, --verify mismatch after schema change). Spool grows until ENOSPC; then
+ append behavior is unspecified. Health that only checks systemctl is-active lies.
+ Need: monotonic drain offset / lag bytes / lag age on the health socket, and a
+ degraded state that names the blocker (AGENTS.md already requires this pattern;
+ the drain service is not under it).
+
+ F. Timestamp authority for RR is undefined
+ Severity: high for any HRV/CNS logic.
+ Notification arrival time ≠ beat time. Multiple RRs in one packet need timestamps
+ derived from a running clock of RR sums (or H10’s clock if exposed), not
+ clock_gettime once per callback. Design never says who stamps
+ vitals_sample.timestamp. Wrong stamps break gap detection, sleep staging, and any
+ rate estimator.
+ How you know: RR series jitter-clusters on packet boundaries; gaps anticorrelate
+ with connection-interval batching.
+
+ ### Might bite
+
+ G. Late HealthKit / phone rows into compressed chunks
+ Compression after 7 days (amendment §3.1) + phone push of backfill → inserts into
+ compressed ranges (decompress/recompress, or failure under load). No policy for
+ “reject older than N” vs “decompress.”
+
+ H. Continuous aggregate lag as a footgun for anything near-real-time
+ end_offset => 1 minute means samples_1min is knowingly stale. Fine if only charts
+ use it; harmful if any scorer or silence detector shortcuts to the CA. Not
+ forbidden in the docs.
+
+ I. Registry reconcile vs historical semantics
+ Rows ON CONFLICT DO UPDATE on service start (amendment §7.1). Changing range_hi
+ does not re-quarantine old rows; renaming meaning of id is permanent. No
+ type-version column. One careless TOML edit reinterprets forever.
+
+ J. bluetoothd / adapter reset is outside the supervision tree
+ Collectors restart; the daemon that owns the radio may not be coupled with hard
+ deps and a known-good reset path. Multi-hour freezes with “collector up, zero
+ notifications” are the common BlueZ failure mode. T-B1 measures the happy path
+ once; it does not produce a recovery runbook.
+
+ K. Restore verify is weaker than the design claims
+ Design §4.2: row-count and checksum. T-C3: count(*) only. Equal counts with
+ truncated values pass. Staleness >45 days is a fault on the panel — good — but
+ the monthly check can green-wash corruption.
+
+ L. Cold start of the whole box after power loss
+ Watchdog reboots the board; ordered dependencies among bluetooth, postgresql,
+ vitalsd, collectors, cns-engine, klaxond are not written as a single target with
+ ConditionPathExists on the DAC and adapter. You can get “alarm up, radios down”
+ or the reverse without a named degraded state at the system level.
+
+ ### Taste (still real, lower)
+
+ - No disk-watermark policy for spool/PG (what % free trips a phone push).
+ - No explicit node_id backup/restore story once HLC is mostly decorative (see
+   §3).
+ - Stage deliverables still document the SQLite path; they will train you to
+   mis-debug.
+
+ ────────────────────────────────────────────────────────────────────────────────
+
+ 2. What it should be using and isn’t
+
+ ┌────────────────┬──────────────────────────┬───────────────┬───────────────────┐
+ │ Area           │ Use this                 │ Instead of    │ Cost              │
+ ├────────────────┼──────────────────────────┼───────────────┼───────────────────┤
+ │ High-freq      │ PK (source, type, time,  │ (source,      │ Migration now is  │
+ │ identity       │ seq) or (source, type,   │ type,         │ cheap; after      │
+ │                │ hlc_physical,            │ timestamp) +  │ Polar nights it   │
+ │                │ hlc_logical, node_id)    │ ON CONFLICT   │ is surgery        │
+ │                │ with event time as a     │ DO NOTHING    │                   │
+ │                │ non-unique column; or    │               │                   │
+ │                │ hypertable without       │               │                   │
+ │                │ pretending second-level  │               │                   │
+ │                │ idempotency              │               │                   │
+ ├────────────────┼──────────────────────────┼───────────────┼───────────────────┤
+ │ Crash-safe     │ Keep file spool or       │ Ad-hoc        │ A few days of     │
+ │ local queue    │ simplify to in-vitalsd   │ cur.offset    │ careful code;     │
+ │                │ disk-backed queue of     │ without a     │ avoids inventing  │
+ │                │ already-encoded COPY     │ written       │ half a database   │
+ │                │ pages with               │ atomic update │                   │
+ │                │ rename()-atomic          │ protocol      │                   │
+ │                │ head/tail (a la          │               │                   │
+ │                │ Kafka/bitcask), single   │               │                   │
+ │                │ consumer lock (flock)    │               │                   │
+ ├────────────────┼──────────────────────────┼───────────────┼───────────────────┤
+ │ Direct ingest  │ tokio-postgres binary    │ Always spool  │ One less          │
+ │ when PG is up  │ COPY from vitalsd with   │ + always      │ always-on mover   │
+ │                │ synchronous_commit=off   │ drain process │ in the common     │
+ │                │ for the writer session,  │               │ case; spool       │
+ │                │ spool only on            │               │ remains the       │
+ │                │ backpressure             │               │ outage path       │
+ ├────────────────┼──────────────────────────┼───────────────┼───────────────────┤
+ │ BLE (if Rust)  │ bluer (official)         │ Hand-rolled   │ Dependency on     │
+ │                │                          │ GDBus C       │ crates.io vs      │
+ │                │                          │ (tasks.md)    │ Debian — real,    │
+ │                │                          │               │ already argued    │
+ ├────────────────┼──────────────────────────┼───────────────┼───────────────────┤
+ │ BLE soak       │ btmon + packaged capture │ One manual    │ Low; catches      │
+ │ testing        │ corpus replay into       │ T-B1 night    │ regressions after │
+ │                │ decoders; nightly gap    │               │ BlueZ upgrades    │
+ │                │ histogram as systemd     │               │                   │
+ │                │ timer from day 1         │               │                   │
+ ├────────────────┼──────────────────────────┼───────────────┼───────────────────┤
+ │ Audio proof    │ ALSA plus either a cheap │ Write-count   │ $10 mic + a page  │
+ │                │ USB mic threshold check  │ self-test     │ of code; or       │
+ │                │ or a DAC with            │ alone         │ accept residual   │
+ │                │ headphone-detect/load;   │               │ risk explicitly   │
+ │                │ usbcore.autosuspend=0 /  │               │                   │
+ │                │ device-level             │               │                   │
+ │                │ power/control            │               │                   │
+ ├────────────────┼──────────────────────────┼───────────────┼───────────────────┤
+ │ Observability  │ node_exporter + a few    │ Health CBOR   │ Hours; gives      │
+ │                │ textfile metrics from    │ only on a     │ “drain stuck”     │
+ │                │ drain/collectors (spool  │ Unix socket   │ without inventing │
+ │                │ lag, last sample age,    │               │ a UI              │
+ │                │ backup age), scraped     │               │                   │
+ │                │ locally; Grafana already │               │                   │
+ │                │ planned                  │               │                   │
+ ├────────────────┼──────────────────────────┼───────────────┼───────────────────┤
+ │ Backup         │ pgBackRest repo2 to any  │ “Same NVMe    │ Whatever the      │
+ │ independence   │ off-box target before    │ until 1 TB    │ second medium     │
+ │                │ Stage 5 (even a NAS or   │ arrives”      │ costs; cheaper    │
+ │                │ cloud object store);     │               │ than unique data  │
+ │                │ encrypt as already       │               │                   │
+ │                │ planned                  │               │                   │
+ ├────────────────┼──────────────────────────┼───────────────┼───────────────────┤
+ │ Schema         │ Sqitch — correct choice  │ Alembic       │ Already paid      │
+ ├────────────────┼──────────────────────────┼───────────────┼───────────────────┤
+ │ Time-series    │ Timescale hypertable +   │ Hand rollups  │ Already paid;     │
+ │                │ CA + gapfill — correct   │ / Influx      │ watch TSL feature │
+ │                │ choice                   │ beside PG     │ set for           │
+ │                │                          │               │ compression/CAggs │
+ ├────────────────┼──────────────────────────┼───────────────┼───────────────────┤
+ │ Fuzzing        │ cargo-fuzz if Rust;      │ Only          │ Low               │
+ │                │ exhaustive 16-bit SFLOAT │ libFuzzer on  │                   │
+ │                │ test already better than │ C             │                   │
+ │                │ fuzz for that surface    │               │                   │
+ │                │ (sfloat.rs)              │               │                   │
+ ├────────────────┼──────────────────────────┼───────────────┼───────────────────┤
+ │ Embed deploy   │ systemd + static         │ Free-floating │ Unit file lines   │
+ │                │ binaries — correct; add  │ services      │                   │
+ │                │ BindsTo=/After= on       │               │                   │
+ │                │ bluetooth.service and    │               │                   │
+ │                │ device units for DAC     │               │                   │
+ ├────────────────┼──────────────────────────┼───────────────┼───────────────────┤
+ │ Offset         │ write(offset.tmp) →      │ In-place      │ Trivial if        │
+ │ durability     │ fdatasync → rename       │ rewrite of    │ specified         │
+ │                │                          │ cur.offset    │                   │
+ └────────────────┴──────────────────────────┴───────────────┴───────────────────┘
+
+ Already right, briefly: bare-metal Postgres, pgBackRest as the tool, gapfill +
+ ban on locf/interpolate for physio, registry-as-codegen, pure decoders, G1 Sena
+ gate, hardware watchdog, no Docker on the siren path.
+
+ ────────────────────────────────────────────────────────────────────────────────
+
+ 3. Where the design is wrong, not just incomplete
+
+ ### Hybrid Logical Clock — not justified for the system you are building
+
+ Design §2.1: HLC is “exactly right for a Pi, a phone, and a watch that each
+ observe reality independently.”
+
+ After amendment 01, replication progress is a byte offset in a COPY spool, not an
+ HLC cursor (amendment §2.2). The scar that justified HLC (“cursor = .now”) is
+ fixed by offset-at-commit, not by HLC. Remaining writers:
+
+ ┌────────────────┬───────────────────────────────────┐
+ │ Writer         │ Key space                         │
+ ├────────────────┼───────────────────────────────────┤
+ │ BLE collectors │ Distinct source ids via vitalsd   │
+ ├────────────────┼───────────────────────────────────┤
+ │ Phone HK push  │ source=healthkit                  │
+ ├────────────────┼───────────────────────────────────┤
+ │ Spool replay   │ Same rows, ON CONFLICT DO NOTHING │
+ └────────────────┴───────────────────────────────────┘
+
+ Nobody concurrent-writes the same (source, type, timestamp) with different values
+ as a merge problem. Phone vs Polar are different sources. Two nodes do not share
+ a cuff.
+
+ What HLC still does: decorate rows; invite a sync design you no longer have;
+ complicate COPY encoding and indexes. What it does not do: fix the real collision
+ problem (same source, same second, many RR). Using HLC as uniqueness would be
+ closer to coherent; storing it while keying on wall time is the worst hybrid.
+
+ Verdict: vestigial after the spool amendment. Keep node_id if you want
+ provenance; drop HLC until a real multi-writer merge exists. Might bite as
+ complexity; will not save you from RR loss.
+
+ ### COPY-binary spool — right impulse, wrong confidence
+
+ Dropping SQLite-as-translation-layer is correct (amendment §1). “Buffer format =
+ Postgres format” is a real invariant.
+
+ Where it is clever for its own sake:
+
+ - You now own a non-portable, schema-frozen, dual-process queue with rotation,
+   partial-segment trailers, and upgrade runbooks (amendment §2.3), i.e. a storage
+   engine.
+ - The common case is local PG on the same NVMe. A writer that COPY-streams live
+   and only pages to disk on backpressure gives the same “PG down doesn’t block
+   sensing” property without a second daemon in the steady state.
+ - Idempotency via staging + ON CONFLICT is required because COPY cannot upsert —
+   that is a tax on the format choice, paid forever.
+
+ Not wrong enough to rip out if implemented with flock, atomic offsets, and lag
+ metrics — but do not tell yourself it is simpler than SQLite. It is simpler than
+ SQLite and Postgres. It is not simpler than Postgres alone + overflow file.
+
+ ### Sqitch structure vs generated reference rows — sound, currently forked
+
+ Amendment §7.1 split is right. db/deploy/registry_tables.sql is structure-only;
+ good.
+
+ Wrong in practice today:
+
+ - T-D1 still tells the generator to emit structure + CHECKs into registry.sql.
+ - Amendment admits the generator must be trimmed “as follow-up.”
+ - Until that lands, two owners do claim the same objects.
+
+ Also: FKs from samples to vitals_source/vitals_type mean drain fails hard if a
+ collector builds against a newer registry than registry.sql reconcile on the
+ server. That is good fail-closed behavior only if deploy order is registry
+ reconcile before collector start — not written into systemd.
+
+ ### One process per collector — right for C, inertia for Rust
+
+ Design §3 / §5.1: process isolation because C shared state is toxic.
+
+ c-vs-rust-evaluation.md §4 already notes Rust can be one supervised process with
+ tasks per radio. The failure mode you care about is one wedged BlueZ connection
+ or one panic, not MMU isolation between Polar and EMAY. Separate processes:
+
+ - Multiply reconnect policy implementations (or require a shared crate anyway),
+ - Do not protect against bluetoothd death,
+ - Do not protect against vitalsd death (shared fate for detection).
+
+ Prefer one collector supervisor + one vitalsd + one cns-engine + one klaxond if
+ Rust wins. Keep process isolation at the life-safety boundary (detection/alarm vs
+ ingest), not per sensor. Taste/architecture; not a silent wrong-number bug.
+
+ ### Staging drain concurrency — the migration disagrees with the amendment, and
+ both are incomplete
+
+ Amendment §2.2: CREATE TEMP TABLE staging … ON COMMIT DROP (session-private,
+ correct).
+ db/deploy/samples.sql: permanent UNLOGGED TABLE samples_staging (shared).
+
+ On a shared UNLOGGED table:
+
+ - Two drainers interleave rows; ON CONFLICT DO NOTHING may hide the bug while row
+   counts look fine.
+ - A failed transaction can leave rows visible to the next session unless you
+   TRUNCATE in the same transaction before COPY.
+ - No pg_advisory_lock / flock on the spool is specified.
+
+ Single systemd unit does not save you from “I ran the binary by hand during an
+ incident.” Wrong as checked in. Fix: TEMP table per session or UNLOGGED +
+ TRUNCATE + advisory lock in the same transaction; document one-drainer invariant
+ with a lock file.
+
+ ### Append-only vs retention — direct contradiction
+
+ Design §2.5 / amendment §5: no DELETE; tombstones.
+ Amendment §3.4 / db/deploy/retention.sql: add_retention_policy('samples',
+ INTERVAL '2 years') drops chunks.
+
+ That is a hard delete of raw history. Continuous aggregates surviving does not
+ make the append-only claim true. Pick one story:
+
+ - “Raw is disposable after rollup; append-only applies inside the retention
+   window,” or
+ - “Raw is forever; no retention policy.”
+
+ Right now the law says both. Implementers will follow Timescale and the docs will
+ lie during the next incident review.
+
+ ### Language decision — three answers, one repo
+
+ ┌─────────────────────────┬───────────────────────────────────────┐
+ │ Doc                     │ Answer                                │
+ ├─────────────────────────┼───────────────────────────────────────┤
+ │ Parent design §3.1      │ C11 life-safety                       │
+ ├─────────────────────────┼───────────────────────────────────────┤
+ │ language-choices.md     │ C11 + Rust collectors only            │
+ ├─────────────────────────┼───────────────────────────────────────┤
+ │ c-vs-rust-evaluation.md │ Rust for everything formerly C        │
+ ├─────────────────────────┼───────────────────────────────────────┤
+ │ tasks.md / AGENTS.md    │ C11 + meson + SQLite                  │
+ ├─────────────────────────┼───────────────────────────────────────┤
+ │ crates/*                │ Rust workspace started; SFLOAT ported │
+ └─────────────────────────┴───────────────────────────────────────┘
+
+ This is not incompleteness; it is an undecided decision written as several
+ decided ones. The evaluation’s portability argument for Swift→Rust cns-engine is
+ the strongest point in the pile; the tasks file ignores it. Wrong process state
+ will produce wrong code.
+
+ ### Minor wrongness worth fixing before it calcifies
+
+ - timestamp type narrative: AGENTS.md still says “UTC epoch seconds” as the store
+   type; DB is TIMESTAMPTZ. The conversion-at-encoder rule is fine; the agent rule
+   is stale and will fight reviewers.
+ - T-A3/T-A4 tooling: hciconfig/hcitool are legacy; prefer bluetoothctl/btmgmt on
+   bookworm going forward.
+ - After disable-bt, the Sena is often hci0, not hci1. Verify checks Bus USB —
+   good — but prose and future collector defaults that say hci1 are wrong.
+ - STAGE-DELIVERABLES Stage 3 diagram still teaches SQLite as truth.
+
+ ────────────────────────────────────────────────────────────────────────────────
+
+ 4. What I would do differently
+
+ Keep the spine: Pi owns radio + alarm; narrow typed sample waist; registry
+ codegen; bare-metal Postgres+Timescale; gapfill discipline; pure decoders;
+ systemd not Docker on the siren path; Sqitch with verify scripts; G1/G2/G3 gates.
+ That core is sound.
+
+ I would freeze one language and one storage path in the task file before another
+ line of implementation, then delete the contradictory prose. I would put
+ cns-engine on a live subscription with an explicit in-process journal (last N
+ minutes of samples in a memory-mapped ring that survives cns-engine restart,
+ filled from subscribe, independent of Postgres and of the COPY spool). I would
+ change the primary key so high-frequency samples cannot be “deduplicated” into
+ oblivion, treat event time as a query column, and demote HLC until phone merge is
+ real. I would spool only on backpressure, lock the drain, metric the lag, and
+ refuse Stage 5 until repo2 is off-box and the alarm self-test has an acoustic or
+ electrical proof. One collector supervisor is enough; spend isolation budget on
+ alarm vs everything else.
+
+ I would not replace Timescale, Sqitch, pgBackRest, or the registry idea. I would
+ not go back to SQLite on the Pi.
+
+ ────────────────────────────────────────────────────────────────────────────────
+
+ Checked and genuinely fine
+
+ - Dropping SQLite as ingest buffer — correct diagnosis (dialect translation on
+   the durability path).
+ - Timescale hypertable + compression + continuous aggregate with min/max — right
+   tool; nadir retained on purpose.
+ - time_bucket_gapfill + ban on locf/interpolate for physio — enforces unknown≠OK
+   at the query boundary; one of the best invariants in the design.
+ - Sqitch with refuse-to-revert on destructive ops (db/revert/extensions.sql,
+   samples_hypertable) — matches the project’s “name the blocker” ethic.
+ - SFLOAT handling in crates/vitals-decode/src/sfloat.rs — sentinels → None,
+   exhaustive domain test, not f16; this is the right shape. (Fallback 1.0 in
+   libm_powi10 is dead for legal exponents; fine.)
+ - G1 Sena-before-disable-bt — absolutely right; do not soften.
+ - Life-safety outside Docker; API/analysis inside — correct split.
+ - Canonical unit once at decoder; UTC in the store — right (modulo TIMESTAMPTZ
+   encoding).
+ - Quarantine out-of-range, never clamp — right.
+ - BP CCCD 0x0002 indication warning — the kind of scar that deserves to be
+   structural; keep it in code comments and verify.
+ - Restore-test-as-timer as an idea — right; strengthen to checksums and off-box
+   before trusting it.
+ - Panel as pure subscriber — right dependency direction.
+
+───────────────────────────────────────────────────────────────────────────────────
+
+───────────────────────────────────────────────────────────────────────────────────
+~/Source/AnxietyWatch2 (refactor/rust-workspace)
+↑49k ↓9.7k R103k CH84.2% 44.7%/128k (auto)                   (litellm) xai/grok-4.5
