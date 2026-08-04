@@ -1008,14 +1008,31 @@ function hzDraw(dt) {
       hzState.nextBeat += period;
       if (hzState.nextBeat < 0) hzState.nextBeat = period;  // recover from a long stall
       if (hzState.bubbles.length < HZ.MAX_BUBBLES) {
-        const r = 2.5 + Math.random() * 6;
+        /* Size varies only modestly, and speed is driven mostly by rate.
+           The first version drew radius from 2.5-8.5 and fed it into velocity
+           at 3.6 px/s per px of radius, so the RANDOM size alone swung speed
+           about 2x while 60->100 bpm moved it barely 28%. The noise drowned
+           the signal: what looked like large speed differences between similar
+           rates was the dice, not the heart. */
+        const r = 3.5 + Math.random() * 2.8;
+
+        /* Velocity grows with the SQUARE ROOT of rate, not linearly.
+           Bubbles are released once per beat, so time-in-flight is
+           height / velocity and the number visible at once is
+           (bpm/60) x (height/v). With v proportional to bpm those cancel and
+           the field looks identical at 50 and 110 — faster, but no busier,
+           which is not what a rising heart rate should look like. A sqrt ramp
+           makes it both quicker AND denser: about 9 bubbles in flight at 50
+           bpm against about 14 at 110.
+
+           Radius still adds a little, because a bigger bubble really does rise
+           faster, but it is capped at ~25% so it cannot swamp the rate again. */
+        const vRate = 20 + 3.2 * Math.sqrt(Math.max(0, bpm - 35));
         hzState.bubbles.push({
           x: 40 + Math.random() * 720,
           y: HZ.FLOOR,
           r,
-          // Buoyancy grows with volume, so a bigger bubble climbs faster; the
-          // bpm term is what makes a fast heart visibly energise the field.
-          v: (14 + r * 3.6) * (0.55 + bpm / 150),
+          v: vRate * (0.90 + ((r - 3.5) / 2.8) * 0.25),
           phase: Math.random() * Math.PI * 2,
           wob: 0.4 + Math.random() * 0.9,
           // The rate at the instant this beat was released. Kept per-bubble so
