@@ -20,24 +20,32 @@ One narrow table, append-only, and everything else is a view over it:
 
 ```sql
 CREATE TABLE samples (
-  source        INTEGER NOT NULL,   -- from the generated registry
-  type          INTEGER NOT NULL,   -- from the generated registry
-  timestamp     REAL    NOT NULL,   -- UTC epoch seconds. Never local time.
-  value         REAL    NOT NULL,   -- canonical unit for `type`. Always.
-  extra         BLOB,
-  hlc_physical  INTEGER NOT NULL,   -- hybrid logical clock: multi-writer merge
-  hlc_logical   INTEGER NOT NULL,
-  node_id       BLOB    NOT NULL,
-  PRIMARY KEY (source, type, timestamp)
-) WITHOUT ROWID, STRICT;
+  source       INTEGER          NOT NULL REFERENCES vitals_source(id),
+  type         INTEGER          NOT NULL REFERENCES vitals_type(id),
+  session_id   BIGINT           NOT NULL,
+  seq          BIGINT           NOT NULL,   -- from the sensor's own data
+  timestamp    TIMESTAMPTZ      NOT NULL,   -- best-estimate event time, UTC
+  value        DOUBLE PRECISION NOT NULL,   -- canonical unit for `type`. Always.
+  extra        BYTEA,
+  node_id      BYTEA            NOT NULL,
+  batch_id     BIGINT,                      -- NULL = did not arrive signed
+  PRIMARY KEY (source, type, session_id, seq)
+);
 ```
+
+**`timestamp` is not the key.** Several RR intervals arrive in one BLE notification, so keying on
+arrival time makes them collide and `ON CONFLICT DO NOTHING` silently discards real measurements
+while every health metric reads normal. `seq` is a monotonic per-session index derived from the
+sensor's own data, so a retransmission dedupes correctly and a reconnect mints a new `session_id`
+rather than faking continuity. `max(seq) - count(*)` per session is the lost-beat count, which makes
+packet loss a measurable quantity instead of an invisible one.
 
 HealthKit's real contribution was never storage — it was a type registry, a provenance model, and an
 observer API. This keeps those three, drops the permission model, and adds the one HealthKit never
-had: a total order across independent writers.
+had: an identity model that makes packet loss measurable rather than invisible.
 
 `vitals/registry.toml` is the single source of truth for every source, type, canonical unit, and
-valid range. It generates the C header, the SQL, the Swift enums, and the JSON. A source label is
+valid range. It generates the Rust enums, the SQL reference data, and the JSON. A source label is
 never typed by hand.
 
 ## Architecture
@@ -45,7 +53,7 @@ never typed by hand.
 The organizing rule: **the life-safety path never runs in Docker and never depends on the network.**
 
 ```
-systemd — static C binaries, hardware watchdog
+systemd — static Rust binaries, hardware watchdog
   collectors ──▶ vitalsd ──▶ cns-engine ──▶ klaxond
                     │
                     ▼
@@ -60,14 +68,14 @@ between a desaturation and a siren.
 ## Build
 
 ```sh
-cmake -B build -DCMAKE_BUILD_TYPE=Debug
-cmake --build build
-ctest --test-dir build --output-on-failure
+cargo build --workspace
+cargo test --workspace
+cargo clippy --workspace --all-targets -- -D warnings
 ```
 
-`vitals_core` (decoders, HLC) is pure C11 and builds on macOS and Linux — Apple Silicon and the Pi 5
-are both arm64 little-endian, so results are identical. `vitals_linux` (SQLite store, `vitalsd`,
-epoll, BlueZ) is Linux-only and is skipped on macOS rather than mocked.
+`vitals-decode` and `vitals-registry` are `no_std` and build anywhere — Apple Silicon and the Pi 5
+are both arm64 little-endian, so results are identical. `vitalsd` and the collectors (Postgres,
+BlueZ, systemd) are Linux-only and are skipped on macOS rather than mocked.
 
 Anything Linux-specific, **including debugging**, happens on the Pi:
 
@@ -78,18 +86,18 @@ scripts/sync-to-pi.sh --test
 ## Testing
 
 ```sh
-scripts/coverage.sh --check
+cargo llvm-cov --workspace --summary-only
 ```
 
 Gates are differentiated, because one flat number would be wrong in both directions:
 
 | Layer | Gate |
 |---|---|
-| Decoders, HLC | **95%** — pure functions, and hostile input lands here |
-| Store, daemon logic | **85%** — testable against `:memory:` SQLite |
+| Decoders | **90%** — pure functions, and hostile input lands here |
+| Store, daemon logic | **85%** — testable against a scratch Postgres |
 | BLE / systemd glue | measured, not gated — needs real radios |
 
-Coverage is a floor, not the goal. Every byte-parsing function also gets a libFuzzer target, because
+Coverage is a floor, not the goal. Every byte-parsing function also gets a `cargo-fuzz` target, because
 coverage tells you a line ran, not that it survived a truncated frame.
 
 ## Documentation

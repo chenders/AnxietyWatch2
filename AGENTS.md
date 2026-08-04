@@ -40,30 +40,37 @@ in full before starting.
 - Stage specific files by name. Never `git add -A` or `git add .`.
 - Commit after every task.
 
-## C
+## Rust
 
-- C11. `-Wall -Wextra -Werror -Wshadow -Wconversion`. **A new warning is a failing test.**
-- Every function that parses bytes off a radio is pure: `(const uint8_t *, size_t) -> result`.
-  No allocation, no I/O, no global state. Bounds-check every read — `len` is attacker-controlled.
-- Every such function also gets a libFuzzer target in `vitals/fuzz/`.
+- Rust, not C. `cargo clippy -- -D warnings`. **A new warning is a failing test.**
+- Every function that parses bytes off a radio is pure: `fn decode_x(buf: &[u8]) -> Option<T>`.
+  No allocation, no I/O, no global state. Use `get()`, never `buf[i]` — `indexing_slicing` is denied
+  and the input is attacker-controlled.
+- Return `Option`/`Result`, never a `bool` plus an out-parameter. A caller must not be able to read a
+  value that is not there. That is the reason this project is in Rust.
+- Every such function also gets a `cargo-fuzz` target in `fuzz/fuzz_targets/`.
+- No `unwrap()`, `expect()`, or `panic!` outside tests. `panic = "abort"` in release, so a panic is a
+  process death, and a dead collector is a silent alarm.
 - No `UPDATE`, no `DELETE` against `samples`. It is append-only; removal is a tombstone row.
 - Never clamp an out-of-range value. Reject it, name the reason, quarantine it. A clamped reading is
   indistinguishable from a real one downstream.
 - Invalid or absent data contributes nothing. Never coerce a sentinel to a number — IEEE-11073
   SFLOAT `0x07FF`/`0x0800` mean *absent*, not zero.
 
-## Portability
+## Crate boundaries
 
-Two libraries, and the split is load-bearing:
+The split is load-bearing:
 
-| Target | Contains | Builds on |
+| Crate | Contains | Constraint |
 |---|---|---|
-| `vitals_core` | decoders, HLC — pure C11 | macOS and Linux |
-| `vitals_linux` | SQLite store, `vitalsd`, epoll, BlueZ, systemd | **Linux only** |
+| `vitals-registry` | generated types and sources | `no_std`, no dependencies |
+| `vitals-decode` | pure decoders | `no_std`, `forbid(unsafe_code)`, no I/O |
+| `vitals-core` | shared value types, COPY encoder, spool | no BlueZ, no systemd |
+| `vitalsd`, collectors | BlueZ, tokio, postgres, systemd | Linux only |
 
-Do not add a Linux header to `vitals_core`. Do not mock BlueZ to make something build on macOS — a
-mock only tests the mock. Linux-specific work, including debugging, runs on the Pi
-(`scripts/sync-to-pi.sh`).
+Do not add a BlueZ, SQL, or systemd dependency to `vitals-decode` or `vitals-registry`. Do not mock
+BlueZ to make something build on macOS — a mock only tests the mock. Linux-specific work, including
+debugging, runs on the Pi (`scripts/sync-to-pi.sh`).
 
 ## Time and units
 
@@ -77,13 +84,15 @@ mock only tests the mock. Linux-specific work, including debugging, runs on the 
 thresholds. Files in `vitals/generated/` are produced from it and are **never hand-edited** — CI
 regenerates and diffs. If you need a new source or type, add it to the TOML and regenerate.
 
-Source and type identifiers are integers everywhere in code. A string like `"polar_h10"` appears in
-exactly one file.
+Source and type identifiers are the **generated enums** `VitalsSource` and `VitalsType` everywhere in
+code — never a bare integer, never a string. An `i32` that can hold any value is what lets a source
+id and a type id be transposed at a call site without the compiler noticing. A string like
+`"polar_h10"` appears in exactly one file.
 
 ## Tests
 
 - Every new or changed behavior gets a test. Coverage gates: 95% pure logic, 85% store/daemon.
-- Never assert float equality. Use a tolerance: `fabs(a - b) < 1e-9`.
+- Never assert float equality. Use a tolerance: `(a - b).abs() < 1e-9`.
 - Fixed reference timestamps. No wall clock in assertions.
 - Fixing a failing test is always in scope, related to your task or not.
 

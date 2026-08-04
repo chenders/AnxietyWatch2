@@ -125,6 +125,19 @@ jobs:
         run: |
           fail=0
           BRIEFS=openspec/changes/pi5-vitals-core/tasks.md
+          # Scoping this to tasks.md was the defect, not the fix. AGENTS.md is
+          # the worker contract -- read before EVERY task, ahead of any Reads:
+          # list -- and it still described C11, SQLite, HLC and epoll long after
+          # the briefs were converged. A guard that clears one file and reports
+          # green tells you the repo describes one system when it does not,
+          # which is worse than no guard at all.
+          #
+          # Anything a worker reads is in scope.
+          CONTEXT="$BRIEFS AGENTS.md README.md Cargo.toml"
+          for extra in docs/HERDR-GUIDE.md docs/STAGE-DELIVERABLES.md \
+                       crates/vitals-core/src/lib.rs .github/copilot-instructions.md; do
+            [ -f "$extra" ] && CONTEXT="$CONTEXT $extra"
+          done
 
           # Test for a match directly, never via a count. `grep -c` over a glob
           # prefixes each result with its filename once more than one file
@@ -149,11 +162,32 @@ jobs:
           # The gap was in what got measured. "grep -c SQLite == 0" was taken from
           # the review finding's wording; the property that must actually hold is
           # "no brief tells a worker to write C."
-          C_PATTERN='```c$|`[A-Za-z0-9_/.-]+\.[ch]`|VITALS_(TYPE|SOURCE)_|LLVMFuzzerTestOneInput|__builtin_|\bC11\b|VitalsRegistry\.swift'
-          if grep -nE "$C_PATTERN" "$BRIEFS"; then
-            echo "::error::task briefs still specify C -- this project is Rust (docs/specs/AMENDMENTS.md)"
+          # Every clause below evaded an earlier version of this pattern:
+          #   ```C  and  ```c<trailing space>   (anchored, case-sensitive)
+          #   bp_decode.C  and  bp_decode.cpp   (case, and .c only)
+          #   "port the decoder from sfloat.c"  (backticks were required)
+          #   "write this in C"                 (no prose clause)
+          #   #include <vitals/registry.h>      (no include clause)
+          # A pattern is only as good as the phrasings it was tested against, so
+          # the self-test below asserts one probe line per clause.
+          C_PATTERN='^```[Cc][[:space:]]*$|[A-Za-z0-9_/.-]+\.([ch]|cpp|hpp)\b|VITALS_(TYPE|SOURCE|KIND)_|LLVMFuzzerTestOneInput|__builtin_|\bC11\b|VitalsRegistry\.swift|\bepoll\b|\bfabs\(|\bHLC\b|hr_capture|libFuzzer target|#include[[:space:]]*<|\b(in|pure|plain) C\b|\bC (header|binar|code|source)'
+          # Refuse to report clean on a file that was never read. The guard
+          # previously exited 0 for a missing path -- grep says 2, the `if` reads
+          # it as false, and set -e does not catch a condition.
+          for f in $CONTEXT; do
+            [ -r "$f" ] || { echo "::error::guard target unreadable: $f"; fail=1; }
+          done
+          # shellcheck disable=SC2086
+          if grep -nE "$C_PATTERN" $CONTEXT; then
+            echo "::error::worker-visible context still specifies C/SQLite/HLC -- this project is Rust (docs/specs/AMENDMENTS.md)"
             fail=1
           fi
+          # The C build system must not outlive the C code.
+          for dead in CMakeLists.txt vitals/CMakeLists.txt vitals/src/version.c scripts/coverage.sh; do
+            if [ -e "$dead" ]; then
+              echo "::error::$dead survives the Rust migration"; fail=1
+            fi
+          done
 
           # A check that cannot fail is indistinguishable from a check that passes.
           # This repo has hit that four times: an empty API key that read as bad
@@ -167,23 +201,38 @@ jobs:
           # above is exactly that case -- tasks.md went binary, grep matched
           # nothing, and a separate-file self-test would still have passed.
           # Same file, same encoding, same invocation, or the test is theatre.
+          # Probe lines are written the way a brief would ACTUALLY phrase the
+          # violation -- capital fences, unbackticked filenames, prose -- not the
+          # single engineered form the pattern was built around. An earlier
+          # version passed its self-test while six of its seven clauses had never
+          # matched anything, in the file or the probe.
           probe=$(mktemp)
           cp "$BRIEFS" "$probe"
           {
             printf '1. Write `vitals/src/bp_decode.c`:\n'
-            printf '```c\n'
+            printf 'port the SFLOAT decoder from sfloat.c into the crate\n'
+            printf '```C\n'
             printf 'source = VITALS_SOURCE_AD_UA651BLE\n'
             printf 'VITALS_TYPE_HR\n'
             printf 'int LLVMFuzzerTestOneInput(const uint8_t *d, size_t n)\n'
             printf '__builtin_trap();\n'
             printf 'written in C11 throughout\n'
             printf 'emits VitalsRegistry.swift\n'
+            printf '#include <vitals/registry.h>\n'
+            printf 'implement this in C for speed\n'
+            printf 'the generated C header lands in vitals/generated\n'
+            printf 'add a proto.cpp shim\n'
+            printf 'an epoll loop over the listening socket\n'
+            printf 'assert fabs(a - b) < 1e-9\n'
+            printf 'the HLC stamp orders writers\n'
           } >> "$probe"
-          # One probe line per alternation: a corrupted branch in a 7-way regex
-          # is invisible if only one branch is ever exercised.
-          for want in 'bp_decode\.c' '```c$' 'VITALS_SOURCE_' 'VITALS_TYPE_' \
-                      'LLVMFuzzerTestOneInput' '__builtin_' 'C11' 'VitalsRegistry\.swift'; do
-            if ! grep -E "$C_PATTERN" "$probe" | grep -qE "$want"; then
+          # One probe line per clause. A corrupted branch in a 15-way regex is
+          # invisible if only one branch is ever exercised.
+          for want in 'bp_decode\.c' 'sfloat\.c' '```C' 'VITALS_SOURCE_' 'VITALS_TYPE_' \
+                      'LLVMFuzzerTestOneInput' '__builtin_' 'C11' 'VitalsRegistry\.swift' \
+                      '#include' 'in C for speed' 'C header' 'proto\.cpp' 'epoll' \
+                      'fabs' 'HLC'; do
+            if ! grep -iE "$C_PATTERN" "$probe" | grep -qF "$(printf '%s' "$want" | tr -d '\\\\')"; then
               echo "::error::guard self-test FAILED -- C_PATTERN does not catch '$want'"
               fail=1
             fi
@@ -196,9 +245,27 @@ jobs:
           # not instructions to a worker -- they carry no Amends: field and should
           # not. Counting the whole file made this check fail the moment any task
           # was marked done, which is a guard that breaks on success.
+          # `|| true` on both: grep -c exits 1 on zero matches, and under
+          # `bash -e` an assignment whose substitution fails aborts the step --
+          # so the "only $heads briefs found" error below, written for exactly
+          # that case, could never print. A guard that fails closed must still
+          # say why; this one failed closed silently.
           briefs=$(sed '/^## Implementation notes/,$d' "$BRIEFS")
-          heads=$(printf '%s\n' "$briefs" | grep -c '^### T-')
-          amends=$(printf '%s\n' "$briefs" | grep -c '^\*\*Amends:\*\*')
+          heads=$(printf '%s\n' "$briefs" | grep -c '^### T-' || true)
+          amends=$(printf '%s\n' "$briefs" | grep -c '^\*\*Amends:\*\*' || true)
+          # Per-brief, not a count. 15 == 15 is equally satisfied by one brief
+          # carrying two Amends: fields and another carrying none -- which is
+          # precisely what a copy-pasted brief produces.
+          printf '%s\n' "$briefs" | awk '
+            /^### T-/   { if (task != "" && !seen) print "MISSING:" task; task=$0; seen=0 }
+            /^\*\*Amends:\*\*/ { seen=1 }
+            END         { if (task != "" && !seen) print "MISSING:" task }
+          ' | while read -r m; do echo "::error::no Amends: field — ${m#MISSING:}"; done
+          if printf '%s\n' "$briefs" | awk '
+            /^### T-/   { if (task != "" && !seen) bad=1; task=$0; seen=0 }
+            /^\*\*Amends:\*\*/ { seen=1 }
+            END         { if (task != "" && !seen) bad=1; exit bad }
+          '; then :; else fail=1; fi
           if [ "$heads" -ne "$amends" ]; then
             echo "::error::$heads task briefs but $amends Amends: fields"; fail=1
           fi

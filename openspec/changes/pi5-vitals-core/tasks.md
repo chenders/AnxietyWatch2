@@ -333,7 +333,7 @@ building anything on top of it.** Deliberately placed before the storage and cor
 5. Run the capture overnight under systemd-run so it survives your SSH session:
    ```sh
    systemd-run --user --unit=hrspike --setenv=H10_MAC=<mac> \
-     ~/vitals/spike/build/hr_capture > ~/vitals/spike/night1.log
+     ./target/release/hr-spike > ~/vitals/spike/night1.log
    ```
 6. In the morning, compute the gap histogram with `gap_histogram.py`: read the log, diff consecutive
    timestamps, and print count of gaps in each bucket `<2s, 2-10s, 10-60s, 60s-5m, >5m`, plus total
@@ -539,7 +539,7 @@ on minidude.
 ### T-D1 — Registry TOML and codegen
 
 **Tier:** implement-standard · **Host:** mac · **Context budget:** ~5k · **Depends:** none
-**Amends:** 01 (§3.1 hypertable) · 02 (§2.2 reserved columns) · 04 (§1 identity, §8 no HLC)
+**Amends:** 01 (§3.1 hypertable) · 02 (§2.2 reserved columns) · 04 (§1 identity, §8 clocks removed)
 **Review required:** no
 
 The keystone. One file declares every source, type, canonical unit, and valid range; three artifacts
@@ -812,7 +812,7 @@ Single writer. Every collector connects; `vitalsd` alone touches the database.
 1. `crates/vitalsd/src/main.rs`: a `tokio` current-thread runtime accepting on the Unix socket, one
    task per client. Single-threaded — a single writer needs no locking, and this is the whole reason
    for the design. `tokio::select!` over accept, per-client reads and the liveness tick replaces the
-   hand-rolled `epoll` loop; use `LocalSet` so no state needs `Send`.
+   hand-rolled readiness loop; use `LocalSet` so no state needs `Send`.
 2. `health` returns, as CBOR: uptime, per-source last-sample age, total rows, WAL size, and the
    contents of `/var/lib/vitals/restore-verify.json`. **Any blocked or degraded state names its
    blocker and the value that blocked it** — never a bare boolean. A guard that will not say why
