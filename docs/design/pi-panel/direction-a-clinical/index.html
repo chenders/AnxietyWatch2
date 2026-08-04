@@ -907,7 +907,7 @@ function hzTint(bpm) {
 }
 
 const hzState = { raf: 0, last: 0, bubbles: [], pops: [], nextBeat: 0, st: null, ctx: null,
-                  sh: null, nextSh: 8 };
+                  sh: null, nextSh: 8, grab: null };
 
 function renderHorizon(st) {
   // The scene is a canvas so it can animate across polls; the text is DOM so
@@ -1078,10 +1078,49 @@ function hzDraw(dt) {
   }
 
   c.lineWidth = 1.4;
+  const sh = hzState.sh;
   for (let i = hzState.bubbles.length - 1; i >= 0; i--) {
     const b = hzState.bubbles[i];
     b.y -= b.v * dt;
     b.phase += dt * b.wob;
+
+    /* ── the seahorse's wake ───────────────────────────────────────────────
+       Bubbles are pushed out of its way as it passes, which is what sells it
+       as swimming THROUGH the water rather than being drawn on top of it.
+
+       Two forces, both proportional to how close the bubble is:
+         · outward from the body, so nothing overlaps it
+         · along its direction of travel, which is the water it displaces
+       Both scale with its ACTUAL speed, so a hovering seahorse only stirs the
+       water faintly and one crossing at speed shoves bubbles clear.
+
+       A smaller bubble is moved more than a large one, because less momentum
+       carries less through the disturbance — the same reason the big ones rise
+       faster. The push is stored as a velocity that damps out over about half
+       a second, so a bubble drifts aside and then resumes its climb instead of
+       snapping back, which would look like a rubber band. */
+    if (sh && sh.alpha > 0.2) {
+      const dx = b.x - sh.x, dy = b.y - sh.y;
+      const d = Math.hypot(dx, dy);
+      const R = 62;
+      if (d < R && d > 0.01) {
+        const near = 1 - d / R;
+        const speed = Math.min(1, Math.abs(sh.vx || 0) / SEA.SPEED);
+        const stir = (0.28 + speed * 0.72) * near * near;   // squared: a soft field, a firm core
+        const mass = 5.0 / (2.5 + b.r);                     // small bubbles shove more easily
+        b.vx = (b.vx || 0) + ((dx / d) * 150 + (sh.dir * 70 * speed)) * stir * mass * dt;
+        b.vy = (b.vy || 0) + (dy / d) * 90 * stir * mass * dt;
+      }
+    }
+    const damp = Math.max(0, 1 - dt * 2.4);
+    b.vx = (b.vx || 0) * damp;
+    b.vy = (b.vy || 0) * damp;
+    b.x += b.vx * dt;
+    b.y += b.vy * dt;
+    // Keep a shoved bubble on screen rather than letting the wake fling it off.
+    if (b.x < 14) { b.x = 14; b.vx = Math.abs(b.vx) * 0.4; }
+    if (b.x > 786) { b.x = 786; b.vx = -Math.abs(b.vx) * 0.4; }
+
     const bx = b.x + Math.sin(b.phase) * (2 + b.r * 0.35);
     const s = surf[Math.max(0, Math.min(799, Math.round(bx)))];
 
@@ -1186,7 +1225,14 @@ function hzTap(ev) {
   // The seahorse is checked first: it is bigger and slower than a bubble, so a
   // finger aimed at it should not catch a bubble drifting past.
   const sh = hzState.sh;
-  if (sh && Math.hypot(sh.x - x, sh.y - y) < 34 + SEA.TAP_SLOP) { hzSeahorseBurp(sh); return; }
+  if (sh && Math.hypot(sh.x - x, sh.y - y) < 34 + SEA.TAP_SLOP) {
+    // Grab him. Whether this turns out to be a tap or a drag is decided on
+    // release; either way the view swipe must not also fire.
+    hzState.grab = { x, y, ox: sh.x, oy: sh.y, vx: 0, vy: 0, t: performance.now(), moved: 0 };
+    S.claimed = true;
+    sh.react = 1;                 // he notices you the moment you touch him
+    return;
+  }
 
   let best = -1, bestD = Infinity;
   for (let i = 0; i < hzState.bubbles.length; i++) {
@@ -1239,14 +1285,29 @@ function hzSeahorseSpawn(now) {
     stopFor: 6 + Math.random() * 12,
     stopped: 0,
     state: "swim",
+    react: 0,          // 1 while he is looking at you, decaying back to 0
     alpha: 0,
     born: now,
   };
 }
 
 function hzSeahorseStep(sh, dt, surf) {
+  const x0 = sh.x, y0 = sh.y;
   sh.bob += dt * 1.6;
+  // He holds your eye for a moment, then goes back to what he was doing.
+  if (sh.react > 0) sh.react = Math.max(0, sh.react - dt / 2.6);
   sh.alpha = Math.min(1, sh.alpha + dt * 0.8);
+
+  // Coast on whatever momentum you gave him, bleeding off over about a second.
+  if (sh.throwVx || sh.throwVy) {
+    sh.x += (sh.throwVx || 0) * dt;
+    sh.y += (sh.throwVy || 0) * dt;
+    const d = Math.max(0, 1 - dt * 1.6);
+    sh.throwVx = Math.abs(sh.throwVx) < 4 ? 0 : sh.throwVx * d;
+    sh.throwVy = Math.abs(sh.throwVy) < 4 ? 0 : sh.throwVy * d;
+  }
+
+  if (hzState.grab) { sh.alpha = Math.min(1, sh.alpha + dt * 0.8); sh.vx = 0; return true; }
 
   if (sh.state === "swim") {
     const reached = sh.dir > 0 ? sh.x >= sh.stopX : sh.x <= sh.stopX;
@@ -1267,6 +1328,11 @@ function hzSeahorseStep(sh, dt, surf) {
   const s = surf[sx];
   if (s == null) { sh.alpha = Math.max(0, sh.alpha - dt * 1.6); }
   else if (sh.y < s + 46) sh.y += (s + 46 - sh.y) * Math.min(1, dt * 1.5);
+
+  // Real velocity, not the nominal cruise speed: a hovering seahorse should
+  // barely stir the water while a transiting one pushes bubbles aside.
+  sh.vx = dt > 0 ? (sh.x - x0) / dt : 0;
+  sh.vy = dt > 0 ? (sh.y - y0) / dt : 0;
 
   const gone = sh.dir > 0 ? sh.x > 880 : sh.x < -80;
   return !gone && sh.alpha > 0.02;
@@ -1333,29 +1399,109 @@ function hzDrawSeahorse(c, sh) {
   c.lineWidth = 1.4;
   c.stroke();
 
+  /* Touched, he turns his head out of profile to look at you, and smiles.
+     Drawn as a front-facing head that grows over the profile one rather than
+     by rotating the body path: a seahorse turning toward the viewer really
+     does foreshorten its snout to almost nothing, so covering it is the honest
+     projection as well as the simple one. The far eye fades in as the near one
+     slides to centre, which is what sells the turn. */
+  const q = sh.react || 0;
+  if (q > 0.01) {
+    const e = q * q * (3 - 2 * q);          // smoothstep, so the turn eases
+    c.save();
+    c.translate(4, -24);
+    c.beginPath();
+    c.ellipse(0, 0, 8 + 3.5 * e, 9.5 + 1.5 * e, 0, 0, Math.PI * 2);
+    c.fillStyle = body;
+    c.globalAlpha = sh.alpha * 0.9 * e;
+    c.fill();
+    c.strokeStyle = edge;
+    c.lineWidth = 1.1;
+    c.stroke();
+
+    c.fillStyle = "rgba(8,22,28,0.92)";
+    c.beginPath(); c.arc(3.4 - 0.4 * e, -2.4, 1.9, 0, Math.PI * 2); c.fill();
+    c.beginPath(); c.arc(-3.6 * e, -2.4, 1.9 * e, 0, Math.PI * 2); c.fill();
+
+    c.beginPath();
+    c.arc(0, 0.5, 4.6, 0.18 * Math.PI, 0.82 * Math.PI);
+    c.strokeStyle = "rgba(8,22,28,0.8)";
+    c.lineWidth = 1.5;
+    c.lineCap = "round";
+    c.stroke();
+    c.restore();
+  }
+
+  c.globalAlpha = sh.alpha * 0.9;
   c.beginPath();
   c.arc(7, -25, 1.8, 0, Math.PI * 2);
   c.fillStyle = "rgba(8,22,28,0.9)";
-  c.fill();
+  if (q < 0.35) c.fill();          // the profile eye gives way to the face
   c.restore();
 }
 
-/* Touch it and it burps: one bubble, rising from the snout, carrying the last
-   pulse the ring actually reported. If there is no current reading it burps a
-   "?" — the seahorse does not get to invent a number either. */
+/* Touch it and it burps — and the burp IS the answer, not a bubble that
+   carries one away. It bursts at the snout with the same treatment a tapped
+   bubble gets: ring, dark plate, number. Spawning a bubble that rose and
+   popped somewhere else seconds later made you hunt for the reply, which is
+   not what touching something to ask it a question should feel like.
+
+   The value is the last pulse the ring actually reported. With no current
+   reading it burps a "?" — the seahorse does not get to invent one either. */
 function hzSeahorseBurp(sh) {
   const hr = (hzState.st && hzState.st.params && hzState.st.params[1]) || {};
   const label = hr.stale ? "?" : String(hr.val);
-  hzState.bubbles.push({
-    x: sh.x + sh.dir * 9,
-    y: sh.y - 20,
-    r: 7,
-    v: 26,
-    phase: 0,
-    wob: 1.1,
-    bpm: hr.stale ? null : Math.round(Number(hr.val) || 0),
-    burp: label,
+  hzState.pops.push({
+    x: sh.x + sh.dir * 16,
+    y: sh.y - 24,
+    r: 8,
+    age: 0,
+    label,
   });
+  sh.react = 1;   // and he looks up at you
+}
+
+/* Drag him and he goes where you put him; let go and he keeps your momentum
+   and turns to face it. Releasing with no real movement is a tap, and taps
+   burp. The velocity is measured over the last few milliseconds of the drag
+   rather than across the whole of it, so a slow reposition ending in a flick
+   throws him, and a flick ending in a stop does not. */
+function hzDragMove(ev) {
+  const g = hzState.grab, sh = hzState.sh;
+  if (!g || !sh) return;
+  const cv = document.getElementById("hzCanvas");
+  if (!cv) return;
+  const r = cv.getBoundingClientRect();
+  const x = (ev.clientX - r.left) * (800 / r.width);
+  const y = (ev.clientY - r.top) * (480 / r.height);
+  const now = performance.now();
+  const dt = Math.max(0.008, (now - g.t) / 1000);
+  const nx = g.ox + (x - g.x), ny = g.oy + (y - g.y);
+  g.vx = (nx - sh.x) / dt;
+  g.vy = (ny - sh.y) / dt;
+  g.moved += Math.abs(nx - sh.x) + Math.abs(ny - sh.y);
+  g.t = now;
+  sh.x = nx;
+  sh.y = Math.max(60, Math.min(430, ny));
+  sh.react = 1;
+}
+
+function hzDragEnd() {
+  const g = hzState.grab, sh = hzState.sh;
+  hzState.grab = null;
+  if (!g || !sh) return;
+  if (g.moved < 8) { hzSeahorseBurp(sh); return; }   // barely moved: that was a tap
+
+  // Your momentum becomes his. He turns to face the way he was thrown, and
+  // coasts before settling back to his own cruising speed.
+  const speed = Math.hypot(g.vx, g.vy);
+  if (speed > 30) {
+    sh.dir = g.vx >= 0 ? 1 : -1;
+    sh.throwVx = Math.max(-420, Math.min(420, g.vx));
+    sh.throwVy = Math.max(-260, Math.min(260, g.vy));
+    // A thrown seahorse stops loitering and swims on.
+    sh.state = "leave";
+  }
 }
 
 function hzWall(c, x) {
@@ -1407,7 +1553,12 @@ function mountHorizon(st) {
   // absolutely positioned on top and would otherwise eat any touch that landed
   // on them.
   const host = document.getElementById("panel");
-  if (host) host.addEventListener("pointerdown", hzTap);
+  if (host) {
+    host.addEventListener("pointerdown", hzTap);
+    window.addEventListener("pointermove", hzDragMove);
+    window.addEventListener("pointerup", hzDragEnd);
+    window.addEventListener("pointercancel", hzDragEnd);
+  }
   hzState.host = host;
   const frame = (now) => {
     // Clamp dt: after a tab stall or a slow poll a huge delta would teleport
@@ -1426,6 +1577,10 @@ function updateHorizon(st) {
 
 function unmountHorizon() {
   if (hzState.host) hzState.host.removeEventListener("pointerdown", hzTap);
+  window.removeEventListener("pointermove", hzDragMove);
+  window.removeEventListener("pointerup", hzDragEnd);
+  window.removeEventListener("pointercancel", hzDragEnd);
+  hzState.grab = null;
   hzState.host = null;
   cancelAnimationFrame(hzState.raf);
   hzState.raf = 0;
@@ -2125,6 +2280,10 @@ function initSwipe() {
     if (x0 === null) return;
     const dx = lastX - x0, dy = lastY - y0, dt = Date.now() - t0;
     x0 = null;
+    /* A view can claim the gesture for itself — dragging the seahorse is a
+       horizontal drag, which is also exactly the shape of a view swipe. The
+       claim is cleared here so it can never leak into the next gesture. */
+    if (S.claimed) { S.claimed = false; return; }
     // 2.5s, not 900ms. The distance and direction tests do the real work of
     // rejecting an accidental brush; the time limit only exists to stop a
     // finger that rested on the panel and moved much later from counting. A
