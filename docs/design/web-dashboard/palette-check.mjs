@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Palette gate for the clinical web dashboard.
 //
-// Run:  node docs/design/web-dashboard/palette-check.mjs
+// Run:  node docs/design/web-dashboard/palette-check.mjs [index.html]
 // Exit: 0 = every declared requirement holds · 1 = at least one failed
 //
 // WHY THIS EXISTS
@@ -37,6 +37,16 @@
 // 1.0; dE is Euclidean distance in OKLab x100.
 
 // ---- thresholds -------------------------------------------------------------
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+// Defaults to the sibling index.html. CI passes a deliberately mutated copy to
+// prove this gate can actually fail -- see the design-gates job in ci.yml.
+const HTML = process.argv[2]
+  ? resolve(process.argv[2])
+  : resolve(dirname(fileURLToPath(import.meta.url)), "index.html");
+
 const CVD_TARGET = 8.0;   // dE, min over protan/deutan/tritan: separable on hue alone
 const CVD_FLOOR = 6.0;    // below this, hue is doing no work at all
 const CONTRAST_GRAPHIC = 3.0;  // WCAG 2.2 non-text contrast
@@ -100,6 +110,85 @@ const THEMES = {
     lineStrong: "#6b7480",
   },
 };
+
+// ── the table above must BE the page ─────────────────────────────────────────
+//
+// Everything this script checks is checked against the hexes hard-coded above.
+// Nothing so far proves those are the hexes index.html actually renders. Let
+// them drift and the gate keeps exiting 0 while validating a palette no reader
+// has ever seen -- a check that cannot fail, which is the exact defect the CI
+// file's own comments were written about.
+//
+// So: parse the stylesheet and require the two to agree, in both directions.
+// A token whose value moved fails. A NEW colour token added to :root that this
+// script has never heard of also fails, because otherwise the way to bypass the
+// gate is simply to introduce a colour it does not know to look at.
+const TOKEN_MAP = {
+  surface: "--bg", unknown: "--unknown", lineStrong: "--line-strong",
+  "signal.spo2": "--spo2", "signal.hr": "--hr", "signal.resp": "--resp",
+  "signal.bp": "--bp", "signal.cpap": "--cpap",
+  "status.hi": "--hi", "status.med": "--med", "status.low": "--low", "status.ok": "--ok",
+  "text.text": "--text", "text.text-dim": "--text-dim", "text.text-faint": "--text-faint",
+};
+// Colour tokens deliberately outside the gate, each with the reason it is
+// exempt. Anything not here and not in TOKEN_MAP is an error, not a default.
+const EXEMPT = {
+  "--surface": "box fill; structure is carried by --line-strong, not by its contrast",
+  "--surface-2": "pressed-state fill for the trend-window control; never a mark",
+  "--line": "decorative gridwork only — explicitly exempt from WCAG 1.4.11",
+};
+
+function parseThemes(html) {
+  const grab = (re) => {
+    const m = re.exec(html);
+    if (!m) return null;
+    const out = {};
+    for (const [, k, v] of m[1].matchAll(/(--[\w-]+)\s*:\s*(#[0-9a-fA-F]{6})\b/g)) out[k] = v.toLowerCase();
+    return out;
+  };
+  return {
+    dark: grab(/:root\s*\{([\s\S]*?)\}/),
+    light: grab(/\[data-theme="light"\]\s*\{([\s\S]*?)\}/),
+  };
+}
+
+function checkSource(htmlPath) {
+  let html;
+  try {
+    html = readFileSync(htmlPath, "utf8");
+  } catch (e) {
+    // Fail loudly. A gate that cannot read the thing it gates must not report
+    // that the thing is fine.
+    console.log(`\nSOURCE SYNC\n  [FAIL] cannot read ${htmlPath} — ${e.code || e.message}`);
+    failed++;
+    return;
+  }
+  const css = parseThemes(html);
+  console.log(`\nSOURCE SYNC — ${htmlPath}`);
+  for (const [mode, t] of Object.entries(THEMES)) {
+    const block = css[mode];
+    if (!block) { line("FAIL", `${mode} block`, "not found in the stylesheet"); continue; }
+    let drift = 0, unknown = 0;
+    for (const [key, cssVar] of Object.entries(TOKEN_MAP)) {
+      const mine = key.includes(".")
+        ? t[key.split(".")[0]][key.split(".")[1]]
+        : t[key];
+      const theirs = block[cssVar];
+      if (theirs === undefined) { line("FAIL", `${cssVar} (${mode})`, "declared here but absent from the stylesheet"); drift++; }
+      else if (theirs !== mine.toLowerCase()) {
+        line("FAIL", `${cssVar} (${mode})`, `gate says ${mine}, stylesheet says ${theirs} — the gate is checking a palette the page does not use`);
+        drift++;
+      }
+    }
+    for (const cssVar of Object.keys(block)) {
+      if (Object.values(TOKEN_MAP).includes(cssVar) || EXEMPT[cssVar]) continue;
+      line("FAIL", `${cssVar} (${mode})`, "colour token in the stylesheet that this gate does not check — add it to TOKEN_MAP or EXEMPT with a reason");
+      unknown++;
+    }
+    if (!drift && !unknown)
+      line("ok", `${mode} theme`, `all ${Object.keys(TOKEN_MAP).length} gated tokens match the stylesheet; ${Object.keys(EXEMPT).length} exempt`);
+  }
+}
 
 // Pairs that appear inside ONE plot box and must be told apart there.
 //
@@ -215,6 +304,8 @@ for (const [mode, t] of Object.entries(THEMES)) {
 }
 console.log("  note: --bp is the one signal with no plot. Give blood pressure a lane");
 console.log("        and its collision with --hi stops being cosmetic — resolve it first.");
+
+checkSource(HTML);
 
 console.log(failed === 0
   ? "\nPASS — every hard requirement holds.\n"
