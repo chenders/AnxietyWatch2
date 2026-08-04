@@ -7,18 +7,27 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use vitals_decode::emay::{decode_data, PULSE_RANGE, SPO2_RANGE};
+use vitals_decode::emay::{decode_data, scan_frame, FRAME_LEN};
 
 fuzz_target!(|data: &[u8]| {
     if let Some(r) = decode_data(data) {
-        // A frame that verified must never yield a value outside the
-        // physiologically possible range. Absence is fine; a wrong number is
-        // not.
+        // There is deliberately no plausibility floor: a pulse of 25 or an SpO2
+        // of 45 is exactly the event this system exists to detect. The only
+        // invariant is the one genuine physical impossibility.
         if let Some(s) = r.spo2 {
-            assert!(s >= SPO2_RANGE.0 && s <= SPO2_RANGE.1, "SpO2 {s} out of range");
+            assert!(s <= 100, "SpO2 {s}% is not physically possible");
+            assert_ne!(s, 0, "0 is a sentinel and must decode as absent");
         }
         if let Some(p) = r.pulse_bpm {
-            assert!(p >= PULSE_RANGE.0 && p <= PULSE_RANGE.1, "pulse {p} out of range");
+            assert_ne!(p, 0, "0 is a sentinel and must decode as absent");
+            assert_ne!(p, 0xFF, "0xFF is a sentinel and must decode as absent");
         }
+    }
+
+    // The scanner must never claim to consume more than it was given, or a
+    // caller draining that many bytes would discard live data.
+    if let Some((_, used)) = scan_frame(data) {
+        assert!(used <= data.len(), "scan_frame consumed {used} of {}", data.len());
+        assert!(used >= FRAME_LEN, "a match must consume at least one frame");
     }
 });
