@@ -12,7 +12,7 @@
 #   PI_HOST=user@hostname PI_PATH=/home/user/AnxietyWatch2 scripts/sync-to-pi.sh
 #   scripts/sync-to-pi.sh              sync only
 #   scripts/sync-to-pi.sh --build      sync, configure, build
-#   scripts/sync-to-pi.sh --test       sync, build, run ctest
+#   scripts/sync-to-pi.sh --test       sync, build, run cargo test
 set -euo pipefail
 
 if [[ -z "${PI_HOST:-}" || -z "${PI_PATH:-}" ]]; then

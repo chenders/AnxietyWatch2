@@ -206,7 +206,7 @@ jobs:
           #   #include <vitals/registry.h>      (no include clause)
           # A pattern is only as good as the phrasings it was tested against, so
           # the self-test below asserts one probe line per clause.
-          C_PATTERN='^```[Cc][[:space:]]*$|[A-Za-z0-9_/.-]+\.([ch]|cpp|hpp)\b|VITALS_(TYPE|SOURCE|KIND)_|LLVMFuzzerTestOneInput|__builtin_|\bC11\b|VitalsRegistry\.swift|\bepoll\b|\bfabs\(|\bHLC\b|hr_capture|libFuzzer target|#include[[:space:]]*<|\b(in|pure|plain) C\b|\bC (header|binar|code|source)|\bSQLite\b|\bmeson\b|CMakeLists|cmake -B|ctest |libvitals|hlc_(physical|logical)|samples_staging|PRIMARY KEY \(source, type, timestamp\)|:memory:'
+          C_PATTERN='^```[Cc][[:space:]]*$|[A-Za-z0-9_/.-]+\.([ch]|cpp|hpp)\b|VITALS_(TYPE|SOURCE|KIND)_|LLVMFuzzerTestOneInput|__builtin_|\bC11\b|VitalsRegistry\.swift|\bepoll\b|\bfabs\(|\bHLC\b|hr_capture|libFuzzer target|#include[[:space:]]*<|\b(in|pure|plain) C\b|\bC (header|binar|code|source)|\bSQLite\b|\bmeson\b|CMakeLists|cmake -B|\bctest\b|libvitals|hlc_(physical|logical)|samples_staging|PRIMARY KEY \(source, type, timestamp\)|:memory:'
           # Refuse to report clean on a file that was never read. The guard
           # previously exited 0 for a missing path -- grep says 2, the `if` reads
           # it as false, and set -e does not catch a condition.
@@ -308,7 +308,7 @@ jobs:
           probe_clause '\bmeson\b'                                'meson test -C build sfloat'
           probe_clause 'CMakeLists'                               'see vitals/CMakeLists.txt'
           probe_clause 'cmake -B'                                 'cmake -B build -DCMAKE_BUILD_TYPE=Debug'
-          probe_clause 'ctest '                                   'ctest --test-dir build'
+          probe_clause '\bctest\b'                                 'sync, build, run ctest'
           probe_clause 'libvitals'                                'task/t-d3-libvitals'
           probe_clause 'hlc_(physical|logical)'                   'hlc_physical INTEGER NOT NULL'
           probe_clause 'samples_staging'                          'INSERT INTO samples_staging'
