@@ -1,0 +1,878 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AnxietyWatch — Clinical Dashboard</title>
+<!--
+  Direction A "Clinical" — the web dashboard, implemented from the Claude Design
+  project as a single self-contained file. No build step, no network, no
+  dependencies: open it with `open index.html` or serve the directory.
+
+  Everything on screen is generated mock data from a seeded PRNG. The point of
+  the file is the design system and the four screens; the numbers are stand-ins
+  until this is wired to vitalsd's query and health endpoints.
+
+  Two toggles in the header drive the states worth reviewing:
+    SIM: SENSOR LOSS  — the pulse-ox drops at 03:04 and never returns, so the
+                        whole "not measured is not OK" language is exercised.
+    THEME             — the light theme is a separately derived ramp, not an
+                        inversion; both are validated by palette-check.mjs.
+
+  Deviations from the imported design, and why, are listed in README.md.
+-->
+<style>
+:root{
+  --bg:#000508; --surface:#0d1117; --surface-2:#151c24; --line:#2a323d; --line-strong:#5b6674;
+  --text:#e8edf2; --text-dim:#9aa7b4; --text-faint:#737f8d;
+  --spo2:#22d3ee; --hr:#4ade80; --resp:#facc15; --bp:#f87171; --cpap:#e879f9; --unknown:#a5b4fc;
+  --hi:#ff5c5c; --med:#ffb54d; --low:#67e8f9; --ok:#4ade80;
+  --hatch:rgba(165,180,252,.20);
+  /* No webfont is fetched: a dashboard that needs the network to render type is
+     a dashboard that renders wrong at 3 a.m. on a Pi with no route out. IBM Plex
+     is used when the machine already has it and the stack degrades to the
+     platform's own grotesque and mono otherwise. Both are metric-compatible
+     enough that tabular numerics stay aligned, which is the property that
+     actually matters here. */
+  --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+}
+[data-theme="light"]{
+  --bg:#f4f6f8; --surface:#ffffff; --surface-2:#eef1f5; --line:#d3d9e0; --line-strong:#6b7480;
+  --text:#10161d; --text-dim:#4a5560; --text-faint:#5c6874;
+  --spo2:#0e7490; --hr:#15803d; --resp:#a16207; --bp:#b91c1c; --cpap:#a21caf; --unknown:#4338ca;
+  --hi:#b91c1c; --med:#a16207; --low:#0e7490; --ok:#15803d;
+  --hatch:rgba(67,56,202,.16);
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);font-size:16px;-webkit-font-smoothing:antialiased}
+a{color:var(--spo2)}a:hover{color:var(--text)}
+button{font:inherit;color:inherit}
+:focus-visible{outline:3px solid var(--unknown);outline-offset:2px}
+h2,h3{font-family:var(--mono)}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.nav-btn{background:transparent;border:0;border-bottom:3px solid transparent;color:var(--text-dim);padding:12px 14px;cursor:pointer;letter-spacing:.06em;text-transform:uppercase;font-size:14px;font-weight:600;white-space:nowrap}
+.nav-btn[aria-current="page"]{color:var(--text);border-bottom-color:var(--spo2)}
+.nav-btn:hover{color:var(--text)}
+.ctl{background:var(--surface);border:1px solid var(--line-strong);color:var(--text-dim);padding:7px 11px;font-size:14px;font-family:var(--mono);cursor:pointer;white-space:nowrap}
+.ctl:hover{color:var(--text)}
+.box{background:var(--surface);border:1px solid var(--line);padding:12px 14px}
+.box-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;border-bottom:1px solid var(--line-strong);padding-bottom:8px;margin-bottom:8px}
+.box-head h2,.box-head h3{margin:0;font-size:16px;letter-spacing:.1em}
+.row{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:baseline;padding:9px 0;border-bottom:1px solid var(--line)}
+.row:last-child{border-bottom:0}
+.legend{display:flex;gap:16px;flex-wrap:wrap;padding-top:8px;font-family:var(--mono);font-size:14px;color:var(--text-dim)}
+svg.lane{width:100%;display:block;background:var(--bg);border:1px solid var(--line)}
+@keyframes hiPulse{0%,100%{background:color-mix(in oklab,var(--hi) 22%,transparent)}50%{background:color-mix(in oklab,var(--hi) 40%,transparent)}}
+.alarm-hi{animation:hiPulse 1.1s steps(2,end) infinite}
+@media (prefers-reduced-motion: reduce){.alarm-hi{animation:none;background:color-mix(in oklab,var(--hi) 32%,transparent)}}
+</style>
+</head>
+<body>
+
+<svg aria-hidden="true" focusable="false" width="0" height="0" style="position:absolute;width:0;height:0;overflow:hidden">
+  <defs>
+    <pattern id="gapHatch" patternUnits="userSpaceOnUse" width="8" height="8" patternTransform="rotate(45)">
+      <line x1="0" y1="0" x2="0" y2="8" stroke="var(--unknown)" stroke-width="2.4" opacity="0.5"></line>
+    </pattern>
+  </defs>
+</svg>
+
+<header style="position:sticky;top:0;z-index:20;background:var(--bg);border-bottom:1px solid var(--line-strong)">
+  <div style="display:flex;flex-wrap:wrap;align-items:center;gap:16px;padding:10px 16px 8px">
+    <div style="display:flex;align-items:baseline;gap:10px">
+      <span class="mono" style="font-weight:700;letter-spacing:.14em">ANXIETYWATCH</span>
+      <span class="mono" style="font-size:14px;color:var(--text-faint)">BED 1 · SELF</span>
+    </div>
+    <div style="flex:1"></div>
+    <div class="mono" id="clock" style="font-size:14px;color:var(--text-dim)"></div>
+    <div style="display:flex;gap:8px">
+      <button class="ctl" data-action="degraded" id="btn-degraded"></button>
+      <button class="ctl" data-action="theme" id="btn-theme"></button>
+    </div>
+  </div>
+  <nav aria-label="Screens" style="display:flex;flex-wrap:wrap;gap:2px;padding:0 8px" id="nav"></nav>
+</header>
+
+<main id="main" style="padding:16px;max-width:1600px;margin:0 auto"></main>
+
+<script>
+"use strict";
+
+/* ══ colour math ═══════════════════════════════════════════════════════════
+   Duplicated from palette-check.mjs on purpose. That file is the gate with an
+   exit code; this copy is what lets the design-system screen state measured
+   numbers instead of asserted ones. The imported design printed "every pair
+   stays >= 18 dE after Brettel-Vienot-Mollon simulation" as static prose, and
+   it was wrong in both directions -- the true worst pair is --spo2 against
+   --unknown at 2.9. Numbers that are computed from the tokens at render time
+   cannot drift away from the tokens.                                        */
+const MACHADO = {
+  protan: [[0.152286,1.052583,-0.204868],[0.114503,0.786281,0.099216],[-0.003882,-0.048116,1.051998]],
+  deutan: [[0.367322,0.860646,-0.227968],[0.280085,0.672501,0.047413],[-0.011820,0.042940,0.968881]],
+  tritan: [[1.255528,-0.076749,-0.178779],[-0.078411,0.930809,0.147602],[0.004733,0.691367,0.303900]],
+};
+const s2lin = c => c <= 0.04045 ? c/12.92 : ((c+0.055)/1.055)**2.4;
+const lin = h => [0,2,4].map(i => s2lin(parseInt(h.replace("#","").slice(i,i+2),16)/255));
+const relLum = ([r,g,b]) => 0.2126*r + 0.7152*g + 0.0722*b;
+function contrast(a,b){ const [hi,lo] = [relLum(lin(a)),relLum(lin(b))].sort((x,y)=>y-x); return (hi+0.05)/(lo+0.05); }
+function oklab([r,g,b]){
+  const l = Math.cbrt(0.4122214708*r + 0.5363325363*g + 0.0514459929*b);
+  const m = Math.cbrt(0.2119034982*r + 0.6806995451*g + 0.1073969566*b);
+  const s = Math.cbrt(0.0883024619*r + 0.2817188376*g + 0.6299787005*b);
+  return [0.2104542553*l + 0.7936177850*m - 0.0040720468*s,
+          1.9779984951*l - 2.4285922050*m + 0.4505937099*s,
+          0.0259040371*l + 0.7827717662*m - 0.8086757660*s];
+}
+function simulate(h,kind){
+  const [r,g,b] = lin(h), M = MACHADO[kind], cl = c => Math.max(0,Math.min(1,c));
+  return [cl(M[0][0]*r+M[0][1]*g+M[0][2]*b), cl(M[1][0]*r+M[1][1]*g+M[1][2]*b), cl(M[2][0]*r+M[2][1]*g+M[2][2]*b)];
+}
+function deltaE(h1,h2,kind){
+  const a = oklab(kind ? simulate(h1,kind) : lin(h1)), b = oklab(kind ? simulate(h2,kind) : lin(h2));
+  return 100*Math.hypot(a[0]-b[0], a[1]-b[1], a[2]-b[2]);
+}
+const worstCVD = (a,b) => Math.min(...["protan","deutan","tritan"].map(k => deltaE(a,b,k)));
+/* Resolve a custom property to the hex the browser actually has, so the tables
+   below describe the running theme rather than a remembered one. */
+const tok = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+/* ══ state ════════════════════════════════════════════════════════════════ */
+const S = { screen:"now", theme:"dark", degraded:false, win:30 };
+const SCREENS = [["now","Now"],["night","Last night"],["trends","Trends"],["sys","System health"],["tok","Design system"]];
+
+/* ══ helpers ══════════════════════════════════════════════════════════════ */
+function rng(seed){ let s = seed>>>0; return () => { s = (s*1664525 + 1013904223)>>>0; return s/4294967296; }; }
+function hhmm(min){ const m = ((min%1440)+1440)%1440; return String(Math.floor(m/60)).padStart(2,"0")+":"+String(m%60).padStart(2,"0"); }
+const scale = (v,lo,hi,H) => H - Math.max(0,Math.min(1,(v-lo)/(hi-lo)))*H;
+
+/* A null is a hole, and the path must break at it. `open` tracks whether the
+   pen is down: after a null the next real point starts a fresh subpath with M
+   instead of continuing with L. That single flag is the whole reason no line
+   ever bridges missing data -- a continuous stroke across a gap would be a
+   claim the system cannot make. */
+function linePath(vals,lo,hi,W,H){
+  let d = "", open = false;
+  vals.forEach((v,i) => {
+    const x = (i/(vals.length-1))*W;
+    if (v == null) { open = false; return; }
+    d += (open ? "L" : "M") + x.toFixed(2) + " " + scale(v,lo,hi,H).toFixed(2) + " ";
+    open = true;
+  });
+  return d.trim();
+}
+/* The positive space of the same truth: every null run becomes a hatched box
+   with a dashed wall at each edge, so a gap is drawn rather than merely absent. */
+function gapPaths(vals,W,H){
+  let fill = "", edge = "", i = 0;
+  const step = W/(vals.length-1);
+  while (i < vals.length) {
+    if (vals[i] == null) {
+      let j = i; while (j < vals.length && vals[j] == null) j++;
+      const x0 = Math.max(0,(i-0.5)*step), x1 = Math.min(W,(j-0.5)*step);
+      fill += "M"+x0.toFixed(2)+" 0 H"+x1.toFixed(2)+" V"+H+" H"+x0.toFixed(2)+" Z ";
+      edge += "M"+x0.toFixed(2)+" 0 V"+H+" M"+x1.toFixed(2)+" 0 V"+H+" ";
+      i = j;
+    } else i++;
+  }
+  return { fill: fill.trim(), edge: edge.trim() };
+}
+function gridPath(W,H,rows){
+  let d = "";
+  for (let r=1; r<rows; r++) d += "M0 "+((H/rows)*r).toFixed(1)+" H"+W+" ";
+  for (let c=1; c<8; c++)   d += "M"+((W/8)*c).toFixed(1)+" 0 V"+H+" ";
+  return d.trim();
+}
+const hLine = (v,lo,hi,W,H) => "M0 " + scale(v,lo,hi,H).toFixed(2) + " H" + W;
+
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const hatchOn = "repeating-linear-gradient(45deg,var(--hatch) 0 2px,transparent 2px 7px)";
+const UNK = "var(--unknown)";
+
+/* ══ mock data ════════════════════════════════════════════════════════════ */
+function session(){
+  const deg = S.degraded, r = rng(7717), N = 460, startMin = 23*60 + 12;
+  const spo2 = [], hr = [], resp = [], leak = [], stage = [];
+  for (let i=0; i<N; i++){
+    let s = 96 + Math.sin(i/23)*0.7 + (r()-0.5)*1.2;
+    let h = 54 + Math.sin(i/31)*3 + (r()-0.5)*3;
+    let rr = 13.5 + Math.sin(i/17)*0.9 + (r()-0.5)*1.1;
+    let lk = 17 + Math.sin(i/41)*4 + (r()-0.5)*3;
+    if (!deg && i>=168 && i<=187){ const k = 1 - Math.abs(i-177)/11; s -= 10.5*k; h += 17*k; rr -= 5.5*k; }
+    if (deg && i>=225 && i<=231){ s -= (i-224)*1.0; h += (i-224)*1.6; }
+    if (!deg && i>=300 && i<=309){ const k = 1 - Math.abs(i-304)/6; s -= 5.5*k; h += 8*k; }
+    if (i>=360 && i<=372) lk += 22;
+    spo2.push(+s.toFixed(1)); hr.push(Math.round(h)); resp.push(+rr.toFixed(1)); leak.push(+lk.toFixed(1));
+    stage.push(i<30 ? 1 : i%97<22 ? 4 : i%61<14 ? 3 : 2);
+  }
+  const g0 = deg ? 232 : 254, g1 = deg ? 259 : 260;
+  for (let i=g0; i<=g1; i++){ spo2[i] = null; hr[i] = null; if (deg) resp[i] = null; }
+  if (deg) for (let i=232; i<N; i++){ spo2[i] = null; hr[i] = null; }
+  return { spo2, hr, resp, leak, stage, N, startMin, gapStart: startMin+g0, gapEnd: startMin+g1 };
+}
+
+function lane(vals,cfg){
+  const W = 1000, H = cfg.H || 110, g = gapPaths(vals,W,H);
+  return {
+    label: cfg.label, color: cfg.color, aria: cfg.aria, hi: cfg.hi, lo: cfg.lo, H,
+    d: linePath(vals,cfg.min,cfg.max,W,H),
+    grid: gridPath(W,H,cfg.rows || 4),
+    gapFill: g.fill, gapEdge: g.edge,
+    limitLine: cfg.limit != null ? hLine(cfg.limit,cfg.min,cfg.max,W,H) : "",
+    eventMarks: cfg.marks || "",
+  };
+}
+
+function trend(key){
+  const days = S.win;
+  /* Seeded from the WHOLE key, not its first character. `key.charCodeAt(0)`
+     gave "hr" and "hrv" the same seed — both start with h — so the two cards
+     drew the identical random walk, differing only in scale. Two independent
+     physiological signals that move in lockstep is exactly the kind of thing a
+     reader would try to interpret. FNV-1a over the key removes the collision
+     class rather than just this instance of it. */
+  let seed = 2166136261 >>> 0;
+  for (let i = 0; i < key.length; i++) {
+    seed = (seed ^ key.charCodeAt(i)) >>> 0;
+    seed = Math.imul(seed, 16777619) >>> 0;
+  }
+  const r = rng((seed + days * 2654435761) >>> 0);
+  /* The unit is the unit and nothing else. The imported design repeated the
+     measure inside it ("% min SpO2 (nadir)" next to a label already reading
+     "NIGHTLY SpO2 NADIR"), which both said the same thing twice and wrapped the
+     card header onto three lines at desktop width. */
+  const spec = {
+    spo2:{ base:92.4, amp:1.4, unit:"%", label:"NIGHTLY SpO₂ NADIR", color:"var(--spo2)", dec:1, dir:-1 },
+    hr:  { base:53.6, amp:2.6, unit:"bpm", label:"MEAN SLEEPING HR", color:"var(--hr)", dec:0, dir:1 },
+    hrv: { base:41.8, amp:6.5, unit:"ms", label:"HRV · RMSSD", color:"var(--resp)", dec:1, dir:-1 },
+    ahi: { base:3.4, amp:1.5, unit:"events/h", label:"CPAP AHI", color:"var(--cpap)", dec:1, dir:1 },
+  }[key];
+  const vals = [];
+  for (let i=0; i<days; i++){
+    let v = spec.base + Math.sin(i/4.5)*spec.amp*0.5 + (r()-0.5)*spec.amp;
+    if (key === "spo2" && i === days-2) v -= 3.2;
+    if (key === "ahi"  && i === days-3) v += 3.1;
+    vals.push(+v.toFixed(spec.dec));
+  }
+  (S.degraded ? [days-1, days-6, days-7] : [days-6]).forEach(i => { if (i >= 0) vals[i] = null; });
+
+  const good = vals.filter(v => v != null).sort((a,b) => a-b);
+  const med = good[Math.floor(good.length/2)], q1 = good[Math.floor(good.length*0.25)], q3 = good[Math.floor(good.length*0.75)];
+  const pad = (q3-q1)*2.6 + spec.amp;
+  const min = Math.min(...good) - pad*0.3, max = Math.max(...good) + pad*0.3;
+  const W = 1000, H = 140, g = gapPaths(vals,W,H);
+  const yq3 = scale(q3,min,max,H), yq1 = scale(q1,min,max,H);
+
+  /* Direct marks only where they earn it: an outlier past 1.5 IQR, and the
+     most recent night. A dot on every point is noise, not information.
+     Each marker is a ZERO-LENGTH subpath, stroked with a round linecap, which
+     SVG renders as a disc of exactly stroke-width across. It has to be done
+     this way: these plots use preserveAspectRatio="none" so a 1000-unit viewBox
+     stretches to fill whatever width the card gets, and x is compressed roughly
+     2:1 against y. A filled `a4,4` circle comes out an invisible 2px-wide
+     splinter under that -- which is exactly how the first render looked. Only
+     stroke geometry honours vector-effect="non-scaling-stroke", so only stroke
+     geometry survives an anisotropic viewBox. */
+  let dots = "";
+  vals.forEach((v,i) => {
+    if (v == null) return;
+    const x = (i/(vals.length-1))*W, y = scale(v,min,max,H);
+    if (v > q3 + (q3-q1)*1.5 || v < q1 - (q3-q1)*1.5 || i === vals.length-1)
+      dots += "M"+x.toFixed(1)+" "+y.toFixed(1)+"L"+x.toFixed(1)+" "+y.toFixed(1)+" ";
+  });
+  const last = [...vals].reverse().find(v => v != null);
+  const dev = last - med, devPct = (dev/med)*100;
+  const bad = spec.dir > 0 ? dev > (q3-q1) : dev < -(q3-q1);
+  const missCount = vals.filter(v => v == null).length;
+  return {
+    label: spec.label, unit: spec.unit, color: spec.color,
+    latest: last.toFixed(spec.dec), baseline: med.toFixed(spec.dec), iqr: q1.toFixed(spec.dec)+"–"+q3.toFixed(spec.dec),
+    dev: (dev>=0?"+":"") + dev.toFixed(spec.dec) + " (" + (devPct>=0?"+":"") + devPct.toFixed(1) + "% vs own)",
+    devGlyph: bad ? "!" : dev >= 0 ? "▲" : "▼", devColor: bad ? "var(--med)" : "var(--text-dim)",
+    missing: missCount ? missCount + " night" + (missCount>1?"s":"") + " not measured" : "full coverage",
+    d: linePath(vals,min,max,W,H), grid: gridPath(W,H,4), gapFill: g.fill, gapEdge: g.edge, dots,
+    baseLine: hLine(med,min,max,W,H),
+    band: "M0 "+yq3.toFixed(1)+" H"+W+" V"+yq1.toFixed(1)+" H0 Z",
+    from: "−"+S.win+" d", to: "last night",
+    aria: spec.label+", "+S.win+" day trend against own rolling baseline "+med.toFixed(spec.dec)+", "+missCount+" nights not measured",
+  };
+}
+
+/* ══ view model ═══════════════════════════════════════════════════════════ */
+function model(){
+  const deg = S.degraded, sess = session(), W = 1000;
+
+  const r = rng(991), lspo2 = [], lhr = [];
+  for (let i=0; i<240; i++){
+    lspo2.push(+(96.5 + Math.sin(i/19)*0.6 + (r()-0.5)*1.0).toFixed(1));
+    lhr.push(Math.round(52 + Math.sin(i/27)*2.4 + (r()-0.5)*2.5));
+  }
+  if (deg) for (let i=158; i<240; i++){ lspo2[i] = null; lhr[i] = null; }
+
+  const alarms = deg ? [
+    { rank:"HIGH", channel:"TECHNICAL", cls:"alarm-hi", color:"var(--hi)", glyph:"×", msg:"Pulse-ox link lost — SpO₂ and HR cannot be assessed. Monitoring is NOT active.", at:"03:04:41", age:"41 min ago" },
+    { rank:"MEDIUM", channel:"TECHNICAL", cls:"", color:"var(--med)", glyph:"!", msg:"Risk tier held at CONFIRM — state machine cannot advance or clear without SpO₂.", at:"03:04:41", age:"41 min ago" },
+    { rank:"INFO", channel:"PHYSIOLOGICAL", cls:"", color:UNK, glyph:"?", msg:"Desaturation 02:57 was unresolved when the sensor dropped — outcome unknown.", at:"02:57:12", age:"48 min ago" },
+  ] : [
+    { rank:"MEDIUM", channel:"PHYSIOLOGICAL", cls:"", color:"var(--med)", glyph:"!", msg:"Desaturation cluster 02:04–02:19 — nadir 85.4 %, 4 events, all self-resolved.", at:"02:19:38", age:"4 h 26 m ago" },
+    { rank:"LOW", channel:"TECHNICAL", cls:"", color:"var(--low)", glyph:"i", msg:"BP cuff has not reported for 19 h — last reading 11:41 yesterday.", at:"06:40:00", age:"5 min ago" },
+  ];
+
+  const num = o => Object.assign({ hatch:"none", valueColor:"var(--text)", glyph:"✓", state:"IN RANGE", sub:"" }, o);
+  const numerics = [
+    deg ? num({ label:"SpO₂", unit:"%", aria:"SpO2 not measured", color:UNK, glyph:"?", value:"— —", valueColor:UNK, limits:"88 / 100", stamp:"03:04:41", state:"NOT MEASURED · 41 m", hatch:hatchOn })
+        : num({ label:"SpO₂", unit:"%", aria:"SpO2 96 percent", color:"var(--spo2)", value:"96", sub:"±1", limits:"88 / 100", stamp:"06:45:02" }),
+    deg ? num({ label:"HR", unit:"bpm", aria:"Heart rate not measured", color:UNK, glyph:"?", value:"— —", valueColor:UNK, limits:"40 / 120", stamp:"03:04:41", state:"NOT MEASURED · 41 m", hatch:hatchOn })
+        : num({ label:"HR", unit:"bpm", aria:"Heart rate 52", color:"var(--hr)", value:"52", sub:"sinus", limits:"40 / 120", stamp:"06:45:02" }),
+    num({ label:"NBP", unit:"mmHg", aria:"Blood pressure 118 over 74, stale", color:"var(--med)", glyph:"!", value:"118/74", sub:"(89)", limits:"90–140 / 55–90", stamp:"11:41 yest.", state:"STALE · 19 h OLD" }),
+    num({ label:"RESP", unit:"rpm", aria:"Respiration 13", color:"var(--resp)", value:"13", sub:"reg", limits:"8 / 24", stamp:"06:45:02" }),
+    deg ? num({ label:"HRV RMSSD", unit:"ms", aria:"HRV not computable", color:UNK, glyph:"?", value:"— —", valueColor:UNK, limits:"own IQR 36–48", stamp:"03:04:41", state:"NO RR INTERVALS", hatch:hatchOn })
+        : num({ label:"HRV RMSSD", unit:"ms", aria:"HRV 42 milliseconds", color:"var(--resp)", value:"42", sub:"n=118 RR", limits:"own IQR 36–48", stamp:"06:44:30" }),
+    num({ label:"CPAP AHI", unit:"/h", aria:"AHI 3.1", color:"var(--cpap)", value:"3.1", sub:"leak 19", limits:"≤ 5.0", stamp:"06:44:58" }),
+  ];
+
+  const sensors = [
+    { name:"Pulse-ox · ring", link:"BLE 0x4A2F", glyph:deg?"×":"✓", state:deg?"LINK LOST":"LIVE", color:deg?"var(--hi)":"var(--ok)", age:deg?"41 m 12 s":"0.8 s" },
+    { name:"ECG chest strap", link:"BLE 0x11C0", glyph:deg?"?":"✓", state:deg?"NO DATA":"LIVE", color:deg?UNK:"var(--ok)", age:deg?"41 m 12 s":"0.9 s" },
+    { name:"BP cuff", link:"BT classic", glyph:"!", state:"IDLE", color:"var(--med)", age:"19 h 04 m" },
+    { name:"CPAP · SD ingest", link:"USB", glyph:"✓", state:"SYNCED", color:"var(--ok)", age:"1 m 04 s" },
+    { name:"Barometer · BME280", link:"I²C 0x76", glyph:"✓", state:"LIVE", color:"var(--ok)", age:"2.0 s" },
+    { name:"Klaxon relay", link:"GPIO 18", glyph:"✓", state:"ARMED", color:"var(--ok)", age:"self-test 1 h" },
+  ];
+
+  const cur = deg ? "confirm" : "clear";
+  const tierColor = { clear:"var(--ok)", watch:"var(--med)", confirm:"var(--hi)", klaxon:"var(--hi)" };
+  const tiers = [
+    { key:"clear", name:"CLEAR", glyph:"✓", note:"all params in range" },
+    { key:"watch", name:"WATCH", glyph:"•", note:"1 param drifting" },
+    { key:"confirm", name:"CONFIRM", glyph:"!", note:"criteria met, 30 s hold" },
+    { key:"klaxon", name:"KLAXON", glyph:"▲", note:"alarm sounding" },
+  ].map(t => {
+    const on = t.key === cur;
+    return { ...t, current: on ? "step" : "false",
+      fg: on ? (deg ? UNK : tierColor[t.key]) : "var(--text-faint)",
+      border: on ? (deg ? UNK : tierColor[t.key]) : "var(--line)",
+      bg: on ? (deg ? "color-mix(in oklab,var(--unknown) 16%,transparent)"
+                    : "color-mix(in oklab,"+tierColor[t.key]+" 14%,transparent)") : "transparent" };
+  });
+
+  /* Event rules are placed by wall-clock time, then dropped if the sample they
+     point at is missing. A marker floating over a gap would assert the system
+     saw something at a moment it was blind. */
+  const marksAt = (deg ? ["02:57:12"] : ["02:04:18","02:09:44","02:19:38"])
+    .map(ts => { const p = ts.split(":"); const i = (+p[0])*60 + (+p[1]) - sess.startMin; return i < 0 ? i+1440 : i; })
+    .filter(i => i >= 0 && i < sess.N && sess.spo2[i] != null)
+    .map(i => "M"+((i/(sess.N-1))*W).toFixed(1)+" 0 V110 ").join("");
+
+  const lanes = [
+    lane(sess.spo2, { label:"SpO₂ %", color:"var(--spo2)", hi:"100", lo:"80", min:80, max:100, limit:88, marks:marksAt,
+      aria:"SpO2 overnight trace, scale 80 to 100 percent, alarm limit 88, gap "+hhmm(sess.gapStart)+" to "+(deg?"now":hhmm(sess.gapEnd)) }),
+    lane(sess.hr,   { label:"HR bpm", color:"var(--hr)", hi:"110", lo:"40", min:40, max:110, limit:100, marks:marksAt, aria:"Heart rate overnight trace, 40 to 110 bpm" }),
+    lane(sess.resp, { label:"RESP rpm", color:"var(--resp)", hi:"24", lo:"4", min:4, max:24, limit:8, marks:marksAt, aria:"Respiration rate overnight, 4 to 24 per minute" }),
+    lane(sess.leak, { label:"LEAK L/min", color:"var(--cpap)", hi:"60", lo:"0", min:0, max:60, limit:40, marks:marksAt, aria:"CPAP mask leak overnight, 0 to 60 litres per minute" }),
+  ];
+  const xTicks = Array.from({length:8}, (_,i) => hhmm(sess.startMin + Math.round((sess.N-1)*(i/7))));
+
+  const events = deg ? [
+    { t:"02:57:12", glyph:"!", color:"var(--med)", rank:"MEDIUM", label:"Desaturation onset", detail:"nadir 89.1 % · unresolved at data loss" },
+    { t:"03:04:41", glyph:"×", color:"var(--hi)", rank:"HIGH TECH", label:"Pulse-ox link lost", detail:"3 missed keepalives · BLE 0x4A2F" },
+    { t:"03:04:41", glyph:"?", color:UNK, rank:"INDET.", label:"Session coverage broken", detail:"3 h 40 m of 7 h 30 m not measured" },
+    { t:"03:05:11", glyph:"!", color:"var(--med)", rank:"MEDIUM", label:"Tier held at CONFIRM", detail:"cannot clear without SpO₂" },
+    { t:"05:58:20", glyph:"✓", color:"var(--cpap)", rank:"INFO", label:"CPAP session ended", detail:"usage 6 h 46 m · AHI over measured span 3.1" },
+  ] : [
+    { t:"23:41:06", glyph:"✓", color:"var(--cpap)", rank:"INFO", label:"CPAP therapy start", detail:"auto 8–14 cmH₂O" },
+    { t:"02:04:18", glyph:"!", color:"var(--med)", rank:"MEDIUM", label:"Desaturation cluster start", detail:"4 events / 15 min" },
+    { t:"02:09:44", glyph:"!", color:"var(--med)", rank:"MEDIUM", label:"SpO₂ nadir 85.4 %", detail:"duration 68 s · HR +19 bpm" },
+    { t:"02:19:38", glyph:"✓", color:"var(--ok)", rank:"RESOLVED", label:"Cluster resolved", detail:"SpO₂ ≥ 94 % for 5 min" },
+    { t:"03:26:00", glyph:"?", color:UNK, rank:"INDET.", label:"Sensor gap 6 min", detail:"03:26–03:32 · not interpolated" },
+    { t:"04:12:52", glyph:"!", color:"var(--cpap)", rank:"LOW", label:"Mask leak 41 L/min", detail:"13 min above limit" },
+  ];
+
+  const okc = "var(--ok)", medc = "var(--med)";
+  return {
+    clock: (deg ? "03:45:53" : "06:45:02") + " · TZ EST · UTC−05",
+    alarms, numerics, sensors, tiers, events, lanes, xTicks,
+    trendCards: ["spo2","hr","hrv","ahi"].map(trend),
+    liveLanes: [
+      lane(lspo2, { label:"SpO₂ %", color:"var(--spo2)", hi:"100", lo:"88", min:88, max:100, H:90, rows:3, aria:"SpO2 last 20 minutes" }),
+      lane(lhr,   { label:"HR bpm", color:"var(--hr)", hi:"80", lo:"40", min:40, max:80, H:90, rows:3, aria:"Heart rate last 20 minutes" }),
+    ],
+    tierSince: deg ? "IN CONFIRM SINCE 02:57:12" : "IN CLEAR SINCE 02:24:38",
+    tierExplain: deg
+      ? "The machine is stuck, and that is the honest reading. CONFIRM was entered on a real desaturation at 02:57; 7 s later the pulse-ox stopped reporting, so the criteria to escalate to KLAXON and the criteria to fall back to CLEAR are both unevaluable. It will not silently relax to CLEAR — an absent sensor is not evidence of recovery."
+      : "CLEAR requires every enrolled parameter to be both measured and within limits for 5 continuous minutes. Any parameter going dark drops the machine out of CLEAR into a held state — never forward into CLEAR by default.",
+    escalate: deg ? "HELD — no valid SpO₂ to evaluate" : "n/a — tier CLEAR",
+    eventCount: (deg ? 5 : 6) + " events · 1 indeterminate span",
+    session: {
+      id: deg ? "2026-08-02 · PARTIAL" : "2026-08-02 · COMPLETE",
+      span: "23:12:04 → 06:42:11", dur: "7 h 30 m",
+      n: deg ? "13,204" : "26,984",
+      coverage: deg ? "51.1 % — 3 h 40 m NOT MEASURED" : "99.2 %",
+    },
+    nightStats: [
+      deg ? { label:"SpO₂ NADIR", color:UNK, glyph:"?", value:"≥89.1", unit:"%", note:"lower bound only — sensor dark after 03:04", hatch:hatchOn }
+          : { label:"SpO₂ NADIR", color:"var(--spo2)", glyph:"!", value:"85.4", unit:"%", note:"02:09:44 · 68 s below 88", hatch:"none" },
+      deg ? { label:"TIME < 90 %", color:UNK, glyph:"?", value:"— —", unit:"min", note:"not computable over 49 % of session", hatch:hatchOn }
+          : { label:"TIME < 90 %", color:"var(--spo2)", glyph:"!", value:"7.4", unit:"min", note:"1.6 % of session", hatch:"none" },
+      { label:"MEAN HR", color:"var(--hr)", glyph:deg?"?":"✓", value:deg?"53":"54", unit:"bpm", note:deg?"over measured span only (3 h 52 m)":"min 46 · max 79", hatch:deg?hatchOn:"none" },
+      { label:"RMSSD", color:"var(--resp)", glyph:"✓", value:deg?"40.2":"41.6", unit:"ms", note:deg?"partial span · own IQR 36–48":"own IQR 36–48", hatch:"none" },
+      { label:"AHI", color:"var(--cpap)", glyph:"✓", value:"3.1", unit:"/h", note:"CPAP-reported · independent of pulse-ox", hatch:"none" },
+    ],
+    readiness: deg
+      ? { verdict:"CANNOT CONFIRM", color:UNK, bg:"color-mix(in oklab,var(--unknown) 14%,transparent)", glyph:"?", detail:"Alarm path is armed and the daemon is up, but the pulse-ox has been dark for 41 minutes. Until a sensor reports, readiness is unknown — not good." }
+      : { verdict:"READY", color:"var(--ok)", bg:"color-mix(in oklab,var(--ok) 12%,transparent)", glyph:"✓", detail:"Daemon up, all sensors reported within 3 s, klaxon self-test passed 06:44:02, restore verified 3 days ago." },
+    sysGroups: [
+      { title:"DAEMON · vitalsd", rows:[
+        { k:"Process state", glyph:"✓", color:okc, v:"active (running)" },
+        { k:"Uptime", glyph:"✓", color:okc, v:"6 d 04 h 12 m" },
+        { k:"Ingest lag p95", glyph:"✓", color:okc, v:"180 ms" },
+        { k:"Restarts (7 d)", glyph:"!", color:medc, v:"1 · 30 Jul 04:02" },
+        { k:"Write queue", glyph:"✓", color:okc, v:"0 / 4096" }]},
+      { title:"ALARM PATH", rows:[
+        { k:"Klaxon self-test", glyph:"✓", color:okc, v:"PASS 06:44:02" },
+        { k:"Test cadence", glyph:"✓", color:okc, v:"daily 06:44" },
+        { k:"Relay continuity", glyph:"✓", color:okc, v:"GPIO 18 · 4.98 V" },
+        { k:"Watchdog", glyph:"✓", color:okc, v:"hw · 15 s timeout" },
+        { k:"Escalation rule", glyph:"✓", color:okc, v:"confirm → klaxon @ 30 s" }]},
+      { title:"DATA DURABILITY", rows:[
+        { k:"Last backup", glyph:"✓", color:okc, v:"41 m ago · 2.1 GB" },
+        { k:"Last verified restore", glyph:"!", color:medc, v:"3 d ago · 31 Jul" },
+        { k:"Checksum sweep", glyph:"✓", color:okc, v:"clean · 02:00" },
+        { k:"Storage", glyph:"✓", color:okc, v:"38.4 / 256 GB · 15 %" },
+        { k:"Retention", glyph:"✓", color:okc, v:"raw 90 d · agg ∞" }]},
+      { title:"COVERAGE (7 NIGHTS)", rows:[
+        { k:"Sessions recorded", glyph:"✓", color:okc, v:deg?"6 / 7":"7 / 7" },
+        { k:"Measured time", glyph:deg?"?":"✓", color:deg?UNK:okc, v:deg?"84.1 % · 8 h 12 m dark":"99.2 %" },
+        { k:"Longest gap", glyph:deg?"?":"✓", color:deg?UNK:okc, v:deg?"3 h 40 m · last night":"6 m 00 s" },
+        { k:"Nights not assessed", glyph:deg?"?":"✓", color:deg?UNK:okc, v:deg?"1 · 02 Aug":"0" },
+        { k:"Clock drift vs NTP", glyph:"✓", color:okc, v:"+4 ms" }]},
+    ],
+  };
+}
+
+/* ══ screens ══════════════════════════════════════════════════════════════ */
+const laneSVG = (L, showLimit) => `
+  <svg class="lane" viewBox="0 0 1000 ${L.H}" preserveAspectRatio="none" role="img" aria-label="${esc(L.aria)}" style="height:${L.H}px">
+    <path d="${L.grid}" stroke="var(--line)" stroke-width="1" fill="none" vector-effect="non-scaling-stroke"></path>
+    ${showLimit && L.limitLine ? `<path d="${L.limitLine}" stroke="${L.color}" stroke-width="1" stroke-dasharray="6 5" fill="none" opacity="0.75" vector-effect="non-scaling-stroke"></path>` : ""}
+    <path d="${L.gapFill}" fill="url(#gapHatch)"></path>
+    <path d="${L.gapEdge}" stroke="var(--unknown)" stroke-width="2" stroke-dasharray="4 4" fill="none" vector-effect="non-scaling-stroke"></path>
+    ${L.eventMarks ? `<path d="${L.eventMarks}" stroke="var(--hi)" stroke-width="1.5" fill="none" opacity="0.9" vector-effect="non-scaling-stroke"></path>` : ""}
+    <path d="${L.d}" stroke="${L.color}" stroke-width="1.7" fill="none" vector-effect="non-scaling-stroke" stroke-linejoin="round"></path>
+  </svg>`;
+
+const laneRow = (L, labelW, showLimit) => `
+  <div style="display:grid;grid-template-columns:${labelW}px 1fr;gap:8px;padding:9px 0;border-bottom:1px solid var(--line)">
+    <div class="mono" style="font-size:14px;color:${L.color};display:flex;flex-direction:column;justify-content:space-between">
+      <span style="color:var(--text-faint)">${L.hi}</span>
+      <span style="font-weight:700;letter-spacing:.06em">${esc(L.label)}</span>
+      <span style="color:var(--text-faint)">${L.lo}</span>
+    </div>
+    ${laneSVG(L, showLimit)}
+  </div>`;
+
+function screenNow(m){ return `
+<section aria-label="Now">
+  <div role="region" aria-label="Alarm stack" style="display:grid;gap:6px;margin-bottom:16px">
+    ${m.alarms.map(a => `
+      <div class="${a.cls}" style="display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;border:2px solid ${a.color};padding:10px 12px">
+        <span aria-hidden="true" class="mono" style="font-size:20px;font-weight:700;width:28px;text-align:center;color:${a.color}">${a.glyph}</span>
+        <div>
+          <div class="mono" style="font-size:14px;letter-spacing:.1em;color:${a.color};font-weight:700">${a.rank} · ${a.channel}</div>
+          <div style="font-size:17px;font-weight:600;margin-top:2px">${esc(a.msg)}</div>
+        </div>
+        <div class="mono" style="text-align:right;font-size:14px;color:var(--text-dim)">${a.at}<br>${a.age}</div>
+      </div>`).join("")}
+  </div>
+
+  <!-- 218px, not 230: six numerics at 1440 wide left one tile orphaned on a
+       second row, and a patient monitor whose numeric block silently reflows is
+       a monitor whose values are not where the eye left them. -->
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(218px,1fr));gap:10px;margin-bottom:16px">
+    ${m.numerics.map(n => `
+      <div role="group" aria-label="${esc(n.aria)}" style="background:var(--surface);border:1px solid var(--line);border-left:6px solid ${n.color};padding:12px 14px;min-height:148px;display:grid;grid-template-rows:auto 1fr auto auto;background-image:${n.hatch};background-size:10px 10px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
+          <span class="mono" style="font-size:14px;font-weight:700;letter-spacing:.1em;color:${n.color}">${n.label}</span>
+          <span class="mono" style="font-size:14px;color:var(--text-dim)">${n.unit}</span>
+        </div>
+        <div style="display:flex;align-items:baseline;gap:8px;padding:6px 0">
+          <span aria-hidden="true" class="mono" style="font-size:20px;color:${n.color}">${n.glyph}</span>
+          <span class="mono" style="font-size:52px;line-height:1;font-weight:600;color:${n.valueColor}">${n.value}</span>
+          <span class="mono" style="font-size:16px;color:var(--text-dim)">${n.sub}</span>
+        </div>
+        <div class="mono" style="display:flex;justify-content:space-between;gap:8px;font-size:14px;color:var(--text-faint);border-top:1px solid var(--line);padding-top:6px">
+          <span>LIM ${n.limits}</span><span>${n.stamp}</span>
+        </div>
+        <div style="font-size:14px;color:${n.color};font-weight:600;padding-top:4px">${n.state}</div>
+      </div>`).join("")}
+  </div>
+
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px">
+    <div class="box">
+      <div class="box-head"><h2>SENSOR LIVENESS</h2><span class="mono" style="font-size:14px;color:var(--text-dim)">POLL 1 Hz</span></div>
+      ${m.sensors.map(s => `
+        <div class="row">
+          <span aria-hidden="true" class="mono" style="font-size:17px;font-weight:700;color:${s.color}">${s.glyph}</span>
+          <span style="font-size:15px;flex:1 1 150px;min-width:0">${esc(s.name)}<span class="mono" style="color:var(--text-faint);font-size:14px"> · ${s.link}</span></span>
+          <span class="mono" style="font-size:14px;font-weight:700;color:${s.color};letter-spacing:.08em">${s.state}</span>
+          <span class="mono" style="font-size:14px;color:var(--text-dim);margin-left:auto;text-align:right">${s.age}</span>
+        </div>`).join("")}
+    </div>
+
+    <div class="box">
+      <div class="box-head"><h2>RISK TIER · STATE MACHINE</h2><span class="mono" style="font-size:14px;color:var(--text-dim)">${m.tierSince}</span></div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px">
+        ${m.tiers.map(t => `
+          <div aria-current="${t.current}" style="border:2px solid ${t.border};background:${t.bg};padding:10px 8px;text-align:center">
+            <div aria-hidden="true" class="mono" style="font-size:18px;color:${t.fg}">${t.glyph}</div>
+            <div class="mono" style="font-size:14px;font-weight:700;letter-spacing:.08em;color:${t.fg};margin-top:4px">${t.name}</div>
+            <div style="font-size:14px;color:var(--text-faint);margin-top:4px">${t.note}</div>
+          </div>`).join("")}
+      </div>
+      <p style="font-size:15px;color:var(--text-dim);margin:12px 0 0;line-height:1.5;text-wrap:pretty">${esc(m.tierExplain)}</p>
+      <div class="mono" style="margin-top:12px;border-top:1px solid var(--line);padding-top:10px;font-size:14px;color:var(--text-dim);display:grid;gap:4px">
+        <div>ESCALATION IN: ${esc(m.escalate)}</div>
+        <div>KLAXON GPIO 18: ARMED · SELF-TEST 06:44:02 PASS</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="box" style="margin-top:12px">
+    <div class="box-head"><h2>LAST 20 MIN · SpO₂ / HR</h2><span class="mono" style="font-size:14px;color:var(--text-dim)">1 Hz · gaps not interpolated</span></div>
+    ${m.liveLanes.map(L => laneRow(L, 84, false)).join("")}
+    <div class="legend">
+      <span><span aria-hidden="true" style="color:var(--spo2)">━</span> SpO₂ %</span>
+      <span><span aria-hidden="true" style="color:var(--hr)">━</span> HR bpm</span>
+      <span><span aria-hidden="true" style="color:var(--unknown)">▨</span> no data — not assessed</span>
+    </div>
+  </div>
+</section>`; }
+
+function screenNight(m){ return `
+<section aria-label="Last night">
+  <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:baseline;border-bottom:1px solid var(--line-strong);padding-bottom:10px;margin-bottom:12px">
+    <h2 style="margin:0;font-size:20px;letter-spacing:.08em">SESSION ${m.session.id}</h2>
+    <span class="mono" style="font-size:15px;color:var(--text-dim)">${m.session.span} · ${m.session.dur} · ${m.session.n} samples · ${m.session.coverage} coverage</span>
+  </div>
+
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-bottom:14px">
+    ${m.nightStats.map(s => `
+      <div style="background:var(--surface);border:1px solid var(--line);border-left:6px solid ${s.color};padding:10px 12px;background-image:${s.hatch};background-size:10px 10px">
+        <div class="mono" style="font-size:14px;letter-spacing:.08em;color:${s.color};font-weight:700">${s.label}</div>
+        <div style="display:flex;align-items:baseline;gap:6px;margin-top:6px">
+          <span aria-hidden="true" class="mono" style="font-size:16px;color:${s.color}">${s.glyph}</span>
+          <span class="mono" style="font-size:30px;font-weight:600">${s.value}</span>
+          <span class="mono" style="font-size:14px;color:var(--text-dim)">${s.unit}</span>
+        </div>
+        <div style="font-size:14px;color:var(--text-faint);margin-top:4px">${esc(s.note)}</div>
+      </div>`).join("")}
+  </div>
+
+  <div class="box">
+    <div class="box-head"><h3>SYNCHRONISED LANES · SHARED X-AXIS</h3><span class="mono" style="font-size:14px;color:var(--text-dim)">fixed vertical scales · no dual axes · no interpolation across gaps</span></div>
+    ${m.lanes.map(L => laneRow(L, 96, true)).join("")}
+    <div style="display:grid;grid-template-columns:96px 1fr;gap:8px;padding-top:6px">
+      <span></span>
+      <div class="mono" style="display:flex;justify-content:space-between;font-size:14px;color:var(--text-dim)">
+        ${m.xTicks.map(t => `<span>${t}</span>`).join("")}
+      </div>
+    </div>
+    <div class="legend" style="margin-top:6px;border-top:1px solid var(--line);padding-top:10px">
+      <span><span aria-hidden="true" style="color:var(--spo2)">━</span> SpO₂</span>
+      <span><span aria-hidden="true" style="color:var(--hr)">━</span> HR</span>
+      <span><span aria-hidden="true" style="color:var(--resp)">━</span> RESP</span>
+      <span><span aria-hidden="true" style="color:var(--cpap)">━</span> LEAK</span>
+      <span><span aria-hidden="true" style="color:var(--hi)">│</span> event</span>
+      <span><span aria-hidden="true" style="color:var(--unknown)">▨</span> gap — not measured</span>
+      <span>· · · alarm limit</span>
+    </div>
+  </div>
+
+  <div class="box" style="margin-top:12px">
+    <div class="box-head"><h3>EVENT LOG</h3><span class="mono" style="font-size:14px;color:var(--text-dim)">${m.eventCount}</span></div>
+    ${m.events.map(e => `
+      <div class="row">
+        <span class="mono" style="font-size:14px;color:var(--text-dim)">${e.t}</span>
+        <span aria-hidden="true" class="mono" style="font-size:17px;font-weight:700;color:${e.color}">${e.glyph}</span>
+        <span style="font-size:15px;flex:1 1 240px;min-width:0">${esc(e.label)} <span class="mono" style="color:var(--text-faint);font-size:14px">${esc(e.detail)}</span></span>
+        <span class="mono" style="font-size:14px;font-weight:700;letter-spacing:.08em;margin-left:auto;color:${e.color}">${e.rank}</span>
+      </div>`).join("")}
+  </div>
+</section>`; }
+
+function screenTrends(m){
+  const btn = (d) => `<button data-action="win" data-win="${d}" aria-pressed="${S.win===d}" style="background:${S.win===d?"var(--surface-2)":"transparent"};border:0;${d!==90?"border-right:1px solid var(--line-strong);":""}color:var(--text);padding:8px 14px;font-family:var(--mono);font-size:14px;cursor:pointer">${d} D</button>`;
+  return `
+<section aria-label="Trends">
+  <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;border-bottom:1px solid var(--line-strong);padding-bottom:10px;margin-bottom:14px">
+    <h2 style="margin:0;font-size:20px;letter-spacing:.08em">TRENDS</h2>
+    <div role="group" aria-label="Window" style="display:flex;border:1px solid var(--line-strong)">${btn(7)}${btn(30)}${btn(90)}</div>
+    <span class="mono" style="font-size:14px;color:var(--text-dim)">baseline = own rolling median, ${S.win} nights · no population norms</span>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px">
+    ${m.trendCards.map(c => `
+      <div class="box">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
+          <span class="mono" style="font-size:14px;font-weight:700;letter-spacing:.08em;color:${c.color}">${c.label}</span>
+          <span class="mono" style="font-size:14px;color:var(--text-dim)">${c.unit}</span>
+        </div>
+        <div style="display:flex;align-items:baseline;gap:10px;margin:8px 0 2px">
+          <span class="mono" style="font-size:34px;font-weight:600">${c.latest}</span>
+          <span class="mono" style="font-size:15px;color:${c.devColor}"><span aria-hidden="true">${c.devGlyph}</span> ${c.dev}</span>
+        </div>
+        <div class="mono" style="font-size:14px;color:var(--text-faint)">BASELINE ${c.baseline} · IQR ${c.iqr} · ${c.missing}</div>
+        <svg class="lane" viewBox="0 0 1000 140" preserveAspectRatio="none" role="img" aria-label="${esc(c.aria)}" style="height:140px;margin-top:10px">
+          <path d="${c.band}" fill="${c.color}" opacity="0.14"></path>
+          <path d="${c.baseLine}" stroke="${c.color}" stroke-width="1" stroke-dasharray="6 5" opacity="0.8" fill="none" vector-effect="non-scaling-stroke"></path>
+          <path d="${c.grid}" stroke="var(--line)" stroke-width="1" fill="none" vector-effect="non-scaling-stroke"></path>
+          <path d="${c.gapFill}" fill="url(#gapHatch)"></path>
+          <path d="${c.gapEdge}" stroke="var(--unknown)" stroke-width="2" stroke-dasharray="4 4" fill="none" vector-effect="non-scaling-stroke"></path>
+          <path d="${c.d}" stroke="${c.color}" stroke-width="1.8" fill="none" vector-effect="non-scaling-stroke" stroke-linejoin="round"></path>
+          <path d="${c.dots}" stroke="${c.color}" stroke-width="8" stroke-linecap="round" fill="none" vector-effect="non-scaling-stroke"></path>
+        </svg>
+        <div class="mono" style="display:flex;justify-content:space-between;font-size:14px;color:var(--text-dim);margin-top:6px">
+          <span>${c.from}</span><span>${c.to}</span>
+        </div>
+        <div class="legend" style="gap:14px;margin-top:6px;border-top:1px solid var(--line);padding-top:6px">
+          <span><span aria-hidden="true" style="color:${c.color}">━</span> nightly</span>
+          <span>· · · own baseline</span>
+          <span><span aria-hidden="true" style="color:${c.color};opacity:.5">▬</span> own IQR</span>
+          <span><span aria-hidden="true" style="color:var(--unknown)">▨</span> no session</span>
+        </div>
+      </div>`).join("")}
+  </div>
+</section>`; }
+
+function screenSys(m){ return `
+<section aria-label="System health">
+  <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:baseline;border-bottom:1px solid var(--line-strong);padding-bottom:10px;margin-bottom:14px">
+    <h2 style="margin:0;font-size:20px;letter-spacing:.08em">SYSTEM HEALTH</h2>
+    <span style="font-size:15px;color:var(--text-dim)">Will it work tonight?</span>
+  </div>
+  <div style="border:2px solid ${m.readiness.color};background:${m.readiness.bg};padding:14px;display:grid;grid-template-columns:auto 1fr;gap:14px;align-items:center;margin-bottom:14px">
+    <span aria-hidden="true" class="mono" style="font-size:34px;font-weight:700;color:${m.readiness.color}">${m.readiness.glyph}</span>
+    <div>
+      <div class="mono" style="font-size:15px;letter-spacing:.1em;font-weight:700;color:${m.readiness.color}">TONIGHT'S READINESS · ${m.readiness.verdict}</div>
+      <div style="font-size:17px;margin-top:4px;text-wrap:pretty">${esc(m.readiness.detail)}</div>
+    </div>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px">
+    ${m.sysGroups.map(g => `
+      <div class="box">
+        <div class="box-head"><h3>${g.title}</h3></div>
+        ${g.rows.map(r => `
+          <div class="row">
+            <span aria-hidden="true" class="mono" style="font-size:16px;font-weight:700;color:${r.color}">${r.glyph}</span>
+            <span style="font-size:15px;flex:1 1 auto">${esc(r.k)}</span>
+            <span class="mono" style="font-size:14px;color:${r.color};margin-left:auto;text-align:right">${esc(r.v)}</span>
+          </div>`).join("")}
+      </div>`).join("")}
+  </div>
+</section>`; }
+
+/* The design-system screen measures itself. Contrast ratios and CVD separations
+   are computed from the tokens currently resolved on <html>, so switching theme
+   re-derives every number and no figure here can outlive the value it describes. */
+function screenTokens(){
+  const surface = tok("--bg");
+  const ratio = n => contrast(tok(n), surface).toFixed(2) + ":1";
+
+  const TEXT_ROWS = [
+    ["--bg", "screen ground"],
+    ["--surface", "boxed regions (structure via border, not contrast)"],
+    ["--text", "numerics, headings, values"],
+    ["--text-dim", "units, labels, secondary"],
+    ["--text-faint", "smallest 14 px metadata"],
+    ["--line", "decorative gridlines only — exempt from 1.4.11"],
+    ["--line-strong", "component boundaries (AA non-text)"],
+    ["--spo2", "SpO₂ — every screen"],
+    ["--hr", "heart rate / ECG"],
+    ["--resp", "respiration, HRV"],
+    ["--bp", "blood pressure — token declared, not yet plotted"],
+    ["--cpap", "CPAP: leak, AHI, pressure"],
+    ["--unknown", "INDETERMINATE — never a signal, never status-ok"],
+    ["--hi", "high-priority alarm"],
+    ["--med", "medium alarm, stale data"],
+    ["--low", "low / info"],
+    ["--ok", "measured & in range (always paired with ✓)"],
+  ];
+
+  /* Only pairs that share one plot box. Signals each own a lane, so they are
+     never asked to be told apart from each other by hue. */
+  const PLOTTED = [["--spo2","SpO₂"],["--hr","HR"],["--resp","RESP / HRV"],["--cpap","CPAP leak"]];
+  const pairRows = [
+    ...PLOTTED.map(([t,n]) => [t, "--unknown", n + " trace vs its data gap", "hatch texture + dashed walls + ? glyph"]),
+    ...PLOTTED.map(([t,n]) => [t, "--hi", n + " trace vs event rule", "vertical rule vs horizontal trace"]),
+  ].map(([a,b,where,secondary]) => {
+    const d = worstCVD(tok(a), tok(b));
+    return { a, b, where, secondary, d,
+      verdict: d >= 8 ? "separable on hue alone" : d >= 6 ? "hue weak — carried by" : "hue carries nothing — carried by",
+      color: d >= 8 ? "var(--ok)" : d >= 6 ? "var(--med)" : "var(--unknown)",
+      glyph: d >= 8 ? "✓" : d >= 6 ? "!" : "?" };
+  }).sort((x,y) => x.d - y.d);
+
+  const cell = "padding:8px 12px;border-bottom:1px solid var(--line)";
+  return `
+<section aria-label="Design system">
+  <div style="border-bottom:1px solid var(--line-strong);padding-bottom:12px;margin-bottom:16px">
+    <h2 style="margin:0 0 6px;font-size:22px;letter-spacing:.08em">DIRECTION A — CLINICAL</h2>
+    <p style="margin:0;max-width:78ch;font-size:16px;line-height:1.6;color:var(--text-dim);text-wrap:pretty">Built on the grammar of a hospital patient monitor — IntelliVue, CARESCAPE, Dräger. Per-parameter colour is fixed for the life of the product and never reused for status; numerics live in boxed regions at constant positions so the eye learns where to land; alarm limits are printed next to the value they bound; physiological and technical alarms occupy separate, priority-ranked channels; nothing appears without a timestamp. It is deliberately un-softened: the reward for looking like equipment is that it is legible from across a dark room and immediately readable by anyone who has worked a floor.</p>
+  </div>
+
+  <h3 style="margin:0 0 4px;font-size:16px;letter-spacing:.1em">1 · COLOUR TOKENS — CONTRAST MEASURED AT RENDER TIME</h3>
+  <p style="margin:0 0 8px;font-size:15px;color:var(--text-dim);max-width:78ch;text-wrap:pretty">Every ratio below is computed from the token the browser has right now, against <span class="mono">--bg</span>. Switch the theme and the whole column re-derives. Nothing here is transcribed, so nothing here can go stale.</p>
+  <div style="overflow-x:auto;border:1px solid var(--line);margin-bottom:20px">
+    <div style="display:grid;grid-template-columns:minmax(190px,1.1fr) 110px 90px 1fr;min-width:720px">
+      ${TEXT_ROWS.map(([name,use],i) => {
+        const z = i % 2 ? "var(--surface)" : "transparent";
+        const c = contrast(tok(name), surface);
+        return `<div class="mono" style="${cell};background:${z};font-size:14px;display:flex;align-items:center;gap:8px"><span aria-hidden="true" style="width:16px;height:16px;display:inline-block;background:var(${name});border:1px solid var(--line-strong);flex:none"></span>${name}</div>
+          <div class="mono" style="${cell};background:${z};font-size:14px;color:var(--text-dim)">${tok(name)}</div>
+          <div class="mono" style="${cell};background:${z};font-size:14px;font-weight:700">${name === "--bg" ? "—" : c.toFixed(2)+":1"}</div>
+          <div style="${cell};background:${z};font-size:14px;color:var(--text-dim)">${use}</div>`;
+      }).join("")}
+    </div>
+  </div>
+
+  <h3 style="margin:0 0 4px;font-size:16px;letter-spacing:.1em">2 · WITHIN-PLOT SEPARATION — MEASURED, NOT ASSERTED</h3>
+  <p style="margin:0 0 8px;font-size:15px;color:var(--text-dim);max-width:78ch;line-height:1.6;text-wrap:pretty">
+    ΔE is Euclidean distance in OKLab ×100 after Machado–Oliveira–Fernandes simulation at severity 1.0, taking the worst of protanopia, deuteranopia and tritanopia. Only pairs that appear inside <em>one</em> plot are listed: each signal owns its own lane with a fixed scale and a printed label, so no two signals are ever asked to be told apart by hue. ΔE ≥ 8 means hue alone suffices; below that the pair depends on the secondary channel named in the last column, which is why every one of them has one. Run <span class="mono">node palette-check.mjs</span> for the same arithmetic behind an exit code.
+  </p>
+  <div style="overflow-x:auto;border:1px solid var(--line);margin-bottom:20px">
+    <div style="display:grid;grid-template-columns:minmax(210px,1fr) 80px minmax(160px,1fr) minmax(200px,1.2fr);min-width:760px">
+      ${pairRows.map((p,i) => {
+        const z = i % 2 ? "var(--surface)" : "transparent";
+        return `<div class="mono" style="${cell};background:${z};font-size:14px;display:flex;align-items:center;gap:8px"><span aria-hidden="true" style="color:${p.color};font-weight:700">${p.glyph}</span>${p.a} ↔ ${p.b}</div>
+          <div class="mono" style="${cell};background:${z};font-size:14px;font-weight:700;color:${p.color}">${p.d.toFixed(1)}</div>
+          <div style="${cell};background:${z};font-size:14px;color:var(--text-dim)">${p.where}</div>
+          <div style="${cell};background:${z};font-size:14px;color:var(--text-dim)">${p.verdict}${p.d >= 8 ? "" : " " + p.secondary}</div>`;
+      }).join("")}
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px;margin-bottom:20px">
+    <div class="box" style="border:2px solid var(--unknown);background-image:${hatchOn};background-size:10px 10px">
+      <h3 style="margin:0 0 8px;font-size:16px;letter-spacing:.1em;color:var(--unknown)">3 · INDETERMINATE — THE THIRD STATE</h3>
+      <p style="margin:0 0 10px;font-size:15px;line-height:1.6;color:var(--text-dim);text-wrap:pretty">Not measured is not OK. The unknown treatment is periwinkle <span class="mono">${tok("--unknown")}</span> — outside both the alarm reds/ambers and the reassurance greens — and it never appears alone. Four cues always fire together:</p>
+      <ol style="margin:0;padding-left:22px;font-size:15px;line-height:1.7">
+        <li>Diagonal hatch fill across the whole region — texture, not hue.</li>
+        <li>The glyph <span class="mono" style="color:var(--unknown);font-weight:700">?</span> in the position where <span class="mono" style="color:var(--ok);font-weight:700">✓</span> or <span class="mono" style="color:var(--hi);font-weight:700">!</span> would sit.</li>
+        <li>The value replaced by <span class="mono">— —</span>, never a last-known number.</li>
+        <li>An age counter that keeps climbing, plus a technical alarm that cannot be silenced, only acknowledged.</li>
+      </ol>
+      <p style="margin:10px 0 0;font-size:15px;color:var(--text-dim);line-height:1.6">In charts the line stops. A gap is drawn as hatch between two dashed vertical walls; no segment ever bridges it. A continuous line across missing samples would be a claim the system cannot make. Those four cues are not belt-and-braces: against <span class="mono">--spo2</span> the hatch is doing nearly all the work, as the table above shows.</p>
+    </div>
+
+    <div class="box">
+      <h3 style="margin:0 0 10px;font-size:16px;letter-spacing:.1em">4 · ALARM RANKS</h3>
+      ${[
+        { name:"HIGH · PHYSIOLOGICAL", glyph:"▲", color:"var(--hi)", bg:"color-mix(in oklab,var(--hi) 22%,transparent)", rule:"Hard limit breached. Solid 2 px frame, flashing fill (static under reduced motion), klaxon armed." },
+        { name:"MEDIUM · PHYSIOLOGICAL", glyph:"!", color:"var(--med)", bg:"color-mix(in oklab,var(--med) 14%,transparent)", rule:"Soft limit or cluster. Solid frame, static fill, no sound." },
+        { name:"LOW / INFO", glyph:"i", color:"var(--low)", bg:"transparent", rule:"Logged context. Outline only, no fill." },
+        { name:"TECHNICAL", glyph:"×", color:"var(--hi)", bg:"color-mix(in oklab,var(--hi) 18%,transparent)", rule:"Separate channel: the monitor, not the patient. Ranked independently and never merged into the physiological stack." },
+        { name:"INDETERMINATE", glyph:"?", color:"var(--unknown)", bg:"color-mix(in oklab,var(--unknown) 16%,transparent)", rule:"Hatched fill, periwinkle frame, climbing age counter. Acknowledgeable, never silenceable." },
+      ].map(r => `
+        <div style="border:2px solid ${r.color};padding:10px;margin-bottom:8px;display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:center;background:${r.bg}">
+          <span aria-hidden="true" class="mono" style="font-size:20px;font-weight:700;color:${r.color};width:26px;text-align:center">${r.glyph}</span>
+          <div>
+            <div class="mono" style="font-size:14px;font-weight:700;letter-spacing:.1em;color:${r.color}">${r.name}</div>
+            <div style="font-size:14px;color:var(--text-dim);margin-top:2px">${r.rule}</div>
+          </div>
+        </div>`).join("")}
+    </div>
+  </div>
+
+  <h3 style="margin:0 0 8px;font-size:16px;letter-spacing:.1em">5 · NUMERIC TILE · ALL STATES</h3>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px;margin-bottom:20px">
+    ${[
+      { stateName:"DEFAULT · IN RANGE", color:"var(--spo2)", glyph:"✓", value:"96", stamp:"06:45:02", note:"measured, within limits", hatch:"none", valueColor:"var(--text)" },
+      { stateName:"LOADING", color:"var(--text-faint)", glyph:"·", value:"· ·", stamp:"awaiting first sample", note:"no claim yet", hatch:"none", valueColor:"var(--text-faint)" },
+      { stateName:"EMPTY · NEVER PAIRED", color:"var(--text-faint)", glyph:"—", value:"—", stamp:"no sensor configured", note:"not part of monitoring", hatch:"none", valueColor:"var(--text-faint)" },
+      { stateName:"STALE", color:"var(--med)", glyph:"!", value:"94", stamp:"06:21:40 · 23 m old", note:"last known — do not trust as current", hatch:"none", valueColor:"var(--text-dim)" },
+      { stateName:"INDETERMINATE", color:"var(--unknown)", glyph:"?", value:"— —", stamp:"03:04:41 · 41 m dark", note:"not measured — cannot assess", hatch:hatchOn, valueColor:"var(--unknown)" },
+      { stateName:"WARNING", color:"var(--med)", glyph:"!", value:"90", stamp:"06:45:02", note:"below 92 % soft limit", hatch:"none", valueColor:"var(--med)" },
+      { stateName:"CRITICAL", color:"var(--hi)", glyph:"▲", value:"84", stamp:"06:45:02", note:"below 88 % hard limit · klaxon in 12 s", hatch:"none", valueColor:"var(--hi)" },
+    ].map(n => `
+      <div style="background:var(--surface);border:1px solid var(--line);border-left:6px solid ${n.color};padding:12px;background-image:${n.hatch};background-size:10px 10px;min-height:150px">
+        <div class="mono" style="font-size:14px;font-weight:700;letter-spacing:.1em;color:${n.color}">${n.stateName}</div>
+        <div style="display:flex;align-items:baseline;gap:6px;margin:10px 0 6px">
+          <span aria-hidden="true" class="mono" style="font-size:18px;color:${n.color}">${n.glyph}</span>
+          <span class="mono" style="font-size:40px;line-height:1;font-weight:600;color:${n.valueColor}">${n.value}</span>
+          <span class="mono" style="font-size:14px;color:var(--text-dim)">%</span>
+        </div>
+        <div class="mono" style="font-size:14px;color:var(--text-faint);border-top:1px solid var(--line);padding-top:6px">${n.stamp}</div>
+        <div style="font-size:14px;color:${n.color};margin-top:4px">${n.note}</div>
+      </div>`).join("")}
+  </div>
+
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px">
+    <div class="box">
+      <h3 style="margin:0 0 10px;font-size:16px;letter-spacing:.1em">6 · TYPE &amp; SPACE</h3>
+      <div style="display:grid;gap:8px">
+        ${[
+          { sample:"96", family:"var(--mono)", px:"52px", weight:"600", spec:"value / 52 / 600 / tnum" },
+          { sample:"118/74", family:"var(--mono)", px:"34px", weight:"600", spec:"value-sm / 34 / 600" },
+          { sample:"SpO₂ %", family:"var(--mono)", px:"20px", weight:"700", spec:"screen head / 20 / 700 / .08em" },
+          { sample:"SENSOR LIVENESS", family:"var(--mono)", px:"16px", weight:"600", spec:"region head / 16 / 600 / .1em" },
+          { sample:"Pulse-ox link lost", family:"var(--sans)", px:"16px", weight:"400", spec:"body / 16 / 400" },
+          { sample:"03:04:41 · 41 m", family:"var(--mono)", px:"14px", weight:"400", spec:"meta / 14 — floor, never smaller" },
+        ].map(t => `
+          <div style="display:grid;grid-template-columns:1fr auto;gap:10px;align-items:baseline;border-bottom:1px solid var(--line);padding-bottom:6px">
+            <span style="font-family:${t.family};font-size:${t.px};font-weight:${t.weight};font-variant-numeric:tabular-nums;line-height:1.1">${t.sample}</span>
+            <span class="mono" style="font-size:14px;color:var(--text-dim)">${t.spec}</span>
+          </div>`).join("")}
+      </div>
+      <p style="font-size:15px;color:var(--text-dim);line-height:1.6;margin:12px 0 0">Space scale 4 · 8 · 12 · 16 · 24 · 32 · 48 px. Everything sits on a 4 px rhythm; boxed regions get 12–14 px inner padding, critical numerics get ≥ 24 px of clear space. Nothing below 14 px anywhere; body 16 px; all numerics tabular.</p>
+    </div>
+    <div class="box">
+      <h3 style="margin:0 0 10px;font-size:16px;letter-spacing:.1em">7 · CHART RULES &amp; ACCESSIBILITY LEDGER</h3>
+      <ul style="margin:0;padding-left:22px;font-size:15px;line-height:1.75;color:var(--text-dim)">
+        <li>No dual-axis charts anywhere — every measure gets its own lane with a fixed vertical scale and printed hi/lo labels.</li>
+        <li>Gridlines at 1 px in <span class="mono">--line</span> (recessive, decorative only); meaningful boundaries use <span class="mono">--line-strong</span>.</li>
+        <li>Direct labels only at lane extremes, outliers and the latest night; never a number on every point.</li>
+        <li>Legend present on every plot where ≥ 2 series or ≥ 2 mark types appear.</li>
+        <li>Sequential encodings: one hue, light→dark. Diverging: signal hue ↔ periwinkle with a neutral mid. No rainbow ramps.</li>
+        <li>Status never rests on hue alone: glyph (✓ ! ? ×), fill-vs-outline, mono label and fixed position all carry it (WCAG 1.4.1).</li>
+        <li>Text ≥ 16 px body, ≥ 14 px labels; every ratio in table 1 is measured, not claimed.</li>
+        <li>Full keyboard path; 3 px periwinkle focus ring; alarm flash disabled under <span class="mono">prefers-reduced-motion</span> and replaced with a static fill.</li>
+        <li>Dark theme is primary and independently validated; the light theme is a separate ramp (own hexes, own measured ratios), not an inversion.</li>
+        <li><strong style="color:var(--text)">Known overload:</strong> <span class="mono">--hr</span> and <span class="mono">--ok</span> are the same green in the dark theme. Tolerable only because status always carries a glyph and the two never share a region — see README.md.</li>
+      </ul>
+    </div>
+  </div>
+</section>`; }
+
+/* ══ render ═══════════════════════════════════════════════════════════════ */
+function render(){
+  document.documentElement.setAttribute("data-theme", S.theme);
+  const m = model();
+
+  document.getElementById("clock").textContent = m.clock;
+  document.getElementById("btn-degraded").textContent = "SIM: SENSOR LOSS " + (S.degraded ? "ON" : "OFF");
+  document.getElementById("btn-degraded").setAttribute("aria-pressed", String(S.degraded));
+  document.getElementById("btn-theme").textContent = "THEME: " + S.theme.toUpperCase();
+
+  document.getElementById("nav").innerHTML = SCREENS.map(([k,label]) =>
+    `<button class="nav-btn" data-action="screen" data-screen="${k}"${S.screen===k?' aria-current="page"':""}>${label}</button>`).join("");
+
+  const body = { now:screenNow, night:screenNight, trends:screenTrends, sys:screenSys, tok:screenTokens }[S.screen];
+  /* screenTokens reads resolved custom properties, so data-theme must already be
+     on <html> before it runs -- which it is, first line of this function. */
+  document.getElementById("main").innerHTML = body(m);
+}
+
+document.addEventListener("click", e => {
+  const el = e.target.closest("[data-action]");
+  if (!el) return;
+  const a = el.dataset.action;
+  if (a === "screen") S.screen = el.dataset.screen;
+  else if (a === "theme") S.theme = S.theme === "dark" ? "light" : "dark";
+  else if (a === "degraded") S.degraded = !S.degraded;
+  else if (a === "win") S.win = Number(el.dataset.win);
+  render();
+});
+
+render();
+</script>
+</body>
+</html>
