@@ -187,7 +187,10 @@ mod tests {
         let j = to_json(&s);
         assert!(j.contains("\"spo2\":null"), "{j}");
         assert!(j.contains("\"pulse_bpm\":null"), "{j}");
-        assert!(!j.contains("\"spo2\":0"), "absent must not become zero: {j}");
+        assert!(
+            !j.contains("\"spo2\":0"),
+            "absent must not become zero: {j}"
+        );
         assert!(j.contains("\"finger\":false"), "{j}");
     }
 
@@ -218,7 +221,11 @@ mod tests {
         let j = to_json(&snap());
         assert!(j.starts_with('{'), "{j}");
         assert!(j.ends_with("}\n"), "{j}");
-        assert_eq!(j.matches('\n').count(), 1, "one line, so a partial read is obvious: {j}");
+        assert_eq!(
+            j.matches('\n').count(),
+            1,
+            "one line, so a partial read is obvious: {j}"
+        );
     }
 }
 
