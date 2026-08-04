@@ -83,8 +83,40 @@ def decode_2a35(b):
     out["_trailing_bytes"] = len(b) - off
     return out, None
 
-bus = None
+# Established before the handlers are defined so `bus` is never None when they
+# run. DBusGMainLoop must be installed before SystemBus() or signals never fire.
+dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
+bus = dbus.SystemBus()
 subscribed = set()
+
+def dump_gatt():
+    """Print the whole GATT tree, including the vendor service.
+
+    BlueZ's on-disk cache (/var/lib/bluetooth/<adapter>/<dev>/attributes) records
+    services but not characteristics, so the only way to see what the vendor
+    service 233bf000-... actually exposes is to enumerate it live. A writable
+    control point there is the one remaining path to a host-triggered
+    measurement -- the standard Blood Pressure Profile has none -- and it is
+    also where a clock-set characteristic would live, which would make the cuff
+    emit real timestamps instead of nothing.
+    """
+    om = dbus.Interface(bus.get_object(BLUEZ, "/"), OM)
+    objs = om.GetManagedObjects()
+    print("\n" + "-" * 62, flush=True)
+    print("GATT TREE", flush=True)
+    for path in sorted(objs):
+        ifaces = objs[path]
+        if CUFF_PATH_FRAG not in path:
+            continue
+        if "org.bluez.GattService1" in ifaces:
+            svc = ifaces["org.bluez.GattService1"]
+            print(f"  service {str(svc.get('UUID',''))}", flush=True)
+        elif CHRC in ifaces:
+            c = ifaces[CHRC]
+            flags = ",".join(str(f) for f in c.get("Flags", []))
+            print(f"    char  {str(c.get('UUID',''))}  [{flags}]", flush=True)
+    print("-" * 62 + "\n", flush=True)
+
 
 def try_subscribe():
     """Find the cuff's characteristics and StartNotify on the ones we want."""
@@ -103,7 +135,13 @@ def try_subscribe():
         except dbus.DBusException as e:
             print(f"!!! StartNotify failed on {WANT[uuid]}: {e}", flush=True)
 
-def on_props(iface, changed, invalidated, path=None):
+def on_props(iface, changed, _invalidated, path=None):
+    # path is keyword-supplied by the signal receiver and is always a str here,
+    # but guard anyway: a None slipping through would raise inside the handler
+    # and D-Bus swallows handler exceptions, which is how a watcher goes silent
+    # while still looking alive.
+    if not path:
+        return
     if iface == DEV and CUFF_PATH_FRAG in path:
         if "Connected" in changed:
             print(f">>> Connected = {bool(changed['Connected'])}", flush=True)
@@ -111,6 +149,7 @@ def on_props(iface, changed, invalidated, path=None):
                 subscribed.clear()
         if changed.get("ServicesResolved"):
             print(">>> ServicesResolved -- subscribing", flush=True)
+            dump_gatt()
             try_subscribe()
     if iface == CHRC and "Value" in changed and CUFF_PATH_FRAG in path:
         raw = bytes(bytearray(changed["Value"]))
@@ -119,7 +158,7 @@ def on_props(iface, changed, invalidated, path=None):
         print(f"  hex: {raw.hex()}", flush=True)
         print(f"  arr: [{', '.join(f'0x{x:02X}' for x in raw)}]", flush=True)
         dec, err = decode_2a35(raw)
-        if err:
+        if err or dec is None:
             print(f"  DECODE ERROR: {err}", flush=True)
         else:
             for k, v in dec.items():
