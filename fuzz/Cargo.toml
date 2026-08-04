@@ -1,0 +1,23 @@
+# Its own workspace: cargo-fuzz builds with nightly and its own profile, and
+# libfuzzer-sys pulls in `unsafe`, which the parent workspace forbids.
+[package]
+name = "vitals-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+vitals-decode = { path = "../crates/vitals-decode" }
+
+[[bin]]
+name = "fuzz_sfloat"
+path = "fuzz_targets/fuzz_sfloat.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]

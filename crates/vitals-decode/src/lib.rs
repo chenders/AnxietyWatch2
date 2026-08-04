@@ -1,7 +1,7 @@
 //! Pure decoders for physiological sensor wire formats.
 //!
 //! Every function here parses **attacker-controlled input** — a malformed
-//! advertisement or a truncated GATT indication is what BlueZ hands you when a
+//! advertisement or a truncated GATT indication is what `BlueZ` hands you when a
 //! device browns out mid-packet. The crate is therefore deliberately minimal:
 //!
 //! - `#![no_std]`, no allocation, no I/O, no global state.

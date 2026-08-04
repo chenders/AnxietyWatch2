@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # sync-to-pi.sh — push the working tree to the-pi and optionally build+test.
 #
-# For anything host:pi — BlueZ, epoll, systemd, sd_notify, getrandom(2), or any
+# For anything host:pi — BlueZ, Postgres, systemd, or any
 # debugging of them. macOS cannot compile that code, let alone run it, and a
 # Mach-O binary will not execute on the Pi regardless.
 #
@@ -22,9 +22,9 @@ echo "synced → $HOST:$REMOTE"
 
 case "${1:-}" in
   --build)
-    ssh "$HOST" "cd $REMOTE && cmake -B build -DCMAKE_BUILD_TYPE=Debug -G Ninja >/dev/null && cmake --build build"
+    ssh "$HOST" "cd $REMOTE && cargo build --workspace"
     ;;
   --test)
-    ssh "$HOST" "cd $REMOTE && cmake -B build -DCMAKE_BUILD_TYPE=Debug -G Ninja >/dev/null && cmake --build build && ctest --test-dir build --output-on-failure"
+    ssh "$HOST" "cd $REMOTE && cargo build --workspace && cargo test --workspace"
     ;;
 esac

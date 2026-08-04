@@ -47,8 +47,8 @@ pane renders (`grep -n '^- \[' tasks.md`).
 
 - [ ] T-A1 — Migrate root filesystem to NVMe · human · pi
 - [ ] T-A2 — Audio output path · human · pi
-- [ ] T-A3 — Bring up the Sena UD100-G03 as hci1 · implement-standard · pi · **gate G1 owner**
-- [ ] T-A4 — Disable onboard Bluetooth · mechanical · pi · **blocked by G1**
+- [x] T-A3 — Bring up the Sena UD100-G03 · implement-standard · pi · **gate G1 owner**
+- [x] T-A4 — Disable onboard Bluetooth · mechanical · pi · **blocked by G1**
 - [ ] T-A5 — Watchdog, governor, update policy · mechanical · pi
 - [ ] T-B1 — Eight-hour Polar H10 capture · implement-complex · pi · **review**
 - [ ] T-C1 — PostgreSQL 16 bare metal on NVMe · implement-standard · pi · **blocked by G2**
@@ -149,7 +149,7 @@ is Stage 5.
 
 ---
 
-### T-A3 — Bring up the Sena UD100-G03 as `hci1`
+### T-A3 — Bring up the Sena UD100-G03
 
 **Tier:** implement-standard · **Host:** pi · **Context budget:** ~3k · **Depends:** none
 **Amends:** none
@@ -276,14 +276,17 @@ Rationale: with one adapter, a collector binding the wrong radio stops being a p
 ### T-B1 — Eight-hour Polar H10 capture
 
 **Tier:** implement-complex · **Host:** pi · **Context budget:** ~5k · **Depends:** T-A4
-**Amends:** 04 (§1 RR beat-time reconstruction) · 03 (§1 tactile evidence) · 05 (§1.4 clock drift, §4.3 IRK pairing)
+**Amends:** 06 (§1.2 seq scope, §3 bonded-but-unencrypted state) · 05 (§1.4 clock drift, §4.3 IRK pairing) · 04 (§1 RR beat-time reconstruction) · 03 (§1 tactile evidence)
 **Review required:** yes
 
 The entire project rests on the Pi holding a BLE connection all night. **Measure this before
 building anything on top of it.** Deliberately placed before the storage and core work.
 
-**Creates:** `crates/hr-spike/` (a throwaway binary crate),
-`~/vitals/spike/gap_histogram.py`
+**Creates:** `crates/hr-spike/` (a throwaway binary crate), `tools/gap_histogram.py`
+
+Both are committed. An earlier version put the histogram script at `~/vitals/spike/` — outside the
+repo — while the Verify line depends on it and the commit block staged only `tasks.md`, so the
+script the acceptance check runs was never version-controlled.
 
 **Do:**
 
@@ -291,50 +294,90 @@ building anything on top of it.** Deliberately placed before the storage and cor
    ```sh
    sudo apt-get update && sudo apt-get install -y libdbus-1-dev bluez
    ```
-2. Write `~/vitals/spike/hr_capture.c`. Use BlueZ over D-Bus (`org.bluez.GattCharacteristic1`),
-   subscribe to Heart Rate Measurement `00002a37-0000-1000-8000-00805f9b34fb`, and append one line
-   per notification to stdout: `<unix_epoch_seconds_float> <hr_bpm> <rr_ms,rr_ms,...>`.
+2. Write `crates/hr-spike/src/main.rs`. Use the `bluer` crate for BlueZ over D-Bus, subscribe to
+   Heart Rate Measurement `00002a37-0000-1000-8000-00805f9b34fb`, and append one line per
+   notification to stdout: `<unix_epoch_seconds_float> <hr_bpm> <rr_ms,rr_ms,...>`.
 
    Decode `0x2A37` per the SIG spec — flags byte first:
-   ```c
+   ```rust
    // byte 0 = flags: bit0 HR is uint16 (else uint8), bit3 energy present, bit4 RR present
-   size_t off = 1;
-   uint8_t flags = buf[0];
-   uint16_t hr;
-   if (flags & 0x01) { if (len < off+2) return -1; hr = buf[off] | (buf[off+1] << 8); off += 2; }
-   else              { if (len < off+1) return -1; hr = buf[off]; off += 1; }
-   if (flags & 0x08) { if (len < off+2) return -1; off += 2; }   // energy expended, skipped
+   let flags = *buf.first()?;
+   let mut off = 1usize;
+   let hr: u16 = if flags & 0x01 != 0 {
+       let v = u16::from_le_bytes(buf.get(off..off + 2)?.try_into().ok()?);
+       off += 2;
+       v
+   } else {
+       let v = u16::from(*buf.get(off)?);
+       off += 1;
+       v
+   };
+   if flags & 0x08 != 0 {
+       buf.get(off..off + 2)?;   // energy expended, skipped -- but still bounds-checked
+       off += 2;
+   }
    // remaining bytes are RR intervals, uint16 LE, units of 1/1024 s
-   while (off + 2 <= len) {
-       uint16_t rr_raw = buf[off] | (buf[off+1] << 8); off += 2;
-       double rr_ms = rr_raw * 1000.0 / 1024.0;
-       emit_rr(rr_ms);
+   let mut rr_ms = Vec::new();
+   while let Some(chunk) = buf.get(off..off + 2) {
+       let raw = u16::from_le_bytes(chunk.try_into().ok()?);
+       rr_ms.push(f64::from(raw) * 1000.0 / 1024.0);
+       off += 2;
    }
    ```
-   Every bounds check above is required. `len` is attacker-controlled radio input.
-3. Build with `cargo build --release -p hr-spike`. Use the `bluer` crate for BlueZ over D-Bus.
-4. Pair and trust the H10 once:
+   `get()` rather than indexing — the crate denies `indexing_slicing`, and `buf` is
+   attacker-controlled radio input. Returning `None` on a short buffer is the whole point: a
+   truncated notification must be *absent*, never a partially-decoded reading.
+3. Build with `cargo build --release -p hr-spike`.
+4. Pair the H10 once, and **register auto-connect** (A05 §4.3, amendment 06 §3):
    ```sh
-   bluetoothctl --timeout 30 scan on
-   bluetoothctl pair <H10_MAC>; bluetoothctl trust <H10_MAC>
+   # bluetoothctl's `scan on` emits nothing when its output is piped, and its
+   # `connect` has been observed issuing no LE Create Connection at all. Use
+   # btmgmt to discover and to register intent with the kernel.
+   sudo btmgmt find                       # note the H10's address
+   sudo bluetoothctl pair <H10_MAC>       # bonding stores the IRK
+   sudo btmgmt add-device -a 2 -t 1 <H10_MAC>   # action 2 = auto-connect
    ```
+   **`trust` is not sufficient and is not the mechanism.** A05 §4.3: a device implementing LE
+   Privacy rotates its address and static-MAC trust then fails silently. Bonding stores the IRK;
+   identify by IRK, not address. The kernel accept-list does the connecting, because a userspace
+   poll cannot reliably catch a short advertising window.
+
+   Distinguish three states, not two (amendment 06 §3): **device not found** (pairing fault),
+   **out of range** (normal), and **bonded but `ServicesResolved` never fired within 10 s**
+   (encryption could not resume — looks exactly like a quiet night, and is not one).
 5. Run the capture overnight under systemd-run so it survives your SSH session:
    ```sh
-   systemd-run --user --unit=hrspike --setenv=H10_MAC=<mac> \
-     ~/vitals/spike/build/hr_capture > ~/vitals/spike/night1.log
+   # --pipe, an ABSOLUTE ExecStart, and the redirect on systemd-run itself.
+   # Without --pipe the child's stdout goes to the journal and the shell
+   # redirect captures only "Running as unit: hrspike.service" -- an 8-hour
+   # capture into a one-line file, which the Verify then happily reads.
+   # A relative path resolves against the unit's WorkingDirectory, not yours.
+   systemd-run --user --pipe --unit=hrspike --setenv=H10_MAC=<mac> \
+     "$PWD/target/release/hr-spike" > ~/vitals/spike/night1.log
    ```
-6. In the morning, compute the gap histogram with `gap_histogram.py`: read the log, diff consecutive
-   timestamps, and print count of gaps in each bucket `<2s, 2-10s, 10-60s, 60s-5m, >5m`, plus total
-   duration, total RR count, and longest gap.
+6. In the morning, compute the gap histogram with `tools/gap_histogram.py`: read the log, diff
+   consecutive timestamps, and print count of gaps in each bucket `<2s, 2-10s, 10-60s, 60s-5m, >5m`,
+   plus total duration, total RR count, and longest gap.
+   Also report, per A05 §1.4 and §5:
+   - **observed clock drift** — fit cumulative RR sum against host arrival time; a rate outside
+     ±0.5% is a sensor or host clock fault, not normal. Nothing else in this system will measure it.
+   - **Dropped-notification count**, not a `seq` gap count. A05 §1.3 offers `max(seq) - count(*)`
+     as the lost-beat metric, but A05 §1.1 defines RR `seq` as the count of intervals *received*,
+     which is dense by construction — so that expression is identically zero and cannot detect
+     anything. The H10 transmits no beat counter (the same payload anonymity amendment 06 §1
+     documents for the cuff). Estimate drops instead from the ratio of elapsed wall time to summed
+     RR duration per connection, and report it as an estimate.
 7. Record the histogram verbatim in `## Implementation notes`. **This number is the project's
    foundation — if the longest gap exceeds 5 minutes, stop and report before proceeding.**
 
-**Verify:** `ssh $PI_HOST 'python3 ~/vitals/spike/gap_histogram.py ~/vitals/spike/night1.log --require-duration-hours 8 --max-gap-seconds 300'`
-**Expect:** exit 0. The script must exit nonzero if duration < 8 h or longest gap > 300 s.
+**Verify:** `ssh $PI_HOST 'cd ~/AnxietyWatch2 && python3 tools/gap_histogram.py ~/vitals/spike/night1.log --require-duration-hours 8 --max-gap-seconds 300 --require-drift-report'`
+**Expect:** exit 0. The script must exit nonzero if duration < 8 h, if longest gap > 300 s, or if
+`--require-drift-report` was passed and no drift figure could be computed. A flag a script may
+accept and ignore is a check that cannot fail.
 
 **Commit:**
 ```sh
-git add openspec/changes/pi5-vitals-core/tasks.md
+git add openspec/changes/pi5-vitals-core/tasks.md crates/hr-spike/ tools/gap_histogram.py
 git commit -m "spike(T-B1): record 8-hour Polar H10 capture gap histogram"
 ```
 
@@ -527,15 +570,20 @@ on the-pi.
 ### T-D1 — Registry TOML and codegen
 
 **Tier:** implement-standard · **Host:** mac · **Context budget:** ~5k · **Depends:** none
-**Amends:** 01 (§3.1 hypertable) · 02 (§2.2 reserved columns) · 04 (§1 identity, §8 no HLC)
+**Amends:** 01 (§3.1 hypertable) · 02 (§2.2 reserved columns) · 04 (§1 identity, §8 clocks removed)
 **Review required:** no
 
-The keystone. One file declares every source, type, canonical unit, and valid range; four artifacts
+The keystone. One file declares every source, type, canonical unit, and valid range; three artifacts
 are generated from it. `"polar_h10"` exists in exactly one place and is an integer everywhere else.
 
 **Creates:** `vitals/registry.toml`, `vitals/tools/gen_registry.py`,
-`vitals/generated/vitals_types.h`, `vitals/generated/registry.sql`,
-`vitals/generated/VitalsRegistry.swift`, `vitals/generated/registry.json`
+`crates/vitals-registry/src/generated.rs`, `vitals/generated/registry.sql`,
+`vitals/generated/registry.json`
+
+The Swift artifact is **dropped** — the iPhone is a thin client that reads the API, not a consumer
+of the registry. Sqitch owns table *structure* (`db/deploy/`), so `registry.sql` emits reference-data
+`INSERT`s only; two systems declaring the same table is how a migration silently diverges from the
+schema it is migrating.
 
 **Do:**
 
@@ -575,29 +623,36 @@ are generated from it. `"polar_h10"` exists in exactly one place and is an integ
    ```
    `indication = true` records that `0x2A35` requires CCCD `0x0002`. Writing `0x0001` yields a
    successful subscription that delivers nothing.
-2. Write `vitals/tools/gen_registry.py` — stdlib only, `tomllib`. It emits all four artifacts. Each
-   generated file starts with `/* GENERATED FROM registry.toml — DO NOT EDIT */`.
-   - `vitals_types.h`: `VITALS_TYPE_HR = 1`, `VITALS_TYPE_BP_SYSTOLIC = 6`, … **and**
-     `VITALS_SOURCE_EMAY = 0`, `VITALS_SOURCE_POLAR_H10 = 1`, `VITALS_SOURCE_AD_UA651BLE = 6`, …
-     (both enums — later tasks reference `VITALS_SOURCE_*` by name). Plus `vitals_type_range(int)`
-     returning `{double lo, hi}` and `vitals_type_unit(int)` returning a `const char *`.
-   - `registry.sql`: `vitals_type` and `vitals_source` lookup tables with `INSERT`s, plus a
-     `CHECK` on `samples.type` referencing them.
-   - `VitalsRegistry.swift`: `public enum VitalsType: Int32` and `VitalsSource: Int32`.
-   - `registry.json`: the parsed structure verbatim, for Python and the API layer.
+2. Write `vitals/tools/gen_registry.py` — stdlib only, `tomllib`. It emits all three artifacts. Each
+   generated file starts with a `GENERATED FROM registry.toml — DO NOT EDIT` banner in that file's
+   comment syntax.
+   - `crates/vitals-registry/src/generated.rs`: `#[repr(i32)]` enums `VitalsType` and `VitalsSource`
+     with explicit discriminants (`Hr = 1`, `BpSystolic = 6`, `Emay = 0`, `PolarH10 = 1`,
+     `AdUa651ble = 6`, …), plus `pub const fn range(self) -> (f64, f64)` and
+     `pub const fn unit(self) -> &'static str`. `#![no_std]`, no allocation — this crate is a
+     dependency of the decoders.
+     A real enum rather than integer constants is the point: an `i32` that could hold any value is
+     what lets a source id and a type id be transposed at a call site without the compiler noticing.
+   - `registry.sql`: `INSERT`s into the `vitals_type` and `vitals_source` lookup tables. **Reference
+     data only** — sqitch owns `CREATE TABLE`.
+   - `registry.json`: the parsed structure verbatim, for the API layer.
 3. Add a regeneration check so a hand-edited generated file cannot survive CI:
    ```sh
    python3 vitals/tools/gen_registry.py --check
    ```
    which regenerates to a temp dir and diffs, exiting nonzero on difference.
 
-**Verify:** `python3 vitals/tools/gen_registry.py --check && grep -q "VITALS_TYPE_BP_SYSTOLIC = 6" vitals/generated/vitals_types.h`
+   **The check must fail when the generator emits nothing.** A `--check` that compares an empty
+   generator run against its own empty output passes forever and proves nothing; assert each
+   artifact is non-empty and contains at least one known discriminant before diffing.
+
+**Verify:** `python3 vitals/tools/gen_registry.py --check && grep -q "BpSystolic = 6" crates/vitals-registry/src/generated.rs && cargo build -p vitals-registry`
 **Expect:** exit 0.
 
 **Commit:**
 ```sh
-git add vitals/registry.toml vitals/tools/gen_registry.py vitals/generated/
-git commit -m "feat(T-D1): vitals registry TOML and codegen for C, SQL, Swift, JSON"
+git add vitals/registry.toml vitals/tools/gen_registry.py vitals/generated/ crates/vitals-registry/
+git commit -m "feat(T-D1): vitals registry TOML and codegen for Rust, SQL, JSON"
 ```
 
 ---
@@ -616,70 +671,66 @@ nibble and a 12-bit signed mantissa below, and it has reserved sentinels that mu
 never to a number. A naive `_Float16` cast produces plausible-looking garbage, which is the worst
 possible failure in a medical value: 118/74 and 141/92 are both believable.
 
-**Creates:** `vitals/src/sfloat.c`, `vitals/src/sfloat.h`, `vitals/tests/test_sfloat.c`,
-`vitals/fuzz/fuzz_sfloat.c`
+**Creates:** `crates/vitals-decode/src/sfloat.rs`, `fuzz/fuzz_targets/fuzz_sfloat.rs`
 
 **Do:**
 
-1. Write `vitals/src/sfloat.h`:
-   ```c
-   #ifndef VITALS_SFLOAT_H
-   #define VITALS_SFLOAT_H
-   #include <stdbool.h>
-   #include <stdint.h>
-   /* Decodes an IEEE-11073 16-bit SFLOAT.
-    * Returns false for NaN/NRes/±INFINITY/Reserved — the value is ABSENT.
-    * *out is untouched when false is returned. */
-   bool vitals_sfloat_decode(uint16_t raw, double *out);
-   #endif
-   ```
-2. Write `vitals/src/sfloat.c`:
-   ```c
-   #include "sfloat.h"
-   #include <math.h>
+1. Write `crates/vitals-decode/src/sfloat.rs`:
+   ```rust
+   /// Reserved mantissa values. These mean **absent**, never a number.
+   const NAN_: u16 = 0x07FF;
+   const NRES: u16 = 0x0800;
+   const POS_INF: u16 = 0x07FE;
+   const NEG_INF: u16 = 0x0802;
+   const RESERVED: u16 = 0x0801;
 
-   bool vitals_sfloat_decode(uint16_t raw, double *out) {
-       int16_t mantissa = (int16_t)(raw & 0x0FFF);
-       int8_t  exponent = (int8_t)(raw >> 12);
-
-       /* Reserved mantissa values are ABSENT, never numbers. */
-       switch (mantissa) {
-           case 0x07FF:  /* NaN        */
-           case 0x0800:  /* NRes       */
-           case 0x07FE:  /* +INFINITY  */
-           case 0x0802:  /* -INFINITY  */
-           case 0x0801:  /* Reserved   */
-               return false;
-           default: break;
+   /// Decodes an IEEE-11073 SFLOAT.
+   ///
+   /// Returns `None` for NaN, NRes, ±INFINITY and Reserved — all of which mean
+   /// the measurement is absent.
+   pub const fn decode_sfloat(raw: u16) -> Option<f64> {
+       let mantissa = raw & 0x0FFF;
+       if matches!(mantissa, NAN_ | NRES | POS_INF | NEG_INF | RESERVED) {
+           return None;
        }
-       if (exponent >= 0x08) exponent -= 0x10;      /* sign-extend 4-bit  */
-       if (mantissa >= 0x0800) mantissa -= 0x1000;  /* sign-extend 12-bit */
-       *out = (double)mantissa * pow(10.0, (double)exponent);
-       return true;
+       let exponent = ((raw >> 12) as i8) << 4 >> 4;          // sign-extend 4-bit
+       let mantissa = ((mantissa as i16) << 4 >> 4) as i32;   // sign-extend 12-bit
+       Some(mantissa as f64 * powi10(exponent))
    }
    ```
-3. Write `vitals/tests/test_sfloat.c` covering, at minimum:
+   `Option<f64>` rather than a `bool` + out-parameter is the concrete case the C-vs-Rust evaluation
+   argued from: the sentinel cannot be read as a number because there is no number to read. In the C
+   version a caller that ignored the return value silently got an uninitialised `double`.
+
+   Use a lookup table for `powi10` rather than `pow()`, so the crate stays `no_std` with no libm
+   dependency. `#![forbid(unsafe_code)]`; clippy `indexing_slicing`, `unwrap_used`, `panic` and the
+   cast lints at `deny`.
+
+2. Tests in the same file (`#[cfg(test)]`), covering at minimum:
    - `0x0076` → 118.0 (systolic, exponent 0)
    - `0x004A` → 74.0
-   - `0xF04A` → 7.4 (exponent −1, mantissa 74). NOTE: an earlier draft of this brief said `0xF14A`, which is 33.0 — mantissa 0x14A is 330. Verify test vectors by hand.
-   - `0x07FF`, `0x0800`, `0x07FE`, `0x0802`, `0x0801` → all return `false`
-   - `0x0FFF` is *not* a sentinel (mantissa 0xFFF ≠ 0x7FF) → returns true
-   - Compare doubles with `fabs(a-b) < 1e-9`, never `==`.
-4. Write `vitals/fuzz/fuzz_sfloat.c`:
-   ```c
-   #include "../src/sfloat.h"
-   #include <stddef.h>
-   #include <stdint.h>
-   int LLVMFuzzerTestOneInput(const uint8_t *d, size_t n) {
-       if (n < 2) return 0;
-       double v;
-       uint16_t raw = (uint16_t)(d[0] | (d[1] << 8));
-       if (vitals_sfloat_decode(raw, &v)) {
-           /* A decode that succeeds must produce a finite number. */
-           if (!(v == v) || v > 1e300 || v < -1e300) __builtin_trap();
+   - `0xF04A` → 7.4 (exponent −1, mantissa 74). **NOTE:** an earlier draft of this brief said
+     `0xF14A`, which is 33.0 — mantissa `0x14A` is 330. That error survived because the check was
+     "did `ctest` exit 0", not "is the expected value right". Verify every vector by hand.
+   - `0x07FF`, `0x0800`, `0x07FE`, `0x0802`, `0x0801` → all return `None`
+   - `0x0FFF` is *not* a sentinel (mantissa `0xFFF` ≠ `0x7FF`) → returns `Some`
+   - An exhaustive sweep of all 2^16 inputs asserting no panic and that every `Some` is finite.
+   - Compare floats with `(a - b).abs() < 1e-9`, never `==`.
+
+3. Write `fuzz/fuzz_targets/fuzz_sfloat.rs`:
+   ```rust
+   #![no_main]
+   use libfuzzer_sys::fuzz_target;
+   use vitals_decode::sfloat::decode_sfloat;
+
+   fuzz_target!(|data: &[u8]| {
+       let Some(chunk) = data.get(..2) else { return };
+       let raw = u16::from_le_bytes([chunk[0], chunk[1]]);
+       if let Some(v) = decode_sfloat(raw) {
+           // A decode that succeeds must produce a finite number.
+           assert!(v.is_finite(), "decode_sfloat({raw:#06x}) -> {v}");
        }
-       return 0;
-   }
+   });
    ```
 5. Add a `cargo-fuzz` target, and a `kani` proof harness — kani proves absence of panics and
    overflow across all 2^16 inputs symbolically, which fuzzing only approximates (amendment 04 §11).
@@ -698,7 +749,7 @@ git commit -m "feat(T-D2): IEEE-11073 SFLOAT decoder with sentinel handling and 
 ### T-D3 — COPY-binary encoder and spool
 
 **Tier:** implement-complex · **Host:** either · **Context budget:** ~7k · **Depends:** T-D1
-**Amends:** 01 (§2, spool replaces the embedded store) · 02 (§2.2, reserve columns) · 04 (§1, identity) · 05 (§1 session_id/seq derivation)
+**Amends:** 06 (§2.1 sync flag, §1.2 seq scope) · 01 (§2, spool replaces the embedded store) · 02 (§2.2, reserve columns) · 04 (§1, identity) · 05 (§1 session_id/seq derivation)
 **Review required:** yes
 
 **Replaces the embedded store entirely.** There is no on-Pi embedded database and no WAL tail. Read
@@ -734,7 +785,12 @@ pub fn copy_trailer() -> [u8; 2];
 pub struct Spool { /* … */ }
 impl Spool {
     pub fn open(dir: &Path) -> io::Result<Self>;
-    pub fn append(&mut self, rows: &[Sample]) -> io::Result<()>;
+    /// `sync: true` fsyncs the segment before returning (amendment 06 §2.1).
+    /// Without this parameter T-D4 was told to "fsync before replying" through
+    /// an API that exposed no fsync, forcing it to either reach into a crate it
+    /// does not own or invent an extension -- the exact ownership break
+    /// amendment 06 diagnosed one layer up.
+    pub fn append(&mut self, rows: &[Sample], sync: bool) -> io::Result<()>;
     pub fn rotate_if_due(&mut self) -> io::Result<()>;
 }
 ```
@@ -750,15 +806,36 @@ impl Spool {
    - Field order is fixed by `vitals/generated/registry.json` and must match the table exactly.
    - **Tests assert against byte arrays captured from a real server** (`COPY … TO STDOUT (FORMAT
      binary)`), not against the encoder's own output. Self-consistency is not correctness.
-2. `session.rs` — session and sequence management. A `session_id` is minted when a collector
-   connects; `seq` is a monotonic per-session counter. For RR intervals `seq` derives from the
-   cumulative RR sum so it is unaffected by packet arrival jitter or retransmission (amendment 04
-   §1). `node_id` is 16 bytes from `/var/lib/vitals/node_id`, generated once via `getrandom`, and
+2. `session.rs` — session and sequence management.
+
+   **`session_id` must be unique across process restarts, and this is load-bearing.** A per-process
+   counter starting at 0 is the obvious implementation and it silently destroys data: `bp-collector`
+   restarts, re-mints `session_id = 0`, and its next reading lands on `(6, 6, 0, 0)` — the same key
+   as the first reading of a previous run — where `ON CONFLICT DO NOTHING` drops it without a trace.
+   For RR the collision surface is narrow because `seq` is a beat index into the thousands; for BP
+   `seq` is 0–3 every single time, so it is near-total, on the one source amendment 06 §2 says is
+   reconstructible from nothing.
+
+   Mint it from a monotonically increasing persisted counter (`/var/lib/vitals/session_seq`,
+   incremented and fsynced before use) or from a UUID-derived 64-bit value. **Not** from a
+   process-local counter, and **not** from wall-clock time — the RTC can be wrong at boot, which is
+   the whole reason T-A5 exists.
+
+   A `session_id` is minted per **upstream connection** — for `bp-collector` that is the BLE
+   connection to the cuff, not the collector's socket connection to `vitalsd` (amendment 06 §1.1).
+   `seq` is a monotonic per-session counter; for RR intervals it derives from the cumulative RR sum
+   so it is unaffected by arrival jitter or retransmission (amendment 05 §1).
+
+   `node_id` is 16 bytes from `/var/lib/vitals/node_id`, generated once via `getrandom`, and
    **never regenerated** — it is provenance and survives a store rebuild.
 3. `spool.rs` — Linux side. `O_APPEND` writes, `fs4::FileExt::lock_exclusive` on the segment and the
    offset file, `fsync` per batch or every 250 ms, rotate at 64 MB or hourly.
    - The spool header carries a **schema fingerprint**: a hash of column names, order and types.
-   - A collector must never block on disk to deliver a sample; batching bounds loss at 250 ms.
+   - A collector must never block on disk **unless it asked to**. Batching bounds loss at 250 ms
+     for streaming sources; `append(rows, sync: true)` opts a caller into durability-before-return
+     (amendment 06 §2.1). Only `bp-collector` sets it — a BP frame is deleted by the device on the
+     kernel's ATT confirmation and is reconstructible from nothing, while a night of RR is ~250 MB
+     and ~100k appends that per-append fsync would destroy.
 
 **Verify:** `cargo test -p vitals-core && cargo clippy -p vitals-core --all-targets`
 **Expect:** exit 0. Includes a round-trip test: encode 1000 samples, drain into a scratch database,
@@ -780,18 +857,35 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 
 Single writer. Every collector connects; `vitalsd` alone touches the database.
 
-**Creates:** `vitals/src/vitalsd.c`, `vitals/src/proto.c`, `vitals/src/proto.h`,
+**Creates:** `crates/vitalsd/src/main.rs`, `crates/vitals-proto/src/lib.rs`,
 `/etc/systemd/system/vitalsd.service` on the-pi
 
 **Interfaces produced:**
 - Unix socket at `/run/vitals/vitalsd.sock`, mode `0660`, group `vitals`.
 - Wire format: 4-byte LE length prefix + CBOR map. Verbs `append`, `query`, `subscribe`, `health`.
+- **`append` takes `sync: bool`, default `false`** (amendment 06 §2.1). When true, `vitalsd` fsyncs
+  the spool segment **before** replying, so the caller's append does not return until the bytes are
+  durable. Only `bp-collector` sets it: a BP frame is deleted by the device on the kernel's ATT
+  confirmation and is reconstructible from nothing, while a night of RR is ~250 MB and ~100k appends
+  that per-append fsync would destroy. The default path stays batched (T-D3: fsync per batch or
+  every 250 ms), and **a collector must never block on disk unless it asked to.**
 
 **Do:**
 
-1. `vitalsd.c`: `epoll` loop over the listening socket, one connection state per client. Single
-   thread — a single writer needs no locking, and this is the whole reason for the design.
-2. `health` returns, as CBOR: uptime, per-source last-sample age, total rows, WAL size, and the
+1. `crates/vitalsd/src/main.rs`: a `tokio` current-thread runtime accepting on the Unix socket, one
+   task per client. Single-threaded — a single writer needs no locking, and this is the whole reason
+   for the design. `tokio::select!` over accept, per-client reads and the liveness tick replaces the
+   hand-rolled readiness loop; use `LocalSet` so no state needs `Send`.
+1b. **Heartbeat condition (A05 §2.1).** `klaxond`'s pin pulses only if a monitoring window is
+   active AND a primary-source sample arrived within 30 s AND `cns-engine` produced a tier
+   evaluation within 30 s AND the drain offset advanced or the spool is empty. Outside a monitoring
+   window the heartbeat is unconditional. `vitalsd` owns these four facts and exposes them.
+1c. **Subscriber backpressure (A05 §4.11).** Each subscriber gets a bounded queue. On overflow,
+   **drop and count** — never block the collector — and raise a degraded state **naming the
+   subscriber**. A detector that missed samples must know it missed them; the count feeds the same
+   "can't assess" path as a sensor gap.
+2. `health` returns, as CBOR: uptime, per-source last-sample age, total rows, WAL size, the p99
+   radio-to-evaluation latency (A05 §4.9), time since the last tier evaluation (A05 §4.7), and the
    contents of `/var/lib/vitals/restore-verify.json`. **Any blocked or degraded state names its
    blocker and the value that blocked it** — never a bare boolean. A guard that will not say why
    costs an hour of guessing.
@@ -883,81 +977,108 @@ and asserts exactly 10 000 rows with no duplicates and the offset at EOF.
 
 ### T-D6 — `bp-collector` end to end
 
-**Tier:** implement-complex · **Host:** pi · **Context budget:** ~6k · **Depends:** T-D2, T-D4, T-D5
-**Amends:** 04 (§1 identity model) · 02 (§2 batch signing) · 05 (§1 identity from the cuff's own sequence)
+**Tier:** implement-complex · **Host:** pi · **Context budget:** ~7k · **Depends:** T-D2, T-D4, T-D5
+**Amends:** 06 (§1 identity from the transport, §2 durability, §3 device state) · 04 (§1 identity model) · 02 (§2 batch signing) · 05 (§1 identity, §4.3 BLE pairing)
 **Review required:** yes
 
 **GATE G3:** requires T-C3 green. No sample worth keeping is written before a restore works.
 
-The first real producer. The A&D cuff speaks standard `0x1810`, so this is the cleanest possible
-end-to-end proof of the whole path.
+**Reads:** `docs/research/2026-08-03-ua651ble-ble-capture.md` (a live capture from this exact
+hardware — it disproved three things an earlier version of this brief asserted; read it first) ·
+`crates/vitals-decode/fixtures/ua651ble-2a35.md` (step 2's test vectors) ·
+`vitals/registry.toml` (step 4's enum variants) · T-D3's `Sample` and T-D4's socket protocol below.
 
-**Creates:** `vitals/src/collectors/bp_collector.c`, `vitals/src/bp_decode.c`,
-`vitals/src/bp_decode.h`, `vitals/tests/test_bp_decode.c`, `vitals/fuzz/fuzz_bp_decode.c`,
+The first real producer. The cuff speaks standard `0x1810`, so this is the cleanest end-to-end
+proof of the path — but the device is harder to talk to than "standard profile" suggests.
+
+**Creates:** `crates/vitals-decode/src/bp.rs` (currently a doc-comment stub),
+`crates/vitals-collectors/src/bin/bp_collector.rs`, `fuzz/fuzz_targets/fuzz_bp_decode.rs`,
 `/etc/systemd/system/vitals-bp.service` on the-pi
 
 **Do:**
 
-1. Write the pure decoder `vitals/src/bp_decode.h`:
-   ```c
-   typedef struct {
-       bool   has_systolic, has_diastolic, has_map, has_pulse, has_timestamp;
-       double systolic, diastolic, map, pulse;   /* mmHg, mmHg, mmHg, bpm */
-       int64_t timestamp;                        /* UTC epoch seconds, 0 if absent */
-       bool   irregular_pulse;
-       bool   units_kpa;                         /* caller converts; store is mmHg */
-   } bp_measurement;
-   /* Decodes a 0x2A35 Blood Pressure Measurement. Returns false on malformed input. */
-   bool bp_decode_2a35(const uint8_t *buf, size_t len, bp_measurement *out);
+1. Implement `bp_decode_2a35` in `crates/vitals-decode/src/bp.rs`:
+   ```rust
+   pub struct BpMeasurement {
+       pub systolic: Option<f64>,      // mmHg — always mmHg, converted at this boundary
+       pub diastolic: Option<f64>,     // mmHg
+       pub map: Option<f64>,           // mmHg
+       pub pulse_bpm: Option<f64>,
+       pub timestamp: Option<i64>,     // UTC epoch seconds
+       pub user_id: Option<u8>,
+       pub irregular_pulse: bool,
+       pub body_movement: bool,
+       pub cuff_too_loose: bool,
+   }
+   /// Decodes a `0x2A35` Blood Pressure Measurement. `None` on malformed input.
+   pub fn bp_decode_2a35(buf: &[u8]) -> Option<BpMeasurement>;
    ```
-2. Implement per the SIG spec. Flags byte first, then three SFLOATs, then optional fields **in this
-   order**: timestamp (7 bytes), pulse (SFLOAT), user id (1 byte), measurement status (2 bytes).
-   ```c
-   /* flags: bit0 units kPa(1)/mmHg(0), bit1 timestamp, bit2 pulse,
-             bit3 user id, bit4 measurement status */
-   if (len < 7) return false;              /* flags + 3 SFLOATs minimum */
-   uint8_t flags = buf[0]; size_t off = 1;
-   out->units_kpa = flags & 0x01;
-   uint16_t raw;
-   raw = buf[off] | (buf[off+1] << 8); off += 2;
-   out->has_systolic  = vitals_sfloat_decode(raw, &out->systolic);
-   raw = buf[off] | (buf[off+1] << 8); off += 2;
-   out->has_diastolic = vitals_sfloat_decode(raw, &out->diastolic);
-   raw = buf[off] | (buf[off+1] << 8); off += 2;
-   out->has_map       = vitals_sfloat_decode(raw, &out->map);
-   if (flags & 0x02) { if (len < off+7) return false; /* parse timestamp */ off += 7; }
-   if (flags & 0x04) { if (len < off+2) return false;
-                       raw = buf[off] | (buf[off+1] << 8); off += 2;
-                       out->has_pulse = vitals_sfloat_decode(raw, &out->pulse); }
-   if (flags & 0x08) { if (len < off+1) return false; off += 1; }
-   if (flags & 0x10) { if (len < off+2) return false;
-                       uint16_t st = buf[off] | (buf[off+1] << 8); off += 2;
-                       out->irregular_pulse = st & 0x0004; }
-   ```
-   Every `len` check is required — this is attacker-controlled radio input.
-   If `units_kpa`, convert to mmHg (`× 7.50062`) **at this boundary**, so the store only ever holds
-   mmHg for these types.
-3. Tests in `test_bp_decode.c`: a real capture from the cuff; a frame with all optional fields
-   absent; a frame with SFLOAT `0x07FF` in systolic, asserting `has_systolic == false` and that
-   `systolic` is untouched; and a truncated frame at every length from 0 to 20, asserting `false`
-   and no read past `len`.
-4. `fuzz_bp_decode.c` passing the raw buffer straight to `bp_decode_2a35`. Run under ASan.
-5. `bp_collector.c`: connect to the cuff over BlueZ, **write `0x0002` to the CCCD** (indication, not
-   notification — `0x0001` gives a successful subscription that silently delivers nothing forever),
-   decode each indication, and `vitals_append` one sample per present field with
-   `source = VITALS_SOURCE_AD_UA651BLE`.
-   The cuff buffers ~30 readings internally, so the collector drains its memory on connect rather
-   than requiring presence at measurement time.
+   `Option` rather than a `has_*` flag per field — this is the concrete case the C-vs-Rust
+   evaluation argued from. Field order after the flags byte: three SFLOATs (systolic, diastolic,
+   MAP), then timestamp (7 bytes), pulse (SFLOAT), user id (1 byte), status (2 bytes), each present
+   only if its flag bit is set. Bounds-check before every read; the crate is `#![forbid(unsafe_code)]`
+   with `indexing_slicing` denied, so use `get()`.
+
+   If `flags & 0x01` (kPa), convert with `× 7.50062` **here**, so the store only ever holds mmHg.
+
+2. Tests from `crates/vitals-decode/fixtures/ua651ble-2a35.md`: the four real frames with their
+   expected values, plus every synthetic case listed there. The real capture only exercises
+   exponent 0 — the synthetic cases are not optional.
+
+3. `fuzz_bp_decode.rs` passing the raw buffer straight in. Run under ASan.
+
+4. `bp_collector.rs` — and note what the capture proved about this device:
+
+   - **Do not call `Device1.Connect()`.** Confirmed against `btmon`: 269 advertising reports with a
+     completely empty ATT trace and no `LE Create Connection` ever issued. The cuff's radio is dark
+     except for ~5–10 s after a measurement. Register intent with the kernel instead:
+     `btmgmt add-device -a 2 -t 1 <MAC>`, then react to `ServicesResolved`. A collector built on
+     `connect()` works when you trigger the cuff by hand and captures nothing unattended.
+   - **`StartNotify()`, never a hand-written CCCD.** `0x2A35` is `indicate`; writing `0x0001`
+     subscribes successfully and delivers nothing forever.
+   - **Append with `sync: true`, and wait for the reply** (amendment 06 §2.1). BlueZ sends the ATT
+     confirmation from the kernel before this process sees the frame, and the cuff deletes its record
+     on that confirmation. `vitalsd` owns the spool, so the collector cannot fsync it directly —
+     `sync: true` makes `vitalsd` fsync before replying. Do **not** set it on any streaming source.
+   - **Journal the raw bytes before decoding**, fsynced, with arrival time. A decoder bug is then
+     replayable; a lost frame never is. Four frames a day makes this free.
+   - **`seq` is the drain index within one connection**, `session_id` minted per connection
+     (amendment 06 §1.1). The cuff sends no timestamp, user id or counter, so identity comes from the
+     transport: `0x2A35` is an indication and the cuff deletes only on confirmation, which makes
+     redelivery impossible. This is ordering bookkeeping, not dedup.
+   - **Say both true things about the guarantee.** Exactly-once holds for delivery to the host stack;
+     it says nothing about durability in this process (amendment 06 §1.3). That gap is why
+     `sync: true` and the raw journal exist.
+   - **Set `extra` to mark `timestamp` as an arrival estimate** (amendment 06 §1.4). The cuff may
+     have held the reading for hours; a later consumer must not read it as a device timestamp.
+   - **Handle "bonded but cannot resume encryption" as a named degraded state** (amendment 06 §3):
+     bonded device reached `Connected` but `ServicesResolved` never fired within 10 s. On kernel
+     6.12.96 the peripheral's SMP Security Request (`0x0b`) is rejected, so encryption never starts
+     and GATT never opens — indistinguishable from a quiet night. Name the device and the elapsed
+     time; recovery is remove-bond-and-re-pair.
+   - Emit one sample per present field with `source = VitalsSource::AdUa651ble` (from
+     `vitals-registry`'s generated enum — never the integer literal, never the string), and types
+     `systolic → VitalsType::BpSystolic`, `diastolic → BpDiastolic`, `map → BpMap`,
+     **`pulse_bpm → VitalsType::Hr`** (the cuff's `provides` list carries `hr`; there is no
+     `VitalsType::Pulse`).
+
+5. **Investigate whether setting the cuff's clock enables timestamps.** `flags` bit1 was 0 across
+   the whole capture. If writing Date Time (`0x2A08`) or the vendor service
+   `233bf000-5a34-1b6d-975c-000d5690abe4` makes the cuff emit real event times, that replaces an
+   arrival-time estimate with a true one and resolves the identity gap above. Record the result in
+   the research doc either way — a negative result is worth as much here.
+
 6. Install `vitals-bp.service`, `WantedBy=multi-user.target`, `Restart=always`.
+
 7. **Take a real blood pressure reading.** Confirm it lands.
 
-**Verify:** `ssh $PI_HOST 'cd ~/AnxietyWatch2 && cargo test -p vitals-decode bp_decode && cargo fuzz run bp_decode -- -max_total_time=60 && psql -U vitals -tAc "SELECT count(*) FROM samples WHERE source=6 AND type=6" | awk "\$1 > 0"'`
+**Verify:** `ssh $PI_HOST 'cd ~/AnxietyWatch2 && cargo test -p vitals-decode bp && cargo fuzz run fuzz_bp_decode -- -max_total_time=60 && psql -U vitals -tAc "SELECT count(*) FROM samples WHERE source=6 AND type=6" | awk "\$1 > 0"'`
 **Expect:** exit 0; tests pass; fuzzer clean at 60 s; at least one systolic row present with
 `source = 6`.
 
 **Commit:**
 ```sh
-git add vitals/src/bp_decode.c vitals/src/bp_decode.h vitals/src/collectors/bp_collector.c vitals/tests/test_bp_decode.c vitals/fuzz/fuzz_bp_decode.c
+git add crates/vitals-decode/src/bp.rs crates/vitals-collectors/src/bin/bp_collector.rs fuzz/fuzz_targets/fuzz_bp_decode.rs
 git commit -m "feat(T-D6): A&D UA-651BLE collector via standard 0x1810 blood pressure service"
 ```
 
@@ -988,3 +1109,86 @@ reading in the store.
 
 <!-- Conductor: record scope deltas, measured results, and decisions here as they happen.
      T-B1's gap histogram goes here verbatim — it is the project's foundational measurement. -->
+
+### T-A3 — Sena UD100-G03 · PASSED 2026-08-03
+
+Verify exited 0: two controllers present, `hci1` UP RUNNING. **Gate G1 is open.**
+
+```
+lsusb    0a12:0001 Cambridge Silicon Radio, Ltd Bluetooth Dongle (HCI mode)
+hci1     BD Address 00:01:95:XX:XX:XX   Bus: USB   UP RUNNING
+         HCI Version 4.0 (0x6)  Revision 0x2031
+         LMP Version 4.0 (0x6)  Subversion 0x2031
+         Manufacturer: Cambridge Silicon Radio (10)
+hci0     BD Address 2C:CF:67:XX:XX:XX   Bus: UART  (onboard, still up)
+```
+
+**Authenticity.** CSR dongles reporting `0a12:0001` are among the most counterfeited USB parts, so
+this was checked rather than assumed: the BD address OUI `00:01:95` belongs to **Sena Technologies**,
+and `HCI Version 4.0` matches the advertised Bluetooth 4.0 Class 1 part. Genuine.
+
+**LE scan (25 s on hci1)** discovered 23 devices, including two project sensors:
+
+| Device | Address |
+|---|---|
+| `ResMed device` — the AirSense 11 | `50:32:5F:XX:XX:XX` |
+| `SleepO2-2_XXXX` — the EMAY oximeter | `D9:80:A3:XX:XX:XX` |
+
+No Polar H10 — expected, it only advertises when worn with a moist strap.
+
+**Two findings for later tasks:**
+
+1. **`hci1` came up RF-killed on first attempt** (`Operation not possible due to RF-kill (132)`) and
+   succeeded on retry a few seconds later — the dongle was still initialising after `btusb` bound.
+   Collector startup must **retry adapter bring-up with backoff**, not fail on first error. `rfkill`
+   was not installed; now is.
+2. **`hci1` is not brought up at boot.** `bluetooth.service` is enabled but nothing raises the second
+   adapter, so after a reboot it will be DOWN. T-A4 must add a unit that brings up the surviving
+   adapter and **verifies it is RUNNING**, otherwise the box reboots into a state with no working
+   Bluetooth and no complaint.
+
+Finding 2 matters more than it looks: it is the same shape as every other silent failure in this
+project — the service is `active`, the adapter is dead, and nothing says so.
+
+### T-A4 — Disable onboard Bluetooth · PASSED 2026-08-03
+
+Verify exited 0: exactly one controller, and it is the USB one. A 20 s LE scan on the surviving
+adapter still finds the AirSense 11 and the EMAY oximeter.
+
+```
+hci0    BD Address 00:01:95:XX:XX:XX   Bus: USB   UP RUNNING     (the Sena)
+        1 controller total; the onboard UART radio is gone
+config.txt:50  dtoverlay=disable-bt
+backup         /boot/firmware/config.txt.pre-disable-bt
+hciuart        disabled
+```
+
+**The Sena renumbered from `hci1` to `hci0`** once the onboard adapter was removed — adapter indices
+are assigned in registration order, not fixed to a device. `vitals-bt-up` handled it because it
+selects the first adapter rather than hardcoding an index, which is why it is written that way.
+
+**Every remaining reference to `hci1` in this repo is now wrong.** Collectors must select the adapter
+by **BD address or by "the only adapter"**, never by index — an index that changed once can change
+again when a second radio is added.
+
+### Order of operations, and why it mattered
+
+T-A3 passed but only proved `hci1` worked *at that moment*. It did not prove the adapter survives a
+reboot — and nothing brought it up at boot, so `bluetooth.service` would have reported `active` with
+a dead radio. Disabling the onboard adapter first would have left the box with no working Bluetooth
+and no complaint.
+
+So `vitals-bt-up.service` went in first and was **proven across a real reboot while `hci0` was still
+present as a fallback**, and only then was the onboard radio disabled. There was never a moment where
+a reboot could have produced a Bluetooth-less box.
+
+The unit retries with backoff because the dongle returned `RF-kill (132)` when addressed before
+`btusb` finished binding, and it **fails loudly** — `Restart=on-failure` plus a nonzero exit — rather
+than absorbing the error. A bring-up that cannot fail is the same as no bring-up.
+
+### Rollback
+
+```sh
+sudo cp /boot/firmware/config.txt.pre-disable-bt /boot/firmware/config.txt
+sudo systemctl enable hciuart && sudo reboot
+```

@@ -3,7 +3,7 @@ resolver = "3"
 members = [
     "crates/vitals-registry",   # generated types from registry.toml
     "crates/vitals-decode",     # pure wire decoders — no_std, no alloc
-    "crates/vitals-core",       # HLC, COPY encoder, spool
+    "crates/vitals-core",       # shared value types, COPY encoder, spool
 ]
 
 [workspace.package]
