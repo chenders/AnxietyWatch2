@@ -1,0 +1,14 @@
+# Hide the mouse cursor on the bedside panel.
+#
+# The Pi's HDMI CEC endpoints (vc4-hdmi-0, vc4-hdmi-1) present themselves to
+# libinput as "keyboard pointer" devices even with nothing plugged into HDMI.
+# Because a pointer device exists, cage draws a pointer -- an arrow parked in
+# the middle of the panel, over a vital sign, on a touchscreen with no mouse.
+#
+# It cannot be fixed from the page: `cursor: none` in CSS only controls the
+# cursor over a client surface, and this one is drawn by the compositor. cage
+# has no flag for it either. So the device is removed from libinput's view
+# instead, which is the layer the cursor actually comes from.
+#
+# The touchscreen (generic ft5x06) is untouched and keeps working.
+SUBSYSTEM=="input", ATTRS{name}=="vc4-hdmi-*", ENV{LIBINPUT_IGNORE_DEVICE}="1"

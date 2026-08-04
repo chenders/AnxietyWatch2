@@ -11,7 +11,10 @@
 #   sudo systemctl disable --now panel-kiosk
 #   sudo systemctl enable --now lightdm
 Description=AnxietyWatch bedside panel - kiosk (cage)
-After=systemd-user-sessions.service panel-http.service getty@tty1.service
+# plymouth-quit-wait matters: with no display manager installed there is
+# nothing else to make plymouth release the DRM master, and it was still
+# active while cage sat with no display.
+After=systemd-user-sessions.service plymouth-quit-wait.service panel-http.service getty@tty1.service
 Wants=panel-http.service
 Conflicts=getty@tty1.service
 
@@ -37,7 +40,10 @@ Environment=XDG_SESSION_TYPE=wayland
 # prompt over the panel on first run. It is not a chromium dialog, so
 # --noerrdialogs never had a chance at it, and a modal over a bedside monitor
 # is exactly what that flag list exists to prevent.
-ExecStart=/usr/bin/cage -- /usr/bin/chromium-browser --kiosk --noerrdialogs --disable-infobars --incognito --disable-session-crashed-bubble --password-store=basic --disable-features=Translate --check-for-update-interval=31536000 --ozone-platform=wayland "http://127.0.0.1:8975/index.html?kiosk=1&live&demo"
+# The launcher waits for the DSI connector and resolves which DRM card holds
+# it before exec-ing cage. See the script for the two cold-boot failures that
+# made both steps necessary.
+ExecStart=/usr/local/bin/panel-kiosk-launch /usr/bin/chromium-browser --kiosk --noerrdialogs --disable-infobars --incognito --disable-session-crashed-bubble --password-store=basic --disable-features=Translate --check-for-update-interval=31536000 --ozone-platform=wayland "http://127.0.0.1:8975/index.html?kiosk=1&live&demo"
 Restart=always
 RestartSec=5
 
