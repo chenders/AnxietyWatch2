@@ -35,10 +35,13 @@ COMMITS="$(git rev-list "$RANGE" 2>/dev/null || echo '')"
 printf '\n── pre-push gates ──\n'
 
 # ── 1. never push to main directly ────────────────────────────────────────────
-BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+# Gate on the REMOTE ref, not the local branch name. Checking the local branch
+# leaves a hole: `git push origin HEAD:main` or `git push origin feature:main`
+# from any branch targets refs/heads/main and would sail through. Merges happen
+# via squash-merge on GitHub, so nothing legitimate ever pushes to main.
 while read -r _ _ remote_ref _; do
-  [[ "$remote_ref" == "refs/heads/main" && "$BRANCH" == "main" ]] && \
-    fail "direct push to main. Branch first: git checkout -b <name> main"
+  [[ "$remote_ref" == "refs/heads/main" ]] && \
+    fail "push targets refs/heads/main. Open a PR instead; merges happen on GitHub."
 done < <(cat)
 
 # ── 2. secrets ────────────────────────────────────────────────────────────────
