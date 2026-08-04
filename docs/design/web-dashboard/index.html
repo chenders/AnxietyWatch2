@@ -224,7 +224,19 @@ function lane(vals,cfg){
 }
 
 function trend(key){
-  const days = S.win, r = rng(4241 + days + key.charCodeAt(0));
+  const days = S.win;
+  /* Seeded from the WHOLE key, not its first character. `key.charCodeAt(0)`
+     gave "hr" and "hrv" the same seed — both start with h — so the two cards
+     drew the identical random walk, differing only in scale. Two independent
+     physiological signals that move in lockstep is exactly the kind of thing a
+     reader would try to interpret. FNV-1a over the key removes the collision
+     class rather than just this instance of it. */
+  let seed = 2166136261 >>> 0;
+  for (let i = 0; i < key.length; i++) {
+    seed = (seed ^ key.charCodeAt(i)) >>> 0;
+    seed = Math.imul(seed, 16777619) >>> 0;
+  }
+  const r = rng((seed + days * 2654435761) >>> 0);
   /* The unit is the unit and nothing else. The imported design repeated the
      measure inside it ("% min SpO2 (nadir)" next to a label already reading
      "NIGHTLY SpO2 NADIR"), which both said the same thing twice and wrapped the
