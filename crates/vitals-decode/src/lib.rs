@@ -28,4 +28,5 @@ pub mod bp;
 pub mod hr;
 pub mod sfloat;
 
+pub use hr::decode_2a37;
 pub use sfloat::decode_sfloat;
