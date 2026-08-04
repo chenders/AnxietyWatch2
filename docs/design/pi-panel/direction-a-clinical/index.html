@@ -582,7 +582,7 @@ function up() {
 /* ── resting / wake ────────────────────────────────────────────────────────
    Only `clear` ever rests. Anything else is either an alarm or an unanswered
    question, and both must stay lit. */
-const S = { state: "clear", restTimer: 0, live: false, panel: 0, indicatorUntil: 0, indicatorTimer: 0 };
+const S = { state: "clear", restTimer: 0, live: false, panel: 0, indicatorUntil: 0, indicatorTimer: 0, mounted: null };
 function armRest() {
   clearTimeout(S.restTimer);
   if (S.state !== "clear") return;
@@ -840,67 +840,278 @@ function creativeFooter(st) {
 }
 
 /* ── HORIZON ────────────────────────────────────────────────────────────────
-   SpO2 drawn as a landscape at night, time flowing right to left. You do not
-   read this one; you notice it. A desaturation is the horizon sinking, which
-   the eye catches from across a dark room at an angle, half asleep, without
-   focusing — which is more than can be said for a number.
+   SpO2 drawn as a body of water seen from below the surface, time flowing
+   right to left. You do not read this one; you notice it. A desaturation is
+   the surface sinking, which the eye catches across a dark room, at an angle,
+   half asleep, without focusing — more than can be said for a number.
 
-   A gap is not a flat horizon. The land simply is not there, and a dashed rule
-   marks where it stopped, because a continuous skyline over missing samples
-   would be the most persuasive lie this panel could tell. */
+   ONE BUBBLE PER HEARTBEAT. The bubbles are not decoration and they are not a
+   rate dial: each one is a single measured beat, released at the interval the
+   ring actually reported, so the field rises faster because the heart is
+   beating faster, not because a parameter was turned up. Bigger bubbles rise
+   faster (as real ones do, buoyancy scaling with volume), and every bubble
+   pops when it reaches the surface *above its own x*, with a ring sized to it.
+
+   THE HONESTY RULES SURVIVE THE PRETTINESS, which is the whole point:
+     · No pulse reading -> no bubbles. Not slower bubbles, not the last known
+       rate: none. A bubble field running on a remembered rate would be the
+       panel inventing a heartbeat, which is the worst thing anything here
+       could do.
+     · No SpO2 at some x -> there is no water there. The surface is absent, not
+       flat, and a bubble arriving in that column finds no surface, does not
+       pop, and leaves the top. A flat surface would be a claim; an empty one
+       is the truth.
+     · The big number goes to "?" when stale. The water does not.
+
+   Motion is smooth and slow — no flashing. The pop is a single expanding ring
+   over ~450ms, an order of magnitude away from anything photosensitive. */
+
+const HZ = {
+  BASE: 330,            // y of 80% saturation; the surface never falls below it
+  TOP: 30,              // y of 100%
+  LO: 80, HI: 100,
+  FLOOR: 470,           // bubbles are born just off the bottom edge
+  MAX_BUBBLES: 90,      // a ceiling so a runaway rate cannot swamp the Pi
+  FPS: 30,              // half of 60: smooth enough to read as fluid, half the GPU
+};
+
+const hzState = { raf: 0, last: 0, bubbles: [], pops: [], nextBeat: 0, st: null, ctx: null };
+
 function renderHorizon(st) {
-  const W = 800, H = 300, BASE = 330;
-  const vals = live.hist.length ? live.hist.map(r => r.s) : [];
-  const lo = 80, hi = 100;
-  const y = (v) => BASE - ((Math.max(lo, Math.min(hi, v)) - lo) / (hi - lo)) * H;
-  const n = Math.max(vals.length, 2);
-  const x = (i) => (i / (n - 1)) * W;
-
-  let land = "", edge = "", run = [];
-  const flush = () => {
-    if (run.length > 1) {
-      const d = run.map((pt, k) => (k ? "L" : "M") + pt).join(" ");
-      const first = run[0].split(",")[0], last = run[run.length - 1].split(",")[0];
-      land += `<path d="${d} L${last},${BASE} L${first},${BASE} Z" fill="url(#hz)"/>`;
-      land += `<path d="${d}" fill="none" stroke="#7FD4DE" stroke-width="2" stroke-linejoin="round" opacity=".9"/>`;
-    }
-    run = [];
-  };
-  vals.forEach((v, i) => {
-    if (v == null) { flush(); return; }
-    run.push(`${x(i).toFixed(1)},${y(v).toFixed(1)}`);
-  });
-  flush();
-  // Mark every break so a hole reads as a hole and not as open sky.
-  let gapping = false;
-  vals.forEach((v, i) => {
-    if (v == null && !gapping) { gapping = true; edge += `<line x1="${x(i).toFixed(1)}" y1="40" x2="${x(i).toFixed(1)}" y2="${BASE}" stroke="#8B97A3" stroke-width="1.5" stroke-dasharray="3 6"/>`; }
-    else if (v != null) gapping = false;
-  });
-
-  const cur = st.params && st.params[0];
-  const stale = !cur || cur.stale;
+  // The scene is a canvas so it can animate across polls; the text is DOM so
+  // it stays crisp and reuses esc().
   return `<div style="width:800px;height:480px;position:relative;background:#000308;overflow:hidden;font-family:var(--sans)">
-    <svg width="800" height="480" style="position:absolute;inset:0">
-      <defs><linearGradient id="hz" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stop-color="#123540" stop-opacity=".85"/>
-        <stop offset="100%" stop-color="#04121a" stop-opacity=".15"/>
-      </linearGradient></defs>
-      ${land}${edge}
-    </svg>
-    <div style="position:absolute;left:34px;top:26px;display:flex;flex-direction:column;gap:2px">
-      <span style="font-size:13px;letter-spacing:3px;color:#5E7A83">SpO₂ · LAST ${vals.length} SAMPLES</span>
-      <div style="display:flex;align-items:flex-end;gap:10px">
-        <span class="lim" style="font-size:96px;font-weight:200;line-height:.85;color:${stale ? "#8B97A3" : "#CFE9EE"};${stale ? "border-bottom:3px dashed #8B97A3" : ""}">${stale ? "?" : esc(cur.val)}</span>
-        <span style="font-size:15px;color:#5E7A83;padding-bottom:12px">${stale ? "NOT MEASURED" : "%"}</span>
-      </div>
-    </div>
-    <div style="position:absolute;right:34px;top:26px;text-align:right">
-      <div class="lim" style="font-size:15px;color:#5E7A83">${esc(st.clock)}</div>
-      <div style="font-size:13px;letter-spacing:2px;color:#5E7A83;margin-top:4px">${esc(st.tier)}</div>
-    </div>
+    <canvas id="hzCanvas" width="800" height="480" style="position:absolute;inset:0"></canvas>
+    <div id="hzHead" style="position:absolute;left:34px;top:22px"></div>
+    <div id="hzMeta" style="position:absolute;right:34px;top:26px;text-align:right"></div>
+    <div id="hzLegend" style="position:absolute;left:34px;bottom:44px;font-size:13px;color:#5E7A83"></div>
     ${creativeFooter(st)}
   </div>`;
+}
+
+function hzSurface() {
+  // One surface y per horizontal pixel, or null where nothing was measured.
+  //
+  // Interpolated between ADJACENT measured samples, never across a gap. That
+  // distinction is the whole rule: joining two neighbouring seconds is the
+  // same claim every other view makes by drawing a line between them, whereas
+  // joining across a hole would invent the readings in between. Per-pixel
+  // nearest-neighbour was also simply wrong to look at — at 54 samples over
+  // 800px it drew the surface as 15px stair steps.
+  const h = live.hist;
+  const out = new Array(800).fill(null);
+  if (h.length < 2) return out;
+  const yOf = (v) => {
+    const t = (Math.max(HZ.LO, Math.min(HZ.HI, v)) - HZ.LO) / (HZ.HI - HZ.LO);
+    return HZ.BASE - t * (HZ.BASE - HZ.TOP);
+  };
+  const ok = (v) => typeof v === "number" && isFinite(v);
+  const step = 799 / (h.length - 1);
+  for (let i = 0; i < h.length - 1; i++) {
+    const a = h[i] ? h[i].s : null, b = h[i + 1] ? h[i + 1].s : null;
+    if (!ok(a) || !ok(b)) continue;          // a gap stays a gap
+    const x0 = Math.round(i * step), x1 = Math.round((i + 1) * step);
+    const y0 = yOf(a), y1 = yOf(b);
+    for (let x = x0; x <= x1 && x < 800; x++) {
+      out[x] = y0 + (y1 - y0) * (x1 === x0 ? 0 : (x - x0) / (x1 - x0));
+    }
+  }
+  return out;
+}
+
+function hzDraw(dt) {
+  const c = hzState.ctx;
+  if (!c) return;
+  const st = hzState.st || {};
+  const hr = (st.params && st.params[1]) || {};
+  const bpm = hr.stale ? 0 : Number(hr.val) || 0;
+  const surf = hzSurface();
+
+  c.clearRect(0, 0, 800, 480);
+  c.fillStyle = "#000308";
+  c.fillRect(0, 0, 800, 480);
+
+  // ── water ────────────────────────────────────────────────────────────────
+  // Drawn as runs of contiguous measured columns. A gap is genuinely empty:
+  // no fill, no surface line, just a dashed wall marking where it stopped.
+  let x = 0;
+  while (x < 800) {
+    if (surf[x] == null) { x++; continue; }
+    const start = x;
+    while (x < 800 && surf[x] != null) x++;
+    const end = x - 1;
+    if (end > start) {
+      const g = c.createLinearGradient(0, HZ.TOP, 0, 480);
+      // Was 0.85 at the top and lit most of an 800x480 panel in a dark
+      // bedroom, which is exactly what this design's "dim by lit area"
+      // position forbids. The surface stroke carries the reading; the body
+      // only has to say there is water beneath it, so it starts dim and
+      // falls away fast.
+      g.addColorStop(0, "rgba(20,86,104,0.30)");
+      g.addColorStop(0.35, "rgba(10,44,58,0.12)");
+      g.addColorStop(1, "rgba(4,18,26,0.02)");
+      c.beginPath();
+      c.moveTo(start, surf[start]);
+      for (let i = start + 1; i <= end; i++) c.lineTo(i, surf[i]);
+      c.lineTo(end, 480); c.lineTo(start, 480); c.closePath();
+      c.fillStyle = g; c.fill();
+      c.beginPath();
+      c.moveTo(start, surf[start]);
+      for (let i = start + 1; i <= end; i++) c.lineTo(i, surf[i]);
+      c.strokeStyle = "#7FD4DE"; c.lineWidth = 2; c.globalAlpha = 0.9;
+      c.stroke(); c.globalAlpha = 1;
+    }
+  }
+  // Mark every break, so a hole reads as a hole and not as open sky.
+  for (let i = 1; i < 800; i++) {
+    if (surf[i] == null && surf[i - 1] != null) hzWall(c, i);
+    else if (surf[i] != null && surf[i - 1] == null) hzWall(c, i);
+  }
+
+  // ── bubbles ──────────────────────────────────────────────────────────────
+  // Spawned on the beat. With no measured pulse there is no beat, so nothing
+  // is released at all.
+  if (bpm > 0) {
+    const period = 60 / bpm;
+    hzState.nextBeat -= dt;
+    if (hzState.nextBeat <= 0) {
+      hzState.nextBeat += period;
+      if (hzState.nextBeat < 0) hzState.nextBeat = period;  // recover from a long stall
+      if (hzState.bubbles.length < HZ.MAX_BUBBLES) {
+        const r = 2.5 + Math.random() * 6;
+        hzState.bubbles.push({
+          x: 40 + Math.random() * 720,
+          y: HZ.FLOOR,
+          r,
+          // Buoyancy grows with volume, so a bigger bubble climbs faster; the
+          // bpm term is what makes a fast heart visibly energise the field.
+          v: (14 + r * 3.6) * (0.55 + bpm / 150),
+          phase: Math.random() * Math.PI * 2,
+          wob: 0.4 + Math.random() * 0.9,
+        });
+      }
+    }
+  } else {
+    // Let the ones already in flight finish honestly rather than vanishing.
+    hzState.nextBeat = 0;
+  }
+
+  c.lineWidth = 1.4;
+  for (let i = hzState.bubbles.length - 1; i >= 0; i--) {
+    const b = hzState.bubbles[i];
+    b.y -= b.v * dt;
+    b.phase += dt * b.wob;
+    const bx = b.x + Math.sin(b.phase) * (2 + b.r * 0.35);
+    const s = surf[Math.max(0, Math.min(799, Math.round(bx)))];
+
+    if (s != null && b.y - b.r <= s) {
+      // Reached the surface above its own column: pop, sized to the bubble.
+      hzState.pops.push({ x: bx, y: s, r: b.r, age: 0 });
+      hzState.bubbles.splice(i, 1);
+      continue;
+    }
+    if (b.y + b.r < 0) {
+      // No surface in this column — it left the top without popping, because
+      // there was nothing there to break.
+      hzState.bubbles.splice(i, 1);
+      continue;
+    }
+    c.beginPath();
+    c.arc(bx, b.y, b.r, 0, Math.PI * 2);
+    c.strokeStyle = "rgba(150,225,235,0.55)";
+    c.stroke();
+    // A single highlight is what makes it read as a bubble rather than a ring.
+    c.beginPath();
+    c.arc(bx - b.r * 0.32, b.y - b.r * 0.32, Math.max(0.6, b.r * 0.22), 0, Math.PI * 2);
+    c.fillStyle = "rgba(200,245,250,0.45)";
+    c.fill();
+  }
+
+  // ── pops ─────────────────────────────────────────────────────────────────
+  const POP_MS = 0.45;
+  for (let i = hzState.pops.length - 1; i >= 0; i--) {
+    const p = hzState.pops[i];
+    p.age += dt;
+    const t = p.age / POP_MS;
+    if (t >= 1) { hzState.pops.splice(i, 1); continue; }
+    const rr = p.r * (1 + t * 2.6);
+    c.beginPath();
+    c.arc(p.x, p.y, rr, 0, Math.PI * 2);
+    c.strokeStyle = `rgba(170,235,245,${(1 - t) * 0.5})`;
+    c.lineWidth = 1.6 * (1 - t) + 0.4;
+    c.stroke();
+    // A shallow surface dimple, so the break looks like it happened IN the
+    // water rather than floating above it.
+    c.beginPath();
+    c.ellipse(p.x, p.y, rr * 0.9, rr * 0.28, 0, 0, Math.PI * 2);
+    c.strokeStyle = `rgba(127,212,222,${(1 - t) * 0.28})`;
+    c.lineWidth = 1;
+    c.stroke();
+  }
+}
+
+function hzWall(c, x) {
+  c.save();
+  c.setLineDash([3, 6]);
+  c.beginPath(); c.moveTo(x, 40); c.lineTo(x, HZ.BASE);
+  c.strokeStyle = "#8B97A3"; c.lineWidth = 1.5; c.stroke();
+  c.restore();
+}
+
+function hzText(st) {
+  const sp = (st.params && st.params[0]) || {};
+  const hr = (st.params && st.params[1]) || {};
+  const stale = sp.stale !== false && sp.stale !== undefined ? sp.stale : false;
+  const head = document.getElementById("hzHead");
+  const meta = document.getElementById("hzMeta");
+  if (!head || !meta) return;
+  head.innerHTML =
+    `<span style="font-size:13px;letter-spacing:3px;color:#5E7A83">SpO₂ · ${live.hist.length} SAMPLES</span>
+     <div style="display:flex;align-items:flex-end;gap:10px">
+       <span class="lim" style="font-size:96px;font-weight:200;line-height:.85;color:${stale ? "#8B97A3" : "#CFE9EE"};${stale ? "border-bottom:3px dashed #8B97A3" : ""}">${stale ? "?" : esc(sp.val)}</span>
+       <span style="font-size:15px;color:#5E7A83;padding-bottom:12px">${stale ? "NOT MEASURED" : "%"}</span>
+     </div>`;
+  // The bubble legend states the mapping, so the motion is information rather
+  // than atmosphere. When there is no pulse it says so instead of going quiet.
+  meta.innerHTML =
+    `<div class="lim" style="font-size:15px;color:#5E7A83">${esc(st.clock)}</div>
+     <div style="font-size:13px;letter-spacing:2px;color:#5E7A83;margin-top:4px">${esc(st.tier)}</div>
+     `;
+  const leg = document.getElementById("hzLegend");
+  if (leg) leg.textContent = hr.stale ? "no pulse · no bubbles" : `1 bubble = 1 beat · ${hr.val} bpm`;
+}
+
+function mountHorizon(st) {
+  const cv = document.getElementById("hzCanvas");
+  if (!cv) return;
+  hzState.ctx = cv.getContext("2d");
+  hzState.st = st;
+  hzState.bubbles = [];
+  hzState.pops = [];
+  hzState.nextBeat = 0;
+  hzState.last = performance.now();
+  hzText(st);
+  const frame = (now) => {
+    // Clamp dt: after a tab stall or a slow poll a huge delta would teleport
+    // every bubble through the surface without popping.
+    const dt = Math.min(0.12, (now - hzState.last) / 1000);
+    if (dt >= 1 / HZ.FPS) { hzState.last = now; hzDraw(dt); }
+    hzState.raf = requestAnimationFrame(frame);
+  };
+  hzState.raf = requestAnimationFrame(frame);
+}
+
+function updateHorizon(st) {
+  hzState.st = st;
+  hzText(st);
+}
+
+function unmountHorizon() {
+  cancelAnimationFrame(hzState.raf);
+  hzState.raf = 0;
+  hzState.ctx = null;
+  hzState.bubbles = [];
+  hzState.pops = [];
 }
 
 /* ── PULSE ──────────────────────────────────────────────────────────────────
@@ -1424,7 +1635,7 @@ const PANELS = [
   { id: "clinical",  name: "CLINICAL",  render: null },              // built inline below
   { id: "penumbra",  name: "PENUMBRA",  render: renderPenumbra },
   { id: "semaphore", name: "SEMAPHORE", render: renderSemaphore },
-  { id: "horizon",   name: "HORIZON",   render: renderHorizon },
+  { id: "horizon",   name: "HORIZON",   render: renderHorizon, mount: mountHorizon, update: updateHorizon, unmount: unmountHorizon },
   { id: "pulse",     name: "PULSE",     render: renderPulse },
   { id: "trail",     name: "TRAIL",     render: renderTrail },
   { id: "aurora",    name: "AURORA",    render: renderAurora },
@@ -1459,7 +1670,23 @@ function render() {
   ].join(";");
 
   const panel = document.getElementById("panel");
-  const alt = PANELS[S.panel].render;
+  const spec = PANELS[S.panel];
+  const alt = spec.render;
+
+  /* Animated views must SURVIVE the poll.
+     render() runs once a second and replaces innerHTML wholesale, which
+     destroys any canvas and restarts any CSS animation — a bubble field would
+     reset every second and never rise. A view may therefore declare `update`:
+     if it is already mounted, it keeps its DOM and is handed the new state
+     instead of being rebuilt. `mount` runs once when it first appears, and
+     unmount() tears down its animation frame when you swipe away, so a view
+     you are not looking at costs nothing. */
+  if (alt && S.mounted === spec.id && spec.update) { spec.update(st); return; }
+  if (S.mounted && S.mounted !== spec.id) {
+    const prev = PANELS.find(v => v.id === S.mounted);
+    if (prev && prev.unmount) prev.unmount();
+    S.mounted = null;
+  }
   /* Alternate directions return their OWN full-bleed 800x480 root with their
      own margins. #panel carries 13/16 padding for the clinical layout, which
      would lay an 800px child inside a 768px box and clip it off the right edge
@@ -1468,9 +1695,12 @@ function render() {
   panel.style.padding = alt ? "0" : "13px 16px";
   if (alt) {
     panel.innerHTML = alt(st) + viewIndicator();
+    S.mounted = spec.id;
+    if (spec.mount) spec.mount(st);
     afterRender(st);
     return;
   }
+  S.mounted = null;
 
   document.getElementById("panel").innerHTML = `
     <div class="r-top">
@@ -1657,6 +1887,13 @@ if (qs.has("live")) {
   initSwipe();
   poll();
   setInterval(poll, 1000);
+  /* ?cycle=<seconds> — attract mode. Advances through every direction on a
+     fixed interval. Exists because driving the cycle with synthetic keypresses
+     drops one occasionally, which is invisible until you are watching the
+     recording afterwards. Also the honest way to see all eight without
+     standing over the panel. */
+  const cyc = Number(qs.get("cycle"));
+  if (cyc > 0) setInterval(() => changePanel(1), cyc * 1000);
 } else {
   render();
   initSwipe();
