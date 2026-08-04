@@ -1,0 +1,26 @@
+# Stopgap: EMAY SleepO2 capture, writing a status file the bedside panel polls.
+# See deploy/stopgap/README.md. This carries no alarm and no detection.
+[Unit]
+Description=EMAY SleepO2 live capture (stopgap, display only)
+After=bluetooth.target
+Requires=bluetooth.target
+
+[Service]
+Type=simple
+User=pi-user
+# Set EMAY_MAC with `systemctl edit emay-live`. Without it the binary exits 64
+# and says so, rather than starting and silently capturing nothing.
+Environment=EMAY_STATUS_JSON=/var/lib/anxietywatch-panel/status.json
+ExecStart=/usr/local/bin/emay-spike
+# The ring powers down when it is not worn, so "not found" is a normal
+# state, not a fault. Restart rather than give up: the run should
+# resume by itself when it goes back on a finger.
+Restart=always
+RestartSec=20
+# stdout is one line per frame, which is the gap_histogram.py format. Keeping it
+# in the journal costs little and means a night is still reconstructable.
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,144 @@
+# Stopgap — real EMAY numbers on the bedside panel, at boot
+
+Gets a live SpO₂ and pulse onto the 7″ DSI panel **without** the storage, query
+or detection paths. It wires the sensor process straight to the browser and
+bypasses the architecture on purpose.
+
+**What this is not.** There is no CNS detection here, no tier machine, no alarm,
+and no storage — nothing is written down and nothing is watching the numbers.
+The panel says so on every frame: the tier reads `NOT ARMED` and the bar
+along the bottom reads `DISPLAY ONLY · THIS PANEL CANNOT WAKE YOU`. Do not sleep
+next to this expecting it to do anything.
+
+It exists to answer one question early: *does the UI work on the real panel, with
+real data?*
+
+```
+emay-spike  ──writes──▶  /var/lib/anxietywatch-panel/status.json
+                                      │
+                         python http.server on 127.0.0.1:8975
+                                      │
+                         cage + chromium --kiosk  ──▶  DSI panel
+```
+
+## Install
+
+```sh
+sudo apt-get install -y cage chromium-browser python3
+sudo install -d -o pi-user -g pi-user /var/lib/anxietywatch-panel
+
+# The panel itself. Re-run after every change to index.html.
+scp docs/design/pi-panel/direction-a-clinical/index.html \
+    $PI_HOST:/var/lib/anxietywatch-panel/index.html
+
+# The capture binary.
+cargo build --release -p emay-spike           # on the Pi, or cross-build
+sudo install -m755 target/release/emay-spike /usr/local/bin/
+
+sudo cp deploy/stopgap/*.service /etc/systemd/system/
+sudo systemctl daemon-reload
+
+# cage needs the display, so the desktop session has to stop first.
+sudo systemctl disable --now lightdm
+sudo systemctl enable --now panel-http emay-live panel-kiosk
+```
+
+Set the ring's address once:
+
+```sh
+sudo systemctl edit emay-live      # add:  [Service]\nEnvironment=EMAY_MAC=XX:XX:...
+```
+
+## Verify
+
+Each of these fails loudly rather than quietly doing nothing:
+
+```sh
+# 1. The capture is writing, and the reading is fresh.
+ssh $PI_HOST 'python3 -c "
+import json,time,sys
+d=json.load(open(\"/var/lib/anxietywatch-panel/status.json\"))
+age=time.time()-d[\"written_at\"]
+print(d)
+sys.exit(0 if age < 15 else 1)"'
+
+# 2. The panel is being served.
+ssh $PI_HOST 'curl -fsS http://127.0.0.1:8975/index.html >/dev/null && echo served'
+
+# 3. Something is actually on the screen.
+ssh $PI_HOST 'systemctl is-active panel-kiosk'
+```
+
+A stale `status.json` is not a failure of this stopgap — the panel is designed to
+notice it and switch to `CAN'T ASSESS`, naming which of the three faults it is
+(process gone, link lost, or no sample). That behaviour is the point; if the ring
+comes off your finger at 2 a.m. the panel must not keep showing 97.
+
+## Deployed and verified on the-pi, 2026-08-04
+
+Running: EMAY `SleepO2-2_XXXX` at 1 Hz, SpO₂ and pulse on the DSI panel, all
+three units enabled and pulled in by `graphical.target`.
+
+Three things the first deploy found, all now fixed in the units above:
+
+**1. The desktop had to go.** The Pi was running the full Raspberry Pi OS desktop
+(lightdm → wayfire), and wayfire would not honour `chromium --kiosk`: the window
+came up roughly 500×45 in the top-left corner. Reproduced from a manual launch as
+well as from the service, so it was chromium-under-wayfire, not systemd. `cage`
+replaces it — one window, no window manager, nothing that can take the screen.
+`lightdm` is now `disabled`, not removed:
+
+```sh
+sudo systemctl disable --now panel-kiosk && sudo systemctl enable --now lightdm
+```
+
+puts the desktop back exactly as it was.
+
+**2. gnome-keyring raised a modal password prompt over the panel.** It is not a
+chromium dialog, so `--noerrdialogs` never had a chance at it — a blocking modal
+over a bedside monitor is precisely what that flag list exists to prevent.
+`--password-store=basic` stops chromium asking for a secret store at all.
+
+**3. `cage` needs a real logind session** to get the DRM device and the
+touchscreen. `PAMName=login` + `TTYPath=/dev/tty1` + `StandardInput=tty-fail`
+are what create it; without them cage exits immediately unable to open a backend.
+
+Still open:
+
+- **Screen blanking is not configured.** Nothing here disables DPMS. If the panel
+  goes black after some minutes that is cage, not the page.
+- **The mouse pointer is visible** over the panel. Cosmetic on a touchscreen;
+  `unclutter` would hide it.
+- `XDG_RUNTIME_DIR=/run/user/1000` assumes `id -u pi-user` is 1000. It is here.
+
+## Query string
+
+The kiosk unit loads `?kiosk=1&live&demo`.
+
+| | |
+|---|---|
+| `kiosk=1` | hides the review scaffolding — the 800×480 panel and nothing else |
+| `live` | poll `status.json` once a second |
+| `live=<url>` | poll somewhere else |
+| `demo` | fill BP, the other three sensors and the system row with moving pseudo-data |
+
+**Drop `&demo` to see only what is real.** With it, the top strip reads
+`DEMO · SpO₂/HR REAL · REST SIMULATED` on every frame, because a fabricated
+`SELF-TEST 02:00 PASS` sitting beside a true SpO₂ would borrow its credibility.
+Without it those regions read `none` and `not in test`, which is the honest
+picture of what this stopgap actually knows.
+
+SpO₂ and HR are never simulated under either flag. If the ring stops reporting
+they go to `- -` and the tier drops to `CAN'T ASSESS`.
+
+## Removing it
+
+```sh
+sudo systemctl disable --now panel-kiosk emay-live panel-http
+sudo rm /etc/systemd/system/{panel-kiosk,emay-live,panel-http}.service
+sudo systemctl daemon-reload
+```
+
+Nothing else on the Pi depends on any of it. When the real path lands (T-C1..C3
+for the sensor adapters, then a read endpoint on `vitalsd`), this whole directory
+goes away rather than being grown into the real thing.
