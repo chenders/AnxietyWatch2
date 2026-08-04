@@ -907,7 +907,7 @@ function hzTint(bpm) {
 }
 
 const hzState = { raf: 0, last: 0, bubbles: [], pops: [], nextBeat: 0, st: null, ctx: null,
-                  sh: null, nextSh: 8, grab: null };
+                  sh: null, nextSh: 8, grab: null, notes: [], nextNote: 1.2 };
 
 function renderHorizon(st) {
   // The scene is a canvas so it can animate across polls; the text is DOM so
@@ -1031,6 +1031,8 @@ function hzDraw(dt) {
       hzDrawSeahorse(c, hzState.sh);
     }
   }
+  hzNoteStep(dt);
+  hzNotesDraw(c);
 
   // ── bubbles ──────────────────────────────────────────────────────────────
   // Spawned on the beat. With no measured pulse there is no beat, so nothing
@@ -1280,6 +1282,65 @@ const SEA = {
    then coast. Modulating forward speed by the same phase that drives the bob
    ties the two together, so he appears to move BECAUSE he is beating rather
    than to be sliding with an animation played over the top. */
+/* He whistles as he goes: notes drift up from the snout and fade out, spaced
+   irregularly so it reads as a tune rather than a metronome. Deliberately NOT
+   tied to the pulse — the bubbles are one-per-beat and carry meaning, and a
+   second thing keeping time would be read as data. This keeps no time at all,
+   which is exactly what makes it ornament. */
+const HZ_NOTES = ["\u266A", "\u266B", "\u266C", "\u2669"];
+
+function hzNoteStep(dt) {
+  const sh = hzState.sh;
+  if (sh && sh.alpha > 0.4) {
+    hzState.nextNote -= dt;
+    if (hzState.nextNote <= 0) {
+      // Irregular spacing, and a rest often enough that it phrases.
+      hzState.nextNote = 0.5 + Math.random() * 1.9;
+      if (Math.random() < 0.72 && hzState.notes.length < 14) {
+        hzState.notes.push({
+          x: sh.x + sh.dir * 20,
+          y: sh.y - 34,
+          glyph: HZ_NOTES[(Math.random() * HZ_NOTES.length) | 0],
+          size: 12 + Math.random() * 8,
+          v: 16 + Math.random() * 12,
+          drift: (Math.random() - 0.5) * 14,
+          phase: Math.random() * Math.PI * 2,
+          age: 0,
+          life: 3.2 + Math.random() * 1.8,
+        });
+      }
+    }
+  }
+  for (let i = hzState.notes.length - 1; i >= 0; i--) {
+    const n = hzState.notes[i];
+    n.age += dt;
+    if (n.age >= n.life) { hzState.notes.splice(i, 1); continue; }
+    n.y -= n.v * dt;
+    n.phase += dt * 1.4;
+    n.x += (n.drift + Math.sin(n.phase) * 9) * dt;
+  }
+}
+
+function hzNotesDraw(c) {
+  for (const n of hzState.notes) {
+    const t = n.age / n.life;
+    // Fades in quickly, lingers, then goes: a note that vanished abruptly would
+    // read as a glitch on a panel where everything else changes slowly.
+    const a = (t < 0.12 ? t / 0.12 : Math.min(1, (1 - t) / 0.45)) * 0.55;
+    if (a <= 0) continue;
+    c.save();
+    c.globalAlpha = a;
+    c.translate(n.x, n.y);
+    c.rotate(Math.sin(n.phase * 0.8) * 0.22);
+    c.font = `${n.size.toFixed(1)}px "Helvetica Neue",Helvetica,Arial,sans-serif`;
+    c.textAlign = "center";
+    c.textBaseline = "middle";
+    c.fillStyle = "rgba(240,205,150,0.95)";
+    c.fillText(n.glyph, 0, 0);
+    c.restore();
+  }
+}
+
 function hzSurge(sh) {
   return 0.45 + 1.05 * Math.max(0, Math.sin(sh.bob * 1.5));
 }
@@ -1449,70 +1510,90 @@ function hzDrawSeahorse(c, sh) {
     c.stroke();
   }
 
-  // ── head: big, round, high-browed ────────────────────────────────────────
+  /* ── head ────────────────────────────────────────────────────────────────
+     The head TURNS rather than being cross-faded. Everything below is a
+     continuous function of `e`, so the same code plays the turn forwards on
+     touch and backwards as the glance decays — there is no separate "front
+     face" drawn over the profile, which is what made the first version look
+     like a mask appearing and disappearing.
+
+     What a head actually does between profile and full-face, and what is
+     modelled here:
+       · the SNOUT foreshortens toward the viewer until it is nearly a point
+       · the silhouette WIDENS, because a face is broader than a profile
+       · the near eye slides back toward centre
+       · the far eye emerges from behind the cheek, growing as it comes round
+       · the whole head yaws and tips, as anything looking up at you does */
+  const e = q * q * (3 - 2 * q);          // smoothstep, so it eases both ways
+  c.save();
+  c.translate(1, -27);
+  c.rotate(-0.22 * e);
+
+  // Snout first, so the head sits over its root. It SHORTENS rather than being
+  // hidden — the honest projection of a snout swinging toward the viewer.
+  const snout = 1 - 0.82 * e;
   c.beginPath();
-  c.arc(1, -27, 12.5, 0, Math.PI * 2);
-  c.fillStyle = grad;
+  c.moveTo(9, -3);
+  c.quadraticCurveTo(9 + 11 * snout, -2, 9 + 11 * snout, 2);
+  c.quadraticCurveTo(9 + 11 * snout, 5, 9, 5);
+  c.closePath();
+  c.fillStyle = "#E8A462";
   c.fill();
   c.strokeStyle = edge;
   c.lineWidth = 1;
   c.stroke();
 
-  // Stub snout. Short is the whole point; a true snout reads as a beak.
   c.beginPath();
-  c.moveTo(10, -30);
-  c.quadraticCurveTo(20, -29, 20, -25);
-  c.quadraticCurveTo(20, -22, 10, -22);
-  c.closePath();
-  c.fillStyle = "#E8A462";
+  c.ellipse(0, 0, 12.5 + 3 * e, 12.5 + 0.8 * e, 0, 0, Math.PI * 2);
+  c.fillStyle = grad;
   c.fill();
   c.strokeStyle = edge;
   c.stroke();
 
-  // Coronet — the crown this animal is named for, rounded into knobs so it
-  // stays friendly rather than spiky.
+  // Coronet. The knobs spread apart as the head comes round, which is most of
+  // what tells you it turned rather than merely grew.
   c.fillStyle = "#F0C08A";
-  [[-6, -38, 2.6], [-1, -40, 3.0], [4, -38.5, 2.4]].forEach(([kx, ky, kr]) => {
-    c.beginPath(); c.arc(kx, ky, kr, 0, Math.PI * 2); c.fill();
+  [[-7, -11, 2.6], [-2, -13, 3.0], [3, -11.5, 2.4]].forEach(function (kn) {
+    c.beginPath();
+    c.arc(kn[0] * (1 + 0.5 * e) + 2 * e, kn[1], kn[2], 0, Math.PI * 2);
+    c.fill();
   });
-  c.strokeStyle = "rgba(240,192,138,0.6)";
-  c.lineWidth = 1.6;
-  c.beginPath();
-  c.moveTo(-6, -36); c.lineTo(-1, -37.5); c.lineTo(4, -36.5);
-  c.stroke();
 
-  // Cheek — a soft blush, which is most of what separates cute from merely round.
-  c.beginPath();
-  c.arc(7, -22.5, 3.4, 0, Math.PI * 2);
-  c.fillStyle = "rgba(232,138,132,0.32)";
-  c.fill();
+  // Cheek blush; a second arrives with the far side of the face.
+  c.beginPath(); c.arc(6 - 1.5 * e, 4.5, 3.4, 0, Math.PI * 2);
+  c.fillStyle = "rgba(232,138,132,0.32)"; c.fill();
+  if (e > 0.05) {
+    c.globalAlpha = sh.alpha * e;
+    c.beginPath(); c.arc(-7 * e, 4.5, 3.4 * e, 0, Math.PI * 2); c.fill();
+    c.globalAlpha = sh.alpha;
+  }
 
-  // ── eyes ─────────────────────────────────────────────────────────────────
-  // Large and LOW-SET, per the baby-schema literature. When idle the near eye
-  // drifts on its own, because a seahorse's eyes really do move independently.
+  // Eyes. Idle, the near one drifts on its own — seahorse eyes really do move
+  // independently of one another.
   const wander = q > 0.01 ? 0 : Math.sin(sh.bob * 0.7) * 0.9;
-  const e = q * q * (3 - 2 * q);
-  const eye = (ex, ey, r, a) => {
+  const eye = function (ex, ey, r, a) {
+    if (r < 0.4) return;
     c.globalAlpha = sh.alpha * a;
     c.beginPath(); c.arc(ex, ey, r, 0, Math.PI * 2);
     c.fillStyle = "#12262E"; c.fill();
-    // Catchlight. Without it the eye is a hole and the whole face dies.
+    // Catchlight: without it the eye is a hole and the whole face is dead.
     c.beginPath(); c.arc(ex + r * 0.34, ey - r * 0.36, r * 0.32, 0, Math.PI * 2);
     c.fillStyle = "rgba(255,252,246,0.92)"; c.fill();
     c.globalAlpha = sh.alpha;
   };
-  eye(5.2 - 1.6 * e + wander, -25.5, 3.5, 1);
-  if (e > 0.02) eye(-4.4 * e, -25.5, 3.5 * e, e);
+  eye(4.2 - 0.8 * e + wander, 1.5, 3.5, 1);
+  eye(-5.0 * e, 1.5, 3.5 * Math.min(1, e * 1.4), Math.min(1, e * 1.6));
 
-  // Touched: he turns out of profile and smiles.
-  if (e > 0.02) {
+  // The smile widens as the face arrives, rather than switching on.
+  if (e > 0.03) {
     c.beginPath();
-    c.arc(0.5, -20.5, 5.2, 0.16 * Math.PI, 0.84 * Math.PI);
-    c.strokeStyle = `rgba(96,44,48,${(0.85 * e).toFixed(2)})`;
+    c.arc(-0.5 + 1.5 * (1 - e), 6, 3.4 + 2.2 * e, 0.16 * Math.PI, 0.84 * Math.PI);
+    c.strokeStyle = "rgba(96,44,48," + (0.9 * e).toFixed(2) + ")";
     c.lineWidth = 1.7;
     c.lineCap = "round";
     c.stroke();
   }
+  c.restore();
   c.restore();
 }
 
@@ -1630,6 +1711,8 @@ function mountHorizon(st) {
   hzState.nextBeat = 0;
   hzState.sh = null;
   hzState.nextSh = 6 + Math.random() * 10;
+  hzState.notes = [];
+  hzState.nextNote = 1.2;
   hzState.last = performance.now();
   hzText(st);
   // Bound to the panel, not the canvas: the readouts, legend and footer are
@@ -1664,6 +1747,7 @@ function unmountHorizon() {
   window.removeEventListener("pointerup", hzDragEnd);
   window.removeEventListener("pointercancel", hzDragEnd);
   hzState.grab = null;
+  hzState.notes = [];
   hzState.host = null;
   cancelAnimationFrame(hzState.raf);
   hzState.raf = 0;
