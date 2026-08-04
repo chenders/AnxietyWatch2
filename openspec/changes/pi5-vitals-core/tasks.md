@@ -47,7 +47,7 @@ pane renders (`grep -n '^- \[' tasks.md`).
 
 - [ ] T-A1 — Migrate root filesystem to NVMe · human · pi
 - [ ] T-A2 — Audio output path · human · pi
-- [ ] T-A3 — Bring up the Sena UD100-G03 as hci1 · implement-standard · pi · **gate G1 owner**
+- [x] T-A3 — Bring up the Sena UD100-G03 as hci1 · implement-standard · pi · **gate G1 owner**
 - [ ] T-A4 — Disable onboard Bluetooth · mechanical · pi · **blocked by G1**
 - [ ] T-A5 — Watchdog, governor, update policy · mechanical · pi
 - [ ] T-B1 — Eight-hour Polar H10 capture · implement-complex · pi · **review**
@@ -1071,3 +1071,43 @@ reading in the store.
 
 <!-- Conductor: record scope deltas, measured results, and decisions here as they happen.
      T-B1's gap histogram goes here verbatim — it is the project's foundational measurement. -->
+
+### T-A3 — Sena UD100-G03 · PASSED 2026-08-03
+
+Verify exited 0: two controllers present, `hci1` UP RUNNING. **Gate G1 is open.**
+
+```
+lsusb    0a12:0001 Cambridge Silicon Radio, Ltd Bluetooth Dongle (HCI mode)
+hci1     BD Address 00:01:95:C9:AF:00   Bus: USB   UP RUNNING
+         HCI Version 4.0 (0x6)  Revision 0x2031
+         LMP Version 4.0 (0x6)  Subversion 0x2031
+         Manufacturer: Cambridge Silicon Radio (10)
+hci0     BD Address 2C:CF:67:E3:3B:4A   Bus: UART  (onboard, still up)
+```
+
+**Authenticity.** CSR dongles reporting `0a12:0001` are among the most counterfeited USB parts, so
+this was checked rather than assumed: the BD address OUI `00:01:95` belongs to **Sena Technologies**,
+and `HCI Version 4.0` matches the advertised Bluetooth 4.0 Class 1 part. Genuine.
+
+**LE scan (25 s on hci1)** discovered 23 devices, including two project sensors:
+
+| Device | Address |
+|---|---|
+| `ResMed 181509` — the AirSense 11 | `50:32:5F:9F:E6:F6` |
+| `SleepO2-2_1110` — the EMAY oximeter | `D9:80:A3:EA:F8:00` |
+
+No Polar H10 — expected, it only advertises when worn with a moist strap.
+
+**Two findings for later tasks:**
+
+1. **`hci1` came up RF-killed on first attempt** (`Operation not possible due to RF-kill (132)`) and
+   succeeded on retry a few seconds later — the dongle was still initialising after `btusb` bound.
+   Collector startup must **retry adapter bring-up with backoff**, not fail on first error. `rfkill`
+   was not installed; now is.
+2. **`hci1` is not brought up at boot.** `bluetooth.service` is enabled but nothing raises the second
+   adapter, so after a reboot it will be DOWN. T-A4 must add a unit that brings up the surviving
+   adapter and **verifies it is RUNNING**, otherwise the box reboots into a state with no working
+   Bluetooth and no complaint.
+
+Finding 2 matters more than it looks: it is the same shape as every other silent failure in this
+project — the service is `active`, the adapter is dead, and nothing says so.
