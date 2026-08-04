@@ -1,0 +1,22 @@
+[package]
+name = "hr-spike"
+description = "T-B1: overnight Polar H10 capture. Throwaway, but the measurement it produces is not."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+vitals-decode = { path = "../vitals-decode" }
+
+# BlueZ over D-Bus. Linux-only by nature, so the crate is target-gated: the
+# decoder it depends on lives in vitals-decode and is tested everywhere, which
+# is the half where the bugs are.
+[target.'cfg(target_os = "linux")'.dependencies]
+bluer = { version = "0.17", features = ["bluetoothd"] }
+tokio = { version = "1", features = ["rt", "macros", "time", "signal"] }
+futures = "0.3"
+
+[lints]
+workspace = true

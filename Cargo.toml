@@ -6,6 +6,7 @@ members = [
     "crates/vitals-core",       # shared value types, COPY encoder, spool
     "crates/vitals-proto",      # socket wire format — pure, no I/O
     "crates/vitalsd",           # the single-writer daemon (Linux)
+    "crates/hr-spike",          # T-B1 overnight capture (Linux)
 ]
 
 [workspace.package]
