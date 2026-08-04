@@ -46,3 +46,7 @@ night*.log
 .venv/
 uv.lock
 .pytest_cache/
+
+# Runtime status file for the pi-panel live stopgap. Written by
+# emay-spike on the Pi; a local copy is only ever a test fixture.
+docs/design/pi-panel/direction-a-clinical/status.json

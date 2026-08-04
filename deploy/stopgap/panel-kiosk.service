@@ -1,0 +1,35 @@
+# Stopgap: full-screen browser on the DSI panel at boot.
+#
+# NOT VERIFIED FROM A LAPTOP — systemd, Wayland and the panel exist only on the
+# Pi, so the first run is the first test. See README.md for the flags most
+# likely to need adjusting on your image.
+[Unit]
+Description=AnxietyWatch bedside panel — kiosk browser (stopgap)
+After=panel-http.service systemd-user-sessions.service
+Wants=panel-http.service
+
+[Service]
+Type=simple
+User=chris
+# Must match `id -u chris`.
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+# cage is a one-window Wayland compositor: no desktop, no window management, no
+# way for anything else to take the screen. That is the whole appliance.
+#
+# --kiosk                 no chrome, no address bar, no exit affordance
+# --noerrdialogs          a modal over a bedside monitor is worse than a crash
+# --disable-session-crashed-bubble   otherwise every unclean reboot needs a tap
+# --check-for-update-interval  never interrupt the display to talk about updates
+# --incognito             nothing to accumulate; the page is stateless
+#
+# Drop &demo from the URL to show only what is really measured.
+ExecStart=/usr/bin/cage -- /usr/bin/chromium-browser \
+  --kiosk --noerrdialogs --disable-infobars --incognito \
+  --disable-session-crashed-bubble --disable-features=Translate \
+  --check-for-update-interval=31536000 \
+  "http://127.0.0.1:8975/index.html?kiosk=1&live&demo"
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

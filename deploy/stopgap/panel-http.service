@@ -1,0 +1,16 @@
+# Stopgap: serve the panel and its status file to the local browser only.
+# 127.0.0.1 deliberately — this is health data and it does not leave the box.
+[Unit]
+Description=AnxietyWatch bedside panel — local HTTP (stopgap)
+After=network.target
+
+[Service]
+Type=simple
+User=chris
+WorkingDirectory=/var/lib/anxietywatch-panel
+ExecStart=/usr/bin/python3 -m http.server 8975 --bind 127.0.0.1
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

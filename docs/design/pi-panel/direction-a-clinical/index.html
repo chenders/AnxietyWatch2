@@ -82,6 +82,11 @@ body.kiosk .review{display:none}
 .sdot.bad{background:var(--hatch);border:1px dashed var(--unknown)}
 .ybox{border:1px solid var(--rule-quiet);background:var(--field);height:34px;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:0 9px}
 .ybox.bad{border:1px dashed var(--unknown)}
+/* "not in this test" — the design's EMPTY·NEVER PAIRED treatment. Reads as
+   not-monitored rather than broken, and never borrows the dashed-slate
+   language that means "unknown". */
+.sbox.off,.ybox.off{border:1px solid var(--rule-quiet)}
+.sdot.off{background:transparent;border:1px solid var(--rule-quiet);color:var(--label)}
 
 /* 1 Hz. Deliberately an order of magnitude under the 3 Hz photosensitive-
    seizure threshold, and deliberately NOT disabled under prefers-reduced-
@@ -142,18 +147,36 @@ function spark(vals, color, w) {
   const min = Math.min(...nums) - 1.5, max = Math.max(...nums) + 1.5;
   const step = w / (vals.length - 1);
   const y = v => (h - ((v - min) / (max - min || 1)) * h).toFixed(1);
-  const pts = [];
-  let cut = -1;
+
+  /* Drawn as SEGMENTS, one per unbroken run of samples.
+     The imported version scanned for the first null and treated everything
+     after it as one trailing gap. That is right for a mock which stops once,
+     and wrong the moment the data is real: this buffer rolls, so a single
+     dropout sixty seconds ago made the entire trace render as a gap until it
+     shifted out. A break in the line is the gap; nothing bridges one. */
+  let out = "", run = [];
+  const flush = () => {
+    if (run.length > 1) out += `<polyline points="${run.join(" ")}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round"/>`;
+    else if (run.length === 1) { const [x, yy] = run[0].split(","); out += `<circle cx="${x}" cy="${yy}" r="1.6" fill="${color}"/>`; }
+    run = [];
+  };
+  let lastReal = null;
   vals.forEach((v, i) => {
-    if (cut < 0 && v != null) pts.push([(i * step).toFixed(1), y(v)]);
-    else if (cut < 0) cut = i;
+    if (v == null) { flush(); return; }
+    const pt = `${(i * step).toFixed(1)},${y(v)}`;
+    run.push(pt);
+    lastReal = [i * step, Number(y(v))];
   });
-  const last = pts[pts.length - 1] || [0, h / 2];
-  let out = `<polyline points="${pts.map(p => p.join(",")).join(" ")}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round"/>`;
-  if (cut >= 0) {
-    out += `<line x1="${last[0]}" y1="${last[1]}" x2="${w}" y2="${last[1]}" stroke="var(--unknown)" stroke-width="2" stroke-dasharray="2 7"/>`
-         + `<circle cx="${last[0]}" cy="${last[1]}" r="3.5" fill="#000" stroke="var(--unknown)" stroke-width="2"/>`
-         + `<text x="${w - 2}" y="${last[1] - 7}" text-anchor="end" fill="var(--unknown)" font-size="15" font-weight="700" font-family="Helvetica,Arial,sans-serif">?</text>`;
+  flush();
+
+  /* A gap at the RIGHT-HAND END is the one that means "right now", so it keeps
+     the full treatment: the line stops, a hollow dot caps the last real sample,
+     and a dotted neutral rule runs out to a "?". */
+  const tailMissing = vals.length && vals[vals.length - 1] == null;
+  if (tailMissing && lastReal) {
+    out += `<line x1="${lastReal[0].toFixed(1)}" y1="${lastReal[1]}" x2="${w}" y2="${lastReal[1]}" stroke="var(--unknown)" stroke-width="2" stroke-dasharray="2 7"/>`
+         + `<circle cx="${lastReal[0].toFixed(1)}" cy="${lastReal[1]}" r="3.5" fill="#000" stroke="var(--unknown)" stroke-width="2"/>`
+         + `<text x="${w - 2}" y="${lastReal[1] - 7}" text-anchor="end" fill="var(--unknown)" font-size="15" font-weight="700" font-family="Helvetica,Arial,sans-serif">?</text>`;
   }
   return `<svg width="${w}" height="${h + 10}" viewBox="0 0 ${w} ${h + 10}" role="img" aria-hidden="true">${out}</svg>`;
 }
@@ -268,6 +291,209 @@ const ORDER = [
   ["confirm", "confirm"], ["klaxon", "klaxon"], ["resting", "resting"],
 ];
 
+/* ══ live mode ═════════════════════════════════════════════════════════════
+   ?live        — poll ./status.json
+   ?live=<url>  — poll somewhere else
+
+   Reads the file emay-spike writes with EMAY_STATUS_JSON. This is a STOPGAP:
+   it shows a real SpO2 and pulse before vitalsd's storage and query path lands
+   (T-C1..T-C3), and it is wired directly to the sensor process, bypassing the
+   architecture entirely.
+
+   ── THE TIER, WHICH IS THE WHOLE PROBLEM ────────────────────────────────────
+
+   Nothing evaluates these numbers. There is no detection engine in this path,
+   no tier machine, and no alarm. Rendering a real SpO2 of 97 under a green
+   CLEAR badge would therefore be the panel asserting something the system has
+   not established -- the exact failure this design exists to prevent, and worse
+   here than anywhere else, because the number beside it is genuinely true and
+   lends the badge its credibility.
+
+   So live mode can only ever produce two tiers:
+
+     NOT MONITORING  data is arriving, nothing is judging it. Slate, because
+                     slate is the hue-free "neither safe nor alarming" token --
+                     but with a SOLID border, because the data is present. The
+                     dashed language means "not measured" and must not be
+                     borrowed for "not assessed"; they are different claims.
+
+     CAN'T ASSESS    data is stale or absent. This is the design's own state,
+                     used unchanged, because that is exactly what it is for.
+
+   CLEAR, WATCH, CONFIRM and KLAXON are unreachable here by construction, and
+   the assertion at the bottom of this file fails the page if that ever stops
+   being true. */
+const LIVE = {
+  /* The device sends about one frame a second. Ten seconds of nothing is not a
+     slow sample, it is an absent one. */
+  STALE_AFTER_S: 10,
+  /* The writer refreshes on every keepalive (~1.2 s) even when the device is
+     silent, so a file that has not changed in 15 s means the PROCESS is gone —
+     which is a different fault, with a different fix, and says so. */
+  DEAD_AFTER_S: 15,
+  TREND_LEN: 60,
+};
+
+const live = { url: null, demo: false, snap: null, err: null, fetchedAt: 0, spo2: [], hr: [] };
+
+async function poll() {
+  try {
+    // cache:"no-store" matters: without it a poll every second happily reads a
+    // cached body forever and the panel shows a frozen number that looks live.
+    const r = await fetch(live.url, { cache: "no-store" });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const j = await r.json();
+    if (j.schema !== 1) throw new Error("unknown schema " + j.schema);
+    live.snap = j;
+    live.err = null;
+  } catch (e) {
+    // A failed fetch is not a reason to keep showing the last good reading.
+    // The snapshot is retained only so the age check below can age it out.
+    live.err = e.message || String(e);
+  }
+  live.fetchedAt = Date.now() / 1000;
+  live.state = liveState();
+  render();
+}
+
+/* Push one sample per poll, so the sparkline's x-axis is wall-clock and a gap
+   in the trace is a real gap in time. A null when nothing was measured — the
+   renderer draws that as the hollow-capped dotted gap, on real data. */
+function pushTrend(spo2, pulse) {
+  live.spo2.push(spo2 ?? null);
+  live.hr.push(pulse ?? null);
+  while (live.spo2.length > LIVE.TREND_LEN) live.spo2.shift();
+  while (live.hr.length > LIVE.TREND_LEN) live.hr.shift();
+}
+
+
+/* ── demo fill ──────────────────────────────────────────────────────────────
+   ?live&demo populates the regions this stopgap has no real source for —
+   blood pressure, the other three sensors, and the system-health row — with
+   plausible values that move, so the whole panel can be judged as a design
+   rather than as three-quarters of one.
+
+   Everything here is invented. The top strip says so on every frame, because
+   the one thing that must never happen is a fabricated "SELF-TEST PASS"
+   sitting beside a real SpO2 and borrowing its credibility. SpO2 and HR are
+   never simulated: if the ring is not reporting, they go to "- -" and the tier
+   goes to CAN'T ASSESS exactly as it does without this flag. */
+function demoFill(now) {
+  const t = Math.floor(now);
+  // Cheap deterministic wobble — no Math.random, so two panels side by side
+  // agree and a screenshot is reproducible.
+  const wob = (period, amp, phase = 0) => Math.sin((t / period) + phase) * amp;
+  const bpAge = t % 2700;                       // a cuff reading every 45 min
+  const sys = Math.round(118 + wob(900, 6));
+  const dia = Math.round(76 + wob(1100, 4, 1));
+  const hhmmss = (secs) => {
+    const h = Math.floor(secs / 3600), m = Math.floor((secs % 3600) / 60);
+    return h ? `${h} h ${String(m).padStart(2, "0")} m` : `${m} m`;
+  };
+  return {
+    nibp: {
+      name: "NIBP", unit: "mmHg", color: "var(--nibp)", small: true, limits: "↑150/95",
+      val: `${sys}/${dia}`, stale: bpAge > 2400,
+      note: `MAP ${Math.round(dia + (sys - dia) / 3)}\n${hhmmss(bpAge)} ago`,
+    },
+    sensors: [
+      { name: "POLAR H10", link: "BLE", ok: true, age: `${(t % 3) + 1}.${t % 10} s` },
+      { name: "A&D BP CUFF", link: "BT", ok: true, age: hhmmss(bpAge) },
+      { name: "HEALTHKIT", link: "sync", ok: true, age: `${(t % 5) + 1} m` },
+    ],
+    sys: [
+      { name: "SELF-TEST", val: "02:00 PASS", ok: true },
+      { name: "BACKUP", val: `${(t / 60) % 55 | 0} m`, ok: true },
+      { name: "RESTORE OK", val: "3 d", ok: true },
+      { name: "DISK", val: `${62 + (wob(3600, 2) | 0)} %`, ok: true },
+    ],
+  };
+}
+
+function liveState() {
+  const now = Date.now() / 1000;
+  const s = live.snap;
+  const fileAge = s ? now - s.written_at : Infinity;
+  const sampleAge = s && s.sample_at != null ? now - s.sample_at : Infinity;
+
+  // Three distinct faults, three distinct sentences. "It is not working" is
+  // not an adequate thing to read at 3 a.m. when the fix differs each time.
+  let fault = null;
+  if (live.err) fault = `cannot read ${live.url} — ${live.err}`;
+  else if (!s) fault = `no reading yet from ${live.url}`;
+  else if (fileAge > LIVE.DEAD_AFTER_S) fault = `emay-spike stopped writing ${Math.round(fileAge)} s ago — the capture process is gone`;
+  else if (s.link === "lost") fault = "emay-spike is running but the ring stopped reporting";
+  else if (sampleAge > LIVE.STALE_AFTER_S) fault = `no sample for ${Math.round(sampleAge)} s`;
+  else if (!s.finger) fault = "ring reports no finger";
+
+  const measured = !fault;
+  pushTrend(measured ? s.spo2 : null, measured ? s.pulse_bpm : null);
+
+  const clock = new Date().toTimeString().slice(0, 8);
+  // Short by necessity, not by taste: see the note-width comment below.
+  const stamp = s && s.sample_at != null ? `${Math.round(sampleAge)} s` : "no sample";
+
+  const d = live.demo ? demoFill(now) : null;
+  const emay = { name: "EMAY SpO₂", link: "BLE", ok: measured,
+    age: measured ? `${sampleAge.toFixed(1)} s` : (s ? `${Math.round(Math.min(sampleAge, 99999))} s` : "—") };
+
+  const common = {
+    clock, detail: true,
+    sensors: d ? [emay, ...d.sensors] : [
+      emay,
+      // Not "unknown" — genuinely not part of this test. The design's
+      // EMPTY·NEVER PAIRED state, which reads as "not monitored", not "broken".
+      { name: "POLAR H10", link: "—", ok: null, age: "not in test" },
+      { name: "A&D BP CUFF", link: "—", ok: null, age: "not in test" },
+      { name: "HEALTHKIT", link: "—", ok: null, age: "not in test" },
+    ],
+    // Without ?demo: no self-test ran, no backup ran, no restore was verified,
+    // and printing "PASS 02:00" because the mock did would be a fabricated
+    // record of a safety check that never happened.
+    sys: d ? d.sys : [
+      { name: "SELF-TEST", val: "none", ok: null },
+      { name: "BACKUP", val: "none", ok: null },
+      { name: "RESTORE OK", val: "none", ok: null },
+      { name: "DISK", val: "—", ok: null },
+    ],
+    silence: {
+      active: false, glyph: "—", color: "var(--unknown)",
+      text: "NO ALARM ARMED",
+      sub: "DISPLAY ONLY · THIS PANEL CANNOT WAKE YOU",
+    },
+  };
+
+  const params = (spo2, pulse, stale) => [
+    { name: "SpO₂", unit: "%", color: "var(--spo2)", limits: "↑100\n↓94",
+      val: spo2 == null ? "- -" : String(spo2), stale, trend: live.spo2,
+      note: stale ? "NO DATA\n" + stamp : "live\n" + stamp },
+    { name: "HR", unit: "bpm", color: "var(--hr)", limits: "↑110\n↓45",
+      val: pulse == null ? "- -" : String(pulse), stale, trend: live.hr,
+      note: stale ? "NO DATA\n" + stamp : "live\n" + stamp },
+    // There is no cuff in this test, so there is no reading — not a stale one.
+    d ? d.nibp : { name: "NIBP", unit: "mmHg", color: "var(--nibp)", small: true, limits: "↑150/95",
+      val: "- -", stale: true, note: "NO CUFF\nnot in test" },
+  ];
+
+  if (!measured) {
+    return { ...common,
+      tier: "CAN’T ASSESS", glyph: "?", accent: "var(--unknown)", indeterminate: true,
+      prio: "NOT MEASURED", prioFg: "var(--unknown-hi)", since: stamp,
+      chanLabel: live.demo ? "DEMO · SpO₂/HR REAL · REST SIMULATED" : "DISPLAY ONLY · NO ALARM", chanFg: "var(--unknown-hi)",
+      params: params(null, null, true),
+      caption: "live · can’t assess", note: fault,
+    };
+  }
+  return { ...common,
+    // Solid border, slate hue: the data is present, the judgement is not.
+    tier: "NOT MONITORING", glyph: "○", accent: "var(--unknown)",
+    prio: "NO ALARM ARMED", prioFg: "var(--unknown-hi)", since: "display only",
+    chanLabel: live.demo ? "DEMO · SpO₂/HR REAL · REST SIMULATED" : "DISPLAY ONLY · NO ALARM", chanFg: "var(--unknown-hi)",
+    params: params(s.spo2, s.pulse_bpm, false),
+    caption: "live", note: `SpO₂ ${s.spo2} · ${s.pulse_bpm} bpm · ${s.frames} frames — nothing is evaluating these numbers`,
+  };
+}
+
 /* ── hold-to-silence ───────────────────────────────────────────────────────
    The requirement is stated the instant contact begins, the countdown IS the
    label, and releasing early goes to zero rather than keeping partial credit.
@@ -316,7 +542,7 @@ function up() {
 /* ── resting / wake ────────────────────────────────────────────────────────
    Only `clear` ever rests. Anything else is either an alarm or an unanswered
    question, and both must stay lit. */
-const S = { state: "clear", restTimer: 0 };
+const S = { state: "clear", restTimer: 0, live: false };
 function armRest() {
   clearTimeout(S.restTimer);
   if (S.state !== "clear") return;
@@ -357,7 +583,15 @@ function paramBox(p) {
 }
 
 function render() {
-  const st = STATES[S.state];
+  const st = S.live ? (live.state || liveState()) : STATES[S.state];
+
+  /* The invariant this whole mode is built around. Live mode has no detection
+     engine behind it, so any tier that implies a judgement has been made is a
+     lie the panel is telling with a true number next to it. If this ever fires,
+     the mode is unsafe to look at, not merely wrong. */
+  if (S.live && ["CLEAR", "WATCH", "CONFIRM", "KLAXON"].includes(st.tier)) {
+    console.error("LIVE MODE asserted tier", st.tier, "— nothing evaluates these numbers; this tier is unreachable by design");
+  }
   const sil = silenceFor(st) || {};
   const active = !!sil.active;
   const silColor = sil.color || (active ? AM : "var(--rule)");
@@ -395,19 +629,19 @@ function render() {
     <div class="r-params">${st.params.map(paramBox).join("")}</div>
 
     <div class="r-sensors">${st.sensors.map(d => `
-      <div class="sbox${d.ok ? "" : " bad"}">
-        <div class="sdot${d.ok ? "" : " bad"}">${d.ok ? "✓" : "?"}</div>
+      <div class="sbox${d.ok === null ? " off" : d.ok ? "" : " bad"}">
+        <div class="sdot${d.ok === null ? " off" : d.ok ? "" : " bad"}">${d.ok === null ? "—" : d.ok ? "✓" : "?"}</div>
         <div style="display:flex;flex-direction:column;gap:1px;min-width:0">
           <span style="font-size:14px;letter-spacing:.6px;color:var(--unknown);white-space:nowrap">${esc(d.name)}</span>
-          <span class="age" style="font-size:15px;color:${d.ok ? "var(--nibp)" : "var(--unknown-hi)"};white-space:nowrap">${esc(d.age)}</span>
+          <span class="age" style="font-size:15px;color:${d.ok === null ? "var(--label)" : d.ok ? "var(--nibp)" : "var(--unknown-hi)"};white-space:nowrap">${esc(d.age)}</span>
         </div>
       </div>`).join("")}
     </div>
 
     <div class="r-sys">${st.sys.map(y => `
-      <div class="ybox${y.ok ? "" : " bad"}">
+      <div class="ybox${y.ok === null ? " off" : y.ok ? "" : " bad"}">
         <span style="font-size:14px;letter-spacing:.6px;color:var(--label);white-space:nowrap">${esc(y.name)}</span>
-        <span class="sysval" style="font-size:15px;color:${y.ok ? "var(--unknown-hi)" : "var(--watch)"};white-space:nowrap">${esc(y.val)}</span>
+        <span class="sysval" style="font-size:15px;color:${y.ok === null ? "var(--label)" : y.ok ? "var(--unknown-hi)" : "var(--watch)"};white-space:nowrap">${esc(y.val)}</span>
       </div>`).join("")}
     </div>`}
 
@@ -449,12 +683,32 @@ document.getElementById("states").addEventListener("click", e => {
 // A hand landing anywhere wakes the panel — not just on the one touch target.
 document.getElementById("panel").addEventListener("pointerdown", wake);
 
-if (new URLSearchParams(location.search).get("kiosk") === "1") document.body.classList.add("kiosk");
-const start = new URLSearchParams(location.search).get("state");
+const qs = new URLSearchParams(location.search);
+if (qs.get("kiosk") === "1") document.body.classList.add("kiosk");
+const start = qs.get("state");
 if (start && STATES[start]) S.state = start;
 
-render();
-armRest();
+// ?live or ?live=<url>. Bare ?live means the sibling status.json, which is what
+// the stopgap systemd units in deploy/stopgap/ produce.
+if (qs.has("live")) {
+  S.live = true;
+  const v = qs.get("live");
+  live.url = v && v !== "1" && v !== "" ? v : "status.json";
+  live.demo = qs.has("demo");
+  document.getElementById("states").innerHTML =
+    `<span style="color:#8E8A83">live — polling <code>${esc(live.url)}</code> at 1 Hz. `
+    + `The state buttons are off; the panel shows what the ring reports.</span>`;
+  // Deliberately no resting in live mode. Resting exists for a panel that has
+  // something to say when it wakes; a display-only panel that goes dark is just
+  // a dark panel, and the point of tonight's run is watching the numbers move.
+  live.state = liveState();
+  render();
+  poll();
+  setInterval(poll, 1000);
+} else {
+  render();
+  armRest();
+}
 
 /* ── layout assertion ──────────────────────────────────────────────────────
    The design's prose claimed the row heights "= 480 exactly". They do not:
