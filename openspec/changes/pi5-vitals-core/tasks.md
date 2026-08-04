@@ -49,7 +49,7 @@ pane renders (`grep -n '^- \[' tasks.md`).
 - [ ] T-A2 — Audio output path · human · pi
 - [x] T-A3 — Bring up the Sena UD100-G03 · implement-standard · pi · **gate G1 owner**
 - [x] T-A4 — Disable onboard Bluetooth · mechanical · pi · **blocked by G1**
-- [ ] T-A5 — Watchdog, governor, update policy · mechanical · pi
+- [x] T-A5 — Watchdog, governor, update policy · mechanical · pi
 - [ ] T-B1 — Eight-hour Polar H10 capture · implement-complex · pi · **review**
 - [ ] T-C1 — PostgreSQL 16 bare metal on NVMe · implement-standard · pi · **blocked by G2**
 - [ ] T-C2 — pgBackRest, three tiers · implement-standard · pi · **review**
@@ -232,15 +232,23 @@ Rationale: with one adapter, a collector binding the wrong radio stops being a p
 
 **Do:**
 
-1. Arm the BCM2712 hardware watchdog. Append to `/boot/firmware/config.txt`:
+1. **Check before editing `/boot/firmware`.** `dtparam=watchdog=on` is **not needed** on this
+   kernel — `bcm2835-wdt` is built in and `/dev/watchdog` already exists:
+   ```sh
+   cat /sys/class/watchdog/watchdog0/identity   # Broadcom BCM2835 Watchdog timer
+   cat /sys/class/watchdog/watchdog0/state      # active
    ```
-   dtparam=watchdog=on
-   ```
-2. Have systemd pet it. In `/etc/systemd/system.conf`:
+   If both are already true, skip this step: there is nothing to add and no reason to reboot. Editing
+   `/boot/firmware` requires stopping to ask (`AGENTS.md`), so not needing to is the better outcome.
+2. Have systemd pet it — via a **drop-in**, not by editing `/etc/systemd/system.conf`, so a package
+   upgrade of that file cannot silently revert it. `/etc/systemd/system.conf.d/watchdog.conf`:
    ```
    RuntimeWatchdogSec=15
    RebootWatchdogSec=2min
+   ShutdownWatchdogSec=2min
    ```
+   Confirm it took effect rather than trusting the file — `systemctl show -p RuntimeWatchdogUSec`
+   reports what systemd is actually using.
 3. Pin the governor to `performance` — a collector that must not miss a connection interval should
    not wait on a frequency ramp, and there is 30+ °C of thermal headroom. Create
    `/etc/systemd/system/cpu-performance.service`:
@@ -264,10 +272,34 @@ Rationale: with one adapter, a collector binding the wrong radio stops being a p
    APT::Periodic::Update-Package-Lists "0";
    APT::Periodic::Unattended-Upgrade "0";
    ```
-5. `sudo reboot`. Wait 60 s.
+5. **OOM policy for what already exists** (amendment 04 §2). The `Amends:` header claims this and the
+   body never had a step for it. The safety daemons do not exist yet, but Docker does — and its
+   packaged defaults are *backwards*: `docker.service` ships at `oom_score_adj=-500` and
+   `containerd.service` at `-999`, one point off the maximum protection this design reserves for the
+   klaxon. Under memory pressure the kernel would sacrifice almost anything before them.
+
+   Drop-in `/etc/systemd/system/{docker,containerd}.service.d/oom.conf`:
+   ```ini
+   [Service]
+   OOMScoreAdjust=500
+   ```
+   Set it now rather than when the daemons land: the first time this matters is the first time memory
+   runs out, which is not the moment to discover the policy was never applied. `vitalsd`, `klaxond`,
+   `cns-engine` and the collectors take `OOMScoreAdjust=-1000` in their own tasks; Postgres takes a
+   positive value in T-C1.
+6. **No reboot** if step 1 was skipped. `daemon-reload` plus enabling the governor unit is enough,
+   and nothing here touches the boot configuration.
 
 **Verify:** `ssh chris@minidude 'test -e /dev/watchdog && cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor | grep -qx performance && vcgencmd get_throttled | grep -qx "throttled=0x0"'`
 **Expect:** exit 0.
+
+**Also assert the governor unit can re-apply**, not merely that the value is right now — anything
+could have set it once:
+```sh
+ssh chris@minidude 'sudo sh -c "echo ondemand > /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor" \
+  && sudo systemctl restart cpu-performance \
+  && grep -qx performance /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor'
+```
 
 ---
 
@@ -1192,6 +1224,44 @@ than absorbing the error. A bring-up that cannot fail is the same as no bring-up
 sudo cp /boot/firmware/config.txt.pre-disable-bt /boot/firmware/config.txt
 sudo systemctl enable hciuart && sudo reboot
 ```
+
+### T-A5 — Watchdog, governor, update policy · PASSED 2026-08-03
+
+Verify exited 0. **No reboot was required** — see the scope delta below.
+
+```
+watchdog   Broadcom BCM2835 Watchdog timer · state active · timeout 15s · bootstatus 0
+systemd    RuntimeWatchdogUSec=15s · RebootWatchdogUSec=2min
+governor   performance on all 4 cores · 2.40 GHz
+thermal    55.4 C under load · throttled=0x0   (48.3 C before, 30+ C of headroom)
+apt        Update-Package-Lists "0" · Unattended-Upgrade "0"
+oom        docker 500 · containerd 500   (were -500 and -999)
+```
+
+**Scope deltas.**
+
+1. **Step 1 was unnecessary and would have caused a pointless reboot.** `dtparam=watchdog=on` is not
+   needed on this kernel — `bcm2835-wdt` is built in, `/dev/watchdog` already existed, and the
+   driver reported `state: active`. A worker following the brief literally would have edited
+   `/boot/firmware/config.txt` (which `AGENTS.md` requires stopping to ask about) and rebooted, to
+   reach a state that already held. Brief corrected to check first.
+
+2. **Step 2 was already satisfied** by `/etc/systemd/system.conf.d/watchdog.conf`, dated 2026-08-02
+   — a drop-in rather than an edit to `system.conf`, which is better than the brief specified because
+   a package upgrade of `system.conf` cannot revert it. Brief corrected to prescribe the drop-in.
+
+3. **The OOM defaults were backwards, not merely absent.** The `Amends:` header cited amendment 04 §2
+   and the body had no step for it. Docker shipped at `oom_score_adj=-500` and containerd at `-999`
+   — the latter one point from the maximum protection A04 §2 reserves for the klaxon. The kernel
+   would have killed nearly anything else first, which is precisely the failure that amendment
+   exists to prevent. Both are now +500, and the step is in the brief.
+
+**Verified rather than assumed:** the governor was forced back to `ondemand` and the unit restarted,
+confirming it re-applies. A value that happens to be correct is not evidence that anything maintains
+it.
+
+**Not done here:** `OOMScoreAdjust=-1000` on `vitalsd`/`klaxond`/`cns-engine`/collectors — those
+units do not exist yet and the setting belongs with them. Postgres takes its positive value in T-C1.
 
 ### T-D3 — COPY-binary encoder and spool · PASSED 2026-08-03
 
