@@ -37,6 +37,9 @@ sudo install -m755 target/release/emay-spike /usr/local/bin/
 
 sudo cp deploy/stopgap/*.service /etc/systemd/system/
 sudo systemctl daemon-reload
+
+# cage needs the display, so the desktop session has to stop first.
+sudo systemctl disable --now lightdm
 sudo systemctl enable --now panel-http emay-live panel-kiosk
 ```
 
@@ -71,18 +74,42 @@ notice it and switch to `CAN'T ASSESS`, naming which of the three faults it is
 (process gone, link lost, or no sample). That behaviour is the point; if the ring
 comes off your finger at 2 a.m. the panel must not keep showing 97.
 
-## Not verified from a laptop
+## Deployed and verified on minidude, 2026-08-04
 
-The Rust and the page are tested. **These unit files are not** — systemd, Wayland
-and the DSI panel only exist on the Pi, so the first run is the first test. Most
-likely things to need adjusting:
+Running: EMAY `SleepO2-2_1110` at 1 Hz, SpO₂ and pulse on the DSI panel, all
+three units enabled and pulled in by `graphical.target`.
 
-- `chromium-browser` vs `chromium` (differs by image).
-- `cage` flags, and whether it wants `WLR_LIBINPUT_NO_DEVICES=1` when no
-  keyboard is attached.
-- `XDG_RUNTIME_DIR` must match `id -u chris` (assumed 1000 below).
-- Screen blanking. Nothing here disables DPMS; if the panel goes black after ten
-  minutes that is the compositor, not the page.
+Three things the first deploy found, all now fixed in the units above:
+
+**1. The desktop had to go.** The Pi was running the full Raspberry Pi OS desktop
+(lightdm → wayfire), and wayfire would not honour `chromium --kiosk`: the window
+came up roughly 500×45 in the top-left corner. Reproduced from a manual launch as
+well as from the service, so it was chromium-under-wayfire, not systemd. `cage`
+replaces it — one window, no window manager, nothing that can take the screen.
+`lightdm` is now `disabled`, not removed:
+
+```sh
+sudo systemctl disable --now panel-kiosk && sudo systemctl enable --now lightdm
+```
+
+puts the desktop back exactly as it was.
+
+**2. gnome-keyring raised a modal password prompt over the panel.** It is not a
+chromium dialog, so `--noerrdialogs` never had a chance at it — a blocking modal
+over a bedside monitor is precisely what that flag list exists to prevent.
+`--password-store=basic` stops chromium asking for a secret store at all.
+
+**3. `cage` needs a real logind session** to get the DRM device and the
+touchscreen. `PAMName=login` + `TTYPath=/dev/tty1` + `StandardInput=tty-fail`
+are what create it; without them cage exits immediately unable to open a backend.
+
+Still open:
+
+- **Screen blanking is not configured.** Nothing here disables DPMS. If the panel
+  goes black after some minutes that is cage, not the page.
+- **The mouse pointer is visible** over the panel. Cosmetic on a touchscreen;
+  `unclutter` would hide it.
+- `XDG_RUNTIME_DIR=/run/user/1000` assumes `id -u chris` is 1000. It is here.
 
 ## Query string
 
