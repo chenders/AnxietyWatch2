@@ -86,6 +86,13 @@ jobs:
           done
           exit $missing
       - name: Run fuzz targets
+        # RUSTUP_TOOLCHAIN overrides rust-toolchain.toml, which pins stable and
+        # otherwise wins over the nightly toolchain action above. cargo-fuzz
+        # needs `-Z` flags, so without this the job fails with "the option `Z` is
+        # only accepted on the nightly compiler" no matter what the action
+        # installed.
+        env:
+          RUSTUP_TOOLCHAIN: nightly
         run: |
           if [ -d fuzz/fuzz_targets ] && ls fuzz/fuzz_targets/*.rs >/dev/null 2>&1; then
             cargo install cargo-fuzz --locked
