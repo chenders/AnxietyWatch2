@@ -48,7 +48,9 @@ never escalates.*
 
 ## What checking the design found
 
-The token table was **exactly right — all thirteen ratios**. That is worth
+The token table was **exactly right — every one of the twelve ratios it
+states**. (Its thirteenth row is `--bg`, the ground the rest are measured
+against, which carries no ratio.) That is worth
 stating plainly, because the two claims that were wrong were both safety claims,
 and a table this reliable is precisely the kind you stop re-deriving.
 

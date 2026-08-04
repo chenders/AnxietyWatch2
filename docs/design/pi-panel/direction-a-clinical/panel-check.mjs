@@ -9,7 +9,9 @@
 // The imported design stated its numbers in prose. Checking them found two
 // different outcomes, and the difference is the whole argument for this file:
 //
-//   * All THIRTEEN contrast ratios in its token table were exactly right.
+//   * Every contrast ratio in its token table was exactly right — all
+//     twelve that state one. The thirteenth row is --bg, the ground the
+//     others are measured against, which carries no ratio of its own.
 //   * Its claim that "grayscale luminance separation between the tier states
 //     is >= 1.9:1 in every adjacent pair" was wrong in every adjacent pair --
 //     the worst is 1.00:1, because WATCH and CONFIRM are the same amber.
@@ -17,7 +19,7 @@
 //     and the remaining 10px is absorbed by margin-top:auto above the silence
 //     bar.
 //
-// A design that gets twelve of thirteen numbers right is not a careless one.
+// A design that gets every stated number right is not a careless one.
 // That is exactly why the numbers get checked rather than trusted: a table this
 // good is the kind you stop re-deriving, and the two that were wrong were both
 // load-bearing safety claims.
