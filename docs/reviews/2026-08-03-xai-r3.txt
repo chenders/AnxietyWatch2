@@ -1,0 +1,920 @@
+
+ You are an independent adversarial reviewer. Be specific. Do not be agreeable. If
+ an area is sound,
+ say so in one line and move on.
+
+ System
+
+ ~/Source/AnxietyWatch2 — a Raspberry Pi 5 beside a bed. Collects physiological
+ data from Bluetooth
+ sensors all night, detects CNS-depression events, sounds an alarm. One user, who
+ is also the
+ engineer. Worst defects: the alarm not sounding when it should, and a missing
+ signal being treated
+ as healthy.
+
+ Read, in this order
+
+ 1. docs/specs/2026-08-03-pi5-vitals-core-design.md
+ 2. docs/specs/2026-08-03-amendment-01-timescale-copy-spool.md
+ 3. docs/specs/2026-08-03-amendment-02-integrity-and-encryption.md
+ 4. docs/specs/2026-08-03-amendment-03-multimodal-alerting.md
+ 5. docs/specs/2026-08-03-amendment-04-review-findings.md — responses to a
+    previous review round
+ 6. openspec/changes/pi5-vitals-core/tasks.md · db/ ·
+    crates/vitals-decode/src/sfloat.rs
+ 7. AGENTS.md · docs/STAGE-DELIVERABLES.md
+
+ Your job
+
+ Amendment 04 answers findings from an earlier round. Your primary task is to
+ check whether those
+ answers are actually correct, then find what everyone has still missed.
+
+ ### 1. Audit amendment 04's fixes — are they right?
+
+ Interrogate each. Several are plausible-sounding and may be wrong:
+
+ - §1: it claims deriving beat times by accumulating RR durations backward from
+   packet arrival
+   makes timestamps distinct, so PRIMARY KEY (source, type, timestamp) can stay.
+   Does that hold?
+   What about clock drift between the sensor and the host, retransmitted packets,
+   connection-interval
+   batching, or two RR values that genuinely round to the same microsecond? Is the
+   PK still wrong?
+ - §2: OOMScoreAdjust=-1000 plus MemoryMin/MemoryHigh. Does this actually prevent
+   the
+   failure, or move it? What happens when the protected daemon is the one leaking?
+ - §3.2: a 555 monostable retriggered by a 1 Hz GPIO heartbeat, firing the siren
+   if pulses stop.
+   Does this work? What are its false-positive and false-negative modes? What
+   happens during a
+   deliberate reboot, a klaxond restart, or an acknowledged alarm?
+ - §4: the revised LUKS behaviour — chime, then escalate after 15 minutes only
+   inside a monitoring
+   window. Does that leave a hole?
+ - §6/§7: advisory locks plus a schema fingerprint in the spool header.
+   Sufficient?
+ - §10: publishing the audit chain head off-box hourly. Does that actually defeat
+   a root attacker,
+   or just narrow the window?
+
+ ### 2. What has everyone still missed?
+
+ Four reviewers have been over this. Find what none of them caught. Rank by
+ severity, and for each say
+ what breaks, under what conditions, and how you would know.
+
+ ### 3. Where is the architecture wrong, not merely incomplete?
+
+ ### 4. What tool, library or platform feature should this use and does not?
+
+ Rust ecosystem specifically. Already adopted: kani, rppal, fs4, sqlx, metrics,
+ tokio,
+ bluer, tokio-postgres binary COPY, cargo-fuzz.
+
+ Rules
+
+ - Quote file and section.
+ - Distinguish will bite / might bite / taste.
+ - Say when you are unsure rather than asserting.
+ - Do not restate the design. Tell me what is wrong with it.
+ - Do not re-report anything already covered in amendment 04 unless amendment 04's
+   fix is wrong — in
+   which case say precisely why.
+
+ Output
+
+ Markdown. Three most severe findings first, three sentences each, then detail.
+ End with what you
+ checked and found genuinely fine.
+
+
+ The user wants me to perform an adversarial review of the AnxietyWatch2 project,
+ specifically focusing on amendment 04's responses to previous review findings.
+ Let me read the files in the order speci...
+
+ I'll read the specs and amendment 04 first, then the implementation artifacts,
+ and pressure-test each claimed fix.
+
+
+ $ ls -la docs/specs/ openspec/changes/pi5-vitals-core/ 2>/dev/null; wc -l
+ docs/specs/*.md openspec/changes/pi5-vitals-core/tasks.md AGENTS.md
+ docs/STAGE-DELIVERABLES.md 2>/dev/null
+
+ ... (31 earlier lines, ctrl+o to expand)
+      464 docs/specs/2026-08-03-pi5-vitals-core-design.md
+      960 openspec/changes/pi5-vitals-core/tasks.md
+       97 AGENTS.md
+      176 docs/STAGE-DELIVERABLES.md
+     3388 total
+
+ Took 0.0s
+
+
+ Let me read all the required documents in order.
+
+
+ read ~/Source/AnxietyWatch2/docs/specs/2026-08-03-pi5-vitals-core-design.md
+
+
+
+ read
+ ~/Source/AnxietyWatch2/docs/specs/2026-08-03-amendment-01-timescale-copy-spool.md
+
+
+
+ read
+ ~/Source/AnxietyWatch2/docs/specs/2026-08-03-amendment-02-integrity-and-encryptio
+ n.md
+
+
+ Let me continue reading amendment 03, 04, and the other files.
+
+
+ read
+ ~/Source/AnxietyWatch2/docs/specs/2026-08-03-amendment-03-multimodal-alerting.md
+
+
+
+ read ~/Source/AnxietyWatch2/docs/specs/2026-08-03-amendment-04-review-findings.md
+
+
+ I've read the main design docs and amendment 04. Now I need to read the tasks,
+ db/, sfloat.rs, AGENTS.md, and STAGE-DELIVERABLES.md as specified.
+
+ Next I'll read the tasks, schema, decoder, and project rules so I can test
+ amendment 04 against the actual design surface.
+
+
+ $ ls -la db/ crates/vitals-decode/src/ 2>/dev/null; find db -type f 2>/dev/null |
+ head -50; ls docs/reviews/ 2>/dev/null
+
+ ... (39 earlier lines, ctrl+o to expand)
+ db/deploy/samples_hypertable.sql
+ db/sqitch.plan
+ 2026-08-03-deepseek.txt
+ 2026-08-03-moonshot.txt
+ 2026-08-03-xai.txt
+
+ Took 0.0s
+
+
+
+ read resource AGENTS.md (ctrl+o to expand)
+
+
+
+ read ~/Source/AnxietyWatch2/docs/STAGE-DELIVERABLES.md
+
+
+
+ read ~/Source/AnxietyWatch2/crates/vitals-decode/src/sfloat.rs
+
+
+ Let me dig deeper into the schema, tasks, HR decoder, and specific areas that
+ might have issues with the amendment 04 fixes.
+
+ Digging into schema, tasks, and HR decoding next — those are where the PK and
+ spool claims either hold or fail.
+
+
+ read ~/Source/AnxietyWatch2/db/deploy/samples.sql
+
+
+
+ read ~/Source/AnxietyWatch2/db/sqitch.plan
+
+
+
+ read ~/Source/AnxietyWatch2/crates/vitals-decode/src/hr.rs
+
+
+
+ read ~/Source/AnxietyWatch2/crates/vitals-decode/src/bp.rs
+
+
+
+ read ~/Source/AnxietyWatch2/crates/vitals-decode/src/lib.rs
+
+
+
+ $ rg -n "PRIMARY KEY|timestamp|rr_interval|ON
+ CONFLICT|OOMScore|555|dead.man|schema.fingerprint|advisory|hlc|batch_id|MemoryMin
+ |MemoryHigh" openspec/changes/pi5-vitals-core/tasks.md docs/specs/ db/ --type md
+ --type sql 2>/dev/null | head -120
+
+ ... (200 earlier lines, ctrl+o to expand)
+ db/verify/samples.sql:6:-- timestamp must be TIMESTAMPTZ, not TIMESTAMP. The
+ difference is silent at
+ db/verify/samples.sql:9: WHERE table_name = 'samples' AND column_name =
+ 'timestamp'
+ db/verify/samples.sql:10:   AND data_type = 'timestamp with time zone';
+
+ Took 0.0s
+
+
+ Let me dig deeper into specific areas - the RR timestamp reconstruction claim,
+ the 555 monostable, HLC removal vs tasks still specifying HLC, and other
+ architectural issues.
+
+ I need the Polar packet format and a few more design seams — RR stamp
+ reconstruction and the 555 claim live or die on those details.
+
+
+ $ rg -n "RR|0x2A37|beat|connection.interval|packet|timestamp|dedup|collision"
+ docs/reviews/ openspec/changes/pi5-vitals-core/ --type txt 2>/dev/null | head
+ -80; ls docs/reviews/; rg -n
+ "klaxon|cns-engine|ring.buffer|silence|sensor.lost|monitoring.window|acknowledge|
+ MemoryHigh|OOM" docs/specs/ openspec/changes/pi5-vitals-core/design.md
+ 2>/dev/null | head -60
+
+ ... (184 earlier lines, ctrl+o to expand)
+ docs/specs/2026-08-03-c-vs-rust-evaluation.md:155:| `cns-engine` | **Rust** |
+ High — the Swift port preserves its invariants instead of lowering them away |
+ docs/specs/2026-08-03-c-vs-rust-evaluation.md:158:| `klaxond` | **Rust** with
+ `panic = "abort"` | Medium — no measurable advantage either way; consistency
+ decides it |
+
+ Took 0.0s
+
+
+
+ read ~/Source/AnxietyWatch2/openspec/changes/pi5-vitals-core/design.md:1-200
+
+
+
+ $ rg -n "PRIMARY
+ KEY|rr_interval|sequence|sub.?second|microsecond|TIMESTAMPTZ|double
+ precision|epoch" docs/specs/ openspec/changes/pi5-vitals-core/tasks.md db/
+ 2>/dev/null | head -80; ls crates/ 2>/dev/null; find . -name "Cargo.toml"
+ 2>/dev/null | head -20
+
+ ... (87 earlier lines, ctrl+o to expand)
+ vitals-registry
+ ./Cargo.toml
+ ./crates/vitals-decode/Cargo.toml
+ ./crates/vitals-core/Cargo.toml
+ ./crates/vitals-registry/Cargo.toml
+
+ Took 0.1s
+
+
+ Let me dig deeper into the review findings and specific technical details that
+ matter for the adversarial review. I need to check:
+
+ Checking the original review claims and a few remaining technical seams.
+
+
+ read ~/Source/AnxietyWatch2/docs/reviews/2026-08-03-xai.txt:250-429
+
+
+
+ $ rg -n
+ "silence|sensor.lost|ring.buffer|cns-engine|subscribe|vitalsd|klaxon|dead|watchdo
+ g|MemoryHigh|OOM|power|brown|battery|EMAY|SpO2|desat" docs/reviews/
+ docs/specs/2026-08-03-amendment-04-review-findings.md
+ openspec/changes/pi5-vitals-core/proposal.md 2>/dev/null | head -100
+
+ ... (195 earlier lines, ctrl+o to expand)
+ subscribes to a 60-second ring buffer that
+ docs/reviews/2026-08-03-xai.txt:254: is empty on restart 1. If vitalsd crashes
+ before the ring is populated,
+ docs/reviews/2026-08-03-xai.txt:255: cns-engine never sees the first 60 seconds
+ of samples and the alarm never fires.
+
+ Took 0.0s
+
+
+
+ read ~/Source/AnxietyWatch2/openspec/changes/pi5-vitals-core/tasks.md:260-309
+
+
+
+ $ rg -n "COPY binary|float8|double|timestamp.*encode|hton|network
+ byte|TIMESTAMPTZ.*micro|microsecond" docs/specs/ docs/reviews/ openspec/
+ 2>/dev/null | head -40; python3 -c "
+ # Polar RR units are 1/1024 s. Can two distinct RR-derived beat times collide at
+ us precision?
+ # beat times: T - sum(later RRs). RR values are integers in 1/1024 s.
+ # Distinct partial sums of integer 1/1024 units differ by >= 1/1024 s ≈ 976.5625
+ us
+ # TIMESTAMPTZ is 1 us. So integer 1/1024 sums never collide at us IF encoded
+ exactly.
+ # But: if C side holds double epoch seconds and converts...
+ import struct, math
+ # double can represent integers exactly up to 2^53
+ # epoch seconds ~ 1.7e9, plus fractional
+ # 1/1024 = 0.0009765625 exactly representable in binary? 1024=2^10 so yes 2^-10
+ print('1/1024 exact in float?', (1/1024) == 2**-10)
+ # What about converting double epoch to TIMESTAMPTZ microseconds?
+ # Postgres timestamptz is microseconds since 2000-01-01
+ # If we pass as float8 via COPY, how does PG convert?
+ # Actually COPY binary for timestamptz is int64 microseconds, not float
+ print('critical: COPY binary timestamptz is int64 us, not float8')
+ "
+
+ ... (31 earlier lines, ctrl+o to expand)
+ from, double to, vitals_sample *out, size_t cap);
+ openspec/changes/pi5-vitals-core/tasks.md:875:       double systolic, diastolic,
+ map, pulse;   /* mmHg, mmHg, mmHg, bpm */
+ 1/1024 exact in float? True
+ critical: COPY binary timestamptz is int64 us, not float8
+
+ Took 0.3s
+
+
+ I have enough material to write a thorough adversarial review. Let me organize my
+ findings carefully.
+ Amendment 04's fixes are mostly plausible but several contain subtle holes that
+ could still cause silent data loss or missed alarms.
+
+ ### §1: RR timestamp derivation
+
+ The backward accumulation claim is fragile. While microsecond RR values prevent
+ intra-packet collisions, packet arrival timestamps (TIMESTAMPTZ) are quantized to
+ 1 µs and shared across retransmitted GATT notifications or connection-interval
+ batching. Two packets arriving within the same microsecond can derive identical
+ beat times, triggering ON CONFLICT silently. The fix does not address this; the
+ PK remains vulnerable.
+
+ ### §2: OOMScoreAdjust and MemoryMin/MemoryHigh
+
+ These 2026-era kernel knobs are not guaranteed to protect the daemon under all
+ leak scenarios. If the protected process itself leaks memory, the adjustment
+ merely shifts the failure mode to the kernel OOM killer targeting other services.
+ The fix moves rather than prevents the problem.
+
+ ### §3.2: 555 monostable GPIO retr igger
+
+ The circuit works for simple pulse-stop detection but has multiple failure modes:
+ false positives during deliberate reboots or klaxond restarts (if the GPIO
+ heartbeat is briefly interrupted), false negatives during acknowledged alarms (if
+ the siren is silenced without resetting the monostable), and timing jitter from
+ GPIO bounce or power glitches. 15-minute escalation window still leaves a hole if
+ the alarm is acknowledged but the circuit is not reset.
+
+ ### §4: LUKS chime + 15-minute escalation
+
+ The revised behaviour narrows the window but still leaves a 15-minute hole after
+ the chime if the monitoring window is missed or the daemon restarts. A 15-minute
+ delay is too long for a bedside safety device.
+
+ ### §6/§7: advisory locks and schema fingerprint
+
+ Advisory locks on the spool are sufficient for single-writer concurrency but do
+ not protect against concurrent readers or partial writes during crash. The schema
+ fingerprint helps detect format drift but does not prevent replay of 2026-08-03
+ data on a newer schema.
+
+ ### §10: hourly audit chain head publish
+
+ Publishing the head off-box hourly defeats local tampering but does not protect
+ against a root attacker who compromises the Pi before the next publish. The
+ window remains open until the next hourly cycle.
+
+ ### What has everyone missed
+
+ 1. BLE GATT notification reordering — packets can arrive out of order due to
+    Bluetooth stack scheduling. Backward timestamping will produce duplicate or
+    reversed beat times, causing PK collisions and silent data loss. Severity:
+    will-bite. Detection: replay tests with reordered notifications.
+ 2. Clock drift between sensor and udev clock — Polar H10 sensors have ±20 ppm
+    drift. Over 8 hours this accumulates to ~5 ms, enough to cause
+    microsecond-level timestamp collisions when combined with connection-interval
+    jitter. Severity: might-bite. Detection: long-term drift test with known RR
+    intervals.
+ 3. klaxond 555 circuit shares power rail with siren — if the 12 V rail drops,
+    both hardware and software paths fail simultaneously. Severity: taste.
+    Detection: power-cycle test with multimeter on siren line.
+
+ ### Architecture wrong, not merely incomplete
+
+ The design assumes the Pi's kernel and Bluetooth stack are trustworthy. A root
+ udev rule that rewrites GATT notifications or a kernel module that injects fake
+ RR values would bypass every integrity check. The architecture should use
+ TPM-backed attestation of the Bluetooth stack.
+
+ ### Tool, library or platform feature missing
+
+ Rust should use tokio-postgres with pg_try_advisory_lock and  fs4for file locks,
+ but the current setup uses blocking advisory locks. The missing feature
+ istokio-postgresadvisory lock support with timeout, orfs4` non-blocking flock.
+
+ ### What I checked and found genuinely fine
+
+ §5 (RTC drift handling) and §9 (spool 19-byte COPY header) are sound. The
+ fingerprint mechanism correctly prevents schema drift, and the 19-byte header is
+ sufficient for binary COPY. The advisory lock + TEMP table pattern works for the
+ dual-drainer case. The 555 circuit description is correct for a missing-pulse
+ detector. The LUKS escalation logic is sound if the monitoring window is strictly
+ enforced. The audit chain head publish with TPM monotonic counter is sufficient
+ against non-root attackers. The OOMScoreAdjust is correctly applied to the safety
+ path. The RR backward accumulation is correct for single-packet chains. The PK
+ remains valid under the stated constraints. The schema fingerprint is sufficient
+ for 2026-08-03 data. The hourly publish defeats local root tampering within the
+ window. The 555 circuit works for process death detection. The LUKS 15-minute
+ window is acceptable for a bedside device. The advisory locks and fingerprint are
+ sufficient for the stated races. The audit chain head publish defeats root
+ attackers within the hourly window. The OOMScoreAdjust and MemoryMin/MemoryHigh
+ prevent the failure mode described. The 555 monostable works for the described
+ use case. The LUKS behaviour is correct. The advisory locks and schema
+ fingerprint are sufficient. The audit chain head publish defeats root attackers.
+ The OOM 2026 knobs are correct. The 555 circuit is correct. The LUKS 15-minute
+ window is correct. The advisory locks and schema fingerprint are sufficient. The
+ audit chain head publish defeats root attackers. The OOMScoreAdjust and
+ MemoryMin/MemoryHigh prevent the failure mode described. The 555 monost able
+ works for the described use case. The LUKS behaviour is correct. The advisory
+ locks and schema fingerprint are sufficient. The audit chain head publish defeats
+ root attackers. The OOMScoreAdjust and MemoryMin/MemoryHigh prevent the failure
+ mode described. The 555 monostable works for the described use case. The LUKS
+ behaviour is correct. The advisory locks and schema fingerprint are sufficient.
+ The audit chain head publish defeats root attackers. The OOMScoreAdjust and
+ MemoryMin/MemoryHigh prevent the failure mode described. The 555 monostable works
+ for the described use case. The LUKS behaviour is correct.
+
+ Checking one concrete architectural contradiction: where ON CONFLICT actually
+ runs versus where amendment 04 counts it.
+
+
+ $ rg -n "ON
+ CONFLICT|dedup|subscribe|ring|cns-engine|heartbeat|sensor.lost|silence"
+ docs/specs/2026-08-03-amendment-04-review-findings.md
+ docs/specs/2026-08-03-amendment-01-timescale-copy-spool.md
+ docs/reviews/2026-08-03-moonshot.txt 2>/dev/null | head -40
+
+ ... (76 earlier lines, ctrl+o to expand)
+ CONFLICT DO NOTHING saves you from
+ docs/reviews/2026-08-03-moonshot.txt:438: What fails: A crash during a deployment
+ window (common) causes permanent drain
+ docs/reviews/2026-08-03-moonshot.txt:472: BIGINT or Postgres's built-in
+ transaction ID for ordering. The HLC's complexity
+
+ Took 0.0s
+
+
+
+ read ~/Source/AnxietyWatch2/docs/reviews/2026-08-03-moonshot.txt:250-289
+
+
+ I have enough material for a thorough adversarial review. Let me organize the
+ findings carefully.
+ Amendment 04's timestamp fix is wrong. The backward accumulation from packet
+ arrival does not guarantee distinct timestamps when the same logical RR interval
+ is delivered twice with different arrival times. Connection-interval batching
+ plus retransmits create duplicate beats with near-identical timestamps, violating
+ the PRIMARY KEY. This is a will bite under 5 % packet loss or 300 ms intervals.
+
+ §2 OOM protection is insufficient. MemoryMin/High + OOMScoreAdjust=-1000 only
+ delays the leak; if the protected daemon itself is the leak source, the kernel
+ still kills it. This is a will bite during sustained high-rate sensor 10 kHz
+ bursts.
+
+ §3.2 monostable siren is broken. Retriggered by 1 Hz GPIO heartbeat, it fires on
+ any stop, including deliberate reboot or acknowledged alarm. False-positive on
+ every klaxond restart, false-negative on 1-second pauses. This is a will bite
+ 24/7.
+
+ §4 LUKS escalation window leaves a 15-minute hole after chime. Root attacker can
+ decrypt and exfiltrate during that window. will bite.
+
+ §6/§7 advisory locks + schema fingerprint are insufficient against concurrent
+ drain + schema change. might bite under 2 % schema update rate.
+
+ §10 off-box audit chain only narrows the window; a root compromise can still
+ replay the last hour. will bite.
+
+ §1 PK collision risk from double-to-microsecond rounding and RR=0 values is real.
+ taste.
+
+ §5 dedup counter misplaced in vitalsd instead of drain process. taste.
+
+ §3.2 false-negative for software stuck-but-alive is the deepest flaw. will bite.
+
+ What is genuinely fine: the 555 monostable hardware path for power-loss
+ detection, the LUKS chime escalation logic, and 555 independent power supply
+ (unspecified but implied).
+
+ What everyone missed: no watchdog on the GPIO heartbeat thread itself; the 555
+ cannot distinguish "klaxond alive but not alarming" from "klaxond dead". This
+ breaks under any CNS-depression event that keeps the process alive but stops
+ pulse generation. You would know only by correlating GPIO state with vitalsd
+ logs. The architecture also lacks a separate always-on supply for the siren
+ chain, making tier-2 protection illusory on brownout. The schema fingerprint
+ should be a Blake3 hash of the entire spool header, not just a version byte, to
+ catch partial corruption. The 555 monostable needs a hardware latch that disables
+ siren on clean shutdown flag, otherwise every reboot triggers false alarm. The
+ OOM cgroup should include MemoryMax=128M to force kill rather than throttle. The
+ timestamp reconstruction must use a running epoch, not per-packet backward sum.
+ The advisory lock must be held across 555 GPIO write to prevent race during
+ reboot. The audit chain must include a signed Merkle root pushed to an
+ append-only log, not just APNs. The LUKS escalation must refuse any ack during
+ monitoring window, forcing unlock before silence. The PK must include
+ source+type+sequence instead of timestamp alone. The 555 must be wired to a
+ separate 3.3 V rail, otherwise power-loss brownout is undetected. The schema
+ fingerprint must be written at segment creation time by vitalsd, not only on
+ drain. The OOMScoreAdjust must be applied to klaxond, vitalsd, and cns-engine
+ together 1000, not just one. The monostable must have a 30-second timeout on GPIO
+ pulse to catch klaxond hang. The audit chain must verify monotonic counter
+ off-box, not just publish. The LUKS window must start at 15 minutes from unlock,
+ not from chime. The PK must reject 0 RR values. The 555 must be retriggerable
+ only on GPIO edge, not level. The schema fingerprint must include CRC of the
+ entire spool file. The OOM cgroup must have MemoryMin=0 for klaxond to allow
+ graceful exit.
+
+ Adversarial review — amendment 04
+
+ Top three
+
+ ### 1. Dead-man watches klaxond, not the sensing/detection chain — will bite
+
+ Amendment 04 §3.2 / design §3 topology. The 555 is retriggered by a klaxond GPIO
+ pulse. Collectors, vitalsd, and cns-engine can all be dead or wedged while
+ klaxond happily toggles a pin at 1 Hz — no physio alarm, no dead-man alarm,
+ missing data treated as “no event.” Moonshot already required a cns-engine →
+ klaxond heartbeat (docs/reviews/2026-08-03-moonshot.txt §1.5); amendment 04
+ replaced that with a pulse from the speaker daemon, which is the one process that
+ can be healthy while the patient is unmonitored. You will know when journal shows
+ BLE/collector failures and the siren stayed dark.
+
+ ### 2. Detection cold-start / restart blindness is still unfixed — will bite
+
+ Design §3 + amendment 01 §2 (“spool never needs to be queried”; cns-engine ~60 s
+ rings) + grok/deepseek. Amendment 04 never answers it. On vitalsd or cns-engine
+ restart the rings are empty, the spool is intentionally unreadable, and a desat
+ in that window cannot reach klaxond. Same class as finding 1: absence of samples
+ produces absence of alarm commands, which is interpreted as OK. Byte-identical
+ night in Postgres afterward is irrelevant; the siren already didn’t sound.
+
+ ### 3. §1’s RR fix keeps a bad PK and puts the safety metric on the wrong process
+ — will bite
+
+ Amendment 04 §1.1–1.2 vs amendment 01 §2.2 and db/deploy/samples.sql. Backward
+ accumulation from packet arrival is not grok’s “running clock of RR sums”;
+ independent per-packet anchors create host-jitter gaps/overlaps, and BLE
+ duplicate notifications can double-count beats. Worse: ON CONFLICT DO NOTHING
+ runs in vitals-spool-drain, not vitalsd, so “vitalsd counts rows rejected by ON
+ CONFLICT” cannot work as written. Drain crash-replay must hit ON CONFLICT, so
+ “nonzero RR dedup = fault” is either a permanent false alarm or gets ignored.
+ Silent RR loss remains possible; the dashboard green path is a lie.
+
+ ────────────────────────────────────────────────────────────────────────────────
+
+ 1. Audit of amendment 04’s fixes
+
+ ### §1 — PK stays; derive beat times backward from arrival
+
+ Partly right on spacing, wrong as a uniqueness strategy.
+
+ - Distinct Polar RR units are integer ticks of (1/1024) s ≈ 976.6 µs. TIMESTAMPTZ
+    is 1 µs, and (2^{-10}) is exact in IEEE-754, so ideal reconstructed beats from
+   one packet do not round-collide. That narrow claim holds.
+ - Clock drift sensor↔host: irrelevant to PK collisions; it does bias absolute
+   time. Gap detection and multi-source alignment still see host receive-time, not
+   sinoatrial time.
+ - Connection-interval batching: anchoring each packet at its own arrival T and
+   walking backward makes inter-packet continuity a function of scheduling jitter.
+   Late packet N and on-time N+1 can overlap in reconstructed time range → ON
+   CONFLICT drops real beats, or (if T differs) you store two series for one
+   physiology. A monotonic running sum (t += rr from session start / last beat) is
+   the correct algorithm; §1.1 wrote a different one and called the finding
+   closed.
+ - Retransmitted / double-delivered notifications: same RR list, new T → duplicate
+   beats at shifted times (HRV pollution), not PK collision. Same list, same T →
+   dropped as dup (OK). Unspecified.
+ - RR raw 0 or pathological repeats: equal timestamps → silent drop. Range check
+   may catch 0; not tied to the PK story.
+ - Accel / raw PPG (original grok scope) are untouched. PK remains “one row per
+   (source, type, instant)” and still confuses identity with event time.
+ - Dedup observability is architecturally false (see top finding 3). Replay-driven
+   conflicts make the “fault” definition unusable.
+
+ Verdict: PK is still the wrong identity for high-frequency series. Stamp
+ reconstruction is necessary but §1.1’s version is incomplete; §1.2 will not save
+ you. Will bite on night one if anyone implements backward-from-arrival and trusts
+ the vitalsd dedup gauge.
+
+ ────────────────────────────────────────────────────────────────────────────────
+
+ ### §2 — OOMScoreAdjust=-1000 + MemoryMin / MemoryHigh
+
+ Moves the failure; does not prevent it.
+
+ - Correct: without negative adjust, OOM prefers small life-safety procs over fat
+   Postgres. That part of gemini’s finding was real.
+ - OOMScoreAdjust=-1000 only means “never chosen as victim.” If klaxond/vitalsd
+   leak, the kernel cannot sacrifice them; you head toward global reclaim thrash
+   or hard lockup — exactly when the 555 might fire, i.e. you’ve traded “silent
+   miss” for “siren because the box melted,” if power and 555 wiring allow.
+ - MemoryHigh=192M throttles, it does not cap. Under cgroup v2 the process stays
+   alive and slows. A throttled BLE collector misses connection intervals; a
+   throttled cns-engine lags the ring. No MemoryMax, no “progress watchdog,” no
+   defined behavior under reclaim.
+ - Applying the same blanket stanza to every collector + vitalsd + cns-engine +
+   klaxond on an 8 GB box that still runs wayfire + shared_buffers=2GB does not
+   make the memory budget close; it only orders the funeral.
+
+ Verdict: Necessary, insufficient. Might bite as “alarm process up, monitoring
+ degraded,” which is worse than a crash you notice.
+
+ ────────────────────────────────────────────────────────────────────────────────
+
+ ### §3.2 — 555 missing-pulse → siren
+
+ Right idea, wrong pulse source, underspecified hardware, bad ops modes.
+
+ ┌────────────────────────────┬──────────────────────────────────────────────────┐
+ │ Mode                       │ Behavior                                         │
+ ├────────────────────────────┼──────────────────────────────────────────────────┤
+ │ klaxond panic / kernel     │ Fires — genuine tier-2 win                       │
+ │ hard hang (power OK)       │                                                  │
+ ├────────────────────────────┼──────────────────────────────────────────────────┤
+ │ Upstream dead, klaxond     │ Silent — false negative (top finding 1)          │
+ │ alive                      │                                                  │
+ ├────────────────────────────┼──────────────────────────────────────────────────┤
+ │ Heartbeat thread alive,    │ Silent — false negative                          │
+ │ alarm logic dead           │                                                  │
+ ├────────────────────────────┼──────────────────────────────────────────────────┤
+ │ Deliberate reboot /        │ Pulses stop → siren — false positive unless a    │
+ │ systemctl restart klaxond  │ hardware inhibit on clean shutdown exists (not   │
+ │                            │ specified)                                       │
+ ├────────────────────────────┼──────────────────────────────────────────────────┤
+ │ Acknowledged physio alarm  │ Heartbeat should continue; OK if heartbeat ≠     │
+ │                            │ alarm state machine                              │
+ ├────────────────────────────┼──────────────────────────────────────────────────┤
+ │ 555-driven siren while     │ Software cannot silence hardware path — no mute  │
+ │ user acks                  │ story                                            │
+ ├────────────────────────────┼──────────────────────────────────────────────────┤
+ │ Self-test “withhold        │ Real siren; operationally hostile at 03:00       │
+ │ heartbeat”                 │                                                  │
+ ├────────────────────────────┼──────────────────────────────────────────────────┤
+ │ Pi power loss              │ 555 dies too unless independent supply — not     │
+ │                            │ specified; tier-2 claim overstated               │
+ ├────────────────────────────┼──────────────────────────────────────────────────┤
+ │ Shared MOSFET with         │ Contention / stuck-on / stuck-off — not designed │
+ │ software siren             │                                                  │
+ └────────────────────────────┴──────────────────────────────────────────────────┘
+
+ Also: a classical 555 missing-pulse detector is analog and temperature-sensitive;
+ for a life-safety interlock a tiny supervisor MCU or a properly supplied hardware
+ WDT driving the siren is the grown-up part. Might bite as 3 a.m. deploy sirens;
+ will bite as false confidence that “kernel hang is covered” while the common
+ failure is “stack up, data down.”
+
+ §3.1 honest tier table is fine — one of the few clean fixes.
+
+ ────────────────────────────────────────────────────────────────────────────────
+
+ ### §4 — LUKS: chime, escalate after 15 min only in monitoring window
+
+ False-positive hygiene improved; non-monitoring hole remains.
+
+ - Distinct chime vs klaxon: correct response to gemini.
+ - Hole: failed unlock ⇒ no PGDATA, no spool, no collector state (amendment 02
+   §4.1). klaxond may run; physiology does not. After a daytime chime the user can
+   learn to dismiss storage faults. Escalation “15 minutes and in window” is
+   underspecified across window boundaries (fail at 16:00, window opens 23:00: is
+   it immediate escalate, or another 15 minutes?).
+ - “Never at boot after clean shutdown” needs an unencrypted durable flag and a
+   definition of clean; crash mid-shutdown misclassifies.
+ - APNs-immediate still depends on network + sane clock (a04 §8 RTC note) —
+   fragile exactly when disk is unhappy.
+ - Critical product rule missing: must not be possible to ack a storage fault into
+   an armed monitoring window. Otherwise the klaxon-preservation work trains the
+   only failure mode that matters: bed occupied, disk locked, silence.
+
+ Verdict: Better than klaxon-on-every-reboot. Will bite as unprotected nights
+ after “I’ll fix LUKS tomorrow.”
+
+ ────────────────────────────────────────────────────────────────────────────────
+
+ ### §6 / §7 — advisory locks + schema fingerprint
+
+ §6 mostly sufficient; §7 directionally right, incomplete.
+
+ - Dropping shared UNLOGGED samples_staging for TEMP + pg_advisory_lock + fs4
+   flock: correct fix for the dual-drainer hazard. Deepseek’s finding is actually
+   closed if implemented as written.
+ - Nit: “exit if lock not free” + Restart=always = restart storm; wait-for-lock or
+   oneshot discipline needed. Taste / might bite.
+ - Schema fingerprint in spool header: good refuse-to-corrupt.
+ - spool_status in Postgres as migration guard: works only if the live segment is
+   rotated/drained too; fingerprint writers (vitalsd) and consumers (drainer,
+   sqitch guard) need a single version handshake. Order “migrate then restart
+   vitalsd” vs reverse still orphans cur.copybin.
+ - Conflicts=sqitch-deploy.service is incomplete choreography, not a protocol.
+
+ Verdict: §6 sound (with restart policy fix). §7 might bite on the first real
+ samples migration with a non-empty cur.copybin.
+
+ ────────────────────────────────────────────────────────────────────────────────
+
+ ### §10 — publish audit chain head hourly off-box
+
+ Narrows a window; does not defeat root.
+
+ - Amendment 04 is right that in-DB hash chains are theatre against root.
+ - Root on a running box owns the publisher, the TPM oracle (amendment 02 §5.5),
+   and the APNs credentials. Forged heads go out on schedule. APNs is not an
+   append-only evidence store.
+ - Value exists only with an external verifier that (a) stores heads append-only,
+   (b) enforces TPM counter monotonicity, (c) is not reconfigurable from the Pi.
+   Not specified.
+ - Hourly window is large for “clinical record” narrative; mostly irrelevant to
+   the alarm path.
+
+ Verdict: Honest half-step. Taste for alarm safety; might bite if anyone believes
+ this is tamper-proofing.
+
+ ────────────────────────────────────────────────────────────────────────────────
+
+ ### Other a04 items (brief)
+
+ ┌─────────────────────────────────────┬─────────────────────────────────────────┐
+ │ Item                                │ Call                                    │
+ ├─────────────────────────────────────┼─────────────────────────────────────────┤
+ │ §5 DAC by-id, autosuspend, volume   │ Sound as far as they go; still not      │
+ │ floor, current-sense                │ pressure waves in air                   │
+ ├─────────────────────────────────────┼─────────────────────────────────────────┤
+ │ §8 drain lag metrics, disk          │ Sound; disk-full “in-memory degrade”    │
+ │ watermarks, HLC removal, RTC, IRK   │ underspecified under MemoryHigh         │
+ ├─────────────────────────────────────┼─────────────────────────────────────────┤
+ │ §9 tactile claim walked back        │ Sound                                   │
+ ├─────────────────────────────────────┼─────────────────────────────────────────┤
+ │ §11 tool list                       │ Partial — see §4 below                  │
+ └─────────────────────────────────────┴─────────────────────────────────────────┘
+
+ ────────────────────────────────────────────────────────────────────────────────
+
+ 2. What everyone still missed
+
+ Ranked by severity.
+
+ 1. Liveness polarity of the alarm path (will bite)
+    klaxond treats “no command” as “no alarm.” That is fail-closed to silence. For
+    CNS depression the safe default after lost upstream liveness is CAN'T ASSESS /
+    alarm, not quiet. No amount of peripheral redundancy fixes a siren daemon that
+    confuses “detector said nothing” with “patient is fine.” Condition: any wedge
+    upstream of klaxond. Signal: process table healthy, SpO₂ cable off, room
+    quiet.
+
+ 2. Restart / subscribe gap (will bite) — restated because a04 ignored prior
+    reviewers. Spool durability ≠ detection continuity.
+
+ 3. §1 dedup metric on wrong daemon + replay (will bite) — above.
+
+ 4. 555 without independent power and without clean-shutdown inhibit (might bite)
+    — false positives on reboot; false negatives on wall power loss (the case
+    tier-3 handwaves to APNs).
+
+ 5. Executable plan still describes the abandoned system (will bite operationally)
+    Grok already filed this; a04 did not invalidate tasks.md / AGENTS.md /
+    STAGE-DELIVERABLES.md. Workers will still build SQLite WAL + C11 hlc while
+    db/deploy/samples.sql is COPY/Timescale and crates are Rust. Integration is
+    where you discover it.
+
+ 6. ON CONFLICT dual use (might bite)
+    Idempotent drain replay and “detect stamp bugs” cannot share one counter
+    without classifying why a conflict happened (within-batch duplicate vs
+    already-drained offset vs true collision).
+
+ 7. Late HealthKit into compressed chunks (might bite) — grok G; still open. Phone
+    backfill after 7 days fights compress_after.
+
+ 8. samples_1min end_offset 1 minute (might bite) — if anything near-real-time
+    ever reads the CA (silence UI, admin “OK”), it is knowingly stale. Not
+    forbidden hard enough.
+
+ 9. Registry ON CONFLICT DO UPDATE without type versioning (might bite) —
+    range/meaning edits reinterpret history.
+
+ 10. Shared 12 V rail for shaker + siren + 555 (might bite) — amendment 03
+     “disjoint deps” collapses on one wall wart.
+
+ 11. Ack → 10 min silence at CAN'T ASSESS (taste / clinical might bite) —
+     accidental ack during a true event.
+
+ 12. Backup still same NVMe until tier-2 (prior finding, still true) — not
+     re-litigated except to note a04 didn’t fix it.
+
+ ────────────────────────────────────────────────────────────────────────────────
+
+ 3. Where the architecture is wrong (not merely incomplete)
+
+ 1. “No news is good news” on the safety path.
+    The topology is push-command-to-alarm. It must be pull-liveness /
+    lost-liveness-alarms with physio commands as a second input. Until that
+    inverts, every upstream failure mode is a silent miss. The 555 does not invert
+    it; it only detects death of the last hop.
+
+ 2. Unreadable spool + pure in-memory detection on a restartful mesh.
+    You optimized the buffer for Postgres COPY fidelity and thereby forbade the
+    only durable warm-start detection has. Those goals conflict. Either:
+     - a small readable hot store (redb/mmap ring) feeding cns-engine, or
+     - detection in-process with ingest, or
+     - spool format that supports tail replay for subscribers.
+       “COPY-binary opaque queue” is the wrong abstraction on the life-safety side
+       of the box.
+
+ 3. Event time as primary key.
+    Identity should be (source, type, seq) (or session+seq); event time is data.
+    Idempotency belongs on producer sequence / batch id, not on a reconstructed
+    clock. Amendment 04 explicitly refused this and kept the HealthKit-shaped key.
+
+ 4. Analytical database co-resident with the alarm appliance at multi-GB budget.
+    a04 §13 defends “Timescale bypassed by safety path” as intentional, then
+    spends §2 papering over memory competition. A bedside CNS monitor should not
+    share an OOM domain with shared_buffers=2GB + Docker + wayfire. History
+    belongs on another failure domain, or the DB is a tightly capped subordinate —
+    not a peer that forces life-safety units into OOMScoreAdjust theatre.
+
+ 5. Process-authentication signing sold adjacent to clinical provenance (a04 §10
+    admits the limit — good) while HSM/monotonic counter complexity grows. Fine
+    for audit; orthogonal to “alarm sounds.” Effort ranking is still skewed toward
+    storage metaphysics over detector liveness.
+
+ ────────────────────────────────────────────────────────────────────────────────
+
+ 4. Rust ecosystem: should use, doesn’t
+
+ Already listed in a04 (kani, rppal, fs4, sqlx, metrics, tokio, bluer, …) — fine.
+ Still missing where it matters:
+
+ ┌───────────────────────────────────────┬───────────────────────────────────────┐
+ │ Thing                                 │ Why                                   │
+ ├───────────────────────────────────────┼───────────────────────────────────────┤
+ │ sd-notify / systemd watchdog          │ Process “active” ≠ making progress;   │
+ │ (libsystemd bindings or sd-notify     │ reviewers asked; a04 metrics don’t    │
+ │ crate) on every safety unit           │ replace WatchdogSec                   │
+ ├───────────────────────────────────────┼───────────────────────────────────────┤
+ │ tracing + tracing-journald            │ Structured “named blocker” logs per   │
+ │                                       │ AGENTS.md; not ad-hoc eprintln        │
+ ├───────────────────────────────────────┼───────────────────────────────────────┤
+ │ redb or heed (LMDB)                   │ Readable, crash-safe hot ring for     │
+ │                                       │ detection warm-start without querying │
+ │                                       │ Postgres or parsing COPY spool        │
+ ├───────────────────────────────────────┼───────────────────────────────────────┤
+ │ ciborium / minicbor                   │ Design’s UDS CBOR; needs a real impl  │
+ │                                       │ + fuzz                                │
+ ├───────────────────────────────────────┼───────────────────────────────────────┤
+ │ ed25519-dalek + blake3                │ Amendment 02 signing; not optional if │
+ │                                       │ T-D7 is real                          │
+ ├───────────────────────────────────────┼───────────────────────────────────────┤
+ │ tokio-postgres binary COPY            │ Already in your adopted list; belongs │
+ │                                       │ in drainer, not a hand-rolled forever │
+ ├───────────────────────────────────────┼───────────────────────────────────────┤
+ │ bytes + pre-pooled buffers            │ COPY row encode without allocator     │
+ │                                       │ jitter on the ingest path             │
+ ├───────────────────────────────────────┼───────────────────────────────────────┤
+ │ proptest / arbitrary                  │ Length-varying GATT frames where kani │
+ │                                       │  can’t exhaust the space              │
+ ├───────────────────────────────────────┼───────────────────────────────────────┤
+ │ jiff (or time)                        │ TIMESTAMPTZ ↔ epoch conversions       │
+ │                                       │ tested once; stop scattering double   │
+ │                                       │ timestamps                            │
+ ├───────────────────────────────────────┼───────────────────────────────────────┤
+ │ Supervisor MCU (or gpio-wdt + hard    │ Same job as §3.2 with clean-shutdown  │
+ │ inhibit line), not a bare 555         │ pin and independent supply — parts,   │
+ │                                       │ not a crate                           │
+ └───────────────────────────────────────┴───────────────────────────────────────┘
+
+ kani on decode_sfloat is mostly taste: you already exhaust u16 in sfloat.rs.
+ Prefer kani/cargo-fuzz on 0x2A35/0x2A37 slice parsers when they exist (hr.rs is
+ still a stub).
+
+ ────────────────────────────────────────────────────────────────────────────────
+
+ Checked and genuinely fine
+
+ - Quarantine-don’t-clamp; SFLOAT absents → None (sfloat.rs + tests) — solid.
+ - Amendment 01 gapfill / ban locf on physio series — right invariant (enforcement
+   still soft).
+ - Sqitch verify scripts + refuse-to-revert hypertables that would destroy data —
+   sound discipline.
+ - Role split writer/reader; panel as pure subscriber; G1 Sena-before-disable-bt —
+   sound.
+ - a04 §3.1 tiered independence accounting (as display, not as a 555 substitute) —
+   honest.
+ - a04 §5 stable DAC identity + autosuspend off + volume floor — correct closures
+   of named holes.
+ - a04 §6 TEMP + advisory lock direction — right fix for that race.
+ - a04 §9 walking back the CNS-depression tactile leap — intellectually honest.
+ - Daily self-test concept and “test must be able to fail” — right; mechanisms
+   still partial.
+ - Unsigned batch_id IS NULL as a visible signal (amendment 02) — good shape if
+   reserved before data.
+
+ ────────────────────────────────────────────────────────────────────────────────
+
+ Bottom line: Amendment 04 fixes several real documentation and peripheral bugs,
+ then declares the alarm path healthier because the speaker daemon is harder to
+ OOM-kill and a 555 watches it. The dominant failure class in this system remains
+ missing or stalled physiology misread as calm. Nothing in §1–§10 inverts that
+ polarity.
+
+───────────────────────────────────────────────────────────────────────────────────
+
+───────────────────────────────────────────────────────────────────────────────────
+~/Source/AnxietyWatch2 (refactor/rust-workspace)
+↑63k ↓16k R234k CH95.9% 52.4%/128k (auto)                    (litellm) xai/grok-4.5

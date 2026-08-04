@@ -1,30 +1,41 @@
 # Tasks — Pi 5 Vitals Core (Stages 0–3)
 
-> **For agentic workers:** each `### T-XX` block is a complete, self-contained prompt. Paste one
-> block into a fresh agent; it needs no conversation history. Read the `Reads:` list and nothing
-> else. Acceptance is the `Verify` command's exit code — not your own assessment.
+> **For agentic workers:** each `### T-XX` block is a self-contained prompt. Paste one into a fresh
+> agent. Read the `Reads:` list **plus `docs/specs/AMENDMENTS.md`, which is always in scope**.
+> Acceptance is the `Verify` command's exit code — not your own assessment.
+>
+> **If a task brief contradicts an accepted amendment, the amendment wins.** Report the
+> contradiction; do not implement either version silently.
 
 **Goal:** A blood pressure reading taken on the A&D UA-651BLE lands in Postgres on the Pi with
 correct provenance, recoverable from a verified backup.
 
-**Architecture:** Collectors write through `libvitals` to `vitalsd`, the single writer of a narrow
-append-only `samples` table in SQLite. `vitalsd` tails its own WAL into Postgres on NVMe. The
-life-safety path runs as static C binaries under systemd; Docker holds nothing in this change.
+**Architecture:** Collectors sign a batch and append it, already encoded as PostgreSQL binary `COPY`
+rows, to a spool file. `vitals-spool-drain` streams the spool into Postgres through a private `TEMP`
+staging table. Detection runs on in-memory ring buffers fed by `vitalsd`'s subscription fan-out, not
+from the database. The life-safety path runs as static Rust binaries under systemd; Docker holds
+nothing in this change.
 
-**Tech stack:** C11 · meson/ninja · SQLite 3 (WAL) · PostgreSQL 16 · pgBackRest · BlueZ/D-Bus ·
-systemd · Python 3.12 (codegen only)
+**Tech stack:** Rust 2024 (pinned via `rust-toolchain.toml`) · cargo · PostgreSQL 16 + TimescaleDB ·
+sqitch · pgBackRest · BlueZ via `bluer` · systemd · Python 3.12 (codegen only)
 
 ## Global constraints
 
 - Host `chris@minidude`, passwordless sudo. Hostname is `raspberrypi`; reach it as `minidude`.
-- Pi-side working tree: `~/vitals`. This repo is authoritative for the registry TOML and generated
-  headers; both are committed here and copied there.
-- **UTC epoch seconds only** in the store. No local time, ever, at any layer below presentation.
-- **Canonical unit per type**, converted once at the decoder. The store holds one unit per type.
-- `samples` is **append-only**. No `UPDATE`, no `DELETE`. Removal is a tombstone row.
-- C11, `-Wall -Wextra -Werror`, no warnings. `-fsanitize=address,undefined` in the test build.
-- Every byte-decoding function is pure: `(const uint8_t*, size_t) -> result`. No allocation, no I/O.
-- Commit after every task. Never commit to `main`; work on `design/pi5-vitals-core`.
+- Repo is authoritative for `vitals/registry.toml` and everything in `vitals/generated/`. Generated
+  artifacts are committed, never regenerated ad hoc on the Pi.
+- **UTC only.** `TIMESTAMPTZ` in Postgres with the cluster timezone pinned to UTC; epoch seconds in
+  Rust. No local time at any layer below presentation.
+- **Canonical unit per type**, converted once at the decoder.
+- `samples` is **append-only in practice**: `INSERT` is the normal path, and any `UPDATE`/`DELETE`
+  passes through the hash-chained audit trigger (amendment 02 §1).
+- **Identity is `(source, type, session_id, seq)`.** `timestamp` is best-estimate event time and is
+  **not** part of the key. Never key on packet arrival time.
+- Rust, `cargo clippy --all-targets` clean at the workspace's `deny` levels. A warning is a failure.
+- Decoder crates are `#![no_std]` and `#![forbid(unsafe_code)]`. Every byte-decoding function is
+  pure: `(&[u8]) -> Option<T>`. No allocation, no I/O, no state.
+- **Every alarm output is provably OFF from power-on until `klaxond` takes control**, in hardware.
+- Commit after every task. Never commit to `main`; branch first.
 
 ---
 
@@ -45,9 +56,9 @@ pane renders (`grep -n '^- \[' tasks.md`).
 - [ ] T-C3 — Scheduled restore verification · implement-complex · pi · **review · gate G3 owner**
 - [ ] T-D1 — Registry TOML and codegen · implement-standard · mac
 - [ ] T-D2 — IEEE-11073 SFLOAT decoder with fuzz target · implement-complex · either · **review**
-- [ ] T-D3 — libvitals append and query · implement-complex · either · **review**
+- [ ] T-D3 — COPY-binary encoder and spool · implement-complex · either · **review**
 - [ ] T-D4 — vitalsd daemon and socket protocol · implement-complex · pi · **review**
-- [ ] T-D5 — SQLite WAL tail into Postgres · implement-complex · pi · **review**
+- [ ] T-D5 — spool drainer · implement-complex · pi · **review · blocked by G3**
 - [ ] T-D6 — bp-collector end to end · implement-complex · pi · **review · blocked by G3**
 
 Parallelism: T-D1 and T-D2 have no hardware dependency and may run on separate workers concurrently
@@ -61,6 +72,7 @@ other groups proceed around it.
 ### T-A1 — Migrate root filesystem to NVMe
 
 **Tier:** human · **Host:** pi · **Context budget:** ~2k · **Depends:** none · **Review required:** no
+**Amends:** none
 
 **Reads:** none.
 **Modifies:** `/boot/firmware/cmdline.txt`, `/etc/fstab` on minidude.
@@ -104,6 +116,7 @@ other groups proceed around it.
 ### T-A2 — Audio output path
 
 **Tier:** human · **Host:** pi · **Context budget:** ~2k · **Depends:** none · **Review required:** no
+**Amends:** 03 (§4 alarm output path, §6 self-test by stable identity)
 
 The Pi 5 has no analog audio. Today only `vc4hdmi0`/`vc4hdmi1` exist and no display is on HDMI, so
 there is currently no way to make a sound. This task establishes the alarm's output path; `klaxond`
@@ -139,6 +152,7 @@ is Stage 5.
 ### T-A3 — Bring up the Sena UD100-G03 as `hci1`
 
 **Tier:** implement-standard · **Host:** pi · **Context budget:** ~3k · **Depends:** none
+**Amends:** none
 **Review required:** no
 
 **GATE G1 owner.** T-A4 must not run until this task's verify exits 0.
@@ -176,6 +190,7 @@ is Stage 5.
 ### T-A4 — Disable onboard Bluetooth
 
 **Tier:** mechanical · **Host:** pi · **Context budget:** ~2k · **Depends:** T-A3 · **Review required:** no
+**Amends:** none
 
 **GATE G1.** Do not run this until T-A3's verify has exited 0. `dtoverlay=disable-bt` removes the
 onboard controller; without a working Sena this leaves the box with no Bluetooth at all. **Dispatch
@@ -209,6 +224,7 @@ Rationale: with one adapter, a collector binding the wrong radio stops being a p
 ### T-A5 — Watchdog, governor, update policy
 
 **Tier:** mechanical · **Host:** pi · **Context budget:** ~2k · **Depends:** T-A1 · **Review required:** no
+**Amends:** 04 (§2 OOMScoreAdjust on safety units)
 
 **Modifies:** `/boot/firmware/config.txt`, `/etc/systemd/system.conf`,
 `/etc/apt/apt.conf.d/20auto-upgrades` on minidude.
@@ -260,19 +276,20 @@ Rationale: with one adapter, a collector binding the wrong radio stops being a p
 ### T-B1 — Eight-hour Polar H10 capture
 
 **Tier:** implement-complex · **Host:** pi · **Context budget:** ~5k · **Depends:** T-A4
+**Amends:** 04 (§1 RR beat-time reconstruction) · 03 (§1 tactile evidence) · 05 (§1.4 clock drift, §4.3 IRK pairing)
 **Review required:** yes
 
 The entire project rests on the Pi holding a BLE connection all night. **Measure this before
 building anything on top of it.** Deliberately placed before the storage and core work.
 
-**Creates:** `~/vitals/spike/hr_capture.c`, `~/vitals/spike/meson.build`,
+**Creates:** `crates/hr-spike/` (a throwaway binary crate),
 `~/vitals/spike/gap_histogram.py`
 
 **Do:**
 
 1. Install dependencies:
    ```sh
-   sudo apt-get update && sudo apt-get install -y libglib2.0-dev libdbus-1-dev meson ninja-build bluez
+   sudo apt-get update && sudo apt-get install -y libdbus-1-dev bluez
    ```
 2. Write `~/vitals/spike/hr_capture.c`. Use BlueZ over D-Bus (`org.bluez.GattCharacteristic1`),
    subscribe to Heart Rate Measurement `00002a37-0000-1000-8000-00805f9b34fb`, and append one line
@@ -295,7 +312,7 @@ building anything on top of it.** Deliberately placed before the storage and cor
    }
    ```
    Every bounds check above is required. `len` is attacker-controlled radio input.
-3. Build with `meson setup build && ninja -C build`.
+3. Build with `cargo build --release -p hr-spike`. Use the `bluer` crate for BlueZ over D-Bus.
 4. Pair and trust the H10 once:
    ```sh
    bluetoothctl --timeout 30 scan on
@@ -330,6 +347,7 @@ git commit -m "spike(T-B1): record 8-hour Polar H10 capture gap histogram"
 ### T-C1 — PostgreSQL 16 bare metal on NVMe
 
 **Tier:** implement-standard · **Host:** pi · **Context budget:** ~4k · **Depends:** T-A1
+**Amends:** 01 (§3 TimescaleDB) · 02 (§1.4 roles) · 04 (§2 memory budget)
 **Review required:** no
 
 Not in Docker, not on the microSD.
@@ -373,16 +391,45 @@ Not in Docker, not on the microSD.
    sudo -u postgres createuser --createdb vitals
    sudo -u postgres createdb -O vitals vitals
    ```
-6. `sudo systemctl restart postgresql`.
+6. **Install extensions** (see Amendment 01 §3). arm64/bookworm/PG16 packages are published:
+   ```sh
+   curl -s https://packagecloud.io/install/repositories/timescale/timescaledb/script.deb.sh | sudo bash
+   sudo apt-get update
+   sudo apt-get install -y timescaledb-2-postgresql-16 timescaledb-toolkit-postgresql-16 postgresql-16-cron
+   ```
+7. Append to `vitals.conf`:
+   ```
+   shared_preload_libraries = 'timescaledb,pg_stat_statements,pg_cron'
+   cron.database_name = 'vitals'
+   timezone = 'UTC'
+   timescaledb.max_background_workers = 4
+   ```
+   Optionally run `sudo timescaledb-tune --quiet --yes` first — but it assumes it owns the machine,
+   and it does not: `vitalsd`, the collectors, and the klaxon share this box. **Re-assert
+   `shared_buffers = 2GB` after running it** and re-check `work_mem`.
+8. `sudo systemctl restart postgresql`, then enable the extensions in the `vitals` database:
+   ```sh
+   sudo -u postgres psql -d vitals -c "CREATE EXTENSION IF NOT EXISTS timescaledb;"
+   sudo -u postgres psql -d vitals -c "CREATE EXTENSION IF NOT EXISTS timescaledb_toolkit;"
+   sudo -u postgres psql -d vitals -c "CREATE EXTENSION IF NOT EXISTS pg_cron;"
+   sudo -u postgres psql -d vitals -c "CREATE EXTENSION IF NOT EXISTS pg_stat_statements;"
+   ```
 
-**Verify:** `ssh chris@minidude 'sudo -u postgres psql -tAc "SHOW shared_buffers" | grep -q 2GB && sudo -u postgres psql -tAc "SHOW data_directory" | xargs findmnt -no SOURCE -T | grep -q nvme'`
-**Expect:** exit 0.
+**Verify:** `ssh chris@minidude 'sudo -u postgres psql -tAc "SHOW shared_buffers" | grep -q 2GB && sudo -u postgres psql -tAc "SHOW data_directory" | xargs findmnt -no SOURCE -T | grep -q nvme && sudo -u postgres psql -d vitals -tAc "SELECT count(*) FROM pg_extension WHERE extname IN ((chr(39)||chr(39)))" >/dev/null && test $(sudo -u postgres psql -d vitals -tAc "SELECT count(*) FROM pg_extension WHERE extname = ANY(ARRAY[chr(116)||chr(105)||chr(109)||chr(101)||chr(115)||chr(99)||chr(97)||chr(108)||chr(101)||chr(100)||chr(98)])") -eq 1'`
+**Expect:** exit 0 — `shared_buffers=2GB`, `PGDATA` on NVMe, `timescaledb` installed.
+
+**Simpler equivalent** if the quoting above is awkward to run by hand:
+```sh
+ssh chris@minidude 'sudo -u postgres psql -d vitals -tAc "SELECT extname FROM pg_extension ORDER BY 1" | tr "\n" " "'
+```
+Expect: `pg_cron pg_stat_statements plpgsql timescaledb timescaledb_toolkit`
 
 ---
 
 ### T-C2 — pgBackRest, three tiers
 
 **Tier:** implement-standard · **Host:** pi · **Context budget:** ~4k · **Depends:** T-C1
+**Amends:** 02 (§4 LUKS interaction)
 **Review required:** yes
 
 **Creates:** `/etc/pgbackrest/pgbackrest.conf`, two systemd timers on minidude.
@@ -444,6 +491,7 @@ puts the klaxon into service.
 ### T-C3 — Scheduled restore verification
 
 **Tier:** implement-complex · **Host:** pi · **Context budget:** ~4k · **Depends:** T-C2
+**Amends:** 02 (§3 integrity verification)
 **Review required:** yes
 
 **GATE G3 owner.** No sample worth keeping is written until a restore has been demonstrated.
@@ -479,6 +527,7 @@ on minidude.
 ### T-D1 — Registry TOML and codegen
 
 **Tier:** implement-standard · **Host:** mac · **Context budget:** ~5k · **Depends:** none
+**Amends:** 01 (§3.1 hypertable) · 02 (§2.2 reserved columns) · 04 (§1 identity, §8 no HLC)
 **Review required:** no
 
 The keystone. One file declares every source, type, canonical unit, and valid range; four artifacts
@@ -556,6 +605,7 @@ git commit -m "feat(T-D1): vitals registry TOML and codegen for C, SQL, Swift, J
 ### T-D2 — IEEE-11073 SFLOAT decoder with fuzz target
 
 **Tier:** implement-complex · **Host:** either · **Context budget:** ~4k · **Depends:** T-D1
+**Amends:** 04 (§11 kani in addition to cargo-fuzz)
 **Review required:** yes
 
 Split out from the collector because it is the subtlest code in this change and the easiest to prove
@@ -611,7 +661,7 @@ possible failure in a medical value: 118/74 and 141/92 are both believable.
 3. Write `vitals/tests/test_sfloat.c` covering, at minimum:
    - `0x0076` → 118.0 (systolic, exponent 0)
    - `0x004A` → 74.0
-   - `0xF14A` → 7.4 (exponent −1)
+   - `0xF04A` → 7.4 (exponent −1, mantissa 74). NOTE: an earlier draft of this brief said `0xF14A`, which is 33.0 — mantissa 0x14A is 330. Verify test vectors by hand.
    - `0x07FF`, `0x0800`, `0x07FE`, `0x0802`, `0x0801` → all return `false`
    - `0x0FFF` is *not* a sentinel (mantissa 0xFFF ≠ 0x7FF) → returns true
    - Compare doubles with `fabs(a-b) < 1e-9`, never `==`.
@@ -631,101 +681,101 @@ possible failure in a medical value: 118/74 and 141/92 are both believable.
        return 0;
    }
    ```
-5. Wire both into `meson.build` with `-fsanitize=address,undefined` on the test build.
+5. Add a `cargo-fuzz` target, and a `kani` proof harness — kani proves absence of panics and
+   overflow across all 2^16 inputs symbolically, which fuzzing only approximates (amendment 04 §11).
 
-**Verify:** `meson test -C vitals/build sfloat --print-errorlogs && vitals/build/fuzz_sfloat -max_total_time=60 -runs=1000000`
+**Verify:** `cargo test -p vitals-decode && cargo kani -p vitals-decode --harness sfloat_never_panics`
 **Expect:** exit 0 for both; fuzzer reports `Done` with no crashes.
 
 **Commit:**
 ```sh
-git add vitals/src/sfloat.c vitals/src/sfloat.h vitals/tests/test_sfloat.c vitals/fuzz/fuzz_sfloat.c vitals/meson.build
+git add crates/vitals-decode/
 git commit -m "feat(T-D2): IEEE-11073 SFLOAT decoder with sentinel handling and fuzz target"
 ```
 
 ---
 
-### T-D3 — `libvitals` append and query
+### T-D3 — COPY-binary encoder and spool
 
-**Tier:** implement-complex · **Host:** either · **Context budget:** ~6k · **Depends:** T-D1
+**Tier:** implement-complex · **Host:** either · **Context budget:** ~7k · **Depends:** T-D1
+**Amends:** 01 (§2, spool replaces the embedded store) · 02 (§2.2, reserve columns) · 04 (§1, identity) · 05 (§1 session_id/seq derivation)
 **Review required:** yes
 
-**Creates:** `vitals/src/libvitals.c`, `vitals/src/libvitals.h`, `vitals/src/hlc.c`,
-`vitals/src/hlc.h`, `vitals/tests/test_libvitals.c`
+**Replaces the embedded store entirely.** There is no on-Pi embedded database and no WAL tail. Read
+`docs/specs/AMENDMENTS.md` before starting.
 
-**Interfaces produced** — later tasks depend on these exact signatures:
+**Creates:** `crates/vitals-core/src/copybin.rs`, `crates/vitals-core/src/spool.rs`,
+`crates/vitals-core/src/session.rs`, and unit tests for each.
 
-```c
-typedef struct { int32_t source, type; double timestamp, value;
-                 const uint8_t *extra; size_t extra_len; } vitals_sample;
+**Interfaces produced** — later tasks depend on these:
 
-typedef struct vitals_conn vitals_conn;
+```rust
+/// One sample. `seq` is the stable identity within a session; `timestamp` is a
+/// best-estimate event time and is NOT part of the key.
+pub struct Sample {
+    pub source: i32,
+    pub r#type: i32,
+    pub session_id: i64,
+    pub seq: i64,
+    pub timestamp: SystemTime,
+    pub value: f64,
+    pub extra: Option<Vec<u8>>,
+    pub batch_id: Option<i64>,
+}
 
-vitals_conn *vitals_connect(const char *socket_path);
-void         vitals_close(vitals_conn *);
-/* Returns rows accepted, or negative errno. Idempotent on (source,type,timestamp). */
-int          vitals_append(vitals_conn *, const vitals_sample *, size_t n);
-int          vitals_query(vitals_conn *, int32_t source, int32_t type,
-                          double from, double to, vitals_sample *out, size_t cap);
+/// Encodes one row in PostgreSQL binary COPY format. Pure: no allocation beyond
+/// `out`, no I/O. Portable — this is why it lives in vitals-core and not the
+/// Linux-only crate, and why it unit-tests on macOS.
+pub fn encode_row(out: &mut Vec<u8>, s: &Sample) -> Result<usize, EncodeError>;
+pub fn copy_header() -> [u8; 19];
+pub fn copy_trailer() -> [u8; 2];
+
+/// Append-only spool. fs4 advisory locks; a second writer fails rather than races.
+pub struct Spool { /* … */ }
+impl Spool {
+    pub fn open(dir: &Path) -> io::Result<Self>;
+    pub fn append(&mut self, rows: &[Sample]) -> io::Result<()>;
+    pub fn rotate_if_due(&mut self) -> io::Result<()>;
+}
 ```
 
 **Do:**
 
-1. Write `hlc.h`/`hlc.c` implementing a Hybrid Logical Clock:
-   ```c
-   typedef struct { int64_t physical; int32_t logical; uint8_t node_id[16]; } hlc_t;
-   /* Advances the clock for a local event. Never moves physical backwards. */
-   void hlc_now(hlc_t *clock, hlc_t *out);
-   /* Merges a remote stamp. Bounds forward drift to 60s. */
-   void hlc_merge(hlc_t *clock, const hlc_t *remote, hlc_t *out);
-   int  hlc_compare(const hlc_t *a, const hlc_t *b);
-   ```
-   `node_id` is 16 bytes read once from `/var/lib/vitals/node_id`, generated on first run from
-   `getrandom(2)`. It is **never** regenerated — persisted separately from the database so a store
-   rebuild does not mint a new identity.
-2. Write the SQLite schema in `libvitals.c` matching the design spec exactly:
-   ```sql
-   PRAGMA journal_mode = WAL;
-   PRAGMA synchronous = NORMAL;
-   PRAGMA foreign_keys = ON;
+1. `copybin.rs` — the binary `COPY` encoder. **All integers are network byte order.** Both hosts are
+   little-endian arm64, so a `memcpy` of a native integer produces a silently wrong value that
+   Postgres will happily accept. Use `to_be_bytes()` everywhere.
+   - 19-byte header: the 11-byte signature `PGCOPY` + `\n\377\r\n\0` (literal bytes `50 47 43 4F 50 59 0A FF 0D 0A 00`), then a 4-byte flags field and a
+     4-byte header-extension length, both zero.
+   - Each row: `i16` field count, then per field `i32` length + raw bytes. Length `-1` is SQL NULL.
+   - Field order is fixed by `vitals/generated/registry.json` and must match the table exactly.
+   - **Tests assert against byte arrays captured from a real server** (`COPY … TO STDOUT (FORMAT
+     binary)`), not against the encoder's own output. Self-consistency is not correctness.
+2. `session.rs` — session and sequence management. A `session_id` is minted when a collector
+   connects; `seq` is a monotonic per-session counter. For RR intervals `seq` derives from the
+   cumulative RR sum so it is unaffected by packet arrival jitter or retransmission (amendment 04
+   §1). `node_id` is 16 bytes from `/var/lib/vitals/node_id`, generated once via `getrandom`, and
+   **never regenerated** — it is provenance and survives a store rebuild.
+3. `spool.rs` — Linux side. `O_APPEND` writes, `fs4::FileExt::lock_exclusive` on the segment and the
+   offset file, `fsync` per batch or every 250 ms, rotate at 64 MB or hourly.
+   - The spool header carries a **schema fingerprint**: a hash of column names, order and types.
+   - A collector must never block on disk to deliver a sample; batching bounds loss at 250 ms.
 
-   CREATE TABLE IF NOT EXISTS samples (
-     source INTEGER NOT NULL, type INTEGER NOT NULL,
-     timestamp REAL NOT NULL, value REAL NOT NULL, extra BLOB,
-     hlc_physical INTEGER NOT NULL, hlc_logical INTEGER NOT NULL,
-     node_id BLOB NOT NULL,
-     PRIMARY KEY (source, type, timestamp)
-   ) WITHOUT ROWID, STRICT;
-   CREATE INDEX IF NOT EXISTS idx_samples_hlc
-     ON samples(node_id, hlc_physical, hlc_logical);
-   ```
-3. `vitals_append` validates every sample against `vitals_type_range()` from the generated header
-   **before** insert. Out-of-range values are rejected with `-EDOM` and written to a
-   `quarantine` table with the raw value and reason. They are never clamped — a clamped value is
-   indistinguishable from a real one downstream.
-4. Insert with `INSERT ... ON CONFLICT(source,type,timestamp) DO NOTHING` so append is idempotent.
-   No `UPDATE`, no `DELETE` anywhere in this file.
-5. Tests in `test_libvitals.c`, against a `:memory:` database:
-   - append 1000 samples, query back, assert count and values within 1e-9
-   - append the same sample twice, assert the second returns 0 accepted
-   - append `spo2 = 150.0`, assert `-EDOM` and one quarantine row
-   - assert `hlc_compare` is a total order over 10k generated stamps
-   - assert no `UPDATE` or `DELETE` statement text appears in the source:
-     `grep -icE '\b(UPDATE|DELETE)\b' src/libvitals.c` returns 0
-
-**Verify:** `meson test -C vitals/build libvitals --print-errorlogs`
-**Expect:** exit 0, all cases pass.
+**Verify:** `cargo test -p vitals-core && cargo clippy -p vitals-core --all-targets`
+**Expect:** exit 0. Includes a round-trip test: encode 1000 samples, drain into a scratch database,
+assert every value matches within 1e-9 and every `seq` is preserved.
 
 **Commit:**
 ```sh
-git add vitals/src/libvitals.c vitals/src/libvitals.h vitals/src/hlc.c vitals/src/hlc.h vitals/tests/test_libvitals.c
-git commit -m "feat(T-D3): libvitals append/query with HLC stamping and range quarantine"
-```
+git add crates/vitals-core/
+git commit -m "feat(T-D3): COPY-binary encoder and append-only spool
 
----
+Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
+```
 
 ### T-D4 — `vitalsd` daemon and socket protocol
 
 **Tier:** implement-complex · **Host:** pi · **Context budget:** ~6k · **Depends:** T-D3
+**Amends:** 01 (§2 spool) · 02 (§2 signed ingest) · 04 (§2 OOM, §8 liveness) · 05 (§2.1 heartbeat condition, §4.11 backpressure)
 **Review required:** yes
 
 Single writer. Every collector connects; `vitalsd` alone touches the database.
@@ -758,7 +808,10 @@ Single writer. Every collector connects; `vitalsd` alone touches the database.
 
    [Service]
    Type=notify
-   ExecStart=/usr/local/bin/vitalsd --db /var/lib/vitals/tsdb.sqlite --socket /run/vitals/vitalsd.sock
+   ExecStart=/usr/local/bin/vitalsd --spool /var/lib/vitals/spool --socket /run/vitals/vitalsd.sock
+   OOMScoreAdjust=-1000
+   MemoryMin=64M
+   MemoryHigh=192M
    Restart=always
    RestartSec=1
    User=vitals
@@ -782,51 +835,56 @@ Single writer. Every collector connects; `vitalsd` alone touches the database.
 
 ---
 
-### T-D5 — SQLite WAL tail into Postgres
+### T-D5 — spool drainer
 
-**Tier:** implement-complex · **Host:** pi · **Context budget:** ~5k · **Depends:** T-D4, T-C3
+**Tier:** implement-complex · **Host:** pi · **Context budget:** ~6k · **Depends:** T-D4, T-C3
+**Amends:** 01 (§2.2 drain protocol) · 04 (§6 staging table, §7 migration guard, §8 liveness) · 05 (§4.1 liveness, §4.2 watermarks)
 **Review required:** yes
 
-SQLite is the durable ingest buffer; Postgres is the queryable system of record. If Postgres is down
-for an upgrade, ingest does not stop and nothing is lost.
+**GATE G3:** requires T-C3 green. No sample worth keeping is written before a restore works.
 
-**Creates:** `vitals/src/wal_tail.c`, `/etc/systemd/system/vitals-waltail.service` on minidude
+**Replaces the WAL-tail design.** Read `docs/specs/AMENDMENTS.md` before starting.
+
+**Creates:** `crates/vitals-drain/`, `/etc/systemd/system/vitals-spool-drain.service`
 
 **Do:**
 
-1. Track a replication cursor in Postgres, not in a file:
+1. **Single-drainer enforcement.** On start, take `pg_advisory_lock(0x5641_4C53)` and exit cleanly if
+   it cannot be acquired. `systemd` with `Restart=always` can respawn before the old process exits;
+   two drainers must be impossible, not merely unlikely.
+2. **Drain protocol** — one transaction, private staging:
    ```sql
-   CREATE TABLE IF NOT EXISTS vitals_repl_cursor (
-     node_id      BYTEA PRIMARY KEY,
-     hlc_physical BIGINT NOT NULL,
-     hlc_logical  INTEGER NOT NULL
-   );
+   BEGIN;
+   CREATE TEMP TABLE staging (LIKE samples INCLUDING DEFAULTS) ON COMMIT DROP;
+   COPY staging FROM STDIN (FORMAT binary);
+   INSERT INTO samples SELECT * FROM staging
+     ON CONFLICT (source, type, session_id, seq) DO NOTHING;
+   UPDATE spool_status SET offset_bytes = $1 WHERE segment = $2;
+   COMMIT;
    ```
-   **The cursor is an HLC position derived from rows already written — never a wall-clock
-   timestamp.** This is the structural fix for the `lastSyncDate = .now` race that opened a data hole
-   twice in the previous system. There is no clock in this path to be wrong about.
-2. The tail loop, per iteration:
-   - read the cursor for each `node_id`
-   - `SELECT ... FROM samples WHERE node_id = ? AND (hlc_physical, hlc_logical) > (?, ?)
-      ORDER BY hlc_physical, hlc_logical LIMIT 5000`
-   - `COPY` the batch into Postgres inside one transaction
-   - **advance the cursor to the max HLC of the rows actually copied, in the same transaction**
-   Cursor advance and the copy that carried the rows are committed together or not at all. A cursor
-   that can advance past rows that were never copied is the same bug in a new costume.
-3. On Postgres unreachable: log, sleep 30 s, retry forever. Never advance the cursor. Never drop
-   from SQLite.
-4. Test: insert 10k rows, run one tail pass, assert Postgres count is 10k and the cursor equals the
-   max HLC. Then kill the tailer mid-batch with `SIGKILL`, restart, and assert the final count is
-   still exactly 10k with no duplicates.
+   **`TEMP`, not a shared staging table.** A shared unlogged table lets two drainers
+   interleave `COPY` and commit a partial batch while the other's rows are lost — amendment 04 §6.
+   The offset advances **in the same transaction** as the rows it accounts for, or not at all.
+3. **`--verify` mode.** Compare the spool header's schema fingerprint against the live table shape;
+   refuse to drain a mismatch and name the differing field. Migrating with a non-empty spool orphans
+   buffered rows with no downgrade path (amendment 04 §7).
+4. **Liveness, not just aliveness.** Expose on the health socket: `lag_bytes`, `lag_age_seconds`,
+   `last_advanced_at`. A monotonic offset that stops advancing is a **named degraded state** —
+   `systemctl is-active` is true while Postgres is in recovery, a lock blocks, or `--verify` fails.
+5. **Disk watermarks.** Warn at 80%, refuse new spool *segments* at 95% — segments, not samples, so
+   ingest degrades to in-memory rather than stopping. Postgres and pgBackRest must not be the things
+   that discover the disk is full.
+6. On Postgres unreachable: log, sleep 30 s, retry forever. **Never advance the offset. Never drop
+   from the spool.**
 
-**Verify:** `ssh chris@minidude 'meson test -C ~/vitals/build waltail --print-errorlogs && psql -U vitals -tAc "SELECT count(*) FROM samples" | grep -qx 10000'`
-**Expect:** exit 0, exactly 10000 rows, no duplicates after the kill-restart cycle.
-
----
+**Verify:** `ssh chris@minidude 'cargo test -p vitals-drain && ~/AnxietyWatch2/scripts/drain-crash-test.sh'`
+**Expect:** exit 0. The crash test encodes 10 000 samples, drains, `SIGKILL`s mid-batch, restarts,
+and asserts exactly 10 000 rows with no duplicates and the offset at EOF.
 
 ### T-D6 — `bp-collector` end to end
 
 **Tier:** implement-complex · **Host:** pi · **Context budget:** ~6k · **Depends:** T-D2, T-D4, T-D5
+**Amends:** 04 (§1 identity model) · 02 (§2 batch signing) · 05 (§1 identity from the cuff's own sequence)
 **Review required:** yes
 
 **GATE G3:** requires T-C3 green. No sample worth keeping is written before a restore works.
@@ -893,7 +951,7 @@ end-to-end proof of the whole path.
 6. Install `vitals-bp.service`, `WantedBy=multi-user.target`, `Restart=always`.
 7. **Take a real blood pressure reading.** Confirm it lands.
 
-**Verify:** `ssh chris@minidude 'meson test -C ~/vitals/build bp_decode --print-errorlogs && ~/vitals/build/fuzz_bp_decode -max_total_time=60 && psql -U vitals -tAc "SELECT count(*) FROM samples WHERE source=6 AND type=6" | awk "\$1 > 0"'`
+**Verify:** `ssh chris@minidude 'cd ~/AnxietyWatch2 && cargo test -p vitals-decode bp_decode && cargo fuzz run bp_decode -- -max_total_time=60 && psql -U vitals -tAc "SELECT count(*) FROM samples WHERE source=6 AND type=6" | awk "\$1 > 0"'`
 **Expect:** exit 0; tests pass; fuzzer clean at 60 s; at least one systolic row present with
 `source = 6`.
 
@@ -915,7 +973,7 @@ ssh chris@minidude '
   systemctl is-active vitalsd vitals-bp &&
   sudo -u postgres pgbackrest --stanza=vitals check &&
   jq -e ".ok == true" /var/lib/vitals/restore-verify.json &&
-  meson test -C ~/vitals/build &&
+  cd ~/AnxietyWatch2 && cargo test --workspace &&
   psql -U vitals -tAc "SELECT count(*) FROM samples WHERE source=6" | awk "\$1 > 0"
 '
 ```

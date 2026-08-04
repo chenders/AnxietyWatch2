@@ -1,0 +1,998 @@
+    3.3V), the 555 retriggers continuously and never fires. This is a
+    single-point-of-failure that a self-test could detect (drive pin low, verify
+    it reads low), but the design doesn't specify testing for it.
+
+ 6. False negative — software still running but hung: If klaxond isn't panicked or
+    dead, but is stuck in a busy loop or deadlock while a thread still pulses
+    GPIO, the 555 keeps getting pulses. The system is effectively dead (detection
+    isn't running) but the 555 doesn't fire. This is the most likely failure mode
+    for a software hang and the 555 doesn't protect against it.
+
+ The 555 is a good idea but the amendment oversells it. The tier-2 independence
+ claim ("fires when klaxond panics, when the kernel locks, when the scheduler
+ stalls") is only true for stalls long enough that the pulsing thread stops, which
+ is a kernel hang, not a scheduler stall or a deadlock.
+
+ ### §4: Revised LUKS behaviour
+
+ The claim: chime instead of klaxon for unlock failure, escalate only after 15
+ minutes inside a monitoring window.
+
+ Problems:
+
+ 1. "Inside a monitoring window" is undefined: What defines the monitoring window?
+    Is it a cron-like schedule? What happens if the Pi reboots at 1 AM (inside the
+    window) due to a power bounce? The LUKS unlock fails, the chime sounds, and 15
+    minutes later the alarm fires. But the chime might not wake the sleeper. So
+    the user sleeps through both the chime and the 15-minute escalation, and wakes
+    up to discover the system was down all night.
+
+ 2. Race condition: The design says "Never at boot after a clean shutdown." How
+    does the system distinguish a clean shutdown from a power bounce? After a
+    power bounce, the filesystem was not cleanly unmounted but the OS booted
+    successfully (possibly after fsck). The distinction the design needs is
+    "user-initiated reboot" vs "unexpected reboot," and that's not reliably
+    detectable from system state alone. A flag file written on clean shutdown
+    could help, but if the power is cut mid-write, the flag might be corrupted.
+
+ 3. The hole: If the LUKS volume can't unlock at 11 PM (inside the monitoring
+    window), the alarm fires at 11:15 PM. The user acknowledges, but the volume is
+    still locked — the system is blind. The design says the alarm is silenced for
+    10 minutes (amendment 03 §5). What happens after 10 minutes? Does the alarm
+    re-fire? If not, the system is silently blind for the rest of the night. If
+    yes, the user is woken every 10 minutes by a storage fault, which is the same
+    "trains you to ignore the alarm" problem the fix was supposed to solve.
+
+ ### §6/§7: Advisory locks + schema fingerprint
+
+ The claim: flock + pg_advisory_lock + schema fingerprint prevents corruption.
+
+ Problems:
+
+ 1. Advisory locks are cooperative: Any process that doesn't call flock() can
+    still write to the spool files. The locks prevent two well-behaved drainers
+    from racing. A root shell doing cat > cur.copybin is not stopped by advisory
+    locks.
+
+ 2. Schema fingerprint in the spool header: The fingerprint is written when the
+    segment is created. If the schema changes after a segment is written but
+    before it's drained, the drainer correctly refuses to drain it. What's the
+    recovery path? The design says "refuses to drain a mismatch rather than
+    corrupting data." Refusal is correct but the rows in that segment are now
+    stuck. The upgrade runbook in amendment 01 §2.3 says "drain to empty before
+    any major Postgres upgrade" — but what about a schema change that happens
+    during sqitch deploy while the drainer is running? The drainer sees the new
+    schema, checks the spool header, sees a mismatch, and stops. Now you have a
+    spool segment that can't be drained because the schema changed.
+
+ 3. The spool_status table: Amendment 04 §7 says "a sqitch change that touches
+    samples begins with a guard that raises unless the spool is drained, read from
+    a spool_status table the drainer maintains." This is a good guard, but it
+    forgets a case: what if the drainer is currently draining when sqitch runs?
+    The spool might be "not empty" but actively draining. The guard would raise,
+    blocking the deploy. The Conflicts=sqitch-deploy.service systemd directive is
+    meant to prevent this, but systemd's Conflicts= stops the conflicting unit —
+    it doesn't prevent manual sqitch runs.
+
+ ### §10: Publishing audit chain head off-box hourly
+
+ The claim: publishing the chain head + TPM counter off-box defeats root rewriting
+ history.
+
+ Problems:
+
+ 1. The window is one hour: Root can rewrite history, recompute the chain, and
+    within 59 minutes the published head hasn't yet updated. If the attack happens
+    just after the hourly publish, the attacker has nearly a full hour before
+    detection. For a system that alarms in real-time, this might be acceptable,
+    but the claim "defeats a root attacker" is wrong — it narrows the window to 1
+    hour.
+
+ 2. The off-box log itself is vulnerable: The chain head is published "to the APNs
+    payload and an append-only remote log." APNs goes through Apple's servers. The
+    append-only remote log — where is it? What enforces its append-only nature? If
+    it's another machine the root attacker also controls, it's meaningless. If
+    it's a cloud service, root on the Pi can't alter it, but can stop publishing
+    to it.
+
+ 3. TPM monotonic counter: The design says to include the TPM counter in the
+    published head. But the TPM counter is incremented per ingest_batch. If root
+    deletes a batch, the counter sequence has a gap. But what if root suppresses
+    the publication of the gap? The gap exists in the local chain but if the
+    published head only carries the latest counter value, the gap isn't visible
+    off-box. You'd need to publish the full counter sequence, or at least the
+    previous counter value alongside the current one, to detect gaps.
+
+ ────────────────────────────────────────────────────────────────────────────────
+
+ What everyone missed:
+
+ Let me think about the big architectural issues.
+
+ ### 1. The two-backend split is still wrong
+
+ The design has both SQLite (hot path in vitalsd) and PostgreSQL (system of
+ record). Amendment 01 replaced SQLite with a COPY-binary spool. But the tasks
+ (T-D3, T-D4, T-D5) still describe SQLite as the hot path. There's a fundamental
+ contradiction:
+
+ - T-D3 says: "Write the SQLite schema in libvitals.c" with CREATE TABLE IF NOT
+   EXISTS samples (...) PRIMARY KEY (source, type, timestamp) WITHOUT ROWID,
+   STRICT;
+ - Amendment 01 says: "SQLite is dropped entirely" in favor of the COPY-binary
+   spool.
+ - Amendment 04 §1 says the PK stays (source, type, timestamp) with derived RR
+   beat times, referencing the Postgres schema with TIMESTAMPTZ.
+
+ The tasks haven't been rewritten to match amendment 01. T-D3 still references
+ SQLite. T-D5 is titled "SQLite WAL tail into Postgres" even though amendment 01
+ renamed it to "spool drainer" and amendment 02 §2.1 says signatures are at the
+ vitalsd ingest boundary — COPY bytes in the spool are unsigned. But T-D4's
+ vitalsd writes to SQLite per its task description.
+
+ These documents describe fundamentally different implementations. Nobody has
+ reconciled them.
+
+ Actually, looking more carefully: T-D5 was amended in amendment 01 §4 ("T-D5 —
+ WAL tail → spool drainer (reworked)") but the task description in tasks.md was
+ never rewritten. The task still says "SQLite WAL tail into Postgres" and
+ references SQLite tables. The amendment's note says "Retains the parent design's
+ cursor discipline unchanged" but the implementation detail is completely
+ different.
+
+ ### 2. Rust vs C11 — amendment 04 §12 endorses Rust, but tasks are all C
+
+ Amendment 04 §12 says the reviewers endorsed "Rust over C11" and the argument
+ about not hand-lowering Option/Result into C sentinels. But every task in
+ tasks.md is C11: libvitals.c, vitalsd.c, hlc.c, bp-collector.c. And amendment 04
+ §11 recommends rppal, fs4, sqlx, and metrics — all Rust crates. The Rust
+ sfloat.rs already exists (and is excellent). But the architecture document hasn't
+ decided which language the safety path uses, and neither has implementation
+ begun.
+
+ This is a real coordination hazard: Rust tools are recommended, Rust is endorsed,
+ but C11 tasks are unchanged.
+
+ ### 3. No authentication on the Unix socket
+
+ vitalsd listens on a Unix domain socket at /run/vitals/vitalsd.sock, mode 0660,
+ group vitals. Access control is filesystem permissions. But any process in the
+ vitals group can append any sample — there's no per-collector authentication. The
+ signed-ingest proposal in amendment 02 adds signatures at the vitalsd ingest
+ boundary, but that's deferred to T-D7 ("deferrable to the end"). Until then, any
+ process in the vitals group can inject samples with any provenance. A compromised
+ collector (say, a Python script that joins the vitals group) can write as
+ source.polar_h10 without being the Polar collector.
+
+ ### 4. The ingest_batch table has no PK/unique constraint on the monotonic
+ counter
+
+ Amendment 02 §5.2 describes binding the TPM monotonic counter to ingest_batch.
+ But the schema in §2.2 doesn't include a counter column. If the counter is in the
+ signed digest but not stored as a column, how do you query for gaps? You'd have
+ to verify every signature just to extract the counter. And there's no constraint
+ preventing two batches from claiming the same counter value (which would happen
+ if root replays an old signed batch).
+
+ ### 5. TimescaleDB compression + append-only = silently lost writes?
+
+ TimescaleDB's compression rewrites chunks into columnar format. compress_chunk is
+ not INSERT in the traditional sense — it's a DDL-like operation that replaces the
+ chunk with a compressed version. The audit trigger fires on UPDATE/DELETE on
+ samples. Does compression fire the trigger? If not, the audit trail doesn't
+ record that the chunk was compressed. If compression fails silently (runs out of
+ space, for example), what happens? The design doesn't address this.
+
+ Actually, compression doesn't fire row triggers — it operates at the chunk level.
+ But that's fine for compression (it's not a correction). The question is whether
+ the hash chain captures compression events in any way. It doesn't need to, but
+ it's a blind spot worth noting.
+
+ ### 6. TIMESTAMPTZ microsecond precision with derived RR timestamps
+
+ Amendment 04 §1 claims "TIMESTAMPTZ carries microsecond precision, so derived
+ beat times do not collide." This is true for the type, but
+ clock_gettime(CLOCK_REALTIME) on Linux typically has resolution of ~1 microsecond
+ but accuracy much worse — NTP-adjusted, and without NTP on a Pi with no RTC, the
+ clock may be wildly wrong. More importantly, when the RTC is dead and time starts
+ at 1970-01-01, the derived beat times are in 1970. They're distinct from each
+ other, sure, but they're useless for correlation with other sources. No reviewer
+ caught this interaction: the timestamp derivation scheme produces distinct but
+ potentially incorrect timestamps, and the incorrectness is worse than collisions
+ because it looks correct.
+
+ ### 7. The samples PK (source, type, timestamp) with TIMESTAMPTZ is still wrong
+ for a fundamental reason
+
+ Even with distinct timestamps, consider: what if a collector appends a sample
+ with timestamp T, and then the clock is adjusted backward (NTP step), and the
+ collector appends another sample at T? The PK would reject the second sample.
+ This is unlikely with the derived-RR scheme (beat times are monotonically
+ increasing within a session), but it's absolutely possible for other source types
+ like SpO₂ from EMAY, where each sample gets clock_gettime() at notification time.
+ If NTP steps the clock back by even 1 microsecond, the next sample gets a
+ timestamp before the previous one, and ON CONFLICT DO NOTHING silently drops it.
+ The dedup counter would catch it (amendment 04 §1.2), but the sample is still
+ lost.
+
+ This is more likely now that amendment 04 §8 acknowledges the RTC is absent and
+ the clock is unreliable. An NTP step from 1970 to 2026 resets the clock forward
+ by 56 years — all samples during the pre-NTP window have 1970 timestamps that
+ collide with nothing. But a subsequent small NTP correction could cause
+ collisions.
+
+ ### 8. The design says "one thread" for vitalsd but epoll is async, not threaded
+
+ From T-D4: "epoll loop over the listening socket, one connection state per
+ client. Single thread — a single writer needs no locking." This is correct and
+ good. But vitals_append writes to SQLite, and SQLite in WAL mode allows
+ concurrent readers but only one writer. A single-threaded vitalsd is fine — one
+ writer at a time. But the spool in amendment 01 replaces SQLite, and the spool is
+ O_APPEND writes to a file. O_APPEND is atomic for writes up to PIPE_BUF on pipes,
+ but for regular files on Linux, O_APPEND is atomic for writes up to the
+ filesystem block size (typically 4 KB). A sample row is a few dozen bytes, so
+ this is fine. But nobody has verified this assumption.
+
+ ### 9. The CPAP collector is Python but the safety path is C
+
+ Amendment 03 says "EDF / CPAP parsing → Python. Already written, already tested,
+ batch-mode." But CPAP data feeds into the detection engine. If CPAP data is
+ relevant to CNS depression detection (and it is — CPAP pressure changes indicate
+ respiratory events), then Python is on the safety path. Python's GIL, memory
+ usage, and startup time make it a poor fit for the safety path. The design says
+ Python is "not on the safety path" but if CPAP data is an input to cns-engine, it
+ is.
+
+ Now let me think about the most severe findings.
+
+ ### Most severe findings (new):
+
+ 1. Tasks and amendments describe different systems — T-D3/T-D4/T-D5 specify
+    SQLite; amendment 01 removed it. The tasks were never updated. If an agentic
+    worker implements T-D3 as written, it builds the SQLite store that the rest of
+    the design has already deleted. This is not a theoretical problem; it's a
+    ticking implementation bomb.
+
+ 2. The 555 dead-man's switch fires on every deliberate reboot — No mechanism
+    stops the 555 from firing during the ~12-second gap between klaxond stopping
+    and the kernel halting. Every reboot produces a short siren burst. That's the
+    exact false-positive conditioning the LUKS fix was designed to prevent.
+
+ 3. No authentication on the Unix socket — Until T-D7 (deferred to the end), any
+    process in the vitals group can inject samples with arbitrary provenance. This
+    makes the entire provenance model optional.
+
+ Actually, let me think more carefully about the three most severe.
+
+ 1. System design incoherence (will bite): The tasks and amendments describe
+    different implementations. Tasks specify SQLite; amendments deleted it. A
+    worker implementing T-D3 will build the wrong thing. This is the most
+    immediate and practical problem.
+
+ 2. 555 dead-man's switch false positive on reboot (will bite): Every deliberate
+    reboot blares the siren for ~10 seconds. The LUKS false-positive fix was
+    deemed critical; this is the same class of problem with no mitigation.
+
+ 3. No collector authentication (might bite): Until signed ingest lands, the Unix
+    socket accepts samples from any process in the vitals group with any claimed
+    provenance. A buggy script, a test harness, or a compromised Docker container
+    in the vitals group can write fake Polar H10 data into the clinical record.
+
+ Let me also think about what I missed on first pass...
+
+ Re-reading amendment 04 more carefully...
+
+ Actually, I notice something important: §8 says "The HLC is vestigial [...]
+ hlc_physical and hlc_logical are removed." But node_id stays. This means the
+ samples table loses two columns but keeps node_id. But the tasks (T-D3, T-D5)
+ still describe HLC with all three fields. And node_id without HLC is just a UUID
+ — it doesn't provide ordering or causality. The HLC removal is mentioned in the
+ amendment's response but not reflected in tasks or the amended schema.
+
+ Also: the tasks reference VITALS_SOURCE_EMAY = 0 in T-D1, but the registry.toml
+ in the design doc and amendment 01 show source.polar_h10 id=1 and source.emay
+ id=0. The generated header uses VITALS_SOURCE_EMAY = 0 and
+ VITALS_SOURCE_POLAR_H10 = 1. This is fine but source 0 in SQL is also the default
+ value for INTEGER DEFAULT 0. Accidentally inserting with source = 0 could mean
+ "unset" or "EMAY" — a sentinel collision.
+
+ Let me organize my findings now.
+
+ Now let me check the verify/revert scripts and confirm a few implementation
+ details before finalizing.
+
+
+ $ ls /Users/chris/Source/AnxietyWatch2/db/verify/
+ /Users/chris/Source/AnxietyWatch2/db/revert/
+
+ ... (12 earlier lines, ctrl+o to expand)
+ retention.sql
+ samples.sql
+ samples_1min.sql
+ samples_compression.sql
+ samples_hypertable.sql
+
+ Took 0.1s
+
+
+
+ read ~/Source/AnxietyWatch2/db/verify/samples.sql
+
+
+
+ read ~/Source/AnxietyWatch2/db/revert/samples.sql
+
+
+ Now I have the full picture. Let me also check if there's a verify script for the
+ spool_status guard that amendment 04 §7 mentions — I suspect it doesn't exist.
+
+ Let me also check if there's a vitals_producer or ingest_batch table anywhere
+ (amendment 02 §2.2), or audit_log table (amendment 02 §1.1).
+
+ The sqitch.plan shows:
+
+ ```
+   extensions
+   registry_tables
+   samples
+   samples_hypertable
+   samples_compression
+   samples_1min
+   retention
+ ```
+
+ None of the amendment 02 schema additions (batch_id, ingest_batch,
+ vitals_producer, audit_log) are in the plan. Amendment 02 §7 says to "reserve the
+ schema now" — but db/deploy/samples.sql doesn't include batch_id or any of those
+ columns. The amendment 04 §7 fix was supposed to address this (adding these
+ columns), but the db/deploy/samples.sql I just read doesn't have them.
+
+ The samples table in db/deploy/samples.sql has:
+ - source, type, timestamp, value, extra, hlc_physical, hlc_logical, node_id
+ - PRIMARY KEY (source, type, timestamp)
+ - CREATE UNLOGGED TABLE samples_staging
+
+ But amendment 04 §8 says HLC columns are removed, and amendment 02 §2.2 says
+ batch_id BIGINT REFERENCES ingest_batch(id) should be added "with the RR
+ primary-key fix." And amendment 04 §6 says the deploy should drop samples_staging
+  (the UNLOGGED table) because the drainer uses a TEMP table. None of these
+ changes are in db/deploy/samples.sql.
+
+ So the schema as committed is stale relative to every amendment. This is the
+ "documented, not enforced" pattern the design claims to eliminate, applied to the
+ design documents themselves.
+
+ This is a major finding.
+
+ Let me also check what the Rust sfloat.rs reveals about the language split — the
+ Rust code already exists but the C tasks haven't been reconciled.
+
+ Let me now compose my review. I need to:
+
+ 1. Audit amendment 04's fixes
+ 2. Find what everyone missed
+ 3. Identify wrong architecture
+ 4. Identify missing tools/libraries
+
+ Let me structure this carefully.
+
+
+ $ cd /Users/chris/Source/AnxietyWatch2 && grep -rn
+ "samples_staging\|batch_id\|ingest_batch\|vitals_producer\|audit_log" db/
+ openspec/ docs/ 2>/dev/null | head -40
+
+ ... (67 earlier lines, ctrl+o to expand)
+ COPY: COPY into an UNLOGGED table is fast,
+ docs/reviews/2026-08-03-deepseek.txt:495:    The sqitch deploy creates
+ samples_staging as a permanent UNLOGGED table shared
+ docs/reviews/2026-08-03-deepseek.txt:544: TABLE samples_staging (LIKE samples
+ INCLUDING DEFAULTS) — a permanent, unlogged,
+
+ Took 0.0s
+
+
+
+ $ cd /Users/chris/Source/AnxietyWatch2 && grep -rn "hlc_physical\|hlc_logical"
+ db/deploy/samples.sql vitals/ 2>/dev/null; echo "---"; grep -rn
+ "UNLOGGED\|samples_staging" db/ 2>/dev/null
+
+ ... (2 earlier lines, ctrl+o to expand)
+ ---
+ db/revert/samples.sql:3:DROP TABLE IF EXISTS samples_staging;
+ db/verify/samples.sql:4:SELECT source FROM samples_staging WHERE FALSE;
+ db/deploy/samples.sql:26:CREATE UNLOGGED TABLE samples_staging (LIKE samples
+ INCLUDING DEFAULTS);
+
+ Took 0.0s
+
+
+ This confirms my central finding: the committed schema (db/deploy/samples.sql) is
+ incompatible with the amendments. It still has:
+
+ 1. hlc_physical and hlc_logical — which amendment 04 §8 says are removed
+ 2. CREATE UNLOGGED TABLE samples_staging — which amendment 04 §6 says must be
+    dropped
+ 3. No batch_id column — which amendment 02 §2.2 says must be reserved
+ 4. No ingest_batch, vitals_producer, audit_log tables — which amendment 02 says
+    must be reserved now
+ 5. No spool_status table — which amendment 04 §7 says the drainer must maintain
+
+ The amendments describe a corrected design. The committed implementation
+ (db/deploy/*.sql) still reflects the pre-review design. The task file still
+ describes SQLite for T-D3/T-D4/T-D5.
+
+ This is the single biggest finding: the docs disagree with each other and with
+ the code.
+
+ Now let me compile my complete review.
+
+
+ $ cd /Users/chris/Source/AnxietyWatch2 && grep -rn "SQLite\|sqlite"
+ openspec/changes/pi5-vitals-core/tasks.md | head -20
+
+ ... (10 earlier lines, ctrl+o to expand)
+ openspec/changes/pi5-vitals-core/tasks.md:813:### T-D5 — SQLite WAL tail into
+ Postgres
+ openspec/changes/pi5-vitals-core/tasks.md:818:SQLite is the durable ingest
+ buffer; Postgres is the queryable system of record. If Postgres is down
+ openspec/changes/pi5-vitals-core/tasks.md:845:   from SQLite.
+
+ Took 0.0s
+
+
+
+ $ cd /Users/chris/Source/AnxietyWatch2 && grep -rn
+ "verify_spool\|spool_status\|spool_empty\|drain.*empty\|drain.*guard" db/
+ 2>/dev/null; echo "---"; ls db/verify/samples.sql db/deploy/samples.sql
+
+ ---
+ db/deploy/samples.sql
+ db/verify/samples.sql
+
+ Took 0.0s
+
+
+ Good. The evidence is clear. The samples deploy has no guard that checks the
+ spool is empty, no spool_status table, and still has samples_staging. The tasks
+ still describe SQLite. Let me now compile the final review.
+
+ Let me also check if the Rust crate structure tells us anything about the
+ language split.
+
+
+ $ cd /Users/chris/Source/AnxietyWatch2 && ls crates/ 2>/dev/null && echo "---" &&
+ ls vitals/ 2>/dev/null
+
+ ... (3 earlier lines, ctrl+o to expand)
+ ---
+ CMakeLists.txt
+ include
+ src
+ tests
+
+ Took 0.0s
+
+
+
+ $ cd /Users/chris/Source/AnxietyWatch2 && head -5 crates/vitals-decode/Cargo.toml
+ 2>/dev/null; echo "---"; ls vitals/src/ 2>/dev/null; echo "---"; ls
+ vitals/generated/ 2>/dev/null
+
+ ... (7 earlier lines, ctrl+o to expand)
+ version.c
+ ---
+
+
+ Command exited with code 1
+
+ Took 0.0s
+
+
+ So there's both a Rust workspace (crates/) and a C codebase (vitals/). The Rust
+ workspace has vitals-core, vitals-decode, and vitals-registry. The C directory
+ has version.c and include/, src/, tests/. The Rust sfloat.rs is in vitals-decode.
+
+ The C vitals/src/sfloat.c mentioned in T-D2 may or may not exist. And the Rust
+ vitals-decode crate is the one with the sfloat implementation I read. This
+ suggests the implementation is actually happening in Rust, not C — but the tasks
+ still specify C11.
+
+ Let me verify what the Rust workspace actually contains.
+
+
+ $ cd /Users/chris/Source/AnxietyWatch2 && find crates/ -name "*.rs" -o -name
+ "Cargo.toml" | sort
+
+ ... (4 earlier lines, ctrl+o to expand)
+ crates/vitals-decode/src/hr.rs
+ crates/vitals-decode/src/lib.rs
+ crates/vitals-decode/src/sfloat.rs
+ crates/vitals-registry/Cargo.toml
+ crates/vitals-registry/src/lib.rs
+
+ Took 0.0s
+
+
+
+ read ~/Source/AnxietyWatch2/crates/vitals-core/Cargo.toml
+
+
+ So the Rust crates exist and are being populated: vitals-decode has sfloat.rs,
+ bp.rs, hr.rs — actual implementations. vitals-core is a stub. vitals-registry
+ exists too. Meanwhile the C vitals/ has version.c and not much else.
+
+ This confirms: the implementation is happening in Rust, and the tasks that say
+ C11 are stale. The amendment 04 endorsement of Rust (endorsed by gemini) is
+ what's actually being followed.
+
+ Now let me compose the final review. I have enough evidence for all my findings.
+
+ Here is the review.
+
+ ────────────────────────────────────────────────────────────────────────────────
+
+ Adversarial Review — Amendment 04 and Beyond
+
+ Three most severe findings
+
+ ### 1. Will bite. The committed schema, the tasks, and the amendments describe
+ three different systems.
+
+ db/deploy/samples.sql still declares hlc_physical, hlc_logical, and CREATE
+ UNLOGGED TABLE samples_staging. Amendment 04 §8 says HLC columns are removed.
+ Amendment 04 §6 says samples_staging must be dropped in favor of a per-session
+ TEMP table. Amendment 02 §2.2 says batch_id must be reserved in the schema now,
+ before data lands — it is not there. Neither ingest_batch, vitals_producer, nor
+ audit_log appear in the sqitch plan. Tasks T-D3/T-D4/T-D5 still describe SQLite
+ as the hot path and vitalsd --db tsdb.sqlite as the invocation, but amendment 01
+ replaced SQLite with a COPY-binary spool. The tasks were never rewritten. An
+ agentic worker reading T-D3 today will build the SQLite store that three
+ amendments have already deleted. This is not a documentation nit — it is a
+ ticking implementation bomb: which is truth, the task or the amendment? The
+ project rule says "Acceptance is a shell command's exit code," but each task's
+ Verify command tests the thing that task describes, not the thing the amendment
+ says it should be.
+
+ Know it by: grep -c SQLite openspec/changes/pi5-vitals-core/tasks.md returns 7.
+ grep -c batch_id db/deploy/samples.sql returns 0. These numbers must converge.
+
+ ### 2. Will bite. The 555 dead-man's switch fires on every deliberate reboot.
+
+ Amendment 04 §3.2 specifies klaxond pulses a GPIO at 1 Hz; if pulses stop for ~10
+ s, the 555 monostable times out and drives the siren directly. During a
+ deliberate sudo reboot, systemd sends SIGTERM to klaxond, which stops pulsing.
+ The kernel then syncs filesystems, detaches drivers, and halts — this takes 5–15
+ seconds on a Pi. The 555 times out mid-shutdown and the siren blares. Every clean
+ reboot produces a false alarm. This is the exact class of failure amendment 04 §4
+ calls "the worst possible place to introduce false positives" — a mechanism that
+ trains the user to ignore the alarm — yet the 555 fix introduces it with no
+ mitigation. The BCM2712 hardware watchdog knows about reboots (it is petted by
+ systemd through RuntimeWatchdogSec), but the 555 is a separate circuit with no
+ awareness of shutdown state.
+
+ Know it by: pull the power on a running system; the 555 fires (correct). Run sudo
+ reboot; the 555 fires (incorrect). The two cases are indistinguishable to the
+ circuit.
+
+ ### 3. Will bite. No authentication on the Unix socket — any process in the
+ vitals group can inject samples with arbitrary provenance.
+
+ vitalsd listens on /run/vitals/vitalsd.sock, mode 0660, group vitals (T-D4). Any
+ process in that group — a Python dev script, a Docker container with the group
+ added, a compromised collector — can append samples claiming source =
+ VITALS_SOURCE_POLAR_H10 and the store accepts them. Amendment 02 §2 adds signed
+ ingest with Ed25519 batches verified at the vitalsd boundary, but that is T-D7,
+ explicitly "deferrable to the end" (amendment 02 §7). Until then, the provenance
+ column (source) is a self-reported integer from an unauthenticated caller. The
+ design claims provenance is "provenance" (§2.4) and the whole inversion from
+ HealthKit rests on trusting the source field — but with no authentication, source
+  is an honor-system field on a single-user box. A root attacker can do worse
+ things, but a buggy script that connects to the wrong socket and writes source=1
+ looks exactly like Polar H10 data forever after. The signed-ingest design is
+ excellent. Deferring it past Stage 3 while Stage 3's bp-collector is writing real
+ data means the first real clinical records have no verifiable provenance.
+
+ Know it by: vitals_append takes source as an int32_t in a struct from the caller.
+ Nothing in the code path checks who the caller is. The vitals group gate is one
+ bit: in or out.
+
+ ────────────────────────────────────────────────────────────────────────────────
+
+ Amendment 04 fix audit
+
+ ### §1 — RR timestamp derivation + PK unchanged
+
+ The PK is still wrong, but for a reason no reviewer raised.
+
+ The claim holds that deriving beat times backward makes them distinct at
+ microsecond precision. What breaks is the correctness of those timestamps when
+ the clock is wrong. Amendment 04 §8 acknowledges the Pi has no RTC and the clock
+ may be 1970-01-01 at boot. The derivation anchors all beats to T = packet arrival
+ time from clock_gettime. During the pre-NTP window, every derived beat time is in
+ 1970. When NTP eventually steps the clock forward 56 years, existing rows in
+ samples have 1970 timestamps. New samples get 2026 timestamps. Queries across the
+ step boundary return nonsense. The PK doesn't need to change for this — the fix
+ is making chrony a hard dependency of the collectors, which amendment 04 §8
+ already notes. But the interaction is worth naming: derived timestamps compound
+ the RTC problem because an entire night's RR series depends on the correctness of
+ a single clock_gettime at notification time.
+
+ Verdict: the PK fix is mechanically correct but incomplete. The timestamp
+ derivation must also record the clock's estimated error bounds, or the monitoring
+ window must refuse to start until chrony reports synchronization.
+
+ One more thing: connection interval resolution. BLE notifications arrive at
+ connection-interval granularity (7.5–50 ms for the H10). A batch of 4 RR
+ intervals delivered in one packet are spaced 0.2–2.0 seconds apart in sensor
+ time, but their derived host timestamps inherit the connection-interval jitter of
+ the packet arrival. If the connection interval is 30 ms and the host's
+ clock_gettime is called once per D-Bus callback (which can batch multiple GATT
+ notifications), all 4 beats are anchored to a single host timestamp T that has
+ ±15 ms of BLE jitter plus BlueZ D-Bus dispatch jitter. The derived times are
+ distinct (they differ by RR interval durations) but systematically offset from
+ true beat times by the dispatch latency. For CNS detection this doesn't matter —
+ RR intervals are what drives the score, not absolute beat times. But for
+ correlation with other sources (SpO₂ timestamps from a different BLE connection,
+ different connection interval, different D-Bus dispatch path), these systematic
+ offsets produce apparent time-skew that looks like a measurement artifact.
+
+ Verdict on the PK: right fix for the collision problem, under-specified for
+ correctness.
+
+ ### §2 — OOMScoreAdjust=-1000 + MemoryMin/MemoryHigh
+
+ Does not prevent the failure it names; it moves it.
+
+ MemoryHigh=192M throttles the daemon's allocations but does not stop them. If
+ vitalsd has a memory leak, it hits MemoryHigh, gets throttled, but MemoryMax is
+ not set — there is no hard ceiling. The daemon can continue allocating slowly
+ past MemoryHigh. OOMScoreAdjust=-1000 means the OOM killer selects something else
+ — Postgres, almost certainly, since it holds 2 GB of shared_buffers. When
+ Postgres is killed and restarted, it must perform WAL recovery. During recovery,
+ the spool drainer cannot connect, the spool fills, and if this happens at night
+ the 95% disk watermark (amendment 04 §8) may not save you fast enough. More
+ importantly: if the memory pressure was caused by Postgres itself (shared_buffers
+ is 2 GB, the kernel's page cache is competing, and wayfire is resident), killing
+ Postgres and restarting it restarts the same pressure cycle. The design assumes
+ the protected daemon is not the one causing the leak, but gives no mechanism to
+ detect which process is leaking.
+
+ Verdict: the fix is correct as far as it goes. It makes the safety daemons the
+ last to be killed, which is the right ordering. But it doesn't address the
+ condition where the protected daemon is the one leaking — it just gives the leak
+ a softer landing (MemoryHigh throttling) and sacrifices Postgres, which then
+ drags down the spool drainer. A MemoryMax on the safety daemons plus a
+ restart-on-throttle in systemd would close this.
+
+ ### §3.2 — 555 monostable hardware dead-man's switch
+
+ False-positive mode: every deliberate reboot, every klaxond restart. Addressed
+ above in finding #2.
+
+ False-negative modes the design misses:
+
+ - GPIO pin stuck high — a solder bridge, a failed GPIO driver, or ESD damage
+   holding the pin at 3.3 V. The 555 retriggers continuously as if klaxond were
+   healthy. The self-test does not cover this: klaxond drives the pin and senses
+   current (§5), but a pin stuck high still passes current through the MOSFET. The
+   self-test must toggle the pin and verify the level changes, which is a
+   different circuit.
+ - klaxond alive but detection stalled — a deadlock in cns-engine doesn't stop
+   klaxond from pulsing GPIO if klaxond is a separate process (which it is). The
+   555 sees pulses, thinks everything is fine, and the alarm never fires. The fix
+   is a watchdog within klaxond: if cns-engine hasn't produced an assessment in N
+   seconds, klaxond stops pulsing. The 555 becomes a liveness check on the
+   detection pipeline, not just the klaxond process. This is not specified.
+
+ Verdict: the 555 is a genuine tier-2 improvement, but the
+ false-positive-on-reboot problem is severe and the
+ false-negative-on-detection-stall problem is invisible.
+
+ ### §4 — Revised LUKS behaviour
+
+ The hole: what happens at minute 25?
+
+ The design: chime on LUKS unlock failure; escalate to alarm after 15 minutes only
+ inside a monitoring window. User is woken, acknowledges (hold-to-silence 3 s on
+ the panel). Amendment 03 §5 says acknowledgement silences for 10 minutes while
+ holding tier at CAN'T ASSESS. Then what? After 10 minutes of silence, the LUKS
+ volume is still locked, the system is blind, and it is still within the
+ monitoring window. Does the alarm re-fire? If yes, the user is woken every 10
+ minutes all night by a storage fault — the exact "trains you to ignore the alarm"
+ problem the revision was meant to solve. If no, the system is silently blind from
+ minute 16 to morning, which is a catastrophic failure of the "unknown is not OK"
+ invariant.
+
+ The design needs an explicit state: ACKNOWLEDGED-STORAGE-FAULT, which is distinct
+ from ACKNOWLEDGED-ALARM. A storage fault that has been acknowledged once must not
+ re-fire, but must keep the panel at STORAGE LOCKED (amber) and the system at
+ CAN'T ASSESS. The APNs path should carry a periodic reminder (every hour, not
+ every 10 minutes). This is a protocol design question, not a LUKS question, and
+ nobody has specified it.
+
+ Verdict: the chime-vs-klaxon distinction is correct. The escalation timeout
+ boundary behavior is unspecified and the spec has a hole at minute 16.
+
+ ### §6/§7 — Advisory locks + schema fingerprint
+
+ Sufficient for well-behaved processes. Insufficient for what they claim to guard.
+
+ Advisory locks are cooperative. flock on the spool files prevents two drainers
+ from racing — good. pg_advisory_lock(0x5641_4C53) prevents two drainers from
+ COPYing simultaneously — good. But the claim in amendment 04 §7 is that these
+ prevent corruption. They don't. A root shell doing cat /dev/zero > cur.copybin is
+ not stopped by advisory locks. The design acknowledges root can do anything
+ (amendment 02 §0), so this is fair. But the schema fingerprint guard has a gap:
+ if the spool is non-empty when sqitch runs, the guard refuses to deploy. Good.
+ But what if the drainer is currently draining when the guard runs? The spool is
+ "not empty" but actively draining to empty. The guard must check whether the
+ drainer is actively making progress (the spool_status table from amendment 04
+ §7), not just whether files exist. The Conflicts=sqitch-deploy.service systemd
+ directive handles the case where both are systemd units, but not a manual sqitch
+ deploy run while the drainer timer fires.
+
+ Verdict: the locking is correct. The schema guard in sqitch changes is specified
+ but not implemented (there is no guard in db/deploy/samples.sql). The race
+ between manual sqitch and the drainer timer is unaddressed.
+
+ ### §10 — Publishing audit chain head off-box hourly
+
+ Narrows the window to one hour. Does not close it.
+
+ A root attacker who rewrites history and recomputes the hash chain can do so
+ undetected until the next hourly publish. The design acknowledges this ("narrows
+ the window, not closes it"). But it misses two things:
+
+ - The TPM monotonic counter gap. If root deletes a batch, the counter sequence
+   has a gap: batch 7 carried counter 7, batch 9 carries counter 9. The published
+   head carries counter 9. The gap at counter 8 is only visible if the verifier
+   keeps a history of published heads and checks for gaps. An hourly publish of
+   the current counter is insufficient; you need the sequence. The design says
+   "publish the chain head — hash plus TPM monotonic counter." One counter value
+   per hour. The gap between last hour's counter and this hour's counter could be
+   legitimate (many batches) or a deletion, and the off-box verifier cannot
+   distinguish them without knowing the expected ingestion rate.
+ - The off-box log's own integrity. The chain head is published "to an append-only
+   remote log." What makes it append-only? If it's a cloud service (S3 with object
+   lock, Google Cloud Storage with retention policies), it's genuinely append-only
+   but requires internet — the system must work when the network is down. If it's
+   a local second machine, root on the Pi can't touch it, but there is no second
+   machine (megadude is being decommissioned, Stage 6). If it's an APNs payload to
+   the phone, Apple's push service is the append-only log, and the phone holds the
+   sequence of published heads. This is the most realistic option and it's nearly
+   specified — "APNs payload" is mentioned — but the phone-side verification is
+   not described.
+
+ Verdict: the mechanism is sound in principle but underspecified. The off-box log
+ needs a concrete home, and the verification needs to check counter sequence gaps,
+ not just the latest value.
+
+ ────────────────────────────────────────────────────────────────────────────────
+
+ What everyone missed (beyond amendment 04)
+
+ ### 4. Will bite. The tasks and the amendments are unreconciled — a worker
+ implementing T-D3 builds the wrong system.
+
+ Already covered as finding #1. Specifics: T-D3 references SQLite schema creation
+ in libvitals.c. T-D4 references --db /var/lib/vitals/tsdb.sqlite. T-D5 is
+ literally titled "SQLite WAL tail into Postgres." Amendment 01 deleted SQLite
+ eight amendments before amendment 04. The task file was never updated. Seven
+ references to SQLite remain in the task file. Zero references to the COPY-binary
+ spool appear in any task. The Rust crates (crates/vitals-decode/) already
+ implement SFLOAT, BP, and HR decoding — but T-D2 specifies C11 with
+ vitals/src/sfloat.c. A Rust SFLOAT exists (and is excellent, with exhaustive
+ testing), a C SFLOAT is specified in the task but may not exist, and the two
+ could diverge.
+
+ Know it by: crates/vitals-decode/src/sfloat.rs has exhaustive 0u16..=u16::MAX
+ testing. T-D2's vitals/src/sfloat.c either doesn't exist or is a port of the
+ Rust. The tasks need to decide which language the safety path uses, and every
+ file referencing the other language must be updated or removed.
+
+ ### 5. Will bite. Source id 0 is both a valid sensor and the SQL INTEGER default.
+
+ VITALS_SOURCE_EMAY = 0 in T-D1's registry. INTEGER DEFAULT 0 in SQL. A row
+ inserted without an explicit source value gets source = 0, which is a real sensor
+ (EMAY). A row with source IS NULL is caught by NOT NULL, but DEFAULT 0 silently
+ fills it. The design says "a source label can never drift" and "no source label
+ is ever typed by hand" — but source 0 drifts by being the default. This is not a
+ subtle bug: it means a bug in the INSERT path that forgets to set source writes
+ data as EMAY instead of failing. The fix is simple: start source ids at 1. Or
+ make vitals_source.id start at 1 and reserve 0 as UNKNOWN/invalid. Either way,
+ the registry TOML must not assign id 0 to a real source.
+
+ ### 6. Might bite. NTP step after boot creates a timestamp cliff that breaks
+ every query.
+
+ When the Pi boots with no RTC, the clock starts at 1970-01-01. Collectors start,
+ samples get 1970 timestamps. chrony eventually syncs and steps the clock to 2026.
+ All samples before the step have 1970 timestamps; all after have 2026 timestamps.
+ TimescaleDB chunks are 1-day ranges. The 1970-timestamped samples land in
+ 1970-01-01 chunks. The 2026 samples land in 2026 chunks. A query for "last
+ night's SpO₂" returns nothing if it uses a 2026 date range, because the data is
+ in 1970. The gap-fill query returns all-NULL. The system reports "no data" rather
+ than "stale clock." Amendment 04 §8 says chrony must be Before= the collectors,
+ which is correct but insufficient: chrony starting doesn't mean it has synced.
+ The collectors' ExecStartPre= must block until chronyc tracking reports Leap
+ status : Normal or System time : within some epsilon of sanity. A collector that
+ starts with a 1970 clock produces data that is technically correct (distinct
+ timestamps, monotonic within source) but practically useless for correlation.
+
+ ### 7. Might bite. samples_staging is still in the deploy and verify scripts.
+
+ Amendment 04 §6: "db/deploy/samples.sql drops samples_staging. The drainer uses a
+ genuine TEMP table." The actual db/deploy/samples.sql still creates
+ samples_staging as UNLOGGED. The verify script still queries it. If the drainer
+ uses CREATE TEMP TABLE staging and the deploy has already created a permanent
+ UNLOGGED TABLE samples_staging, the drainer's TEMP table of the same name shadows
+ the permanent one in its session — it works. But the permanent UNLOGGED TABLE is
+ dead code, visible to every other session, and if some other process (psql, admin
+ panel, a future migration) touches it, writes go to a table that the drainer
+ never reads. A ghost table in a production schema that exists for no reason is
+ exactly the kind of drift the design claims to eliminate.
+
+ ### 8. Might bite. The monitor window concept appears in amendment 04 §4 and is
+ never defined.
+
+ "Escalates only if unresolved — If still locked after 15 minutes and it is within
+ a monitoring window, then the alarm." What defines the monitoring window? A
+ systemd timer? A cron expression? A config file? Is it the same as the "Silence
+ is an alert condition" window from the main design §5? The main design says
+ "During a monitoring window, vitalsd expects samples at a known cadence per
+ source." Both the silence detector and the LUKS escalation use the same term but
+ describe different things: one is about sensor liveness, the other about system
+ availability. If the monitoring window is a single config value used by both, a
+ SpO₂ monitoring window (e.g., 22:00–08:00) is the wrong window for LUKS
+ escalation (which should fire any time the system is expected to be monitoring,
+ which might be 24/7). If they are separate config values, they need distinct
+ names.
+
+ ### 9. Taste. The cpap-collector is Python but feeds the safety path.
+
+ Amendment 03 shows cpap-collector in the process topology feeding cns-engine.
+ CPAP data (pressure, flow, events) is directly relevant to CNS depression scoring
+ — obstructive apneas and pressure drops are physiological signals. The design
+ says Python is "not on the safety path" (design §3.1), but the topology diagram
+ puts cpap-collector on the same path as polar-collector. If CPAP absence degrades
+ the CNS assessment, then a Python process crashing, hitting a GIL stall, or
+ leaking memory degrades the safety assessment. Either the CPAP collector must be
+ C/Rust (for the safety path), or CPAP data must be classified as enrichment
+ (absent without consequence), or the design must acknowledge that one collector
+ on the safety path is Python.
+
+ ### 10. Taste. OOMScoreAdjust=-1000 only works if the kernel's OOM killer is
+ configured to respect it.
+
+ oom_score_adj ranges from -1000 to 1000. -1000 means the process is excluded from
+ OOM killing. This is the right value. But cgroup v2's memory controller also has
+ memory.oom.group and memory.max. If systemd's MemoryHigh is set but MemoryMax is
+ not, the process can exceed MemoryHigh (it's a throttle, not a ceiling). If the
+ cgroup hits the system-wide OOM, the kernel selects by cgroup-level OOM scoring,
+ not process-level. The interaction between OOMScoreAdjust on the service and
+ cgroup v2 OOM scoring is kernel-version-dependent and not specified in the
+ design. On kernel 6.12 (the Pi's kernel), the behavior is: cgroup-level OOM kills
+ a process within the over-limit cgroup, and oom_score_adj is consulted within
+ that cgroup. So -1000 on vitalsd works as intended unless the vitalsd.service
+ cgroup itself is over its memory limit — in which case the kernel kills within
+ that cgroup, and vitalsd is the only process there. This is unlikely (the cgroup
+ limit is MemoryHigh, not MemoryMax) but the edge case is not documented.
+
+ ────────────────────────────────────────────────────────────────────────────────
+
+ Architecture wrong, not incomplete
+
+ ### Wrong: The two-backend design persists in code but was deleted in prose.
+
+ The design document, amendment 01, amendment 02, and amendment 04 all describe a
+ single-backend architecture (COPY-binary spool → PostgreSQL). The tasks still
+ describe SQLite → PostgreSQL WAL tailing. The db/deploy/samples.sql still creates
+ a staging table for the SQLite WAL tail pattern. The Rust crate structure
+ (vitals-core, vitals-decode, vitals-registry) suggests the implementation is
+ moving to Rust, but every C task in tasks.md contradicts this. This is not an
+ architectural disagreement to be resolved — it is a reconciliation that didn't
+ happen. The amendments describe the correct design. The tasks and the db/ files
+ describe a design that was superseded before implementation began. A project that
+ prides itself on making "documented rather than structural" patterns impossible
+ has its own task file as Exhibit A.
+
+ ### Wrong: node_id without HLC is a UUID pretending to be a clock.
+
+ Amendment 04 §8 removes hlc_physical and hlc_logical ("The HLC is vestigial"). It
+ keeps node_id. But node_id without HLC fields is just a 16-byte blob — it
+ identifies which node wrote a row, but provides no ordering, no causality, and no
+ merge semantics. The design's original justification for HLC was "merge writes
+ from multiple independent nodes without a coordinator" — the Pi, the phone, and
+ the watch. If HLC is removed, the merge story must be re-specified. What does the
+ Pi do when the phone pushes samples with node_id = phone but no HLC ordering? The
+ design says "replication progress is a byte offset now; no two writers share a
+ key, since sources partition the key space by construction." This is a different
+ correctness argument than HLC and it may hold, but it replaces a formal merge
+ model (HLC provides a total order with bounded clock skew) with a partitioning
+ argument (sources don't overlap, so no merge conflicts exist). Are sources
+ actually disjoint? source.healthkit can produce HR and source.polar_h10 also
+ produces HR. Different source, same type — so the PK (source, type, timestamp)
+ doesn't conflict. But downstream consumers (CNS engine, charts) must merge these
+ two HR streams. Without HLC, the merge is by timestamp alone, and timestamp
+ correctness depends on both the Pi clock and the phone clock being synchronized.
+ The design needs to state this explicitly: HLC removal means clock sync is a hard
+ dependency for multi-node correctness.
+
+ ────────────────────────────────────────────────────────────────────────────────
+
+ Tools, libraries, platform features not adopted
+
+ - ntpd / chrony with rtc support. The design acknowledges the RTC is absent but
+   doesn't specify a hardware RTC module. A DS3231 RTC on I2C costs ~$2 and would
+   make the "1970 clock at boot" problem disappear entirely. The Pi 5 has an RTC
+   header. For a life-safety device that must timestamp clinical data, an RTC is
+   not optional — it's $2 to eliminate an entire class of time-related failures.
+   The battery-backed RTC also feeds the LUKS unlock scenario: with a correct
+   clock, TLS certificate validation works, APNs works, and the out-of-band
+   alerting channel is available from boot.
+
+ - MemoryMax in systemd units. The design uses MemoryHigh (soft throttle) but
+   never MemoryMax (hard ceiling). A hard ceiling with MemoryMax=256M on vitalsd
+   combined with OOMScoreAdjust=-1000 would make the safety daemon's memory
+   consumption bounded rather than throttled. If it hits MemoryMax, the kernel
+   sends SIGKILL, systemd restarts it, and the 1-second restart gap is shorter
+   than a 10-second 555 timeout. A bounded-daemon that restarts is better than a
+   throttled-daemon that slowly suffocates Postgres.
+
+ - systemd-creds for key distribution to collectors. Amendment 02 §2.3 mentions
+   LoadCredentialEncrypted= for vitalsd's signing key, but the collectors also
+   need keys (each producer has its own Ed25519 keypair, amendment 02 §2.1).
+   Distributing per-collector signing keys via systemd credentials is the natural
+   path (LoadCredential=) and is not specified.
+
+ - rppal for GPIO on the safety path. Amendment 04 §11 recommends rppal — "the
+   maintained Rust GPIO crate for the Pi." If klaxond is Rust (as the crate
+   structure suggests), then rppal is the right choice for the GPIO heartbeat and
+   the piezo siren drive. But the tasks specify C11 for the safety path. If the
+   safety path stays C, then /sys/class/gpio sysfs or libgpiod is the C
+   equivalent, and rppal is unavailable. Another language-split ambiguity.
+
+ - rustls not OpenSSL for the COPY connection. The spool drainer connects to
+   PostgreSQL. If it's Rust, use rustls not native-tls/OpenSSL — avoids pulling in
+   a C TLS library with a known CVE surface. The design doesn't specify TLS for
+   the drainer connection (it assumes localhost), but if off-box replication is
+   added, TLS becomes mandatory.
+
+ ────────────────────────────────────────────────────────────────────────────────
+
+ Checked and found genuinely fine
+
+ - The SFLOAT decoder in crates/vitals-decode/src/sfloat.rs is correct,
+   exhaustive, and well-tested. The 16-bit exhaustive loop (0u16..=u16::MAX) is
+   strictly stronger than any fuzz target. The libm_powi10 lookup table covers the
+   exact domain. The 0xF14A → 33.0 correction from the T-D2 task brief error is
+   documented in the test.
+ - TIMESTAMPTZ with session timezone = UTC is the right type. Postgres stores an
+   absolute instant; no timezone ambiguity exists at the storage layer.
+ - Role separation (§1.4) into vitals_writer, vitals_reader, vitals_owner is
+   correctly specified and deferred appropriately (grants are independent of
+   data).
+ - The WITH NO DATA on the continuous aggregate avoids a full scan at creation —
+   documented and correct.
+ - The staging-table drain with ON CONFLICT DO NOTHING is correct for idempotent
+   replay. The cursor-in-transaction discipline (advance only after commit) is the
+   right pattern and correctly specified.
+ - Conflicts=sqitch-deploy.service for the spool drainer is the right systemd
+   directive for the common case.
+ - The dedup counter on the health endpoint (amendment 04 §1.2) is exactly the
+   right pattern — making silent loss observable. "A nonzero RR dedup count is a
+   fault, not housekeeping" is the correct stance.
+ - The tactile channel as redundancy, not physiological advantage (amendment 04 §9
+   correction) is honest and well-stated.
+ - The flock + pg_advisory_lock two-level locking is correct for preventing two
+   drainers from racing — it's the right tool for that specific race.
+ - sqitch over Alembic is justified and the verify-script discipline matches the
+   project's acceptance-testing culture.
+ - The boot-time dtoverlay=disable-bt gate G1 requiring T-A3 green is the correct
+   ordering and the correct caution.
+
+───────────────────────────────────────────────────────────────────────────────────
+
+───────────────────────────────────────────────────────────────────────────────────
+~/Source/AnxietyWatch2 (refactor/rust-workspace)
+↑50k ↓16k R478k CH99.5% 51.5%/128k (auto)        (litellm) deepseek/deepseek-v4-pro
