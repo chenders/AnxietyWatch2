@@ -1016,6 +1016,10 @@ function hzDraw(dt) {
     else if (surf[i] != null && surf[i - 1] == null) hzWall(c, i);
   }
 
+  // Bursts flagged `behind` are painted before him, so he swims in front of
+  // his own burp rather than being covered by it.
+  hzPops(c, dt, true);
+
   // ── the seahorse ─────────────────────────────────────────────────────────
   hzState.nextSh -= dt;
   if (!hzState.sh && hzState.nextSh <= 0) hzState.sh = hzSeahorseSpawn(performance.now());
@@ -1152,9 +1156,16 @@ function hzDraw(dt) {
   }
 
   // ── pops ─────────────────────────────────────────────────────────────────
+  hzPops(c, dt, false);
+}
+
+/* Bursts. `behind` selects which layer this call paints, so a seahorse can swim
+   in front of its own burp. */
+function hzPops(c, dt, behind) {
   for (let i = hzState.pops.length - 1; i >= 0; i--) {
     const p = hzState.pops[i];
-    p.age += dt;
+    if (!!p.behind !== !!behind) continue;
+    if (!behind || !p.stepped) { p.age += dt; p.stepped = behind; }
     // A tapped bubble lingers, because it has something to say; one that
     // simply reached the surface is over in a blink.
     const POP_MS = p.label ? 1.5 : 0.45;
@@ -1167,8 +1178,6 @@ function hzDraw(dt) {
     c.strokeStyle = `rgba(170,235,245,${(1 - t) * 0.5})`;
     c.lineWidth = 1.6 * (1 - t) + 0.4;
     c.stroke();
-    // A shallow surface dimple, so the break looks like it happened IN the
-    // water rather than floating above it.
     c.beginPath();
     c.ellipse(p.x, p.y, rr * 0.9, rr * 0.28, 0, 0, Math.PI * 2);
     c.strokeStyle = `rgba(127,212,222,${(1 - t) * 0.28})`;
@@ -1177,12 +1186,6 @@ function hzDraw(dt) {
   }
 }
 
-/* A tapped bubble bursts where it floats and leaves its number behind.
-   The burst itself is the plate the text sits on — the ring expands, a dark
-   disc fades up inside it to give the digits a background, and both fade out
-   together. The value shown is the bubble's OWN bpm, captured when it was
-   released, so it is a reading from that moment rather than a fresh one
-   dressed up as history. */
 function hzPopLabel(c, p, t) {
   const grow = 1 - Math.pow(1 - t, 3);          // fast burst, slow settle
   const rr = p.r + grow * 34;
@@ -1230,7 +1233,9 @@ function hzTap(ev) {
     // release; either way the view swipe must not also fire.
     hzState.grab = { x, y, ox: sh.x, oy: sh.y, vx: 0, vy: 0, t: performance.now(), moved: 0 };
     S.claimed = true;
-    sh.react = 1;                 // he notices you the moment you touch him
+    // Deliberately does NOT look up here. The glance belongs to a tap and only
+    // a tap — it lands when you lift your finger having not moved him, which
+    // makes it read as a "tee-hee" rather than as a reaction to being seized.
     return;
   }
 
@@ -1270,6 +1275,14 @@ const SEA = {
   SPEED: 26,                  // px/s cruising
   TAP_SLOP: 30,
 };
+
+/* Seahorses do not glide, they shove themselves along in little pushes and
+   then coast. Modulating forward speed by the same phase that drives the bob
+   ties the two together, so he appears to move BECAUSE he is beating rather
+   than to be sliding with an animation played over the top. */
+function hzSurge(sh) {
+  return 0.45 + 1.05 * Math.max(0, Math.sin(sh.bob * 1.5));
+}
 
 function hzSeahorseSpawn(now) {
   const dir = Math.random() < 0.5 ? 1 : -1;
@@ -1312,14 +1325,14 @@ function hzSeahorseStep(sh, dt, surf) {
   if (sh.state === "swim") {
     const reached = sh.dir > 0 ? sh.x >= sh.stopX : sh.x <= sh.stopX;
     if (sh.linger && reached) { sh.state = "hover"; }
-    else sh.x += sh.dir * SEA.SPEED * dt;
+    else sh.x += sh.dir * SEA.SPEED * hzSurge(sh) * dt;
   } else if (sh.state === "hover") {
     // Hovering is not standing still: it drifts a little, as they do.
     sh.x += Math.sin(sh.bob * 0.4) * 6 * dt;
     sh.stopped += dt;
     if (sh.stopped >= sh.stopFor) sh.state = "leave";
   } else {
-    sh.x += sh.dir * SEA.SPEED * dt;
+    sh.x += sh.dir * SEA.SPEED * hzSurge(sh) * dt;
   }
 
   // Keep it under the surface above its own column, and fade out where there
@@ -1338,105 +1351,168 @@ function hzSeahorseStep(sh, dt, surf) {
   return !gone && sh.alpha > 0.02;
 }
 
-/* Drawn rather than lifted from a font: a glyph would not curl its tail or
-   carry a dorsal fin, and at this size the silhouette is most of what sells
-   it. The first attempt was ~40px and read as a comma — a seahorse is
-   recognised by three things and it needs the room for all of them: a long
-   tubular SNOUT, a crowned head set back from it, and a tail that spirals
-   FORWARD. Everything else is body. */
+/* Drawn, not lifted from a font — a glyph has no coronet, no ring armour and
+   no tail to curl.
+   ── CUTE, on purpose and by the book ─────────────────────────────────────────
+   Lorenz's Kindchenschema: a large head relative to the body, large LOW-SET
+   eyes, a rounded face, a small nose and a high forehead. So this one has a
+   head nearly a third of its height, a snout cut to a stub (the one place
+   realism is deliberately sacrificed — a real snout is long and reads as a
+   beak, which is the opposite of cute), a chubby forward belly, and an eye
+   with a catchlight, because a matte eye reads as dead.
+   ── STILL A SEAHORSE ─────────────────────────────────────────────────────────
+   The identity lives in four things, all kept: the CORONET, which differs by
+   species like a fingerprint; the BONY RINGS, skin stretched over armour, drawn
+   as ridges down the flank; the spineless DORSAL FIN that actually powers
+   swimming; and the PREHENSILE TAIL, which curls forward to grasp.
+   ── COLOUR ───────────────────────────────────────────────────────────────────
+   Amber through coral to rose along the body, a cream belly, and a fin left
+   translucent so the water shows through it. Multi-hued but low-luminance: this
+   is still an object in a dark bedroom, so the range runs warm-dim to warm-mid
+   and never reaches white. */
 function hzDrawSeahorse(c, sh) {
-  const k = SEA.SCALE, sway = Math.sin(sh.bob) * 3;
+  const k = SEA.SCALE, q = sh.react || 0;
+  /* Exaggerated locomotion. A seahorse is a famously poor swimmer: it hangs
+     upright, bobs, and is driven by a dorsal fin beating far faster than
+     anything else about it moves. So the bob is deliberately larger than life,
+     the whole body ROCKS about the tail as if hinged there, and forward motion
+     comes in surges rather than at a constant glide. */
+  const bobY = Math.sin(sh.bob) * 6.5;
+  const rock = Math.sin(sh.bob * 0.9) * 0.16;
+
   c.save();
-  c.translate(sh.x, sh.y + sway);
+  c.translate(sh.x, sh.y + bobY);
   c.scale(sh.dir * k, k);
-  c.globalAlpha = sh.alpha * 0.9;
+  c.rotate(rock);
+  c.globalAlpha = sh.alpha;
 
-  const body = "rgba(198,168,118,0.62)";
-  const edge = "rgba(232,206,158,0.55)";
+  const grad = c.createLinearGradient(0, -40, 0, 42);
+  grad.addColorStop(0.00, "#E8A462");   // amber crown
+  grad.addColorStop(0.45, "#D8846A");   // coral flank
+  grad.addColorStop(1.00, "#B4626E");   // rose tail
+  const edge = "rgba(246,214,170,0.55)";
 
-  // Head, body and the spiral tail, in one stroke.
+  // ── dorsal fin, behind the body: the engine, fluttering fast ──────────────
+  const f = Math.sin(sh.bob * 7) * 2.6;          // deliberately much faster than the bob
   c.beginPath();
-  c.moveTo(4, -30);                         // crown, behind the snout
-  c.quadraticCurveTo(12, -32, 15, -27);     // brow forward
-  c.lineTo(27, -23);                        // snout, upper edge
-  c.quadraticCurveTo(30, -21, 27, -19);     // blunt tip
-  c.lineTo(15, -20);                        // snout, lower edge
-  c.quadraticCurveTo(11, -19, 10, -14);     // throat
-  c.quadraticCurveTo(8, -4, 9, 6);          // chest, bulging forward
-  c.quadraticCurveTo(10, 15, 6, 21);        // belly falling away
-  c.quadraticCurveTo(12, 25, 12, 32);       // tail sweeping forward
-  c.quadraticCurveTo(12, 40, 4, 40);        // outer curl
-  c.quadraticCurveTo(-3, 40, -3, 33);       // round the bottom
-  c.quadraticCurveTo(-3, 28, 2, 27);        // inner curl closing
-  c.quadraticCurveTo(6, 27, 5, 31);         // the eye of the spiral
-  c.quadraticCurveTo(4, 34, 1, 33);         // and back out
-  c.quadraticCurveTo(-6, 32, -5, 24);       // tail root, rear edge
-  c.quadraticCurveTo(-4, 14, -6, 4);        // lower back
-  c.quadraticCurveTo(-8, -8, -5, -18);      // upper back
-  c.quadraticCurveTo(-3, -27, 4, -30);      // nape into the crown
+  c.moveTo(-6, -6);
+  c.quadraticCurveTo(-17 - f, 2, -14 + f * 0.5, 12);
+  c.quadraticCurveTo(-10, 16, -5, 12);
   c.closePath();
-  c.fillStyle = body;
+  c.fillStyle = "rgba(127,212,222,0.30)";
   c.fill();
-  c.strokeStyle = edge;
-  c.lineWidth = 1.1;
+  c.strokeStyle = "rgba(160,228,236,0.35)";
+  c.lineWidth = 0.9;
   c.stroke();
 
-  // Dorsal fin, fluttering: what makes it read as swimming rather than
-  // drifting sideways.
-  const f = Math.sin(sh.bob * 2.2) * 2;
+  // ── body and prehensile tail ─────────────────────────────────────────────
   c.beginPath();
-  c.moveTo(-6, -2);
-  c.quadraticCurveTo(-14 - f, 6, -6, 14);
+  c.moveTo(6, -18);
+  c.quadraticCurveTo(11, -8, 11, 2);       // chubby chest, pushed forward
+  c.quadraticCurveTo(11, 12, 7, 19);       // belly falling away
+  c.quadraticCurveTo(14, 23, 14, 31);      // tail sweeping forward
+  c.quadraticCurveTo(14, 39, 5, 39);       // outer curl
+  c.quadraticCurveTo(-3, 39, -3, 31);      // round the bottom
+  c.quadraticCurveTo(-3, 26, 2, 25);       // closing inward
+  c.quadraticCurveTo(6, 25, 5, 29);        // the eye of the spiral
+  c.quadraticCurveTo(4, 32, 1, 31);        // and back out
+  c.quadraticCurveTo(-6, 30, -5, 22);      // tail root
+  c.quadraticCurveTo(-4, 12, -6, 2);       // lower back
+  c.quadraticCurveTo(-8, -10, -3, -17);    // upper back into the nape
   c.closePath();
-  c.fillStyle = "rgba(232,206,158,0.34)";
+  c.fillStyle = grad;
   c.fill();
-
-  // The crown spines a seahorse is named for.
-  c.beginPath();
-  c.moveTo(0, -30); c.lineTo(-2, -36);
-  c.moveTo(-4, -27); c.lineTo(-8, -32);
   c.strokeStyle = edge;
-  c.lineWidth = 1.4;
+  c.lineWidth = 1;
   c.stroke();
 
-  /* Touched, he turns his head out of profile to look at you, and smiles.
-     Drawn as a front-facing head that grows over the profile one rather than
-     by rotating the body path: a seahorse turning toward the viewer really
-     does foreshorten its snout to almost nothing, so covering it is the honest
-     projection as well as the simple one. The far eye fades in as the near one
-     slides to centre, which is what sells the turn. */
-  const q = sh.react || 0;
-  if (q > 0.01) {
-    const e = q * q * (3 - 2 * q);          // smoothstep, so the turn eases
-    c.save();
-    c.translate(4, -24);
-    c.beginPath();
-    c.ellipse(0, 0, 8 + 3.5 * e, 9.5 + 1.5 * e, 0, 0, Math.PI * 2);
-    c.fillStyle = body;
-    c.globalAlpha = sh.alpha * 0.9 * e;
-    c.fill();
-    c.strokeStyle = edge;
-    c.lineWidth = 1.1;
-    c.stroke();
+  // Cream belly, the lighter underside almost every seahorse carries.
+  c.save();
+  c.clip();
+  c.beginPath();
+  c.moveTo(4, -14);
+  c.quadraticCurveTo(12, -2, 8, 20);
+  c.quadraticCurveTo(4, 30, 12, 34);
+  c.lineTo(20, 34); c.lineTo(20, -20); c.closePath();
+  c.fillStyle = "rgba(246,222,186,0.35)";
+  c.fill();
+  c.restore();
 
-    c.fillStyle = "rgba(8,22,28,0.92)";
-    c.beginPath(); c.arc(3.4 - 0.4 * e, -2.4, 1.9, 0, Math.PI * 2); c.fill();
-    c.beginPath(); c.arc(-3.6 * e, -2.4, 1.9 * e, 0, Math.PI * 2); c.fill();
-
+  // Bony rings: skin stretched over armour. Faint, so they read as texture.
+  c.strokeStyle = "rgba(255,226,186,0.22)";
+  c.lineWidth = 0.9;
+  for (let i = 0; i < 7; i++) {
+    const yy = -12 + i * 5.2;
     c.beginPath();
-    c.arc(0, 0.5, 4.6, 0.18 * Math.PI, 0.82 * Math.PI);
-    c.strokeStyle = "rgba(8,22,28,0.8)";
-    c.lineWidth = 1.5;
-    c.lineCap = "round";
+    c.moveTo(-5.5 + i * 0.25, yy);
+    c.quadraticCurveTo(3, yy + 2.6, 10 - i * 0.5, yy - 0.5);
     c.stroke();
-    c.restore();
   }
 
-  c.globalAlpha = sh.alpha * 0.9;
+  // ── head: big, round, high-browed ────────────────────────────────────────
   c.beginPath();
-  c.arc(7, -25, 1.8, 0, Math.PI * 2);
-  c.fillStyle = "rgba(8,22,28,0.9)";
-  if (q < 0.35) c.fill();          // the profile eye gives way to the face
+  c.arc(1, -27, 12.5, 0, Math.PI * 2);
+  c.fillStyle = grad;
+  c.fill();
+  c.strokeStyle = edge;
+  c.lineWidth = 1;
+  c.stroke();
+
+  // Stub snout. Short is the whole point; a true snout reads as a beak.
+  c.beginPath();
+  c.moveTo(10, -30);
+  c.quadraticCurveTo(20, -29, 20, -25);
+  c.quadraticCurveTo(20, -22, 10, -22);
+  c.closePath();
+  c.fillStyle = "#E8A462";
+  c.fill();
+  c.strokeStyle = edge;
+  c.stroke();
+
+  // Coronet — the crown this animal is named for, rounded into knobs so it
+  // stays friendly rather than spiky.
+  c.fillStyle = "#F0C08A";
+  [[-6, -38, 2.6], [-1, -40, 3.0], [4, -38.5, 2.4]].forEach(([kx, ky, kr]) => {
+    c.beginPath(); c.arc(kx, ky, kr, 0, Math.PI * 2); c.fill();
+  });
+  c.strokeStyle = "rgba(240,192,138,0.6)";
+  c.lineWidth = 1.6;
+  c.beginPath();
+  c.moveTo(-6, -36); c.lineTo(-1, -37.5); c.lineTo(4, -36.5);
+  c.stroke();
+
+  // Cheek — a soft blush, which is most of what separates cute from merely round.
+  c.beginPath();
+  c.arc(7, -22.5, 3.4, 0, Math.PI * 2);
+  c.fillStyle = "rgba(232,138,132,0.32)";
+  c.fill();
+
+  // ── eyes ─────────────────────────────────────────────────────────────────
+  // Large and LOW-SET, per the baby-schema literature. When idle the near eye
+  // drifts on its own, because a seahorse's eyes really do move independently.
+  const wander = q > 0.01 ? 0 : Math.sin(sh.bob * 0.7) * 0.9;
+  const e = q * q * (3 - 2 * q);
+  const eye = (ex, ey, r, a) => {
+    c.globalAlpha = sh.alpha * a;
+    c.beginPath(); c.arc(ex, ey, r, 0, Math.PI * 2);
+    c.fillStyle = "#12262E"; c.fill();
+    // Catchlight. Without it the eye is a hole and the whole face dies.
+    c.beginPath(); c.arc(ex + r * 0.34, ey - r * 0.36, r * 0.32, 0, Math.PI * 2);
+    c.fillStyle = "rgba(255,252,246,0.92)"; c.fill();
+    c.globalAlpha = sh.alpha;
+  };
+  eye(5.2 - 1.6 * e + wander, -25.5, 3.5, 1);
+  if (e > 0.02) eye(-4.4 * e, -25.5, 3.5 * e, e);
+
+  // Touched: he turns out of profile and smiles.
+  if (e > 0.02) {
+    c.beginPath();
+    c.arc(0.5, -20.5, 5.2, 0.16 * Math.PI, 0.84 * Math.PI);
+    c.strokeStyle = `rgba(96,44,48,${(0.85 * e).toFixed(2)})`;
+    c.lineWidth = 1.7;
+    c.lineCap = "round";
+    c.stroke();
+  }
   c.restore();
 }
 
@@ -1451,12 +1527,16 @@ function hzDrawSeahorse(c, sh) {
 function hzSeahorseBurp(sh) {
   const hr = (hzState.st && hzState.st.params && hzState.st.params[1]) || {};
   const label = hr.stale ? "?" : String(hr.val);
+  /* Placed BEHIND and above him, on his far side, so the burst never sits over
+     the face — the whole point of touching him is that he looks up at you, and
+     a number covering his head hides the reaction you came for. */
   hzState.pops.push({
-    x: sh.x + sh.dir * 16,
-    y: sh.y - 24,
+    x: sh.x - sh.dir * 40,
+    y: sh.y - 46,
     r: 8,
     age: 0,
     label,
+    behind: true,
   });
   sh.react = 1;   // and he looks up at you
 }
@@ -1483,7 +1563,10 @@ function hzDragMove(ev) {
   g.t = now;
   sh.x = nx;
   sh.y = Math.max(60, Math.min(430, ny));
-  sh.react = 1;
+  // Once it is a drag, any glance in progress is cancelled: he is being
+  // carried, not greeted, and a fixed grin while hauled around is unsettling
+  // rather than charming.
+  if (g.moved >= 8) sh.react = 0;
 }
 
 function hzDragEnd() {
