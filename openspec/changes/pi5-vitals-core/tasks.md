@@ -883,81 +883,95 @@ and asserts exactly 10 000 rows with no duplicates and the offset at EOF.
 
 ### T-D6 — `bp-collector` end to end
 
-**Tier:** implement-complex · **Host:** pi · **Context budget:** ~6k · **Depends:** T-D2, T-D4, T-D5
-**Amends:** 04 (§1 identity model) · 02 (§2 batch signing) · 05 (§1 identity from the cuff's own sequence)
+**Tier:** implement-complex · **Host:** pi · **Context budget:** ~7k · **Depends:** T-D2, T-D4, T-D5
+**Amends:** 04 (§1 identity model) · 02 (§2 batch signing) · 05 (§1 identity, §4.3 BLE pairing)
 **Review required:** yes
 
 **GATE G3:** requires T-C3 green. No sample worth keeping is written before a restore works.
 
-The first real producer. The A&D cuff speaks standard `0x1810`, so this is the cleanest possible
-end-to-end proof of the whole path.
+**Reads:** `docs/research/2026-08-03-ua651ble-ble-capture.md` — a live capture from this exact
+hardware. It contradicts three things an earlier version of this brief asserted. Read it first.
 
-**Creates:** `vitals/src/collectors/bp_collector.c`, `vitals/src/bp_decode.c`,
-`vitals/src/bp_decode.h`, `vitals/tests/test_bp_decode.c`, `vitals/fuzz/fuzz_bp_decode.c`,
+The first real producer. The cuff speaks standard `0x1810`, so this is the cleanest end-to-end
+proof of the path — but the device is harder to talk to than "standard profile" suggests.
+
+**Creates:** `crates/vitals-decode/src/bp.rs` (currently a doc-comment stub),
+`crates/vitals-collectors/src/bin/bp_collector.rs`, `fuzz/fuzz_targets/fuzz_bp_decode.rs`,
 `/etc/systemd/system/vitals-bp.service` on minidude
 
 **Do:**
 
-1. Write the pure decoder `vitals/src/bp_decode.h`:
-   ```c
-   typedef struct {
-       bool   has_systolic, has_diastolic, has_map, has_pulse, has_timestamp;
-       double systolic, diastolic, map, pulse;   /* mmHg, mmHg, mmHg, bpm */
-       int64_t timestamp;                        /* UTC epoch seconds, 0 if absent */
-       bool   irregular_pulse;
-       bool   units_kpa;                         /* caller converts; store is mmHg */
-   } bp_measurement;
-   /* Decodes a 0x2A35 Blood Pressure Measurement. Returns false on malformed input. */
-   bool bp_decode_2a35(const uint8_t *buf, size_t len, bp_measurement *out);
+1. Implement `bp_decode_2a35` in `crates/vitals-decode/src/bp.rs`:
+   ```rust
+   pub struct BpMeasurement {
+       pub systolic: Option<f64>,      // mmHg — always mmHg, converted at this boundary
+       pub diastolic: Option<f64>,     // mmHg
+       pub map: Option<f64>,           // mmHg
+       pub pulse_bpm: Option<f64>,
+       pub timestamp: Option<i64>,     // UTC epoch seconds
+       pub user_id: Option<u8>,
+       pub irregular_pulse: bool,
+       pub body_movement: bool,
+       pub cuff_too_loose: bool,
+   }
+   /// Decodes a `0x2A35` Blood Pressure Measurement. `None` on malformed input.
+   pub fn bp_decode_2a35(buf: &[u8]) -> Option<BpMeasurement>;
    ```
-2. Implement per the SIG spec. Flags byte first, then three SFLOATs, then optional fields **in this
-   order**: timestamp (7 bytes), pulse (SFLOAT), user id (1 byte), measurement status (2 bytes).
-   ```c
-   /* flags: bit0 units kPa(1)/mmHg(0), bit1 timestamp, bit2 pulse,
-             bit3 user id, bit4 measurement status */
-   if (len < 7) return false;              /* flags + 3 SFLOATs minimum */
-   uint8_t flags = buf[0]; size_t off = 1;
-   out->units_kpa = flags & 0x01;
-   uint16_t raw;
-   raw = buf[off] | (buf[off+1] << 8); off += 2;
-   out->has_systolic  = vitals_sfloat_decode(raw, &out->systolic);
-   raw = buf[off] | (buf[off+1] << 8); off += 2;
-   out->has_diastolic = vitals_sfloat_decode(raw, &out->diastolic);
-   raw = buf[off] | (buf[off+1] << 8); off += 2;
-   out->has_map       = vitals_sfloat_decode(raw, &out->map);
-   if (flags & 0x02) { if (len < off+7) return false; /* parse timestamp */ off += 7; }
-   if (flags & 0x04) { if (len < off+2) return false;
-                       raw = buf[off] | (buf[off+1] << 8); off += 2;
-                       out->has_pulse = vitals_sfloat_decode(raw, &out->pulse); }
-   if (flags & 0x08) { if (len < off+1) return false; off += 1; }
-   if (flags & 0x10) { if (len < off+2) return false;
-                       uint16_t st = buf[off] | (buf[off+1] << 8); off += 2;
-                       out->irregular_pulse = st & 0x0004; }
-   ```
-   Every `len` check is required — this is attacker-controlled radio input.
-   If `units_kpa`, convert to mmHg (`× 7.50062`) **at this boundary**, so the store only ever holds
-   mmHg for these types.
-3. Tests in `test_bp_decode.c`: a real capture from the cuff; a frame with all optional fields
-   absent; a frame with SFLOAT `0x07FF` in systolic, asserting `has_systolic == false` and that
-   `systolic` is untouched; and a truncated frame at every length from 0 to 20, asserting `false`
-   and no read past `len`.
-4. `fuzz_bp_decode.c` passing the raw buffer straight to `bp_decode_2a35`. Run under ASan.
-5. `bp_collector.c`: connect to the cuff over BlueZ, **write `0x0002` to the CCCD** (indication, not
-   notification — `0x0001` gives a successful subscription that silently delivers nothing forever),
-   decode each indication, and `vitals_append` one sample per present field with
-   `source = VITALS_SOURCE_AD_UA651BLE`.
-   The cuff buffers ~30 readings internally, so the collector drains its memory on connect rather
-   than requiring presence at measurement time.
+   `Option` rather than a `has_*` flag per field — this is the concrete case the C-vs-Rust
+   evaluation argued from. Field order after the flags byte: three SFLOATs (systolic, diastolic,
+   MAP), then timestamp (7 bytes), pulse (SFLOAT), user id (1 byte), status (2 bytes), each present
+   only if its flag bit is set. Bounds-check before every read; the crate is `#![forbid(unsafe_code)]`
+   with `indexing_slicing` denied, so use `get()`.
+
+   If `flags & 0x01` (kPa), convert with `× 7.50062` **here**, so the store only ever holds mmHg.
+
+2. Tests from `crates/vitals-decode/fixtures/ua651ble-2a35.md`: the four real frames with their
+   expected values, plus every synthetic case listed there. The real capture only exercises
+   exponent 0 — the synthetic cases are not optional.
+
+3. `fuzz_bp_decode.rs` passing the raw buffer straight in. Run under ASan.
+
+4. `bp_collector.rs` — and note what the capture proved about this device:
+
+   - **Do not call `Device1.Connect()`.** Confirmed against `btmon`: 269 advertising reports with a
+     completely empty ATT trace and no `LE Create Connection` ever issued. The cuff's radio is dark
+     except for ~5–10 s after a measurement. Register intent with the kernel instead:
+     `btmgmt add-device -a 2 -t 1 <MAC>`, then react to `ServicesResolved`. A collector built on
+     `connect()` works when you trigger the cuff by hand and captures nothing unattended.
+   - **`StartNotify()`, never a hand-written CCCD.** `0x2A35` is `indicate`; writing `0x0001`
+     subscribes successfully and delivers nothing forever.
+   - **`fsync` the spool segment on every frame.** BlueZ sends the ATT confirmation from the kernel
+     before the application has stored anything, and the cuff deletes its record on confirmation.
+     A crash in that window destroys the reading permanently — nothing upstream can rebuild it.
+     Four readings a day makes the cost irrelevant.
+   - **`seq` cannot come from the payload.** A05 §5 said to take it "from the cuff's own measurement
+     sequence"; there is none — no timestamp, no counter, no user id (`flags = 0x14`). Use the drain
+     index within one connection, with `session_id` minted per connection. The transport already
+     guarantees exactly-once (indication + confirmation), so this is bookkeeping, not dedup.
+   - **Handle "bonded but cannot resume encryption" as a named degraded state.** On kernel 6.12.96
+     a bonded reconnect fails with `unexpected SMP command 0x0b` — the peripheral's Security Request
+     is rejected, encryption never starts, GATT never opens. It looks identical to a healthy idle
+     system. Detect it as "connected but `ServicesResolved` never fired within 10 s" and surface it;
+     recovery is remove-bond-and-re-pair.
+   - Emit one sample per present field with `source = VITALS_SOURCE_AD_UA651BLE`.
+
+5. **Investigate whether setting the cuff's clock enables timestamps.** `flags` bit1 was 0 across
+   the whole capture. If writing Date Time (`0x2A08`) or the vendor service
+   `233bf000-5a34-1b6d-975c-000d5690abe4` makes the cuff emit real event times, that replaces an
+   arrival-time estimate with a true one and resolves the identity gap above. Record the result in
+   the research doc either way — a negative result is worth as much here.
+
 6. Install `vitals-bp.service`, `WantedBy=multi-user.target`, `Restart=always`.
+
 7. **Take a real blood pressure reading.** Confirm it lands.
 
-**Verify:** `ssh chris@minidude 'cd ~/AnxietyWatch2 && cargo test -p vitals-decode bp_decode && cargo fuzz run bp_decode -- -max_total_time=60 && psql -U vitals -tAc "SELECT count(*) FROM samples WHERE source=6 AND type=6" | awk "\$1 > 0"'`
+**Verify:** `ssh chris@minidude 'cd ~/AnxietyWatch2 && cargo test -p vitals-decode bp && cargo fuzz run fuzz_bp_decode -- -max_total_time=60 && psql -U vitals -tAc "SELECT count(*) FROM samples WHERE source=6 AND type=6" | awk "\$1 > 0"'`
 **Expect:** exit 0; tests pass; fuzzer clean at 60 s; at least one systolic row present with
 `source = 6`.
 
 **Commit:**
 ```sh
-git add vitals/src/bp_decode.c vitals/src/bp_decode.h vitals/src/collectors/bp_collector.c vitals/tests/test_bp_decode.c vitals/fuzz/fuzz_bp_decode.c
+git add crates/vitals-decode/src/bp.rs crates/vitals-collectors/src/bin/bp_collector.rs fuzz/fuzz_targets/fuzz_bp_decode.rs
 git commit -m "feat(T-D6): A&D UA-651BLE collector via standard 0x1810 blood pressure service"
 ```
 
