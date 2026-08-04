@@ -150,6 +150,12 @@ jobs:
         with: { components: llvm-tools-preview }
       - uses: taiki-e/install-action@cargo-llvm-cov
       - uses: Swatinem/rust-cache@v2
+      # hr-spike links BlueZ via `bluer`. build-test got this and coverage did
+      # not, so the workspace built in one job and failed to link in the other
+      # — the dependency belongs with every job that compiles the workspace,
+      # not with the one where it was first noticed.
+      - name: Install D-Bus headers
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq libdbus-1-dev pkg-config
       # Decoders are the highest-value and most testable code here, so they carry
       # the hard gate. A flat workspace number would let untested decoder paths
       # hide behind well-covered glue.
