@@ -28,3 +28,10 @@ path = "fuzz_targets/fuzz_hr.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "fuzz_emay"
+path = "fuzz_targets/fuzz_emay.rs"
+test = false
+doc = false
+bench = false
