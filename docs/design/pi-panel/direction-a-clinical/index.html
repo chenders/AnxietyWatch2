@@ -1018,7 +1018,8 @@ function hzDraw(dt) {
 
   // Bursts flagged `behind` are painted before him, so he swims in front of
   // his own burp rather than being covered by it.
-  hzPops(c, dt, true);
+  hzPopsAge(dt);
+  hzPops(c, true);
 
   // ── the seahorse ─────────────────────────────────────────────────────────
   hzState.nextSh -= dt;
@@ -1158,21 +1159,33 @@ function hzDraw(dt) {
   }
 
   // ── pops ─────────────────────────────────────────────────────────────────
-  hzPops(c, dt, false);
+  hzPops(c, false);
+}
+
+/* Ageing is done ONCE per frame, here, and drawing never touches the clock.
+   Entangling the two is what broke it: hzPops runs twice a frame (once per
+   layer) and carried a `stepped` flag to avoid double-ageing, but the flag was
+   set and never cleared — so a burst behind the seahorse aged on its first
+   frame and then froze, fading to its held opacity and hanging there forever.
+   A draw pass that can advance time is a draw pass that will eventually
+   advance it the wrong number of times. */
+function hzPopsAge(dt) {
+  for (let i = hzState.pops.length - 1; i >= 0; i--) {
+    const p = hzState.pops[i];
+    p.age += dt;
+    if (p.age >= (p.label ? 1.5 : 0.45)) hzState.pops.splice(i, 1);
+  }
 }
 
 /* Bursts. `behind` selects which layer this call paints, so a seahorse can swim
    in front of its own burp. */
-function hzPops(c, dt, behind) {
-  for (let i = hzState.pops.length - 1; i >= 0; i--) {
-    const p = hzState.pops[i];
+function hzPops(c, behind) {
+  for (const p of hzState.pops) {
     if (!!p.behind !== !!behind) continue;
-    if (!behind || !p.stepped) { p.age += dt; p.stepped = behind; }
-    // A tapped bubble lingers, because it has something to say; one that
-    // simply reached the surface is over in a blink.
-    const POP_MS = p.label ? 1.5 : 0.45;
-    const t = p.age / POP_MS;
-    if (t >= 1) { hzState.pops.splice(i, 1); continue; }
+    // A tapped bubble lingers, because it has something to say; one that simply
+    // reached the surface is over in a blink.
+    const t = p.age / (p.label ? 1.5 : 0.45);
+    if (t >= 1) continue;
     if (p.label) { hzPopLabel(c, p, t); continue; }
     const rr = p.r * (1 + t * 2.6);
     c.beginPath();
@@ -1272,7 +1285,7 @@ function hzTap(ev) {
    allowed to paper over missing data. */
 
 const SEA = {
-  MIN_GAP: 22, MAX_GAP: 70,   // seconds between visits; it should feel like luck
+  MIN_GAP: 9, MAX_GAP: 30,    // seconds between visits: often enough to be company
   SCALE: 1.25,   // ~90px tall; smaller than this and it stops reading as a seahorse
   SPEED: 26,                  // px/s cruising
   TAP_SLOP: 30,
@@ -1391,7 +1404,7 @@ function hzSeahorseStep(sh, dt, surf) {
     // Hovering is not standing still: it drifts a little, as they do.
     sh.x += Math.sin(sh.bob * 0.4) * 6 * dt;
     sh.stopped += dt;
-    if (sh.stopped >= sh.stopFor) sh.state = "leave";
+    if (sh.stopped >= sh.stopFor) sh.state = "leave";   // the one way out
   } else {
     sh.x += sh.dir * SEA.SPEED * hzSurge(sh) * dt;
   }
@@ -1407,6 +1420,16 @@ function hzSeahorseStep(sh, dt, surf) {
   // barely stir the water while a transiting one pushes bubbles aside.
   sh.vx = dt > 0 ? (sh.x - x0) / dt : 0;
   sh.vy = dt > 0 ? (sh.y - y0) / dt : 0;
+
+  /* Only a seahorse that has decided to leave may exit. One that is still
+     swimming or hovering turns at the edge, so a throw toward the side of the
+     screen bounces him back into the water rather than costing you his
+     company for the next half minute. */
+  if (sh.state !== "leave") {
+    if (sh.x < 46 && sh.dir < 0) { sh.dir = 1; sh.throwVx = Math.abs(sh.throwVx || 0) * 0.5; }
+    if (sh.x > 754 && sh.dir > 0) { sh.dir = -1; sh.throwVx = -Math.abs(sh.throwVx || 0) * 0.5; }
+    sh.x = Math.max(40, Math.min(760, sh.x));
+  }
 
   const gone = sh.dir > 0 ? sh.x > 880 : sh.x < -80;
   return !gone && sh.alpha > 0.02;
@@ -1663,8 +1686,15 @@ function hzDragEnd() {
     sh.dir = g.vx >= 0 ? 1 : -1;
     sh.throwVx = Math.max(-420, Math.min(420, g.vx));
     sh.throwVy = Math.max(-260, Math.min(260, g.vy));
-    // A thrown seahorse stops loitering and swims on.
-    sh.state = "leave";
+    /* He does NOT leave. Setting state to "leave" here meant that playing with
+       him was punished by him swimming off, and then a long wait for the next
+       visit — the opposite of what an interaction should do. He keeps your
+       momentum, settles wherever he ends up, and carries on. */
+    sh.state = "swim";
+    sh.linger = true;
+    sh.stopped = 0;
+    sh.stopFor = 8 + Math.random() * 14;
+    sh.stopX = Math.max(120, Math.min(680, sh.x + sh.dir * 60));
   }
 }
 
