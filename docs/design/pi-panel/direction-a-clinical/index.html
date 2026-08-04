@@ -873,7 +873,27 @@ const HZ = {
   FLOOR: 470,           // bubbles are born just off the bottom edge
   MAX_BUBBLES: 90,      // a ceiling so a runaway rate cannot swamp the Pi
   FPS: 30,              // half of 60: smooth enough to read as fluid, half the GPU
+  /* Bubbles darken and thin out as the rate climbs toward the HR upper alarm
+     limit. 110 is not chosen for looks — it is the same ↑110 the clinical view
+     prints beside HR, so the two views cannot disagree about what "high" means.
+     Below CALM the field is bright and clear; by LIMIT it has gone murky. The
+     effect is that the prettiest view degrades legibly as things get worse,
+     instead of staying decorative while the number climbs. */
+  CALM: 62, LIMIT: 110,
+  TAP_SLOP: 26,         // fat-finger radius on a 7" touchscreen, in the dark
 };
+
+/* Tint for a bubble carrying `bpm`: bright and translucent when calm, dark and
+   faint as it approaches the limit. */
+function hzTint(bpm) {
+  const t = Math.max(0, Math.min(1, (bpm - HZ.CALM) / (HZ.LIMIT - HZ.CALM)));
+  const mix = (a, b) => Math.round(a + (b - a) * t);
+  return {
+    t,
+    stroke: `rgba(${mix(150, 58)},${mix(225, 92)},${mix(235, 108)},${(0.55 - t * 0.34).toFixed(3)})`,
+    hi: `rgba(${mix(200, 90)},${mix(245, 130)},${mix(250, 145)},${(0.45 - t * 0.30).toFixed(3)})`,
+  };
+}
 
 const hzState = { raf: 0, last: 0, bubbles: [], pops: [], nextBeat: 0, st: null, ctx: null };
 
@@ -942,14 +962,21 @@ function hzDraw(dt) {
     const end = x - 1;
     if (end > start) {
       const g = c.createLinearGradient(0, HZ.TOP, 0, 480);
-      // Was 0.85 at the top and lit most of an 800x480 panel in a dark
-      // bedroom, which is exactly what this design's "dim by lit area"
-      // position forbids. The surface stroke carries the reading; the body
-      // only has to say there is water beneath it, so it starts dim and
-      // falls away fast.
-      g.addColorStop(0, "rgba(20,86,104,0.30)");
-      g.addColorStop(0.35, "rgba(10,44,58,0.12)");
-      g.addColorStop(1, "rgba(4,18,26,0.02)");
+      /* The body starts dim and falls away fast — the surface stroke carries
+         the reading, and lighting most of an 800x480 panel in a dark bedroom
+         is exactly what this design's "dim by lit area" position forbids.
+
+         It also DARKENS AS THE RATE CLIMBS. Tinting the bubble outlines alone
+         was too subtle to notice at a real resting rate; shifting the water
+         from a shallow teal toward an abyssal blue is visible instantly and
+         means the right thing — the field sinks into deeper, colder water as
+         the heart works harder, and it is legible from across the room without
+         reading a number. */
+      const wt = hzTint(bpm).t;
+      const wmix = (a, b) => Math.round(a + (b - a) * wt);
+      g.addColorStop(0, `rgba(${wmix(24, 8)},${wmix(96, 32)},${wmix(114, 78)},${(0.30 + wt * 0.26).toFixed(3)})`);
+      g.addColorStop(0.35, `rgba(${wmix(10, 5)},${wmix(44, 18)},${wmix(58, 44)},${(0.12 + wt * 0.20).toFixed(3)})`);
+      g.addColorStop(1, `rgba(${wmix(4, 2)},${wmix(18, 8)},${wmix(26, 24)},${(0.02 + wt * 0.10).toFixed(3)})`);
       c.beginPath();
       c.moveTo(start, surf[start]);
       for (let i = start + 1; i <= end; i++) c.lineTo(i, surf[i]);
@@ -958,7 +985,10 @@ function hzDraw(dt) {
       c.beginPath();
       c.moveTo(start, surf[start]);
       for (let i = start + 1; i <= end; i++) c.lineTo(i, surf[i]);
-      c.strokeStyle = "#7FD4DE"; c.lineWidth = 2; c.globalAlpha = 0.9;
+      const stint = hzTint(bpm).t;
+      const smix = (a, b) => Math.round(a + (b - a) * stint);
+      c.strokeStyle = `rgb(${smix(127, 62)},${smix(212, 122)},${smix(222, 176)})`;
+      c.lineWidth = 2; c.globalAlpha = 0.9;
       c.stroke(); c.globalAlpha = 1;
     }
   }
@@ -988,6 +1018,10 @@ function hzDraw(dt) {
           v: (14 + r * 3.6) * (0.55 + bpm / 150),
           phase: Math.random() * Math.PI * 2,
           wob: 0.4 + Math.random() * 0.9,
+          // The rate at the instant this beat was released. Kept per-bubble so
+          // tapping one later reports what it actually represented, not
+          // whatever the rate happens to be by the time you touch it.
+          bpm: Math.round(bpm),
         });
       }
     }
@@ -1016,24 +1050,29 @@ function hzDraw(dt) {
       hzState.bubbles.splice(i, 1);
       continue;
     }
+    const tint = hzTint(b.bpm);
+    b.sx = bx;                       // remembered so a tap can hit where it is drawn
     c.beginPath();
     c.arc(bx, b.y, b.r, 0, Math.PI * 2);
-    c.strokeStyle = "rgba(150,225,235,0.55)";
+    c.strokeStyle = tint.stroke;
     c.stroke();
     // A single highlight is what makes it read as a bubble rather than a ring.
     c.beginPath();
     c.arc(bx - b.r * 0.32, b.y - b.r * 0.32, Math.max(0.6, b.r * 0.22), 0, Math.PI * 2);
-    c.fillStyle = "rgba(200,245,250,0.45)";
+    c.fillStyle = tint.hi;
     c.fill();
   }
 
   // ── pops ─────────────────────────────────────────────────────────────────
-  const POP_MS = 0.45;
   for (let i = hzState.pops.length - 1; i >= 0; i--) {
     const p = hzState.pops[i];
     p.age += dt;
+    // A tapped bubble lingers, because it has something to say; one that
+    // simply reached the surface is over in a blink.
+    const POP_MS = p.label ? 1.5 : 0.45;
     const t = p.age / POP_MS;
     if (t >= 1) { hzState.pops.splice(i, 1); continue; }
+    if (p.label) { hzPopLabel(c, p, t); continue; }
     const rr = p.r * (1 + t * 2.6);
     c.beginPath();
     c.arc(p.x, p.y, rr, 0, Math.PI * 2);
@@ -1048,6 +1087,63 @@ function hzDraw(dt) {
     c.lineWidth = 1;
     c.stroke();
   }
+}
+
+/* A tapped bubble bursts where it floats and leaves its number behind.
+   The burst itself is the plate the text sits on — the ring expands, a dark
+   disc fades up inside it to give the digits a background, and both fade out
+   together. The value shown is the bubble's OWN bpm, captured when it was
+   released, so it is a reading from that moment rather than a fresh one
+   dressed up as history. */
+function hzPopLabel(c, p, t) {
+  const grow = 1 - Math.pow(1 - t, 3);          // fast burst, slow settle
+  const rr = p.r + grow * 34;
+  const fade = t < 0.18 ? t / 0.18 : (t > 0.72 ? (1 - t) / 0.28 : 1);
+
+  c.beginPath();
+  c.arc(p.x, p.y, rr, 0, Math.PI * 2);
+  c.fillStyle = `rgba(6,26,34,${(0.82 * fade).toFixed(3)})`;
+  c.fill();
+  c.strokeStyle = `rgba(170,235,245,${(0.55 * fade).toFixed(3)})`;
+  c.lineWidth = 1.4;
+  c.stroke();
+
+  c.save();
+  c.textAlign = "center";
+  c.textBaseline = "middle";
+  c.fillStyle = `rgba(207,233,238,${fade.toFixed(3)})`;
+  c.font = "600 22px ui-monospace,SFMono-Regular,Menlo,monospace";
+  c.fillText(String(p.label), p.x, p.y - 5);
+  c.fillStyle = `rgba(94,122,131,${fade.toFixed(3)})`;
+  c.font = "400 11px ui-monospace,SFMono-Regular,Menlo,monospace";
+  c.fillText("bpm", p.x, p.y + 13);
+  c.restore();
+}
+
+/* Tap-to-pop. Hit-tests the bubble nearest the touch and bursts it in place,
+   underwater, rather than waiting for it to reach the surface.
+   The slop is generous because this is a 7" panel operated by a finger in the
+   dark; the swipe handler needs 60px of travel, so a tap can never be mistaken
+   for one. */
+function hzTap(ev) {
+  const cv = document.getElementById("hzCanvas");
+  if (!cv) return;
+  // Ignore the tail of a swipe: a gesture that travelled is a view change,
+  // not an attempt to burst a bubble.
+  if (ev.__fromSwipe) return;
+  const r = cv.getBoundingClientRect();
+  const x = (ev.clientX - r.left) * (800 / r.width);
+  const y = (ev.clientY - r.top) * (480 / r.height);
+  let best = -1, bestD = Infinity;
+  for (let i = 0; i < hzState.bubbles.length; i++) {
+    const b = hzState.bubbles[i];
+    const d = Math.hypot((b.sx ?? b.x) - x, b.y - y);
+    if (d < b.r + HZ.TAP_SLOP && d < bestD) { bestD = d; best = i; }
+  }
+  if (best < 0) return;
+  const b = hzState.bubbles[best];
+  hzState.pops.push({ x: b.sx ?? b.x, y: b.y, r: b.r, age: 0, label: b.bpm });
+  hzState.bubbles.splice(best, 1);
 }
 
 function hzWall(c, x) {
@@ -1078,7 +1174,9 @@ function hzText(st) {
      <div style="font-size:13px;letter-spacing:2px;color:#5E7A83;margin-top:4px">${esc(st.tier)}</div>
      `;
   const leg = document.getElementById("hzLegend");
-  if (leg) leg.textContent = hr.stale ? "no pulse · no bubbles" : `1 bubble = 1 beat · ${hr.val} bpm`;
+  if (leg) leg.textContent = hr.stale
+    ? "no pulse · no bubbles"
+    : `1 bubble = 1 beat · ${hr.val} bpm · darker toward ${HZ.LIMIT} · tap one to read it`;
 }
 
 function mountHorizon(st) {
@@ -1091,6 +1189,12 @@ function mountHorizon(st) {
   hzState.nextBeat = 0;
   hzState.last = performance.now();
   hzText(st);
+  // Bound to the panel, not the canvas: the readouts, legend and footer are
+  // absolutely positioned on top and would otherwise eat any touch that landed
+  // on them.
+  const host = document.getElementById("panel");
+  if (host) host.addEventListener("pointerdown", hzTap);
+  hzState.host = host;
   const frame = (now) => {
     // Clamp dt: after a tab stall or a slow poll a huge delta would teleport
     // every bubble through the surface without popping.
@@ -1107,6 +1211,8 @@ function updateHorizon(st) {
 }
 
 function unmountHorizon() {
+  if (hzState.host) hzState.host.removeEventListener("pointerdown", hzTap);
+  hzState.host = null;
   cancelAnimationFrame(hzState.raf);
   hzState.raf = 0;
   hzState.ctx = null;
