@@ -42,7 +42,12 @@ PLAUSIBLE = {"systolic": (30.0, 300.0), "diastolic": (10.0, 200.0),
              "map": (20.0, 250.0), "pulse_bpm": (20.0, 250.0)}
 KPA_TO_MMHG = 7.50062
 
-CUFF = sys.argv[1] if len(sys.argv) > 1 else "00:09:1F:98:EB:CF"
+# No default. A hardcoded address is both a leak in a repo and a footgun: it
+# silently targets one device while appearing to be generic. Find it with
+#   sudo btmgmt find | grep -i A\\&D
+if len(sys.argv) < 2:
+    sys.exit(f"usage: {sys.argv[0]} <MAC>   (find it with: sudo btmgmt find)")
+CUFF = sys.argv[1]
 if not re.fullmatch(r"(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}", CUFF):
     sys.exit(f"not a MAC address: {CUFF!r}")
 # BlueZ object paths use UPPERCASE hex. Matching the argument verbatim meant a

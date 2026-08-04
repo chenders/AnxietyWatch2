@@ -276,14 +276,17 @@ Rationale: with one adapter, a collector binding the wrong radio stops being a p
 ### T-B1 — Eight-hour Polar H10 capture
 
 **Tier:** implement-complex · **Host:** pi · **Context budget:** ~5k · **Depends:** T-A4
-**Amends:** 04 (§1 RR beat-time reconstruction) · 03 (§1 tactile evidence) · 05 (§1.4 clock drift, §4.3 IRK pairing)
+**Amends:** 06 (§1.2 seq scope, §3 bonded-but-unencrypted state) · 05 (§1.4 clock drift, §4.3 IRK pairing) · 04 (§1 RR beat-time reconstruction) · 03 (§1 tactile evidence)
 **Review required:** yes
 
 The entire project rests on the Pi holding a BLE connection all night. **Measure this before
 building anything on top of it.** Deliberately placed before the storage and core work.
 
-**Creates:** `crates/hr-spike/` (a throwaway binary crate),
-`~/vitals/spike/gap_histogram.py`
+**Creates:** `crates/hr-spike/` (a throwaway binary crate), `tools/gap_histogram.py`
+
+Both are committed. An earlier version put the histogram script at `~/vitals/spike/` — outside the
+repo — while the Verify line depends on it and the commit block staged only `tasks.md`, so the
+script the acceptance check runs was never version-controlled.
 
 **Do:**
 
@@ -324,29 +327,45 @@ building anything on top of it.** Deliberately placed before the storage and cor
    `get()` rather than indexing — the crate denies `indexing_slicing`, and `buf` is
    attacker-controlled radio input. Returning `None` on a short buffer is the whole point: a
    truncated notification must be *absent*, never a partially-decoded reading.
-3. Build with `cargo build --release -p hr-spike`. Use the `bluer` crate for BlueZ over D-Bus.
-4. Pair and trust the H10 once:
+3. Build with `cargo build --release -p hr-spike`.
+4. Pair the H10 once, and **register auto-connect** (A05 §4.3, amendment 06 §3):
    ```sh
-   bluetoothctl --timeout 30 scan on
-   bluetoothctl pair <H10_MAC>; bluetoothctl trust <H10_MAC>
+   # bluetoothctl's `scan on` emits nothing when its output is piped, and its
+   # `connect` has been observed issuing no LE Create Connection at all. Use
+   # btmgmt to discover and to register intent with the kernel.
+   sudo btmgmt find                       # note the H10's address
+   sudo bluetoothctl pair <H10_MAC>       # bonding stores the IRK
+   sudo btmgmt add-device -a 2 -t 1 <H10_MAC>   # action 2 = auto-connect
    ```
+   **`trust` is not sufficient and is not the mechanism.** A05 §4.3: a device implementing LE
+   Privacy rotates its address and static-MAC trust then fails silently. Bonding stores the IRK;
+   identify by IRK, not address. The kernel accept-list does the connecting, because a userspace
+   poll cannot reliably catch a short advertising window.
+
+   Distinguish three states, not two (amendment 06 §3): **device not found** (pairing fault),
+   **out of range** (normal), and **bonded but `ServicesResolved` never fired within 10 s**
+   (encryption could not resume — looks exactly like a quiet night, and is not one).
 5. Run the capture overnight under systemd-run so it survives your SSH session:
    ```sh
    systemd-run --user --unit=hrspike --setenv=H10_MAC=<mac> \
      ./target/release/hr-spike > ~/vitals/spike/night1.log
    ```
-6. In the morning, compute the gap histogram with `gap_histogram.py`: read the log, diff consecutive
-   timestamps, and print count of gaps in each bucket `<2s, 2-10s, 10-60s, 60s-5m, >5m`, plus total
-   duration, total RR count, and longest gap.
+6. In the morning, compute the gap histogram with `tools/gap_histogram.py`: read the log, diff
+   consecutive timestamps, and print count of gaps in each bucket `<2s, 2-10s, 10-60s, 60s-5m, >5m`,
+   plus total duration, total RR count, and longest gap.
+   Also report, per A05 §1.4 and §5:
+   - **observed clock drift** — fit cumulative RR sum against host arrival time; a rate outside
+     ±0.5% is a sensor or host clock fault, not normal. Nothing else in this system will measure it.
+   - **`seq` gap count** — `max(seq) - count(*)` per session, the lost-beat count.
 7. Record the histogram verbatim in `## Implementation notes`. **This number is the project's
    foundation — if the longest gap exceeds 5 minutes, stop and report before proceeding.**
 
-**Verify:** `ssh chris@minidude 'python3 ~/vitals/spike/gap_histogram.py ~/vitals/spike/night1.log --require-duration-hours 8 --max-gap-seconds 300'`
+**Verify:** `ssh chris@minidude 'cd ~/AnxietyWatch2 && python3 tools/gap_histogram.py ~/vitals/spike/night1.log --require-duration-hours 8 --max-gap-seconds 300 --require-drift-report'`
 **Expect:** exit 0. The script must exit nonzero if duration < 8 h or longest gap > 300 s.
 
 **Commit:**
 ```sh
-git add openspec/changes/pi5-vitals-core/tasks.md
+git add openspec/changes/pi5-vitals-core/tasks.md crates/hr-spike/ tools/gap_histogram.py
 git commit -m "spike(T-B1): record 8-hour Polar H10 capture gap histogram"
 ```
 
@@ -806,6 +825,12 @@ Single writer. Every collector connects; `vitalsd` alone touches the database.
 **Interfaces produced:**
 - Unix socket at `/run/vitals/vitalsd.sock`, mode `0660`, group `vitals`.
 - Wire format: 4-byte LE length prefix + CBOR map. Verbs `append`, `query`, `subscribe`, `health`.
+- **`append` takes `sync: bool`, default `false`** (amendment 06 §2.1). When true, `vitalsd` fsyncs
+  the spool segment **before** replying, so the caller's append does not return until the bytes are
+  durable. Only `bp-collector` sets it: a BP frame is deleted by the device on the kernel's ATT
+  confirmation and is reconstructible from nothing, while a night of RR is ~250 MB and ~100k appends
+  that per-append fsync would destroy. The default path stays batched (T-D3: fsync per batch or
+  every 250 ms), and **a collector must never block on disk unless it asked to.**
 
 **Do:**
 
@@ -813,7 +838,16 @@ Single writer. Every collector connects; `vitalsd` alone touches the database.
    task per client. Single-threaded — a single writer needs no locking, and this is the whole reason
    for the design. `tokio::select!` over accept, per-client reads and the liveness tick replaces the
    hand-rolled readiness loop; use `LocalSet` so no state needs `Send`.
-2. `health` returns, as CBOR: uptime, per-source last-sample age, total rows, WAL size, and the
+1b. **Heartbeat condition (A05 §2.1).** `klaxond`'s pin pulses only if a monitoring window is
+   active AND a primary-source sample arrived within 30 s AND `cns-engine` produced a tier
+   evaluation within 30 s AND the drain offset advanced or the spool is empty. Outside a monitoring
+   window the heartbeat is unconditional. `vitalsd` owns these four facts and exposes them.
+1c. **Subscriber backpressure (A05 §4.11).** Each subscriber gets a bounded queue. On overflow,
+   **drop and count** — never block the collector — and raise a degraded state **naming the
+   subscriber**. A detector that missed samples must know it missed them; the count feeds the same
+   "can't assess" path as a sensor gap.
+2. `health` returns, as CBOR: uptime, per-source last-sample age, total rows, WAL size, the p99
+   radio-to-evaluation latency (A05 §4.9), time since the last tier evaluation (A05 §4.7), and the
    contents of `/var/lib/vitals/restore-verify.json`. **Any blocked or degraded state names its
    blocker and the value that blocked it** — never a bare boolean. A guard that will not say why
    costs an hour of guessing.
@@ -906,13 +940,15 @@ and asserts exactly 10 000 rows with no duplicates and the offset at EOF.
 ### T-D6 — `bp-collector` end to end
 
 **Tier:** implement-complex · **Host:** pi · **Context budget:** ~7k · **Depends:** T-D2, T-D4, T-D5
-**Amends:** 04 (§1 identity model) · 02 (§2 batch signing) · 05 (§1 identity, §4.3 BLE pairing)
+**Amends:** 06 (§1 identity from the transport, §2 durability, §3 device state) · 04 (§1 identity model) · 02 (§2 batch signing) · 05 (§1 identity, §4.3 BLE pairing)
 **Review required:** yes
 
 **GATE G3:** requires T-C3 green. No sample worth keeping is written before a restore works.
 
-**Reads:** `docs/research/2026-08-03-ua651ble-ble-capture.md` — a live capture from this exact
-hardware. It contradicts three things an earlier version of this brief asserted. Read it first.
+**Reads:** `docs/research/2026-08-03-ua651ble-ble-capture.md` (a live capture from this exact
+hardware — it disproved three things an earlier version of this brief asserted; read it first) ·
+`crates/vitals-decode/fixtures/ua651ble-2a35.md` (step 2's test vectors) ·
+`vitals/registry.toml` (step 4's enum variants) · T-D3's `Sample` and T-D4's socket protocol below.
 
 The first real producer. The cuff speaks standard `0x1810`, so this is the cleanest end-to-end
 proof of the path — but the device is harder to talk to than "standard profile" suggests.
@@ -962,21 +998,31 @@ proof of the path — but the device is harder to talk to than "standard profile
      `connect()` works when you trigger the cuff by hand and captures nothing unattended.
    - **`StartNotify()`, never a hand-written CCCD.** `0x2A35` is `indicate`; writing `0x0001`
      subscribes successfully and delivers nothing forever.
-   - **`fsync` the spool segment on every frame.** BlueZ sends the ATT confirmation from the kernel
-     before the application has stored anything, and the cuff deletes its record on confirmation.
-     A crash in that window destroys the reading permanently — nothing upstream can rebuild it.
-     Four readings a day makes the cost irrelevant.
-   - **`seq` cannot come from the payload.** A05 §5 said to take it "from the cuff's own measurement
-     sequence"; there is none — no timestamp, no counter, no user id (`flags = 0x14`). Use the drain
-     index within one connection, with `session_id` minted per connection. The transport already
-     guarantees exactly-once (indication + confirmation), so this is bookkeeping, not dedup.
-   - **Handle "bonded but cannot resume encryption" as a named degraded state.** On kernel 6.12.96
-     a bonded reconnect fails with `unexpected SMP command 0x0b` — the peripheral's Security Request
-     is rejected, encryption never starts, GATT never opens. It looks identical to a healthy idle
-     system. Detect it as "connected but `ServicesResolved` never fired within 10 s" and surface it;
-     recovery is remove-bond-and-re-pair.
+   - **Append with `sync: true`, and wait for the reply** (amendment 06 §2.1). BlueZ sends the ATT
+     confirmation from the kernel before this process sees the frame, and the cuff deletes its record
+     on that confirmation. `vitalsd` owns the spool, so the collector cannot fsync it directly —
+     `sync: true` makes `vitalsd` fsync before replying. Do **not** set it on any streaming source.
+   - **Journal the raw bytes before decoding**, fsynced, with arrival time. A decoder bug is then
+     replayable; a lost frame never is. Four frames a day makes this free.
+   - **`seq` is the drain index within one connection**, `session_id` minted per connection
+     (amendment 06 §1.1). The cuff sends no timestamp, user id or counter, so identity comes from the
+     transport: `0x2A35` is an indication and the cuff deletes only on confirmation, which makes
+     redelivery impossible. This is ordering bookkeeping, not dedup.
+   - **Say both true things about the guarantee.** Exactly-once holds for delivery to the host stack;
+     it says nothing about durability in this process (amendment 06 §1.3). That gap is why
+     `sync: true` and the raw journal exist.
+   - **Set `extra` to mark `timestamp` as an arrival estimate** (amendment 06 §1.4). The cuff may
+     have held the reading for hours; a later consumer must not read it as a device timestamp.
+   - **Handle "bonded but cannot resume encryption" as a named degraded state** (amendment 06 §3):
+     bonded device reached `Connected` but `ServicesResolved` never fired within 10 s. On kernel
+     6.12.96 the peripheral's SMP Security Request (`0x0b`) is rejected, so encryption never starts
+     and GATT never opens — indistinguishable from a quiet night. Name the device and the elapsed
+     time; recovery is remove-bond-and-re-pair.
    - Emit one sample per present field with `source = VitalsSource::AdUa651ble` (from
-     `vitals-registry`'s generated enum — never the integer literal, never the string).
+     `vitals-registry`'s generated enum — never the integer literal, never the string), and types
+     `systolic → VitalsType::BpSystolic`, `diastolic → BpDiastolic`, `map → BpMap`,
+     **`pulse_bpm → VitalsType::Hr`** (the cuff's `provides` list carries `hr`; there is no
+     `VitalsType::Pulse`).
 
 5. **Investigate whether setting the cuff's clock enables timestamps.** `flags` bit1 was 0 across
    the whole capture. If writing Date Time (`0x2A08`) or the vendor service
