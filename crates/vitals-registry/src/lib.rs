@@ -11,7 +11,7 @@
 
 mod generated;
 
-pub use generated::{VitalsSource, VitalsType, ALL_SOURCES, ALL_TYPES};
+pub use generated::{ALL_SOURCES, ALL_TYPES, VitalsSource, VitalsType};
 
 #[cfg(test)]
 mod tests {

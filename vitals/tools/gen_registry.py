@@ -28,6 +28,8 @@ from __future__ import annotations
 import argparse
 import filecmp
 import json
+import shutil
+import subprocess
 import sys
 import tomllib
 from dataclasses import dataclass
@@ -412,6 +414,22 @@ def validate(reg: Registry, out_dir: Path) -> None:
         raise ValueError("generated output is incomplete:\n  " + "\n  ".join(problems))
 
 
+def _rustfmt(path: Path) -> None:
+    """Format generated Rust in place, if rustfmt is available.
+
+    `cargo fmt --check` is a CI gate, so unformatted generated output fails the
+    build on every run and the fix is not obvious from the error. Emitting
+    formatted source by hand is possible but fragile — one edit to a template
+    and it drifts. Let the formatter be authoritative.
+    """
+    if shutil.which("rustfmt") is None:
+        return
+    subprocess.run(  # noqa: S603
+        ["rustfmt", "--edition", "2024", str(path)],
+        check=False, capture_output=True,
+    )
+
+
 def install(staged: Path) -> None:
     """Copy staged artifacts to their real homes, creating parents."""
     for name, dest in ARTIFACT_DESTS.items():
@@ -422,6 +440,11 @@ def install(staged: Path) -> None:
 def write_all(reg: Registry, out_dir: Path) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "generated.rs").write_text(emit_rust(reg), encoding="utf-8")
+    # Format the STAGED copy, before validate() and before --check compares it
+    # against the committed file. Formatting only on install made --check
+    # compare unformatted staging against a formatted destination and report
+    # drift forever.
+    _rustfmt(out_dir / "generated.rs")
     (out_dir / "registry.sql").write_text(emit_sql(reg), encoding="utf-8")
     (out_dir / "registry.json").write_text(emit_json(reg), encoding="utf-8")
     validate(reg, out_dir)
