@@ -36,6 +36,11 @@ UtmpIdentifier=tty1
 UtmpMode=user
 Environment=XDG_RUNTIME_DIR=/run/user/1000
 Environment=XDG_SESSION_TYPE=wayland
+# --disable-pinch: a two-finger touch otherwise zooms a fixed-size 800x480
+#   appliance, which has no meaning and no way back without a keyboard.
+# --overscroll-history-navigation=0: Chromium treats a horizontal drag as
+#   back/forward navigation and consumes it BEFORE the page sees it, which is
+#   why finger swipes were being dropped while synthetic ones worked.
 # --password-store=basic: without it gnome-keyring raises a modal password
 # prompt over the panel on first run. It is not a chromium dialog, so
 # --noerrdialogs never had a chance at it, and a modal over a bedside monitor
@@ -43,7 +48,7 @@ Environment=XDG_SESSION_TYPE=wayland
 # The launcher waits for the DSI connector and resolves which DRM card holds
 # it before exec-ing cage. See the script for the two cold-boot failures that
 # made both steps necessary.
-ExecStart=/usr/local/bin/panel-kiosk-launch /usr/bin/chromium-browser --kiosk --noerrdialogs --disable-infobars --incognito --disable-session-crashed-bubble --password-store=basic --disable-features=Translate --check-for-update-interval=31536000 --ozone-platform=wayland "http://127.0.0.1:8975/index.html?kiosk=1&live&demo"
+ExecStart=/usr/local/bin/panel-kiosk-launch /usr/bin/chromium-browser --kiosk --noerrdialogs --disable-infobars --incognito --disable-session-crashed-bubble --password-store=basic --disable-features=Translate --check-for-update-interval=31536000 --ozone-platform=wayland --disable-pinch --overscroll-history-navigation=0 --disable-features=TouchpadOverscrollHistoryNavigation "http://127.0.0.1:8975/index.html?kiosk=1&live&demo"
 Restart=always
 RestartSec=5
 

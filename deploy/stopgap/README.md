@@ -6,7 +6,7 @@ bypasses the architecture on purpose.
 
 **What this is not.** There is no CNS detection here, no tier machine, no alarm,
 and no storage — nothing is written down and nothing is watching the numbers.
-The panel says so on every frame: the tier reads `NOT MONITORING` and the bar
+The panel says so on every frame: the tier reads `NOT ARMED` and the bar
 along the bottom reads `DISPLAY ONLY · THIS PANEL CANNOT WAKE YOU`. Do not sleep
 next to this expecting it to do anything.
 

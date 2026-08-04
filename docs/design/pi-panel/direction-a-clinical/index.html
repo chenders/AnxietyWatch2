@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=800, height=480, initial-scale=1, user-scalable=no">
+<meta name="viewport" content="width=800, height=480, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no">
 <title>AnxietyWatch — Bedside Panel · Direction A "Clinical"</title>
 <!--
   800x480 bedside panel for the Hosyond 7" DSI on the Pi 5, implemented from
@@ -49,7 +49,17 @@
   --hatch:repeating-linear-gradient(135deg,#8B97A3 0 2px,rgba(0,0,0,0) 2px 7px);
 }
 *{box-sizing:border-box}
-html,body{margin:0;background:#17191B;font-family:var(--sans)}
+/* The page must not own ANY gesture.
+   Chromium treats a horizontal drag as history navigation and a two-finger
+   gesture as pinch-zoom, both at the browser level and both above anything
+   JS can see — so a real finger swipe was being consumed before the handler
+   ran, and a two-finger touch zoomed a fixed-size 800x480 appliance. These
+   properties surrender pan/zoom/overscroll on the whole document; the kiosk
+   unit additionally passes --disable-pinch and disables overscroll history
+   navigation, because CSS alone does not stop the browser-level ones. */
+html,body{margin:0;background:#17191B;font-family:var(--sans);
+  touch-action:none;overscroll-behavior:none;overscroll-behavior-x:none;
+  user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
 body.kiosk{background:#000;overflow:hidden}
 /* Belt-and-braces only: this hides the cursor while it is over the page, which
    covers an actually-attached mouse. It does NOT fix the arrow cage parks on
@@ -65,7 +75,7 @@ body.kiosk .review{display:none}
    margin-top:auto, so no region can ever reflow into another's address. That
    the eye learns one place per value is the entire point of the layout. */
 #panel{
-  width:800px;height:480px;background:var(--bg);padding:13px 16px;
+  width:800px;height:480px;background:var(--bg);padding:13px 16px;touch-action:none;
   display:flex;flex-direction:column;gap:8px;overflow:hidden;position:relative;
   font-family:var(--sans);color:var(--nibp);
 }
@@ -335,7 +345,7 @@ const ORDER = [
 
    So live mode can only ever produce two tiers:
 
-     NOT MONITORING  data is arriving, nothing is judging it. Slate, because
+     NOT ARMED  data is arriving, nothing is judging it. Slate, because
                      slate is the hue-free "neither safe nor alarming" token --
                      but with a SOLID border, because the data is present. The
                      dashed language means "not measured" and must not be
@@ -358,7 +368,11 @@ const LIVE = {
   TREND_LEN: 60,
 };
 
-const live = { url: null, demo: false, snap: null, err: null, fetchedAt: 0, spo2: [], hr: [] };
+const live = { url: null, demo: false, snap: null, err: null, fetchedAt: 0, spo2: [], hr: [], hist: [] };
+/* How much of the night the accreting views remember. 2000 samples is a bit
+   over half an hour at 1 Hz — enough to see shape, small enough to redraw at
+   1 Hz on a Pi without the panel becoming the thing that heats the room. */
+const HIST_MAX = 2000;
 
 async function poll() {
   try {
@@ -388,6 +402,8 @@ function pushTrend(spo2, pulse) {
   live.hr.push(pulse ?? null);
   while (live.spo2.length > LIVE.TREND_LEN) live.spo2.shift();
   while (live.hr.length > LIVE.TREND_LEN) live.hr.shift();
+  live.hist.push({ s: spo2 ?? null, h: pulse ?? null });
+  while (live.hist.length > HIST_MAX) live.hist.shift();
 }
 
 
@@ -510,7 +526,7 @@ function liveState() {
   }
   return { ...common,
     // Solid border, slate hue: the data is present, the judgement is not.
-    tier: "NOT MONITORING", glyph: "○", accent: "var(--unknown)",
+    tier: "NOT ARMED", glyph: "○", accent: "var(--unknown)",
     prio: "NO ALARM ARMED", prioFg: "var(--unknown-hi)", since: "display only",
     chanLabel: live.demo ? "DEMO · SpO₂/HR REAL · REST SIMULATED" : "DISPLAY ONLY · NO ALARM", chanFg: "var(--unknown-hi)",
     params: params(s.spo2, s.pulse_bpm, false),
@@ -722,7 +738,7 @@ function renderPenumbra(st) {
    defocus, a wrong pair of glasses, grayscale, a photograph, every dichromacy.
 
    ── ONE ADDITION TO THE LADDER ──────────────────────────────────────────────
-   The designed ladder covers physiological tiers. "NOT MONITORING" is not one:
+   The designed ladder covers physiological tiers. "NOT ARMED" is not one:
    the data is real, it is the judgement that is absent, and neither the solid
    mass (which reads as fine) nor the dashed hollow (which means not measured)
    is honest for it. So it gets the third distinguishable form — hollow with a
@@ -737,7 +753,7 @@ function semGlyph(st) {
   if (st.indeterminate) {
     return `<div style="${box}"><div style="width:150px;height:150px;border:5px dashed ${SEM.slate};display:flex;align-items:center;justify-content:center;font-size:86px;font-weight:700;color:${SEM.slate};line-height:1">?</div></div>`;
   }
-  if (st.tier === "NOT MONITORING") {
+  if (st.tier === "NOT ARMED") {
     // Present but not judged: hollow, but solidly outlined. See the note above.
     return `<div style="${box}"><div style="width:150px;height:150px;border:5px solid ${SEM.calm}"></div></div>`;
   }
@@ -802,12 +818,617 @@ function renderSemaphore(st) {
   </div>`;
 }
 
+
+/* ══ Creative directions ═══════════════════════════════════════════════════
+   Three views that are not instrument panels. They exist because a thing you
+   sleep beside every night for years is furniture as much as equipment, and a
+   panel you actively want in the room is one you will actually keep plugged in.
+
+   They obey the same rule as the clinical ones, which is the only rule that
+   matters here: THEY CANNOT LIE ABOUT MISSING DATA. When the ring stops
+   reporting, the horizon breaks, the pulse ring stops and goes dashed, and the
+   trail leaves a hole. None of them interpolate, and none of them show a last
+   known value as though it were current. A pretty panel that quietly holds the
+   last number would be worse than no panel. */
+
+function creativeFooter(st) {
+  const sil = st.silence || {};
+  return `<div style="position:absolute;left:34px;right:34px;bottom:16px;display:flex;align-items:baseline;gap:14px;font-family:var(--mono);font-size:13px;letter-spacing:1.4px;color:#5A5F63">
+    <span>${esc(sil.text || "")}</span>
+    <span style="margin-left:auto">${esc(sil.sub || "")}</span>
+  </div>`;
+}
+
+/* ── HORIZON ────────────────────────────────────────────────────────────────
+   SpO2 drawn as a landscape at night, time flowing right to left. You do not
+   read this one; you notice it. A desaturation is the horizon sinking, which
+   the eye catches from across a dark room at an angle, half asleep, without
+   focusing — which is more than can be said for a number.
+
+   A gap is not a flat horizon. The land simply is not there, and a dashed rule
+   marks where it stopped, because a continuous skyline over missing samples
+   would be the most persuasive lie this panel could tell. */
+function renderHorizon(st) {
+  const W = 800, H = 300, BASE = 330;
+  const vals = live.hist.length ? live.hist.map(r => r.s) : [];
+  const lo = 80, hi = 100;
+  const y = (v) => BASE - ((Math.max(lo, Math.min(hi, v)) - lo) / (hi - lo)) * H;
+  const n = Math.max(vals.length, 2);
+  const x = (i) => (i / (n - 1)) * W;
+
+  let land = "", edge = "", run = [];
+  const flush = () => {
+    if (run.length > 1) {
+      const d = run.map((pt, k) => (k ? "L" : "M") + pt).join(" ");
+      const first = run[0].split(",")[0], last = run[run.length - 1].split(",")[0];
+      land += `<path d="${d} L${last},${BASE} L${first},${BASE} Z" fill="url(#hz)"/>`;
+      land += `<path d="${d}" fill="none" stroke="#7FD4DE" stroke-width="2" stroke-linejoin="round" opacity=".9"/>`;
+    }
+    run = [];
+  };
+  vals.forEach((v, i) => {
+    if (v == null) { flush(); return; }
+    run.push(`${x(i).toFixed(1)},${y(v).toFixed(1)}`);
+  });
+  flush();
+  // Mark every break so a hole reads as a hole and not as open sky.
+  let gapping = false;
+  vals.forEach((v, i) => {
+    if (v == null && !gapping) { gapping = true; edge += `<line x1="${x(i).toFixed(1)}" y1="40" x2="${x(i).toFixed(1)}" y2="${BASE}" stroke="#8B97A3" stroke-width="1.5" stroke-dasharray="3 6"/>`; }
+    else if (v != null) gapping = false;
+  });
+
+  const cur = st.params && st.params[0];
+  const stale = !cur || cur.stale;
+  return `<div style="width:800px;height:480px;position:relative;background:#000308;overflow:hidden;font-family:var(--sans)">
+    <svg width="800" height="480" style="position:absolute;inset:0">
+      <defs><linearGradient id="hz" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#123540" stop-opacity=".85"/>
+        <stop offset="100%" stop-color="#04121a" stop-opacity=".15"/>
+      </linearGradient></defs>
+      ${land}${edge}
+    </svg>
+    <div style="position:absolute;left:34px;top:26px;display:flex;flex-direction:column;gap:2px">
+      <span style="font-size:13px;letter-spacing:3px;color:#5E7A83">SpO₂ · LAST ${vals.length} SAMPLES</span>
+      <div style="display:flex;align-items:flex-end;gap:10px">
+        <span class="lim" style="font-size:96px;font-weight:200;line-height:.85;color:${stale ? "#8B97A3" : "#CFE9EE"};${stale ? "border-bottom:3px dashed #8B97A3" : ""}">${stale ? "?" : esc(cur.val)}</span>
+        <span style="font-size:15px;color:#5E7A83;padding-bottom:12px">${stale ? "NOT MEASURED" : "%"}</span>
+      </div>
+    </div>
+    <div style="position:absolute;right:34px;top:26px;text-align:right">
+      <div class="lim" style="font-size:15px;color:#5E7A83">${esc(st.clock)}</div>
+      <div style="font-size:13px;letter-spacing:2px;color:#5E7A83;margin-top:4px">${esc(st.tier)}</div>
+    </div>
+    ${creativeFooter(st)}
+  </div>`;
+}
+
+/* ── PULSE ──────────────────────────────────────────────────────────────────
+   One ring, expanding once per beat at the ACTUAL measured rate. The lit area
+   is a few thousand pixels and the room stays dark; from the bed it reads as a
+   slow heartbeat you can watch instead of a number you have to parse.
+
+   When the ring stops, it stops — dashed and still, with a "?". A ring that
+   kept beating on the last known rate would be the panel inventing a pulse,
+   which is the single worst thing anything in this repo could do. */
+function renderPulse(st) {
+  const hr = st.params && st.params[1];
+  const sp = st.params && st.params[0];
+  const stale = !hr || hr.stale;
+  const bpm = stale ? 0 : Number(hr.val) || 0;
+  const period = bpm > 0 ? (60 / bpm).toFixed(2) : 0;
+  return `<div style="width:800px;height:480px;position:relative;background:#000;overflow:hidden;font-family:var(--sans);display:flex;align-items:center;justify-content:center">
+    <style>
+      @keyframes beat { 0%{transform:scale(.55);opacity:.95} 70%{transform:scale(1.25);opacity:0} 100%{opacity:0} }
+      .ring{position:absolute;width:230px;height:230px;border-radius:50%;border:2px solid #4ADE80}
+    </style>
+    ${stale ? `
+      <div style="position:absolute;width:230px;height:230px;border-radius:50%;border:3px dashed #8B97A3;display:flex;align-items:center;justify-content:center;font-size:96px;color:#8B97A3">?</div>`
+    : `
+      <div class="ring" style="animation:beat ${period}s ease-out infinite"></div>
+      <div class="ring" style="animation:beat ${period}s ease-out infinite;animation-delay:${(period / 2).toFixed(2)}s"></div>
+      <div style="position:absolute;width:96px;height:96px;border-radius:50%;background:#0B2B18;border:1px solid #2C6B45"></div>`}
+    <div style="position:absolute;text-align:center">
+      <div class="lim" style="font-size:64px;font-weight:200;color:${stale ? "#8B97A3" : "#D6F5E3"};line-height:1">${stale ? "" : esc(hr.val)}</div>
+      <div style="font-size:13px;letter-spacing:3px;color:#4A6A57">${stale ? "" : "bpm"}</div>
+    </div>
+    <div style="position:absolute;left:34px;top:26px">
+      <div style="font-size:13px;letter-spacing:3px;color:#4A6A57">SpO₂</div>
+      <div class="lim" style="font-size:44px;font-weight:200;color:${!sp || sp.stale ? "#8B97A3" : "#CFE9EE"}">${!sp || sp.stale ? "?" : esc(sp.val)}</div>
+    </div>
+    <div style="position:absolute;right:34px;top:26px;text-align:right">
+      <div class="lim" style="font-size:15px;color:#4A6A57">${esc(st.clock)}</div>
+      <div style="font-size:13px;letter-spacing:2px;color:#4A6A57;margin-top:4px">${esc(st.tier)}</div>
+    </div>
+    ${creativeFooter(st)}
+  </div>`;
+}
+
+/* ── TRAIL ──────────────────────────────────────────────────────────────────
+   The night as one long-exposure photograph. Every sample is a dot; the night
+   accretes into a shape you can read at a glance in the morning — steady bands
+   where you were settled, scatter where you were not, and holes where nothing
+   was measured. Closer to a star-trail exposure than a chart, and the only view
+   here whose value goes UP the longer it runs. */
+function renderTrail(st) {
+  const W = 800, H = 340, TOP = 70;
+  const h = live.hist;
+  const n = Math.max(h.length, 2);
+  const band = (v, lo, hi) => TOP + H - ((Math.max(lo, Math.min(hi, v)) - lo) / (hi - lo)) * H;
+  let dots = "", holes = "";
+  h.forEach((r, i) => {
+    const x = ((i / (n - 1)) * (W - 68) + 34).toFixed(1);
+    if (r.s == null && r.h == null) { holes += `<rect x="${x}" y="${TOP}" width="1.2" height="${H}" fill="#1B2429"/>`; return; }
+    if (r.s != null) dots += `<circle cx="${x}" cy="${band(r.s, 80, 100).toFixed(1)}" r="1.5" fill="#22D3EE" opacity=".55"/>`;
+    if (r.h != null) dots += `<circle cx="${x}" cy="${band(r.h, 40, 110).toFixed(1)}" r="1.5" fill="#4ADE80" opacity=".45"/>`;
+  });
+  const mins = Math.round(h.length / 60);
+  return `<div style="width:800px;height:480px;position:relative;background:#000;overflow:hidden;font-family:var(--sans)">
+    <svg width="800" height="480" style="position:absolute;inset:0">${holes}${dots}</svg>
+    <div style="position:absolute;left:34px;top:22px;display:flex;gap:26px;align-items:baseline">
+      <span style="font-size:13px;letter-spacing:3px;color:#5A6A70">TRAIL · ${mins} MIN</span>
+      <span style="font-size:12px;letter-spacing:2px;color:#22D3EE">SpO₂</span>
+      <span style="font-size:12px;letter-spacing:2px;color:#4ADE80">HR</span>
+      <span style="font-size:12px;letter-spacing:2px;color:#5A6A70">▏NOT MEASURED</span>
+    </div>
+    <div style="position:absolute;right:34px;top:22px;text-align:right">
+      <div class="lim" style="font-size:15px;color:#5A6A70">${esc(st.clock)}</div>
+      <div style="font-size:13px;letter-spacing:2px;color:#5A6A70;margin-top:4px">${esc(st.tier)}</div>
+    </div>
+    ${creativeFooter(st)}
+  </div>`;
+}
+
+/* ── AURORA (designed by a dedicated agent, integrated verbatim) ────────────
+   An ambient light-field. Both signals become slow soft bands, like an aurora
+   through a window: SpO2 is the upper curtain whose HEIGHT is the saturation,
+   pulse is the lower ribbon of rays. A desaturation makes the light physically
+   sink, warm from jade to ember, and grow downward filaments — three cues at
+   once, so it registers from three feet with one eye open.
+
+   Two decisions worth keeping: the light budget is spent as AREA (~1-2% of the
+   panel lit) rather than as brightness, so the few lit strokes can sit at a
+   readable luminance without the panel acting as a lamp; and the palette
+   avoids cyan on purpose, because melanopic sensitivity peaks near 480nm and
+   the obvious "aurora cyan" is the worst possible hue for a bedroom.
+
+   Gaps are structural: only contiguous runs of measured samples become paths,
+   so there is no code path that could bridge a null. */
+function renderAurora(st) {
+  const W = 800, H = 480;
+  const FX0 = 18, NOW_X = 650;
+  const N = NOW_X - FX0;
+
+  const S_HI = 100, S_LO = 86, S_TOP = 72, S_BOT = 300;
+  const S_WATCH = 93, S_ALERT = 90;
+  const H_HI = 120, H_LO = 40, H_TOP = 324, H_BOT = 400;
+  const RAIL_Y = 56;
+
+  const sy = v => S_TOP + (S_HI - Math.min(S_HI, Math.max(S_LO, v))) * (S_BOT - S_TOP) / (S_HI - S_LO);
+  const hy = v => H_BOT - (Math.min(H_HI, Math.max(H_LO, v)) - H_LO) * (H_BOT - H_TOP) / (H_HI - H_LO);
+
+  const C_CORE = '#4FA773', C_ECHO = '#2E7A50', C_WARN = '#C08A3E',
+        C_ALERT = '#D0552E', C_HR = '#B07A3A', C_RAIL = '#514B42';
+
+  const hist = Array.isArray(live.hist) ? live.hist : [];
+  const base = hist.length - N;
+  const cols = new Array(N);
+  for (let i = 0; i < N; i++) {
+    const recorded = base + i >= 0;
+    const e = recorded ? hist[base + i] : null;
+    // NaN must never reach a coordinate: SVG silently drops a NaN vertex and
+    // joins its neighbours, which is exactly the false bridge across a gap.
+    const s = e && typeof e.s === 'number' && isFinite(e.s) ? e.s : null;
+    const h = e && typeof e.h === 'number' && isFinite(e.h) ? e.h : null;
+    cols[i] = { x: FX0 + i + 0.5, s: s, h: h, k: recorded };
+  }
+
+  const runsOf = pick => {
+    const out = [];
+    let cur = null;
+    for (let i = 0; i < N; i++) {
+      const v = pick(cols[i]);
+      if (v === null) { cur = null; continue; }
+      if (!cur) { cur = []; out.push(cur); }
+      cur.push([cols[i].x, v]);
+    }
+    return out;
+  };
+
+  const pathOf = (run, ymap) => {
+    if (run.length === 1) {
+      // A one-second island would render as nothing; give it a dash so a
+      // single real measurement is never silently discarded.
+      const y = ymap(run[0][1]).toFixed(1);
+      return `M${(run[0][0] - 0.6).toFixed(1)} ${y}L${(run[0][0] + 0.6).toFixed(1)} ${y}`;
+    }
+    let d = '';
+    for (let i = 0; i < run.length; i++) d += (i ? 'L' : 'M') + run[i][0].toFixed(1) + ' ' + ymap(run[i][1]).toFixed(1);
+    return d;
+  };
+
+  let defs = '';
+  const layerOf = (runs, ymap, pfx) => {
+    const ids = [];
+    runs.forEach((r, i) => { const id = pfx + i; defs += `<path id="${id}" d="${pathOf(r, ymap)}"/>`; ids.push(id); });
+    return dy => ids.map(id => `<use href="#${id}"${dy ? ` transform="translate(0 ${dy})"` : ''}/>`).join('');
+  };
+
+  const useSp = layerOf(runsOf(c => c.s), sy, 'aurS');
+  const useWarn = layerOf(runsOf(c => (c.s !== null && c.s < S_WATCH && c.s >= S_ALERT) ? c.s : null), sy, 'aurW');
+  const useAlert = layerOf(runsOf(c => (c.s !== null && c.s < S_ALERT) ? c.s : null), sy, 'aurA');
+
+  const CURTAIN = [[4, 3, .13], [10, 5, .085], [18, 7, .055], [28, 9, .034]];
+
+  let filaments = '';
+  for (let i = N - 1; i >= 0; i -= 3) {
+    const v = cols[i].s;
+    if (v === null || v >= S_ALERT) continue;
+    const y = sy(v);
+    filaments += `<line x1="${cols[i].x}" y1="${(y + 3).toFixed(1)}" x2="${cols[i].x}" y2="${(y + 21).toFixed(1)}"/>`;
+  }
+
+  // A sample below the floor is clamped for drawing and would otherwise
+  // impersonate exactly 86; these stubs say "this went off the bottom".
+  let floored = '';
+  for (let i = 0; i < N; i++) {
+    if (cols[i].s !== null && cols[i].s < S_LO) floored += `<line x1="${cols[i].x}" y1="${S_BOT}" x2="${cols[i].x}" y2="${S_BOT + 7}"/>`;
+  }
+
+  // Each ray stands for a fully-measured 3s window: if ANY of its seconds is
+  // missing the ray is not drawn, so the ribbon can never look continuous
+  // across data it does not have.
+  let rays = '';
+  for (let i = N - 3; i >= 0; i -= 3) {
+    if (cols[i].h === null || cols[i + 1].h === null || cols[i + 2].h === null) continue;
+    const y = hy((cols[i].h + cols[i + 1].h + cols[i + 2].h) / 3);
+    const x = cols[i + 1].x;
+    rays += `<line x1="${x}" y1="${(y - 5).toFixed(1)}" x2="${x}" y2="${(y + 5).toFixed(1)}"/>`;
+  }
+
+  // Blur makes a 1-2s break easy to miss, so absence gets its own un-blurred
+  // mark. Solid = the recorder ran and got nothing; faint = before the buffer.
+  const railRuns = [];
+  let missing = 0, lastIdx = -1;
+  for (let i = 0; i < N; i++) {
+    if (cols[i].s !== null) { lastIdx = i; continue; }
+    missing++;
+    const last = railRuns[railRuns.length - 1];
+    if (last && last[1] === i && last[2] === cols[i].k) last[1] = i + 1;
+    else railRuns.push([i, i + 1, cols[i].k]);
+  }
+  const rail = railRuns.map(r =>
+    `<rect x="${FX0 + r[0]}" y="${RAIL_Y}" width="${Math.max(1, r[1] - r[0])}" height="3" rx="1.5" opacity="${r[2] ? .72 : .3}"/>`
+  ).join('');
+
+  const ago = n => n === null ? 'no SpO₂ in this window' : (n >= 120 ? `last SpO₂ ${Math.floor(n / 60)} min ago` : `last SpO₂ ${n} s ago`);
+  const coverage = `${(N / 60).toFixed(1)} min shown · ${missing} s unmeasured · ${ago(lastIdx >= 0 ? N - 1 - lastIdx : null)}`;
+
+  const svg = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" style="position:absolute;inset:0">
+<defs>
+<filter id="aurSoft" filterUnits="userSpaceOnUse" x="0" y="0" width="${W}" height="${H}" color-interpolation-filters="sRGB"><feGaussianBlur stdDeviation="6"/></filter>
+${defs}
+</defs>
+<g fill="${C_RAIL}">${rail}</g>
+<line x1="${FX0}" y1="${sy(S_ALERT).toFixed(1)}" x2="${NOW_X}" y2="${sy(S_ALERT).toFixed(1)}" stroke="#2C4433" stroke-width="1" stroke-dasharray="2 11"/>
+<line x1="${NOW_X + 0.5}" y1="60" x2="${NOW_X + 0.5}" y2="406" stroke="#3A352E" stroke-width="1"/>
+<g fill="none" stroke="${C_ECHO}" stroke-linecap="round" stroke-linejoin="round">${CURTAIN.map(l => `<g opacity="${l[2]}" stroke-width="${l[1]}">${useSp(l[0])}</g>`).join('')}</g>
+<g filter="url(#aurSoft)" fill="none" stroke-linecap="round"><g stroke="${C_CORE}" stroke-width="2.5" opacity=".26">${useSp(0)}</g><g stroke="${C_ALERT}" stroke-width="3" opacity=".42">${useAlert(0)}</g><g stroke="${C_HR}" stroke-width="2" opacity=".2">${rays}</g></g>
+<g fill="none" stroke-linecap="round" stroke-linejoin="round">
+<g stroke="${C_CORE}" stroke-width="1.6" opacity=".72">${useSp(0)}</g>
+<g stroke="${C_WARN}" stroke-width="1.8" opacity=".85">${useWarn(0)}</g>
+<g stroke="${C_ALERT}" stroke-width="2" opacity=".95">${useAlert(0)}</g>
+<g stroke="${C_ALERT}" stroke-width="1" opacity=".3">${filaments}</g>
+<g stroke="${C_ALERT}" stroke-width="1.4" opacity=".85">${floored}</g>
+<g stroke="${C_HR}" stroke-width="1.3" opacity=".5">${rays}</g>
+</g>
+</svg>`;
+
+  const P = Array.isArray(st.params) ? st.params : [];
+  const readout = (p, top, fallbackName, tone) => {
+    p = p || {};
+    // Unknown if it says so OR the value is empty. Both collapse to "?" — the
+    // last good number is never reprinted as if it were now.
+    const unknown = p.stale === true || p.val === null || p.val === undefined || p.val === '';
+    const note = p.note ? esc(p.note) : (unknown ? 'no current reading' : '');
+    return `<div class="aur-ro" style="top:${top}px">
+<div class="aur-lbl">${esc(p.name || fallbackName)}</div>
+<div class="aur-val lim ${unknown ? 'aur-q' : tone}">${unknown ? '?' : esc(p.val)}${unknown || !p.unit ? '' : `<span class="aur-unit">${esc(p.unit)}</span>`}</div>
+${note ? `<div class="aur-note">${note}</div>` : ''}
+</div>`;
+  };
+
+  const sil = st.silence || {};
+
+  return `<div style="width:800px;height:480px;position:relative;background:#000;overflow:hidden">
+<style>
+.aur{position:absolute;inset:0;font-family:var(--sans);-webkit-font-smoothing:antialiased}
+.aur-hd{position:absolute;left:18px;right:16px;top:11px;display:flex;justify-content:space-between;align-items:baseline}
+.aur-clk{font-family:var(--mono);font-size:20px;letter-spacing:.08em;color:#8A8175}
+.aur-tier{font-size:13px;letter-spacing:.22em;text-transform:uppercase;color:#8A8175}
+.aur-ro{position:absolute;right:16px;width:152px;text-align:right}
+.aur-lbl{font-size:13px;letter-spacing:.2em;text-transform:uppercase;color:#8A8175}
+.aur-val{font-family:var(--mono);font-size:38px;line-height:1.06;margin-top:5px}
+.aur-unit{font-family:var(--sans);font-size:14px;letter-spacing:.04em;margin-left:5px;color:#8A8175}
+.aur-note{font-size:13px;line-height:1.35;color:#8A8175;margin-top:5px}
+.aur-j{color:#3E7551}
+.aur-e{color:#8A5C2E}
+.aur-q{color:#8A8175}
+.aur-bl{position:absolute;left:18px;top:408px;width:372px}
+.aur-br{position:absolute;right:16px;top:408px;width:376px;text-align:right}
+.aur-sil{font-size:15px;line-height:1.3;color:#8A8175}
+.aur-sub{font-size:13px;line-height:1.4;color:#8A8175;margin-top:3px;letter-spacing:.02em}
+.aur-key{font-size:13px;line-height:1.5;color:#8A8175}
+</style>
+${svg}
+<div class="aur">
+<div class="aur-hd"><span class="aur-clk lim">${esc(st.clock || '')}</span><span class="aur-tier">${esc(st.tier || '')}</span></div>
+${readout(P[0], 118, 'SpO₂', 'aur-j')}
+${readout(P[1], 330, 'Pulse', 'aur-e')}
+<div class="aur-bl">
+<div class="aur-sil">${esc(sil.text || '')}</div>
+<div class="aur-sub">${esc(sil.sub || '')}</div>
+</div>
+<div class="aur-br">
+<div class="aur-key">upper curtain 100–86 %SpO₂, dashes at 90 · lower rays 40–120 bpm</div>
+<div class="aur-key">${esc(coverage)} · top bar marks every unmeasured second</div>
+</div>
+</div>
+</div>`;
+}
+
+/* ── ORBIT (designed by a dedicated agent, integrated) ──────────────────────
+   The observation window drawn as a chronometer dial. Reading outward → in:
+     halo of dots ... pulse (radius = bpm)
+     bezel ticks .... 1 minute, long tick = 5 minutes
+     the RAIL ....... one arc per contiguous run of seconds that actually
+                      carried an SpO2 reading. This is the headline: a closed
+                      ring means a measured night, and every break is a real
+                      hole you can see from across the room.
+     inward fringe .. SpO2 hanging down from the rail; deeper and warmer as
+                      saturation falls.
+     centre ......... the current SpO2 only.
+
+   Time runs clockwise from a notch at 12 o'clock. The notch exists because a
+   rolling window has a seam: without it the oldest and newest samples would
+   sit shoulder to shoulder and read as continuous.
+
+   Everything is drawn as UNCONNECTED marks — radial ticks, dots, and arcs cut
+   to exact sample runs. Nothing here is a polyline, so no code path could ever
+   bridge a null. The no-interpolation rule is structural, not a promise. */
+function renderOrbit(st) {
+  const S = st || {};
+  const E = esc;
+  const HIST = (live && Array.isArray(live.hist)) ? live.hist : [];
+  const n = HIST.length;
+
+  const CX = 232, CY = 222;
+  const R_RAIL = 158, R_FRINGE_TOP = 154, D_MIN = 4, D_MAX = 54;
+  const R_FLAG_IN = 160, R_FLAG_OUT = 165;
+  const R_TICK_IN = 168, R_TICK_OUT = 172, R_TICK5_IN = 166, R_TICK5_OUT = 174;
+  const R_HR_IN = 178, R_HR_SPAN = 16;
+  const SEAM = 4.2, A0 = SEAM, A1 = 360 - SEAM;
+  const SPO2_HI = 100, SPO2_LO = 85, HR_LO = 40, HR_HI = 120;
+  const PANEL = 452;
+
+  const rad = t => { const c = t < 0 ? 0 : (t > 1 ? 1 : t); return (A0 + (A1 - A0) * c) * Math.PI / 180; };
+  const PXa = (a, r) => (CX + r * Math.sin(a)).toFixed(2);
+  const PYa = (a, r) => (CY - r * Math.cos(a)).toFixed(2);
+
+  // Butt caps and exact endpoints. Round caps would extend each run by half a
+  // stroke at both ends — on a 2000-second dial that is coverage the sensor
+  // never delivered. Understating is the only safe direction to round.
+  const arc = (t0, t1, r) => {
+    const a0 = rad(t0), a1 = rad(t1);
+    if (!(a1 > a0)) return '';
+    const large = (a1 - a0) > Math.PI ? 1 : 0;
+    return 'M' + PXa(a0, r) + ' ' + PYa(a0, r) + 'A' + r + ' ' + r + ' 0 ' + large + ' 1 ' + PXa(a1, r) + ' ' + PYa(a1, r);
+  };
+  const depthFor = s => {
+    const c = Math.max(SPO2_LO, Math.min(SPO2_HI, s));
+    return D_MIN + (D_MAX - D_MIN) * Math.pow((SPO2_HI - c) / (SPO2_HI - SPO2_LO), 0.8);
+  };
+
+  // Anything not a finite number is NOT MEASURED. Never coerce to 0 (which
+  // would render as a catastrophic desat that never happened) nor carry a
+  // previous value forward.
+  const num = v => (typeof v === 'number' && isFinite(v)) ? v : null;
+  const sArr = new Array(n), hArr = new Array(n);
+  for (let i = 0; i < n; i++) {
+    const e = HIST[i];
+    sArr[i] = (e && typeof e === 'object') ? num(e.s) : null;
+    hArr[i] = (e && typeof e === 'object') ? num(e.h) : null;
+  }
+
+  // Runs of PRESENT samples. The rail is built from these exact indices, never
+  // from the display bins below, so bin aliasing can neither invent coverage
+  // nor invent a hole.
+  const sRuns = [];
+  { let start = -1;
+    for (let i = 0; i < n; i++) {
+      const has = sArr[i] !== null;
+      if (has && start < 0) start = i;
+      else if (!has && start >= 0) { sRuns.push([start, i - 1]); start = -1; }
+    }
+    if (start >= 0) sRuns.push([start, n - 1]); }
+
+  const gaps = [];
+  { let prevEnd = -1;
+    for (const r of sRuns) { if (r[0] > prevEnd + 1) gaps.push([prevEnd + 1, r[0] - 1]); prevEnd = r[1]; }
+    if (n > 0 && prevEnd < n - 1) gaps.push([prevEnd + 1, n - 1]); }
+
+  let sCount = 0, sMin = null, below90 = 0, hCount = 0, hMin = null, hMax = null;
+  for (let i = 0; i < n; i++) {
+    const s = sArr[i];
+    if (s !== null) { sCount++; if (sMin === null || s < sMin) sMin = s; if (s < 90) below90++; }
+    const h = hArr[i];
+    if (h !== null) { hCount++; if (hMin === null || h < hMin) hMin = h; if (hMax === null || h > hMax) hMax = h; }
+  }
+  let longGap = 0;
+  for (const g of gaps) { const len = g[1] - g[0] + 1; if (len > longGap) longGap = len; }
+
+  const fmtDur = sec => {
+    sec = Math.max(0, Math.round(sec));
+    const h = Math.floor(sec / 3600), m = Math.floor(sec / 60) % 60, s = sec % 60;
+    if (h) return h + 'h ' + String(m).padStart(2, '0') + 'm';
+    if (m) return m + 'm ' + String(s).padStart(2, '0') + 's';
+    return s + 's';
+  };
+
+  // Bins capped at the sample count, so a short history can never be spread
+  // across empty bins and draw gaps that do not exist.
+  const NB = n > 0 ? Math.max(1, Math.min(240, n)) : 0;
+  const TIER_COLOR = ['#5f4a1e', '#9a6b1c', '#cf6a2a'];
+  const TIER_WIDTH = [1.0, 1.9, 2.8];
+  const fringe = [[], [], [], [], [], [], [], [], []];
+  const halo = [];
+
+  for (let b = 0; b < NB; b++) {
+    const i0 = Math.floor(b * n / NB), i1 = Math.floor((b + 1) * n / NB);
+    const slots = Math.max(1, i1 - i0);
+    let sm = null, sc = 0, hs = 0, hc = 0;
+    for (let i = i0; i < i1; i++) {
+      const s = sArr[i];
+      // The bin carries the MINIMUM, not the mean: a mean would erase a
+      // six-second desaturation inside an eight-second bin. The minimum is
+      // always a value that was actually observed.
+      if (s !== null) { sc++; if (sm === null || s < sm) sm = s; }
+      const h = hArr[i];
+      if (h !== null) { hs += h; hc++; }
+    }
+    const a = rad((b + 0.5) / NB);
+    if (sm !== null) {
+      // Stroke width reports how much of the bin was sampled, so a bin holding
+      // one lonely second is a hairline rather than impersonating eight
+      // seconds of continuous monitoring.
+      const cov = sc / slots;
+      const wl = cov < 0.34 ? 0 : (cov < 0.75 ? 1 : 2);
+      const tier = sm >= 94 ? 0 : (sm >= 90 ? 1 : 2);
+      const d = depthFor(sm);
+      fringe[tier * 3 + wl].push('M' + PXa(a, R_FRINGE_TOP) + ' ' + PYa(a, R_FRINGE_TOP) + 'L' + PXa(a, R_FRINGE_TOP - d) + ' ' + PYa(a, R_FRINGE_TOP - d));
+    }
+    // A bin with no SpO2 sample emits no tick. That absence IS the gap.
+    if (hc > 0) {
+      const f = Math.min(1, Math.max(0, (hs / hc - HR_LO) / (HR_HI - HR_LO)));
+      const r = R_HR_IN + f * R_HR_SPAN;
+      halo.push('M' + PXa(a, r) + ' ' + PYa(a, r) + 'l0.01 0');
+    }
+  }
+
+  const ticksMinor = [], ticksMajor = [];
+  if (n > 1) {
+    for (let i = n - 1, k = 0; i >= 0 && k < 240; i -= 60, k++) {
+      const major = ((n - 1 - i) % 300 === 0);
+      const a = rad((i + 0.5) / n);
+      const ri = major ? R_TICK5_IN : R_TICK_IN, ro = major ? R_TICK5_OUT : R_TICK_OUT;
+      (major ? ticksMajor : ticksMinor).push('M' + PXa(a, ri) + ' ' + PYa(a, ri) + 'L' + PXa(a, ro) + ' ' + PYa(a, ro));
+    }
+  }
+
+  const railD = sRuns.map(r => arc(r[0] / n, (r[1] + 1) / n, R_RAIL)).join('');
+  // Holes under half a minute stay plain darkness; longer ones get an outward
+  // flag so a 3 a.m. glance can find them without counting.
+  const flagD = gaps.filter(g => (g[1] - g[0] + 1) >= 30).map(g => {
+    const a = rad(((g[0] + g[1] + 1) / 2) / n);
+    return 'M' + PXa(a, R_FLAG_IN) + ' ' + PYa(a, R_FLAG_IN) + 'L' + PXa(a, R_FLAG_OUT) + ' ' + PYa(a, R_FLAG_OUT);
+  }).join('');
+
+  const params = Array.isArray(S.params) ? S.params : [];
+  const pS = params[0] || null, pH = params[1] || null;
+  // A stale param has NO current reading; its last value must never appear
+  // here, where it would be indistinguishable from a live one.
+  const liveVal = p => {
+    if (!p || p.stale) return null;
+    const v = String(p.val == null ? '' : p.val).trim();
+    return v ? v : null;
+  };
+  const sNow = liveVal(pS), hNow = liveVal(pH);
+  const sNowNum = sNow === null ? NaN : parseFloat(sNow);
+  const sNowColor = !isFinite(sNowNum) ? '#c3ced8' : (sNowNum >= 94 ? '#a9b6c0' : (sNowNum >= 90 ? '#d0932f' : '#e0603c'));
+
+  const covPct = n > 0 ? (sCount / n * 100) : 0;
+  const covTxt = n > 0 ? (covPct >= 99.95 ? '100' : covPct.toFixed(1)) + '%' : '—';
+  const gapsTxt = n === 0 ? 'nothing recorded'
+    : (gaps.length === 0 ? 'no gaps · rail is closed'
+      : gaps.length + (gaps.length === 1 ? ' gap · ' : ' gaps · ') + 'longest ' + fmtDur(longGap));
+  const minTxt = sMin === null ? 'no SpO₂ samples in this window' : 'min ' + (Math.round(sMin * 10) / 10) + '%';
+  const belowTxt = sCount === 0 ? '—' : 'below 90% for ' + fmtDur(below90) + ' of ' + fmtDur(sCount) + ' measured';
+  const hrRangeTxt = hCount === 0 ? 'no pulse samples in window'
+    : 'window ' + Math.round(hMin) + '–' + Math.round(hMax) + ' bpm · ' + (n > 0 ? Math.round(hCount / n * 100) : 0) + '% covered';
+  const sil = S.silence || {};
+
+  const g = [];
+  g.push('<svg width="800" height="480" viewBox="0 0 800 480" style="position:absolute;left:0;top:0">');
+  // Substrate: where the rail COULD be, so a hole reads as a hole rather than
+  // as empty space that might mean "nothing scheduled here".
+  g.push('<path d="' + arc(0, 1, R_RAIL) + '" fill="none" stroke="#191d22" stroke-width="2.5"/>');
+  g.push('<path d="' + arc(0, 1, R_FRINGE_TOP - depthFor(94)) + '" fill="none" stroke="#1e2329" stroke-width="1" stroke-dasharray="1 6"/>');
+  g.push('<path d="' + arc(0, 1, R_FRINGE_TOP - depthFor(90)) + '" fill="none" stroke="#2a2119" stroke-width="1" stroke-dasharray="1 6"/>');
+  for (let k = 0; k < 9; k++) {
+    if (!fringe[k].length) continue;
+    g.push('<path d="' + fringe[k].join('') + '" fill="none" stroke="' + TIER_COLOR[(k / 3) | 0] + '" stroke-width="' + TIER_WIDTH[k % 3] + '" stroke-linecap="butt"/>');
+  }
+  if (halo.length) g.push('<path d="' + halo.join('') + '" fill="none" stroke="#41616f" stroke-width="2.1" stroke-linecap="round"/>');
+  if (railD) g.push('<path d="' + railD + '" fill="none" stroke="#7d8f9b" stroke-width="2.5" stroke-linecap="butt"/>');
+  if (flagD) g.push('<path d="' + flagD + '" fill="none" stroke="#7a3226" stroke-width="1.6"/>');
+  if (ticksMinor.length) g.push('<path d="' + ticksMinor.join('') + '" fill="none" stroke="#262c33" stroke-width="1"/>');
+  if (ticksMajor.length) g.push('<path d="' + ticksMajor.join('') + '" fill="none" stroke="#3b444d" stroke-width="1.4"/>');
+  // Seam cursor: filled only while SpO2 is actually arriving. Hollow says the
+  // cursor is here but nothing is landing on it.
+  g.push('<path d="M' + CX + ' ' + (CY - 159) + 'L' + (CX - 6) + ' ' + (CY - 173) + 'L' + (CX + 6) + ' ' + (CY - 173) + 'Z" ' +
+         (sNow !== null ? 'fill="#d0932f" stroke="none"' : 'fill="none" stroke="#5a646d" stroke-width="1.2"') + '/>');
+  g.push('</svg>');
+
+  const row = (y, html) => '<div style="position:absolute;left:' + PANEL + 'px;top:' + y + 'px;width:322px">' + html + '</div>';
+  const rule = y => '<div style="position:absolute;left:' + PANEL + 'px;top:' + y + 'px;width:322px;height:1px;background:#20262c"></div>';
+  const hd = t => '<span class="orb-hd">' + t + '</span>';
+
+  return `<div class="orb" style="width:800px;height:480px;position:relative;background:#000;overflow:hidden">
+<style>
+/* No animation of any kind: a bedside panel that moves is a panel that wakes
+   you. The host re-renders at most once a second and that is the only change
+   on screen. */
+.orb{font-family:var(--sans);-webkit-font-smoothing:antialiased}
+.orb .orb-hd{font-size:13px;letter-spacing:.15em;color:#6f7c86;text-transform:uppercase}
+.orb .bd{font-size:13px;line-height:16px;color:#8d9aa6}
+</style>
+${g.join('')}
+<div style="position:absolute;left:${CX - 80}px;top:${CY - 52}px;width:160px;height:104px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center">
+  <div class="lim" style="font-size:46px;line-height:50px;color:${sNow === null ? '#98a2ab' : sNowColor}">${sNow === null ? '?' : E(sNow)}</div>
+  <div style="font-size:13px;letter-spacing:.12em;color:#6f7c86;margin-top:4px">${sNow === null ? 'NO CURRENT READING' : 'SpO₂ %'}</div>
+</div>
+<div class="bd" style="position:absolute;left:28px;top:424px;width:410px;color:#6f7c86">▼ now · clockwise · tick 1 min, long 5 min · rings 94 / 90%</div>
+${row(22, '<span class="lim" style="font-size:30px;line-height:34px;color:#c3ced8">' + E(S.clock || '--:--:--') + '</span>')}
+${row(62, '<span class="bd">' + hd('tier') + ' &nbsp;<span style="color:#8d9aa6">' + E(S.tier || '—') + '</span></span>')}
+${rule(86)}
+${row(96, hd('halo · pulse'))}
+${row(114, '<span class="lim" style="font-size:32px;line-height:36px;color:' + (hNow === null ? '#98a2ab' : '#a9b6c0') + '">' + (hNow === null ? '?' : E(hNow)) + '</span><span style="font-size:14px;color:#6f7c86;margin-left:8px">' + (hNow === null ? 'no current reading' : 'bpm') + '</span>')}
+${row(154, '<span class="bd">' + E(hrRangeTxt) + '</span>')}
+${rule(192)}
+${row(202, hd('ring · measured seconds'))}
+${row(220, '<span class="lim" style="font-size:26px;line-height:30px;color:' + (n > 0 && covPct < 90 ? '#d0932f' : '#c3ced8') + '">' + E(covTxt) + '</span><span class="bd lim" style="margin-left:10px">' + (n > 0 ? sCount + ' / ' + n + ' s' : '0 s') + '</span>')}
+${row(258, '<span class="bd" style="color:' + (gaps.length ? '#d0932f' : '#8d9aa6') + '">' + E(gapsTxt) + '</span>')}
+${rule(292)}
+${row(302, hd('fringe · spo₂ depth'))}
+${row(320, '<span class="bd" style="color:' + (sMin !== null && sMin < 90 ? '#e0603c' : '#8d9aa6') + '">' + E(minTxt) + '</span>')}
+${row(338, '<span class="bd">' + E(belowTxt) + '</span>')}
+${rule(366)}
+${row(376, '<span style="font-size:15px;line-height:18px;color:#8d9aa6">' + E(sil.text || '') + '</span>')}
+${row(398, '<span class="bd" style="color:#6f7c86">' + E(sil.sub || '') + '</span>')}
+</div>`;
+}
+
 /* The directions the user can swipe between. Ordered quietest-first so a swipe
    left from the default always lights less, never more. */
 const PANELS = [
   { id: "clinical",  name: "CLINICAL",  render: null },              // built inline below
   { id: "penumbra",  name: "PENUMBRA",  render: renderPenumbra },
   { id: "semaphore", name: "SEMAPHORE", render: renderSemaphore },
+  { id: "horizon",   name: "HORIZON",   render: renderHorizon },
+  { id: "pulse",     name: "PULSE",     render: renderPulse },
+  { id: "trail",     name: "TRAIL",     render: renderTrail },
+  { id: "aurora",    name: "AURORA",    render: renderAurora },
+  { id: "orbit",     name: "ORBIT",     render: renderOrbit },
 ];
 
 function render() {
@@ -837,9 +1458,16 @@ function render() {
     `border:2px ${st.indeterminate ? "dashed" : "solid"} ${st.accent}`,
   ].join(";");
 
+  const panel = document.getElementById("panel");
   const alt = PANELS[S.panel].render;
+  /* Alternate directions return their OWN full-bleed 800x480 root with their
+     own margins. #panel carries 13/16 padding for the clinical layout, which
+     would lay an 800px child inside a 768px box and clip it off the right edge
+     — Aurora's readouts were running past the screen. Zero the padding for a
+     full-bleed view and restore it for the clinical one. */
+  panel.style.padding = alt ? "0" : "13px 16px";
   if (alt) {
-    document.getElementById("panel").innerHTML = alt(st) + viewIndicator();
+    panel.innerHTML = alt(st) + viewIndicator();
     afterRender(st);
     return;
   }
@@ -925,19 +1553,47 @@ function viewIndicator() {
    must be more horizontal than vertical, so a stray touch while reaching past
    the panel in the dark does not silently change what you are looking at. */
 function initSwipe() {
-  const el = document.getElementById("panel");
-  let x0 = null, y0 = null, t0 = 0;
-  el.addEventListener("pointerdown", (e) => { x0 = e.clientX; y0 = e.clientY; t0 = Date.now(); });
-  el.addEventListener("pointerup", (e) => {
+  /* Listeners go on WINDOW, not on #panel.
+     render() replaces #panel's children once a second. The browser's implicit
+     pointer capture targets whatever child was under the finger at pointerdown,
+     so when that child is destroyed mid-gesture the browser fires
+     `pointercancel` and never `pointerup` — the swipe is silently dropped. At
+     1 Hz that swallows a large share of attempts, which is exactly the
+     "sometimes works, mostly doesn't" this was reported as.
+
+     Tracking on window, remembering the last move position, and treating
+     pointercancel as an end means a re-render can no longer eat the gesture.
+     #panel also declares touch-action:none, without which the compositor
+     claims the horizontal drag as a pan and cancels the stream before any of
+     this runs. */
+  let x0 = null, y0 = null, t0 = 0, lastX = 0, lastY = 0;
+
+  const start = (e) => { x0 = e.clientX; y0 = e.clientY; lastX = e.clientX; lastY = e.clientY; t0 = Date.now(); };
+  const move = (e) => { if (x0 !== null) { lastX = e.clientX; lastY = e.clientY; } };
+  const end = () => {
     if (x0 === null) return;
-    const dx = e.clientX - x0, dy = e.clientY - y0, dt = Date.now() - t0;
+    const dx = lastX - x0, dy = lastY - y0, dt = Date.now() - t0;
     x0 = null;
-    // A slow drag is not a swipe; neither is a mostly-vertical one.
-    if (dt > 800 || Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy)) return;
+    // 2.5s, not 900ms. The distance and direction tests do the real work of
+    // rejecting an accidental brush; the time limit only exists to stop a
+    // finger that rested on the panel and moved much later from counting. A
+    // deliberate drag across a 7-inch panel, made half asleep, routinely takes
+    // well over a second — the original 900ms budget rejected exactly the
+    // gesture a human actually makes, which is how this shipped "not working".
+    if (dt > 2500 || Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy)) return;
     changePanel(dx < 0 ? 1 : -1);
-  });
-  // Arrow keys do the same thing, so the directions are reachable without a
-  // touchscreen when reviewing on a desktop.
+  };
+
+  window.addEventListener("pointerdown", start, { passive: true });
+  window.addEventListener("pointermove", move, { passive: true });
+  window.addEventListener("pointerup", end, { passive: true });
+  window.addEventListener("pointercancel", end, { passive: true });
+  // Touch events as a fallback: if anything upstream suppresses the pointer
+  // stream entirely, these still arrive.
+  window.addEventListener("touchstart", (e) => { if (e.touches[0]) start(e.touches[0]); }, { passive: true });
+  window.addEventListener("touchmove", (e) => { if (e.touches[0]) move(e.touches[0]); }, { passive: true });
+  window.addEventListener("touchend", end, { passive: true });
+
   window.addEventListener("keydown", (e) => {
     if (e.key === "ArrowRight") changePanel(1);
     else if (e.key === "ArrowLeft") changePanel(-1);
@@ -946,6 +1602,10 @@ function initSwipe() {
 
 function changePanel(delta) {
   S.panel = (S.panel + delta + PANELS.length) % PANELS.length;
+  // Remember the choice. Restarting the kiosk (an update, a crash, a reboot)
+  // otherwise silently reverts to CLINICAL, and a panel that forgets what you
+  // set it to is one you stop bothering to set.
+  try { localStorage.setItem("panelView", PANELS[S.panel].id); } catch (e) { /* private mode */ }
   S.indicatorUntil = Date.now() + 1800;
   render();
   clearTimeout(S.indicatorTimer);
@@ -980,6 +1640,12 @@ if (qs.has("live")) {
   const v = qs.get("live");
   live.url = v && v !== "1" && v !== "" ? v : "status.json";
   live.demo = qs.has("demo");
+  // ?view=<id> picks a direction directly; otherwise fall back to whatever was
+  // last chosen on this device.
+  let want = qs.get("view");
+  if (!want) { try { want = localStorage.getItem("panelView"); } catch (e) { want = null; } }
+  const idx = PANELS.findIndex(v => v.id === want);
+  if (idx >= 0) S.panel = idx;
   document.getElementById("states").innerHTML =
     `<span style="color:#8E8A83">live — polling <code>${esc(live.url)}</code> at 1 Hz. `
     + `The state buttons are off; the panel shows what the ring reports.</span>`;
