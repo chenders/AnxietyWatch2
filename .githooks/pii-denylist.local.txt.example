@@ -1,0 +1,20 @@
+# Personal terms the pre-push PHI gate blocks. Copy to
+# .githooks/pii-denylist.local.txt (gitignored) and fill in.
+#
+# One term per line, case-insensitive substring match. Matches are reported
+# MASKED, so the failure message never reproduces the term it caught.
+#
+# What belongs here — anything that identifies a real person, place, device or
+# account, and that this repo has no reason to contain:
+#   real legal names (yours, family, clinicians)
+#   street address, city if small, postcode
+#   provider and practice names, MRN or patient identifiers
+#   insurance member or group numbers
+#   real phone numbers not in 555-0100..555-0199
+#   personalised device names ("Chris's iPhone")
+#   account emails and usernames
+#
+# What does NOT belong here:
+#   medication names (public drug names, not personal information)
+#   device model numbers (UA-651BLE, Polar H10)
+#   vendor OUIs (00:09:1F) — the full-address check already covers the rest

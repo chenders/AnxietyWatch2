@@ -29,3 +29,15 @@ fuzz/coverage/
 __pycache__/
 *.pyc
 .idea/deployment.xml
+
+# PHI: raw capture output. bp_capture.py fsyncs real measurements here by
+# design, btmon writes .snoop, T-B1 writes night*.log. None belongs in git.
+*.snoop
+*-capture.jsonl
+bp-capture.jsonl
+bpcap*.log
+night*.log
+
+# The personal denylist the pre-push PHI gate reads. Never committed — the
+# repo must not contain the strings the guard exists to keep out.
+.githooks/pii-denylist.local.txt

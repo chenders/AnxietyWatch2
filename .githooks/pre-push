@@ -74,6 +74,49 @@ fi
 BADFILES="$(git diff "$RANGE" --name-only --diff-filter=ACM | grep -iE '\.(har|pcap|pcapng)$|network.*\.txt$|\.playwright-mcp/' || true)"
 [[ -n "$BADFILES" ]] && fail "capture artifact staged:"$'\n'"$BADFILES"
 
+# ── 3b. PHI and device identifiers ────────────────────────────────────────────
+# This gate did not exist until four real blood-pressure readings and a real
+# device address were committed and only caught in review. Everything this repo
+# is built to collect is PHI by definition, so the shapes below are the ones a
+# medical-monitoring repo produces by accident.
+#
+# The predecessor project needed a 401-commit history rewrite for this class.
+# A blob survives deletion; the only cheap moment is before the push.
+
+# Raw capture output. bp_capture.py fsyncs real measurements to JSONL, btmon
+# writes .snoop, and the T-B1 overnight run produces night*.log — all of them
+# land in the working tree by design and none belongs in git.
+PHIFILES="$(git diff "$RANGE" --name-only --diff-filter=ACM \
+  | grep -iE '(^|/)(bp-capture|.*-capture)\.jsonl$|\.snoop$|(^|/)night[0-9]*\.log$|bpcap.*\.(log|jsonl)$' || true)"
+[[ -n "$PHIFILES" ]] && fail "raw capture output staged (contains real measurements):"$'\n'"$PHIFILES"
+
+if [[ -n "$ADDED" ]]; then
+  # Full BLE/Bluetooth addresses identify a specific device a specific person
+  # wears. Documented placeholders are exempt: XX octets and the reserved
+  # AA:BB:CC:DD:EE:FF example. Redact to the vendor OUI — it is rediscoverable
+  # with `btmgmt find` in seconds, so keeping it buys nothing.
+  if grep -oiE '\b([0-9A-F]{2}:){5}[0-9A-F]{2}\b' <<<"$ADDED" \
+       | grep -qviE 'XX|AA:BB:CC:DD:EE:FF'; then
+    fail "a full device address appears in the diff — redact to the OUI (00:11:22:XX:XX:XX)"
+  fi
+
+  # A personal denylist that the public repo must never contain: real names,
+  # street addresses, provider names, account identifiers. Kept in a gitignored
+  # file so the guard never ships the strings it guards against, and matches are
+  # reported masked.
+  DENY="$ROOT/.githooks/pii-denylist.local.txt"
+  if [[ -r "$DENY" ]]; then
+    while IFS= read -r term; do
+      [[ -z "$term" || "$term" == \#* ]] && continue
+      if grep -qiF -- "$term" <<<"$ADDED"; then
+        fail "a denylisted personal term appears in the diff: ${term:0:2}$(printf '%*s' $(( ${#term} - 2 )) '' | tr ' ' '*')"
+      fi
+    done < "$DENY"
+  else
+    warn "no .githooks/pii-denylist.local.txt — personal-term checking is off"
+  fi
+fi
+
 # ── 4. build junk ─────────────────────────────────────────────────────────────
 JUNK="$(git diff "$RANGE" --name-only --diff-filter=ACM | grep -E '(^|/)(a\.out|test_quick\.c|core|.*\.o|.*\.gcda|.*\.gcno)$' || true)"
 [[ -n "$JUNK" ]] && fail "build artifact staged:"$'\n'"$JUNK"
