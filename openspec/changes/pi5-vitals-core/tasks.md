@@ -1289,3 +1289,62 @@ review found earlier):
 malformed payload (answered, connection survives), an oversized length prefix (refused before
 allocation, daemon survives), a disconnected subscriber (forgotten, not leaked), and four concurrent
 clients.
+
+### T-B1 — tooling built 2026-08-03 · capture not yet run
+
+The night itself still has to happen. Everything it needs is built, verified on both hosts, and
+committed.
+
+**Built:**
+
+- `crates/vitals-decode/src/hr.rs` — the `0x2A37` decoder, **not** inside `hr-spike`. `bluer` is
+  Linux-only, so a decoder living in the spike binary could not be tested or fuzzed on a Mac at all
+  — and the decoder is the half with the bugs. 16 tests plus `fuzz/fuzz_targets/fuzz_hr.rs`.
+- `crates/hr-spike/` — the BLE wiring, target-gated. On a non-Linux host it exits 64 and says where
+  the testable half lives.
+- `tools/gap_histogram.py` — the report and the acceptance gate, one script. 21 tests.
+
+**What the decoder gets right that a from-the-spec version would not:**
+
+- **RR intervals are 1/1024 s, not milliseconds.** Treating them as ms yields intervals 2.4% short —
+  an HRV figure wrong in a way no range check would ever flag. Asserted both directions: the test
+  checks the correct value *and* that the naive value is wrong.
+- **Energy expended sits between HR and the RR intervals.** Skipping it at the wrong offset shifts
+  every RR value by one byte into plausible garbage.
+- **`contact: Option<bool>`.** Bit 2 says the feature exists; bit 1 is the reading. A sensor that
+  cannot report contact must never read as reporting good contact.
+- **Truncation past `MAX_RR` is reported, not silent.** `rr_truncated` makes lost intervals visible;
+  silent truncation is indistinguishable from a shorter notification.
+
+**What the gate refuses to accept:**
+
+- **A one-line capture**, naming `--pipe` as the cause. `systemd-run` without it sends the child's
+  stdout to the journal and the shell redirect captures only the unit banner — an eight-hour run
+  into a one-line file. A gate that accepted it would cost another night.
+- **`--require-drift-report` when drift could not be computed.** A flag a script may accept and
+  ignore is a check that cannot fail.
+- Malformed lines, which are collected and counted rather than skipped: silently skipping would make
+  a corrupt capture look shorter but clean.
+
+**Drift is measured across the longest unbroken run**, not the whole capture — a dropped connection
+loses beats and would otherwise read as a slow sensor clock. Tested with a 600 s outage injected.
+
+**Dropped notifications are an estimate, labelled as one.** A05 §1.3 offers `max(seq) - count(*)`,
+but §1.1 defines RR `seq` as the count of intervals *received* — dense by construction, so that
+expression is identically zero and can never detect anything. The H10 sends no beat counter, the
+same payload anonymity amendment 06 §1 documents for the cuff.
+
+**Scope deltas.**
+
+1. **The Pi had no Rust toolchain.** `scripts/sync-to-pi.sh` runs `cargo build` there, so this was a
+   silent prerequisite for T-B1 and for every later task. Installed (1.97.1, minimal profile).
+
+2. **macOS cannot compile the half that matters.** Building on the Pi caught a real error the Mac
+   reported clean: `bluer`'s notification stream is not `Unpin`, so `.next()` inside `select!` does
+   not compile. Fixed with `Box::pin`. Clippy on the Pi then found four more. **Any crate with a
+   `#[cfg(target_os = "linux")]` body must be built on the Pi before it is called done** — a clean
+   local build proves only that the stub compiles.
+
+**Still required, and it needs you:** pair the H10 (`bluetoothctl pair` + `btmgmt add-device -a 2`),
+wear it overnight with a moist strap, and run the capture under `systemd-run --pipe`. The strap must
+be damp or the H10 does not advertise at all.
