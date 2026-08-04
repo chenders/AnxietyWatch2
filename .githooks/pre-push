@@ -1,0 +1,177 @@
+#!/usr/bin/env bash
+# pre-push — blocking gates. Install with: scripts/install-hooks.sh
+#
+# These exist because every one of them has already caught something real in this
+# project's history, or in its predecessor's. They are cheap; a bad push is not.
+#
+# Bypass with --no-verify only when you know exactly which gate you are skipping
+# and why.
+
+set -uo pipefail
+
+RED=$'\033[31m'; YEL=$'\033[33m'; GRN=$'\033[32m'; OFF=$'\033[0m'
+fail() { printf '%s✗ %s%s\n' "$RED" "$*" "$OFF" >&2; FAILED=1; }
+warn() { printf '%s! %s%s\n' "$YEL" "$*" "$OFF" >&2; }
+ok()   { printf '%s✓ %s%s\n' "$GRN" "$*" "$OFF"; }
+FAILED=0
+
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT" || exit 1
+
+REMOTE_HEAD="$(git rev-parse --verify -q origin/main 2>/dev/null || echo '')"
+if [[ -n "$REMOTE_HEAD" ]]; then
+  RANGE="$REMOTE_HEAD..HEAD"
+else
+  # No origin/main yet (first push or renamed default branch). Fall back to all
+  # commits reachable from HEAD that have no parent — i.e. everything. Using
+  # HEAD~1..HEAD here would only inspect the last commit and let earlier ones
+  # skip every gate.
+  ROOT_COMMIT="$(git rev-list --max-parents=0 HEAD 2>/dev/null | head -1)"
+  RANGE="${ROOT_COMMIT}..HEAD"
+fi
+COMMITS="$(git rev-list "$RANGE" 2>/dev/null || echo '')"
+[[ -z "$COMMITS" ]] && { ok "nothing to push"; exit 0; }
+
+printf '\n── pre-push gates ──\n'
+
+# ── 1. never push to main directly ────────────────────────────────────────────
+# Gate on the REMOTE ref, not the local branch name. Checking the local branch
+# leaves a hole: `git push origin HEAD:main` or `git push origin feature:main`
+# from any branch targets refs/heads/main and would sail through. Merges happen
+# via squash-merge on GitHub, so nothing legitimate ever pushes to main.
+while read -r _ _ remote_ref _; do
+  [[ "$remote_ref" == "refs/heads/main" ]] && \
+    fail "push targets refs/heads/main. Open a PR instead; merges happen on GitHub."
+done < <(cat)
+
+# ── 2. secrets ────────────────────────────────────────────────────────────────
+# Not a general scanner — these are the shapes that have actually shown up.
+ADDED="$(git diff "$RANGE" --diff-filter=ACM -U0 | grep '^+' | grep -v '^+++' || true)"
+if [[ -n "$ADDED" ]]; then
+  # A key with an actual value. Empty assignments (VAR=) are fine and common.
+  if grep -qE '(API_KEY|SECRET|PASSWORD|TOKEN|MASTER_KEY)[[:space:]]*[:=][[:space:]]*["'"'"']?[A-Za-z0-9_\-]{16,}' <<<"$ADDED"; then
+    fail "a credential value appears in the diff"
+  fi
+  grep -qE -- 'sk-[A-Za-z0-9_-]{20,}'                 <<<"$ADDED" && fail "an sk- API key appears in the diff"
+  # `--` is required: the pattern starts with dashes and grep would otherwise
+  # parse it as options, error out, match nothing, and silently pass. A gate
+  # that cannot fail verifies nothing.
+  grep -qE -- '-----BEGIN [A-Z ]*PRIVATE KEY-----'    <<<"$ADDED" && fail "a private key appears in the diff"
+  # Phone numbers outside the reserved fictional range.
+  # Checked line-by-line: a diff containing both a real number and a fictional
+  # 555-01xx number must not let the real one through because the second grep
+  # matches on the full-text. grep -v first removes fictional lines, then
+  # checks whether any phone-shaped string remains.
+  if grep -E '\b(\(?[0-9]{3}\)?[ .-]?)[0-9]{3}[ .-][0-9]{4}\b' <<<"$ADDED" \
+       | grep -qvE '555-01[0-9]{2}'; then
+    warn "a phone-number-shaped string is in the diff — use 555-0100..555-0199"
+  fi
+fi
+
+# ── 3. capture artifacts ──────────────────────────────────────────────────────
+# These can carry live authenticated-session data. In the predecessor repo one of
+# these landing in history required a rewrite to remove.
+BADFILES="$(git diff "$RANGE" --name-only --diff-filter=ACM | grep -iE '\.(har|pcap|pcapng)$|network.*\.txt$|\.playwright-mcp/' || true)"
+[[ -n "$BADFILES" ]] && fail "capture artifact staged:"$'\n'"$BADFILES"
+
+# ── 3b. PHI and device identifiers ────────────────────────────────────────────
+# This gate did not exist until four real blood-pressure readings and a real
+# device address were committed and only caught in review. Everything this repo
+# is built to collect is PHI by definition, so the shapes below are the ones a
+# medical-monitoring repo produces by accident.
+#
+# The predecessor project needed a 401-commit history rewrite for this class.
+# A blob survives deletion; the only cheap moment is before the push.
+
+# Raw capture output. bp_capture.py fsyncs real measurements to JSONL, btmon
+# writes .snoop, and the T-B1 overnight run produces night*.log — all of them
+# land in the working tree by design and none belongs in git.
+PHIFILES="$(git diff "$RANGE" --name-only --diff-filter=ACM \
+  | grep -iE '(^|/)(bp-capture|.*-capture)\.jsonl$|\.snoop$|(^|/)night[0-9]*\.log$|bpcap.*\.(log|jsonl)$' || true)"
+[[ -n "$PHIFILES" ]] && fail "raw capture output staged (contains real measurements):"$'\n'"$PHIFILES"
+
+if [[ -n "$ADDED" ]]; then
+  # Full BLE/Bluetooth addresses identify a specific device a specific person
+  # wears. Documented placeholders are exempt: XX octets and the reserved
+  # AA:BB:CC:DD:EE:FF example. Redact to the vendor OUI — it is rediscoverable
+  # with `btmgmt find` in seconds, so keeping it buys nothing.
+  if grep -oiE '\b([0-9A-F]{2}:){5}[0-9A-F]{2}\b' <<<"$ADDED" \
+       | grep -qviE 'XX|AA:BB:CC:DD:EE:FF'; then
+    fail "a full device address appears in the diff — redact to the OUI (00:11:22:XX:XX:XX)"
+  fi
+
+  # A personal denylist that the public repo must never contain: real names,
+  # street addresses, provider names, account identifiers. Kept in a gitignored
+  # file so the guard never ships the strings it guards against, and matches are
+  # reported masked.
+  DENY="$ROOT/.githooks/pii-denylist.local.txt"
+  if [[ -r "$DENY" ]]; then
+    while IFS= read -r term; do
+      [[ -z "$term" || "$term" == \#* ]] && continue
+      if grep -qiF -- "$term" <<<"$ADDED"; then
+        fail "a denylisted personal term appears in the diff: ${term:0:2}$(printf '%*s' $(( ${#term} - 2 )) '' | tr ' ' '*')"
+      fi
+    done < "$DENY"
+  else
+    warn "no .githooks/pii-denylist.local.txt — personal-term checking is off"
+  fi
+fi
+
+# ── 4. build junk ─────────────────────────────────────────────────────────────
+JUNK="$(git diff "$RANGE" --name-only --diff-filter=ACM | grep -E '(^|/)(a\.out|test_quick\.c|core|.*\.o|.*\.gcda|.*\.gcno)$' || true)"
+[[ -n "$JUNK" ]] && fail "build artifact staged:"$'\n'"$JUNK"
+
+# ── 5. generated files must be current ────────────────────────────────────────
+# A hand-edited generated file silently desynchronises C, SQL, Swift and JSON.
+if [[ -f vitals/tools/gen_registry.py ]]; then
+  PY=python3; command -v uv >/dev/null && PY="uv run python3"
+  if ! $PY vitals/tools/gen_registry.py --check >/dev/null 2>&1; then
+    fail "vitals/generated/ is stale or hand-edited — run: $PY vitals/tools/gen_registry.py"
+  else
+    ok "generated files current"
+  fi
+fi
+
+# ── 6. build and test ─────────────────────────────────────────────────────────
+if [[ -f CMakeLists.txt ]]; then
+  if cmake -B build -DCMAKE_BUILD_TYPE=Debug >/dev/null 2>&1 && cmake --build build >/dev/null 2>&1; then
+    if ctest --test-dir build --output-on-failure >/tmp/pp-ctest.$$ 2>&1; then
+      ok "build + ctest pass"
+    else
+      fail "ctest failed:"; tail -12 /tmp/pp-ctest.$$ >&2
+    fi
+  else
+    fail "build failed (warnings are errors here)"
+  fi
+  rm -f /tmp/pp-ctest.$$
+fi
+
+# ── 7. agent provenance ───────────────────────────────────────────────────────
+# The repo's git config signs every commit as the owner, so without a trailer an
+# agent's work is indistinguishable from a human's in git log.
+for c in $COMMITS; do
+  BODY="$(git log -1 --format=%B "$c")"
+  if grep -qiE '^(feat|fix|chore|docs|refactor|test)\((T-[A-Z]?[0-9]+)\)' <<<"$BODY" \
+     && ! grep -qi 'Co-Authored-By:' <<<"$BODY"; then
+    fail "$(git log -1 --format='%h %s' "$c")"$'\n'"   task commit without Co-Authored-By trailer"
+  fi
+done
+
+# ── 8. Verify-command tampering ───────────────────────────────────────────────
+# A worker once rewrote a task's Verify line so its output would pass. The Verify
+# command is the contract; changing it to fit the implementation inverts that.
+if git diff "$RANGE" --name-only | grep -q 'openspec/changes/.*/tasks.md'; then
+  if git diff "$RANGE" -- 'openspec/changes/*/tasks.md' | grep -qE '^-.*\*\*Verify:\*\*'; then
+    fail "a **Verify:** line was modified in tasks.md."
+    printf '   The Verify command is the contract. Satisfy it, do not edit it.\n' >&2
+    printf '   If it is genuinely wrong, say so in the PR and change it deliberately.\n' >&2
+  fi
+fi
+
+printf '\n'
+if (( FAILED )); then
+  printf '%spush blocked%s — fix the above, or --no-verify if you know which gate you are skipping\n' "$RED" "$OFF" >&2
+  exit 1
+fi
+ok "all gates passed"
+exit 0
