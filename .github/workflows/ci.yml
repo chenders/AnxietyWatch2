@@ -68,15 +68,56 @@ jobs:
       - name: No superseded architecture in task briefs
         run: |
           fail=0
+          BRIEFS=openspec/changes/pi5-vitals-core/tasks.md
+
           for term in SQLite meson hlc_physical hlc_logical samples_staging libvitals; do
             n=$(grep -ci "$term" openspec/changes/*/tasks.md || true)
             if [ "${n:-0}" -ne 0 ]; then echo "::error::tasks.md still references '$term' ($n)"; fail=1; fi
           done
+
+          # The language decision. The first version of this guard checked only the
+          # storage terms above, and 18 C references survived the A1 rewrite --
+          # including T-D6 specifying bp_decode.c four amendments after the Rust
+          # decision, and T-D2's brief specifying sfloat.c while its Rust
+          # implementation sat in the same repo, passing.
+          #
+          # The gap was in what got measured. "grep -c SQLite == 0" was taken from
+          # the review finding's wording; the property that must actually hold is
+          # "no brief tells a worker to write C."
+          C_PATTERN='```c$|`[A-Za-z0-9_/.-]+\.[ch]`|VITALS_(TYPE|SOURCE)_|LLVMFuzzerTestOneInput|__builtin_|\bC11\b|VitalsRegistry\.swift'
+          if grep -nE "$C_PATTERN" "$BRIEFS"; then
+            echo "::error::task briefs still specify C -- this project is Rust (docs/specs/AMENDMENTS.md)"
+            fail=1
+          fi
+
+          # A check that cannot fail is indistinguishable from a check that passes.
+          # This repo has hit that four times: an empty API key that read as bad
+          # credentials, a --check comparing a generator to its own empty output, a
+          # secret-scan grep that parsed its pattern as flags, and a null byte that
+          # made tasks.md binary so grep silently matched nothing. Prove the pattern
+          # matches a known-bad line before trusting a clean run.
+          probe=$(mktemp)
+          printf '1. Write `vitals/src/bp_decode.c`:\n' > "$probe"
+          if ! grep -qE "$C_PATTERN" "$probe"; then
+            echo "::error::guard self-test FAILED -- C_PATTERN matches nothing, so a clean run proves nothing"
+            fail=1
+          fi
+          rm -f "$probe"
           # Every task must declare which amendments touch it.
-          heads=$(grep -c '^### T-' openspec/changes/pi5-vitals-core/tasks.md)
-          amends=$(grep -c '^\*\*Amends:\*\*' openspec/changes/pi5-vitals-core/tasks.md)
+          #
+          # Count only the briefs. "## Implementation notes" holds a "### T-Ax ...
+          # PASSED" record per completed task, and those are records of work done,
+          # not instructions to a worker -- they carry no Amends: field and should
+          # not. Counting the whole file made this check fail the moment any task
+          # was marked done, which is a guard that breaks on success.
+          briefs=$(sed '/^## Implementation notes/,$d' "$BRIEFS")
+          heads=$(printf '%s\n' "$briefs" | grep -c '^### T-')
+          amends=$(printf '%s\n' "$briefs" | grep -c '^\*\*Amends:\*\*')
           if [ "$heads" -ne "$amends" ]; then
-            echo "::error::$heads tasks but $amends Amends: fields"; fail=1
+            echo "::error::$heads task briefs but $amends Amends: fields"; fail=1
+          fi
+          if [ "$heads" -lt 15 ]; then
+            echo "::error::only $heads briefs found -- the sed scope is wrong, not the file"; fail=1
           fi
           test -f docs/specs/AMENDMENTS.md || { echo "::error::AMENDMENTS.md missing"; fail=1; }
           exit $fail

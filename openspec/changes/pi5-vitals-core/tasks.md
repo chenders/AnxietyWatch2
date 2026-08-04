@@ -291,27 +291,39 @@ building anything on top of it.** Deliberately placed before the storage and cor
    ```sh
    sudo apt-get update && sudo apt-get install -y libdbus-1-dev bluez
    ```
-2. Write `~/vitals/spike/hr_capture.c`. Use BlueZ over D-Bus (`org.bluez.GattCharacteristic1`),
-   subscribe to Heart Rate Measurement `00002a37-0000-1000-8000-00805f9b34fb`, and append one line
-   per notification to stdout: `<unix_epoch_seconds_float> <hr_bpm> <rr_ms,rr_ms,...>`.
+2. Write `crates/hr-spike/src/main.rs`. Use the `bluer` crate for BlueZ over D-Bus, subscribe to
+   Heart Rate Measurement `00002a37-0000-1000-8000-00805f9b34fb`, and append one line per
+   notification to stdout: `<unix_epoch_seconds_float> <hr_bpm> <rr_ms,rr_ms,...>`.
 
    Decode `0x2A37` per the SIG spec — flags byte first:
-   ```c
+   ```rust
    // byte 0 = flags: bit0 HR is uint16 (else uint8), bit3 energy present, bit4 RR present
-   size_t off = 1;
-   uint8_t flags = buf[0];
-   uint16_t hr;
-   if (flags & 0x01) { if (len < off+2) return -1; hr = buf[off] | (buf[off+1] << 8); off += 2; }
-   else              { if (len < off+1) return -1; hr = buf[off]; off += 1; }
-   if (flags & 0x08) { if (len < off+2) return -1; off += 2; }   // energy expended, skipped
+   let flags = *buf.first()?;
+   let mut off = 1usize;
+   let hr: u16 = if flags & 0x01 != 0 {
+       let v = u16::from_le_bytes(buf.get(off..off + 2)?.try_into().ok()?);
+       off += 2;
+       v
+   } else {
+       let v = u16::from(*buf.get(off)?);
+       off += 1;
+       v
+   };
+   if flags & 0x08 != 0 {
+       buf.get(off..off + 2)?;   // energy expended, skipped -- but still bounds-checked
+       off += 2;
+   }
    // remaining bytes are RR intervals, uint16 LE, units of 1/1024 s
-   while (off + 2 <= len) {
-       uint16_t rr_raw = buf[off] | (buf[off+1] << 8); off += 2;
-       double rr_ms = rr_raw * 1000.0 / 1024.0;
-       emit_rr(rr_ms);
+   let mut rr_ms = Vec::new();
+   while let Some(chunk) = buf.get(off..off + 2) {
+       let raw = u16::from_le_bytes(chunk.try_into().ok()?);
+       rr_ms.push(f64::from(raw) * 1000.0 / 1024.0);
+       off += 2;
    }
    ```
-   Every bounds check above is required. `len` is attacker-controlled radio input.
+   `get()` rather than indexing — the crate denies `indexing_slicing`, and `buf` is
+   attacker-controlled radio input. Returning `None` on a short buffer is the whole point: a
+   truncated notification must be *absent*, never a partially-decoded reading.
 3. Build with `cargo build --release -p hr-spike`. Use the `bluer` crate for BlueZ over D-Bus.
 4. Pair and trust the H10 once:
    ```sh
@@ -530,12 +542,17 @@ on minidude.
 **Amends:** 01 (§3.1 hypertable) · 02 (§2.2 reserved columns) · 04 (§1 identity, §8 no HLC)
 **Review required:** no
 
-The keystone. One file declares every source, type, canonical unit, and valid range; four artifacts
+The keystone. One file declares every source, type, canonical unit, and valid range; three artifacts
 are generated from it. `"polar_h10"` exists in exactly one place and is an integer everywhere else.
 
 **Creates:** `vitals/registry.toml`, `vitals/tools/gen_registry.py`,
-`vitals/generated/vitals_types.h`, `vitals/generated/registry.sql`,
-`vitals/generated/VitalsRegistry.swift`, `vitals/generated/registry.json`
+`crates/vitals-registry/src/generated.rs`, `vitals/generated/registry.sql`,
+`vitals/generated/registry.json`
+
+The Swift artifact is **dropped** — the iPhone is a thin client that reads the API, not a consumer
+of the registry. Sqitch owns table *structure* (`db/deploy/`), so `registry.sql` emits reference-data
+`INSERT`s only; two systems declaring the same table is how a migration silently diverges from the
+schema it is migrating.
 
 **Do:**
 
@@ -575,29 +592,36 @@ are generated from it. `"polar_h10"` exists in exactly one place and is an integ
    ```
    `indication = true` records that `0x2A35` requires CCCD `0x0002`. Writing `0x0001` yields a
    successful subscription that delivers nothing.
-2. Write `vitals/tools/gen_registry.py` — stdlib only, `tomllib`. It emits all four artifacts. Each
-   generated file starts with `/* GENERATED FROM registry.toml — DO NOT EDIT */`.
-   - `vitals_types.h`: `VITALS_TYPE_HR = 1`, `VITALS_TYPE_BP_SYSTOLIC = 6`, … **and**
-     `VITALS_SOURCE_EMAY = 0`, `VITALS_SOURCE_POLAR_H10 = 1`, `VITALS_SOURCE_AD_UA651BLE = 6`, …
-     (both enums — later tasks reference `VITALS_SOURCE_*` by name). Plus `vitals_type_range(int)`
-     returning `{double lo, hi}` and `vitals_type_unit(int)` returning a `const char *`.
-   - `registry.sql`: `vitals_type` and `vitals_source` lookup tables with `INSERT`s, plus a
-     `CHECK` on `samples.type` referencing them.
-   - `VitalsRegistry.swift`: `public enum VitalsType: Int32` and `VitalsSource: Int32`.
-   - `registry.json`: the parsed structure verbatim, for Python and the API layer.
+2. Write `vitals/tools/gen_registry.py` — stdlib only, `tomllib`. It emits all three artifacts. Each
+   generated file starts with a `GENERATED FROM registry.toml — DO NOT EDIT` banner in that file's
+   comment syntax.
+   - `crates/vitals-registry/src/generated.rs`: `#[repr(i32)]` enums `VitalsType` and `VitalsSource`
+     with explicit discriminants (`Hr = 1`, `BpSystolic = 6`, `Emay = 0`, `PolarH10 = 1`,
+     `AdUa651ble = 6`, …), plus `pub const fn range(self) -> (f64, f64)` and
+     `pub const fn unit(self) -> &'static str`. `#![no_std]`, no allocation — this crate is a
+     dependency of the decoders.
+     A real enum rather than integer constants is the point: an `i32` that could hold any value is
+     what lets a source id and a type id be transposed at a call site without the compiler noticing.
+   - `registry.sql`: `INSERT`s into the `vitals_type` and `vitals_source` lookup tables. **Reference
+     data only** — sqitch owns `CREATE TABLE`.
+   - `registry.json`: the parsed structure verbatim, for the API layer.
 3. Add a regeneration check so a hand-edited generated file cannot survive CI:
    ```sh
    python3 vitals/tools/gen_registry.py --check
    ```
    which regenerates to a temp dir and diffs, exiting nonzero on difference.
 
-**Verify:** `python3 vitals/tools/gen_registry.py --check && grep -q "VITALS_TYPE_BP_SYSTOLIC = 6" vitals/generated/vitals_types.h`
+   **The check must fail when the generator emits nothing.** A `--check` that compares an empty
+   generator run against its own empty output passes forever and proves nothing; assert each
+   artifact is non-empty and contains at least one known discriminant before diffing.
+
+**Verify:** `python3 vitals/tools/gen_registry.py --check && grep -q "BpSystolic = 6" crates/vitals-registry/src/generated.rs && cargo build -p vitals-registry`
 **Expect:** exit 0.
 
 **Commit:**
 ```sh
-git add vitals/registry.toml vitals/tools/gen_registry.py vitals/generated/
-git commit -m "feat(T-D1): vitals registry TOML and codegen for C, SQL, Swift, JSON"
+git add vitals/registry.toml vitals/tools/gen_registry.py vitals/generated/ crates/vitals-registry/
+git commit -m "feat(T-D1): vitals registry TOML and codegen for Rust, SQL, JSON"
 ```
 
 ---
@@ -616,70 +640,66 @@ nibble and a 12-bit signed mantissa below, and it has reserved sentinels that mu
 never to a number. A naive `_Float16` cast produces plausible-looking garbage, which is the worst
 possible failure in a medical value: 118/74 and 141/92 are both believable.
 
-**Creates:** `vitals/src/sfloat.c`, `vitals/src/sfloat.h`, `vitals/tests/test_sfloat.c`,
-`vitals/fuzz/fuzz_sfloat.c`
+**Creates:** `crates/vitals-decode/src/sfloat.rs`, `fuzz/fuzz_targets/fuzz_sfloat.rs`
 
 **Do:**
 
-1. Write `vitals/src/sfloat.h`:
-   ```c
-   #ifndef VITALS_SFLOAT_H
-   #define VITALS_SFLOAT_H
-   #include <stdbool.h>
-   #include <stdint.h>
-   /* Decodes an IEEE-11073 16-bit SFLOAT.
-    * Returns false for NaN/NRes/±INFINITY/Reserved — the value is ABSENT.
-    * *out is untouched when false is returned. */
-   bool vitals_sfloat_decode(uint16_t raw, double *out);
-   #endif
-   ```
-2. Write `vitals/src/sfloat.c`:
-   ```c
-   #include "sfloat.h"
-   #include <math.h>
+1. Write `crates/vitals-decode/src/sfloat.rs`:
+   ```rust
+   /// Reserved mantissa values. These mean **absent**, never a number.
+   const NAN_: u16 = 0x07FF;
+   const NRES: u16 = 0x0800;
+   const POS_INF: u16 = 0x07FE;
+   const NEG_INF: u16 = 0x0802;
+   const RESERVED: u16 = 0x0801;
 
-   bool vitals_sfloat_decode(uint16_t raw, double *out) {
-       int16_t mantissa = (int16_t)(raw & 0x0FFF);
-       int8_t  exponent = (int8_t)(raw >> 12);
-
-       /* Reserved mantissa values are ABSENT, never numbers. */
-       switch (mantissa) {
-           case 0x07FF:  /* NaN        */
-           case 0x0800:  /* NRes       */
-           case 0x07FE:  /* +INFINITY  */
-           case 0x0802:  /* -INFINITY  */
-           case 0x0801:  /* Reserved   */
-               return false;
-           default: break;
+   /// Decodes an IEEE-11073 SFLOAT.
+   ///
+   /// Returns `None` for NaN, NRes, ±INFINITY and Reserved — all of which mean
+   /// the measurement is absent.
+   pub const fn decode_sfloat(raw: u16) -> Option<f64> {
+       let mantissa = raw & 0x0FFF;
+       if matches!(mantissa, NAN_ | NRES | POS_INF | NEG_INF | RESERVED) {
+           return None;
        }
-       if (exponent >= 0x08) exponent -= 0x10;      /* sign-extend 4-bit  */
-       if (mantissa >= 0x0800) mantissa -= 0x1000;  /* sign-extend 12-bit */
-       *out = (double)mantissa * pow(10.0, (double)exponent);
-       return true;
+       let exponent = ((raw >> 12) as i8) << 4 >> 4;          // sign-extend 4-bit
+       let mantissa = ((mantissa as i16) << 4 >> 4) as i32;   // sign-extend 12-bit
+       Some(mantissa as f64 * powi10(exponent))
    }
    ```
-3. Write `vitals/tests/test_sfloat.c` covering, at minimum:
+   `Option<f64>` rather than a `bool` + out-parameter is the concrete case the C-vs-Rust evaluation
+   argued from: the sentinel cannot be read as a number because there is no number to read. In the C
+   version a caller that ignored the return value silently got an uninitialised `double`.
+
+   Use a lookup table for `powi10` rather than `pow()`, so the crate stays `no_std` with no libm
+   dependency. `#![forbid(unsafe_code)]`; clippy `indexing_slicing`, `unwrap_used`, `panic` and the
+   cast lints at `deny`.
+
+2. Tests in the same file (`#[cfg(test)]`), covering at minimum:
    - `0x0076` → 118.0 (systolic, exponent 0)
    - `0x004A` → 74.0
-   - `0xF04A` → 7.4 (exponent −1, mantissa 74). NOTE: an earlier draft of this brief said `0xF14A`, which is 33.0 — mantissa 0x14A is 330. Verify test vectors by hand.
-   - `0x07FF`, `0x0800`, `0x07FE`, `0x0802`, `0x0801` → all return `false`
-   - `0x0FFF` is *not* a sentinel (mantissa 0xFFF ≠ 0x7FF) → returns true
-   - Compare doubles with `fabs(a-b) < 1e-9`, never `==`.
-4. Write `vitals/fuzz/fuzz_sfloat.c`:
-   ```c
-   #include "../src/sfloat.h"
-   #include <stddef.h>
-   #include <stdint.h>
-   int LLVMFuzzerTestOneInput(const uint8_t *d, size_t n) {
-       if (n < 2) return 0;
-       double v;
-       uint16_t raw = (uint16_t)(d[0] | (d[1] << 8));
-       if (vitals_sfloat_decode(raw, &v)) {
-           /* A decode that succeeds must produce a finite number. */
-           if (!(v == v) || v > 1e300 || v < -1e300) __builtin_trap();
+   - `0xF04A` → 7.4 (exponent −1, mantissa 74). **NOTE:** an earlier draft of this brief said
+     `0xF14A`, which is 33.0 — mantissa `0x14A` is 330. That error survived because the check was
+     "did `ctest` exit 0", not "is the expected value right". Verify every vector by hand.
+   - `0x07FF`, `0x0800`, `0x07FE`, `0x0802`, `0x0801` → all return `None`
+   - `0x0FFF` is *not* a sentinel (mantissa `0xFFF` ≠ `0x7FF`) → returns `Some`
+   - An exhaustive sweep of all 2^16 inputs asserting no panic and that every `Some` is finite.
+   - Compare floats with `(a - b).abs() < 1e-9`, never `==`.
+
+3. Write `fuzz/fuzz_targets/fuzz_sfloat.rs`:
+   ```rust
+   #![no_main]
+   use libfuzzer_sys::fuzz_target;
+   use vitals_decode::sfloat::decode_sfloat;
+
+   fuzz_target!(|data: &[u8]| {
+       let Some(chunk) = data.get(..2) else { return };
+       let raw = u16::from_le_bytes([chunk[0], chunk[1]]);
+       if let Some(v) = decode_sfloat(raw) {
+           // A decode that succeeds must produce a finite number.
+           assert!(v.is_finite(), "decode_sfloat({raw:#06x}) -> {v}");
        }
-       return 0;
-   }
+   });
    ```
 5. Add a `cargo-fuzz` target, and a `kani` proof harness — kani proves absence of panics and
    overflow across all 2^16 inputs symbolically, which fuzzing only approximates (amendment 04 §11).
@@ -780,7 +800,7 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 
 Single writer. Every collector connects; `vitalsd` alone touches the database.
 
-**Creates:** `vitals/src/vitalsd.c`, `vitals/src/proto.c`, `vitals/src/proto.h`,
+**Creates:** `crates/vitalsd/src/main.rs`, `crates/vitals-proto/src/lib.rs`,
 `/etc/systemd/system/vitalsd.service` on minidude
 
 **Interfaces produced:**
@@ -789,8 +809,10 @@ Single writer. Every collector connects; `vitalsd` alone touches the database.
 
 **Do:**
 
-1. `vitalsd.c`: `epoll` loop over the listening socket, one connection state per client. Single
-   thread — a single writer needs no locking, and this is the whole reason for the design.
+1. `crates/vitalsd/src/main.rs`: a `tokio` current-thread runtime accepting on the Unix socket, one
+   task per client. Single-threaded — a single writer needs no locking, and this is the whole reason
+   for the design. `tokio::select!` over accept, per-client reads and the liveness tick replaces the
+   hand-rolled `epoll` loop; use `LocalSet` so no state needs `Send`.
 2. `health` returns, as CBOR: uptime, per-source last-sample age, total rows, WAL size, and the
    contents of `/var/lib/vitals/restore-verify.json`. **Any blocked or degraded state names its
    blocker and the value that blocked it** — never a bare boolean. A guard that will not say why
@@ -953,7 +975,8 @@ proof of the path — but the device is harder to talk to than "standard profile
      is rejected, encryption never starts, GATT never opens. It looks identical to a healthy idle
      system. Detect it as "connected but `ServicesResolved` never fired within 10 s" and surface it;
      recovery is remove-bond-and-re-pair.
-   - Emit one sample per present field with `source = VITALS_SOURCE_AD_UA651BLE`.
+   - Emit one sample per present field with `source = VitalsSource::AdUa651ble` (from
+     `vitals-registry`'s generated enum — never the integer literal, never the string).
 
 5. **Investigate whether setting the cuff's clock enables timestamps.** `flags` bit1 was 0 across
    the whole capture. If writing Date Time (`0x2A08`) or the vendor service
