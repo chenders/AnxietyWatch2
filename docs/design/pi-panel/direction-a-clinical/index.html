@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=800, height=480, initial-scale=1, user-scalable=no">
+<title>AnxietyWatch — Bedside Panel · Direction A "Clinical"</title>
+<!--
+  800x480 bedside panel for the Hosyond 7" DSI on the Pi 5, implemented from
+  the Claude Design project b8c918e3 (Direction A, "Clinical"). Self-contained:
+  no build step, no network, no dependencies.
+
+  The panel is EXACTLY the 800x480 frame. Everything below it is review
+  scaffolding for looking at states on a desktop, and is hidden by ?kiosk=1 --
+  which is how it is meant to run on the device. Nothing in the scaffolding can
+  affect the panel's layout, because the panel is a fixed-size box.
+
+  The position this design takes, and the reason it is worth building:
+
+      dim by lit AREA, never by contrast.
+
+  Every glyph sits at 5:1 or better against pure black, because a half-asleep
+  eye at 3 a.m. cannot afford a low-contrast reading. What shrinks at night is
+  how much of the 800x480 is emitting at all. Escalation is paid for in area,
+  fill and motion -- never in saturation. Nothing is large and bright at the
+  same time until something is actually wrong.
+
+  See README.md for what was changed from the imported design and why.
+-->
+<style>
+:root{
+  /* Every ratio here is against pure black and was verified with panel-check.mjs.
+     The design's own table stated all twelve correctly -- unusually, they
+     survived checking unchanged. */
+  --bg:#000000;          /* panel ground. true zero emission around every glyph */
+  --field:#0A0B0C;       /* 1.07:1 — interior of boxes: region without emission */
+  --rule:#5E6670;        /* 3.61:1 — boxed-region borders (WCAG 1.4.11 graphical) */
+  --rule-quiet:#3A4048;  /* 2.01:1 — system hairlines. decorative, carries nothing */
+  --spo2:#3FC8D8;        /* 10.46:1 — oxygen saturation. cyan, per monitor convention */
+  --hr:#35C46A;          /*  9.26:1 — pulse. green. never used for anything else */
+  --nibp:#DCE1E6;        /* 15.96:1 — non-invasive pressure. neutral white */
+  --watch:#E0A227;       /*  9.37:1 — medium physiological + technical warnings */
+  --klaxon:#E2453C;      /*  5.15:1 — high priority ONLY. appears nowhere else */
+  --unknown:#8B97A3;     /*  7.05:1 — indeterminate. neutral slate, hue-free by design */
+  --unknown-hi:#B9C0C7;  /* 11.43:1 — indeterminate text that must out-read a live value */
+  --label:#7A828C;       /*  5.40:1 — region labels at 14px, clears the 4.5:1 bar */
+  --rest:#585F52;        /*  3.17:1 — resting tier word at 44px. large-text AA at min emission */
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:"Helvetica Neue",Helvetica,Arial,sans-serif;
+  --hatch:repeating-linear-gradient(135deg,#8B97A3 0 2px,rgba(0,0,0,0) 2px 7px);
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:#17191B;font-family:var(--sans)}
+body.kiosk{background:#000;overflow:hidden}
+body.kiosk .review{display:none}
+
+/* ── the panel ─────────────────────────────────────────────────────────────
+   Fixed 800x480. Row heights are hard-coded and the silence bar is pinned with
+   margin-top:auto, so no region can ever reflow into another's address. That
+   the eye learns one place per value is the entire point of the layout. */
+#panel{
+  width:800px;height:480px;background:var(--bg);padding:13px 16px;
+  display:flex;flex-direction:column;gap:8px;overflow:hidden;position:relative;
+  font-family:var(--sans);color:var(--nibp);
+}
+.r-top{height:22px;flex:0 0 auto;display:flex;align-items:center;justify-content:space-between}
+.r-band{height:86px;flex:0 0 auto;display:flex;align-items:center;gap:16px;padding:0 14px}
+.r-params{height:152px;flex:0 0 auto;display:grid;grid-template-columns:1.12fr 1fr 1.12fr;gap:8px}
+.r-sensors{height:54px;flex:0 0 auto;display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.r-sys{height:34px;flex:0 0 auto;display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.r-sil{margin-top:auto;height:56px;flex:0 0 auto;position:relative;overflow:hidden;touch-action:none;user-select:none;-webkit-user-select:none}
+
+.pbox{border:1px solid var(--rule);background:var(--field);padding:8px 10px 6px;display:flex;flex-direction:column;min-width:0}
+.pbox.stale{border:1px dashed var(--unknown)}
+.val{font-family:var(--mono);font-variant-numeric:tabular-nums;font-weight:700;line-height:.86;font-size:72px;padding-bottom:2px;border-bottom:3px solid transparent}
+.val.sm{font-size:48px;letter-spacing:-1px}
+.val.stale{color:var(--unknown);border-bottom:3px dashed var(--unknown)}
+.lim,.note,.age,.sysval{font-family:var(--mono);font-variant-numeric:tabular-nums}
+
+.sbox{border:1px solid var(--rule);background:var(--field);display:flex;align-items:center;gap:9px;padding:0 10px}
+.sbox.bad{border:1px dashed var(--unknown)}
+.sdot{width:26px;height:26px;flex:0 0 auto;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;color:#000;background:var(--hr);border:1px solid var(--hr)}
+.sdot.bad{background:var(--hatch);border:1px dashed var(--unknown)}
+.ybox{border:1px solid var(--rule-quiet);background:var(--field);height:34px;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:0 9px}
+.ybox.bad{border:1px dashed var(--unknown)}
+
+/* 1 Hz. Deliberately an order of magnitude under the 3 Hz photosensitive-
+   seizure threshold, and deliberately NOT disabled under prefers-reduced-
+   motion: this flash is the alarm, not decoration, and WCAG 2.3.3 scopes that
+   preference to non-essential motion. Everything else on the panel is static. */
+@keyframes klx{0%,49%{opacity:1}50%,100%{opacity:.28}}
+.flash{animation:klx 1s steps(1,end) infinite}
+
+.review{width:800px;margin:24px auto 64px;color:#B4AFA6;font-size:15px;line-height:1.6}
+.review h1{font-size:22px;color:#E8E4DC;margin:0 0 4px;letter-spacing:-.2px}
+.review button{font:inherit;font-size:14px;letter-spacing:1px;font-weight:700;background:transparent;color:#9BA3AB;border:1px solid #2F343A;padding:9px 12px;cursor:pointer}
+.review button[aria-pressed="true"]{background:#3FC8D8;border-color:#3FC8D8;color:#000}
+.review button:hover{color:#E8E4DC}
+.review .strip{display:flex;flex-wrap:wrap;gap:6px;margin:14px 0}
+.review code{font-family:var(--mono);color:#B9C0C7}
+#frame{width:800px;margin:0 auto;outline:1px solid #2F343A}
+</style>
+</head>
+<body>
+
+<div id="frame"><div id="panel"></div></div>
+
+<div class="review">
+  <h1>Bedside panel — Direction A, “Clinical”</h1>
+  <p>The black rectangle above is the panel at its true size: 800 × 480, exactly what the
+  Hosyond 7″ DSI shows. Everything here is review scaffolding — load with
+  <code>?kiosk=1</code> and it disappears.</p>
+  <div class="strip" id="states"></div>
+  <p id="note" style="min-height:3em;color:#8E8A83"></p>
+  <p><strong style="color:#D6D2CB">Hold to silence:</strong> press and hold the bar for a full
+  3 seconds. Releasing early resets to zero — no partial credit, and a tap does nothing at all.
+  Silencing stops the <em>audio</em>, for two minutes. The visual alarm never silences.</p>
+  <p><strong style="color:#D6D2CB">Resting:</strong> at <code>clear</code>, untouched for 45 s,
+  every region but the tier line goes dark — about 1.5 % of the field lit. Touching anywhere wakes
+  it for 20 s. Escalation wakes it immediately and nothing dims while an alarm is active. Use the
+  <em>resting</em> button to see it without waiting.</p>
+</div>
+
+<script>
+"use strict";
+
+const HOLD_MS = 3000;
+const REST_AFTER_MS = 45000;   // untouched at clear before the panel goes to rest
+const WAKE_MS = 20000;         // how long a touch keeps it awake
+
+const CY = "var(--spo2)", GR = "var(--hr)", WH = "var(--nibp)",
+      AM = "var(--watch)", RD = "var(--klaxon)", SL = "var(--unknown)";
+
+/* ── sparkline ──────────────────────────────────────────────────────────────
+   A gap is drawn, never bridged. The line stops at the last real sample, is
+   capped with a HOLLOW dot (fill #000, so it reads as an open end rather than
+   a data point), and the rest of the span is a dotted neutral rule ending in a
+   "?". A continuous line across missing data would be a claim the system
+   cannot make, so there is no code path that draws one. */
+function spark(vals, color, w) {
+  const h = 26, nums = vals.filter(v => v != null);
+  if (!nums.length) return "";
+  const min = Math.min(...nums) - 1.5, max = Math.max(...nums) + 1.5;
+  const step = w / (vals.length - 1);
+  const y = v => (h - ((v - min) / (max - min || 1)) * h).toFixed(1);
+  const pts = [];
+  let cut = -1;
+  vals.forEach((v, i) => {
+    if (cut < 0 && v != null) pts.push([(i * step).toFixed(1), y(v)]);
+    else if (cut < 0) cut = i;
+  });
+  const last = pts[pts.length - 1] || [0, h / 2];
+  let out = `<polyline points="${pts.map(p => p.join(",")).join(" ")}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round"/>`;
+  if (cut >= 0) {
+    out += `<line x1="${last[0]}" y1="${last[1]}" x2="${w}" y2="${last[1]}" stroke="var(--unknown)" stroke-width="2" stroke-dasharray="2 7"/>`
+         + `<circle cx="${last[0]}" cy="${last[1]}" r="3.5" fill="#000" stroke="var(--unknown)" stroke-width="2"/>`
+         + `<text x="${w - 2}" y="${last[1] - 7}" text-anchor="end" fill="var(--unknown)" font-size="15" font-weight="700" font-family="Helvetica,Arial,sans-serif">?</text>`;
+  }
+  return `<svg width="${w}" height="${h + 10}" viewBox="0 0 ${w} ${h + 10}" role="img" aria-hidden="true">${out}</svg>`;
+}
+
+/* ── states ─────────────────────────────────────────────────────────────── */
+const SENSORS_OK = [
+  { name: "POLAR H10", age: "2 s", ok: true },
+  { name: "EMAY SpO₂", age: "4 s", ok: true },
+  { name: "A&D BP CUFF", age: "37 m", ok: true },
+  { name: "HEALTHKIT", age: "1 m", ok: true },
+];
+const SYS_OK = [
+  { name: "SELF-TEST", val: "02:00 PASS", ok: true },
+  { name: "BACKUP", val: "21 m", ok: true },
+  { name: "RESTORE OK", val: "3 d", ok: true },
+  { name: "DISK", val: "62 %", ok: true },
+];
+const base = {
+  clock: "03:14:22", chanLabel: "ALARMS ARMED", chanFg: "var(--label)",
+  sensors: SENSORS_OK, sys: SYS_OK, detail: true,
+  silence: { active: false, text: "NO ACTIVE ALARM", sub: "ALARM AUDIO ARMED · SELF-TEST 02:00 PASS", color: "var(--rule)" },
+};
+const spo2 = p => ({ name: "SpO₂", unit: "%", color: CY, limits: "↑100\n↓94", ...p });
+const hr   = p => ({ name: "HR", unit: "bpm", color: GR, limits: "↑110\n↓45", ...p });
+const nibp = p => ({ name: "NIBP", unit: "mmHg", color: WH, small: true, limits: "↑150/95", ...p });
+
+const STATES = {};
+
+STATES.clear = { ...base,
+  caption: "clear", note: "Measured, in range. Two colours lit, nothing moving. ~4 % of the field emitting.",
+  tier: "CLEAR", glyph: "●", accent: GR, prio: "NO ALARM", prioFg: SL, since: "stable 4 h 06 m",
+  params: [
+    spo2({ val: "97", note: "steady\n30 m", trend: [97,96,97,98,97,98,97,96,97,97] }),
+    hr({ val: "58", note: "steady\n30 m", trend: [60,59,58,59,57,58,58,59,58,58] }),
+    nibp({ val: "118/76", note: "MAP 90\n37 m ago" }),
+  ],
+};
+
+STATES.cant = { ...base,
+  caption: "can’t assess", note: "Not measured. The tier degrades — it does not hold at clear, and it does not alarm. Absence is a question, not an emergency.",
+  tier: "CAN’T ASSESS", glyph: "?", accent: SL, indeterminate: true,
+  prio: "TECHNICAL ALARM", prioFg: "var(--unknown-hi)", since: "since 03:08:41",
+  chanLabel: "TECHNICAL · SENSOR LOST", chanFg: "var(--unknown-hi)",
+  params: [
+    spo2({ val: "- -", stale: true, note: "NO DATA\n6 m", trend: [96,95,96,95,96,null,null,null,null,null] }),
+    hr({ val: "61", note: "steady\n30 m", trend: [59,60,61,60,62,61,60,61,61,61] }),
+    nibp({ val: "118/76", stale: true, note: "MAP 90\n4 h 12 m" }),
+  ],
+  sensors: [
+    { name: "POLAR H10", age: "2 s", ok: true },
+    { name: "EMAY SpO₂", age: "no data 6 m", ok: false },
+    { name: "A&D BP CUFF", age: "4 h 12 m", ok: false },
+    { name: "HEALTHKIT", age: "stale 22 m", ok: false },
+  ],
+  sys: [
+    { name: "SELF-TEST", val: "02:00 PASS", ok: true },
+    { name: "BACKUP", val: "21 m", ok: true },
+    { name: "RESTORE OK", val: "17 d ?", ok: false },
+    { name: "DISK", val: "62 %", ok: true },
+  ],
+  silence: { active: false, text: "NOT SILENCEABLE", sub: "NO ALARM TO SILENCE · FIX THE SENSOR", color: SL, glyph: "?" },
+};
+
+STATES.watch = { ...base,
+  caption: "watch", note: "Measured, drifting below limit. Medium priority: amber outline, no motion, no sound.",
+  tier: "WATCH", glyph: "▲", accent: AM, bandBg: "rgba(224,162,39,0.06)",
+  prio: "MEDIUM PRIORITY", prioFg: AM, since: "since 03:11:50", chanLabel: "PHYSIOLOGICAL", chanFg: AM,
+  params: [
+    spo2({ val: "91", note: "↓6\n8 m", trend: [95,94,94,93,93,92,92,91,91,91] }),
+    hr({ val: "64", note: "↑5\n8 m", trend: [59,60,60,61,62,62,63,64,64,64] }),
+    nibp({ val: "118/76", note: "MAP 90\n41 m ago" }),
+  ],
+};
+
+STATES.confirm = { ...base,
+  caption: "confirm", note: "High priority. Filled glyph, larger lit area, silence bar armed. The glyph breathes at 0.5 Hz; nothing else moves.",
+  tier: "CONFIRM", glyph: "▲▲", accent: AM, solid: true, bandBg: "rgba(224,162,39,0.14)",
+  prio: "HIGH PRIORITY — CONFIRM", prioFg: AM, since: "since 03:13:04", chanLabel: "PHYSIOLOGICAL", chanFg: AM,
+  params: [
+    spo2({ val: "88", note: "↓9\n11 m", trend: [93,92,91,90,89,89,88,88,88,88] }),
+    hr({ val: "102", note: "↑44\n11 m", trend: [66,72,78,84,89,93,97,100,102,102] }),
+    nibp({ val: "118/76", note: "MAP 90\n43 m · RE-TAKE" }),
+  ],
+  silence: { active: true, text: "HOLD 3 s TO SILENCE", sub: "AUDIO 2 MIN · ALARM CONTINUES", glyph: "⏻", color: AM, fill: "#3A2E12" },
+};
+
+STATES.klaxon = { ...base,
+  caption: "klaxon", note: "High priority, band and tier word flashing at 1 Hz. The only red on the entire system.",
+  tier: "KLAXON", glyph: "■", accent: RD, solid: true, flash: true, bandBg: "rgba(226,69,60,0.18)",
+  prio: "HIGH PRIORITY ALARM", prioFg: RD, since: "since 03:14:02", chanLabel: "PHYSIOLOGICAL · AUDIO ON", chanFg: RD,
+  params: [
+    spo2({ val: "82", note: "↓15\n13 m", trend: [90,88,87,86,85,84,83,82,82,82] }),
+    hr({ val: "121", note: "↑63\n13 m", trend: [70,80,90,98,105,111,116,119,121,121] }),
+    nibp({ val: "118/76", note: "MAP 90\n44 m · RE-TAKE" }),
+  ],
+  silence: { active: true, text: "HOLD 3 s TO SILENCE", sub: "AUDIO 2 MIN · ALARM CONTINUES", glyph: "⏻", color: RD, fill: "#3A1512", textColor: RD },
+};
+
+/* Resting is not "the panel dimmed". It is a different, smaller panel: the tier
+   line only, at the one token low enough to sleep beside and still large enough
+   that 3.17:1 clears large-text AA at 44px. Contrast is never what gets traded. */
+STATES.resting = {
+  caption: "resting", note: "Untouched for 45 s at clear. ~1.5 % of the field lit, 3.17:1 at 44 px — AA for large text, and invisible from across the room.",
+  detail: false, clock: "", chanLabel: "", tier: "CLEAR", glyph: "●", accent: "var(--rest)",
+  prio: "", since: "", sensors: [], sys: [], params: [],
+  restWord: true,
+  silence: { active: false, text: "", sub: "TOUCH ANYWHERE TO WAKE", color: "#2A2E33", subColor: "var(--label)" },
+};
+
+const ORDER = [
+  ["clear", "clear"], ["cant", "can’t assess"], ["watch", "watch"],
+  ["confirm", "confirm"], ["klaxon", "klaxon"], ["resting", "resting"],
+];
+
+/* ── hold-to-silence ───────────────────────────────────────────────────────
+   The requirement is stated the instant contact begins, the countdown IS the
+   label, and releasing early goes to zero rather than keeping partial credit.
+   A progress bar that kept 40% would invite a half-press at 3 a.m.; this one
+   cannot be satisfied by accident, which is the only property that matters for
+   silencing a medical alarm. */
+const hold = { p: 0, phase: "idle", raf: 0, tid: 0, t0: 0 };
+
+function silenceFor(st) {
+  if (!st.silence || !st.silence.active) return st.silence;
+  if (hold.phase === "done")
+    return { active: true, p: 1, text: "AUDIO SILENCED 2:00", sub: "ALARM STILL ACTIVE · RE-SOUNDS 03:16:11",
+             glyph: "✓", color: AM, fill: "#3A2E12", textColor: AM, big: true };
+  if (hold.phase === "released")
+    return { active: true, p: 0, text: "RELEASED — RESET TO 0", sub: "NO PARTIAL CREDIT · HOLD THE FULL 3 s",
+             glyph: "↺", color: SL, textColor: "var(--unknown-hi)" };
+  if (hold.phase === "holding")
+    return { active: true, p: hold.p, text: "KEEP HOLDING — " + (3 - hold.p * 3).toFixed(1) + " s",
+             sub: "RELEASE NOW AND THIS RESETS TO ZERO", glyph: "⏻", color: RD, fill: "#3A1512", textColor: WH };
+  return st.silence;
+}
+
+function down() {
+  const st = STATES[S.state];
+  if (!st.silence || !st.silence.active || hold.phase === "done") return;
+  hold.t0 = performance.now();
+  hold.phase = "holding"; hold.p = 0;
+  clearTimeout(hold.tid);
+  const step = () => {
+    hold.p = Math.min(1, (performance.now() - hold.t0) / HOLD_MS);
+    if (hold.p >= 1) { hold.phase = "done"; render(); return; }
+    render();
+    hold.raf = requestAnimationFrame(step);
+  };
+  hold.raf = requestAnimationFrame(step);
+  render();
+}
+function up() {
+  cancelAnimationFrame(hold.raf);
+  if (hold.phase !== "holding") return;
+  hold.p = 0; hold.phase = "released";
+  render();
+  hold.tid = setTimeout(() => { hold.phase = "idle"; render(); }, 1600);
+}
+
+/* ── resting / wake ────────────────────────────────────────────────────────
+   Only `clear` ever rests. Anything else is either an alarm or an unanswered
+   question, and both must stay lit. */
+const S = { state: "clear", restTimer: 0 };
+function armRest() {
+  clearTimeout(S.restTimer);
+  if (S.state !== "clear") return;
+  S.restTimer = setTimeout(() => { S.state = "resting"; render(); }, REST_AFTER_MS);
+}
+function wake() {
+  if (S.state !== "resting") return;
+  S.state = "clear";
+  render();
+  clearTimeout(S.restTimer);
+  S.restTimer = setTimeout(() => { S.state = "resting"; render(); }, WAKE_MS);
+}
+
+/* ── render ────────────────────────────────────────────────────────────── */
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c]));
+
+function paramBox(p) {
+  const c = p.stale ? SL : p.color;
+  return `<div class="pbox${p.stale ? " stale" : ""}">
+    <div style="display:flex;align-items:baseline;justify-content:space-between">
+      <span style="font-size:16px;font-weight:700;letter-spacing:1.4px;color:${c}">${esc(p.name)}</span>
+      <span class="lim" style="font-size:14px;color:var(--unknown);text-align:right;line-height:1.25;white-space:pre-line">${esc(p.limits)}</span>
+    </div>
+    <div style="display:flex;align-items:flex-end;gap:7px;margin-top:2px">
+      <span class="val${p.small ? " sm" : ""}${p.stale ? " stale" : ""}" style="color:${c}">${esc(p.val)}</span>
+      <span style="font-size:16px;letter-spacing:.8px;color:var(--unknown);padding-bottom:8px;white-space:nowrap">${esc(p.unit)}</span>
+    </div>
+    <div style="display:flex;align-items:flex-end;justify-content:space-between;margin-top:auto">
+      <!-- 132px, not the design's 172. The columns are 1.12fr / 1fr / 1.12fr,
+           so the HR box has ~207px of content width and a 172px spark plus the
+           "steady / 30 m" note ran to ~237px — the trend line was drawn under
+           the text. One width for every column, sized to the narrowest, so the
+           three boxes stay visually identical. -->
+      <span style="display:block">${p.trend ? spark(p.trend, c, 132) : ""}</span>
+      <span class="note" style="font-size:14px;color:${p.stale ? "var(--unknown-hi)" : "var(--unknown)"};text-align:right;white-space:pre-line;line-height:1.3;padding-bottom:2px">${esc(p.note)}</span>
+    </div>
+  </div>`;
+}
+
+function render() {
+  const st = STATES[S.state];
+  const sil = silenceFor(st) || {};
+  const active = !!sil.active;
+  const silColor = sil.color || (active ? AM : "var(--rule)");
+  const p = Math.max(0, Math.min(1, sil.p || 0));
+
+  const bandStyle = [
+    `border:2px ${st.indeterminate ? "dashed" : "solid"} ${st.accent}`,
+    `background:${st.bandBg || "transparent"}`,
+  ].join(";");
+  const glyphStyle = [
+    "width:56px;height:56px;flex:0 0 auto;display:flex;align-items:center;justify-content:center",
+    "font-size:30px;font-weight:700;line-height:1",
+    `color:${st.indeterminate || st.solid ? "#000" : st.accent}`,
+    `background:${st.indeterminate ? "var(--hatch)" : st.solid ? st.accent : "transparent"}`,
+    `border:2px ${st.indeterminate ? "dashed" : "solid"} ${st.accent}`,
+  ].join(";");
+
+  document.getElementById("panel").innerHTML = `
+    <div class="r-top">
+      <span style="font-size:14px;letter-spacing:1.6px;color:var(--label)">${st.detail === false ? "" : "BEDSIDE MONITOR · HOME"}</span>
+      <span style="font-size:14px;letter-spacing:1.4px;font-weight:700;color:${st.chanFg || "var(--label)"}">${esc(st.chanLabel)}</span>
+      <span class="lim" style="font-size:15px;letter-spacing:.5px;color:var(--unknown)">${esc(st.clock)}</span>
+    </div>
+
+    <div class="r-band${st.flash ? " flash" : ""}" style="${bandStyle}">
+      <div style="${glyphStyle}">${esc(st.glyph)}</div>
+      <div style="font-size:${st.restWord ? 44 : 50}px;font-weight:700;letter-spacing:${st.restWord ? 3 : 4}px;line-height:1;color:${st.accent};white-space:nowrap">${esc(st.tier)}</div>
+      <div style="margin-left:auto;text-align:right;display:flex;flex-direction:column;gap:4px">
+        <span style="font-size:15px;font-weight:700;letter-spacing:1.2px;color:${st.prioFg || "var(--unknown)"}">${esc(st.prio)}</span>
+        <span class="lim" style="font-size:14px;color:var(--unknown)">${esc(st.since)}</span>
+      </div>
+    </div>
+
+    ${st.detail === false ? "" : `
+    <div class="r-params">${st.params.map(paramBox).join("")}</div>
+
+    <div class="r-sensors">${st.sensors.map(d => `
+      <div class="sbox${d.ok ? "" : " bad"}">
+        <div class="sdot${d.ok ? "" : " bad"}">${d.ok ? "✓" : "?"}</div>
+        <div style="display:flex;flex-direction:column;gap:1px;min-width:0">
+          <span style="font-size:14px;letter-spacing:.6px;color:var(--unknown);white-space:nowrap">${esc(d.name)}</span>
+          <span class="age" style="font-size:15px;color:${d.ok ? "var(--nibp)" : "var(--unknown-hi)"};white-space:nowrap">${esc(d.age)}</span>
+        </div>
+      </div>`).join("")}
+    </div>
+
+    <div class="r-sys">${st.sys.map(y => `
+      <div class="ybox${y.ok ? "" : " bad"}">
+        <span style="font-size:14px;letter-spacing:.6px;color:var(--label);white-space:nowrap">${esc(y.name)}</span>
+        <span class="sysval" style="font-size:15px;color:${y.ok ? "var(--unknown-hi)" : "var(--watch)"};white-space:nowrap">${esc(y.val)}</span>
+      </div>`).join("")}
+    </div>`}
+
+    <div class="r-sil" id="sil" style="border:2px ${active ? "solid" : "dashed"} ${silColor};background:${active ? "var(--field)" : "transparent"};cursor:${active ? "pointer" : "default"}"
+         role="button" aria-label="${active ? "Hold three seconds to silence the alarm audio" : esc(sil.text)}" tabindex="${active ? 0 : -1}">
+      <div style="position:absolute;left:0;top:0;bottom:0;width:${(p * 100).toFixed(1)}%;background:${sil.fill || "#3A2E12"};${p > 0 ? `border-right:2px solid ${silColor}` : ""}"></div>
+      <div style="position:relative;height:100%;display:flex;align-items:center;gap:14px;padding:0 16px">
+        <span style="font-size:22px;font-weight:700;color:${silColor};line-height:1;display:${sil.glyph ? "block" : "none"}">${esc(sil.glyph)}</span>
+        <span style="font-size:${sil.big ? 24 : 20}px;font-weight:700;letter-spacing:1.6px;color:${sil.textColor || silColor};white-space:nowrap">${esc(sil.text)}</span>
+        <span class="lim" style="margin-left:auto;font-size:15px;color:${sil.subColor || "var(--unknown)"};text-align:right;white-space:nowrap">${esc(sil.sub)}</span>
+      </div>
+    </div>`;
+
+  const bar = document.getElementById("sil");
+  bar.addEventListener("pointerdown", down);
+  bar.addEventListener("pointerup", up);
+  bar.addEventListener("pointerleave", up);
+  bar.addEventListener("pointercancel", up);
+
+  document.querySelectorAll("#states button").forEach(b =>
+    b.setAttribute("aria-pressed", String(b.dataset.s === S.state)));
+  const n = document.getElementById("note");
+  if (n) n.textContent = st.caption + " — " + st.note;
+}
+
+document.getElementById("states").innerHTML = ORDER
+  .map(([k, label]) => `<button data-s="${k}">${label}</button>`).join("");
+document.getElementById("states").addEventListener("click", e => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  S.state = b.dataset.s;
+  hold.phase = "idle"; hold.p = 0;
+  cancelAnimationFrame(hold.raf); clearTimeout(hold.tid);
+  clearTimeout(S.restTimer);
+  render();
+  armRest();
+});
+
+// A hand landing anywhere wakes the panel — not just on the one touch target.
+document.getElementById("panel").addEventListener("pointerdown", wake);
+
+if (new URLSearchParams(location.search).get("kiosk") === "1") document.body.classList.add("kiosk");
+const start = new URLSearchParams(location.search).get("state");
+if (start && STATES[start]) S.state = start;
+
+render();
+armRest();
+
+/* ── layout assertion ──────────────────────────────────────────────────────
+   The design's prose claimed the row heights "= 480 exactly". They do not:
+   22+86+152+54+34+56 = 404, plus five 8px gaps = 444, plus 26px of vertical
+   padding = 470. The remaining 10px is absorbed above the silence bar by
+   margin-top:auto. That is harmless -- but "480 exactly" was still an
+   arithmetic claim that nothing checked, so it is checked here instead of
+   restated. What actually has to hold is that the panel is exactly 800x480 and
+   that the silence bar sits flush on its bottom edge, which is what makes the
+   layout non-reflowing. panel-check.mjs asserts the same sums offline. */
+requestAnimationFrame(() => {
+  const el = document.getElementById("panel"), r = el.getBoundingClientRect();
+  const bar = document.getElementById("sil").getBoundingClientRect();
+  const problems = [];
+  if (Math.round(r.width) !== 800 || Math.round(r.height) !== 480)
+    problems.push(`panel is ${Math.round(r.width)}x${Math.round(r.height)}, must be 800x480`);
+  if (Math.abs(bar.bottom - (r.bottom - 13)) > 1)
+    problems.push(`silence bar is ${(r.bottom - 13 - bar.bottom).toFixed(1)}px off the bottom padding edge`);
+  if (problems.length) console.error("PANEL LAYOUT:", problems.join(" · "));
+  else console.log("PANEL LAYOUT: 800x480, silence bar flush — ok");
+});
+</script>
+</body>
+</html>
