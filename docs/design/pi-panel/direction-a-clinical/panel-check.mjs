@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Gate for the Direction A bedside panel.
 //
-// Run:  node docs/design/pi-panel/direction-a-clinical/panel-check.mjs
+// Run:  node docs/design/pi-panel/direction-a-clinical/panel-check.mjs [index.html]
 // Exit: 0 = every hard requirement holds · 1 = at least one failed
 //
 // WHY THIS EXISTS
@@ -41,6 +41,16 @@ const simulate = (h, kind) => {
           cl(M[1][0] * r + M[1][1] * g + M[1][2] * b),
           cl(M[2][0] * r + M[2][1] * g + M[2][2] * b)];
 };
+
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+// Defaults to the sibling index.html. CI passes a deliberately mutated copy to
+// prove this gate can actually fail -- see the design-gates job in ci.yml.
+const HTML = process.argv[2]
+  ? resolve(process.argv[2])
+  : resolve(dirname(fileURLToPath(import.meta.url)), "index.html");
 
 let failed = 0;
 const pad = (s, n) => String(s).padEnd(n);
@@ -164,6 +174,64 @@ console.log("\nTOUCH");
 line(BAR.h >= 44 ? "ok" : "FAIL", "silence bar short axis", `${BAR.h}px >= 44px (WCAG 2.5.5 AAA)`);
 line(BAR.w === PANEL_W - 32 ? "ok" : "FAIL", "silence bar width",
   `${BAR.w}px — full content width, so an imprecise finger cannot miss it`);
+
+
+// -- the TOKENS table above must BE the panel ---------------------------------
+//
+// Every ratio checked above is checked against hexes hard-coded in TOKENS.
+// Nothing so far proves those are the hexes index.html renders. Let them drift
+// and this gate keeps exiting 0 while certifying a panel nobody sees -- the
+// same vacuous-check failure mode the rest of ci.yml was written about.
+//
+// Both directions: a changed value fails, and a NEW colour token the gate has
+// never heard of also fails, since otherwise the way around the gate is to add
+// a colour it does not know to look at.
+const EXEMPT = {
+  "--bg": "pure black — the ground every ratio above is measured against",
+};
+
+console.log(`\nSOURCE SYNC -- ${HTML}`);
+let html = null;
+try {
+  html = readFileSync(HTML, "utf8");
+} catch (e) {
+  // Fail loudly: a gate that cannot read what it gates must not call it fine.
+  line("FAIL", "read index.html", `${e.code || e.message}`);
+}
+if (html !== null) {
+  const m = /:root\s*\{([\s\S]*?)\}/.exec(html);
+  if (!m) {
+    line("FAIL", ":root block", "not found in the stylesheet");
+  } else {
+    const css = {};
+    for (const [, k, v] of m[1].matchAll(/(--[\w-]+)\s*:\s*(#[0-9a-fA-F]{6})\b/g)) css[k] = v.toLowerCase();
+    let bad = 0;
+    for (const [name, hex] of TOKENS) {
+      const theirs = css[name];
+      if (theirs === undefined) { line("FAIL", name, "declared here but absent from the stylesheet"); bad++; }
+      else if (theirs !== hex.toLowerCase()) {
+        line("FAIL", name, `gate says ${hex}, stylesheet says ${theirs} -- the gate is checking a panel the device does not render`);
+        bad++;
+      }
+    }
+    const known = new Set(TOKENS.map((t) => t[0]));
+    for (const name of Object.keys(css)) {
+      if (known.has(name) || EXEMPT[name]) continue;
+      line("FAIL", name, "colour token in the stylesheet that this gate does not check -- add it to TOKENS or EXEMPT with a reason");
+      bad++;
+    }
+    // The tier accents are asserted separately above, so they must be real
+    // tokens too -- otherwise TIERS could describe a panel that does not exist.
+    const values = new Set(Object.values(css));
+    for (const t of TIERS) {
+      if (!values.has(t.accent.toLowerCase())) {
+        line("FAIL", `tier ${t.name}`, `accent ${t.accent} is not any token in the stylesheet`);
+        bad++;
+      }
+    }
+    if (!bad) line("ok", "tokens vs stylesheet", `all ${TOKENS.length} gated tokens match, ${TIERS.length} tier accents real, ${Object.keys(EXEMPT).length} exempt`);
+  }
+}
 
 console.log(failed === 0
   ? "\nPASS — every hard requirement holds.\n"
