@@ -27,7 +27,7 @@ $403 the carts first totalled.
 |---|---|---|---|
 | **Geekworm X1202 UPS** | 50 | [Amazon `B0CRZ4ZXQW`](https://www.amazon.com/Geekworm-X1202-Raspberry-Shutdown-Detection/dp/B0CRZ4ZXQW) · [Geekworm](https://geekworm.com/products/x1202) | **4 cells, not 2** — see the runtime table below. Reports battery state over I2C, so the software can *see* the power situation rather than just die. Also takes 6–18 V (≥3 A) on a DC5521 barrel, where the 2-cell X1200 needs a USB-C source that genuinely negotiates 5 A |
 | **Geekworm X1202-C1 case** | 19.00 | [Amazon `B0D59ZK1QR`](https://www.amazon.com/Geekworm-X1202-C1-Raspberry-Active-Cooler/dp/B0D59ZK1QR) · [Geekworm](https://geekworm.com/products/x1202-c1) | Built for exactly this stack: Pi 5 + X1202 + active cooler + a top PCIe M.2 HAT (X1000/X1001/X1003/X1004/X1015 all named). 100 × 90.8 × 62.8 mm. **Each case fits only its own UPS** — an X1200-C1 will not take an X1202 |
-| **4× Samsung 35E 18650**, **flat-top, unprotected** | 23.96 | [18650BatteryStore](https://www.18650batterystore.com/products/samsung-35e-18650-3500mah-8a-battery) ($5.99 ea) | **Not protected cells.** Geekworm: *"Do not use the battery with built-in protection circuit because it will limit the discharge current"* — the X1202 does overcurrent, overvoltage and reverse-cell protection on the board. It is also why the spec caps length at 65.3 mm: a protected cell is 68–70 mm and does not physically fit. **Flat-top is correct here** — the X1202's holders are the Keystone pattern, coil spring on the negative end and a flat plate on the positive, which a flat top meets face-on (the "flat tops don't make contact" failure applies to holders with a recessed ring or a raised nub). ≤65.3 × 18.5 mm, all four from one batch. Geekworm names the 35E and the Panasonic NCR18650B. Ignore anything advertising >3600 mAh — those numbers are fiction |
+| **4× Samsung 35E 18650**, **flat-top, unprotected** | ~24 | **sourced locally** — online ref: [18650BatteryStore](https://www.18650batterystore.com/products/samsung-35e-18650-3500mah-8a-battery), $5.99 ea | See the cell spec below. This is the item most likely to be bought wrong |
 | **Geekworm X1001 M.2 HAT** | 13.90 | [Amazon](https://www.amazon.com/s?k=Geekworm+X1001) · [Geekworm](https://geekworm.com/products/x1001) | Top-mounts, takes 2280. The official HAT+ is 2230/2242 only, which cuts you off from most known-good drives |
 | **NVMe SSD** | **0 — from stock** | — | Already on hand; see the NVMe note below for what to verify and what it would have cost. **Avoid WD SN550/SN580/SN350/SN850 and anything Phison or MAP1202** — they are the documented Pi 5 detection and I/O-error failures. The Pi 5's PCIe is Gen2 ×1 (Gen3 ×1 with a dtparam), so any modern drive is throttled well below its rating; capacity and reliability matter here, speed does not |
 | **Official Active Cooler** | 9.85 | [Amazon](https://www.amazon.com/s?k=Raspberry+Pi+5+Official+Active+Cooler) · [Raspberry Pi](https://www.raspberrypi.com/products/active-cooler/) | Top HATs are designed around its height. The CanaKit "Mega Heat Sink" is taller and probably will not fit under the X1001. Geekworm's own H505 is the other supported option and the case names both |
@@ -46,8 +46,27 @@ $403 the carts first totalled.
 | **Thu Aug 6** | X1202 UPS · X1202-C1 case · UGREEN audio adapter | **T-A2, audio path.** UPS reports battery state over I²C from here on |
 | **Aug 10–13** | Official Active Cooler | Closing the stack into the metal case — see the thermal note |
 
-Still to order: the 18650 cells (18650BatteryStore) and the RTC cell (PiShop). The UPS lands Thursday
-but does nothing without cells.
+Still open: the 18650 cells (being sourced locally) and the RTC cell (PiShop, $5.50 — not needed
+until the box runs unattended). The UPS lands Thursday but does nothing without cells.
+
+### The cell spec — take this to the counter
+
+Buying these locally is fine, but the shelf stock in battery and vape shops is aimed at flashlight
+buyers, which means almost all of it is **protected button-top** — the one variant that does not work
+here. Ask for:
+
+> **4 × Samsung INR18650-35E** (or Panasonic NCR18650B) · **unprotected** · **flat top** ·
+> **≤ 65.3 mm × 18.5 mm** · all four from the same batch
+
+- **Unprotected, not protected.** Geekworm: *"Do not use the battery with built-in protection circuit
+  because it will limit the discharge current."* The X1202 does overcurrent, overvoltage and
+  reverse-cell protection on the board. A protected cell is also 68–70 mm and physically will not
+  fit under the 65.3 mm cap — that cap is the tell.
+- **Flat top is correct here.** The X1202's holders are the Keystone pattern: coil spring on the
+  negative end, flat plate on the positive, which a flat top meets face-on. The "flat tops don't make
+  contact" failure applies to holders with a recessed ring or a raised nub, not these.
+- **Same batch, matched.** They sit in series; mismatched cells drag the pack down to the weakest.
+- **Reject anything claiming over 3600 mAh.** No 18650 holds that. Those are rewraps.
 
 **Thermal note — worth watching, not worth waiting for.** As of 2026-08-04 the Pi has *no active
 cooler fitted*: no `cooling_fan` platform device and no registered cooling devices, idling at 58.2 °C
@@ -196,8 +215,9 @@ time. Reasons in [`HARDWARE_RECOMMENDATIONS.md`](HARDWARE_RECOMMENDATIONS.md) §
 | Order 4 — TPM | 28 |
 | **Through to a klaxon in service** | **~330** |
 
-Order 1 splits as **$126.73 Amazon** (6 items) + **$23.96 18650BatteryStore** + **$5.50 PiShop**.
-Buying the NVMe instead of using one on hand would have added $237.62 at current prices.
+Order 1 splits as **$126.73 Amazon** (6 items, placed) + **~$24 cells** (sourced locally) +
+**$5.50 PiShop** (RTC cell, still open). Buying the NVMe instead of using one on hand would have
+added $237.62 at current prices.
 
 If only one thing gets bought from Order 2, the **$25 bed shaker** is the item most likely to
 determine whether the system does its job.
