@@ -1,129 +1,134 @@
 # AnxietyWatch2
 
-A Raspberry Pi 5 that collects physiological data from body-worn sensors all night, detects
-CNS-depression events, and sounds an alarm.
+AnxietyWatch2 is an experimental Rust system for investigating reliable overnight collection of
+physiological sensor data on a Raspberry Pi 5. The target design combines local Bluetooth ingestion,
+provenance-aware storage, and a network-independent alert path.
 
-This is the second-generation system. The [first](https://github.com/chenders/AnxietyWatch) is an
-iOS + watchOS app; it stays, and keeps the jobs it is good at. What moves here are the two jobs an
-iPhone is structurally wrong for:
+The [first generation](https://github.com/chenders/AnxietyWatch) is an iOS and watchOS app. This
+repository explores moving continuous radio capture and local alerting onto always-on, mains-powered
+hardware while keeping the phone as a future HealthKit bridge and viewer.
 
-- **The always-on radio.** iOS backgrounding, CoreBluetooth state restoration, and battery cost make
-  continuous BLE capture unreliable.
-- **The always-on alarm.** A speaker driven from a degraded battery throttles under voltage sag.
+> [!WARNING]
+> **Not a medical device.** This is an experimental personal project. It has not been clinically
+> validated and must not be relied on to diagnose, prevent, detect, or treat any medical condition.
+> It is not a substitute for professional care, approved monitoring equipment, or emergency
+> services. Physiological decoding and alarm logic may be incomplete, wrong, or absent.
 
-A Pi on mains power with an external antenna and a real amplifier has neither problem. The phone
-stays as a HealthKit bridge and a viewer.
+## Status
 
-## The core
+**Under active development.** The end-to-end sensor-to-database-to-detector-to-alarm system is not
+complete. The repository currently contains:
 
-One narrow table, append-only, and everything else is a view over it:
+- generated, strongly typed source and vital-sign registries;
+- pure `no_std` BLE decoders with fuzz targets;
+- PostgreSQL binary `COPY` encoding, spool primitives, and restart-safe session identity;
+- the `vitalsd` Unix-socket protocol and single-writer daemon;
+- Polar H10 and EMAY capture spikes for hardware validation; and
+- Sqitch definitions for the accepted PostgreSQL/TimescaleDB schema.
 
-```sql
-CREATE TABLE samples (
-  source       INTEGER          NOT NULL REFERENCES vitals_source(id),
-  type         INTEGER          NOT NULL REFERENCES vitals_type(id),
-  session_id   BIGINT           NOT NULL,
-  seq          BIGINT           NOT NULL,   -- stable across retransmission
-  timestamp    TIMESTAMPTZ      NOT NULL,   -- best-estimate event time, UTC
-  value        DOUBLE PRECISION NOT NULL,   -- canonical unit for `type`. Always.
-  extra        BYTEA,
-  node_id      BYTEA            NOT NULL,
-  batch_id     BIGINT,                      -- NULL = did not arrive signed
-  PRIMARY KEY (source, type, session_id, seq)
-);
-```
+Not yet complete are the production database deployment and verified restore, spool drain, production
+collector fleet, accepted overnight capture, CNS detector, klaxon path, and admin console. The
+[task index](openspec/changes/pi5-vitals-core/tasks.md) is the source of truth for implementation
+status; the [amendment index](docs/specs/AMENDMENTS.md) is the source of truth for decisions that
+supersede older design prose.
 
-**`timestamp` is not the key.** Several RR intervals arrive in one BLE notification, so keying on
-arrival time makes them collide and `ON CONFLICT DO NOTHING` silently discards real measurements
-while every health metric reads normal. `seq` is a monotonic per-session index derived from whatever
-the source makes stable across retransmission — the sensor's own data for a streaming source, the
-delivery index for a confirmed store-and-forward one — so a retransmission dedupes correctly and a
-reconnect mints a new `session_id` rather than faking continuity. `max(seq) - count(*)` per session is the lost-beat count, which makes
-packet loss a measurable quantity instead of an invisible one.
+## Design invariants
 
-HealthKit's real contribution was never storage — it was a type registry, a provenance model, and an
-observer API. This keeps those three, drops the permission model, and adds the one HealthKit never
-had: an identity model that makes packet loss measurable rather than invisible.
+These are requirements of the target system, not claims that every component is implemented:
 
-`vitals/registry.toml` is the single source of truth for every source, type, canonical unit, and
-valid range. It generates the Rust enums, the SQL reference data, and the JSON. A source label is
-never typed by hand.
+- **Unknown is not healthy.** Missing, stale, or invalid data never reassures or escalates by itself.
+- **Reject; never clamp.** Out-of-range physiological values are rejected with a named reason.
+- **One canonical unit per type.** Conversion happens once at the decoder boundary.
+- **Append-only samples.** Corrections add records or tombstones; they do not rewrite history.
+- **Stable ingest identity.** `(source, type, session_id, seq)` identifies a sample; arrival time does
+  not.
+- **No network or container dependency in the alert path.** Convenience services may restart without
+  sitting between a sample and an alarm output.
+- **Hardware must fail visibly.** The target alert design includes supervised native services,
+  current-sensed outputs, and a conditional hardware dead-man rather than trusting a successful
+  software write.
 
-## Architecture
+`vitals/registry.toml` is the single source of truth for sources, types, canonical units, and valid
+ranges. It generates Rust enums, SQL reference data, and JSON; source and type labels are not
+duplicated by hand.
 
-The organizing rule: **the life-safety path never runs in Docker and never depends on the network.**
+## Target architecture
 
-```
-systemd — static Rust binaries, hardware watchdog
+The target topology deliberately separates the native safety path from restartable conveniences:
+
+```text
+systemd — native Rust services, hardware watchdog
   collectors ──▶ vitalsd ──▶ cns-engine ──▶ klaxond
                     │
                     ▼
-  PostgreSQL — bare metal, NVMe, pgBackRest
+  PostgreSQL 16 + TimescaleDB — bare metal, NVMe, pgBackRest
                     ▲
-  Docker — api · admin · analysis   (restartable conveniences)
+  containers — analysis and other non-critical conveniences
 ```
 
-A container runtime is a dependency: an upgrade, a daemon, a storage driver. None of that belongs
-between a desaturation and a siren.
+Only `vitalsd`, the protocol, storage primitives, and hardware-validation spikes shown above are
+currently landed. See the [stage deliverables](docs/STAGE-DELIVERABLES.md) for the intended sequence.
 
-## Build
+## Why sample identity is not time
+
+Several RR intervals can arrive in one BLE notification. Using host arrival time as a key can either
+collapse distinct measurements or admit retransmissions as new data. The accepted schema instead
+uses a source-specific sequence that is stable across retransmission, plus a session identifier that
+changes across discontinuities and process restarts. Event time remains UTC data, not identity.
+
+The committed schema and its deploy/revert/verify scripts live in [`db/`](db/). Storage is
+append-only: collectors send samples to the single-writer `vitalsd`, which spools rows in PostgreSQL
+binary `COPY` format before the database drain handles them.
+
+## Validate the repository
+
+The same core checks run in CI:
 
 ```sh
 cargo build --workspace
 cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
+python3 vitals/tools/gen_registry.py --check
 ```
 
-`vitals-decode` and `vitals-registry` are `no_std` and build anywhere — Apple Silicon and the Pi 5
-are both arm64 little-endian, so results are identical. `vitalsd` and the collectors (Postgres,
-BlueZ, systemd) are Linux-only and are skipped on macOS rather than mocked.
+Decoder coverage is gated at 90% in CI, and every decoder that parses radio bytes gets a
+`cargo-fuzz` target. Linux-specific integration work runs against real BlueZ, PostgreSQL, systemd,
+and radios on the Pi rather than macOS mocks.
 
-Anything Linux-specific, **including debugging**, happens on the Pi:
+## Repository map
 
-```sh
-scripts/sync-to-pi.sh --test
-```
-
-## Testing
-
-```sh
-cargo llvm-cov --workspace --summary-only
-```
-
-Gates are differentiated, because one flat number would be wrong in both directions:
-
-| Layer | Gate |
+| Path | Purpose |
 |---|---|
-| Decoders | **90%** — pure functions, and hostile input lands here |
-| Store, daemon logic | **85%** — testable against a scratch Postgres |
-| BLE / systemd glue | measured, not gated — needs real radios |
+| [`crates/`](crates/) | Registry types, pure decoders, COPY/spool core, socket protocol, daemon, and capture spikes |
+| [`vitals/`](vitals/) | Registry source plus generated Rust, SQL, and JSON artifacts |
+| [`db/`](db/) | Sqitch deploy, revert, and verify migrations |
+| [`fuzz/`](fuzz/) | `cargo-fuzz` targets for hostile radio input |
+| [`deploy/`](deploy/) | Native service definitions |
+| [`scripts/`](scripts/) | Host synchronization, hooks, and development helpers |
+| [`docs/specs/`](docs/specs/) | Architecture decisions and accepted amendments |
+| [`docs/design/`](docs/design/) | Console, panel, and architecture research |
+| [`openspec/changes/pi5-vitals-core/`](openspec/changes/pi5-vitals-core/) | Current proposal, design, task contracts, and runbook |
 
-Coverage is a floor, not the goal. Every byte-parsing function also gets a `cargo-fuzz` target, because
-coverage tells you a line ran, not that it survived a truncated frame.
+## Target hardware
+
+Raspberry Pi 5 (8 GB) · NVMe storage · 7-inch DSI display · Sena UD100-G03 external Bluetooth
+adapter · Polar H10 · EMAY SleepO2 · A&D UA-651BLE blood-pressure monitor · supervised audio and
+physical alert outputs
+
+Hardware acquisition and validation are ongoing; this list is the target/test setup, not a claim
+that every path is operational. See the [hardware recommendations](docs/hardware/HARDWARE_RECOMMENDATIONS.md)
+and [purchase plan](docs/hardware/PURCHASE-PLAN.md).
 
 ## Documentation
 
-| | |
-|---|---|
-| [`docs/HERDR-GUIDE.md`](docs/HERDR-GUIDE.md) | **Start here.** Build, dispatch, debug, recommendations |
-| [`docs/STAGE-DELIVERABLES.md`](docs/STAGE-DELIVERABLES.md) | What each stage produces that you can look at |
-| [`docs/specs/`](docs/specs/) | Architecture and rationale |
-| [`openspec/changes/pi5-vitals-core/`](openspec/changes/pi5-vitals-core/) | The current change: proposal, design, 15 tasks, runbook |
-| [`docs/design/`](docs/design/) | UI design prompts and the bedside panel |
+- [Accepted amendments](docs/specs/AMENDMENTS.md) — current decisions; these override older prose.
+- [Stage deliverables](docs/STAGE-DELIVERABLES.md) — what each stage is intended to produce.
+- [Current task contracts](openspec/changes/pi5-vitals-core/tasks.md) — checkboxes, reads, and exact
+  verification commands.
+- [Admin-console specification](docs/design/SPEC-admin-console.md) — liveness, operations, and
+  implementation milestones.
+- [Contributor/agent rules](AGENTS.md) — scope, safety invariants, Git workflow, and acceptance rules.
 
-## Status
+## Licence
 
-Stage 0 of 8. The toolchain builds and tests on both hosts; no task has landed yet.
-
-Progress is visible rather than asserted — each stage produces an artifact you open in a browser,
-and those artifacts are the panels of the admin console. See
-[`docs/STAGE-DELIVERABLES.md`](docs/STAGE-DELIVERABLES.md).
-
-## Hardware
-
-Raspberry Pi 5 (8 GB) · M.2 HAT + NVMe · Hosyond 7" DSI touchscreen · Sena UD100-G03 long-range BLE ·
-Polar H10 · EMAY SleepO2 · A&D UA-651BLE blood pressure monitor · USB DAC + amplifier
-
-## License
-
-MIT
+[MIT](LICENSE)
