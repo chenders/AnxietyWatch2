@@ -13,25 +13,41 @@ because three items on this list have known counterfeit or mis-shipped-part prob
 
 ---
 
-## Order 1 — unblocks the next tasks · ~$150
+## Order 1 — unblocks the next tasks · ~$215
 
 Nothing else can proceed past Stage 3 without these. T-A1 (root on NVMe) and T-A2 (audio path) are
 both waiting on hardware, not code.
 
 | Item | ~$ | Where | Why this one |
 |---|---|---|---|
-| **Geekworm X1200 UPS + X1200-C1 case** | 55 | [Amazon (bundle)](https://www.amazon.com/Geekworm-X1200-C1-Raspberry-Shutdown-Detection/dp/B0D7D4B5S7) · [Geekworm](https://geekworm.com/products/x1200) | The case is built for exactly this stack: Pi 5 + X1200 + cooler + a top PCIe M.2 HAT. Reports battery state over I2C, so the software can *see* the power situation rather than just die |
-| **2× 18650 cells**, button-top, protected | 15 | any reputable cell seller | The X1200 ships empty. **Flat-top cells do not make contact** |
+| **Geekworm X1202 UPS** | 50 | [Amazon `B0CRZ4ZXQW`](https://www.amazon.com/Geekworm-X1202-Raspberry-Shutdown-Detection/dp/B0CRZ4ZXQW) · [Geekworm](https://geekworm.com/products/x1202) | **4 cells, not 2** — see the runtime table below. Reports battery state over I2C, so the software can *see* the power situation rather than just die. Also takes 6–18 V (≥3 A) on a DC5521 barrel, where the 2-cell X1200 needs a USB-C source that genuinely negotiates 5 A |
+| **Geekworm X1202-C1 case** | 17 | [Geekworm](https://geekworm.com/products/x1202-c1) · [Amazon `B0D6YYM7QK`](https://www.amazon.com/Geekworm-X1202-X1202-C1-Raspberry-Detection/dp/B0D6YYM7QK) (with the UPS) | Built for exactly this stack: Pi 5 + X1202 + active cooler + a top PCIe M.2 HAT (X1000/X1001/X1003/X1004/M901 all named). 100 × 90.8 × 62.8 mm. **Each case fits only its own UPS** — an X1200-C1 will not take an X1202 |
+| **4× 18650 cells**, button-top, protected | 40 | any reputable cell seller | The X1202 ships empty. **Flat-top cells do not make contact.** Ignore any cell advertising >3600 mAh — those numbers are fiction, and capacity is the whole point here |
 | **Geekworm X1001 M.2 HAT** | 17 | [Geekworm](https://geekworm.com/products/x1001) | Top-mounts, takes 2280. The official HAT+ is 2230/2242 only, which cuts you off from most known-good drives |
 | **Samsung 980 500 GB** (MZ-V8V500B) | 45 | [Amazon](https://www.amazon.com/dp/B08V83JZH4) | 2280, TLC, on every Pi 5 compatibility list. **Avoid WD SN550/SN580/SN350/SN850 and anything Phison or MAP1202** — they are the documented Pi 5 detection and I/O-error failures |
-| **Official Active Cooler** | 5 | [Raspberry Pi](https://www.raspberrypi.com/products/active-cooler/) | Top HATs are designed around its height. The CanaKit "Mega Heat Sink" is taller and probably will not fit under the X1001 |
+| **Official Active Cooler** | 5 | [Raspberry Pi](https://www.raspberrypi.com/products/active-cooler/) | Top HATs are designed around its height. The CanaKit "Mega Heat Sink" is taller and probably will not fit under the X1001. Geekworm also sells [`B0D7HLF6QR`](https://www.amazon.com/Geekworm-X1202-C1-Raspberry-Shutdown-Detection/dp/B0D7HLF6QR) — X1202 + X1202-C1 + their own H505 cooler in one box, which is the vendor's own verified pairing; price not checked |
 | **Raspberry Pi RTC battery (ML2020 + JST-SH)** | 5 | search `Raspberry Pi RTC battery` or `ML2020 JST-SH` | **Must be rechargeable.** The Pi 5 trickle-charges J5; a primary cell like a CR2032 on a charging circuit risks rupture. Without it the clock resets to 1970 on power loss, which breaks TIMESTAMPTZ chunking *and* TLS validation — so the out-of-band alerts die at the same moment everything else does |
 | **USB audio adapter** | 10 | [PiShop](https://www.pishop.us/product/usb-audio-adapter-works-with-raspberry-pi/) | The Pi 5 has no analog output at all — the 3.5 mm jack was removed for PCIe. Right now the box physically cannot make a sound |
 | **Powered speaker**, any | 15–25 | anywhere | It is an alarm. Loud and reliable beats accurate |
 | **Ethernet cable** | 5 | anywhere | Removes a whole failure class and frees the shared WiFi/BT antenna. The wifi already stranded this box once |
 
-*Skip the RASPIAUDIO MEGA_AMP and similar — they are GPIO HATs, and that header is already spoken
-for.*
+*The RASPIAUDIO MEGA_AMP and similar are GPIO HATs, and that header is already spoken for.*
+
+**Why the 4-cell UPS and not the 2-cell one** (~$30 more all-in). A real protected 18650 holds
+~12.2 Wh; this box draws about 7 W with the panel lit. That gives:
+
+| | Panel on | Panel blanked on battery |
+|---|---|---|
+| 2 cells (X1200) | ~3 h | ~4 h |
+| **4 cells (X1202)** | **~6 h** | **~8 h** |
+
+A night is eight hours. Four cells with the display blanked rides out a whole-night outage; two cells
+do not reach it under any configuration. For a device whose entire job happens overnight, that is the
+line. Vendor "up to 6 / up to 10 hours" claims are bare-Pi-idle and not comparable to each other.
+
+**What the UPS does not cover:** the bed shaker and the powered speaker both run from mains, so an
+outage kills them either way. What rides through is detection, the GPIO piezo, and the out-of-band
+notification path.
 
 ---
 
@@ -121,11 +137,11 @@ time. Reasons in [`HARDWARE_RECOMMENDATIONS.md`](HARDWARE_RECOMMENDATIONS.md) §
 
 | | ~$ |
 |---|---|
-| Order 1 — unblocks the plan | 150 |
+| Order 1 — unblocks the plan | 215 |
 | Order 2 — the alerting chain | 75 |
 | Order 3 — backup, before service | 70 |
 | Order 4 — TPM | 28 |
-| **Through to a klaxon in service** | **~325** |
+| **Through to a klaxon in service** | **~390** |
 
 If only one thing gets bought from Order 2, the **$25 bed shaker** is the item most likely to
 determine whether the system does its job.
