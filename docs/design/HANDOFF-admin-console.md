@@ -34,53 +34,17 @@ degrading to `UNKNOWN` automatically, with no status rendered without the age of
 
 ## Still pending
 
-### 1. Home Assistant research — two agents were running when this was written
+### 1. Home Assistant research — DONE (2026-08-05)
 
-- **Architecture**: HA's integration model, entity/device model, `device_class`/`state_class`/units,
-  the `DataUpdateCoordinator` pattern, config flow, the Bluetooth stack, and its
-  `unavailable` vs `unknown` distinction (which is the same distinction this spec is built on —
-  worth citing as precedent).
-- **Integration landscape**: which HA integrations map to this project's sources (Oura, Withings,
-  Fitbit, the HA Companion app's HealthKit/Health Connect push, BLE health profiles, ESPHome for
-  alarm output hardware), with PORT / READ-AND-REIMPLEMENT / USE-AS-IS / IGNORE verdicts and license
-  notes.
+Both agents completed. Findings are written out and folded in:
 
-**To do:** fold the findings into the spec — a section on which HA patterns to adopt, and a table of
-which integrations to translate. Flag licensing: HA core is Apache 2.0, so porting code needs
-attribution; reading protocol knowledge and reimplementing does not.
-
-**If those agents did not finish before the session ended, re-run them.** Two parallel agents, ~10
-minutes. Briefs below, condensed but sufficient.
-
-> **Agent A — HA architecture.** Research Home Assistant's design via WebSearch/WebFetch against
-> developers.home-assistant.io and the core repo. Cover: (1) the exact anatomy of an integration —
-> `manifest.json`, `config_flow.py`, platform files — and **how a third party ships one without
-> touching core**; the custom_components/HACS path; quality-scale tiers; how core isolates a bad
-> integration; **why protocol parsing lives in separate PyPI libraries** rather than in the
-> integration. (2) Device vs Entity vs Config Entry; entity platforms; `device_class`, `state_class`,
-> `native_unit_of_measurement`, `suggested_display_precision`, and what that metadata enables (unit
-> conversion, long-term statistics). (3) **`unavailable` vs `unknown` — what each means, when each is
-> set, and why they were made distinct**; the `available` property; whether HA has any notion of
-> expected update interval and automatic staleness. (4) `DataUpdateCoordinator` — what problem it
-> solves, its API, error/backoff handling, push vs poll. (5) `config_flow` and why HA moved off YAML;
-> discovery via zeroconf/bluetooth/dhcp/usb. (6) The `bluetooth` integration — `habluetooth`,
-> `bleak`, passive vs active scanning, multi-adapter, ESPHome proxies. (7) **What NOT to copy** —
-> maintainer commentary, ADRs, architectural regrets, what is over-engineered for a single-user
-> appliance. End with: the five things most worth stealing for a single-user Rust health appliance,
-> and the three most worth avoiding.
->
-> **Agent B — HA integration landscape.** Identify HA integrations relevant to this project's
-> sources: Polar H10 (BLE 0x180D), EMAY oximeter, A&D UA-651BLE (0x1810), Oura cloud, ResMed
-> AirSense 11, Apple HealthKit, Android Health Connect, barometric pressure, CO2/temp/humidity, and
-> alarm output hardware (bed shaker, piezo, strobe). For each: name, where it lives (core vs HACS),
-> license, maturity, and a verdict — **PORT / READ-AND-REIMPLEMENT / USE-AS-IS / IGNORE** — with a
-> one-line reason. Investigate specifically: (a) **the HA Companion app — does it push HealthKit and
-> Health Connect data, how, and over what transport?** This is exactly the phone→server problem this
-> project has on both platforms. (b) Whether HA has integrations for standard GATT health profiles.
-> (c) **ESPHome for driving alarm hardware over wifi instead of Pi GPIO** — is that a better
-> architecture, and what does it give you. (d) Which candidates are **separate PyPI libraries**
-> (portable) versus tangled into HA internals. Flag any GPL that would be a problem for a project
-> that may be open-sourced. End with a ranked shortlist of the five highest-value things to take.
+- [`HOMEASSISTANT-ARCHITECTURE.md`](HOMEASSISTANT-ARCHITECTURE.md) — how HA is built; verified
+  against a clone of `home-assistant/core` @ `9c8ae126`. Headline: HA has **no automatic staleness
+  detection** (2 of 1,481 integrations implement expiry; a failed poll writes nothing and the stale
+  value looks healthy forever) — independent confirmation of this spec's governing law.
+- [`HOMEASSISTANT-PRIOR-ART.md`](HOMEASSISTANT-PRIOR-ART.md) — which integrations to translate.
+- Spec **§8b** — the normative subset: eight adopted patterns, the rejected machinery, and the
+  integration-translation commitment table with licence obligations.
 
 ### 2. Final multi-model review, then merge
 

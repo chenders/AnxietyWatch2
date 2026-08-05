@@ -113,6 +113,10 @@ working alarm. A collector reporting no errors because it never started is not h
 "OK · checked 4m ago" is a fact. A status whose underlying check is older than its expected interval
 degrades to `UNKNOWN` **automatically**, without anyone writing a rule for that specific source.
 
+This law has independent precedent — and a cautionary counter-example — in Home Assistant, whose
+availability model gets the distinction right per-integration but has no automatic staleness in the
+core, with the predictable result. See §8b.
+
 ### 2.3 Corollaries that are separately load-bearing
 
 - **Failure must be recordable.** Attempt-scoped records, written *before* the work, updated with the
@@ -199,10 +203,10 @@ The three-state rule needs these pinned down or it cannot be implemented uniform
 | **Cadence measures what?** | Attempts. "Last success age" is a second, separately rendered fact — a source attempting every 10 min and failing every time is `FAILING`, not `UNKNOWN` |
 | **Stale *and* last-seen-failing** | `FAILING` wins. Promotion order is `FAILING` > `UNKNOWN` > `LIVE` |
 | **Event-driven sources** (manual upload, SD card) | Declared **on-demand**: state is the outcome and age of the last event, never time-degraded. Labelled as on-demand so an old timestamp does not read as a fault |
-| **In-flight work** | Every attempt record carries an expected duration. An attempt still running past it degrades to `UNKNOWN` — otherwise a killed process renders as "running" forever, which is precisely the gen-1 defect in §4.6 |
+| **In-flight work** | Every attempt record carries an expected duration. An attempt still running past it degrades to `UNKNOWN` — otherwise a killed process renders as "running" forever, which is precisely the gen-1 defect in §4.7 |
 | **Legitimately variable cadence** | Declare the *upper bound*. If no honest bound exists, the source is on-demand |
 
-**Cadence is visible, auditable config** (§4.8), and **the expectation renders next to the age** —
+**Cadence is visible, auditable config** (§4.9), and **the expectation renders next to the age** —
 "4m ago · expect ≤ 10m". Age alone lets a loosened cadence silently recreate gen-1: a source declared
 at 7 days shows 5 silent days as `LIVE`, which is the original incident laundered through config.
 
@@ -345,7 +349,7 @@ recording, and none of them involves a daemon crashing:
 - **Network link and signal.** The wifi has already stranded this box once.
 - **Mains present / UPS state and charge**, once the UPS is fitted.
 
-- **Restart and stop are operations with audit entries** (§4.8) and confirmation proportionate to
+- **Restart and stop are operations with audit entries** (§4.9) and confirmation proportionate to
   consequence (§5). Restarting the lyrics fetcher and restarting the alarm daemon overnight are not
   the same act and must not feel the same.
 - **Log access applies S7 sanitisation.** Filterable by unit and severity.
@@ -599,7 +603,7 @@ running and inspectable**, not after the box is off.
 
 | Capability | Risk if dropped |
 |---|---|
-| **Redundant push alert channel** | A safety regression, not a feature cut. §4.2 |
+| **Redundant push alert channel** | A safety regression, not a feature cut. §4.10 |
 | **Clinical PDF report generation** | A documented pre-appointment workflow with no successor |
 | **JSON/CSV export** | Browse-and-search is not the same as emit-a-portable-file |
 | **Correlation recompute** | Never had a button; easy to lose silently |
@@ -673,15 +677,15 @@ indicts, sitting inside the one contract this console consumes. Fixing it means 
 
 ### Honest sequencing
 
-**Buildable now, against a live contract:** a subset of §4.1 Overview and §4.3 Ingest — for the five
+**Buildable now, against a live contract:** a subset of §4.1 Overview and §4.4 Ingest — for the five
 registry sources only — driven by the daemon's `Health` response, plus the registry left-join above.
 
-**Blocked on the sample store** (→ storage tasks → the M.2 HAT): §4.4 Data, §4.6 Analysis.
+**Blocked on the sample store** (→ storage tasks → the M.2 HAT): §4.5 Data, §4.7 Analysis.
 
-**Blocked on schema that does not exist yet:** §4.5 Recovery, §4.7 Records, §4.8 Config & access, and
+**Blocked on schema that does not exist yet:** §4.6 Recovery, §4.8 Records, §4.9 Config & access, and
 every attempt/audit requirement in §2.3.
 
-**Blocked on daemons that do not exist yet, and built last by choice:** §4.2 Alarm path.
+**Blocked on daemons that do not exist yet, and built last by choice:** §4.10 Alarm path.
 
 An earlier draft of this section claimed the alarm path could be built now. That was wrong, and
 wrong in the most expensive direction — it is the most blocked section in the document.
@@ -694,6 +698,65 @@ wrong in the most expensive direction — it is the most blocked section in the 
   ingest.
 - Replacing systemd, Postgres, or the shell. This surfaces state and triggers work; it is not a
   general-purpose remote console.
+
+---
+
+## 8b. Prior art — Home Assistant
+
+Two research passes were run against Home Assistant: how it is built
+([`HOMEASSISTANT-ARCHITECTURE.md`](HOMEASSISTANT-ARCHITECTURE.md)) and which of its integrations
+carry knowledge this project needs ([`HOMEASSISTANT-PRIOR-ART.md`](HOMEASSISTANT-PRIOR-ART.md)).
+This section is the normative subset; the reasoning and the receipts live in those documents.
+
+### Patterns adopted as requirements
+
+| Pattern | Requirement here | Source |
+|---|---|---|
+| **`reported_at` distinct from `changed_at`** | Every reading and attempt carries the time it was last *affirmatively asserted*, separate from when its value last changed. Freshness is a stored field, never a derived query. HA retrofitted this (`last_reported`, 2024) after losing the steady-vs-dead distinction | ARCH §2.3a |
+| **Transition logging** | One log line on entering a failure state, silence while it persists, one line on recovery. Applies to collectors, importers, channels, and the console's own checks | ARCH §2.3c |
+| **Jitter on every scheduled repeat** | All timers (polls, retries, refreshes) add random jitter so N failing things cannot resonate | ARCH §3 |
+| **Evidence beats a timer** | Data arriving from a source in retry backoff short-circuits the backoff immediately | ARCH §3 |
+| **Failure taxonomy** | Every collector/job failure is classified transient / needs-credentials / terminal, and each class is handled differently (retry with backoff · surface for reauth, stop polling · stop, surface) | ARCH §3 |
+| **Learned BLE staleness intervals** | BLE collectors may refine the declared cadence with a learned advertising interval (max of a sample window + wobble), with a per-device sleepy override. The registry cadence remains the floor — learned values may tighten expectation, never loosen it past the declaration | ARCH §2.3b |
+| **Operator-override / system-default split** | Any operator-editable display metadata (source names, units, precision) stores the system default beside the operator value; display resolves operator-or-default, so upgrades never stomp customisation | ARCH §4 |
+| **Never silently stop persisting** | Under load, bound the queue and apply backpressure or spill to disk. Dropping persistence to protect the process — HA's recorder-shedding behaviour — is prohibited; here the data is the product | ARCH §8.3 |
+
+The statistics semantics (time-weighted means, gaps-not-zeros, retention decided at schema time) are
+independent HA precedent for choices Amendment 01 and the CNS invariants already made — cited in
+ARCH §5, no spec change needed.
+
+### Precedent for the governing law
+
+HA's `unavailable` (can't reach it) vs `unknown` (reached it, no value) distinction is the closest
+existing precedent for §2's three states — and HA's gap is the stronger evidence: **a failed poll
+writes no state at all, so the previous value sits in the state machine looking healthy forever**,
+and exactly 2 of 1,481 integrations implement any staleness expiry. The largest home-telemetry
+project ships the defect §2.1 indicts, as default behaviour. That is why liveness belongs in the
+core evaluator (M0), not in per-source code: left to integrations, it appears 2 times in 1,481.
+
+### Machinery explicitly not adopted
+
+The stringly-typed state machine (typed values and sum-type status instead) · UI-driven
+configuration state (`.storage/`; the registry stays declarative TOML in git) · a generic
+multi-backend recorder (one engine, typed schema, retention at design time — Amendment 01) · the
+entire third-party-safety apparatus (manifests, quality tiers, runtime blocking-IO watchdog),
+which is mechanism substituting for trust this project does not need. Receipts in ARCH §8.
+
+### Integrations to translate
+
+Verdicts, licences, and reasoning in [`HOMEASSISTANT-PRIOR-ART.md`](HOMEASSISTANT-PRIOR-ART.md);
+this is the commitment list. Apache-2.0 ports carry attribution and NOTICE obligations.
+
+| What | From (licence) | Action |
+|---|---|---|
+| iOS HealthKit push — `HKObserverQuery` + background delivery, 23 metrics | HA companion iOS (Apache-2.0) | **Port** into the iOS app at the phone-ingest stage |
+| The webhook envelope — register-once / update-many, libsodium secretbox | HA companion protocol | **Reimplement** in the axum service; this is the client write API's ingest shape |
+| Android Health Connect sensors | HA companion Android (Apache-2.0) | **Port**, at the later Android stage |
+| myAir cloud client — Okta OAuth2 + PKCE, per-region GraphQL | `resmed_myair_sensors` (MIT) | **Port the protocol knowledge** to Rust |
+| SD-card CPAP ingest | `hms-cpap` (MIT); OSCAR is GPL-3 — **formats only, never code** | **Reimplement**, copying hms-cpap's clean-room NOTICE pattern |
+| Polar RR + PMD service knowledge | `polar-python` (MIT) | **Reimplement** in the Rust collector |
+| BLE operations layer — adapter recovery ladder, wedge watchdog, slot accounting, error-classified backoff, learned intervals | `habluetooth` / `bleak-retry-connector` (Apache-2.0 / MIT) | **Reimplement** in the collector supervisor; ARCH §6 is the porting guide |
+| ESPHome as remote GPIO | `aioesphomeapi` (MIT; ESPHome C++ is GPL-3 — talk to it, never vendor it) | **Use only for what must be physically remote**; `reboot_timeout: 0s` and a Pi-side heartbeat are mandatory |
 
 ---
 
@@ -784,6 +847,22 @@ not a spec change — and recording it as one is how a plan quietly stops descri
 **The rule that keeps it honest:** an amendment states what it supersedes and **why the earlier
 version was wrong**. An edit that quietly improves the text loses the reason, and the reason is the
 part that generalises.
+
+---
+
+## 9c. Decisions deferred to the point of use
+
+These need a human call, and **none of them blocks starting.** Ask when the work reaches them; do not
+resolve them early, and do not let them hold up M0.
+
+| Decision | Needed by | Why it can wait |
+|---|---|---|
+| **Bind and auth posture** — LAN-only, tunnel-only, or TLS with a pinned cert | M0 item 5 (the HTTP service) | M0 items 1–4 (attempt schema, cadence, evaluator, and its tests) are pure backend and need no network posture at all. Decide when the service is about to listen |
+| **Watch: peer node or thin sender with a durable outbox** | Stage 7 ("thin the phone") | Nothing in M0–M3 touches the watch. The existing behaviour keeps working meanwhile. Note that the watch is *already* a durable peer for sensor data — quick-log is the anomaly, not the norm — so the smaller change may simply be making quick-log consistent with what the watch already does |
+| **Whether to model the collector layer on Home Assistant's integration/coordinator shape** | Stage 4 (the BLE fleet) | The research landed with a recommendation: borrow the behaviours (§8b), not the machinery — see [`HOMEASSISTANT-ARCHITECTURE.md`](HOMEASSISTANT-ARCHITECTURE.md) §3. What remains at Stage 4 is confirming that against the real collector code, not an open design question |
+
+The general rule: **a decision that is not yet load-bearing should be recorded, not made.** Making it
+early spends judgement on incomplete information and then anchors everything after it.
 
 ---
 
