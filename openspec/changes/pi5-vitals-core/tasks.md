@@ -21,7 +21,7 @@ sqitch · pgBackRest · BlueZ via `bluer` · systemd · Python 3.12 (codegen onl
 
 ## Global constraints
 
-- Host `$PI_HOST`, passwordless sudo. Hostname is `raspberrypi`; reach it as `the-pi`.
+- Host `$PI_HOST`, passwordless sudo. Hostname is `pi-host`; use the configured SSH alias `pi-host`.
 - Repo is authoritative for `vitals/registry.toml` and everything in `vitals/generated/`. Generated
   artifacts are committed, never regenerated ad hoc on the Pi.
 - **UTC only.** `TIMESTAMPTZ` in Postgres with the cluster timezone pinned to UTC; epoch seconds in
@@ -75,7 +75,7 @@ other groups proceed around it.
 **Amends:** none
 
 **Reads:** none.
-**Modifies:** `/boot/firmware/cmdline.txt`, `/etc/fstab` on the-pi.
+**Modifies:** `/boot/firmware/cmdline.txt`, `/etc/fstab` on the Pi.
 
 `BOOT_ORDER` is already `0xf461` (SD → NVMe → USB), so no EEPROM change is needed.
 
@@ -106,7 +106,7 @@ other groups proceed around it.
 6. Add `noatime` to the root line in `/mnt/nvme/etc/fstab`.
 7. `sudo reboot`. Wait 60 s, reconnect.
 
-**Verify:** `ssh $PI_HOST 'findmnt -no SOURCE / | grep -q nvme && df -h / | tail -1'`
+**Verify:** `ssh "$PI_HOST" 'findmnt -no SOURCE / | grep -q nvme && df -h / | tail -1'`
 **Expect:** exit 0, root shown on `/dev/nvme0n1p1`.
 
 **Commit:** nothing to commit — hardware state. Record the result in `## Implementation notes`.
@@ -123,7 +123,7 @@ there is currently no way to make a sound. This task establishes the alarm's out
 is Stage 5.
 
 **Reads:** none.
-**Creates:** `/etc/asound.conf` on the-pi.
+**Creates:** `/etc/asound.conf` on the Pi.
 
 **Do:**
 
@@ -144,7 +144,7 @@ is Stage 5.
    ```
 4. Confirm you heard it. This is the only step in this plan verified by ear.
 
-**Verify:** `ssh $PI_HOST 'aplay -l | grep -viE "vc4hdmi" | grep -q "^card" && aplay -D default /usr/share/sounds/alsa/Front_Center.wav'`
+**Verify:** `ssh "$PI_HOST" 'aplay -l | grep -viE "vc4hdmi" | grep -q "^card" && aplay -D default /usr/share/sounds/alsa/Front_Center.wav'`
 **Expect:** exit 0, a non-HDMI card present, playback returns cleanly.
 
 ---
@@ -182,7 +182,7 @@ is Stage 5.
    ```
 4. Record the result — device count and the Sena's BD address — in `## Implementation notes`.
 
-**Verify:** `ssh $PI_HOST 'hciconfig -a | grep -c "^hci" | grep -q 2 && hciconfig hci1 | grep -q "UP RUNNING"'`
+**Verify:** `ssh "$PI_HOST" 'hciconfig -a | grep -c "^hci" | grep -q 2 && hciconfig hci1 | grep -q "UP RUNNING"'`
 **Expect:** exit 0, exactly two controllers, `hci1` up.
 
 ---
@@ -198,7 +198,7 @@ only on a green verify, never on a worker's report.**
 
 Rationale: with one adapter, a collector binding the wrong radio stops being a possible bug.
 
-**Modifies:** `/boot/firmware/config.txt` on the-pi.
+**Modifies:** `/boot/firmware/config.txt` on the Pi.
 
 **Do:**
 
@@ -216,7 +216,7 @@ Rationale: with one adapter, a collector binding the wrong radio stops being a p
    ```
 4. `sudo reboot`. Wait 60 s.
 
-**Verify:** `ssh $PI_HOST 'hciconfig -a | grep -c "^hci" | grep -qx 1 && hciconfig -a | grep -q "Bus: USB"'`
+**Verify:** `ssh "$PI_HOST" 'hciconfig -a | grep -c "^hci" | grep -qx 1 && hciconfig -a | grep -q "Bus: USB"'`
 **Expect:** exit 0, exactly one controller, and it is the USB one.
 
 ---
@@ -227,8 +227,8 @@ Rationale: with one adapter, a collector binding the wrong radio stops being a p
 **Amends:** 04 (§2 OOMScoreAdjust on safety units)
 
 **Modifies:** `/boot/firmware/config.txt`, `/etc/systemd/system.conf`,
-`/etc/apt/apt.conf.d/20auto-upgrades` on the-pi.
-**Creates:** `/etc/systemd/system/cpu-performance.service` on the-pi.
+`/etc/apt/apt.conf.d/20auto-upgrades` on the Pi.
+**Creates:** `/etc/systemd/system/cpu-performance.service` on the Pi.
 
 **Do:**
 
@@ -290,13 +290,13 @@ Rationale: with one adapter, a collector binding the wrong radio stops being a p
 6. **No reboot** if step 1 was skipped. `daemon-reload` plus enabling the governor unit is enough,
    and nothing here touches the boot configuration.
 
-**Verify:** `ssh $PI_HOST 'test -e /dev/watchdog && cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor | grep -qx performance && vcgencmd get_throttled | grep -qx "throttled=0x0"'`
+**Verify:** `ssh "$PI_HOST" 'test -e /dev/watchdog && cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor | grep -qx performance && vcgencmd get_throttled | grep -qx "throttled=0x0"'`
 **Expect:** exit 0.
 
 **Also assert the governor unit can re-apply**, not merely that the value is right now — anything
 could have set it once:
 ```sh
-ssh $PI_HOST 'sudo sh -c "echo ondemand > /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor" \
+ssh "$PI_HOST" 'sudo sh -c "echo ondemand > /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor" \
   && sudo systemctl restart cpu-performance \
   && grep -qx performance /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor'
 ```
@@ -402,7 +402,7 @@ script the acceptance check runs was never version-controlled.
 7. Record the histogram verbatim in `## Implementation notes`. **This number is the project's
    foundation — if the longest gap exceeds 5 minutes, stop and report before proceeding.**
 
-**Verify:** `ssh $PI_HOST 'cd ~/AnxietyWatch2 && python3 tools/gap_histogram.py ~/vitals/spike/night1.log --require-duration-hours 8 --max-gap-seconds 300 --require-drift-report'`
+**Verify:** `ssh "$PI_HOST" 'cd ~/AnxietyWatch2 && python3 tools/gap_histogram.py ~/vitals/spike/night1.log --require-duration-hours 8 --max-gap-seconds 300 --require-drift-report'`
 **Expect:** exit 0. The script must exit nonzero if duration < 8 h, if longest gap > 300 s, or if
 `--require-drift-report` was passed and no drift figure could be computed. A flag a script may
 accept and ignore is a check that cannot fail.
@@ -427,7 +427,7 @@ git commit -m "spike(T-B1): record 8-hour Polar H10 capture gap histogram"
 
 Not in Docker, not on the microSD.
 
-**Creates:** `/etc/postgresql/16/main/conf.d/vitals.conf` on the-pi.
+**Creates:** `/etc/postgresql/16/main/conf.d/vitals.conf` on the Pi.
 
 **Do:**
 
@@ -490,12 +490,12 @@ Not in Docker, not on the microSD.
    sudo -u postgres psql -d vitals -c "CREATE EXTENSION IF NOT EXISTS pg_stat_statements;"
    ```
 
-**Verify:** `ssh $PI_HOST 'sudo -u postgres psql -tAc "SHOW shared_buffers" | grep -q 2GB && sudo -u postgres psql -tAc "SHOW data_directory" | xargs findmnt -no SOURCE -T | grep -q nvme && sudo -u postgres psql -d vitals -tAc "SELECT count(*) FROM pg_extension WHERE extname IN ((chr(39)||chr(39)))" >/dev/null && test $(sudo -u postgres psql -d vitals -tAc "SELECT count(*) FROM pg_extension WHERE extname = ANY(ARRAY[chr(116)||chr(105)||chr(109)||chr(101)||chr(115)||chr(99)||chr(97)||chr(108)||chr(101)||chr(100)||chr(98)])") -eq 1'`
+**Verify:** `ssh "$PI_HOST" 'sudo -u postgres psql -tAc "SHOW shared_buffers" | grep -q 2GB && sudo -u postgres psql -tAc "SHOW data_directory" | xargs findmnt -no SOURCE -T | grep -q nvme && sudo -u postgres psql -d vitals -tAc "SELECT count(*) FROM pg_extension WHERE extname IN ((chr(39)||chr(39)))" >/dev/null && test $(sudo -u postgres psql -d vitals -tAc "SELECT count(*) FROM pg_extension WHERE extname = ANY(ARRAY[chr(116)||chr(105)||chr(109)||chr(101)||chr(115)||chr(99)||chr(97)||chr(108)||chr(101)||chr(100)||chr(98)])") -eq 1'`
 **Expect:** exit 0 — `shared_buffers=2GB`, `PGDATA` on NVMe, `timescaledb` installed.
 
 **Simpler equivalent** if the quoting above is awkward to run by hand:
 ```sh
-ssh $PI_HOST 'sudo -u postgres psql -d vitals -tAc "SELECT extname FROM pg_extension ORDER BY 1" | tr "\n" " "'
+ssh "$PI_HOST" 'sudo -u postgres psql -d vitals -tAc "SELECT extname FROM pg_extension ORDER BY 1" | tr "\n" " "'
 ```
 Expect: `pg_cron pg_stat_statements plpgsql timescaledb timescaledb_toolkit`
 
@@ -507,7 +507,7 @@ Expect: `pg_cron pg_stat_statements plpgsql timescaledb timescaledb_toolkit`
 **Amends:** 02 (§4 LUKS interaction)
 **Review required:** yes
 
-**Creates:** `/etc/pgbackrest/pgbackrest.conf`, two systemd timers on the-pi.
+**Creates:** `/etc/pgbackrest/pgbackrest.conf`, two systemd timers on the Pi.
 
 **Do:**
 
@@ -558,7 +558,7 @@ recovery in the meantime. Tier 2 becomes a `repo2-*` block in this same config f
 `pgbackrest stanza-upgrade`; it is tracked in `## Implementation notes` and must land before Stage 5
 puts the klaxon into service.
 
-**Verify:** `ssh $PI_HOST 'sudo -u postgres pgbackrest --stanza=vitals check && sudo -u postgres pgbackrest --stanza=vitals info | grep -q "status: ok"'`
+**Verify:** `ssh "$PI_HOST" 'sudo -u postgres pgbackrest --stanza=vitals check && sudo -u postgres pgbackrest --stanza=vitals info | grep -q "status: ok"'`
 **Expect:** exit 0, `status: ok`.
 
 ---
@@ -574,7 +574,7 @@ puts the klaxon into service.
 A backup that has never been restored is a hypothesis. This makes it a measurement.
 
 **Creates:** `/usr/local/bin/verify-restore.sh`, `verify-restore.service`, `verify-restore.timer`
-on the-pi.
+on the Pi.
 
 **Do:**
 
@@ -592,7 +592,7 @@ on the-pi.
 4. Wire the result into the health surface: `/var/lib/vitals/restore-verify.json` is read by the
    Stage 8 panel and by `vitalsd`'s health endpoint. Staleness beyond 45 days is itself a fault.
 
-**Verify:** `ssh $PI_HOST 'sudo /usr/local/bin/verify-restore.sh && jq -e ".ok == true" /var/lib/vitals/restore-verify.json'`
+**Verify:** `ssh "$PI_HOST" 'sudo /usr/local/bin/verify-restore.sh && jq -e ".ok == true" /var/lib/vitals/restore-verify.json'`
 **Expect:** exit 0, `ok: true`.
 
 ---
@@ -890,7 +890,7 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 Single writer. Every collector connects; `vitalsd` alone touches the database.
 
 **Creates:** `crates/vitalsd/src/main.rs`, `crates/vitals-proto/src/lib.rs`,
-`/etc/systemd/system/vitalsd.service` on the-pi
+`/etc/systemd/system/vitalsd.service` on the Pi
 
 **Interfaces produced:**
 - Unix socket at `/run/vitals/vitalsd.sock`, mode `0660`, group `vitals`.
@@ -956,7 +956,7 @@ Single writer. Every collector connects; `vitalsd` alone touches the database.
    `WantedBy=multi-user.target`, not `graphical.target` — this must survive the compositor dying.
 6. `sudo useradd -r -s /usr/sbin/nologin vitals`, install, `systemctl enable --now vitalsd`.
 
-**Verify:** `ssh $PI_HOST 'systemctl is-active vitalsd && vitals-cli health | jq -e ".uptime_seconds > 0"'`
+**Verify:** `ssh "$PI_HOST" 'systemctl is-active vitalsd && vitals-cli health | jq -e ".uptime_seconds > 0"'`
 **Expect:** exit 0.
 
 ---
@@ -1003,7 +1003,7 @@ Single writer. Every collector connects; `vitalsd` alone touches the database.
 6. On Postgres unreachable: log, sleep 30 s, retry forever. **Never advance the offset. Never drop
    from the spool.**
 
-**Verify:** `ssh $PI_HOST 'cargo test -p vitals-drain && ~/AnxietyWatch2/scripts/drain-crash-test.sh'`
+**Verify:** `ssh "$PI_HOST" 'cargo test -p vitals-drain && ~/AnxietyWatch2/scripts/drain-crash-test.sh'`
 **Expect:** exit 0. The crash test encodes 10 000 samples, drains, `SIGKILL`s mid-batch, restarts,
 and asserts exactly 10 000 rows with no duplicates and the offset at EOF.
 
@@ -1025,7 +1025,7 @@ proof of the path — but the device is harder to talk to than "standard profile
 
 **Creates:** `crates/vitals-decode/src/bp.rs` (currently a doc-comment stub),
 `crates/vitals-collectors/src/bin/bp_collector.rs`, `fuzz/fuzz_targets/fuzz_bp_decode.rs`,
-`/etc/systemd/system/vitals-bp.service` on the-pi
+`/etc/systemd/system/vitals-bp.service` on the Pi
 
 **Do:**
 
@@ -1104,7 +1104,7 @@ proof of the path — but the device is harder to talk to than "standard profile
 
 7. **Take a real blood pressure reading.** Confirm it lands.
 
-**Verify:** `ssh $PI_HOST 'cd ~/AnxietyWatch2 && cargo test -p vitals-decode bp && cargo fuzz run fuzz_bp_decode -- -max_total_time=60 && psql -U vitals -tAc "SELECT count(*) FROM samples WHERE source=6 AND type=6" | awk "\$1 > 0"'`
+**Verify:** `ssh "$PI_HOST" 'cd ~/AnxietyWatch2 && cargo test -p vitals-decode bp && cargo fuzz run fuzz_bp_decode -- -max_total_time=60 && psql -U vitals -tAc "SELECT count(*) FROM samples WHERE source=6 AND type=6" | awk "\$1 > 0"'`
 **Expect:** exit 0; tests pass; fuzzer clean at 60 s; at least one systolic row present with
 `source = 6`.
 
@@ -1119,7 +1119,7 @@ git commit -m "feat(T-D6): A&D UA-651BLE collector via standard 0x1810 blood pre
 ## Acceptance — this change is done when
 
 ```sh
-ssh $PI_HOST '
+ssh "$PI_HOST" '
   findmnt -no SOURCE / | grep -q nvme &&
   hciconfig -a | grep -c "^hci" | grep -qx 1 &&
   test -e /dev/watchdog &&
@@ -1163,8 +1163,8 @@ and `HCI Version 4.0` matches the advertised Bluetooth 4.0 Class 1 part. Genuine
 
 | Device | Address |
 |---|---|
-| `ResMed device` — the AirSense 11 | `50:32:5F:XX:XX:XX` |
-| `SleepO2-2_XXXX` — the EMAY oximeter | `D9:80:A3:XX:XX:XX` |
+| `ResMed AirSense 11` — the AirSense 11 | `50:32:5F:XX:XX:XX` |
+| `SleepO2 device` — the EMAY oximeter | `D9:80:A3:XX:XX:XX` |
 
 No Polar H10 — expected, it only advertises when worn with a moist strap.
 

@@ -8,7 +8,7 @@ After=network.target local-fs.target
 
 [Service]
 Type=simple
-User=pi-user
+User=anxietywatch
 # Served straight out of a git checkout, so `git pull` IS the deploy step.
 # Previously this was a copy under /var/lib, which meant every panel change
 # needed an scp and silently went stale the moment one was forgotten.

@@ -11,6 +11,13 @@ jobs:
   #
   # A conditional that skips when its target is missing does not report a gap --
   # it reports success. Every gate here now either runs or fails; none skip.
+  public-info:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject personal and setup-specific information
+        run: python3 scripts/check-public-info.py --self-test
+
   build-test:
     runs-on: ubuntu-latest
     # A real PostgreSQL, because the COPY-binary round-trip cannot be trusted

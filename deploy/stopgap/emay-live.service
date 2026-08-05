@@ -7,7 +7,7 @@ Requires=bluetooth.target
 
 [Service]
 Type=simple
-User=pi-user
+User=anxietywatch
 # Set EMAY_MAC with `systemctl edit emay-live`. Without it the binary exits 64
 # and says so, rather than starting and silently capturing nothing.
 # Written INTO the checkout, next to the page that reads it. That path is
