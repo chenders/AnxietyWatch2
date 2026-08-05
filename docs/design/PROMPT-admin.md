@@ -13,6 +13,30 @@ I need **three distinct design directions**, each with its own complete design s
 console of a self-hosted health monitoring appliance. Deliver each as self-contained HTML/CSS — no
 external dependencies, no build step.
 
+### How the output will be used — this shapes how to structure it
+
+The production console is **vanilla HTML, CSS and JavaScript with no build step and no framework**.
+Whichever direction is chosen, its CSS is intended to become the real stylesheet **verbatim**, not to
+be reverse-engineered into one. Structure every direction so that is possible:
+
+- **A token layer in CSS custom properties**, declared once on `:root` — colour, type scale, spacing,
+  radii, status colours. Every other rule references `var(--…)`. No raw hex outside the token block.
+- **Semantic, reusable class names** (`.status--unknown`, `.card`, `.attempt-row`) — not utility soup
+  and not per-screen one-offs.
+- **One stylesheet per direction that all its screens share.** Screens differ in markup, not in
+  private styles. **Inline `style=` attributes are a failure**, with the sole exception of a value
+  genuinely computed per-datum (a bar width, a sparkline point).
+- Components must survive being lifted out one at a time. If a card only works inside its screen's
+  grid, it is not a component.
+- Plain semantic HTML: real `<table>` for tabular data, real `<button>`, real `<form>`, real
+  landmarks. No `<div role="button">`.
+- Any interactivity in a single `<script>` of dependency-free JS, and **the page must be legible and
+  useful with JavaScript disabled** — the status content is server-rendered; JS only advances ages
+  and refreshes.
+
+Treat this as a hard constraint on the deliverable, not a nice-to-have. A gorgeous mockup that has to
+be rebuilt from scratch to ship is worth less than a slightly plainer one that drops straight in.
+
 ## Product
 
 **AnxietyWatch** tracks anxiety from both sides — the severity the user reports, and the physiology
