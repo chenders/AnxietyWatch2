@@ -14,22 +14,44 @@ It exists to answer one question early: *does the UI work on the real panel, wit
 real data?*
 
 ```
-emay-spike  ──writes──▶  /var/lib/anxietywatch-panel/status.json
-                                      │
-                         python http.server on 127.0.0.1:8975
-                                      │
-                         cage + chromium --kiosk  ──▶  DSI panel
+  git checkout ~/anxietywatch-panel
+        │  docs/design/pi-panel/direction-a-clinical/
+        │      index.html      <- tracked; `git pull` updates the panel
+        │      status.json     <- gitignored; emay-spike rewrites it every second
+        ▼
+  python http.server on 127.0.0.1:8975
+        │
+  cage + chromium --kiosk  ──▶  DSI panel
 ```
+
+**Updating the panel is `git pull`.** It was previously a copy under
+`/var/lib`, which meant every change needed an `scp` and went silently stale
+the moment one was forgotten. Runtime data lives in the same directory on
+purpose: that path is gitignored, so it never dirties the working tree and a
+pull can never conflict with it. No restart is needed for a page change — the
+HTTP server reads from disk per request; only a Chromium reload is required,
+which `systemctl restart panel-kiosk` does.
 
 ## Install
 
 ```sh
-sudo apt-get install -y cage chromium-browser python3
-sudo install -d -o chris -g chris /var/lib/anxietywatch-panel
+sudo apt-get install -y cage chromium-browser python3 git
 
-# The panel itself. Re-run after every change to index.html.
-scp docs/design/pi-panel/direction-a-clinical/index.html \
-    $PI_HOST:/var/lib/anxietywatch-panel/index.html
+# The panel is served straight out of a git checkout — `git pull` IS the
+# deploy step. A read-only DEPLOY KEY is used rather than an account
+# credential: it is scoped to this one repository, cannot push, and is
+# revocable from the repo's Settings -> Deploy keys.
+ssh-keygen -t ed25519 -N "" -C "pi-panel-readonly" -f ~/.ssh/anxietywatch_deploy
+cat >> ~/.ssh/config <<'CFG'
+Host github-anxietywatch
+  HostName github.com
+  User git
+  IdentityFile ~/.ssh/anxietywatch_deploy
+  IdentitiesOnly yes
+CFG
+# Add ~/.ssh/anxietywatch_deploy.pub as a read-only deploy key, then:
+git clone --branch main github-anxietywatch:chenders/AnxietyWatch2.git \
+    ~/anxietywatch-panel
 
 # The capture binary.
 cargo build --release -p emay-spike           # on the Pi, or cross-build
@@ -57,7 +79,7 @@ Each of these fails loudly rather than quietly doing nothing:
 # 1. The capture is writing, and the reading is fresh.
 ssh $PI_HOST 'python3 -c "
 import json,time,sys
-d=json.load(open(\"/var/lib/anxietywatch-panel/status.json\"))
+d=json.load(open(\"/opt/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical/status.json\"))
 age=time.time()-d[\"written_at\"]
 print(d)
 sys.exit(0 if age < 15 else 1)"'
@@ -103,6 +125,34 @@ over a bedside monitor is precisely what that flag list exists to prevent.
 touchscreen. `PAMName=login` + `TTYPath=/dev/tty1` + `StandardInput=tty-fail`
 are what create it; without them cage exits immediately unable to open a backend.
 
+### Headless wifi: one bad handshake used to take it down for good
+
+Worth knowing about before running any Pi this way. Disabling `lightdm` removes
+the desktop session, and with it NetworkManager's secret agent. On 2026-08-04 a
+single failed 4-way handshake — while roaming between two APs on the same SSID —
+was reported by wpa_supplicant as `reason=WRONG_KEY`. NetworkManager concluded
+the stored PSK might be wrong, asked an agent for a new one, found none, and
+gave up **permanently** rather than retrying the key on disk that was perfectly
+good. The Pi sat there with the panel running happily and no network at all,
+and since `cage` owns tty1 and no keyboard is attached, the only way back in
+was to pull its power.
+
+Two changes, both applied:
+
+```sh
+# Retry forever. The default of 4 attempts assumes somebody is present to
+# notice — false for an appliance with no keyboard.
+sudo nmcli connection modify <ssid> connection.autoconnect-retries 0
+# Powersave is a common cause of exactly this handshake flakiness on Pi wifi.
+sudo nmcli connection modify <ssid> 802-11-wireless.powersave 2
+```
+
+plus `panel-net-watchdog` (script + timer, in this directory): once a minute, if
+the interface has **no address**, bring the connection up, and cycle the radio if
+that fails. Deliberately narrow — it does not ping the internet or test DNS,
+because a router reboot is not something a bedside panel should answer by
+cycling its radio.
+
 Still open:
 
 - **Screen blanking is not configured.** Nothing here disables DPMS. If the panel
@@ -136,8 +186,14 @@ they go to `- -` and the tier drops to `CAN'T ASSESS`.
 ```sh
 sudo systemctl disable --now panel-kiosk emay-live panel-http
 sudo rm /etc/systemd/system/{panel-kiosk,emay-live,panel-http}.service
+sudo rm -rf /etc/systemd/system/panel-kiosk.service.d
 sudo systemctl daemon-reload
+sudo systemctl enable --now lightdm        # put the desktop back
+rm -rf ~/anxietywatch-panel                # the checkout
 ```
+
+Also revoke the deploy key in the repository's **Settings → Deploy keys**, and
+delete `~/.ssh/anxietywatch_deploy*` plus its `~/.ssh/config` stanza.
 
 Nothing else on the Pi depends on any of it. When the real path lands (T-C1..C3
 for the sensor adapters, then a read endpoint on `vitalsd`), this whole directory
