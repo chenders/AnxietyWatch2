@@ -13,25 +13,35 @@ because three items on this list have known counterfeit or mis-shipped-part prob
 
 ---
 
-## Order 1 — unblocks the next tasks · ~$215
+## Order 1 — unblocks the next tasks · ~$403
 
 Nothing else can proceed past Stage 3 without these. T-A1 (root on NVMe) and T-A2 (audio path) are
 both waiting on hardware, not code.
 
-| Item | ~$ | Where | Why this one |
+Prices below are what was actually in the carts on 2026-08-04, not estimates. Three vendors: Amazon
+for most of it, PiShop for the RTC cell, 18650BatteryStore for the UPS cells.
+
+| Item | $ | Where | Why this one |
 |---|---|---|---|
 | **Geekworm X1202 UPS** | 50 | [Amazon `B0CRZ4ZXQW`](https://www.amazon.com/Geekworm-X1202-Raspberry-Shutdown-Detection/dp/B0CRZ4ZXQW) · [Geekworm](https://geekworm.com/products/x1202) | **4 cells, not 2** — see the runtime table below. Reports battery state over I2C, so the software can *see* the power situation rather than just die. Also takes 6–18 V (≥3 A) on a DC5521 barrel, where the 2-cell X1200 needs a USB-C source that genuinely negotiates 5 A |
-| **Geekworm X1202-C1 case** | 17 | [Geekworm](https://geekworm.com/products/x1202-c1) · [Amazon `B0D6YYM7QK`](https://www.amazon.com/Geekworm-X1202-X1202-C1-Raspberry-Detection/dp/B0D6YYM7QK) (with the UPS) | Built for exactly this stack: Pi 5 + X1202 + active cooler + a top PCIe M.2 HAT (X1000/X1001/X1003/X1004/M901 all named). 100 × 90.8 × 62.8 mm. **Each case fits only its own UPS** — an X1200-C1 will not take an X1202 |
-| **4× 18650 cells**, button-top, protected | 40 | any reputable cell seller | The X1202 ships empty. **Flat-top cells do not make contact.** Ignore any cell advertising >3600 mAh — those numbers are fiction, and capacity is the whole point here |
-| **Geekworm X1001 M.2 HAT** | 17 | [Geekworm](https://geekworm.com/products/x1001) | Top-mounts, takes 2280. The official HAT+ is 2230/2242 only, which cuts you off from most known-good drives |
-| **Samsung 980 500 GB** (MZ-V8V500B) | 45 | [Amazon](https://www.amazon.com/dp/B08V83JZH4) | 2280, TLC, on every Pi 5 compatibility list. **Avoid WD SN550/SN580/SN350/SN850 and anything Phison or MAP1202** — they are the documented Pi 5 detection and I/O-error failures |
-| **Official Active Cooler** | 5 | [Raspberry Pi](https://www.raspberrypi.com/products/active-cooler/) | Top HATs are designed around its height. The CanaKit "Mega Heat Sink" is taller and probably will not fit under the X1001. Geekworm also sells [`B0D7HLF6QR`](https://www.amazon.com/Geekworm-X1202-C1-Raspberry-Shutdown-Detection/dp/B0D7HLF6QR) — X1202 + X1202-C1 + their own H505 cooler in one box, which is the vendor's own verified pairing; price not checked |
-| **Raspberry Pi RTC battery (ML2020 + JST-SH)** | 5 | search `Raspberry Pi RTC battery` or `ML2020 JST-SH` | **Must be rechargeable.** The Pi 5 trickle-charges J5; a primary cell like a CR2032 on a charging circuit risks rupture. Without it the clock resets to 1970 on power loss, which breaks TIMESTAMPTZ chunking *and* TLS validation — so the out-of-band alerts die at the same moment everything else does |
-| **USB audio adapter** | 10 | [PiShop](https://www.pishop.us/product/usb-audio-adapter-works-with-raspberry-pi/) | The Pi 5 has no analog output at all — the 3.5 mm jack was removed for PCIe. Right now the box physically cannot make a sound |
-| **Powered speaker**, any | 15–25 | anywhere | It is an alarm. Loud and reliable beats accurate |
-| **Ethernet cable** | 5 | anywhere | Removes a whole failure class and frees the shared WiFi/BT antenna. The wifi already stranded this box once |
+| **Geekworm X1202-C1 case** | 19.00 | [Amazon `B0D59ZK1QR`](https://www.amazon.com/Geekworm-X1202-C1-Raspberry-Active-Cooler/dp/B0D59ZK1QR) · [Geekworm](https://geekworm.com/products/x1202-c1) | Built for exactly this stack: Pi 5 + X1202 + active cooler + a top PCIe M.2 HAT (X1000/X1001/X1003/X1004/X1015 all named). 100 × 90.8 × 62.8 mm. **Each case fits only its own UPS** — an X1200-C1 will not take an X1202 |
+| **4× Samsung 35E 18650**, **flat-top, unprotected** | 23.96 | [18650BatteryStore](https://www.18650batterystore.com/products/samsung-35e-18650-3500mah-8a-battery) ($5.99 ea) | **Not protected cells.** Geekworm: *"Do not use the battery with built-in protection circuit because it will limit the discharge current"* — the X1202 does overcurrent, overvoltage and reverse-cell protection on the board. It is also why the spec caps length at 65.3 mm: a protected cell is 68–70 mm and does not physically fit. **Flat-top is correct here** — the X1202's holders are the Keystone pattern, coil spring on the negative end and a flat plate on the positive, which a flat top meets face-on (the "flat tops don't make contact" failure applies to holders with a recessed ring or a raised nub). ≤65.3 × 18.5 mm, all four from one batch. Geekworm names the 35E and the Panasonic NCR18650B. Ignore anything advertising >3600 mAh — those numbers are fiction |
+| **Geekworm X1001 M.2 HAT** | 13.90 | [Amazon](https://www.amazon.com/s?k=Geekworm+X1001) · [Geekworm](https://geekworm.com/products/x1001) | Top-mounts, takes 2280. The official HAT+ is 2230/2242 only, which cuts you off from most known-good drives |
+| **Samsung 990 EVO Plus 1 TB** | 237.62 | [Amazon](https://www.amazon.com/s?k=Samsung+990+EVO+Plus+1TB) | See the NVMe price note below — the plan's original pick is gone. Samsung controller, 2280. **Avoid WD SN550/SN580/SN350/SN850 and anything Phison or MAP1202** — they are the documented Pi 5 detection and I/O-error failures. The Pi 5's PCIe is Gen2 ×1 (Gen3 ×1 with a dtparam), so any modern drive is throttled well below its rating; this is bought for reliability and capacity, not speed |
+| **Official Active Cooler** | 9.85 | [Amazon](https://www.amazon.com/s?k=Raspberry+Pi+5+Official+Active+Cooler) · [Raspberry Pi](https://www.raspberrypi.com/products/active-cooler/) | Top HATs are designed around its height. The CanaKit "Mega Heat Sink" is taller and probably will not fit under the X1001. Geekworm's own H505 is the other supported option and the case names both |
+| **Raspberry Pi RTC battery** (Panasonic ML-2020, 45 mAh) | 5.50 | [PiShop SKU 1055-1](https://www.pishop.us/product/rtc-battery-for-raspberry-pi-5/) | **Must be rechargeable.** The Pi 5 trickle-charges J5; a primary cell like a CR2032 on a charging circuit risks rupture — and nearly every Amazon result for this search is a CR2032 holder. Without it the clock resets to 1970 on power loss, which breaks TIMESTAMPTZ chunking *and* TLS validation, so the out-of-band alerts die at the same moment everything else does |
+| **UGREEN USB audio adapter** | 11.99 | [Amazon](https://www.amazon.com/s?k=UGREEN+USB+audio+adapter+TRS) | The Pi 5 has no analog output at all — the 3.5 mm jack was removed for PCIe. Right now the box physically cannot make a sound. Take the **dedicated TRS headphone jack**, not a TRRS combo: combo jacks auto-detect and switch modes on what is plugged in, which is a bad property for the one device whose job is to reliably make noise |
+| **FUNLOGY 14 W powered speaker** | 21.99 | [Amazon](https://www.amazon.com/s?k=FUNLOGY+14W+USB+powered+speaker) | **USB-powered on purpose** — it draws from the Pi, which is on the UPS, so it survives an outage where a mains speaker would not. Physical volume dial, and no LEDs, which matters in a dark bedroom |
+| **Cat6 ethernet cable, 10 ft** | 8.99 | [Amazon](https://www.amazon.com/s?k=Cable+Matters+Cat6+10ft) | Removes a whole failure class and frees the shared WiFi/BT antenna. The wifi already stranded this box once |
 
 *The RASPIAUDIO MEGA_AMP and similar are GPIO HATs, and that header is already spoken for.*
+
+**The NVMe price note.** The plan originally specified a Samsung 980 500 GB at ~$45. As of 2026-08-04
+that part is discontinued and the remaining stock is $349 new / $149 used; the 970 EVO Plus 500 GB is
+$242. The whole NVMe market is running roughly 3–5× its historical level — the cheapest Pi-5-safe
+2280 drives are Crucial P310 500 GB at $132 and E100 1 TB at $160, both Phison-controller parts this
+plan otherwise avoids. At those levels the 1 TB 990 EVO Plus at $237 is the sane buy, and that is
+what was chosen. If this is being read after prices normalise, re-check before paying $237.
 
 **Why the 4-cell UPS and not the 2-cell one** (~$30 more all-in). A real protected 18650 holds
 ~12.2 Wh; this box draws about 7 W with the panel lit. That gives:
@@ -45,9 +55,11 @@ A night is eight hours. Four cells with the display blanked rides out a whole-ni
 do not reach it under any configuration. For a device whose entire job happens overnight, that is the
 line. Vendor "up to 6 / up to 10 hours" claims are bare-Pi-idle and not comparable to each other.
 
-**What the UPS does not cover:** the bed shaker and the powered speaker both run from mains, so an
-outage kills them either way. What rides through is detection, the GPIO piezo, and the out-of-band
-notification path.
+**What the UPS does and does not cover.** Detection, the GPIO piezo, the out-of-band notification
+path, and — because it is USB-powered off the Pi rather than mains — the speaker all ride through an
+outage. The **12 V bed shaker and strobe do not**: they run from their own mains PSU. Since the
+shaker is the primary alarm channel, an outage still degrades the alarm to its audible channels
+unless that 12 V rail is separately backed up.
 
 ---
 
@@ -137,11 +149,14 @@ time. Reasons in [`HARDWARE_RECOMMENDATIONS.md`](HARDWARE_RECOMMENDATIONS.md) §
 
 | | ~$ |
 |---|---|
-| Order 1 — unblocks the plan | 215 |
+| Order 1 — unblocks the plan (actual carts, before shipping/tax) | 403 |
 | Order 2 — the alerting chain | 75 |
 | Order 3 — backup, before service | 70 |
 | Order 4 — TPM | 28 |
-| **Through to a klaxon in service** | **~390** |
+| **Through to a klaxon in service** | **~575** |
+
+Order 1 splits as **$373.34 Amazon** (8 items) + **$23.96 18650BatteryStore** + **$5.50 PiShop**.
+The NVMe alone is $237.62 of that; at historical SSD prices the order would be roughly $210.
 
 If only one thing gets bought from Order 2, the **$25 bed shaker** is the item most likely to
 determine whether the system does its job.
