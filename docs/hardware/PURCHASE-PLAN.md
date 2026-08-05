@@ -123,21 +123,24 @@ unless that 12 V rail is separately backed up.
 
 ---
 
-## Order 2 — the alerting chain · ~$75
+## Order 2 — the alerting chain · $89.41
 
 This is what turns a monitor into an alarm. Largest reliability gain per dollar on the list, and the
 two channels have **disjoint dependencies** from the audio stack.
 
-| Item | ~$ | Where | Why this one |
+Carted 2026-08-04, all Amazon, all arriving Thu Aug 6 except the resistors (overnight). Prices are
+actual, not estimates.
+
+| Item | $ | Where | Why this one |
 |---|---|---|---|
-| **Sonic Alert Super Shaker, 12 V** | 25 | [Amazon](https://www.amazon.com/Super-Shaker-12v-White-Vibrator/dp/B005GGQX7C) | **The primary channel**, not the backup. Fire-safety research finds bed shakers with an intermittent pulse 100% effective at all hearing levels from deep sleep — and the event being detected impairs arousal itself |
-| **Tokatuker B604 piezo × 2** | 20 | [Amazon](https://www.amazon.com/dp/B079L2KBG7) | Self-driving, 2–12 V, ~3.8 kHz. Bypasses USB, ALSA, card enumeration and DAC firmware entirely. Buy two — reliability reviews are mixed and it is $10 |
-| **IRLZ44N MOSFETs**, genuine Infineon, ×5 | 9 | any parts seller listing V<sub>GS(th)</sub> 1.0–2.0 V | **Not** the common "IRF520 driver module" — IRF520 needs ~10 V of gate drive, so from a 3.3 V GPIO it conducts partially, runs hot and degrades silently. The `L` in IRLZ is the logic-level marker |
-| **Resistors: 150–220 Ω and 10 kΩ** | 5 | any parts seller | One of each per channel. The **10 kΩ gate-to-source pulldown is not optional** — Pi GPIO floats from power-on until configured, and without it the siren sounds at every boot |
-| **1N4007 diodes** | 3 | any parts seller | Flyback across the shaker. It is a motor; switching it without one puts a reverse spike across the MOSFET |
-| **Screw-terminal proto board** | 8 | anywhere | If soldering is unappealing, Adafruit and Pololu sell single-channel logic-level MOSFET breakouts with the resistor and pulldown already fitted |
-| **12 V 2 A PSU** | 10 | anywhere | Drives shaker and siren |
-| **INA219 current sensor** (optional) | 5 | anywhere | I²C, inline with the siren. Turns "we drove the pin" into "current flowed" — the closest thing to physical proof a sound happened |
+| **Sonic Alert Super Shaker, 12 V** | 17.99 | [Amazon `B005GGQX7C`](https://www.amazon.com/Super-Shaker-12v-White-Vibrator/dp/B005GGQX7C) | **The primary channel**, not the backup. Fire-safety research finds bed shakers with an intermittent pulse 100% effective at all hearing levels from deep sleep — and the event being detected impairs arousal itself |
+| **Tokatuker B604 piezo × 2** | 19.98 | [Amazon `B079L2KBG7`](https://www.amazon.com/dp/B079L2KBG7) | Self-driving, 2–12 V, 120 dB at 12 V. Bypasses USB, ALSA, card enumeration and DAC firmware entirely. Two, because reliability reviews are mixed and it is $10 |
+| **IRLZ44N MOSFETs**, **genuine Infineon**, ×5 | 8.99 | Amazon — the listing that says *"Authentic parts from Infineon Technologies"* | **Not** the common "IRF520 driver module" — IRF520 needs ~10 V of gate drive, so from a 3.3 V GPIO it conducts partially, runs hot and degrades silently. The `L` in IRLZ is the logic-level marker. Buy the branded listing rather than the cheaper generic 10-pack: a relabelled non-logic-level part fails in exactly the silent way described above, and you cannot tell by looking |
+| **Resistor kit**, 25-value 1 % metal film, 1000 pc | 6.49 | [Amazon](https://www.amazon.com/s?k=1000+piece+resistor+kit+25+value+1%25+metal+film) | Covers the 150–220 Ω gate and 10 kΩ pulldown many times over. The **10 kΩ gate-to-source pulldown is not optional** — Pi GPIO floats from power-on until configured, and without it the siren sounds at every boot |
+| **1N4007 diodes × 125** | 5.99 | [Amazon](https://www.amazon.com/s?k=1N4007+rectifier+diode) | Flyback across the shaker. It is a motor; switching it without one puts a reverse spike across the MOSFET |
+| **KEYESTUDIO GPIO breakout + ribbon + breadboard** | 9.99 | [Amazon](https://www.amazon.com/s?k=KEYESTUDIO+GPIO+breakout+kit+Raspberry+Pi) | Replaces the planned screw-terminal proto board, and solves a problem §7 raised for the TPM that applies here too: **a top-mounted M.2 HAT physically covers the 40-pin header** even though it does not use it. This brings the header out of the case on a ribbon, and the breadboard prototypes three MOSFET channels without soldering |
+| **12 V 3 A PSU** | 9.99 | [Amazon](https://www.amazon.com/s?k=Facmogu+12V+3A+power+adapter) | **3 A, not the planned 2 A** — same price, and shaker + two piezos + a future 12 V strobe is ~1.7 A, uncomfortably close to a 2 A ceiling |
+| **INA219 current sensor × 4** | 9.99 | [Amazon](https://www.amazon.com/s?k=INA219+current+sensor+4+pack) | I²C, inline with each load. Turns "we drove the pin" into "current flowed" — the closest thing to physical proof a sound happened. Four is the right count, not one: three channels plus a spare, and the module's address jumpers give 0x40/0x41/0x44/0x45 so they coexist on one bus |
 
 **Pin allocation, already checked clear of the TPM** (which occupies physical 17–26):
 
@@ -146,6 +149,10 @@ two channels have **disjoint dependencies** from the audio stack.
 | Piezo siren | GPIO5 | 29 |
 | Bed shaker | GPIO6 | 31 |
 | Strobe | GPIO13 | 33 |
+
+**Both loads arrive terminated in plugs, not bare wire** — the piezo in a 3.5 mm jack, the shaker in a
+DC barrel. Driving either from a MOSFET drain means cutting the plug off or fitting a matching panel
+jack. Cheap either way; it is listed here so it does not stall an evening.
 
 ---
 
@@ -209,15 +216,19 @@ time. Reasons in [`HARDWARE_RECOMMENDATIONS.md`](HARDWARE_RECOMMENDATIONS.md) §
 
 | | ~$ |
 |---|---|
-| Order 1 — unblocks the plan (actual carts, before shipping/tax) | 156 |
-| Order 2 — the alerting chain | 75 |
-| Order 3 — backup, before service | 70 |
-| Order 4 — TPM | 28 |
-| **Through to a klaxon in service** | **~330** |
+| Order 1 — unblocks the plan (actual, before shipping/tax) | 156 |
+| Order 2 — the alerting chain (actual) | 89 |
+| Order 3 — backup, before service (estimate) | 70 |
+| Order 4 — TPM (estimate) | 28 |
+| **Through to a klaxon in service** | **~344** |
 
 Order 1 splits as **$126.73 Amazon** (6 items, placed) + **~$24 cells** (sourced locally) +
 **$5.50 PiShop** (RTC cell, still open). Buying the NVMe instead of using one on hand would have
 added $237.62 at current prices.
 
-If only one thing gets bought from Order 2, the **$25 bed shaker** is the item most likely to
+Order 2 is **$89.41, all Amazon**, against a $75 estimate. The overage is entirely the three
+substitutions justified in that section — the GPIO breakout, the 3 A supply, and four INA219s
+instead of one — partly offset by the shaker coming in at $17.99 rather than $25.
+
+If only one thing gets bought from Order 2, the **$17.99 bed shaker** is the item most likely to
 determine whether the system does its job.
