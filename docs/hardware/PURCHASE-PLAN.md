@@ -49,13 +49,18 @@ $403 the carts first totalled.
 Still to order: the 18650 cells (18650BatteryStore) and the RTC cell (PiShop). The UPS lands Thursday
 but does nothing without cells.
 
-**Thermal note — do not close the case before the cooler arrives.** As of 2026-08-04 the Pi has *no
-active cooler fitted*: no `cooling_fan` platform device and no registered cooling devices, running at
-58.2 °C open-air with `get_throttled=0x0`. That measurement was taken without an enclosure and
-without the NVMe. A closed metal case removes convection and the drive adds a few watts right beside
-the SoC; the Pi 5 soft-throttles at 80 °C, and there is not 22 °C of headroom in that combination.
-The UPS-and-HAT stack itself is fine open-air — X1202 mounts underneath on pogo pins, X1001 on top —
-so Aug 5 and Aug 6 are not blocked, only the enclosure is.
+**Thermal note — worth watching, not worth waiting for.** As of 2026-08-04 the Pi has *no active
+cooler fitted*: no `cooling_fan` platform device and no registered cooling devices, idling at 58.2 °C
+open-air with `get_throttled=0x0`. Closing it into the case adds an enclosure and an NVMe to that
+picture, so temps will rise. That is a throttling question, not a damage one — the Pi 5 caps its own
+clock at 80 °C and protects itself; the case is heavily vented; and this workload (1 Hz BLE capture,
+a light Postgres, a panel) leaves the CPU mostly idle. Assemble when the parts land and watch it:
+
+```sh
+vcgencmd measure_temp && vcgencmd get_throttled     # 0x0 means it has never throttled
+```
+
+If `get_throttled` stays non-zero under normal load, run with the lid off until the cooler arrives.
 
 ### The NVMe
 
