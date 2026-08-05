@@ -65,15 +65,38 @@ self-test check the enrolled identity.
 alarm — and nothing to report afterwards, because the thing that would report it is also off. Every
 other failure mode in this design has a detection story. This one does not.
 
-- **[Geekworm X1200](https://geekworm.com/products/x1200)** — 2× 18650, 5.1 V 5 A, purpose-built for
+- **[Geekworm X1202](https://geekworm.com/products/x1202)** — 4× 18650, 5.1 V 5 A, purpose-built for
   the Pi 5, pogo-pin connection, and exposes battery voltage and capacity over I2C so the software
-  can *see* it. Roughly 30 minutes of runtime.
-- Waveshare UPS HAT (E) is an equivalent alternative.
+  can *see* it. Also takes 6–18 V on a DC5521 barrel or XH2.54, not just USB-C.
+- The 2-cell **[X1200](https://geekworm.com/products/x1200)** is the same board family and ~$30
+  cheaper all-in. Waveshare UPS HAT (E) is an equivalent alternative.
+
+### How long it actually lasts
+
+Vendor figures ("up to 6 hours" for the X1200, "up to 10" for the X1202) are bare-Pi-idle numbers —
+note that doubling the cells does not double their claim, which means the two figures were not taken
+under the same load. Work from energy instead.
+
+A real protected 18650 is ~3400 mAh at 3.6 V ≈ **12.2 Wh**. This box — Pi 5 + NVMe + active cooler +
+the 7" DSI panel at 35% + BLE and wifi + a light Postgres — draws about **7 W**. At ~90% conversion:
+
+| | Panel on | Panel blanked on battery |
+|---|---|---|
+| 2 cells (X1200) | ~3 h | ~4 h |
+| **4 cells (X1202)** | **~6 h** | **~8 h** |
+
+A night is eight hours. Four cells with the display blanked rides out a whole-night outage; two cells
+do not reach it under any configuration. For a device whose entire job happens overnight, that is the
+line the choice sits on — hence the X1202 in the purchase plan.
 
 What the software should do with it, once fitted: treat mains loss as a **monitoring-degraded event**
-that alerts immediately rather than a silent countdown, and shut down cleanly before the battery
-dies rather than being cut mid-write. Thirty minutes is not enough to sleep through an outage — it
-is enough to be told about one.
+that alerts immediately rather than a silent countdown, blank the panel to buy the extra ~2 hours,
+and shut down cleanly before the battery dies rather than being cut mid-write.
+
+**What the UPS does not cover.** The bed shaker runs from a 12 V mains PSU and the powered speaker
+from mains, so an outage kills both regardless. What survives on battery is detection, the GPIO
+piezo, and the out-of-band notification path. Design the outage behaviour around that, rather than
+assuming the whole alarm chain rides through.
 
 Check stacking clearance against the M.2 HAT before ordering; both want the same physical space.
 
@@ -289,7 +312,8 @@ under-mounting NVMe base.** All three want the Pi's underside, and only one can 
 |---|---|
 | Hosyond 7" DSI panel | 164.89 × 102.00 × 12.25 mm (from the listing) |
 | Raspberry Pi 5 | 85 × 56 mm, mounting holes 58 × 49 mm |
-| Geekworm X1200-C1 case (Pi + UPS + cooler + top M.2) | 90.8 × 69 × 62.8 mm |
+| Geekworm X1202-C1 case (Pi + 4-cell UPS + cooler + top M.2) | 100 × 90.8 × 62.8 mm |
+| Geekworm X1200-C1 case (same, 2-cell UPS) | 90.8 × 69 × 62.8 mm |
 
 ### What mounts where
 
@@ -298,7 +322,7 @@ under-mounting NVMe base.** All three want the Pi's underside, and only one can 
 | Official M.2 HAT+ | **top** | PCIe FFC + GPIO. **2230/2242 only — a standard 2280 SSD does not fit** |
 | Geekworm X1001 / X1004 | **top** | PCIe FFC, supports 2280 |
 | Pimoroni NVMe Base | **bottom** | PCIe FFC. Frees the whole GPIO header and allows a taller cooler |
-| Geekworm X1200 UPS | **bottom**, pogo pins | Does **not** use the 40-pin header, so it stacks well with top HATs |
+| Geekworm X1200 / X1202 UPS | **bottom**, pogo pins | Does **not** use the 40-pin header, so it stacks well with top HATs |
 | TPM module | **top**, GPIO SPI | Physically sits over the first ~10 pins |
 | Screen standoffs | **bottom** | The Pi bolts flat to the panel |
 
@@ -311,15 +335,16 @@ the UPS, which is the add-on with no top-mounting alternative.
 Working stack, bottom to top:
 
 ```
-X1200 UPS          (pogo pins, no GPIO)
+X1202 UPS          (pogo pins, no GPIO)
   └─ Pi 5
        └─ active cooler        (fits between Pi and a top HAT)
             └─ X1001 M.2 HAT   (PCIe FFC, takes 2280)
                  └─ TPM        (GPIO — needs a riser, see below)
 ```
 
-The **Geekworm X1200-C1 metal case** is built for exactly this combination — Pi 5 + X1200 + active
-cooler + a top PCIe-to-M.2 HAT. If you go this route, buy the case with the UPS.
+The **Geekworm X1202-C1 metal case** is built for exactly this combination — Pi 5 + X1202 + active
+cooler + a top PCIe-to-M.2 HAT (X1001/X1003/X1004/X1000/M901 are all named on the listing). Buy the
+case with the UPS; each case fits only its own UPS, so an X1200-C1 will not take an X1202.
 
 **The TPM still needs a home.** A top M.2 HAT sits over the GPIO header even when it does not
 electrically use it. Options:
