@@ -61,26 +61,24 @@ messages. **Two findings were declined deliberately; do not re-litigate them:** 
 integrations table stays in the spec (Chris's explicit direction), and §1.3's rationale overlap
 with `PROMPT-admin.md` stays (different audiences).
 
-**Round 2** (verification): Gemini **PASS**. Sol **FAIL on exactly one residual** — `PROMPT-admin.md`
-still counted "four" status vocabularies against the spec's five — **fixed in the same commit as
-this handoff update** (five vocabularies, Configuration row added, deliverables count updated).
-Grok's round-2 verdict had not returned when this session stopped; its output lands at
-`/private/tmp/claude-501/-Users-chris-Source-AnxietyWatch/8b7fa9a8-929a-496d-8ae0-c9f9dc6cea5c/scratchpad/verify2-out-grok.md`
-(local, ephemeral — alongside `verify2-out-{sol,gem}.md` and the briefs `verify2-*.txt`).
+**Round 2** (verification): Gemini **PASS** · Grok **PASS** (all five fixes confirmed, "no material
+new contradiction") · Sol **FAIL on exactly one residual** — `PROMPT-admin.md` still counted "four"
+status vocabularies against the spec's five — **fixed in commit `43198fb`** (five vocabularies,
+Configuration row added, deliverables count updated). Verdict transcripts are local and ephemeral:
+`verify2-out-{sol,gem,grok}.md` in
+`/private/tmp/claude-501/-Users-chris-Source-AnxietyWatch/8b7fa9a8-929a-496d-8ae0-c9f9dc6cea5c/scratchpad/`,
+with the exact briefs beside them as `verify2-*.txt`.
 
 ### Immediate next steps, in order
 
-1. **Read Grok's round-2 verdict** at the path above (an empty file means still running or lost;
-   re-run is cheap — `verify2-grok.txt` in that directory is the exact brief, model
-   `xai/grok-4.5`). Round 2's only known open item was the PROMPT four→five count, already fixed.
-2. Fix anything real that Grok adds; ignore anything that re-litigates the declined items.
-3. **Confirm the PROMPT count fix** — either judge it directly (it is mechanical: PROMPT now says
+1. **Confirm the PROMPT count fix** — either judge it directly (it is mechanical: PROMPT now says
    "five separate visual vocabularies" with a Configuration row, and "all five status
-   vocabularies" in deliverables) or re-run Sol with the round-2 brief.
-4. **Merge PR #19**: update its body first (it still says two HA research agents are outstanding —
+   vocabularies" in deliverables) or re-run Sol with the round-2 brief. With that confirmed, the
+   review is a triple-PASS and Chris's merge condition is met.
+2. **Merge PR #19**: update its body first (it still says two HA research agents are outstanding —
    they are done and folded in), `gh pr ready 19`, then merge. Delete this handoff file in the
    merge or immediately after.
-5. **Post-merge queued work** (Chris's standing instruction from this session): update `AGENTS.md`,
+3. **Post-merge queued work** (Chris's standing instruction from this session): update `AGENTS.md`,
    `CLAUDE.md`, `.github/copilot-instructions.md`, the Rust instructions file, `ci.yml`,
    `.githooks/pre-push`, and `README.md` to encode the newly-settled rules — the status law
    (no status without observation age), the per-source-cadence build gate, never render status
