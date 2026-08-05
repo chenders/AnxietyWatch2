@@ -1,7 +1,7 @@
 # Runbook — driving this change with herdr
 
 Operator's guide. How to actually execute `openspec/changes/pi5-vitals-core/` using herdr + pi,
-on the Mac, on minidude, or both.
+on the Mac, on the Pi, or both.
 
 Read `design.md` §2 (tiers), §3 (verification), §5 (gates) first — this file is the *how*, that one
 is the *why*.
@@ -12,18 +12,18 @@ is the *why*.
 
 | Task group | Machine | Why |
 |---|---|---|
-| **Group A** (hardware) | **minidude** | You are physically at the box with a screwdriver. `dmesg`, `lsusb`, `hciconfig` are local. |
-| **T-B1** (8-hour capture) | **minidude** | Must outlive an SSH session. Runs overnight under `systemd-run`. |
-| **Group C** (Postgres) | either | Every `Verify` is already `ssh chris@minidude '…'`, so Mac works fine. |
+| **Group A** (hardware) | **the Pi** | You are physically at the box with a screwdriver. `dmesg`, `lsusb`, `hciconfig` are local. |
+| **T-B1** (8-hour capture) | **the Pi** | Must outlive an SSH session. Runs overnight under `systemd-run`. |
+| **Group C** (Postgres) | either | Every `Verify` is already `ssh "$PI_HOST" '…'`, so Mac works fine. |
 | **Group D** (code) | **Mac** | Pure code. Bigger worker pool, your editor, the repo is here. |
 
-Rule of thumb: **hardware and overnight work on minidude, code on the Mac.** Both have herdr 0.7.5
+Rule of thumb: **hardware and overnight work on the Pi, code on the Mac.** Both have herdr 0.7.5
 and pi 0.83.0, so either works for anything — this is preference, not capability.
 
 Attach to the Pi's session from your Mac terminal without leaving your desk:
 
 ```sh
-herdr --remote chris@minidude
+herdr --remote "$PI_HOST"
 ```
 
 That drives the Pi's own herdr server. Panes execute *on the Pi*, survive disconnection, and are
@@ -41,16 +41,16 @@ pi --version             # expect 0.83.0
 claude --version         # expect 2.1.220
 ```
 
-On minidude, `pi` needs its bundled node on PATH. Already done — `~/.bashrc` and `~/.profile` carry
+On the Pi, `pi` needs its bundled node on PATH. Already done — `~/.bashrc` and `~/.profile` carry
 `~/.local/share/pi-node/node-v22.23.2-linux-arm64/bin`. If `pi` ever reports
 `/usr/bin/env: 'node': No such file or directory`, that line went missing.
 
 ### 2.2 The gateway
 
-LiteLLM now runs **on minidude**, not the Mac. Verify from wherever you are:
+LiteLLM now runs **on the Pi**, not the Mac. Verify from wherever you are:
 
 ```sh
-curl -s http://192.168.1.48:4000/health/readiness     # {"status":"healthy","db":"connected"}
+curl -s http://pi-host:4000/health/readiness     # {"status":"healthy","db":"connected"}
 ```
 
 Its `config.yaml` uses passthrough wildcards, so any model under these prefixes routes through with
@@ -62,7 +62,7 @@ tier uses the `claude` CLI directly on its subscription, which is also why revie
 against your topped-up credits.
 
 **There is exactly one gateway, and it lives on the Pi.** The Mac's stack was stopped and its
-`~/.pi/agent/models.json` repointed at `http://192.168.1.48:4000/v1` (backup at `models.json.bak`).
+`~/.pi/agent/models.json` repointed at `http://pi-host:4000/v1` (backup at `models.json.bak`).
 Both machines share one worker key, one budget, one cost dashboard. The Pi is the right host because
 it is the box that is always on — a laptop that sleeps should not be brokering model calls for an
 overnight capture running on the Pi.
@@ -70,7 +70,7 @@ overnight capture running on the Pi.
 **Consequence for adding provider keys:** add them **on the Pi only**, and both machines get them.
 
 ```sh
-ssh chris@minidude && cd ~/litellm && ./add-provider-key.sh
+ssh "$PI_HOST" && cd ~/litellm && ./add-provider-key.sh
 ```
 
 Running that on the Mac now edits a `.env` no gateway reads — it will report success and change
@@ -89,7 +89,7 @@ export LITELLM_WORKER_KEY=<printed key>    # add to ~/.bashrc on whichever box r
 ### 2.4 The layout plugin
 
 ```sh
-herdr plugin config-dir chris.opsx-dev-layout    # prints the config dir
+herdr plugin config-dir <layout-plugin-id>    # prints the config dir
 ```
 
 Edit `config.env` there:
@@ -146,11 +146,11 @@ pi --model deepseek/deepseek-v4-flash -p "reply OK"
 ## 4. Spin up
 
 ```sh
-cd ~/Source/AnxietyWatch
+cd /path/to/AnxietyWatch2
 git checkout design/pi5-vitals-core
-herdr                                                            # or: herdr --remote chris@minidude
+herdr                                                            # or: herdr --remote "$PI_HOST"
 # then, inside a pane in this workspace:
-herdr plugin action invoke spinup --plugin chris.opsx-dev-layout
+herdr plugin action invoke spinup --plugin <layout-plugin-id>
 ```
 
 You get a tab labeled `opsx:pi5-vitals-core`:
@@ -206,7 +206,7 @@ herdr pane run <pane-id> "srt pi --model deepseek/deepseek-chat"
 the task in the shell pane before ticking its box:
 
 ```sh
-ssh chris@minidude 'cd ~/AnxietyWatch2 && cargo test -p vitals-decode sfloat'
+ssh "$PI_HOST" 'cd ~/AnxietyWatch2 && cargo test -p vitals-decode sfloat'
 echo "exit=$?"
 ```
 
@@ -243,19 +243,19 @@ yourself, never on a worker's report.**
 is not verified up as `hci1` first, the box ends with no Bluetooth at all.
 
 ```sh
-ssh chris@minidude 'hciconfig hci1 | grep -q "UP RUNNING"' && echo "G1 OPEN" || echo "G1 CLOSED"
+ssh "$PI_HOST" 'hciconfig hci1 | grep -q "UP RUNNING"' && echo "G1 OPEN" || echo "G1 CLOSED"
 ```
 
 **G2 — Group C needs T-A1 green.** Postgres must never initialize on the microSD.
 
 ```sh
-ssh chris@minidude 'findmnt -no SOURCE / | grep -q nvme' && echo "G2 OPEN" || echo "G2 CLOSED"
+ssh "$PI_HOST" 'findmnt -no SOURCE / | grep -q nvme' && echo "G2 OPEN" || echo "G2 CLOSED"
 ```
 
 **G3 — T-D6 needs T-C3 green.** No sample worth keeping is written before a restore is demonstrated.
 
 ```sh
-ssh chris@minidude 'jq -e ".ok == true" /var/lib/vitals/restore-verify.json' && echo "G3 OPEN"
+ssh "$PI_HOST" 'jq -e ".ok == true" /var/lib/vitals/restore-verify.json' && echo "G3 OPEN"
 ```
 
 ---
@@ -281,7 +281,7 @@ send_task T-D3 worker-3 gemini/gemini-3.1-pro-preview
 
 That is Stage 3's foundation done before a single package arrives.
 
-When the hardware lands: `herdr --remote chris@minidude`, spin the layout there, run Group A in
+When the hardware lands: `herdr --remote "$PI_HOST"`, spin the layout there, run Group A in
 order, and dispatch **T-B1 the moment T-A4 goes green** — it occupies a whole night, so start it and
 let everything else proceed around it.
 
@@ -296,7 +296,7 @@ let everything else proceed around it.
   task is mis-scoped — stop it.
 - `review` runs on the `claude` subscription and does not touch metered credits, so do not skimp on
   review passes.
-- Watch spend: `http://192.168.1.48:4000/ui`
+- Watch spend: `http://pi-host:4000/ui`
 
 ---
 
@@ -312,7 +312,7 @@ let everything else proceed around it.
 | Gateway 401 on the **master** key itself | `general_settings.master_key` in `config.yaml` is a literal and overrides `.env` | Set it to `os.environ/LITELLM_MASTER_KEY` so `.env` is the single source of truth, then `docker compose up -d --force-recreate litellm` |
 | Provider says `bad-credentials` but the key is set | the env var exists but is **empty** — a failed terminal paste writes `VAR=` silently | `V=$(sed -n "s/^XAI_API_KEY=//p" ~/litellm/.env); echo "len ${#V}"` — zero means re-enter. Capture with `read -rs -p "key: " K; echo "captured ${#K} chars"` so a failed paste is visible immediately |
 | Layout picks the wrong change | most-recently-modified wins | `OPSX_CHANGE=pi5-vitals-core herdr plugin action invoke spinup …` |
-| Pi session gone after reboot | herdr server not enabled at boot | reattach with `herdr --remote chris@minidude`; panes restore |
+| Pi session gone after reboot | herdr server not enabled at boot | reattach with `herdr --remote "$PI_HOST"`; panes restore |
 
 ---
 

@@ -4,7 +4,7 @@
 **Status:** Design, pending approval
 **Supersedes (partially):** `docs/redesign_spec.md` §1.7, CLAUDE.md Design Principle #1
 **Hardware:** Raspberry Pi 5 (BCM2712, 8 GB LPDDR4X), NVMe via PCIe, Sena UD100-G03 BLE, Hosyond 7" DSI
-**Host:** `chris@minidude` (hostname `raspberrypi`), passwordless sudo, Claude Code 2.1.220 installed
+**Host:** `$PI_HOST` (hostname `pi-host`), passwordless sudo, Claude Code 2.1.220 installed
 
 ---
 
@@ -19,7 +19,7 @@ Surveyed over SSH rather than assumed. Facts below supersede any estimate elsewh
 | Storage | **microSD only** — 119.4 GB, `/` ext4 with 104 GB free. **No NVMe present.** |
 | PCIe | `BCM2712 PCIe Bridge` live at `0002:00:00.0`. Lane free for an M.2 HAT. |
 | EEPROM | `BOOT_ORDER=0xf461` → SD → NVMe → USB. **Already NVMe-boot capable; no EEPROM change needed.** |
-| Bluetooth | `hci0` only (UART, onboard, `2C:CF:67:E3:3B:4A`). **Sena dongle not yet attached** — `lsusb` shows root hubs only. |
+| Bluetooth | `hci0` only (UART, onboard, `2C:CF:67:XX:XX:XX`). **Sena dongle not yet attached** — `lsusb` shows root hubs only. |
 | Network | `wlan0` on **5 GHz** (ch 48, 5240 MHz, −63 dBm, 270 Mbit/s). `eth0` down. |
 | Display | **`card1-DSI-2: connected`, mode `800x480`.** The 7" panel is attached and driving. |
 | Desktop | `graphical.target`, **wayfire** compositor running (no Xorg). |

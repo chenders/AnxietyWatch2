@@ -302,8 +302,8 @@
  details before finalizing.
 
 
- $ ls /Users/chris/Source/AnxietyWatch2/db/verify/
- /Users/chris/Source/AnxietyWatch2/db/revert/
+ $ ls /path/to/AnxietyWatch2/db/verify/
+ /path/to/AnxietyWatch2/db/revert/
 
  ... (12 earlier lines, ctrl+o to expand)
  retention.sql
@@ -377,7 +377,7 @@
  Let me structure this carefully.
 
 
- $ cd /Users/chris/Source/AnxietyWatch2 && grep -rn
+ $ cd /path/to/AnxietyWatch2 && grep -rn
  "samples_staging\|batch_id\|ingest_batch\|vitals_producer\|audit_log" db/
  openspec/ docs/ 2>/dev/null | head -40
 
@@ -392,7 +392,7 @@
 
 
 
- $ cd /Users/chris/Source/AnxietyWatch2 && grep -rn "hlc_physical\|hlc_logical"
+ $ cd /path/to/AnxietyWatch2 && grep -rn "hlc_physical\|hlc_logical"
  db/deploy/samples.sql vitals/ 2>/dev/null; echo "---"; grep -rn
  "UNLOGGED\|samples_staging" db/ 2>/dev/null
 
@@ -427,7 +427,7 @@
  Now let me compile my complete review.
 
 
- $ cd /Users/chris/Source/AnxietyWatch2 && grep -rn "SQLite\|sqlite"
+ $ cd /path/to/AnxietyWatch2 && grep -rn "SQLite\|sqlite"
  openspec/changes/pi5-vitals-core/tasks.md | head -20
 
  ... (10 earlier lines, ctrl+o to expand)
@@ -441,7 +441,7 @@
 
 
 
- $ cd /Users/chris/Source/AnxietyWatch2 && grep -rn
+ $ cd /path/to/AnxietyWatch2 && grep -rn
  "verify_spool\|spool_status\|spool_empty\|drain.*empty\|drain.*guard" db/
  2>/dev/null; echo "---"; ls db/verify/samples.sql db/deploy/samples.sql
 
@@ -460,7 +460,7 @@
  language split.
 
 
- $ cd /Users/chris/Source/AnxietyWatch2 && ls crates/ 2>/dev/null && echo "---" &&
+ $ cd /path/to/AnxietyWatch2 && ls crates/ 2>/dev/null && echo "---" &&
  ls vitals/ 2>/dev/null
 
  ... (3 earlier lines, ctrl+o to expand)
@@ -474,7 +474,7 @@
 
 
 
- $ cd /Users/chris/Source/AnxietyWatch2 && head -5 crates/vitals-decode/Cargo.toml
+ $ cd /path/to/AnxietyWatch2 && head -5 crates/vitals-decode/Cargo.toml
  2>/dev/null; echo "---"; ls vitals/src/ 2>/dev/null; echo "---"; ls
  vitals/generated/ 2>/dev/null
 
@@ -500,7 +500,7 @@
  Let me verify what the Rust workspace actually contains.
 
 
- $ cd /Users/chris/Source/AnxietyWatch2 && find crates/ -name "*.rs" -o -name
+ $ cd /path/to/AnxietyWatch2 && find crates/ -name "*.rs" -o -name
  "Cargo.toml" | sort
 
  ... (4 earlier lines, ctrl+o to expand)

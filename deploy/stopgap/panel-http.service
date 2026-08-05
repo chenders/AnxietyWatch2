@@ -8,11 +8,11 @@ After=network.target local-fs.target
 
 [Service]
 Type=simple
-User=chris
+User=anxietywatch
 # Served straight out of a git checkout, so `git pull` IS the deploy step.
 # Previously this was a copy under /var/lib, which meant every panel change
 # needed an scp and silently went stale the moment one was forgotten.
-WorkingDirectory=/home/chris/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical
+WorkingDirectory=/opt/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical
 ExecStart=/usr/bin/python3 -m http.server 8975 --bind 127.0.0.1
 Restart=always
 RestartSec=5

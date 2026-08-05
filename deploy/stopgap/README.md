@@ -14,7 +14,7 @@ It exists to answer one question early: *does the UI work on the real panel, wit
 real data?*
 
 ```
-  git checkout ~/anxietywatch-panel
+  git checkout /opt/anxietywatch-panel
         │  docs/design/pi-panel/direction-a-clinical/
         │      index.html      <- tracked; `git pull` updates the panel
         │      status.json     <- gitignored; emay-spike rewrites it every second
@@ -36,22 +36,27 @@ which `systemctl restart panel-kiosk` does.
 
 ```sh
 sudo apt-get install -y cage chromium-browser python3 git
+sudo useradd --system --create-home --shell /usr/sbin/nologin anxietywatch
+sudo install -d -o anxietywatch -g anxietywatch /opt/anxietywatch-panel
 
 # The panel is served straight out of a git checkout — `git pull` IS the
 # deploy step. A read-only DEPLOY KEY is used rather than an account
 # credential: it is scoped to this one repository, cannot push, and is
 # revocable from the repo's Settings -> Deploy keys.
-ssh-keygen -t ed25519 -N "" -C "minidude-panel-readonly" -f ~/.ssh/anxietywatch_deploy
-cat >> ~/.ssh/config <<'CFG'
+sudo -u anxietywatch install -d -m 700 ~anxietywatch/.ssh
+sudo -u anxietywatch ssh-keygen -t ed25519 -N "" -C "pi-panel-readonly" \
+    -f ~anxietywatch/.ssh/anxietywatch_deploy
+sudo -u anxietywatch tee ~anxietywatch/.ssh/config >/dev/null <<'CFG'
 Host github-anxietywatch
   HostName github.com
   User git
   IdentityFile ~/.ssh/anxietywatch_deploy
   IdentitiesOnly yes
 CFG
-# Add ~/.ssh/anxietywatch_deploy.pub as a read-only deploy key, then:
-git clone --branch main github-anxietywatch:chenders/AnxietyWatch2.git \
-    ~/anxietywatch-panel
+sudo chmod 600 ~anxietywatch/.ssh/config
+# Add ~anxietywatch/.ssh/anxietywatch_deploy.pub as a read-only deploy key, then:
+sudo -u anxietywatch git clone --branch main github-anxietywatch:chenders/AnxietyWatch2.git \
+    /opt/anxietywatch-panel
 
 # The capture binary.
 cargo build --release -p emay-spike           # on the Pi, or cross-build
@@ -77,18 +82,18 @@ Each of these fails loudly rather than quietly doing nothing:
 
 ```sh
 # 1. The capture is writing, and the reading is fresh.
-ssh chris@minidude 'python3 -c "
+ssh "$PI_HOST" 'python3 -c "
 import json,time,sys
-d=json.load(open(\"/home/chris/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical/status.json\"))
+d=json.load(open(\"/opt/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical/status.json\"))
 age=time.time()-d[\"written_at\"]
 print(d)
 sys.exit(0 if age < 15 else 1)"'
 
 # 2. The panel is being served.
-ssh chris@minidude 'curl -fsS http://127.0.0.1:8975/index.html >/dev/null && echo served'
+ssh "$PI_HOST" 'curl -fsS http://127.0.0.1:8975/index.html >/dev/null && echo served'
 
 # 3. Something is actually on the screen.
-ssh chris@minidude 'systemctl is-active panel-kiosk'
+ssh "$PI_HOST" 'systemctl is-active panel-kiosk'
 ```
 
 A stale `status.json` is not a failure of this stopgap — the panel is designed to
@@ -96,9 +101,9 @@ notice it and switch to `CAN'T ASSESS`, naming which of the three faults it is
 (process gone, link lost, or no sample). That behaviour is the point; if the ring
 comes off your finger at 2 a.m. the panel must not keep showing 97.
 
-## Deployed and verified on minidude, 2026-08-04
+## Deployed and verified on the Pi, 2026-08-04
 
-Running: EMAY `SleepO2-2_1110` at 1 Hz, SpO₂ and pulse on the DSI panel, all
+Running: EMAY `SleepO2 device` at 1 Hz, SpO₂ and pulse on the DSI panel, all
 three units enabled and pulled in by `graphical.target`.
 
 Three things the first deploy found, all now fixed in the units above:
@@ -159,7 +164,7 @@ Still open:
   goes black after some minutes that is cage, not the page.
 - **The mouse pointer is visible** over the panel. Cosmetic on a touchscreen;
   `unclutter` would hide it.
-- `XDG_RUNTIME_DIR=/run/user/1000` assumes `id -u chris` is 1000. It is here.
+- `XDG_RUNTIME_DIR` must match the UID assigned to the dedicated `anxietywatch` service account.
 
 ## Query string
 
@@ -189,11 +194,11 @@ sudo rm /etc/systemd/system/{panel-kiosk,emay-live,panel-http}.service
 sudo rm -rf /etc/systemd/system/panel-kiosk.service.d
 sudo systemctl daemon-reload
 sudo systemctl enable --now lightdm        # put the desktop back
-rm -rf ~/anxietywatch-panel                # the checkout
+sudo rm -rf /opt/anxietywatch-panel                # the checkout
 ```
 
 Also revoke the deploy key in the repository's **Settings → Deploy keys**, and
-delete `~/.ssh/anxietywatch_deploy*` plus its `~/.ssh/config` stanza.
+delete `~anxietywatch/.ssh/anxietywatch_deploy*` plus its `~anxietywatch/.ssh/config` stanza.
 
 Nothing else on the Pi depends on any of it. When the real path lands (T-C1..C3
 for the sensor adapters, then a read endpoint on `vitalsd`), this whole directory

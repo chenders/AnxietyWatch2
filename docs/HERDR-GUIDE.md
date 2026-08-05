@@ -61,7 +61,7 @@ One LiteLLM gateway, on the Pi, because the Pi is the box that is always on. A s
 not be brokering model calls for an overnight capture.
 
 ```sh
-curl -s http://192.168.1.48:4000/health/readiness    # {"status":"healthy","db":"connected"}
+curl -s http://pi-host:4000/health/readiness    # {"status":"healthy","db":"connected"}
 ```
 
 Your Mac's `~/.pi/agent/models.json` already points there and shares the Pi's worker key.
@@ -69,7 +69,7 @@ Your Mac's `~/.pi/agent/models.json` already points there and shares the Pi's wo
 **Add provider keys on the Pi only** — both machines then get them:
 
 ```sh
-ssh chris@minidude && cd ~/litellm && ./add-provider-key.sh
+ssh "$PI_HOST" && cd ~/litellm && ./add-provider-key.sh
 ```
 
 Running that on the Mac edits a `.env` no gateway reads. It reports success and changes nothing.
@@ -130,10 +130,10 @@ For `host: pi` work you want breakpoints, not print statements. Two ways.
 Edit on the Mac, build/run/debug on the Pi, with full IDE debugging. Set up once:
 
 1. **Settings → Build, Execution, Deployment → Toolchains → + → Remote Host**
-   Credentials: `chris@minidude`, key-based. CLion auto-detects `gcc`, `gdb`, `cmake`, `ninja`
+   Credentials: the host configured in `PI_HOST`, key-based. CLion auto-detects `gcc`, `gdb`, `cmake`, `ninja`
    (all installed).
 2. **Settings → Deployment** — the mapping is already in `.idea/deployment.xml`:
-   `$PROJECT_DIR$ → /home/chris/AnxietyWatch2`, with `build*`, `.git`, `.idea` excluded.
+   `$PROJECT_DIR$ → $PI_PATH`, with `build*`, `.git`, `.idea` excluded.
 3. **Settings → CMake** — add a profile using the remote toolchain.
 
 Now `Run → Debug` compiles on the Pi, launches under `gdbserver`, and gives you breakpoints,
@@ -144,7 +144,7 @@ the only way to debug a BLE collector, because the bug needs the hardware.
 
 ```sh
 scripts/sync-to-pi.sh --test        # sync, build, cargo test
-ssh chris@minidude
+ssh "$PI_HOST"
 cd ~/AnxietyWatch2 && gdb ./build/vitals/test_bp_decode
 ```
 
@@ -186,17 +186,17 @@ for 60 s per push.
 ## 6. Running the work
 
 ```sh
-cd ~/Source/AnxietyWatch2
-herdr                                   # or: herdr --remote chris@minidude
-herdr plugin action invoke spinup --plugin chris.opsx-dev-layout
+cd /path/to/AnxietyWatch2
+herdr                                   # or: herdr --remote "$PI_HOST"
+herdr plugin action invoke spinup --plugin <layout-plugin-id>
 ```
 
 Conductor + 3 workers + a shell pane showing the 15-task index.
 
 **Mode A — Mac pool** (default). Workers on the Mac. Every `Verify` in `tasks.md` is written as
-`ssh chris@minidude '…'`, so `host: pi` tasks still execute remotely.
+`ssh "$PI_HOST" '…'`, so `host: pi` tasks still execute remotely.
 
-**Mode B — Pi-local.** `herdr --remote chris@minidude`. Panes run *on the Pi*, survive
+**Mode B — Pi-local.** `herdr --remote "$PI_HOST"`. Panes run *on the Pi*, survive
 disconnection, and are still there when you reattach from a phone. Use for all of Group A and the
 overnight T-B1 capture.
 
@@ -281,7 +281,7 @@ AnxietyWatch2/
 │   ├── systemd/                unit files
 │   └── postgres/               schema, tuning, pgBackRest config
 ├── scripts/
-│   ├── sync-to-pi.sh           push + build + test on minidude
+│   ├── sync-to-pi.sh           push + build + test on the Pi
 │   └── coverage.sh             instrumented build, report, threshold gate
 ├── docs/
 │   ├── HERDR-GUIDE.md          this file
@@ -313,12 +313,12 @@ cargo +nightly fuzz run fuzz_sfloat -- -max_total_time=60
 cmake --build build-fuzz && build-fuzz/vitals/fuzz_sfloat -max_total_time=60
 
 # gates
-ssh chris@minidude 'hciconfig hci1 | grep -q "UP RUNNING"'          && echo G1 OPEN
-ssh chris@minidude 'findmnt -no SOURCE / | grep -q nvme'            && echo G2 OPEN
-ssh chris@minidude 'jq -e ".ok==true" /var/lib/vitals/restore-verify.json' && echo G3 OPEN
+ssh "$PI_HOST" 'hciconfig hci1 | grep -q "UP RUNNING"'          && echo G1 OPEN
+ssh "$PI_HOST" 'findmnt -no SOURCE / | grep -q nvme'            && echo G2 OPEN
+ssh "$PI_HOST" 'jq -e ".ok==true" /var/lib/vitals/restore-verify.json' && echo G3 OPEN
 
 # harness
-herdr --remote chris@minidude
-herdr plugin action invoke spinup --plugin chris.opsx-dev-layout
+herdr --remote "$PI_HOST"
+herdr plugin action invoke spinup --plugin <layout-plugin-id>
 herdr agent list
 ```

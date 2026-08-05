@@ -1,4 +1,4 @@
- /Users/chris/Source/AnxietyWatch2/db/sqitch.plan
+ /path/to/AnxietyWatch2/db/sqitch.plan
 
  Took 0.0s
 
@@ -72,9 +72,9 @@
  already.
 
 
- $ ls /Users/chris/Source/AnxietyWatch2/vitals/registry.toml 2>/dev/null; ls
- /Users/chris/Source/AnxietyWatch2/vitals/generated/ 2>/dev/null; ls
- /Users/chris/Source/AnxietyWatch2/crates/ 2>/dev/null
+ $ ls /path/to/AnxietyWatch2/vitals/registry.toml 2>/dev/null; ls
+ /path/to/AnxietyWatch2/vitals/generated/ 2>/dev/null; ls
+ /path/to/AnxietyWatch2/crates/ 2>/dev/null
 
  vitals-core
  vitals-decode
@@ -87,26 +87,26 @@
  code has moved to Rust.
 
 
- $ find /Users/chris/Source/AnxietyWatch2/crates -type f -name '*.rs' -o -name
+ $ find /path/to/AnxietyWatch2/crates -type f -name '*.rs' -o -name
  '*.toml' -o -name '*.md' | sort
 
  ... (4 earlier lines, ctrl+o to expand)
- /Users/chris/Source/AnxietyWatch2/crates/vitals-decode/src/hr.rs
- /Users/chris/Source/AnxietyWatch2/crates/vitals-decode/src/lib.rs
- /Users/chris/Source/AnxietyWatch2/crates/vitals-decode/src/sfloat.rs
- /Users/chris/Source/AnxietyWatch2/crates/vitals-registry/Cargo.toml
- /Users/chris/Source/AnxietyWatch2/crates/vitals-registry/src/lib.rs
+ /path/to/AnxietyWatch2/crates/vitals-decode/src/hr.rs
+ /path/to/AnxietyWatch2/crates/vitals-decode/src/lib.rs
+ /path/to/AnxietyWatch2/crates/vitals-decode/src/sfloat.rs
+ /path/to/AnxietyWatch2/crates/vitals-registry/Cargo.toml
+ /path/to/AnxietyWatch2/crates/vitals-registry/src/lib.rs
 
  Took 0.0s
 
 
 
- $ find /Users/chris/Source/AnxietyWatch2/vitals -type f | sort
+ $ find /path/to/AnxietyWatch2/vitals -type f | sort
 
- /Users/chris/Source/AnxietyWatch2/vitals/CMakeLists.txt
- /Users/chris/Source/AnxietyWatch2/vitals/include/vitals.h
- /Users/chris/Source/AnxietyWatch2/vitals/src/version.c
- /Users/chris/Source/AnxietyWatch2/vitals/tests/test_toolchain.c
+ /path/to/AnxietyWatch2/vitals/CMakeLists.txt
+ /path/to/AnxietyWatch2/vitals/include/vitals.h
+ /path/to/AnxietyWatch2/vitals/src/version.c
+ /path/to/AnxietyWatch2/vitals/tests/test_toolchain.c
 
  Took 0.0s
 
@@ -138,8 +138,8 @@
  exists.
 
 
- $ ls /Users/chris/Source/AnxietyWatch2/Cargo.toml 2>/dev/null && cat
- /Users/chris/Source/AnxietyWatch2/Cargo.toml
+ $ ls /path/to/AnxietyWatch2/Cargo.toml 2>/dev/null && cat
+ /path/to/AnxietyWatch2/Cargo.toml
 
  ... (37 earlier lines, ctrl+o to expand)
  # A panic in a life-safety daemon should terminate the process so systemd
@@ -451,8 +451,8 @@
  Now let me check the remaining revert/verify files and the TOML-based registry:
 
 
- $ ls /Users/chris/Source/AnxietyWatch2/vitals/registry.toml 2>/dev/null && cat
- /Users/chris/Source/AnxietyWatch2/vitals/registry.toml 2>/dev/null || echo "No
+ $ ls /path/to/AnxietyWatch2/vitals/registry.toml 2>/dev/null && cat
+ /path/to/AnxietyWatch2/vitals/registry.toml 2>/dev/null || echo "No
  registry.toml yet"
 
  No registry.toml yet

@@ -132,32 +132,32 @@
  Now let me check if there's a db/ directory and the sfloat.rs file mentioned:
 
 
- $ find /Users/chris/Source/AnxietyWatch2 -type d -name "db" 2>/dev/null | head -5
+ $ find /path/to/AnxietyWatch2 -type d -name "db" 2>/dev/null | head -5
 
- /Users/chris/Source/AnxietyWatch2/db
- /Users/chris/Source/AnxietyWatch2/.git/objects/db
+ /path/to/AnxietyWatch2/db
+ /path/to/AnxietyWatch2/.git/objects/db
 
  Took 0.1s
 
 
 
- $ find /Users/chris/Source/AnxietyWatch2 -name "sfloat.rs" 2>/dev/null | head -5
+ $ find /path/to/AnxietyWatch2 -name "sfloat.rs" 2>/dev/null | head -5
 
- /Users/chris/Source/AnxietyWatch2/crates/vitals-decode/src/sfloat.rs
+ /path/to/AnxietyWatch2/crates/vitals-decode/src/sfloat.rs
 
  Took 0.0s
 
 
 
- $ ls -la /Users/chris/Source/AnxietyWatch2/crates/ 2>/dev/null || echo "No crates
+ $ ls -la /path/to/AnxietyWatch2/crates/ 2>/dev/null || echo "No crates
  directory"
 
  ... (1 earlier lines, ctrl+o to expand)
- drwxr-xr-x   5 chris  staff  160 Aug  3 04:02 .
- drwxr-xr-x  26 chris  staff  832 Aug  3 04:05 ..
- drwxr-xr-x   4 chris  staff  128 Aug  3 04:02 vitals-core
- drwxr-xr-x   5 chris  staff  160 Aug  3 04:02 vitals-decode
- drwxr-xr-x   4 chris  staff  128 Aug  3 04:02 vitals-registry
+ drwxr-xr-x   5 user   staff  160 Aug  3 04:02 .
+ drwxr-xr-x  26 user   staff  832 Aug  3 04:05 ..
+ drwxr-xr-x   4 user   staff  128 Aug  3 04:02 vitals-core
+ drwxr-xr-x   5 user   staff  160 Aug  3 04:02 vitals-decode
+ drwxr-xr-x   4 user   staff  128 Aug  3 04:02 vitals-registry
 
  Took 0.0s
 
@@ -167,27 +167,27 @@
 
 
 
- $ ls -la /Users/chris/Source/AnxietyWatch2/db/
+ $ ls -la /path/to/AnxietyWatch2/db/
 
  ... (3 earlier lines, ctrl+o to expand)
- drwxr-xr-x   9 chris  staff   288 Aug  3 04:05 deploy
- drwxr-xr-x   9 chris  staff   288 Aug  3 04:05 revert
- -rw-r--r--   1 chris  staff   204 Aug  3 04:05 sqitch.conf
- -rw-r--r--   1 chris  staff  1106 Aug  3 04:05 sqitch.plan
- drwxr-xr-x   9 chris  staff   288 Aug  3 04:05 verify
+ drwxr-xr-x   9 user   staff   288 Aug  3 04:05 deploy
+ drwxr-xr-x   9 user   staff   288 Aug  3 04:05 revert
+ -rw-r--r--   1 user   staff   204 Aug  3 04:05 sqitch.conf
+ -rw-r--r--   1 user   staff  1106 Aug  3 04:05 sqitch.plan
+ drwxr-xr-x   9 user   staff   288 Aug  3 04:05 verify
 
  Took 0.0s
 
 
 
- $ ls -la /Users/chris/Source/AnxietyWatch2/db/deploy/
+ $ ls -la /path/to/AnxietyWatch2/db/deploy/
 
  ... (5 earlier lines, ctrl+o to expand)
- -rw-r--r--  1 chris  staff   437 Aug  3 04:05 retention.sql
- -rw-r--r--  1 chris  staff  1260 Aug  3 04:05 samples.sql
- -rw-r--r--  1 chris  staff   923 Aug  3 04:05 samples_1min.sql
- -rw-r--r--  1 chris  staff   631 Aug  3 04:05 samples_compression.sql
- -rw-r--r--  1 chris  staff   439 Aug  3 04:05 samples_hypertable.sql
+ -rw-r--r--  1 user   staff   437 Aug  3 04:05 retention.sql
+ -rw-r--r--  1 user   staff  1260 Aug  3 04:05 samples.sql
+ -rw-r--r--  1 user   staff   923 Aug  3 04:05 samples_1min.sql
+ -rw-r--r--  1 user   staff   631 Aug  3 04:05 samples_compression.sql
+ -rw-r--r--  1 user   staff   439 Aug  3 04:05 samples_hypertable.sql
 
  Took 0.0s
 

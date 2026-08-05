@@ -122,14 +122,14 @@
 
 
 
- $ ls -la /Users/chris/Source/AnxietyWatch2/db/
+ $ ls -la /path/to/AnxietyWatch2/db/
 
  ... (3 earlier lines, ctrl+o to expand)
- drwxr-xr-x   9 chris  staff   288 Aug  3 04:05 deploy
- drwxr-xr-x   9 chris  staff   288 Aug  3 04:05 revert
- -rw-r--r--   1 chris  staff   204 Aug  3 04:05 sqitch.conf
- -rw-r--r--   1 chris  staff  1106 Aug  3 04:05 sqitch.plan
- drwxr-xr-x   9 chris  staff   288 Aug  3 04:05 verify
+ drwxr-xr-x   9 user   staff   288 Aug  3 04:05 deploy
+ drwxr-xr-x   9 user   staff   288 Aug  3 04:05 revert
+ -rw-r--r--   1 user   staff   204 Aug  3 04:05 sqitch.conf
+ -rw-r--r--   1 user   staff  1106 Aug  3 04:05 sqitch.plan
+ drwxr-xr-x   9 user   staff   288 Aug  3 04:05 verify
 
  Took 0.0s
 
@@ -139,15 +139,15 @@
 
 
 
- $ ls -la /Users/chris/Source/AnxietyWatch2/db/deploy/ && ls -la
- /Users/chris/Source/AnxietyWatch2/db/verify/
+ $ ls -la /path/to/AnxietyWatch2/db/deploy/ && ls -la
+ /path/to/AnxietyWatch2/db/verify/
 
  ... (15 earlier lines, ctrl+o to expand)
- -rw-r--r--  1 chris  staff  321 Aug  3 04:05 retention.sql
- -rw-r--r--  1 chris  staff  641 Aug  3 04:05 samples.sql
- -rw-r--r--  1 chris  staff  486 Aug  3 04:05 samples_1min.sql
- -rw-r--r--  1 chris  staff  285 Aug  3 04:05 samples_compression.sql
- -rw-r--r--  1 chris  staff  133 Aug  3 04:05 samples_hypertable.sql
+ -rw-r--r--  1 user   staff  321 Aug  3 04:05 retention.sql
+ -rw-r--r--  1 user   staff  641 Aug  3 04:05 samples.sql
+ -rw-r--r--  1 user   staff  486 Aug  3 04:05 samples_1min.sql
+ -rw-r--r--  1 user   staff  285 Aug  3 04:05 samples_compression.sql
+ -rw-r--r--  1 user   staff  133 Aug  3 04:05 samples_hypertable.sql
 
  Took 0.0s
 
