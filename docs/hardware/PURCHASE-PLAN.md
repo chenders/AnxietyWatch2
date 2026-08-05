@@ -189,7 +189,7 @@ module, so anything created beforehand is permanently a software key.
 
 | Item | ~$ | Buys |
 |---|---|---|
-| **Seeed MR60BHA2** 60 GHz mmWave | 25 | The only contactless option that actually measures **respiration**. Buy from the [Seeed Studio official Amazon storefront](https://www.amazon.com/stores/SeeedStudio) — not The Pi Hut (VAT you do not owe), and not any "Generic" $89 listing, which is the discontinued BHA1 at 4× price. Range for breathing is ~2 m, so it mounts above or beside the bed, and it is specified for one person |
+| **Seeed MR60BHA2** 60 GHz mmWave | 25 | Contactless **presence** only by default; respiration and HR must not escalate or clear CNS tiers until this unit passes bench validation against the Polar H10 ([evidence and gate](../design/HOMEASSISTANT-PRIOR-ART.md#6-respiration-sensing--a-warning-worth-heeding)). Buy from the [Seeed Studio official Amazon storefront](https://www.amazon.com/stores/SeeedStudio) — not The Pi Hut (VAT you do not owe), and not any "Generic" $89 listing, which is the discontinued BHA1 at 4× price. Range for breathing is ~2 m, so it mounts above or beside the bed, and it is specified for one person |
 | Zigbee coordinator (Sonoff ZBDongle-E) | 25 | Hue and most Zigbee gear locally — no bridge, no vendor cloud, works with the internet down |
 | 12 V strobe | 15 | Strongest visual channel. Shares the MOSFET board. Go bright and cold — the opposite of the panel's warm-dim design |
 | LTE USB modem | 30+ | Makes the out-of-band voice path independent of home internet |
