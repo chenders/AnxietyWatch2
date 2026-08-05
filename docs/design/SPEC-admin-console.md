@@ -277,19 +277,37 @@ is indistinguishable from a healthy one unless the console says otherwise** — 
 already produced five distinct failure modes in deployment, including a systemd unit reporting
 `active` while the screen showed nothing.
 
-Required: compositor running, the correct DRM connector attached, a Wayland socket that actually
-appeared, the browser process alive, and **the age of the last frame the panel rendered** — not
-merely that the service is up. Service-up and screen-lit are different claims and gen-2 has already
-learned the difference the hard way.
+Required: compositor running, the correct DRM connector attached and reporting `connected`, a Wayland
+socket that actually appeared, and the browser process alive. Service-up and screen-lit are different
+claims, and gen-2 has already learned the difference the hard way.
+
+**Deliberately not required: the age of the last rendered frame.** An earlier draft asked for it.
+Obtaining presentation timestamps for a separate browser process means a compositor extension or DRM
+polling — a disproportionate amount of new machinery for a gauge. The checks above catch every
+failure mode this project has actually hit. If a screen is physically dark despite all four passing,
+that is a hardware or driver fault, not something the console can see.
 
 ### 4.3 Services
 
 The machine's own daemons. `PROMPT-admin.md` mocks this screen up; without it here, restarting a
 daemon is formally out of scope while the design shows a button for it.
 
-**Enumerate the supervised units** — the sample-store daemon, each radio collector, the detection
-engine, the alarm daemon, the replication tailer, the display path (§4.2), and the scheduled jobs
-(§4.3). Per unit: state (§2.2), uptime, restart count, memory, last error, and last log lines.
+**Derive the unit list from the deployment manifest, never hardcode it.** A hardcoded list goes stale
+the moment a daemon is added or renamed, and the console then reports confidently on a set that no
+longer matches reality. Whatever is under supervision is what appears — including the display path
+(§4.2) and the scheduled importers (§4.4). Per unit: state (§2.2), uptime, restart count, memory,
+last error, and last log lines.
+
+**Host state belongs here too**, and has no other owner. These are the ways this box silently stops
+recording, and none of them involves a daemon crashing:
+
+- **NVMe free space and wear**, with a projected time-to-full. A disk that fills overnight ends
+  collection without any process failing.
+- **Thermal and undervoltage flags.** Undervoltage in particular degrades radios and storage before
+  anything logs an error.
+- **Hardware watchdog present and armed.**
+- **Network link and signal.** The wifi has already stranded this box once.
+- **Mains present / UPS state and charge**, once the UPS is fitted.
 
 - **Restart and stop are operations with audit entries** (§4.8) and confirmation proportionate to
   consequence (§5). Restarting the lyrics fetcher and restarting the alarm daemon overnight are not
@@ -307,7 +325,7 @@ radio — every card carrying:
 - State (`LIVE`/`FAILING`/`UNKNOWN`) computed against that source's declared cadence
 - Last attempt **and** last success, as distinct facts
 - **Row delta from the last run**, not just status
-- The failure reason when failing, sanitised (see §8)
+- The failure reason when failing, sanitised (§7, S7)
 - What this source **uniquely owns** — i.e. what is unrecoverable if it stays dark
 
 **Precedence must be visible.** Four sources write CPAP session rows under two asymmetric,
@@ -315,9 +333,23 @@ independently maintained skip-lists. Which source owns a given night is currentl
 without SQL. Show it.
 
 **Derived-state that silently corrupts must be inspectable.** The CPAP clock-offset correction guesses
-an offset for a device epoch bug and writes rows under the corrected date — which is the primary key.
-A wrong offset files clinical data under wrong dates with no way to see, confirm, or reset it. Expose
-the offset, when it was derived, and a way to correct it.
+an offset for a device epoch bug. In gen-1 it was applied at write time and the corrected date was
+the primary key, so a wrong offset filed clinical data under wrong dates with no way to see, confirm,
+or reset it.
+
+**Gen-2 must not reproduce that, and structurally cannot if the offset stays out of the write path.**
+Samples are append-only and identity is `(source, type, session_id, seq)` — not a timestamp — so a
+correction may never rewrite stored rows. Requirements:
+
+- Store the offset as **versioned metadata with its derivation evidence**, and apply it **at read
+  time**. Raw device time is always recoverable.
+- Show the raw device time, the applied transform, its version, and when it was derived.
+- Changing it is a new version, not an edit. A **preview** states which nights move and which would
+  collide *before* anything is committed, and both versions remain auditable afterwards.
+- Downstream aggregates recompute from source (they are continuous aggregates), so a corrected offset
+  propagates without a migration.
+
+This keeps the requirement inside §8's non-goal — the console never edits physiological samples.
 
 ### 4.5 Data
 
