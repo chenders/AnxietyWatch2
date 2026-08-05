@@ -18,7 +18,8 @@ from AnxietyWatch v1; where v1 made a choice, it is re-argued from scratch or re
 | `klaxond` | **C11** | anything with a runtime |
 | **BLE collectors** | **Rust** *(recommended change)* | C11 |
 | Codegen, tooling | **Python 3.12** | C, Go, shell |
-| HTTP API, admin, analysis | **Python 3.12 + FastAPI** | Flask, Go, Rust |
+| HTTP API and admin | **Rust + axum** — superseded by [Amendment 07](2026-08-05-amendment-07-api-in-rust.md) | Python + FastAPI, Go |
+| Analysis and batch importers | **Python 3.12** | Go, Rust |
 | Bedside panel + web UI | **Vanilla HTML/CSS/JS** | React, Svelte |
 | Database | **PostgreSQL 16 + TimescaleDB** | SQLite, InfluxDB, DuckDB |
 | Build | **CMake** | meson, Bazel, plain Make |
@@ -79,10 +80,14 @@ soak build, and an explicit weekly ASan soak test as a gate. Say which and I wil
 
 ---
 
-## 3. Python — and why FastAPI, not Flask
+## 3. Python — analysis and tooling only
 
-**Used for:** codegen (`gen_registry.py`), the HTTP API, admin console, analysis jobs, EDF/CPAP
-parsing.
+> **Superseded in part by [Amendment 07](2026-08-05-amendment-07-api-in-rust.md).** The HTTP API and
+> admin backend are Rust with axum. The FastAPI rationale below is retained as the record of the
+> superseded decision, not current guidance.
+
+**Still used for:** codegen (`gen_registry.py`), analysis jobs, and the carved-out batch importers
+such as EDF/CPAP parsing.
 
 **Why Python at all:** none of this is on the life-safety path. It is I/O-bound, changes often, and
 benefits from a large ecosystem. Rewriting the EDF parser in C would be weeks of work to make an
