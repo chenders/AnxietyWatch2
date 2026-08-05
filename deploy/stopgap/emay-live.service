@@ -10,7 +10,10 @@ Type=simple
 User=chris
 # Set EMAY_MAC with `systemctl edit emay-live`. Without it the binary exits 64
 # and says so, rather than starting and silently capturing nothing.
-Environment=EMAY_STATUS_JSON=/var/lib/anxietywatch-panel/status.json
+# Written INTO the checkout, next to the page that reads it. That path is
+# gitignored, so runtime data never dirties the working tree and `git pull`
+# never conflicts with it.
+Environment=EMAY_STATUS_JSON=/home/chris/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical/status.json
 ExecStart=/usr/local/bin/emay-spike
 # The ring powers down when it is not worn, so "not found" is the normal
 # overnight state, not a fault. Restart rather than give up: the run should
