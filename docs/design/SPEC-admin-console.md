@@ -128,6 +128,39 @@ degrades to `UNKNOWN` **automatically**, without anyone writing a rule for that 
   not need to be a push notification, and specifically must not be delivered only to the device whose
   silence is being reported.
 
+### 2.3b Writes are idempotent on content
+
+**Every write endpoint must be idempotent: re-sending data the server already holds is a no-op that
+returns the same result as the first send.** Not an error, not a duplicate, not a 409.
+
+This is a rule about the ingest API rather than the console, but the console is its main witness, and
+it removes a whole class of the defects §2.1 catalogues.
+
+**What it buys.** A client that does not know whether its POST landed can simply send again. That
+single property:
+
+- Makes a **durable client outbox trivial** — retry until acknowledged, no delivery-state tracking.
+- Removes the need for the ack to be reliable, which is the actual bug in the gen-1 watch path: a
+  delivered entry whose acknowledgement was lost gets re-sent and silently duplicated, and survives
+  today only because a natural-key upsert three hops downstream happens to collapse it.
+- Makes **at-least-once delivery sufficient**, so no layer needs exactly-once.
+
+**What it requires.**
+
+| | Rule |
+|---|---|
+| **Identity** | A stable, **client-generated** id on every record, minted at the point of capture — by the device the user touched, not by whatever receives it. UUIDv7 is the recommended shape: it carries creation time, so it sorts naturally and needs no separate ordering column |
+| **Same id, identical content** | No-op. Return the existing record and the same status as the original create |
+| **Same id, *different* content** | **Not a replay — an edit or a conflict.** It must be resolved deliberately (§2.3c), never silently overwritten. This is exactly what gen-1 does wrong: `ON CONFLICT (timestamp) DO UPDATE` cannot tell the two cases apart, so a second device's edit destroys the first with no signal |
+| **Same content, no id** | Rejected. Content-hash identity is tempting and wrong here — two genuinely separate journal entries with the same severity and empty notes are not the same event |
+
+**The console consequence, and it matters.** Once writes are idempotent, a healthy system produces
+**many legitimate no-op successes** — so "the sync succeeded" says even less than it did before.
+Every attempt record must therefore distinguish **created · updated · replayed (no-op) · rejected**,
+and the ingest surface must show the breakdown rather than a success count. A source whose every
+attempt succeeds as `replayed` is the §2.3 high-water-mark case wearing a new costume: working
+perfectly, moving nothing.
+
 ### 2.4 The law applies to the console itself
 
 The console is a status source and is not exempt.
