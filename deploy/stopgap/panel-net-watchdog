@@ -1,0 +1,52 @@
+#!/bin/sh
+# Bring the bedside Pi's wifi back up if it has dropped.
+#
+# WHY THIS EXISTS
+#
+# The panel runs headless — cage owns tty1 and there is no keyboard attached —
+# so there is no way to fix networking at the console. On 2026-08-04 a single
+# failed 4-way handshake while roaming between two APs on the same SSID was
+# reported by wpa_supplicant as reason=WRONG_KEY. NetworkManager concluded the
+# stored PSK might be wrong and asked a secret agent for a new one; with no
+# desktop session there was no agent, so it gave up permanently rather than
+# retrying the key that was on disk and perfectly good. The box stayed up with
+# the panel happily running and no network at all until it was power-cycled by
+# hand.
+#
+# `connection.autoconnect-retries 0` makes NM keep trying, which addresses the
+# common case. This is the backstop for everything else: a device that can only
+# be recovered by walking over and pulling its power is not an appliance.
+#
+# Deliberately conservative — it only acts when the interface has NO address.
+# It does not ping the internet or test DNS, because a router reboot or an ISP
+# outage is not something this should respond to by cycling the radio.
+
+IFACE=wlan0
+CONN=snorper
+
+addr=$(ip -4 -brief addr show "$IFACE" 2>/dev/null | awk '{print $3}')
+if [ -n "$addr" ]; then
+    exit 0
+fi
+
+echo "panel-net-watchdog: $IFACE has no address; attempting to bring up '$CONN'" >&2
+nmcli -w 30 connection up "$CONN" >/dev/null 2>&1 && {
+    echo "panel-net-watchdog: recovered — $(ip -4 -brief addr show "$IFACE" | awk '{print $3}')" >&2
+    exit 0
+}
+
+# Second attempt: cycle the radio. wpa_supplicant occasionally wedges in a
+# state that a connection-up alone does not clear.
+echo "panel-net-watchdog: connection up failed; cycling the radio" >&2
+nmcli radio wifi off; sleep 3; nmcli radio wifi on; sleep 8
+nmcli -w 30 connection up "$CONN" >/dev/null 2>&1
+
+addr=$(ip -4 -brief addr show "$IFACE" 2>/dev/null | awk '{print $3}')
+if [ -n "$addr" ]; then
+    echo "panel-net-watchdog: recovered after radio cycle — $addr" >&2
+else
+    # Say so loudly. A watchdog that fails silently is worth less than none:
+    # the journal is the only place this can be seen after the fact.
+    echo "panel-net-watchdog: STILL DOWN after both attempts" >&2
+    exit 1
+fi

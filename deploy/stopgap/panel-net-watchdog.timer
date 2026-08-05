@@ -1,0 +1,12 @@
+[Unit]
+Description=Check the bedside panel's wifi every minute
+
+[Timer]
+# First check a minute after boot, then every minute. Cheap: the common path
+# is one `ip addr show` and an exit.
+OnBootSec=60
+OnUnitActiveSec=60
+AccuracySec=10
+
+[Install]
+WantedBy=timers.target
