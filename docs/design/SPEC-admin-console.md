@@ -10,6 +10,9 @@ do, and why. Where the two disagree, this one governs behaviour and that one gov
 the running deployment. Findings labelled **[observed]** were seen in the running system, not
 inferred from code.
 
+**This document is expected to change as it is built.** It was written before most of what it
+describes exists. Amend it when implementation contradicts it — see [§9b](#9b-how-this-document-changes).
+
 ---
 
 ## 1. What this console is for
@@ -749,6 +752,38 @@ of scope for that release**, not an unticked box.
     for whatever shipped.
 19. The five gen-1 failures in §2.1 are regression tests, each asserting the gen-2 console
     distinguishes the case gen-1 conflated.
+
+---
+
+## 9b. How this document changes
+
+**This spec is expected to be wrong in places, and finding out is the point.** It was written before
+most of what it describes exists (§7b), from an audit of a different system. Contact with real
+hardware, real data rates and a real contract will contradict some of it. **Discovering that is a
+success, not a failure**, and the spec must not become something implementation works around.
+
+Use the existing amendment mechanism in [`../specs/AMENDMENTS.md`](../specs/AMENDMENTS.md). That log
+already does this well — it carries entries that supersede earlier amendments outright, including
+*"both were wrong"* and *"the hardware disproved it."* The record of the mistake is most of the
+value: it stops the same reasoning being repeated, and it is why §2.1's evidence is worth more than
+any assertion in this document.
+
+**What warrants an amendment:**
+
+- Measurement contradicts an estimate. Several numbers here are guesses awaiting data — per-source
+  cadences, the `N` in "high-water mark unmoved across N runs", retention. **Replace them with what
+  you measure**; do not defend them.
+- A contract cannot express a requirement, as with `FAILING` having no representation on the wire.
+- A requirement proves unbuildable at proportionate cost — the "age of the last rendered frame" was
+  cut for exactly this reason.
+- Building it reveals the requirement was solving the wrong problem, or a better solution now exists.
+
+**What does not:** finding it inconvenient, or not getting to it. That is a milestone slip (§3.1),
+not a spec change — and recording it as one is how a plan quietly stops describing reality.
+
+**The rule that keeps it honest:** an amendment states what it supersedes and **why the earlier
+version was wrong**. An edit that quietly improves the text loses the reason, and the reason is the
+part that generalises.
 
 ---
 
