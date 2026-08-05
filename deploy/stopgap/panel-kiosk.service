@@ -20,7 +20,7 @@ Conflicts=getty@tty1.service
 
 [Service]
 Type=simple
-User=chris
+User=anxietywatch
 # PAMName + TTYPath make logind open a real session on seat0, which is what
 # grants cage the DRM device and the touchscreen. Without them cage exits
 # immediately unable to open a backend.
@@ -34,7 +34,7 @@ StandardOutput=journal
 StandardError=journal
 UtmpIdentifier=tty1
 UtmpMode=user
-Environment=XDG_RUNTIME_DIR=/run/user/1000
+Environment=XDG_RUNTIME_DIR=/run/user/%U
 Environment=XDG_SESSION_TYPE=wayland
 # --disable-pinch: a two-finger touch otherwise zooms a fixed-size 800x480
 #   appliance, which has no meaning and no way back without a keyboard.

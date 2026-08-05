@@ -34,6 +34,14 @@ COMMITS="$(git rev-list "$RANGE" 2>/dev/null || echo '')"
 
 printf '\n── pre-push gates ──\n'
 
+# Scan every tracked file, not only this push's diff. Historical setup details
+# remain public until removed, and diff-only checks cannot catch them.
+if python3 scripts/check-public-info.py --self-test; then
+  ok "public-info scan clean"
+else
+  fail "personal or setup-specific information is present"
+fi
+
 # ── 1. never push to main directly ────────────────────────────────────────────
 # Gate on the REMOTE ref, not the local branch name. Checking the local branch
 # leaves a hole: `git push origin HEAD:main` or `git push origin feature:main`
@@ -95,7 +103,10 @@ if [[ -n "$ADDED" ]]; then
   # wears. Documented placeholders are exempt: XX octets and the reserved
   # AA:BB:CC:DD:EE:FF example. Redact to the vendor OUI — it is rediscoverable
   # with `btmgmt find` in seconds, so keeping it buys nothing.
-  if grep -oiE '\b([0-9A-F]{2}:){5}[0-9A-F]{2}\b' <<<"$ADDED" \
+  DEVICE_ADDED="$(git diff "$RANGE" --diff-filter=ACM -U0 -- . \
+    ':(exclude)scripts/check-public-info.py' \
+    | grep '^+' | grep -v '^+++' || true)"
+  if grep -oiE '\b([0-9A-F]{2}:){5}[0-9A-F]{2}\b' <<<"$DEVICE_ADDED" \
        | grep -qviE 'XX|AA:BB:CC:DD:EE:FF'; then
     fail "a full device address appears in the diff — redact to the OUI (00:11:22:XX:XX:XX)"
   fi

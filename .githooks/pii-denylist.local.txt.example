@@ -11,7 +11,7 @@
 #   provider and practice names, MRN or patient identifiers
 #   insurance member or group numbers
 #   real phone numbers not in 555-0100..555-0199
-#   personalised device names ("Chris's iPhone")
+#   personalised device names ("a user's iPhone")
 #   account emails and usernames
 #
 # What does NOT belong here:

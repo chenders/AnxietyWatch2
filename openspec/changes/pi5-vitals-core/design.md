@@ -11,7 +11,7 @@ how their output is verified without a human in the loop.
 Herdr `opsx-dev-layout` spins a conductor + N workers for this change:
 
 ```
-herdr plugin action invoke spinup --plugin example.opsx-dev-layout
+herdr plugin action invoke spinup --plugin <layout-plugin-id>
 ```
 
 - **Conductor** — reads `proposal.md`, `design.md`, `tasks.md`; dispatches; reviews; maintains
@@ -64,7 +64,7 @@ which model ran it. It also means the conductor verifies by running, not by read
 Task acceptance blocks are literal:
 
 ```
-**Verify:** `ssh $PI_HOST 'cd ~/AnxietyWatch2 && cargo test -p vitals-decode sfloat'`
+**Verify:** `ssh "$PI_HOST" 'cd ~/AnxietyWatch2 && cargo test -p vitals-decode sfloat'`
 **Expect:** exit 0, "Ok: 12" in output
 ```
 
@@ -94,13 +94,13 @@ Tasks declare `host:` because the two machines differ in what they can do.
 
 | `host:` | Meaning |
 |---|---|
-| `pi` | Runs on the-pi. Hardware, radios, systemd, Postgres, logs. |
+| `pi` | Runs on the Pi. Hardware, radios, systemd, Postgres, logs. |
 | `mac` | Runs in this repo. Specs, registry TOML, generated headers, plan bookkeeping. |
 | `either` | Pure code with no hardware dependency. Cross-compiles or runs in CI. |
 
 ### 4.1 Measured harness inventory (2026-08-03)
 
-| | Mac (this repo) | Pi (the-pi) |
+| | development host | Pi |
 |---|---|---|
 | `herdr` | `~/.local/bin/herdr` | **0.7.5, server live** (`~/.config/herdr/herdr.sock`) |
 | `pi` | `~/.nvm/.../bin/pi` | **0.83.0**, at `~/.local/share/pi-node/node-v22.23.2-linux-arm64/bin/pi` |
@@ -149,7 +149,7 @@ With both prerequisites done, the full §2 tier table is available on **both** h
 modes, both valid:
 
 **Mode A — Mac pool, remote execution (default).** Workers run on the Mac; every `Verify` in
-`tasks.md` is already written as `ssh $PI_HOST '…'`, so `host: pi` tasks execute remotely with
+`tasks.md` is already written as `ssh "$PI_HOST" '…'`, so `host: pi` tasks execute remotely with
 no change. Default for everything except long-running hardware work.
 
 **Mode B — Pi-local session.** For work where being on the box matters — the overnight T-B1 capture,
@@ -157,7 +157,7 @@ no change. Default for everything except long-running hardware work.
 connection — attach to the Pi's own herdr from the Mac:
 
 ```sh
-herdr --remote $PI_HOST
+herdr --remote "$PI_HOST"
 ```
 
 Workers execute locally on the Pi with the same model tiers. Prefer Mode B for all of Group A and

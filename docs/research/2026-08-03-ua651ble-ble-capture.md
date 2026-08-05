@@ -1,7 +1,7 @@
 # A&D UA-651BLE — live BLE capture
 
 **Date:** 2026-08-03
-**Hardware:** A&D UA-651BLE (`00:09:1F:XX:XX:XX`), Sena UD100-G03 (CSR8510) on the-pi
+**Hardware:** A&D UA-651BLE (`00:09:1F:XX:XX:XX`), Sena UD100-G03 (CSR8510) on the Pi
 **Kernel:** `6.12.96+rpt-rpi-2712` · **BlueZ:** 5.66
 **Feeds:** T-D6 (`bp-collector`) · **produced amendment 06**, which supersedes A05 §5 and extends §4.3
 

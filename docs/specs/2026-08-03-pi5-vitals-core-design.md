@@ -4,7 +4,7 @@
 **Status:** Design, pending approval
 **Supersedes (partially):** `docs/redesign_spec.md` §1.7, CLAUDE.md Design Principle #1
 **Hardware:** Raspberry Pi 5 (BCM2712, 8 GB LPDDR4X), NVMe via PCIe, Sena UD100-G03 BLE, Hosyond 7" DSI
-**Host:** `$PI_HOST` (hostname `raspberrypi`), passwordless sudo, Claude Code 2.1.220 installed
+**Host:** `$PI_HOST` (hostname `pi-host`), passwordless sudo, Claude Code 2.1.220 installed
 
 ---
 
