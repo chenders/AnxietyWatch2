@@ -147,8 +147,10 @@ muted fault is not a health state. Design **four separate visual vocabularies**:
 
 A component may show a health assertion **beside** its lifecycle state. It must never collapse them.
 
-**2. "Not configured" is not "unknown."** An optional source the user does not own, or simply did not
-wear last night, must render as *declared absent* — excluded from rollups, visible but quiet. If
+**2. "Not configured" is not "unknown."** An optional source the user does not own or has declared
+out of use must render as *declared absent* — excluded from rollups, visible but quiet. (A
+configured wearable that simply went unworn last night is different: that is a benign *unknown*,
+and expected silence is muted with an expiry date — it is never re-badged as configuration.) If
 every optional thing shows a question mark, the question mark becomes wallpaper and stops meaning
 anything. **This is the single fastest way to destroy the value of the third state.**
 

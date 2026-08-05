@@ -35,10 +35,12 @@ That optionality is architectural, not a caveat. Two consequences that bind else
   computed from whatever sources exist. A missing optional source narrows the evidence; it never
   produces a null that overwrites a real value — the gen-1 failure where authorization loss let
   aggregation write nils over restored data.
-- **An absent optional source must not render as a fault.** "I didn't wear the watch" and "the watch
+- **An absent optional source must not render as a fault.** "I don't use a watch" and "the watch
   feed is broken" are different facts and the console must distinguish them. This is the
   `NOT_CONFIGURED` state — declared-absent, excluded from rollups, never a question mark demanding
-  attention. Without it, `UNKNOWN` becomes wallpaper and stops meaning anything.
+  attention. (A configured wearable merely unworn one night is a third, different fact: a benign
+  `UNKNOWN`, optionally muted with an expiry.) Without the distinction, `UNKNOWN` becomes
+  wallpaper and stops meaning anything.
 
 **2. `samples` is append-only, and everything else is a view over it.** No `UPDATE`, no
 `DELETE`; removal is a tombstone. Merge is commutative, replay is exact, and a bug in a derived value

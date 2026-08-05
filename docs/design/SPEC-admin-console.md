@@ -164,10 +164,11 @@ single property:
 | **Same content, no id** | Rejected. Content-hash identity is tempting and wrong here — two genuinely separate journal entries with the same severity and empty notes are not the same event |
 
 **Scope.** The client-generated id applies to **domain records** — journal entries, songs, tags,
-severity ratings, doses: the things the client write API accepts. Physiological samples are not
-written through this API and keep their ingest identity `(source, type, session_id, seq)` per
-Amendments 01/05/06 — which is idempotent by construction (`ON CONFLICT DO NOTHING` on a stable
-key). The two identity schemes serve the same rule and never mix.
+severity ratings, doses. Pushed platform-store samples keep their ingest identity
+`(source, type, session_id, seq)` per Amendments 01/05/06 — which is idempotent by construction
+(`ON CONFLICT DO NOTHING` on a stable key). Both payload classes ride the **same** phone→Pi
+envelope (§8b): the envelope is transport, and the payload class selects the identity contract.
+The two identity schemes serve the same rule and never mix.
 
 **The console consequence, and it matters.** Once writes are idempotent, a healthy system produces
 **many legitimate no-op successes** — so "the sync succeeded" says even less than it did before.
@@ -225,7 +226,7 @@ at 7 days shows 5 silent days as `LIVE`, which is the original incident laundere
 not a universal enum, and forcing every state machine through them produces nonsense — **a completed
 upload is not `LIVE`; a queued job is not `UNKNOWN`; a muted fault is not a health state.**
 
-Four separate vocabularies, each rendered in its own visual language:
+Five separate vocabularies, each rendered in its own visual language:
 
 | Axis | Values | Applies to |
 |---|---|---|
@@ -233,7 +234,7 @@ Four separate vocabularies, each rendered in its own visual language:
 | **Lifecycle** | `queued` · `running` · `succeeded` · `failed` · `cancelled` | Jobs, uploads, imports — work with a beginning and an end |
 | **Process state** | `active` · `activating` · `failed` · `inactive` | Supervised units, straight from the supervisor |
 | **Operator suppression** | `muted until <date>, by operator` | An acknowledgement, never a health value |
-| **Configuration** | `NOT_CONFIGURED` — declared absent | Optional sources and channels (§1.1's graceful degradation). A configuration fact, not a health assertion: rendered outside the health palette, excluded from rollups, never promoted. M1 criterion 9 (§9) is its acceptance test |
+| **Configuration** | `NOT_CONFIGURED` — declared absent | Optional sources and channels (§1.1's graceful degradation). A **standing declaration, not a nightly fact**: an enabled wearable that went unworn is `UNKNOWN` (optionally muted, §2.6), never `NOT_CONFIGURED`. Rendered outside the health palette, excluded from rollups, never promoted. M1 criterion 9 (§9) is its acceptance test |
 
 Any component may carry a health assertion **alongside** its domain state — a job runner has both a
 lifecycle for each run and a health assertion about whether the runner itself is trustworthy. What it
@@ -285,7 +286,7 @@ hardware, so that schedule stalled before any loop closed.
 
 | | Contains | Gated on |
 |---|---|---|
-| **M0** — foundations, no UI | The observation/attempt schema · per-source cadence in the registry · the liveness evaluator as one pure function · an HTTP service · the client write API skeleton (§2.3b; envelope shape §8b) with a crude test page, deliberately not part of the console · the bind and auth decision | Nothing. None of it exists; everything below needs all of it |
+| **M0** — foundations, no UI | The observation/attempt schema · per-source cadence in the registry · the liveness evaluator as one pure function · an HTTP service · the client write API skeleton — the §8b envelope carrying the §2.3b domain-record class — with a crude test page, deliberately not part of the console · the bind and auth decision | Nothing. None of it exists; everything below needs all of it |
 | **M1** — first usable console, read-only | Overview · Display path · Ingest for the registry sources · **attempt history** · registry left-join so a never-seen source appears · console self-freshness · clock state · build and schema identity · host readouts (disk, thermal, undervoltage, network, watchdog) | M0 |
 | **M2** — operations | Services with logs and audited restart · **the silence detector** (§2.3) — the first consumer of the liveness evaluator that runs without a page open, feeding outbound email · outbound email with its test loop · operator-override storage for display metadata (§8b) · S1–S5 | M1 |
 | **M3** — data | Targeted integrity views, then scoped export | The sample store → storage tasks → the M.2 HAT |
@@ -778,9 +779,9 @@ normative home. Apache-2.0 ports carry attribution — and the NOTICE file, wher
 | What | From (licence) | Action |
 |---|---|---|
 | iOS HealthKit push — `HKObserverQuery` + background delivery, 23 metrics | HA companion iOS (Apache-2.0) | **Port** into the iOS app at the phone-ingest stage |
-| The webhook envelope — register-once / update-many, libsodium secretbox | HA companion protocol | **Reimplement** in the axum service; this is the client write API's ingest shape |
+| The webhook envelope — register-once / update-many, libsodium secretbox | HA companion protocol | **Reimplement** in the axum service as the single phone→Pi write surface. The envelope is transport only; it carries two payload classes with two identity contracts — domain records (client UUIDv7, §2.3b) and pushed platform-store samples (ingest identity, Amendments 01/05/06). M0 ships the envelope with the domain-record class; the sample class lands at the phone-ingest stage |
 | Android Health Connect sensors | HA companion Android (Apache-2.0) | **Port**, at the later Android stage |
-| myAir cloud client — Okta OAuth2 + PKCE, per-region GraphQL | `resmed_myair_sensors` (MIT) | **Reimplement** the protocol knowledge; implementation language per Amendment 07, whose batch-importer carve-out applies |
+| myAir cloud client — Okta OAuth2 + PKCE, per-region GraphQL | `resmed_myair_sensors` (MIT) | **Port** the `client/` subpackage as the Python batch importer's upgrade path (Amendment 07's carve-out). Gen-1's working `resmed_sync.py` is adopted meanwhile (`GEN1-REASSESSMENT.md`); this is what replaces it when the auth flow shifts |
 | SD-card CPAP ingest | `hms-cpap` (MIT); OSCAR is GPL-3 — **formats only, never code** | **Reimplement**, copying hms-cpap's clean-room NOTICE pattern |
 | Polar RR + PMD service knowledge | `polar-python` (MIT) | **Reimplement** in the Rust collector |
 | BLE operations layer — adapter recovery ladder, wedge watchdog, slot accounting, error-classified backoff, learned intervals | `habluetooth` / `bleak-retry-connector` (Apache-2.0 / MIT) | **Reimplement** in the collector supervisor; ARCH §6 is the porting guide |
@@ -886,7 +887,7 @@ resolve them early, and do not let them hold up M0.
 
 | Decision | Needed by | Why it can wait |
 |---|---|---|
-| **Bind and auth posture** — LAN-only, tunnel-only, or TLS with a pinned cert | M0 item 5 (the HTTP service) | M0 items 1–4 (attempt schema, cadence, evaluator, and its tests) are pure backend and need no network posture at all. Decide when the service is about to listen |
+| **Bind and auth posture** — LAN-only, tunnel-only, or TLS with a pinned cert | The M0 HTTP service | The rest of M0 — attempt schema, cadence, evaluator, and their tests — is pure backend and needs no network posture at all. Decide when the service is about to listen |
 | **Watch: peer node or thin sender with a durable outbox** | Stage 7 ("thin the phone") | Nothing in M0–M3 touches the watch. The existing behaviour keeps working meanwhile. Note that the watch is *already* a durable peer for sensor data — quick-log is the anomaly, not the norm — so the smaller change may simply be making quick-log consistent with what the watch already does |
 | **Whether to model the collector layer on Home Assistant's integration/coordinator shape** | Stage 4 (the BLE fleet) | The research landed with a recommendation: borrow the behaviours (§8b), not the machinery — see [`HOMEASSISTANT-ARCHITECTURE.md`](HOMEASSISTANT-ARCHITECTURE.md) §3. What remains at Stage 4 is confirming that against the real collector code, not an open design question |
 
