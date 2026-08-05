@@ -49,7 +49,8 @@ a 15-minute `PeriodicWorkRequestBuilder` poll. Not push.
 
 > **Verdict: PORT.** Apache-2.0 Swift, lifts into the existing iOS app, and the webhook envelope is
 > the client write API this project needs anyway. It also gives the Android leg for free later.
-> Note the licence obligation: Apache-2.0 requires attribution and a NOTICE.
+> Note the licence obligation: Apache-2.0 requires retaining the applicable attribution notices;
+> carry NOTICE contents when the upstream distribution includes a NOTICE file.
 
 ---
 
@@ -72,8 +73,9 @@ IEEE-11073 SFLOAT. HA contributes **connection management**, not decoders. That 
 | `Rudertier/medisana_blood_pressure` | **CC BY-NC 4.0** | **IGNORE** — a content licence on code, non-commercial only. Legally toxic |
 
 `polar-python` and `bleak-retry-connector` would grade USE-AS-IS for a Python collector; the table
-records **REIMPLEMENT** because under amendment 07 the collectors are Rust, and their value is the
-retry discipline and the PMD service knowledge rather than the code.
+records **REIMPLEMENT** because the project architecture makes collectors Rust (Amendment 07 covers
+the HTTP/socket-facing API, not this collector decision), and their value is the retry discipline and
+the PMD service knowledge rather than the code.
 
 ---
 
@@ -82,7 +84,7 @@ retry discipline and the PMD service knowledge rather than the code.
 | Item | Licence | Verdict |
 |---|---|---|
 | [`resmed_myair_sensors`](https://github.com/prestomation/resmed_myair_sensors) | MIT | **PORT** the `client/` subpackage — current **Okta OAuth2 + PKCE** and the per-region GraphQL endpoint map. Already proven separable (`myair-py` is a soft fork of exactly that) |
-| [`hms-cpap`](https://github.com/hms-homelab/hms-cpap) | MIT | **PORT / REIMPLEMENT** — reads the SD card (ezShare or local FS) for real-time session data. Its `NOTICE` is a model clean-room statement about OSCAR |
+| [`hms-cpap`](https://github.com/hms-homelab/hms-cpap) | MIT | **REIMPLEMENT** — reads the SD card (ezShare or local FS) for real-time session data. Although its MIT code is portable, this project chooses one clean-room boundary for the SD path; its `NOTICE` is the model statement about OSCAR |
 | **OSCAR** | **GPL-3.0** | **REIMPLEMENT ONLY.** Never copy a line; treat the file formats as a clean-room reimplementation, documented the way `hms-cpap`'s NOTICE does |
 | `edfio` | BSD-3 | **USE-AS-IS** — cleanest EDF reader. None of them understand ResMed channel semantics |
 

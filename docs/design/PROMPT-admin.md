@@ -227,9 +227,10 @@ completely. The rest are real and must be designed, but they land later.
 Screens 7–9 are where a lot of the real work happens. Do not treat them as an afterthought to the
 monitoring screens.
 
-**One screen deliberately excluded from prominence: the alarm path.** It exists, it is scheduled
-last, and it should appear as a normal section rather than a headline. A design that makes this
-console look like an alarm panel has misread the product.
+**One screen deliberately excluded from this nine-screen deliverable: the alarm path.** It is the
+tenth section, scheduled last at M6, and will be designed when the daemons and contracts it depends
+on exist. It must eventually appear as a normal section rather than a headline. A design that makes
+this console look like an alarm panel has misread the product.
 
 ## The three directions
 
@@ -239,11 +240,11 @@ three palettes on one layout.
 **Direction A — Clinical / biomedical equipment.** Model it on the service and technician interfaces
 of real hospital equipment — the screens behind the patient-facing display on a Philips IntelliVue,
 GE CARESCAPE, or a Dräger ventilator. Rigid information hierarchy, fixed field positions that never
-reflow, dense tabular readouts, explicit units on everything, alarm-priority conventions
-(high/medium/low) with the distinct visual weight each carries, technical alarms strictly separated
-from physiological ones, and timestamps on every value. It should look like the maintenance mode of
-a regulated medical device. Do not soften it — this direction earns its keep by being
-uncompromising.
+reflow, dense tabular readouts, explicit units on everything, technician/service-priority
+conventions with distinct visual weight, technical state strictly separated from physiological
+measurements, and timestamps on every value. It should look like the maintenance mode of a regulated
+medical device without implying that this personal tool is regulated. Do not soften it — this
+direction earns its keep by being uncompromising.
 
 **Direction B and C — your call.** Two coherent alternatives. Real positions. As illustration, not a
 menu: a systems-console approach with monospace and keyboard-first navigation; a topology approach
