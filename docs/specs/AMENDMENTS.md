@@ -17,6 +17,7 @@ wins**. If you find a contradiction, report it rather than implementing either v
 | **04** | [Multi-model review findings](2026-08-03-amendment-04-review-findings.md) | design §3–§5, amendments 01–03 | most of Group D |
 | **05** | [Corrections and runtime safety](2026-08-03-amendment-05-corrections-and-runtime-safety.md) | **amendment 04 §1 and §3.2 — both were wrong** | T-B1, T-D3…D6, T-K2, T-K6 |
 | **06** | [BP identity and durability](2026-08-03-amendment-06-bp-identity-and-durability.md) | **amendment 05 §5 (T-D6 row) — the hardware disproved it**, and **§1.1's identity rule, which it narrows**; extends §4.3; restates A01 §5's durability rule | T-B1, T-D3, T-D4, T-D6 |
+| **07** | [The HTTP API and admin console are Rust, not Python](2026-08-05-amendment-07-api-in-rust.md) | **`language-choices.md` §1 row "HTTP API, admin, analysis → Python 3.12 + FastAPI", and §3 in full** | admin console M0–M2, web dashboard backend, client write API |
 | — | [C vs Rust evaluation](2026-08-03-c-vs-rust-evaluation.md) | the C11 decision | all code tasks |
 | — | [Review synthesis and fix tracker](../reviews/SYNTHESIS.md) | — | status of every finding |
 

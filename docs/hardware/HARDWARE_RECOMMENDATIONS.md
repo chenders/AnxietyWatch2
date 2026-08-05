@@ -255,7 +255,7 @@ these turn up refurbished.
 
 | Item | Buys |
 |---|---|
-| **Seeed MR60BHA2** (60 GHz) | **The only one of these that measures respiration.** ~5 mm wavelength resolves sub-1 mm chest displacement; tested within 3 BPM of a medical pulse oximeter. **Breathing/heartbeat range is only 1.5 m** (6 m presence-only), so it mounts above or beside the bed |
+| **Seeed MR60BHA2** (60 GHz) | **Presence-only by default.** Its breath and heart-rate outputs are unvalidated and must not escalate or clear CNS tiers until this deployed unit passes extensive bench validation against the Polar H10 (see [`HOMEASSISTANT-PRIOR-ART.md` §6](../design/HOMEASSISTANT-PRIOR-ART.md#6-respiration-sensing--a-warning-worth-heeding)). **Breathing/heartbeat range is only 1.5 m** (6 m presence-only), so it mounts above or beside the bed |
 
 **There is no bare module — the MR60BHA1 is discontinued.** The MR60BHA2 ships pre-assembled with a
 XIAO ESP32C6, and that is the only way to buy it.
@@ -274,9 +274,10 @@ $89, which is the discontinued BHA1 at four times its price.
 The BHA2 also beats the BHA1 on specs: 80° × 80° coverage against 40° × 40°, and 0.4–2 m against
 0.4–1.5 m.
 
-**Two constraints worth knowing before it becomes a signal the detection engine trusts:** breathing
+**Two constraints worth knowing before even testing it as a detection-engine signal:** breathing
 and heartbeat work to ~2 m (presence to 6 m), so it mounts above or beside the bed; and it is
-specified for **one person in range** — a second body degrades accuracy.
+specified for **one person in range** — a second body degrades accuracy. Until the bench-validation
+gate above passes, neither output may escalate or clear a tier.
 | ~~LD2410 / LD2450 (24 GHz)~~ | **Not respiration sensors.** The LD2450 is a *tracking* radar — it outputs distance, angle and velocity for moving targets, i.e. where people are. The LD2410 does presence and micro-motion. Neither measures breathing. An earlier draft of this document listed them for respiration; that was wrong |
 | CO₂ sensor (SCD40/SCD41) | Bedroom CO₂ correlates with sleep quality and can be genuinely high in a closed room |
 | Temperature / humidity (SHT41, BME280) | Environmental context, and it protects the box: alarms on enclosure temperature |
