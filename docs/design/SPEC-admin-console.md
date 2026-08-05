@@ -87,10 +87,12 @@ What that produced, in the live system **[observed]**:
 | `Last Used` on an API key, two days *newer* than the newest `sync_log` row | Requests were arriving and leaving no trace of their outcome |
 | 6 of 6 keys `Active`, one labelled `…-revoke-after`, two never used since April | The page shows `Last Used` and never computes staleness, so an explicit note-to-self sat ignored for two months in plain sight |
 
-The root cause is structural, not cosmetic: **`sync_log` is a success-only ledger.** The
-`INSERT INTO sync_log` sits *inside* the `try` block; the `except` rolls back and returns 500. A
-failed sync leaves no row at all. The dashboard's freshest-row query therefore cannot distinguish
-"you stopped syncing" from "every sync since has failed."
+Beneath the table sit several distinct defect classes — success reported without effect, no declared
+expectation, absent-state UI — and §2.2–§2.3 address each in turn. The deepest is structural, not
+cosmetic: **`sync_log` is a success-only ledger.** The `INSERT INTO sync_log` sits *inside* the
+`try` block; the `except` rolls back and returns 500. A failed sync leaves no row at all. The
+dashboard's freshest-row query therefore cannot distinguish "you stopped syncing" from "every sync
+since has failed."
 
 ### 2.2 The requirement
 
@@ -106,8 +108,8 @@ against that expectation and renders one of three states — never two:
 | `FAILING` | Observed, and bad | PROBLEM, with the reason |
 | `UNKNOWN` | Never observed · stale past expectation · check itself did not run | **A QUESTION** — visually distinct from both |
 
-A backup never verified is not a passing backup. A self-test that has not run in 40 days is not a
-working alarm. A collector reporting no errors because it never started is not healthy.
+A backup never verified is not a passing backup. A channel untested for 40 days is not a working
+channel. A collector reporting no errors because it never started is not healthy.
 
 **No status may be displayed without the age of the observation behind it.** "OK" is meaningless;
 "OK · checked 4m ago" is a fact. A status whose underlying check is older than its expected interval
@@ -158,8 +160,14 @@ single property:
 |---|---|
 | **Identity** | A stable, **client-generated** id on every record, minted at the point of capture — by the device the user touched, not by whatever receives it. UUIDv7 is the recommended shape: it carries creation time, so it sorts naturally and needs no separate ordering column |
 | **Same id, identical content** | No-op. Return the existing record and the same status as the original create |
-| **Same id, *different* content** | **Not a replay — an edit or a conflict.** It must be resolved deliberately (§2.3c), never silently overwritten. This is exactly what gen-1 does wrong: `ON CONFLICT (timestamp) DO UPDATE` cannot tell the two cases apart, so a second device's edit destroys the first with no signal |
+| **Same id, *different* content** | **Not a replay — an edit or a conflict.** It is resolved deliberately: the write is rejected with a distinct conflict status, recorded as `rejected` on its attempt, and surfaced in the console for operator resolution — never silently overwritten. This is exactly what gen-1 does wrong: `ON CONFLICT (timestamp) DO UPDATE` cannot tell the two cases apart, so a second device's edit destroys the first with no signal |
 | **Same content, no id** | Rejected. Content-hash identity is tempting and wrong here — two genuinely separate journal entries with the same severity and empty notes are not the same event |
+
+**Scope.** The client-generated id applies to **domain records** — journal entries, songs, tags,
+severity ratings, doses: the things the client write API accepts. Physiological samples are not
+written through this API and keep their ingest identity `(source, type, session_id, seq)` per
+Amendments 01/05/06 — which is idempotent by construction (`ON CONFLICT DO NOTHING` on a stable
+key). The two identity schemes serve the same rule and never mix.
 
 **The console consequence, and it matters.** Once writes are idempotent, a healthy system produces
 **many legitimate no-op successes** — so "the sync succeeded" says even less than it did before.
@@ -191,8 +199,9 @@ mean the last thing it saw stopped being true:
 Erasing the second line is the failure. The reason a source was failing is the only fact that lets
 the operator fix it, and it is exactly what gen-1 threw away.
 - **Clock health is a subsystem.** Every age in this document is computed against the Pi's clock. NTP
-  sync state and RTC battery presence appear on the Overview. This is not hypothetical: §6 already
-  records two clock-skew hazards this project has hit.
+  sync state and RTC battery presence appear on the Overview. This is not hypothetical: this project
+  has already hit two clock hazards — the CPAP epoch offset (§4.4) and the device-clock-skew replay
+  window (§6).
 
 ### 2.5 Cadence — the boundary cases
 
@@ -224,10 +233,11 @@ Four separate vocabularies, each rendered in its own visual language:
 | **Lifecycle** | `queued` · `running` · `succeeded` · `failed` · `cancelled` | Jobs, uploads, imports — work with a beginning and an end |
 | **Process state** | `active` · `activating` · `failed` · `inactive` | Supervised units, straight from the supervisor |
 | **Operator suppression** | `muted until <date>, by operator` | An acknowledgement, never a health value |
+| **Configuration** | `NOT_CONFIGURED` — declared absent | Optional sources and channels (§1.1's graceful degradation). A configuration fact, not a health assertion: rendered outside the health palette, excluded from rollups, never promoted. M1 criterion 9 (§9) is its acceptance test |
 
 Any component may carry a health assertion **alongside** its domain state — a job runner has both a
 lifecycle for each run and a health assertion about whether the runner itself is trustworthy. What it
-may not do is collapse them into one field. Acceptance criterion 1 (§9) applies to the health axis
+may not do is collapse them into one field. M1 criterion 4 (§9) applies to the health axis
 only.
 
 ### 2.6 The failure mode this law creates, and its bound
@@ -275,13 +285,17 @@ hardware, so that schedule stalled before any loop closed.
 
 | | Contains | Gated on |
 |---|---|---|
-| **M0** — foundations, no UI | The observation/attempt schema · per-source cadence in the registry · the liveness evaluator as one pure function · an HTTP service · the bind and auth decision | Nothing. None of it exists; everything below needs all of it |
+| **M0** — foundations, no UI | The observation/attempt schema · per-source cadence in the registry · the liveness evaluator as one pure function · an HTTP service · the client write API skeleton (§2.3b; envelope shape §8b) with a crude test page, deliberately not part of the console · the bind and auth decision | Nothing. None of it exists; everything below needs all of it |
 | **M1** — first usable console, read-only | Overview · Display path · Ingest for the registry sources · **attempt history** · registry left-join so a never-seen source appears · console self-freshness · clock state · build and schema identity · host readouts (disk, thermal, undervoltage, network, watchdog) | M0 |
-| **M2** — operations | Services with logs and audited restart · outbound email with its test loop · S1–S5 | M1 |
+| **M2** — operations | Services with logs and audited restart · **the silence detector** (§2.3) — the first consumer of the liveness evaluator that runs without a page open, feeding outbound email · outbound email with its test loop · operator-override storage for display metadata (§8b) · S1–S5 | M1 |
 | **M3** — data | Targeted integrity views, then scoped export | The sample store → storage tasks → the M.2 HAT |
 | **M4** — analysis | Job lifecycle, cost ledger, AI review loop | M3 + a job runner |
 | **M5** — records and recovery | Domain CRUD · backups and restore verification | Schema that does not exist yet |
 | **M6** — alarm path | Channel availability, self-test, arming | Daemons that do not exist yet |
+
+**Vocabulary.** M-numbers are this console's milestones. *Stage N* refers to the build stages of the
+pi5 vitals-core plan (the architecture design this console sits inside); the *M.2 HAT* is the NVMe
+storage hardware and has nothing to do with milestone M2.
 
 **Attempt history is in M1, not M3.** It is the single thing that distinguishes *silent* from
 *failing repeatedly*, which is this document's entire claim (§2.1). Putting it behind a generic data
@@ -314,12 +328,14 @@ state have no request verb that can set them (§7b). Nothing else waits on it.
 
 Not in `PROMPT-admin.md`'s subsystem list, and it must be. **A bedside monitor whose screen is dark
 is indistinguishable from a healthy one unless the console says otherwise** — and the panel has
-already produced five distinct failure modes in deployment, including a systemd unit reporting
+already produced multiple distinct failure modes in deployment, including a systemd unit reporting
 `active` while the screen showed nothing.
 
 Required: compositor running, the correct DRM connector attached and reporting `connected`, a Wayland
-socket that actually appeared, and the browser process alive. Service-up and screen-lit are different
-claims, and gen-2 has already learned the difference the hard way.
+socket that actually appeared, and the browser process alive. All four are filesystem reads —
+`/sys/class/drm` and socket paths, never DRM ioctls; the console backend does not need DRM master or
+membership in the render groups. Service-up and screen-lit are different claims, and gen-2 has
+already learned the difference the hard way.
 
 **Deliberately not required: the age of the last rendered frame.** An earlier draft asked for it.
 Obtaining presentation timestamps for a separate browser process means a compositor extension or DRM
@@ -335,8 +351,9 @@ daemon is formally out of scope while the design shows a button for it.
 **Derive the unit list from the deployment manifest, never hardcode it.** A hardcoded list goes stale
 the moment a daemon is added or renamed, and the console then reports confidently on a set that no
 longer matches reality. Whatever is under supervision is what appears — including the display path
-(§4.2) and the scheduled importers (§4.4). Per unit: state (§2.2), uptime, restart count, memory,
-last error, and last log lines.
+(§4.2) and the scheduled importers (§4.4). Per unit: supervisor process state *and* the computed
+health assertion, as separate axes (§2.5b), plus uptime, restart count, memory, last error, and last
+log lines.
 
 **Host state belongs here too**, and has no other owner. These are the ways this box silently stops
 recording, and none of them involves a daemon crashing:
@@ -391,13 +408,22 @@ correction may never rewrite stored rows. Requirements:
 
 This keeps the requirement inside §8's non-goal — the console never edits physiological samples.
 
+**Milestone split.** Displaying the current transform — raw device time, applied version, its
+derivation — is M1, read-only. Minting a new version, with its preview of which nights move, is
+**M3**: it is a mutation, and the preview needs the sample store to compute against.
+
 ### 4.5 Data
 
-- **All tables, not a subset.** Gen-1 browses 14 of 40; 20 have no surface anywhere, including the
-  largest table in the system and the app-only oximetry rows that nothing else can reconstruct.
-- **Real pagination.** Gen-1 has `LIMIT` with no `OFFSET` and a 500-row ceiling, so **row 501 of any
-  table is unreachable through the UI, ever**. Tables that cannot be paged safely must be aggregated
-  instead — never listed.
+- **Nothing invisible — and no generic browser.** Every stored table is reachable through *some*
+  surface: a targeted integrity view, an aggregate, or scoped export (criterion 14, §9). Gen-1
+  failed the coverage half — 14 of 40 tables browsable, the largest table and the app-only oximetry
+  rows with no surface anywhere — but "all 40 tables" is a gen-1 number, and a generic all-tables
+  browser is explicitly **not** the requirement (`GEN1-REASSESSMENT.md` §2.4): gen-2 has seven
+  tables, one of them a hypertable.
+- **Real pagination, sized to the store.** Keyset pagination on the time index — never `OFFSET`,
+  and never `COUNT(*)` against the hypertable. Gen-1's `LIMIT` with no `OFFSET` and a 500-row
+  ceiling made **row 501 of any table unreachable through the UI, ever**. Tables that cannot be
+  paged safely are aggregated instead — never listed.
 - **Never conflate truncation with completeness.** "Showing 25 of up to 25 rows" is ambiguous by
   construction. Show the true total, or state explicitly that it is a window.
 - Date-range and source filters, sortable columns, and export.
@@ -603,7 +629,7 @@ running and inspectable**, not after the box is off.
 
 | Capability | Risk if dropped |
 |---|---|
-| **Redundant push alert channel** | A safety regression, not a feature cut. §4.10 |
+| **Redundant push alert channel** | Channel continuity, not a feature cut — the one channel that reaches the operator away from the console. §4.10 |
 | **Clinical PDF report generation** | A documented pre-appointment workflow with no successor |
 | **JSON/CSV export** | Browse-and-search is not the same as emit-a-portable-file |
 | **Correlation recompute** | Never had a button; easy to lose silently |
@@ -613,7 +639,7 @@ running and inspectable**, not after the box is off.
 | **Log sanitisation** | Token redaction exists in gen-1. Fresh logging code starts leaking credentials into the journal |
 | **"Phone has gone dark"** | Belongs on the Pi, exists nowhere today. §2.3 |
 | **Phone-side health-access state** | Irreducible to the Pi, but its *state* must surface here. A phone that silently loses health-data access is invisible from the Pi today — and that exact freeze ran undetected for three months |
-| **Device↔server reconciliation** | Distinct from backup/restore. The restore path carries hard-won invariants (empty-store guard that names its blocker, preserve server-side row identity, mark restored rows as already-synced, page anything large). Recovery covers cluster restore, not this |
+| **Device↔server reconciliation** | Reframed by gen-2, not carried as-is: with the Pi as system of record, reprovisioning a phone is a projection rebuild, so the empty-store guard and the per-table importers do **not** migrate (`GEN1-REASSESSMENT.md` §3). What needs an owner is the capability — a fresh install rebuilds its view completely — and the surviving lesson that a guard which fails closed names its blocker. Owner: Recovery (§4.6, M5) |
 
 **Undocumented operational knowledge** encoded only in gen-1 code, which must be carried across
 deliberately: the replay window keyed on server receipt rather than device timestamp, so a skewed
@@ -667,8 +693,8 @@ daemon that exists.
 | Spec says | Contract says | Consequence |
 |---|---|---|
 | Three states `LIVE` / `FAILING` / `UNKNOWN` | `Liveness` is `Live` / `Stale` / `NeverSeen` | **There is no `FAILING` on the wire.** `Stale` reads like "bad" but means only "past cadence" and belongs in `UNKNOWN`. Required mapping: `Live → LIVE`, `Stale → UNKNOWN`, `NeverSeen → UNKNOWN`. A source actively producing *bad* data has no representation at all and needs new plumbing |
-| A never-seen source shows `UNKNOWN` | A source that never reported is **absent from the map**, not present as `NeverSeen` | The console must left-join the registry's known sources against reported ones to synthesise "never seen." The daemon has no census to diff against — this is console-side work, and §9.4 is otherwise unsatisfiable for a collector that never started |
-| Each source declares its cadence | One global constant for the whole daemon; the registry has no cadence field | **§9.3 is untestable today.** Per-source cadence in the registry is a named prerequisite: schema change plus codegen |
+| A never-seen source shows `UNKNOWN` | A source that never reported is **absent from the map**, not present as `NeverSeen` | The console must left-join the registry's known sources against reported ones to synthesise "never seen." The daemon has no census to diff against — this is console-side work, and M1 criterion 7 (§9) is otherwise unsatisfiable for a collector that never started |
+| Each source declares its cadence | One global constant for the whole daemon; the registry has no cadence field | **M0 criterion 2 (§9) is untestable today.** Per-source cadence in the registry is a named prerequisite: schema change plus codegen |
 
 Additionally, the heartbeat inputs (`monitoring_window_active`, tier evaluation, drain progress) are
 public fields with **no request verb that can set them**. Today `monitoring_window_active` can never
@@ -694,8 +720,8 @@ wrong in the most expensive direction — it is the most blocked section in the 
 
 - Reviewing health data — that is the web dashboard.
 - Multi-user, roles, or permissions. One operator.
-- Editing physiological samples. The console inspects and exports them; corrections happen at
-  ingest.
+- Editing physiological samples. The console inspects and exports them; corrections are versioned
+  read-time transforms (§4.4), never row edits.
 - Replacing systemd, Postgres, or the shell. This surfaces state and triggers work; it is not a
   general-purpose remote console.
 
@@ -718,7 +744,7 @@ This section is the normative subset; the reasoning and the receipts live in tho
 | **Evidence beats a timer** | Data arriving from a source in retry backoff short-circuits the backoff immediately | ARCH §3 |
 | **Failure taxonomy** | Every collector/job failure is classified transient / needs-credentials / terminal, and each class is handled differently (retry with backoff · surface for reauth, stop polling · stop, surface) | ARCH §3 |
 | **Learned BLE staleness intervals** | BLE collectors may refine the declared cadence with a learned advertising interval (max of a sample window + wobble), with a per-device sleepy override. The registry cadence remains the floor — learned values may tighten expectation, never loosen it past the declaration | ARCH §2.3b |
-| **Operator-override / system-default split** | Any operator-editable display metadata (source names, units, precision) stores the system default beside the operator value; display resolves operator-or-default, so upgrades never stomp customisation | ARCH §4 |
+| **Operator-override / system-default split** | Any operator-editable display metadata (source names, units, precision) stores the system default beside the operator value; display resolves operator-or-default, so upgrades never stomp customisation. Overrides are rows in the console's own schema (M2); system defaults stay in the git-owned registry — **the console never writes git** | ARCH §4 |
 | **Never silently stop persisting** | Under load, bound the queue and apply backpressure or spill to disk. Dropping persistence to protect the process — HA's recorder-shedding behaviour — is prohibited; here the data is the product | ARCH §8.3 |
 
 The statistics semantics (time-weighted means, gaps-not-zeros, retention decided at schema time) are
@@ -745,14 +771,16 @@ which is mechanism substituting for trust this project does not need. Receipts i
 ### Integrations to translate
 
 Verdicts, licences, and reasoning in [`HOMEASSISTANT-PRIOR-ART.md`](HOMEASSISTANT-PRIOR-ART.md);
-this is the commitment list. Apache-2.0 ports carry attribution and NOTICE obligations.
+this is the commitment list. These are product and collector obligations rather than console
+behaviour; they are recorded here, once, at the operator's direction so the commitment has a
+normative home. Apache-2.0 ports carry attribution — and the NOTICE file, where upstream ships one.
 
 | What | From (licence) | Action |
 |---|---|---|
 | iOS HealthKit push — `HKObserverQuery` + background delivery, 23 metrics | HA companion iOS (Apache-2.0) | **Port** into the iOS app at the phone-ingest stage |
 | The webhook envelope — register-once / update-many, libsodium secretbox | HA companion protocol | **Reimplement** in the axum service; this is the client write API's ingest shape |
 | Android Health Connect sensors | HA companion Android (Apache-2.0) | **Port**, at the later Android stage |
-| myAir cloud client — Okta OAuth2 + PKCE, per-region GraphQL | `resmed_myair_sensors` (MIT) | **Port the protocol knowledge** to Rust |
+| myAir cloud client — Okta OAuth2 + PKCE, per-region GraphQL | `resmed_myair_sensors` (MIT) | **Reimplement** the protocol knowledge; implementation language per Amendment 07, whose batch-importer carve-out applies |
 | SD-card CPAP ingest | `hms-cpap` (MIT); OSCAR is GPL-3 — **formats only, never code** | **Reimplement**, copying hms-cpap's clean-room NOTICE pattern |
 | Polar RR + PMD service knowledge | `polar-python` (MIT) | **Reimplement** in the Rust collector |
 | BLE operations layer — adapter recovery ladder, wedge watchdog, slot accounting, error-classified backoff, learned intervals | `habluetooth` / `bleak-retry-connector` (Apache-2.0 / MIT) | **Reimplement** in the collector supervisor; ARCH §6 is the porting guide |
@@ -770,8 +798,9 @@ of scope for that release**, not an unticked box.
 ### M0 — foundations
 
 1. The liveness evaluator is **one pure function** with an injectable clock, unit-tested at the
-   boundary (`age == cadence`), and both the console and the silence detector call it. Neither
-   reimplements it.
+   boundary (`age == effective cadence`, where the effective cadence is the declared floor,
+   possibly tightened by a learned interval — §8b). It is the only implementation: the console (M1)
+   and the silence detector (M2) call it rather than reimplementing it.
 2. Every source in the registry declares a cadence; a source without one is a **build-time error**,
    not a silently-`LIVE` card.
 3. An attempt record exists before its work begins and carries an expected duration; killing the

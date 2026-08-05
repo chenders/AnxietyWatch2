@@ -101,6 +101,8 @@ nothing", "sensor said 96% forty minutes ago", "finger not on sensor", and "neve
 different states; HA collapses them into two. The CNS quality-gate asymmetry (indeterminate ≠ safe ≠
 dangerous) goes beyond what HA ships. In Rust the state should be a sum type —
 `Fresh(v) | Stale(v, age) | Invalid(reason) | Unreachable | NeverSeen` — not a string vocabulary.
+(Non-normative: the console's health axis remains the spec's three states; the richer sum type is
+collector-side representation that the evaluator collapses.)
 
 ---
 

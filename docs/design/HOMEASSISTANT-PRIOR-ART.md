@@ -64,16 +64,16 @@ IEEE-11073 SFLOAT. HA contributes **connection management**, not decoders. That 
 
 | Item | Licence | Verdict |
 |---|---|---|
-| [`polar-python`](https://github.com/zHElEARN/polar-python) | MIT | **USE-AS-IS** — the one real find. RR intervals *and* the Polar PMD service for raw ECG/ACC/PPG. No HA wrapper exists |
-| [`bleak-retry-connector`](https://github.com/Bluetooth-Devices/bleak-retry-connector) | MIT | **USE-AS-IS** — retry/backoff plus service-cache reuse. Directly the `fix/t4-ble-reconnect` problem class |
+| [`polar-python`](https://github.com/zHElEARN/polar-python) | MIT | **REIMPLEMENT** — the one real find. RR intervals *and* the Polar PMD service for raw ECG/ACC/PPG. No HA wrapper exists |
+| [`bleak-retry-connector`](https://github.com/Bluetooth-Devices/bleak-retry-connector) | MIT | **REIMPLEMENT** — retry/backoff plus service-cache reuse. Directly the `fix/t4-ble-reconnect` problem class |
 | [`habluetooth`](https://github.com/Bluetooth-Devices/habluetooth) | Apache-2.0 | **REIMPLEMENT** — the **connection-slot broker** is the idea. Three concurrent GATT streams on one adapter is exactly where limits bite |
 | `bthome` | MIT | **IGNORE** for vitals — the v2 object-ID catalogue defines **no** HR, BP or SpO2 types, and it is advertisement-only |
 | `theengs/decoder` | **GPL-3.0** | **IGNORE** — copyleft, advert-only, and its Polar entry decodes broadcast BPM with no RR |
 | `Rudertier/medisana_blood_pressure` | **CC BY-NC 4.0** | **IGNORE** — a content licence on code, non-commercial only. Legally toxic |
 
-These are Python, so "USE-AS-IS" means *for a Python collector*. Under amendment 07 the collectors
-are Rust — so in practice `bleak-retry-connector` and `polar-python` are **REIMPLEMENT** targets, and
-their value is the retry discipline and the PMD service knowledge rather than the code.
+`polar-python` and `bleak-retry-connector` would grade USE-AS-IS for a Python collector; the table
+records **REIMPLEMENT** because under amendment 07 the collectors are Rust, and their value is the
+retry discipline and the PMD service knowledge rather than the code.
 
 ---
 
@@ -83,7 +83,7 @@ their value is the retry discipline and the PMD service knowledge rather than th
 |---|---|---|
 | [`resmed_myair_sensors`](https://github.com/prestomation/resmed_myair_sensors) | MIT | **PORT** the `client/` subpackage — current **Okta OAuth2 + PKCE** and the per-region GraphQL endpoint map. Already proven separable (`myair-py` is a soft fork of exactly that) |
 | [`hms-cpap`](https://github.com/hms-homelab/hms-cpap) | MIT | **PORT / REIMPLEMENT** — reads the SD card (ezShare or local FS) for real-time session data. Its `NOTICE` is a model clean-room statement about OSCAR |
-| **OSCAR** | **GPL-3.0** | **REIMPLEMENT ONLY.** Never copy a line. Formats are not copyrightable; the code is |
+| **OSCAR** | **GPL-3.0** | **REIMPLEMENT ONLY.** Never copy a line; treat the file formats as a clean-room reimplementation, documented the way `hms-cpap`'s NOTICE does |
 | `edfio` | BSD-3 | **USE-AS-IS** — cleanest EDF reader. None of them understand ResMed channel semantics |
 
 **Correction to stale lore:** current myAir auth is Okta OAuth2 + PKCE, **not** AWS Cognito. Also
@@ -171,8 +171,8 @@ licence) · `andrewjfreyer/monitor` (no licence = all rights reserved).
 
 **Everything else worth taking is MIT or Apache-2.0** — both companion apps, the whole HA BLE stack,
 `polar-python`, `aioesphomeapi`, `resmed_myair_sensors`, `hms-cpap`, `edfio`, and the Adafruit driver
-set. No conflict with open-sourcing under MIT or Apache-2.0, **provided Apache-2.0 attribution and
-NOTICE obligations are honoured** for the companion-app code.
+set. No conflict with open-sourcing under MIT or Apache-2.0, **provided Apache-2.0 attribution is
+honoured for the companion-app code** — and the NOTICE file carried, where upstream ships one.
 
 ---
 

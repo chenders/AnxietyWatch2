@@ -40,9 +40,16 @@ That optionality is architectural, not a caveat. Two consequences that bind else
   `NOT_CONFIGURED` state — declared-absent, excluded from rollups, never a question mark demanding
   attention. Without it, `UNKNOWN` becomes wallpaper and stops meaning anything.
 
-**2. `samples` is append-only with an HLC, and everything else is a view over it.** No `UPDATE`, no
+**2. `samples` is append-only, and everything else is a view over it.** No `UPDATE`, no
 `DELETE`; removal is a tombstone. Merge is commutative, replay is exact, and a bug in a derived value
 is fixed by recomputing the view rather than migrating data.
+
+> **Correction (2026-08-05):** this document originally reasoned from "an HLC on every row."
+> Amendment 05 removed the HLC columns; row identity is `(source, type, session_id, seq)` with batch
+> provenance (Amendment 02). Every verdict below stands unchanged — append-only plus a stable ingest
+> identity provides the same properties the rows attribute to the HLC (the data as its own change
+> log, a sync cursor that is a position in written data, restore as a merge). Where a verdict below
+> says "HLC," read "the stable ingest identity."
 
 **3. The life-safety path is static binaries under systemd; conveniences live in Docker.** The admin
 console is explicitly a convenience — restartable, read-mostly, off the critical path.
@@ -93,7 +100,7 @@ console is explicitly a convenience — restartable, read-mostly, off the critic
 
 | Gen-1 | Verdict | Reasoning |
 |---|---|---|
-| **Flask + Jinja + one `<style>` block** | **REPLACE — already decided** | `docs/specs/2026-08-03-language-choices.md` picks FastAPI + vanilla HTML/CSS/JS, with the reasoning already written (ASGI-native SSE for job status, OpenAPI generated for the iOS client and dashboard). Nothing to re-litigate |
+| **Flask + Jinja + one `<style>` block** | **REPLACE — already decided** | Amendment 07 supersedes the earlier FastAPI choice: the HTTP layer and console backend are Rust (`axum`), consuming `vitals-proto` directly, so the wire protocol is implemented once. Batch parsers stay Python per the amendment's carve-out. `language-choices.md` §4's vanilla HTML/CSS/JS conclusion is unchanged |
 | **`/admin/data` generic browser** — 14 of 40 tables, `LIMIT` with no `OFFSET`, 500-row ceiling | **REPLACE, and re-scope** | The *idea* — a generic read-only browser — is the highest-value surface gen-1 has, and it is why `/query-prod` exists. But gen-2's shape is different: seven tables today, one of which is a hypertable with two years of raw retention. `OFFSET` pagination is wrong here; keyset on the time index is right, and `COUNT(*)` on the hypertable must never be issued. "All 40 tables" is a gen-1 number and should not be inherited as a requirement |
 | **`/query-prod` slash command** — SSH + `docker exec psql`, read-only enforced by prompt text | **REPLACE with a Postgres role** | The command's own docs say to promote repeated queries to a server-side endpoint. A real `pg_read_all_data` role with a statement timeout retires the SSH-to-prod pattern instead of reproducing it |
 | **`verify-schema.yml`** — manual CI dispatch to run `alembic current` | **DROP the workflow, ADOPT the readout** | A CI job standing in for a missing admin page. Gen-2 uses sqitch; the deployed change name belongs on the Overview |
