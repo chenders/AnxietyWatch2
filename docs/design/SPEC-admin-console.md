@@ -189,7 +189,7 @@ sections, ordered by how often a healthy operator needs them:
 | 4 | **Data** | What is actually stored — browse, filter, export. | **v1** |
 | 5 | **Analysis** | Run correlation and AI jobs, watch them, review output, see cost. | v1.1 |
 | 6 | **Records** | Journal, medications, prescriptions, pharmacies, profiles, schedule. | v1.1 |
-| 7 | **Config & access** | Credentials, registry, thresholds, flags, audit. | v1.1 |
+| 7 | **Config & access** | Credentials, registry, thresholds, flags, audit, **outbound email**. | v1.1 |
 | 8 | **Recovery** | Backups, restore verification, what would I lose right now. | v1.2 |
 | 9 | **Alarm path** | Is the CNS early-warning subsystem armed and testable. | **last** |
 
@@ -331,6 +331,48 @@ feeds the analysis context block — and it is the strongest part of gen-1's exi
   actions, and job runs, each with actor and timestamp.
 
 ---
+
+### 4.9b Outbound email — the independent notification channel
+
+Most of what this console detects is **not urgent but is easy to miss**: a feed that stopped, a
+source silent past its cadence, a backup that has not verified, a correlation run on stale inputs.
+Those need a channel that survives the phone being dark, flat, or left at the office — which is
+precisely the case a push notification cannot cover.
+
+Email through the operator's own Gmail account is the right fit: independent infrastructure, no
+Apple dependency, no account to create, arrives on every device already signed in, and it **persists**
+rather than vanishing from a lock screen.
+
+**Setup, in the console:**
+
+- From address and destination address (they may differ; sending to yourself is the default).
+- **App Password, not the account password** — Gmail requires 2FA enabled and issues a 16-character
+  app-specific credential for SMTP. Stored encrypted at rest, write-only in the UI, **never echoed
+  back**, displayed thereafter as presence-plus-last-4 only.
+- SMTP is `smtp.gmail.com:587` with STARTTLS. Fixed, not a form field — an editable host is a
+  misconfiguration surface with no upside for a single-user appliance.
+- **A "send test email" button whose result is recorded**, with the outcome and its age shown
+  afterwards. Configured-but-never-tested reads `UNKNOWN`, not `LIVE` (§2.2).
+
+**Behavioural requirements:**
+
+- **Not on the alarm path.** SMTP latency and deliverability are unbounded; email must never be a
+  channel the CNS klaxon depends on. It carries integrity and operational notices, and *at most* a
+  redundant copy of an alarm that has already fired locally.
+- **Rate-limited and coalesced.** A source that has been silent for nine days must produce one
+  message, not one per check. Digest by default; immediate only for state changes that matter.
+- **The failure is visible.** A send that fails leaves an attempt record (§2.3) and degrades the
+  channel's state. A notification channel that silently stops is worse than none, because it is
+  trusted.
+- **Credentials are revocable from Google's side without touching the Pi**, which is a real advantage
+  over most auth: if the app password leaks, revoking it at the account is sufficient and the console
+  will show the channel failing on its next send.
+
+**Why an app password rather than OAuth2.** OAuth is the more correct answer for a distributed
+product and the wrong answer here: it needs a Google Cloud project, a consent screen, a refresh-token
+lifecycle, and re-consent handling — significant machinery whose entire benefit is not storing a
+credential the operator can revoke in one click anyway. Revisit only if Google withdraws app
+passwords.
 
 ### 4.10 Alarm path — the CNS early-warning subsystem (built last)
 

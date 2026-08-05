@@ -19,11 +19,26 @@ opposite.
 
 Everything below follows from these. They come from the architecture doc, not from me.
 
-**1. HealthKit is demoted to source #2.** The Pi reads Polar RR intervals and oximetry directly over
-BLE, on mains power, continuously. That is a better measurement than HealthKit's and it is available
-when the phone is asleep, in another room, or dead. HealthKit becomes an *enrichment stream* carrying
-what only Apple can see — sleep stages, wrist temperature, the Watch's own resting HR — pushed
-opportunistically, **absent without consequence**.
+**1. HealthKit is demoted to source #2 — demoted, not dropped.** The Pi reads Polar RR intervals and
+oximetry directly over BLE, on mains power, continuously. That is a better measurement than
+HealthKit's and it is available when the phone is asleep, in another room, or dead.
+
+The phone still syncs everything it has — HealthKit, iOS, and Watch data — and that is a **real
+source** carrying things only Apple can see: sleep stages, wrist temperature, the Watch's own resting
+HR. What changed is its *standing*. It is one source among many rather than the authority, and both
+the Watch and iOS streams are **entirely optional**: their absence is a fact about the setup, not a
+fault.
+
+That optionality is architectural, not a caveat. Two consequences that bind elsewhere in this project:
+
+- **No derived value may require HealthKit to be present.** Baselines, correlations, and reports are
+  computed from whatever sources exist. A missing optional source narrows the evidence; it never
+  produces a null that overwrites a real value — the gen-1 failure where authorization loss let
+  aggregation write nils over restored data.
+- **An absent optional source must not render as a fault.** "I didn't wear the watch" and "the watch
+  feed is broken" are different facts and the console must distinguish them. This is the
+  `NOT_CONFIGURED` state — declared-absent, excluded from rollups, never a question mark demanding
+  attention. Without it, `UNKNOWN` becomes wallpaper and stops meaning anything.
 
 **2. `samples` is append-only with an HLC, and everything else is a view over it.** No `UPDATE`, no
 `DELETE`; removal is a tombstone. Merge is commutative, replay is exact, and a bug in a derived value
@@ -47,7 +62,7 @@ console is explicitly a convenience — restartable, read-mostly, off the critic
 | Gen-1 | Verdict | Reasoning |
 |---|---|---|
 | **`health_snapshots`** — 36-column daily aggregate, hand-maintained by `SnapshotAggregator` | **DROP the table, REPLACE with a continuous aggregate** | This is a materialized view maintained by application code, and every bug it produced follows from that: frozen shells, nils overwriting real values, late-landing overnight data never re-aggregated, three months undetected. A TimescaleDB CAGG recomputes from source and **cannot** hold a value its inputs no longer support. `samples_1min` already exists in `db/`; daily rollups are the same mechanism. This single change deletes an entire bug class rather than porting its workarounds |
-| **`quantity_health_samples`** — 250k-row per-sample HealthKit mirror | **DROP** | It existed because HealthKit was authoritative and the app needed a local queryable copy. Under inversion #1 the Pi reads the sensor directly and `samples` *is* the store. Mirroring HealthKit per-sample in gen-2 would be duplicating a secondary source into the primary store. The ~224k app-only oximetry rows migrate **once** into `samples` as a historical backfill, then the mirror concept dies |
+| **`quantity_health_samples`** — 250k-row per-sample HealthKit mirror | **DROP the table — keep the data** | The phone **does** push its HealthKit/iOS/Watch history to the Pi, and that is a real source. What dies is the *separate table*: it was a second store with its own provenance columns, its own restore path (which nobody wrote — hence the 224k-row hole), and its own sync semantics. In gen-2 those samples are rows in `samples` with `source = healthkit`, which is exactly what `source` is for; the registry already declares it `id = 2, transport = "push"`. Parallel machinery for data that belongs in the one table everything else is a view over is the defect, not the data |
 | **`samples` + `sample_tombstones` + `delta_sync_log`** — the CRDT delta-sync trio | **DROP two, ADOPT one** | `samples` is the design's own substrate and survives. `delta_sync_log` — roughly one ledger row per synced row — exists to reconstruct what changed; with an HLC on every row, **the data is its own change log**. `sample_tombstones` survives as the append-only deletion mechanism, which the design already specifies |
 | **`sensor_sessions.rr_archive`** — write-only BYTEA, ~80–120 KB/night, no GET route | **REPLACE** | The intent is right and important — archive raw RR so future HRV measures can be re-derived without re-pairing. But under append-only, raw RR intervals are just `rr_interval` samples in the store, at their natural rate. There is no separate archive blob to have a missing read route for |
 | **The 40-table domain schema** (journal, meds, Rx, pharmacies, labs, songs) | **ADOPT, unchanged in shape** | This is not time-series and does not belong in `samples`. It is ordinary relational domain data that works. Move it in Stage 6 with its schema substantially intact. Resist the urge to redesign it — it is the least broken part of gen-1 |
@@ -107,6 +122,40 @@ console is explicitly a convenience — restartable, read-mostly, off the critic
 | **watchOS Quick Log** — colour-graded severity grid, sub-5-second logging during panic | **KEEP ON PHONE, untouched** | This is the product at its most essential and it is on exactly the right hardware. Nothing about gen-2 improves it |
 | **Dose-triggered 30-minute follow-up** | **KEEP ON PHONE** | Needs local notifications and the person. Server-side scheduling would be worse |
 | **Random check-ins** | **KEEP scheduling on phone, MOVE preferences to the Pi** | Config is config |
+
+---
+
+## 2.7 Platform health stores are a *class*, not a special case
+
+HealthKit is the first platform health store this project ingests. It will not be the last — Android's
+Health Connect is wanted later, in the same shape. That is a constraint on decisions being made now,
+not a future feature, because getting it wrong means a second ingest path bolted alongside the first.
+
+**What already generalises correctly.** The registry declares *physiological concepts* —
+`hr`, `spo2`, `sleep_stage`, `rr_interval` — not vendor identifiers, with a canonical unit per type
+and conversion at the decoder. That is exactly the right shape: a Health Connect receiver converts
+into the same canonical types and nothing downstream knows or cares which phone it came from.
+
+**What needs deciding before the second platform arrives:**
+
+| Question | Recommendation |
+|---|---|
+| One source id for "platform health," or one per platform? | **One per platform.** `healthkit` and `health_connect` are different measurement pipelines with different quality characteristics and different gaps. Provenance is the reason `source` exists; collapsing them discards it for no gain |
+| Where does platform-specific mapping live? | **A per-platform mapper, a shared receiver.** The transport is identical — a batch of typed samples pushed over the network. Only the *translation* is platform-specific, and it belongs on the same side as the fuzzed wire decoders: pure, `(vendor payload) → canonical samples`, no I/O |
+| Sleep stages | **The hard case, and the one to design deliberately.** Apple's stage set and Health Connect's do not align one-to-one. `sleep_stage` needs a canonical enum in the registry with an explicit, documented mapping per platform — and a rule for what happens to a stage that has no canonical equivalent. Do not let the first platform's enum become the canonical one by accident |
+
+**The genuinely unresolved one — sub-provenance.** A HealthKit sample carries its *own* origin:
+which app or device wrote it into HealthKit. A resting HR from the Watch, the same value typed in by
+hand, and one written by a third-party app are three different facts, and gen-1 tracked this
+(`source_bundle_id` / `source_name` / device) and *used* it — it is how oximetry rows deduped against
+HealthKit rows.
+
+Gen-2's `source` is a single integer. Collapsing a platform store into one id loses that second
+dimension. This needs a home before the HealthKit receiver is written, and the options are: a
+sub-source field in the registry, structured `extra` per `(source, type)`, or a separate provenance
+column. **The one unacceptable answer is discarding it** — dedupe against directly-read sensors
+depends on it, and this project will have both a Polar-measured HR and a HealthKit-relayed HR for the
+same minute.
 
 ---
 
