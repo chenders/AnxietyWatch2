@@ -1,0 +1,10 @@
+[Unit]
+Description=Bring the bedside panel's wifi back if it has dropped
+After=NetworkManager.service
+Wants=NetworkManager.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/panel-net-watchdog
+StandardOutput=journal
+StandardError=journal
