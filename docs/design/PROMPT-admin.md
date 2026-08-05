@@ -15,45 +15,72 @@ external dependencies, no build step.
 
 ## Product
 
-**AnxietyWatch2** runs on a Raspberry Pi 5 beside a bed. It collects data from body-worn sensors
-over Bluetooth all night, stores it in PostgreSQL, detects CNS-depression events, and sounds an
-alarm if one occurs. There is exactly one user: the person being monitored, who is also the engineer
-who built and maintains it.
+**AnxietyWatch** tracks anxiety from both sides — the severity the user reports, and the physiology
+their devices record — so that a fifteen-minute psychiatrist appointment becomes a data-informed
+conversation instead of an exchange of impressions. A journal entry is the anchor; everything else is
+context around it: medication doses with efficacy follow-up, heart-rate variability from a chest
+strap, sleep and CPAP nights, pulse oximetry, ring data, labs, prescriptions. A correlation engine
+finds which metrics actually move with anxiety, and a report generator turns that into something you
+can hand a clinician.
+
+**AnxietyWatch2** relocates the always-on parts onto a Raspberry Pi 5 beside the bed — the radios
+that hold Bluetooth sensors all night, and the database that becomes the system of record. The phone
+keeps journaling, health-store access, and viewing.
+
+It is **not a medical device**, not FDA-cleared, and not on a path to clearance. It is a personal
+tool, aiming at a first version that is genuinely useful to one person. One user: the person tracked,
+who is also the engineer who built it.
+
+*(There is an in-progress nocturnal early-warning feature that can sound an alarm. It is one feature
+among twenty and is scheduled last. **Do not design this console as an alarm appliance.**)*
 
 This console is not for reviewing health data — that is a separate app. It does two jobs:
 
-> **1. Is this machine going to work tonight?**
-> **2. Let me operate it.**
+> **1. Is the record I am building actually complete and correct?**
+> **2. Let me operate the machine that builds it.**
 
-Job 1 is monitoring. Job 2 is real operational work — issuing and revoking credentials, kicking off
-long-running analysis jobs, uploading data files, editing records, reviewing AI-generated text.
+Job 1 is integrity monitoring. Job 2 is real operational work — issuing and revoking credentials,
+kicking off long-running jobs, uploading data files, editing records, reviewing AI-generated text.
 Roughly half the surface is actions, not readouts. **A design that covers only job 1 is incomplete
 and will be rejected.**
 
+**Why integrity is the organising idea.** The product's whole claim is *evidence instead of
+impressions* — and that is only as good as the data behind it. A sync gap is a hole in the report you
+hand your psychiatrist. A frozen daily aggregate means correlations computed on stale inputs, still
+returning confident numbers that are simply wrong. A silently dead CPAP feed guts half the
+sleep-apnea-anxiety thesis. **None of these announce themselves. All of them look exactly like a
+working system that had a quiet week.** That is what this console exists to make visible.
+
 ## What it manages
 
-**Daemons** — `vitalsd` (the sample store), per-radio collectors (Polar H10, EMAY oximeter, A&D BP
-cuff), `cns-engine` (detection), `klaxond` (alarm), `wal-tail` (SQLite→Postgres replication). Each
-with uptime, restart count, memory, last error.
+**Daemons** — the sample-store daemon, per-radio collectors (chest strap, oximeter, BP cuff), the
+spool drain, and the scheduled importers. Each with uptime, restart count, memory, last error, and
+recent log output. The unit list is derived from the deployment manifest, not hardcoded.
 
-**Radios** — Bluetooth adapters, paired devices, RSSI, connection state, reconnect history, per-source
-last-sample age and expected cadence.
+**Host** — NVMe free space and wear with a projected time-to-full, thermal and undervoltage flags,
+hardware watchdog armed, network link and signal, mains/UPS state. **These are the ways this box
+silently stops recording without any process crashing**, and they matter as much as daemon state.
 
-**Storage** — Postgres size and growth rate, table row counts, SQLite WAL depth, NVMe wear and free
-space, retention/compaction status.
+**Radios** — Bluetooth adapters, paired devices, signal, connection state, reconnect history,
+per-source last-sample age against its **declared expected cadence**.
+
+**Ingest** — per source: last attempt and last success as distinct facts, rows moved, **whether the
+newest data timestamp actually advanced**, rejected samples and why, and the quarantine table.
+
+**Storage** — Postgres size and growth rate, table row counts, **spool depth and oldest unspooled
+age, drain progress and latency**, NVMe wear and free space, retention and compaction status.
 
 **Backups** — last full, last incremental, WAL archive lag, and **the last verified restore** (a
 restore into a scratch cluster with row-count comparison, which either passed or failed).
 
-**The alarm path** — last self-test result and timestamp, audio device present, volume, amplifier
-responding.
+**Jobs** — correlation recomputes and AI analysis runs: queued, running with elapsed time, succeeded,
+failed with a reason, cancellable, with a run history and a cost ledger.
 
-**Ingest** — samples/minute by source, rejected samples and why, the quarantine table.
+**Config** — the type/source registry including per-source cadences, thresholds, provider keys
+(presence and last-4 only, never values), feature flags, an outbound email channel, and optional
+telemetry that is off by default.
 
-**Config** — the type/source registry, thresholds, provider keys (presence and last-4 only, never
-values), feature flags.
-
-**Logs** — recent daemon output, filterable by unit and severity.
+**Logs** — recent daemon output, filterable by unit and severity, with credentials redacted.
 
 ## The single most important constraint
 
@@ -75,6 +102,49 @@ and show it on every panel.
 **Freshness is part of every status.** No status indicator appears without the age of the
 observation behind it. "OK" alone is meaningless; "OK · checked 4m ago" is a fact. A status whose
 underlying check is older than its expected interval degrades to unknown automatically.
+
+**Show the expectation next to the age** — "4m ago · expect ≤ 10m". Age alone hides the standard it
+is being judged against, and a source with a loose cadence can then sit silent for days looking fine.
+
+### Four things this constraint does *not* mean
+
+These are the places a three-state design usually goes wrong. Get them right and the rest follows.
+
+**1. The three states are for *health assertions only.*** They answer "can this be relied on right
+now?" They are not a universal enum. A completed upload is not OK; a queued job is not a question; a
+muted fault is not a health state. Design **four separate visual vocabularies**:
+
+| Axis | Values |
+|---|---|
+| Health assertion | good · bad · unknown |
+| Lifecycle | queued · running · succeeded · failed · cancelled |
+| Process state | active · activating · failed · inactive |
+| Operator suppression | muted until *date*, by operator |
+
+A component may show a health assertion **beside** its lifecycle state. It must never collapse them.
+
+**2. "Not configured" is not "unknown."** An optional source the user does not own, or simply did not
+wear last night, must render as *declared absent* — excluded from rollups, visible but quiet. If
+every optional thing shows a question mark, the question mark becomes wallpaper and stops meaning
+anything. **This is the single fastest way to destroy the value of the third state.**
+
+**3. Current confidence and last known outcome are separate facts, and both are shown.** When the
+page's own feed goes stale, the console cannot vouch for anything — but that does not erase what it
+last saw:
+
+> **unknown** — feed stale 18m · *last known: failing at 02:14, sensor disconnected*
+
+Losing that second line is a design failure. The reason is the only thing that lets the user fix it.
+
+**4. The page is not exempt.** A page opened at 23:00 and read at 03:30 must not still claim
+"checked 40s ago." Ages advance on screen; the document carries its own freshness; and when the feed
+dies, the *document* degrades — as an overlay, without rewriting each card's underlying state.
+
+### Severity is a second axis, not a fourth state
+
+Some faults are consequential (data being lost, the record going wrong); some are routine. Sort by
+severity first, then state — otherwise one permanently-unknown benign subsystem occupies the top of
+the screen forever and trains the user to ignore it.
 
 ## Operations — four interaction patterns, all required
 
@@ -104,22 +174,35 @@ credentials) with validation, dirty-state handling, and explicit save/discard.
 
 ## Screens
 
-1. **Overview** — the whole machine on one screen. Every subsystem, current state, freshness.
-   Readable in five seconds.
-2. **Services** — per-daemon detail, logs, restart controls, resource use over time.
-3. **Data** — ingest rates by source, storage growth, quarantine, retention. Browse and search
-   records. Upload CPAP files (pattern D).
-4. **Recovery** — backups, WAL archive, restore-verification history, and a prominent "what would I
-   lose if this died right now?" answer.
-5. **Analysis** — trigger runs, watch them, read results, review and accept AI-generated text
-   (patterns B and C).
-6. **Access** — API keys: issue, list, revoke. Third-party credentials (ResMed, Oura). Pattern A.
-7. **Records** — patient and psychiatrist profiles, therapy schedule, conflicts, songs. CRUD forms
-   with AI-assist actions.
-8. **Config** — registry, thresholds, feature flags.
+Nine. **The first three are the first release** — design those most carefully, and show them most
+completely. The rest are real and must be designed, but they land later.
 
-Screens 5–7 are where the existing system's real work happens. Do not treat them as an afterthought
-to the monitoring screens.
+1. **Overview** — the whole machine and the state of the record, on one screen. Every subsystem,
+   current state, freshness. Readable in five seconds, from bed, on a phone.
+2. **Display path** — is the bedside screen actually lit: compositor running, connector attached,
+   socket present, browser alive. *Service-up and screen-lit are different claims.*
+3. **Ingest** — per source: state, last attempt **and** last success, rows moved, whether the newest
+   data timestamp advanced, what that source uniquely owns, and the attempt history.
+4. **Services** — per-daemon detail, logs, restart controls, resource use over time, **plus host
+   state** (disk, thermal, undervoltage, watchdog, network, power).
+5. **Config & access** — API keys: issue, list, revoke (pattern A). Third-party credentials. The
+   registry and its per-source cadences. Outbound email. Optional telemetry, off by default. Audit
+   log.
+6. **Data** — targeted integrity views by source and date range, quarantine, retention, then scoped
+   export. Upload data files (pattern D). *Not a generic all-tables browser.*
+7. **Analysis** — trigger runs, watch them, read results, review and accept AI-generated text
+   (patterns B and C), and see cost **before** spending it.
+8. **Records** — journal, medications, prescriptions, pharmacies, profiles, therapy schedule, songs.
+   CRUD forms with AI-assist actions.
+9. **Recovery** — backups, WAL archive, restore-verification history, and a prominent "what would I
+   lose if this died right now?" answer.
+
+Screens 7–9 are where a lot of the real work happens. Do not treat them as an afterthought to the
+monitoring screens.
+
+**One screen deliberately excluded from prominence: the alarm path.** It exists, it is scheduled
+last, and it should appear as a normal section rather than a headline. A design that makes this
+console look like an alarm panel has misread the product.
 
 ## The three directions
 
@@ -180,12 +263,20 @@ most important number is not the largest thing on screen.
 ## Deliverables per direction
 
 1. **Design system page** — color tokens with computed contrast ratios, the status palette including
-   the explicit "unknown/stale" treatment, type scale, spacing, and every component in all states:
-   default, loading, empty, stale, unknown, warning, critical. Plus form controls, buttons by
-   severity, and modals.
-2. **High-fidelity mockups of all eight screens** with realistic sample data.
+   the explicit "unknown/stale" treatment **and the separate "not configured" treatment**, all four
+   status vocabularies, type scale, spacing, and every component in all states: default, loading,
+   empty, stale, unknown, not-configured, warning, critical. Plus form controls, buttons by severity,
+   and modals.
+2. **High-fidelity mockups of all nine screens** with realistic sample data. Screens 1–3 are the
+   first release — show those most completely.
 3. **At least one screen per direction in a degraded state** — a collector crashed, a backup 9 days
    stale, a restore verification that failed.
+3b. **The attempt-history component**, in its own right: a run list showing attempted / succeeded /
+   failed with reasons and durations, and the difference between *silent* (no attempts at all) and
+   *failing* (attempts happening, all failing). **This is the component that carries the product's
+   central claim** — design it, do not bury it in a table.
+3c. **A first-run / empty state.** Nothing configured, no data yet, no attempts. Distinct from
+   degraded — a fresh install must not look broken.
 4. **All four operational patterns, each shown across its full state sequence:**
    - **A** — issue a key (including the one-time reveal), the list afterwards, and revocation with
      its confirmation.
