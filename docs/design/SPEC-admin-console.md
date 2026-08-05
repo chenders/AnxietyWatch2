@@ -234,7 +234,7 @@ Five separate vocabularies, each rendered in its own visual language:
 | **Lifecycle** | `queued` · `running` · `succeeded` · `failed` · `cancelled` | Jobs, uploads, imports — work with a beginning and an end |
 | **Process state** | `active` · `activating` · `failed` · `inactive` | Supervised units, straight from the supervisor |
 | **Operator suppression** | `muted until <date>, by operator` | An acknowledgement, never a health value |
-| **Configuration** | `NOT_CONFIGURED` — declared absent | Optional sources and channels (§1.1's graceful degradation). A **standing declaration, not a nightly fact**: an enabled wearable that went unworn is `UNKNOWN` (optionally muted, §2.6), never `NOT_CONFIGURED`. Rendered outside the health palette, excluded from rollups, never promoted. M1 criterion 9 (§9) is its acceptance test |
+| **Configuration** | `NOT_CONFIGURED` — declared absent | Optional sources and channels (`GEN1-REASSESSMENT.md` §1). A **standing declaration, not a nightly fact**: an enabled wearable that went unworn is `UNKNOWN` (optionally muted, §2.6), never `NOT_CONFIGURED`. Rendered outside the health palette, excluded from rollups, never promoted. M1 criterion 9 (§9) is its acceptance test |
 
 Any component may carry a health assertion **alongside** its domain state — a job runner has both a
 lifecycle for each run and a health assertion about whether the runner itself is trustworthy. What it
@@ -251,8 +251,8 @@ That converges on gen-1's outcome by the opposite route.
 Two mechanisms bound it:
 
 - **Severity is a second axis, not a fourth state.** Each subsystem declares whether a fault is
-  *consequential* (data being lost, the record going wrong, the alarm subsystem unarmed) or
-  *routine*. Promotion order sorts on severity first, then state.
+  *consequential* (data being lost or the record going wrong) or *routine*. Promotion order sorts
+  on severity first, then state.
 - **Expected silence can be acknowledged, time-boxed.** "Travelling until the 14th; the phone will
   not sync" renders as **muted until a date, by the operator** — visibly distinct from `LIVE`, never
   collapsing into it, and expiring on its own.
@@ -276,7 +276,10 @@ healthy operator needs the answer:
 | 7 | **Analysis** | Run correlation and AI jobs, watch them, review output, see cost. | M4 |
 | 8 | **Records** | Journal, medications, prescriptions, pharmacies, profiles, schedule. | M5 |
 | 9 | **Recovery** | Backups, restore verification, what would I lose right now. | M5 |
-| — | **Alarm path** | Is the CNS early-warning subsystem armed and testable. | **M6, last** |
+| 10 | **Alarm path** | Is the CNS early-warning subsystem armed and testable. | **M6, last** |
+
+The Alarm path is the tenth section, but it is outside the current nine-screen design deliverable:
+its screen is designed when M6 begins, after the daemons and contracts it depends on exist.
 
 ### 3.1 Milestones
 
@@ -290,7 +293,7 @@ hardware, so that schedule stalled before any loop closed.
 | **M1** — first usable console, read-only | Overview · Display path · Ingest for the registry sources · **attempt history** · registry left-join so a never-seen source appears · console self-freshness · clock state · build and schema identity · host readouts (disk, thermal, undervoltage, network, watchdog) | M0 |
 | **M2** — operations | Services with logs and audited restart · **the silence detector** (§2.3) — the first consumer of the liveness evaluator that runs without a page open, feeding outbound email · outbound email with its test loop · operator-override storage for display metadata (§8b) · S1–S5 | M1 |
 | **M3** — data | Targeted integrity views, then scoped export | The sample store → storage tasks → the M.2 HAT |
-| **M4** — analysis | Job lifecycle, cost ledger, AI review loop | M3 + a job runner |
+| **M4** — analysis | Job lifecycle, cost ledger, AI review loop · clinical PDF report generation | M3 + a job runner |
 | **M5** — records and recovery | Domain CRUD · backups and restore verification | Schema that does not exist yet |
 | **M6** — alarm path | Channel availability, self-test, arming | Daemons that do not exist yet |
 
@@ -356,8 +359,9 @@ longer matches reality. Whatever is under supervision is what appears — includ
 health assertion, as separate axes (§2.5b), plus uptime, restart count, memory, last error, and last
 log lines.
 
-**Host state belongs here too**, and has no other owner. These are the ways this box silently stops
-recording, and none of them involves a daemon crashing:
+**Detailed host state belongs here too.** M1 puts the immediate disk, thermal, undervoltage,
+network, and watchdog readouts on Overview; M2 Services adds history, diagnostics, and controls.
+These are the ways this box silently stops recording, and none of them involves a daemon crashing:
 
 - **NVMe free space and wear**, with a projected time-to-full. A disk that fills overnight ends
   collection without any process failing.
@@ -368,8 +372,8 @@ recording, and none of them involves a daemon crashing:
 - **Mains present / UPS state and charge**, once the UPS is fitted.
 
 - **Restart and stop are operations with audit entries** (§4.9) and confirmation proportionate to
-  consequence (§5). Restarting the lyrics fetcher and restarting the alarm daemon overnight are not
-  the same act and must not feel the same.
+  consequence (§5). Restarting the lyrics fetcher and restarting the sample-store daemon during an
+  active capture are not the same act and must not feel the same.
 - **Log access applies S7 sanitisation.** Filterable by unit and severity.
 - **Restart count is a first-class signal.** A unit that is `LIVE` because it restarted forty times
   today is not healthy; a crash loop reads as `FAILING`, not `LIVE`.
@@ -404,8 +408,10 @@ correction may never rewrite stored rows. Requirements:
 - Show the raw device time, the applied transform, its version, and when it was derived.
 - Changing it is a new version, not an edit. A **preview** states which nights move and which would
   collide *before* anything is committed, and both versions remain auditable afterwards.
-- Downstream aggregates recompute from source (they are continuous aggregates), so a corrected offset
-  propagates without a migration.
+- Read-time views apply the selected transform version. Continuous aggregates over immutable raw
+  timestamps do **not** dynamically rebucket when metadata changes: any corrected-time materialized
+  projection is versioned by the transform and explicitly refreshed or rebuilt from raw samples.
+  Changing an offset never migrates or rewrites `samples`.
 
 This keeps the requirement inside §8's non-goal — the console never edits physiological samples.
 
@@ -471,8 +477,9 @@ feeds the analysis context block — and it is the strongest part of gen-1's exi
 
 ### 4.9 Config & access
 
-- Credentials: presence and last-4 only, never values. Expiry and rotation as first-class concepts —
-  gen-1 keys live forever.
+- Stored credentials: presence and last-4 only, never values. A newly generated API key is the sole
+  exception: its plaintext is revealed exactly once at creation (pattern A, §5), then becomes
+  unrecoverable. Expiry and rotation are first-class concepts — gen-1 keys live forever.
 - **The whole settings table is operator-relevant.** ~12 keys are reachable today only via psql,
   including poller status, the CPAP clock offset, and the login-throttle state.
 - Validate against reality, not shape. An unvalidated timezone string drives day-bucketing for the
@@ -631,7 +638,7 @@ running and inspectable**, not after the box is off.
 | Capability | Risk if dropped |
 |---|---|
 | **Redundant push alert channel** | Channel continuity, not a feature cut — the one channel that reaches the operator away from the console. §4.10 |
-| **Clinical PDF report generation** | A documented pre-appointment workflow with no successor |
+| **Clinical PDF report generation** | A documented pre-appointment workflow with no successor. Owner: Analysis (§4.7, M4) |
 | **JSON/CSV export** | Browse-and-search is not the same as emit-a-portable-file |
 | **Correlation recompute** | Never had a button; easy to lose silently |
 | **Timezone setting** | Drives day-bucketing across analysis and correlations |
@@ -639,7 +646,7 @@ running and inspectable**, not after the box is off.
 | **Deployed build identity** | Gen-1 shows none; gen-2 should not inherit that |
 | **Log sanitisation** | Token redaction exists in gen-1. Fresh logging code starts leaking credentials into the journal |
 | **"Phone has gone dark"** | Belongs on the Pi, exists nowhere today. §2.3 |
-| **Phone-side health-access state** | Irreducible to the Pi, but its *state* must surface here. A phone that silently loses health-data access is invisible from the Pi today — and that exact freeze ran undetected for three months |
+| **Phone-side health-access state** | Irreducible to the Pi, but its *state* must surface here. A phone that silently loses health-data access is invisible from the Pi today — and that exact freeze ran undetected for three months. Owner: Ingest (§4.4, M1), supplied by the phone status beacon |
 | **Device↔server reconciliation** | Reframed by gen-2, not carried as-is: with the Pi as system of record, reprovisioning a phone is a projection rebuild, so the empty-store guard and the per-table importers do **not** migrate (`GEN1-REASSESSMENT.md` §3). What needs an owner is the capability — a fresh install rebuilds its view completely — and the surviving lesson that a guard which fails closed names its blocker. Owner: Recovery (§4.6, M5) |
 
 **Undocumented operational knowledge** encoded only in gen-1 code, which must be carried across
@@ -693,7 +700,7 @@ daemon that exists.
 
 | Spec says | Contract says | Consequence |
 |---|---|---|
-| Three states `LIVE` / `FAILING` / `UNKNOWN` | `Liveness` is `Live` / `Stale` / `NeverSeen` | **There is no `FAILING` on the wire.** `Stale` reads like "bad" but means only "past cadence" and belongs in `UNKNOWN`. Required mapping: `Live → LIVE`, `Stale → UNKNOWN`, `NeverSeen → UNKNOWN`. A source actively producing *bad* data has no representation at all and needs new plumbing |
+| Three states `LIVE` / `FAILING` / `UNKNOWN` | `Liveness` is `Live` / `Stale` / `NeverSeen` | **There is no `FAILING` in `Health`.** `Stale` reads like "bad" but means only "past cadence" and belongs in `UNKNOWN`. Required mapping: `Live → LIVE`, `Stale → UNKNOWN`, `NeverSeen → UNKNOWN`. In M1, `FAILING` is derived from the attempt ledger's recorded bad outcome (§2.3), not from `Liveness`; a future daemon-level bad-data signal would require new protocol plumbing |
 | A never-seen source shows `UNKNOWN` | A source that never reported is **absent from the map**, not present as `NeverSeen` | The console must left-join the registry's known sources against reported ones to synthesise "never seen." The daemon has no census to diff against — this is console-side work, and M1 criterion 7 (§9) is otherwise unsatisfiable for a collector that never started |
 | Each source declares its cadence | One global constant for the whole daemon; the registry has no cadence field | **M0 criterion 2 (§9) is untestable today.** Per-source cadence in the registry is a named prerequisite: schema change plus codegen |
 
@@ -798,10 +805,13 @@ of scope for that release**, not an unticked box.
 
 ### M0 — foundations
 
-1. The liveness evaluator is **one pure function** with an injectable clock, unit-tested at the
-   boundary (`age == effective cadence`, where the effective cadence is the declared floor,
-   possibly tightened by a learned interval — §8b). It is the only implementation: the console (M1)
-   and the silence detector (M2) call it rather than reimplementing it.
+1. The backend liveness evaluator is **one pure function** with an injectable clock, unit-tested at
+   the boundary (`age == effective cadence`, where the effective cadence is the declared floor,
+   possibly tightened by a learned interval — §8b). It is the only implementation of source-health
+   policy: API responses carry its evaluated state and expiry deadline, and the silence detector
+   (M2) calls it directly. The console may compare that deadline with its local clock to advance ages
+   and apply the document-level stale-feed overlay (§2.4); it does not reimplement source-health
+   precedence or cadence policy in JavaScript.
 2. Every source in the registry declares a cadence; a source without one is a **build-time error**,
    not a silently-`LIVE` card.
 3. An attempt record exists before its work begins and carries an expected duration; killing the
@@ -843,8 +853,9 @@ of scope for that release**, not an unticked box.
 
 18. The accessibility bar in `PROMPT-admin.md` is met with **computed** ratios, not asserted ones,
     for whatever shipped.
-19. The five gen-1 failures in §2.1 are regression tests, each asserting the gen-2 console
-    distinguishes the case gen-1 conflated.
+19. Each of the five gen-1 failures in §2.1 becomes a regression test in the milestone that first
+    ships the corresponding capability. Later milestones keep applicable tests passing; an earlier
+    milestone is not gated on a feature it has not introduced.
 
 ---
 
@@ -898,8 +909,9 @@ early spends judgement on incomplete information and then anchors everything aft
 
 ## 10. Open questions
 
-1. **Where does the phone-silence alarm fire?** It is the Pi's job (§2.3), but the Pi alerting about
-   the phone that alerts about the Pi needs a defined escalation path that does not loop.
+1. **Where does the phone-silence notice escalate?** It is the Pi's job (§2.3), but the Pi notifying
+   about the phone that also carries Pi notifications needs a defined escalation path that does not
+   loop.
 2. **Retention.** Several high-volume tables have no pruning job in either generation. Does the
    console show retention state, trigger compaction, or both?
 3. **How much of Records migrates at all?** It is the least machine-ish part of the console and the
