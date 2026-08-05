@@ -136,7 +136,7 @@ These are the places a three-state design usually goes wrong. Get them right and
 
 **1. The three states are for *health assertions only.*** They answer "can this be relied on right
 now?" They are not a universal enum. A completed upload is not OK; a queued job is not a question; a
-muted fault is not a health state. Design **four separate visual vocabularies**:
+muted fault is not a health state. Design **five separate visual vocabularies**:
 
 | Axis | Values |
 |---|---|
@@ -144,6 +144,7 @@ muted fault is not a health state. Design **four separate visual vocabularies**:
 | Lifecycle | queued · running · succeeded · failed · cancelled |
 | Process state | active · activating · failed · inactive |
 | Operator suppression | muted until *date*, by operator |
+| Configuration | not configured — declared absent (see item 2 below) |
 
 A component may show a health assertion **beside** its lifecycle state. It must never collapse them.
 
@@ -289,7 +290,7 @@ most important number is not the largest thing on screen.
 ## Deliverables per direction
 
 1. **Design system page** — color tokens with computed contrast ratios, the status palette including
-   the explicit "unknown/stale" treatment **and the separate "not configured" treatment**, all four
+   the explicit "unknown/stale" treatment **and the separate "not configured" treatment**, all five
    status vocabularies, type scale, spacing, and every component in all states: default, loading,
    empty, stale, unknown, not-configured, warning, critical. Plus form controls, buttons by severity,
    and modals.

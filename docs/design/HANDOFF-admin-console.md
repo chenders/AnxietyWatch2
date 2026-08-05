@@ -1,7 +1,9 @@
 # Handoff — admin console spec work
 
-**Written:** 2026-08-05 · **Branch:** `docs/admin-console-spec` (unmerged, ~15 commits)
+**Written:** 2026-08-05, updated same day at 00:35 PT for herdr/pi takeover ·
+**Branch:** `docs/admin-console-spec` (unmerged, draft PR #19)
 **Delete this file when the work lands.** It is session state, not project documentation.
+**Start at [Immediate next steps](#immediate-next-steps-in-order).**
 
 ---
 
@@ -20,6 +22,8 @@ over from gen-1, a rewritten design brief, and one amendment. Six model reviews 
 | `docs/design/PROMPT-admin.md` | The design brief (rewritten — it previously described a superseded architecture) |
 | `docs/design/GEN1-REASSESSMENT.md` | Every gen-1 concept judged ADOPT / REPLACE / EXTRACT / DROP / DEFER against gen-2's goals |
 | `docs/specs/2026-08-05-amendment-07-api-in-rust.md` | Supersedes the Python/FastAPI decision for the HTTP layer |
+| `docs/design/HOMEASSISTANT-ARCHITECTURE.md` | HA research: patterns to adopt, machinery to avoid (reference) |
+| `docs/design/HOMEASSISTANT-PRIOR-ART.md` | HA research: integrations to translate, licences (reference) |
 | `docs/hardware/PURCHASE-PLAN.md` | Already merged as PR #17 |
 
 ### The spec's central claim, in one paragraph
@@ -46,23 +50,46 @@ Both agents completed. Findings are written out and folded in:
 - Spec **§8b** — the normative subset: eight adopted patterns, the rejected machinery, and the
   integration-translation commitment table with licence obligations.
 
-### 2. Final multi-model review, then merge
+### 2. Final multi-model review — TWO ROUNDS DONE, one verdict outstanding
 
-Chris's instruction: run one more `pi` review pass once everything above is done, **and merge the
-branch when it passes.**
+Chris's instruction: **merge the branch when the final review passes.**
 
-Review all four documents *together* — they now cross-reference each other, and the earlier rounds
-reviewed them individually.
+**Round 1** (fresh eyes, all six documents together, three lenses — Sol/coherence,
+Gemini/buildability, Grok/soundness): 6 blockers, 13 shoulds, 4 nits. All fixed or declined with a
+recorded reason — commits `20499d9` and `376dc79` carry the full disposition lists in their
+messages. **Two findings were declined deliberately; do not re-litigate them:** the §8b
+integrations table stays in the spec (Chris's explicit direction), and §1.3's rationale overlap
+with `PROMPT-admin.md` stays (different audiences).
 
-### 3. Two questions that genuinely need Chris
+**Round 2** (verification): Gemini **PASS**. Sol **FAIL on exactly one residual** — `PROMPT-admin.md`
+still counted "four" status vocabularies against the spec's five — **fixed in the same commit as
+this handoff update** (five vocabularies, Configuration row added, deliverables count updated).
+Grok's round-2 verdict had not returned when this session stopped; its output lands at
+`/private/tmp/claude-501/-Users-chris-Source-AnxietyWatch/8b7fa9a8-929a-496d-8ae0-c9f9dc6cea5c/scratchpad/verify2-out-grok.md`
+(local, ephemeral — alongside `verify2-out-{sol,gem}.md` and the briefs `verify2-*.txt`).
 
-Everything else was answered from the code. These were not:
+### Immediate next steps, in order
 
-1. **Does the watch become a peer node** (own store, own `node_id`, reconciling with the Pi
-   directly) **or stay a thin sender with a durable local outbox?** The pi5 design doc argues peer.
-   Either fixes the real defect below; doing neither carries it forward.
-2. **Bind and auth posture for the HTTP service** — LAN-only, Tailscale/WireGuard-only, or TLS with a
-   pinned cert. Blocks M0 item 5.
+1. **Read Grok's round-2 verdict** at the path above (an empty file means still running or lost;
+   re-run is cheap — `verify2-grok.txt` in that directory is the exact brief, model
+   `xai/grok-4.5`). Round 2's only known open item was the PROMPT four→five count, already fixed.
+2. Fix anything real that Grok adds; ignore anything that re-litigates the declined items.
+3. **Confirm the PROMPT count fix** — either judge it directly (it is mechanical: PROMPT now says
+   "five separate visual vocabularies" with a Configuration row, and "all five status
+   vocabularies" in deliverables) or re-run Sol with the round-2 brief.
+4. **Merge PR #19**: update its body first (it still says two HA research agents are outstanding —
+   they are done and folded in), `gh pr ready 19`, then merge. Delete this handoff file in the
+   merge or immediately after.
+5. **Post-merge queued work** (Chris's standing instruction from this session): update `AGENTS.md`,
+   `CLAUDE.md`, `.github/copilot-instructions.md`, the Rust instructions file, `ci.yml`,
+   `.githooks/pre-push`, and `README.md` to encode the newly-settled rules — the status law
+   (no status without observation age), the per-source-cadence build gate, never render status
+   from an undeployed producer, no `UPDATE`/`DELETE` on samples, the telemetry privacy boundary
+   (counters and timings leave, measurements and words do not), and reconcile the README's
+   no-telemetry claim with §4.9c's opt-in New Relic.
+6. **Then start M0** — see "Then: build M0" below. Bind/auth and the watch peer-vs-outbox
+   questions are **deferred by spec §9c**: ask Chris at the point of use, do not block on them,
+   and do not resolve them early.
 
 ---
 
@@ -73,8 +100,9 @@ Everything else was answered from the code. These were not:
 The gateway is LiteLLM on the Pi at `http://192.168.1.48:4000/v1`. Model catalog:
 `~/.pi/agent/models.json`.
 
-**The key in your shell is dead** — the LiteLLM DB was recreated 2026-08-04 and lost its token table,
-so the old `LITELLM_WORKER_KEY` 401s. Mint a replacement (budget-capped $5/24h, $25/30d):
+**Any pre-2026-08-04 key is dead** — the LiteLLM DB was recreated that day and lost its token
+table, so old `LITELLM_WORKER_KEY` values 401 (Chris hit this too; the recipe below is confirmed
+working). Mint a fresh worker key (budget-capped $5/24h, $25/30d):
 
 ```sh
 cd ~/Source/ai-harness-stack/litellm
@@ -124,7 +152,8 @@ M0, in build order — none of it exists today:
    the silence detector so they cannot drift.
 4. **An `axum` service** exposing health and attempt history. Nothing serves HTTP today, and
    `vitalsd`'s unit is `AF_UNIX`-restricted.
-5. **The bind/auth decision** (question 2 above).
+5. **The bind/auth decision** — deferred by spec §9c: ask Chris when the service is about to
+   listen, not before.
 6. **A crude test page** for posting journal entries, severity and tags. No design needed; it exercises
    the idempotency rule end to end.
 
