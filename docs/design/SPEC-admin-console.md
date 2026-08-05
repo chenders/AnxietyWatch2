@@ -134,9 +134,22 @@ The console is a status source and is not exempt.
 
 - **Ages are recomputed continuously client-side.** A page opened at 23:40 and read at 03:10 must not
   still claim "checked 4m ago." Rendered ages advance whether or not new data arrives.
-- **The page carries its own feed state.** If the status feed goes stale past its own cadence, every
-  status on screen degrades to `UNKNOWN` together, and the page says why. Gen-1's crude 5-second
-  meta-refresh is rejected in §5; this is its replacement, and the replacement is mandatory.
+- **The page carries its own feed state, as an overlay — not by rewriting each card.** If the status
+  feed goes stale past its own cadence, the *document* degrades and says so, and every card's
+  confidence drops with it. It does **not** mutate the individual computed states underneath: an
+  event-driven source declared on-demand (§2.5) is not time-degraded by a page problem, and a card
+  that was `FAILING` must not lose its reason. Gen-1's crude 5-second meta-refresh is rejected in §5;
+  this is its replacement, and the replacement is mandatory.
+
+**Current confidence and last known outcome are separate facts, and both are shown.** This is the
+rule that resolves the apparent conflict between the overlay above and the `FAILING` > `UNKNOWN`
+precedence in §2.5. A stale feed means the console cannot currently vouch for anything — it does not
+mean the last thing it saw stopped being true:
+
+> `UNKNOWN` — feed stale 18m · **last known: FAILING at 02:14, sensor disconnected**
+
+Erasing the second line is the failure. The reason a source was failing is the only fact that lets
+the operator fix it, and it is exactly what gen-1 threw away.
 - **Clock health is a subsystem.** Every age in this document is computed against the Pi's clock. NTP
   sync state and RTC battery presence appear on the Overview. This is not hypothetical: §6 already
   records two clock-skew hazards this project has hit.
@@ -156,6 +169,26 @@ The three-state rule needs these pinned down or it cannot be implemented uniform
 **Cadence is visible, auditable config** (§4.8), and **the expectation renders next to the age** —
 "4m ago · expect ≤ 10m". Age alone lets a loosened cadence silently recreate gen-1: a source declared
 at 7 days shows 5 silent days as `LIVE`, which is the original incident laundered through config.
+
+### 2.5b The three states are for health assertions only
+
+`LIVE` / `FAILING` / `UNKNOWN` answer one question: *can this thing be relied on right now?* They are
+not a universal enum, and forcing every state machine through them produces nonsense — **a completed
+upload is not `LIVE`; a queued job is not `UNKNOWN`; a muted fault is not a health state.**
+
+Four separate vocabularies, each rendered in its own visual language:
+
+| Axis | Values | Applies to |
+|---|---|---|
+| **Health assertion** | `LIVE` · `FAILING` · `UNKNOWN` | Sources, daemons, channels, backups — anything that can be relied on or not |
+| **Lifecycle** | `queued` · `running` · `succeeded` · `failed` · `cancelled` | Jobs, uploads, imports — work with a beginning and an end |
+| **Process state** | `active` · `activating` · `failed` · `inactive` | Supervised units, straight from the supervisor |
+| **Operator suppression** | `muted until <date>, by operator` | An acknowledgement, never a health value |
+
+Any component may carry a health assertion **alongside** its domain state — a job runner has both a
+lifecycle for each run and a health assertion about whether the runner itself is trustworthy. What it
+may not do is collapse them into one field. Acceptance criterion 1 (§9) applies to the health axis
+only.
 
 ### 2.6 The failure mode this law creates, and its bound
 
@@ -598,22 +631,59 @@ wrong in the most expensive direction — it is the most blocked section in the 
 
 ## 9. Acceptance criteria
 
-The build is not done until:
+**Criteria are per-milestone (§3.1).** An earlier draft listed eleven criteria under "the build is
+not done until," several of which depend on substrate that does not land until M3–M6 — so no
+milestone could pass and the list gated nothing. A criterion outside the current milestone is **out
+of scope for that release**, not an unticked box.
 
-1. Every status in the console is one of three states, and the third is visually distinct from both
-   others on **every** panel.
-2. No status renders without the age of its observation.
-3. A source stale past its declared cadence degrades to `UNKNOWN` **without a per-source rule**.
-4. Killing any collector produces a visible `UNKNOWN` within its cadence, and the console names which
-   one.
-5. A failed job leaves a durable record with a reason, and appears in history.
-6. Both alarm channels can be tested independently, and a never-tested channel reads `UNKNOWN`.
-7. Every table is reachable — paged if pageable, aggregated if not — with no unreachable rows.
-8. NULL, zero, and parse-failure are visually distinct in every data cell.
-9. Cost is shown before a billed action, and a running total exists.
-10. Every destructive action has confirmation proportionate to its consequence, and lands in the audit
-    log.
-11. The accessibility bar in `PROMPT-admin.md` is met with **computed** ratios, not asserted ones.
+### M0 — foundations
+
+1. The liveness evaluator is **one pure function** with an injectable clock, unit-tested at the
+   boundary (`age == cadence`), and both the console and the silence detector call it. Neither
+   reimplements it.
+2. Every source in the registry declares a cadence; a source without one is a **build-time error**,
+   not a silently-`LIVE` card.
+3. An attempt record exists before its work begins and carries an expected duration; killing the
+   process mid-run leaves a row that degrades to `UNKNOWN` rather than reading "running" forever.
+
+### M1 — first usable console
+
+4. Every health assertion is one of three states, and the third is visually distinct from both others
+   on every panel. (Health axis only — §2.5b.)
+5. No status renders without the age of its observation, and the **expectation renders beside it**.
+6. Ages advance client-side; with the network dropped, the document degrades to `UNKNOWN` within one
+   interval while each card **retains its last known outcome and reason**.
+7. Killing any collector produces a visible `UNKNOWN` within its cadence and names which one.
+   Restarting the daemon leaves every registry source visible as `UNKNOWN` — none disappears.
+8. A source whose high-water mark has not advanced across N successful runs is visibly degraded, not
+   `LIVE`.
+9. An optional source that is declared-absent renders as such, and does not appear in rollups or
+   demand attention.
+10. Clock-sync state, build identity, and schema revision are on the Overview.
+
+### M2 — operations
+
+11. Every destructive action has confirmation proportionate to its consequence and lands in the audit
+    log with actor and timestamp.
+12. Each of S1–S5 has a named test.
+13. Email and telemetry each have a test action whose result is recorded; configured-but-never-tested
+    reads `UNKNOWN`, and a failing exporter is visible as `FAILING`.
+
+### M3 and later
+
+14. Targeted integrity views answer the source/date questions without a generic table browser;
+    export is scoped and complete for the range requested.
+15. NULL, zero, and parse-failure are visually distinct wherever provenance exists to distinguish
+    them.
+16. Cost is shown before a billed action, and a running total exists. *(M4)*
+17. Both alarm channels can be tested independently; a never-tested channel reads `UNKNOWN`. *(M6)*
+
+### Every milestone
+
+18. The accessibility bar in `PROMPT-admin.md` is met with **computed** ratios, not asserted ones,
+    for whatever shipped.
+19. The five gen-1 failures in §2.1 are regression tests, each asserting the gen-2 console
+    distinguishes the case gen-1 conflated.
 
 ---
 
