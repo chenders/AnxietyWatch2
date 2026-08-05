@@ -177,33 +177,51 @@ Two mechanisms bound it:
 
 ## 3. Information architecture
 
-Gen-1's 11-item flat nav is an accretion log: a life-critical question ("is the alarm armed?" —
-absent entirely) sits at the same weight as a content-editing form ("fix these song lyrics"). Eight
-sections, ordered by how often a healthy operator needs them:
+Gen-1's 11-item flat nav is an accretion log: a content-editing form ("fix these song lyrics") sits
+at the same weight as whether data is arriving at all. **Nine** sections, ordered by how often a
+healthy operator needs the answer:
 
-| # | Section | Answers | Ship |
+| # | Section | Answers | Milestone |
 |---|---|---|---|
-| 1 | **Overview** | Is the record complete, and is the machine working? Five seconds. | **v1** |
-| 2 | **Ingest** | Is data arriving, from which sources, and did anything change? | **v1** |
-| 3 | **Services** | Are the daemons up, and let me restart one. | **v1** |
-| 4 | **Data** | What is actually stored — browse, filter, export. | **v1** |
-| 5 | **Analysis** | Run correlation and AI jobs, watch them, review output, see cost. | v1.1 |
-| 6 | **Records** | Journal, medications, prescriptions, pharmacies, profiles, schedule. | v1.1 |
-| 7 | **Config & access** | Credentials, registry, thresholds, flags, audit, **outbound email**. | v1.1 |
-| 8 | **Recovery** | Backups, restore verification, what would I lose right now. | v1.2 |
-| 9 | **Alarm path** | Is the CNS early-warning subsystem armed and testable. | **last** |
+| 1 | **Overview** | Is the record complete, and is the machine working? Five seconds. | **M1** |
+| 2 | **Display path** | Is the bedside screen actually lit, not merely "service active"? | **M1** |
+| 3 | **Ingest** | Is data arriving, from which sources, and did anything change? | **M1** |
+| 4 | **Services** | Are the daemons up, what did they log, let me restart one. | M2 |
+| 5 | **Config & access** | Credentials, registry, cadences, flags, audit, outbound email, telemetry. | M2 |
+| 6 | **Data** | What is actually stored — targeted views, then export. | M3 |
+| 7 | **Analysis** | Run correlation and AI jobs, watch them, review output, see cost. | M4 |
+| 8 | **Records** | Journal, medications, prescriptions, pharmacies, profiles, schedule. | M5 |
+| 9 | **Recovery** | Backups, restore verification, what would I lose right now. | M5 |
+| — | **Alarm path** | Is the CNS early-warning subsystem armed and testable. | **M6, last** |
 
-**Ordering reflects how often the answer is needed**, and `Ship` is the delivery order (§9b).
-Overview, Ingest, Services and Data are the loop that keeps the evidence trustworthy; they ship
-first.
+### 3.1 Milestones
 
-**The alarm path is built last, deliberately, and for two independent reasons that agree.** It is one
-in-progress feature among twenty and not what the product is for — and it is also the *most* blocked
-section in this document: the daemons it would observe do not exist as code, and the daemon fields
-that would report its state have no wire path to ever be set (§7b). Nothing else waits on it.
+**Delivery order is a function of §7b, not of how interesting a section is.** An earlier draft ranked
+purely by operator frequency and put Data in the first release — which is blocked on storage
+hardware, so that schedule stalled before any loop closed.
 
-Songs/lyrics is content CRUD on an experimental correlate. It belongs inside **Records**, not in the
-top-level nav.
+| | Contains | Gated on |
+|---|---|---|
+| **M0** — foundations, no UI | The observation/attempt schema · per-source cadence in the registry · the liveness evaluator as one pure function · an HTTP service · the bind and auth decision | Nothing. None of it exists; everything below needs all of it |
+| **M1** — first usable console, read-only | Overview · Display path · Ingest for the registry sources · **attempt history** · registry left-join so a never-seen source appears · console self-freshness · clock state · build and schema identity · host readouts (disk, thermal, undervoltage, network, watchdog) | M0 |
+| **M2** — operations | Services with logs and audited restart · outbound email with its test loop · S1–S5 | M1 |
+| **M3** — data | Targeted integrity views, then scoped export | The sample store → storage tasks → the M.2 HAT |
+| **M4** — analysis | Job lifecycle, cost ledger, AI review loop | M3 + a job runner |
+| **M5** — records and recovery | Domain CRUD · backups and restore verification | Schema that does not exist yet |
+| **M6** — alarm path | Channel availability, self-test, arming | Daemons that do not exist yet |
+
+**Attempt history is in M1, not M3.** It is the single thing that distinguishes *silent* from
+*failing repeatedly*, which is this document's entire claim (§2.1). Putting it behind a generic data
+browser would be paying more for less: the browser is expensive, security-sensitive, and awkward to
+paginate across arbitrary schemas, while attempt history is one narrow table that answers the
+highest-frequency question directly.
+
+**The alarm path is built last, for two independent reasons that agree.** It is one in-progress
+feature among twenty and not what the product is for — and it is also the *most* blocked section
+here: the daemons it would observe do not exist as code, and the daemon fields that would report its
+state have no request verb that can set them (§7b). Nothing else waits on it.
+
+**Songs/lyrics** is content CRUD on an experimental correlate. It belongs inside **Records**.
 
 ---
 
@@ -373,6 +391,55 @@ product and the wrong answer here: it needs a Google Cloud project, a consent sc
 lifecycle, and re-consent handling — significant machinery whose entire benefit is not storing a
 credential the operator can revoke in one click anyway. Revisit only if Google withdraws app
 passwords.
+
+### 4.9c Optional telemetry — New Relic
+
+**Off by default, opt-in, operational metrics only.** This is observability for the appliance, not
+analytics about the person. The distinction is load-bearing and is stated here so it cannot erode:
+the project's public promise is that health data never leaves the box, and enabling telemetry must
+not weaken it.
+
+**Instrument with OpenTelemetry; export via OTLP to New Relic.** The vendor is a configuration line,
+not a dependency compiled into the daemons. That keeps New Relic swappable and keeps vendor SDKs off
+the ingest path — the same reasoning that keeps Docker off the life-safety path.
+
+**What may be exported** — shape, not content:
+
+- Daemon uptime, restart counts, memory, per-unit error counts
+- Sample **rate** per source, spool depth, drain latency, rejected/quarantined batch counts
+- Attempt outcomes and durations by job type
+- HTTP latency and error rates for the console itself
+- Host: disk free, thermal, undervoltage, clock-sync state
+
+**What may never be exported**, at any setting:
+
+- Sample **values** — no heart rate, no SpO₂, no blood pressure
+- Journal text, tags, severity ratings, song titles
+- Medication names, prescriptions, pharmacy or provider details
+- Anything identifying the person or the device beyond an opaque instance id
+
+The safe rule: **counters and timings leave; measurements and words do not.** A metric whose
+cardinality is per-sample or per-entry is prohibited outright — it would both breach the boundary and
+exhaust the free tier.
+
+**In the console:**
+
+- Enable/disable, plainly labelled as off by default, with a one-line statement of what leaves.
+- Licence key, stored encrypted at rest, write-only, shown thereafter as presence-plus-last-4 (the
+  same handling as the Gmail app password, §4.9b).
+- Region endpoint (US/EU) — New Relic's OTLP endpoints differ and a wrong region fails silently.
+- **Test connection**, with the outcome and its age recorded. Configured-but-never-tested is
+  `UNKNOWN`.
+- **Export health is itself a status** (§2.2). A telemetry exporter that has been failing for a week
+  is exactly the "reports the last success" defect this document exists to prevent — and it is worse
+  here, because the operator now believes something is watching.
+
+**Never on the critical path.** Telemetry export failing must not slow, block, or crash ingest, the
+detector, or the alarm. Bounded queue, drop on backpressure, count the drops, and surface the count.
+
+**Open-source consequence.** If this repository is published, telemetry ships disabled with no key
+and no endpoint. A contributor cloning it must not be able to enable it by accident, and the README's
+no-telemetry statement stays accurate as written — because for anyone who has not opted in, it is.
 
 ### 4.10 Alarm path — the CNS early-warning subsystem (built last)
 
