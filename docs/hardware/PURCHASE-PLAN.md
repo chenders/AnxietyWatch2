@@ -38,6 +38,25 @@ $403 the carts first totalled.
 
 *The RASPIAUDIO MEGA_AMP and similar are GPIO HATs, and that header is already spoken for.*
 
+### Order status — Amazon placed 2026-08-04
+
+| Arrives | Items | Unblocks |
+|---|---|---|
+| **Wed Aug 5** | X1001 M.2 HAT · FUNLOGY speaker | **T-A1, root on NVMe** — the HAT plus the drive already on hand is the entire dependency |
+| **Thu Aug 6** | X1202 UPS · X1202-C1 case · UGREEN audio adapter | **T-A2, audio path.** UPS reports battery state over I²C from here on |
+| **Aug 10–13** | Official Active Cooler | Closing the stack into the metal case — see the thermal note |
+
+Still to order: the 18650 cells (18650BatteryStore) and the RTC cell (PiShop). The UPS lands Thursday
+but does nothing without cells.
+
+**Thermal note — do not close the case before the cooler arrives.** As of 2026-08-04 the Pi has *no
+active cooler fitted*: no `cooling_fan` platform device and no registered cooling devices, running at
+58.2 °C open-air with `get_throttled=0x0`. That measurement was taken without an enclosure and
+without the NVMe. A closed metal case removes convection and the drive adds a few watts right beside
+the SoC; the Pi 5 soft-throttles at 80 °C, and there is not 22 °C of headroom in that combination.
+The UPS-and-HAT stack itself is fine open-air — X1202 mounts underneath on pogo pins, X1001 on top —
+so Aug 5 and Aug 6 are not blocked, only the enclosure is.
+
 ### The NVMe
 
 **Supplied from stock — verify it before assembling.** "Samsung EVO" spans two electrically
