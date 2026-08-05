@@ -813,14 +813,16 @@ of scope for that release**, not an unticked box.
    and apply the document-level stale-feed overlay (§2.4); it does not reimplement source-health
    precedence or cadence policy in JavaScript.
 2. Every source in the registry declares a cadence; a source without one is a **build-time error**,
-   not a silently-`LIVE` card.
+   not a silently-`LIVE` card. This criterion is the acceptance contract for the registry schema and
+   codegen work already named in the M0 milestone row (§3.1); M0 cannot complete before they land.
 3. An attempt record exists before its work begins and carries an expected duration; killing the
    process mid-run leaves a row that degrades to `UNKNOWN` rather than reading "running" forever.
 
 ### M1 — first usable console
 
 4. Every health assertion is one of three states, and the third is visually distinct from both others
-   on every panel. (Health axis only — §2.5b.)
+   on every panel. The M0 attempt schema makes `FAILING` reachable in M1: a named failed attempt must
+   render it in the M1 acceptance test. (Health axis only — §2.5b.)
 5. No status renders without the age of its observation, and the **expectation renders beside it**.
 6. Ages advance client-side; with the network dropped, the document degrades to `UNKNOWN` within one
    interval while each card **retains its last known outcome and reason**.
