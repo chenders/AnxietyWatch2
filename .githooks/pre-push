@@ -36,7 +36,11 @@ printf '\n── pre-push gates ──\n'
 
 # Scan every tracked file, not only this push's diff. Historical setup details
 # remain public until removed, and diff-only checks cannot catch them.
-if python3 scripts/check-public-info.py --self-test; then
+# Resolve the interpreter the same way the later gates do — a bare `python3`
+# is rejected by shell shims on some dev machines, which failed this gate
+# closed regardless of content.
+PY=python3; command -v uv >/dev/null && PY="uv run python3"
+if $PY scripts/check-public-info.py --self-test; then
   ok "public-info scan clean"
 else
   fail "personal or setup-specific information is present"
