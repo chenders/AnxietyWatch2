@@ -289,16 +289,7 @@ fn handle(
             if let Some(blocker) = rotation_blocker {
                 health.degraded.push(blocker.clone());
             }
-            health.heartbeat.drain_progressing =
-                health.lag_bytes == 0 || health.lag_age_seconds <= 300;
-            health.heartbeat_pulsing = health
-                .heartbeat
-                .should_pulse(state::HEARTBEAT_MAX_AGE.as_secs());
-            if !health.heartbeat.drain_progressing {
-                health
-                    .degraded
-                    .push("heartbeat blocked: spool drain offset is not advancing".to_owned());
-            }
+            finalize_drain_health(&mut health);
             let _ = reply.try_send(Response::Health {
                 health: Box::new(health),
             });
@@ -313,6 +304,18 @@ fn handle(
                     .to_owned(),
             });
         }
+    }
+}
+
+fn finalize_drain_health(health: &mut vitals_proto::Health) {
+    health.heartbeat.drain_progressing = health.lag_bytes == 0 || health.lag_age_seconds <= 300;
+    health.heartbeat_pulsing = health
+        .heartbeat
+        .should_pulse(state::HEARTBEAT_MAX_AGE.as_secs());
+    if !health.heartbeat.drain_progressing {
+        health
+            .degraded
+            .push("heartbeat blocked: spool drain offset is not advancing".to_owned());
     }
 }
 
@@ -542,6 +545,47 @@ mod tests {
                 .expect("before epoch")
                 .as_micros(),
             1_000_000
+        );
+    }
+
+    #[test]
+    fn drain_health_uses_durable_status_and_excludes_active_segment() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let spool = Spool::open(dir.path()).expect("spool");
+        std::fs::write(dir.path().join("finished.spool"), vec![0_u8; 100]).expect("segment");
+        std::fs::write(dir.path().join("finished.offset"), "40\n").expect("offset");
+        std::fs::write(dir.path().join(".drain-status"), "12345\n").expect("status");
+        let mut health = State::new(Vec::new()).health(Instant::now());
+        update_drain_health(&mut health, &spool);
+        assert_eq!(health.lag_bytes, 60);
+        assert_eq!(health.last_advanced_at, Some(12_345));
+        let json = serde_json::to_value(&health).expect("json");
+        assert_eq!(json.get("lag_bytes"), Some(&serde_json::json!(60)));
+        assert_eq!(
+            json.get("lag_age_seconds"),
+            Some(&serde_json::json!(health.lag_age_seconds))
+        );
+        assert_eq!(
+            json.get("last_advanced_at"),
+            Some(&serde_json::json!(12_345))
+        );
+    }
+
+    #[test]
+    fn stalled_drain_blocks_heartbeat_inside_monitoring_window() {
+        let mut state = State::new(Vec::new());
+        state.monitoring_window_active = true;
+        let mut health = state.health(Instant::now());
+        health.lag_bytes = 1;
+        health.lag_age_seconds = 301;
+        finalize_drain_health(&mut health);
+        assert!(!health.heartbeat.drain_progressing);
+        assert!(!health.heartbeat_pulsing);
+        assert!(
+            health
+                .degraded
+                .iter()
+                .any(|item| item.contains("drain offset is not advancing"))
         );
     }
 }
