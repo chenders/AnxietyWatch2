@@ -10,7 +10,7 @@ implementations that actually run.
 |---|---|---|---|
 | `pi-panel/claude-design/` | "Bedside Status Panel Designs" | `b8c918e3-c9cb-4c96-859a-19e6adcfbee6` | Three 800×480 panel directions (Clinical / Penumbra / Semaphore): a rationale doc + a `*Panel.dc.html` component each, with the five-state PanelState fixtures |
 | `web-dashboard/claude-design/` | "Design fixes: hatch and theme" | `6bfab67a-4990-4c2c-ac4e-43fe46373569` | Three dashboard directions (A Clinical / B Night Report / C Terminal) + two complete standalone builds (`standalone-source.html` = A, `standalone-source-b.html` = B) |
-| `admin-console/claude-design/` | "Three design directions" | `b5785f63-9247-41c9-a460-f79dfa9603eb` | Admin console: 3 directions (a "Service Mode" / b "Preflight" / c "Flowpath") × 17 files each (16 screens + console.css/app.js), all vanilla HTML/CSS/JS, no dependencies |
+| `admin-console/claude-design/` | "Three design directions" | `b5785f63-9247-41c9-a460-f79dfa9603eb` | Admin console: 3 directions (a "Service Mode" / b "Preflight" / c "Flowpath") × 17 files each (15 HTML pages + console.css/app.js), all vanilla HTML/CSS/JS, no dependencies |
 | `progress-map/claude-design/` | "AnxietyWatch2 Progress Map" | `7729e2af-8148-4c2b-90fe-e11cd0c6306f` | Dependency-ordered platform-migration progress map (stages, gates, task table, hardware) |
 
 ## Notes
