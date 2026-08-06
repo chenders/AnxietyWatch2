@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Recovery — AW2 Flowpath</title>
+<link rel="stylesheet" href="console.css">
+</head>
+<body data-feed="live">
+<a class="skip-link" href="#main">Skip to content</a>
+
+<div class="app">
+  <div class="stickytop">
+  <div class="docstale" role="status">
+    <span class="st st--severed">Console feed severed</span>
+    <b>This page has not heard from the appliance for <span data-feed-age>—</span>.</b>
+    <span class="muted-text">The graph below is the last shape the machine had. Edge states are unchanged; it is the link between you and the box that is cut.</span>
+    <button class="btn btn--sm" type="button" data-action="refresh">Reconnect <span class="btn__key">r</span></button>
+  </div>
+
+  <header class="cmdbar">
+    <span class="cmdbar__id"><b>AW2 FLOWPATH</b> · bedside-pi5 · 2.4.11+g8c1f</span>
+    <label class="sr-only" for="q">Filter nodes and sources</label>
+    <input class="input cmdbar__search" id="q" data-filter placeholder="Filter nodes, sources, units…   /">
+    <span class="cmdbar__id" data-clock>09:56:04Z</span>
+    <span class="cmdbar__id">feed <span data-feed-age>2s</span></span>
+    <span class="cmdbar__hint"><span class="kbd">j</span><span class="kbd">k</span> walk the path <span class="kbd">/</span> filter <span class="kbd">1</span>–<span class="kbd">9</span> screens <span class="kbd">?</span> keys</span>
+  </header>
+
+<nav class="tabs" aria-label="Screens">
+  <a class="tabs__item" href="overview.html" data-tabkey="1"><span class="tabs__key">1</span> Overview</a>
+  <a class="tabs__item" href="display.html" data-tabkey="2"><span class="tabs__key">2</span> Flow · display</a>
+  <a class="tabs__item" href="ingest.html" data-tabkey="3"><span class="tabs__key">3</span> Flow · ingest</a>
+  <a class="tabs__item" href="services.html" data-tabkey="4"><span class="tabs__key">4</span> Services</a>
+  <a class="tabs__item" href="config.html" data-tabkey="5"><span class="tabs__key">5</span> Access</a>
+  <a class="tabs__item" href="data.html" data-tabkey="6"><span class="tabs__key">6</span> Data</a>
+  <a class="tabs__item" href="analysis.html" data-tabkey="7"><span class="tabs__key">7</span> Analysis</a>
+  <a class="tabs__item" href="records.html" data-tabkey="8"><span class="tabs__key">8</span> Records</a>
+  <a class="tabs__item" href="recovery.html" data-tabkey="9" aria-current="page"><span class="tabs__key">9</span> Recovery</a>
+  <a class="tabs__item" href="system.html">System</a>
+  <a class="tabs__item" href="patterns.html">Patterns</a>
+  <a class="tabs__item" href="attempts.html">Timeline</a>
+  <a class="tabs__item" href="overview-degraded.html">Degraded</a>
+  <a class="tabs__item" href="firstrun.html">First run</a>
+</nav>
+  </div>
+
+  <main class="main" id="main">
+    <div class="pagehd">
+      <div>
+        <h1>Recovery</h1>
+        <p>Backups, WAL archive, and whether the return path has ever carried anything.</p>
+      </div>
+      <div class="pagehd__act">
+        <button class="btn btn--sm" type="button" data-action="refresh">Refresh <span class="btn__key">r</span></button>
+      </div>
+    </div>
+
+    <div class="cols-4">
+      <div class="fig"><span class="fig__k">You would lose</span>
+        <span class="fig__v">41<span class="unit">min</span></span>
+        <span class="muted-text">≈ 12,400 samples · 0 journal entries</span></div>
+      <div class="fig fig--severed fig--sm"><span class="fig__k">Restore would take</span>
+        <span class="fig__v">~26<span class="unit">min</span></span>
+        <span class="muted-text">Estimated. Never measured — see below.</span></div>
+      <div class="fig fig--sm"><span class="fig__k">Last full backup</span>
+        <span class="fig__v">06:00<span class="unit">today</span></span>
+        <span class="muted-text">3.9 GB, checksum valid</span></div>
+      <div class="fig fig--severed fig--sm"><span class="fig__k">Proven restore</span>
+        <span class="fig__v">None</span><span class="muted-text">No verification has ever completed</span></div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="stack">
+      <section class="pane pane--severed">
+        <div class="pane__hd"><h2>If this box died right now</h2>
+          <span class="caps"><span class="fresh" data-age-s="44" data-expect-s="900"><span class="fresh__age">44s ago</span><span class="fresh__expect">15m</span></span></span></div>
+        <div class="pane__body">
+          <p class="prose"><b>A backup that has never been restored is not a passing backup.</b> Three of
+          the four figures above are reassuring: the job ran, the file exists, the checksum matches. The
+          edge this screen actually cares about is the return path — data coming back out — and it has never
+          carried anything, so it is drawn cut. The 41 minutes assumes an archive that has never been proven
+          readable.</p>
+        </div>
+      </section>
+
+      <div class="cols-2">
+        <section class="pane">
+          <div class="pane__hd"><h2>Restore verification history</h2>
+            <span class="caps">Restore into a scratch cluster, then compare row counts</span></div>
+          <div class="pane__body--flush">
+            <div class="timeline timeline--silent">
+              <div class="timeline__hd">
+                <div class="timeline__verdict"><b>Never verified</b><span>aw2-restore-verify</span></div>
+                <p class="timeline__gloss">The verification timer has been enabled for 43 days and has never
+                fired. Nothing has failed because nothing has run. This is the console's own central claim
+                turned on itself: the subsystem reporting no failures is the one that has never tried.</p>
+                <span class="fresh fresh--over"><span class="fresh__age">never run</span><span class="fresh__expect">7d</span></span>
+              </div>
+              <div class="strip" role="img" aria-label="Six expected weekly verification windows, none attempted.">
+                <span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span>
+                <span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span>
+              </div>
+              <div class="strip__legend"><span><span class="seg seg--none seg-key"></span> no attempt — one segment per weekly window since 23 Jun</span></div>
+              <div class="attempt-row attempt-row--gap"><span class="attempt-row__t">Since 23 Jun</span>
+                <span class="attempt-row__why">6 expected windows, 0 attempts. The unit
+                <span class="mono">aw2-restore-verify.timer</span> is loaded, but its calendar expression
+                resolves to a date in 2027.</span></div>
+            </div>
+          </div>
+          <div class="pane__ft"><p class="prose">Fixing the calendar expression is the actual repair.
+          Running one now proves the current archive.</p>
+            <span class="grow"></span>
+            <button class="btn btn--sm btn--primary" type="button">Run a verification now · ~26 min</button></div>
+        </section>
+
+        <div class="stack">
+          <section class="pane">
+            <div class="pane__hd"><h2>Backups</h2></div>
+            <div class="pane__body--flush t-scroll">
+              <table class="t t--rowstate">
+                <thead><tr><th scope="col">Kind</th><th scope="col">When</th><th class="num" scope="col">Size</th>
+                  <th scope="col">Edge</th></tr></thead>
+                <tbody>
+                  <tr><th scope="row">Full</th><td class="mono">06:00 today</td><td class="num">3.9 GB</td>
+                    <td><span class="st st--flowing"><span aria-hidden="true">✓</span> Checksum valid</span></td></tr>
+                  <tr><th scope="row">Incremental</th><td class="mono">09:00 today</td><td class="num">142 MB</td>
+                    <td><span class="st st--flowing"><span aria-hidden="true">✓</span> Checksum valid</span></td></tr>
+                  <tr data-state="impaired"><th scope="row">WAL archive</th><td class="mono">lag 41m</td><td class="num">18 MB</td>
+                    <td><span class="st st--impaired"><span aria-hidden="true">▲</span> Lag over 15m</span></td></tr>
+                  <tr data-state="severed"><th scope="row">Off-site copy</th><td class="muted-text">never</td><td class="num">—</td>
+                    <td><span class="st st--severed">No destination set</span></td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="pane__ft"><p class="prose">All copies share the NVMe with the database. A drive
+            failure loses the record and every copy of it in the same moment.</p></div>
+          </section>
+
+          <section class="pane">
+            <div class="pane__hd"><h2>Restore</h2></div>
+            <div class="pane__body"><div class="danger-zone">
+              <div class="danger-zone__hd"><b>Destructive</b>
+                <p class="prose">Restoring into the live cluster replaces the system of record with the
+                chosen archive. Everything written since that archive is gone.</p></div>
+              <button class="btn btn--danger" type="button" data-action="open" data-target="m-restore">Restore into live cluster…</button>
+            </div></div>
+            <div class="pane__ft"><p class="prose">Restoring into a scratch cluster is safe and is what the
+            verification job does. It is a separate, unfenced control.</p>
+              <span class="grow"></span><button class="btn btn--sm" type="button">Restore into scratch…</button></div>
+          </section>
+        </div>
+      </div>
+    </div>
+
+<div class="scrim" id="m-restore" hidden data-no-escape>
+  <div class="modal modal--danger" role="alertdialog" aria-modal="true" aria-labelledby="mre-h">
+    <div class="modal__hd"><span aria-hidden="true">✕</span><h2 id="mre-h">Restore into the live cluster?</h2></div>
+    <form class="modal__body" data-confirm-phrase="aw2-prod" onsubmit="return false">
+      <p class="prose">Restoring <span class="mono">full-20260805-0600</span> over
+      <span class="mono">aw2-prod</span>. This archive has never been verified by a test restore.</p>
+      <ul class="consequences">
+        <li>3h 56m of samples written since 06:00 are destroyed — roughly 71,000 rows.</li>
+        <li>1 journal entry written at 07:52 is destroyed.</li>
+        <li>If the archive turns out to be unreadable, the cluster is left empty and the current data is already gone.</li>
+        <li>Estimated downtime 26 minutes. Collection continues into the spool and drains afterwards.</li>
+      </ul>
+      <div><label class="caps" for="mre-i">Type <span class="mono">aw2-prod</span> to confirm</label>
+        <input class="input" id="mre-i" data-confirm-input autocomplete="off" placeholder="cluster name"></div>
+      <div class="modal__ft"><button class="btn btn--ghost" type="button" data-action="close">Cancel</button>
+        <span class="grow"></span>
+        <button class="btn btn--danger" type="submit" data-confirm-go disabled>Restore over live data</button></div>
+    </form>
+  </div>
+</div>
+  </main>
+</div>
+
+<div class="scrim" id="keymap" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="km-h">
+    <div class="modal__hd"><h2 id="km-h">Keyboard</h2></div>
+    <div class="modal__body">
+      <div class="fields fields--wide">
+        <span class="field__k"><span class="kbd">j</span> <span class="kbd">k</span></span><span class="field__v">Walk the flow path, upstream and downstream</span>
+        <span class="field__k"><span class="kbd">↑</span> <span class="kbd">↓</span></span><span class="field__v">Same as j and k</span>
+        <span class="field__k"><span class="kbd">/</span></span><span class="field__v">Focus the node filter</span>
+        <span class="field__k"><span class="kbd">1</span>–<span class="kbd">9</span></span><span class="field__v">Jump to a screen</span>
+        <span class="field__k"><span class="kbd">r</span></span><span class="field__v">Refresh the feed</span>
+        <span class="field__k"><span class="kbd">?</span></span><span class="field__v">Show or hide this map</span>
+        <span class="field__k"><span class="kbd">esc</span></span><span class="field__v">Leave a field, or close a dialog</span>
+      </div>
+      <p class="prose muted-text">Every one of these is also reachable by tab and click. The keys are an accelerator, never the only route.</p>
+    </div>
+    <div class="modal__ft"><span class="grow"></span><button class="btn" type="button" data-action="close">Close</button></div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

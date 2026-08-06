@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>08 Records — AW2 Service Mode</title>
+<link rel="stylesheet" href="console.css">
+</head>
+<body data-feed="live">
+<a class="skip-link" href="#main">Skip to content</a>
+
+<div class="shell">
+  <div class="stickytop">
+  <header class="idstrip">
+    <div class="idstrip__brand"><b>AW2 SERVICE MODE</b><span>bedside-pi5 · 08 Records</span></div>
+    <div class="idstrip__fields">
+      <div class="idfield"><span class="idfield__k">Host</span><span class="idfield__v">bedside-pi5</span></div>
+      <div class="idfield"><span class="idfield__k">Build</span><span class="idfield__v">aw2 2.4.11+g8c1f</span></div>
+      <div class="idfield"><span class="idfield__k">Uptime</span><span class="idfield__v">17d 04:12</span></div>
+      <div class="idfield"><span class="idfield__k">Console clock</span><span class="idfield__v" data-clock>09:56:04Z</span></div>
+      <div class="idfield"><span class="idfield__k">Feed age</span><span class="idfield__v"><span data-feed-age>2s</span> · poll 15s</span></div>
+      <div class="idstrip__spacer"></div>
+    </div>
+  </header>
+
+  <div class="docstale" role="status">
+    <span class="status status--unknown"><span class="status__glyph" aria-hidden="true">?</span> Document stale</span>
+    <span class="docstale__b">This page has not heard from the appliance for <span data-feed-age>—</span>.</span>
+    <span class="muted-text">Everything below is the last state observed, not the current state.</span>
+    <button class="btn btn--sm" type="button" data-action="refresh">Reconnect</button>
+  </div>
+  </div>
+
+  <div class="body">
+    <nav class="rail" aria-label="Console sections">
+      <div class="rail__group">
+        <span class="caps">First release</span>
+        <a class="rail__item" href="overview.html"><span class="rail__ord">01</span> Overview <span class="dot dot--med"><span class="dot__g" aria-hidden="true">■</span><span class="sr-only">Fault, medium</span></span></a>
+        <a class="rail__item" href="display.html"><span class="rail__ord">02</span> Display path <span class="dot dot--ok"><span class="dot__g" aria-hidden="true">✓</span><span class="sr-only">OK</span></span></a>
+        <a class="rail__item" href="ingest.html"><span class="rail__ord">03</span> Ingest <span class="dot dot--unknown"><span class="dot__g" aria-hidden="true">?</span><span class="sr-only">Unknown</span></span></a>
+      </div>
+      <div class="rail__group">
+        <span class="caps">Later</span>
+        <a class="rail__item" href="services.html"><span class="rail__ord">04</span> Services &amp; host <span class="dot dot--ok"><span class="dot__g" aria-hidden="true">✓</span><span class="sr-only">OK</span></span></a>
+        <a class="rail__item" href="config.html"><span class="rail__ord">05</span> Config &amp; access <span class="dot dot--ok"><span class="dot__g" aria-hidden="true">✓</span><span class="sr-only">OK</span></span></a>
+        <a class="rail__item" href="data.html"><span class="rail__ord">06</span> Data <span class="dot dot--med"><span class="dot__g" aria-hidden="true">■</span><span class="sr-only">Fault, medium</span></span></a>
+        <a class="rail__item" href="analysis.html"><span class="rail__ord">07</span> Analysis <span class="dot dot--ok"><span class="dot__g" aria-hidden="true">✓</span><span class="sr-only">OK</span></span></a>
+        <a class="rail__item" href="records.html" aria-current="page"><span class="rail__ord">08</span> Records <span class="dot dot--ok"><span class="dot__g" aria-hidden="true">✓</span><span class="sr-only">OK</span></span></a>
+        <a class="rail__item" href="recovery.html"><span class="rail__ord">09</span> Recovery <span class="dot dot--unknown"><span class="dot__g" aria-hidden="true">?</span><span class="sr-only">Unknown</span></span></a>
+      </div>
+      <div class="rail__group">
+        <span class="caps">Reference</span>
+        <a class="rail__item" href="system.html">Design system</a>
+        <a class="rail__item" href="patterns.html">Operational patterns</a>
+        <a class="rail__item" href="attempts.html">Attempt history</a>
+        <a class="rail__item" href="overview-degraded.html">Overview · degraded</a>
+        <a class="rail__item" href="firstrun.html">First run</a>
+      </div>
+    </nav>
+
+    <main class="main" id="main">
+      <div class="page-hd">
+        <div>
+          <h1>Records</h1>
+          <p class="page-hd__sub">Journal, medication, prescriptions and schedule. CRUD with AI assist.</p>
+        </div>
+        <div class="page-hd__actions">
+          <button class="btn btn--sm" type="button" data-action="refresh">Refresh</button>
+        </div>
+      </div>
+
+      <div class="stack">
+
+        <section class="panel">
+          <div class="panel__hd"><h2 class="panel__title">Record types</h2>
+            <div class="panel__meta"><span class="caps">Freshness applies here too — a record type nobody has written to is a hole</span></div></div>
+          <div class="panel__body panel__body--flush t-scroll">
+            <table class="t t--rowstate">
+              <thead><tr><th scope="col">Type</th><th class="num" scope="col">Rows</th><th scope="col">Last written</th>
+                <th scope="col">Expected</th><th scope="col">Health</th><th scope="col"><span class="sr-only">Open</span></th></tr></thead>
+              <tbody>
+                <tr><th scope="row">Journal entries</th><td class="num">1,204</td>
+                  <td><span class="fresh" data-age-s="7200" data-expect-s="86400"><span class="fresh__age">2h ago</span><span class="fresh__expect">24h</span></span></td>
+                  <td>Daily</td><td><span class="status status--ok"><span class="status__glyph" aria-hidden="true">✓</span> OK</span></td>
+                  <td><button class="btn btn--sm" type="button">Open</button></td></tr>
+                <tr><th scope="row">Medication doses</th><td class="num">3,880</td>
+                  <td><span class="fresh" data-age-s="12600" data-expect-s="43200"><span class="fresh__age">3h 30m ago</span><span class="fresh__expect">12h</span></span></td>
+                  <td>Twice daily</td><td><span class="status status--ok"><span class="status__glyph" aria-hidden="true">✓</span> OK</span></td>
+                  <td><button class="btn btn--sm" type="button">Open</button></td></tr>
+                <tr data-state="unknown"><th scope="row">Dose efficacy follow-up</th><td class="num">602</td>
+                  <td><span class="fresh fresh--over" data-age-s="561600" data-expect-s="86400"><span class="fresh__age">6d 12h ago</span><span class="fresh__expect">24h</span></span></td>
+                  <td>Per dose</td><td><span class="status status--unknown"><span class="status__glyph" aria-hidden="true">?</span> Unknown</span></td>
+                  <td><button class="btn btn--sm" type="button">Open</button></td></tr>
+                <tr><th scope="row">Prescriptions</th><td class="num">14</td>
+                  <td><span class="fresh" data-age-s="1900800" data-expect-s="7776000"><span class="fresh__age">22d ago</span><span class="fresh__expect">90d</span></span></td>
+                  <td>On change</td><td><span class="status status--ok"><span class="status__glyph" aria-hidden="true">✓</span> OK</span></td>
+                  <td><button class="btn btn--sm" type="button">Open</button></td></tr>
+                <tr><th scope="row">Pharmacies</th><td class="num">3</td>
+                  <td><span class="fresh" data-age-s="8467200"><span class="fresh__age">98d ago</span></span></td>
+                  <td>On change</td><td><span class="status status--ok"><span class="status__glyph" aria-hidden="true">✓</span> OK</span></td>
+                  <td><button class="btn btn--sm" type="button">Open</button></td></tr>
+                <tr><th scope="row">Therapy schedule</th><td class="num">1</td>
+                  <td><span class="fresh" data-age-s="604800"><span class="fresh__age">7d ago</span></span></td>
+                  <td>Weekly</td><td><span class="status status--ok"><span class="status__glyph" aria-hidden="true">✓</span> OK</span></td>
+                  <td><button class="btn btn--sm" type="button">Open</button></td></tr>
+                <tr><th scope="row">Profiles</th><td class="num">1</td>
+                  <td><span class="fresh" data-age-s="1036800"><span class="fresh__age">12d ago</span></span></td>
+                  <td>Rarely</td><td><span class="status status--ok"><span class="status__glyph" aria-hidden="true">✓</span> OK</span></td>
+                  <td><button class="btn btn--sm" type="button">Open</button></td></tr>
+                <tr><th scope="row">Songs</th><td class="num">88</td>
+                  <td><span class="fresh" data-age-s="259200"><span class="fresh__age">3d ago</span></span></td>
+                  <td>Ad hoc</td><td><span class="status status--ok"><span class="status__glyph" aria-hidden="true">✓</span> OK</span></td>
+                  <td><button class="btn btn--sm" type="button">Open</button></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="panel__ft"><p class="prose">Dose efficacy follow-up has not been filled in for
+          six days. Nothing is broken — the user simply stopped answering the prompt — but the
+          correlation between dose timing and severity is computed from this table, so it is
+          reported as unknown rather than as an empty column.</p></div>
+        </section>
+
+        <div class="cols-main">
+          <section class="panel">
+            <div class="panel__hd"><h2 class="panel__title">Edit prescription</h2>
+              <div class="panel__meta"><span class="caps">sertraline 100 mg</span></div></div>
+            <div class="panel__body">
+              <form class="form" data-dirty-track onsubmit="return false">
+                <div class="form__row"><label for="r1" class="req">Drug</label>
+                  <div><input class="input" id="r1" name="r1" value="Sertraline"></div></div>
+                <div class="form__row"><label for="r2" class="req">Dose</label>
+                  <div><input class="input" id="r2" name="r2" value="100 mg"></div></div>
+                <div class="form__row"><label for="r3" class="req">Schedule</label>
+                  <div><select class="select" id="r3" name="r3"><option selected>Once daily, morning</option>
+                    <option>Once daily, evening</option><option>Twice daily</option><option>As needed</option></select></div></div>
+                <div class="form__row"><label for="r4">Prescriber</label>
+                  <div><input class="input" id="r4" name="r4" value="Dr M. Okafor"></div></div>
+                <div class="form__row"><label for="r5">Started</label>
+                  <div><input class="input" id="r5" name="r5" type="date" value="2025-11-04"></div></div>
+                <div class="form__row"><label for="r6">Notes</label>
+                  <div><textarea class="textarea" id="r6" name="r6">Titrated up from 50 mg on 2026-01-12.</textarea>
+                    <div class="row"><button class="btn btn--sm" type="button">Draft a summary with AI</button>
+                      <span class="hint">Generated text is reviewed before it is saved.</span></div></div></div>
+                <div class="savebar" data-dirty="false">
+                  <span class="savebar__state">No changes since last save.</span>
+                  <button class="btn btn--ghost" type="reset" data-needs-dirty disabled>Discard</button>
+                  <button class="btn btn--primary" type="submit" data-needs-dirty disabled>Save prescription</button>
+                </div>
+              </form>
+            </div>
+            <div class="panel__ft">
+              <div class="danger-zone">
+                <div class="danger-zone__hd"><b>Destructive</b>
+                  <p class="prose">Deleting a prescription removes it from every past report. Dose
+                  records that reference it are kept but become unattributed.</p></div>
+                <button class="btn btn--danger" type="button" data-action="open" data-target="m-del">Delete prescription…</button>
+              </div>
+            </div>
+          </section>
+
+          <div class="stack">
+            <section class="panel">
+              <div class="panel__hd"><h2 class="panel__title">Recent journal entries</h2></div>
+              <div class="panel__body panel__body--flush">
+                <div class="attempt-row"><span class="attempt-row__t">05 Aug 07:52</span>
+                  <span class="attempt-row__dur">sev 5</span><span class="attempt-row__rows">2m</span>
+                  <span class="attempt-row__why">Woke tense, settled after coffee and a walk.</span></div>
+                <div class="attempt-row"><span class="attempt-row__t">04 Aug 22:40</span>
+                  <span class="attempt-row__dur">sev 3</span><span class="attempt-row__rows">4m</span>
+                  <span class="attempt-row__why">Quiet evening. No notable triggers.</span></div>
+                <div class="attempt-row attempt-row--gap"><span class="attempt-row__t">04 Aug</span>
+                  <span class="attempt-row__why">No morning entry. The anchor for that day is missing.</span></div>
+              </div>
+              <div class="panel__ft"><button class="btn btn--sm btn--primary" type="button">New entry</button></div>
+            </section>
+
+            <section class="panel">
+              <div class="panel__hd"><h2 class="panel__title">Therapy schedule</h2></div>
+              <div class="panel__body">
+                <div class="fields">
+                  <span class="field__k">Weekly</span><span class="field__v">Thursday 14:00 · R. Alvarez</span>
+                  <span class="field__k">Next</span><span class="field__v mono">06 Aug 14:00</span>
+                  <span class="field__k">Attended</span><span class="field__v mono">31 of 33</span>
+                </div>
+              </div>
+              <div class="panel__ft">
+                <div class="actions-split">
+                  <button class="btn btn--sm" type="button">Edit</button>
+                  <span class="actions-split__gap" aria-hidden="true"></span>
+                  <button class="btn btn--sm btn--danger" type="button" data-action="open" data-target="m-sess">Delete session…</button>
+                </div>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+
+<div class="scrim" id="m-sess" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="msx-h">
+    <div class="modal__hd"><h2 id="msx-h">Delete therapy session?</h2></div>
+    <div class="modal__body">
+      <p class="prose">Thursday 14:00 with R. Alvarez, weekly. Removed from the schedule. Past
+      journal entries that reference it are unaffected.</p>
+      <p class="prose muted-text">Recoverable from the audit log for 30 days.</p>
+    </div>
+    <div class="modal__ft">
+      <button class="btn btn--ghost" type="button" data-action="close">Cancel</button>
+      <span class="grow"></span>
+      <button class="btn" type="button" data-action="close">Delete session</button>
+    </div>
+  </div>
+</div>
+
+<div class="scrim" id="m-del" hidden data-no-escape>
+  <div class="modal modal--danger" role="alertdialog" aria-modal="true" aria-labelledby="mdx-h">
+    <div class="modal__hd"><span aria-hidden="true">▲</span><h2 id="mdx-h">Delete prescription “Sertraline 100 mg”?</h2></div>
+    <form class="modal__body" data-confirm-phrase="Sertraline" onsubmit="return false">
+      <p class="prose">This prescription has been active for 274 days and is referenced by 548 dose
+      records.</p>
+      <ul class="consequences">
+        <li>548 dose records become unattributed. They are not deleted.</li>
+        <li>Every past report that named this prescription will no longer resolve it.</li>
+        <li>The dose-timing correlation is recomputed without it.</li>
+      </ul>
+      <div><label class="caps" for="mdx-i">Type <span class="mono">Sertraline</span> to confirm</label>
+        <input class="input" id="mdx-i" data-confirm-input autocomplete="off" placeholder="drug name"></div>
+      <div class="modal__ft">
+        <button class="btn btn--ghost" type="button" data-action="close">Cancel</button>
+        <span class="grow"></span>
+        <button class="btn btn--danger" type="submit" data-confirm-go disabled>Delete permanently</button>
+      </div>
+    </form>
+  </div>
+</div>
+    </main>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

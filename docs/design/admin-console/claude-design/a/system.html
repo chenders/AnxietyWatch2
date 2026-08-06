@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Design system — SERVICE MODE — AnxietyWatch2</title>
+<link rel="stylesheet" href="console.css">
+</head>
+<body data-feed="live">
+<a class="skip-link" href="#main">Skip to content</a>
+
+<div class="shell">
+  <div class="stickytop">
+  <header class="idstrip">
+    <div class="idstrip__brand"><b>AW2 SERVICE MODE</b><span>Direction A</span></div>
+    <div class="idstrip__fields">
+      <div class="idfield"><span class="idfield__k">Document</span><span class="idfield__v">Design system</span></div>
+      <div class="idfield"><span class="idfield__k">Version</span><span class="idfield__v">A.1</span></div>
+      <div class="idfield"><span class="idfield__k">Theme</span><span class="idfield__v">Dark (only)</span></div>
+      <div class="idstrip__spacer"></div>
+    </div>
+  </header>
+  </div>
+
+  <div class="body">
+    <nav class="rail" aria-label="Console sections">
+      <div class="rail__group">
+        <span class="caps">First release</span>
+        <a class="rail__item" href="overview.html"><span class="rail__ord">01</span> Overview</a>
+        <a class="rail__item" href="display.html"><span class="rail__ord">02</span> Display path</a>
+        <a class="rail__item" href="ingest.html"><span class="rail__ord">03</span> Ingest</a>
+      </div>
+      <div class="rail__group">
+        <span class="caps">Later</span>
+        <a class="rail__item" href="services.html"><span class="rail__ord">04</span> Services &amp; host</a>
+        <a class="rail__item" href="config.html"><span class="rail__ord">05</span> Config &amp; access</a>
+        <a class="rail__item" href="data.html"><span class="rail__ord">06</span> Data</a>
+        <a class="rail__item" href="analysis.html"><span class="rail__ord">07</span> Analysis</a>
+        <a class="rail__item" href="records.html"><span class="rail__ord">08</span> Records</a>
+        <a class="rail__item" href="recovery.html"><span class="rail__ord">09</span> Recovery</a>
+      </div>
+      <div class="rail__group">
+        <span class="caps">Reference</span>
+        <a class="rail__item" href="system.html" aria-current="page">Design system</a>
+        <a class="rail__item" href="patterns.html">Operational patterns</a>
+        <a class="rail__item" href="firstrun.html">First run</a>
+      </div>
+    </nav>
+
+    <main class="main" id="main">
+      <div class="page-hd">
+        <div>
+          <h1>Direction A — Service Mode</h1>
+          <p class="page-hd__sub">Modelled on the technician screens behind a bedside patient monitor.</p>
+        </div>
+      </div>
+
+      <div class="stack">
+
+        <!-- ============ RATIONALE ============ -->
+        <section class="panel">
+          <div class="panel__hd"><h2 class="panel__title">Rationale</h2></div>
+          <div class="panel__body stack--tight">
+            <p class="prose">Hospital equipment has already solved the problem this console has: a
+            person under time pressure has to establish, from across a room, whether an instrument
+            can be trusted. The answer is a rigid frame. Fields occupy fixed positions and never
+            reflow, so the eye learns where to look rather than reading the screen. Every value
+            carries its unit and the time it was observed. Alarm priority is a formal, bounded
+            vocabulary rather than an adjective.</p>
+            <p class="prose">This direction takes that literally. Every health state carries a hue and
+            a wash behind it, on the same alarm-priority terms a monitor uses — so a subsystem's
+            condition is readable from the doorway, not only from the chair. Grey is reserved for
+            ordinary text and for something declared absent, which is the one state with nothing to
+            assert. The third state — we have not checked, so we do not know — sits in the palette
+            beside high, medium and low rather than below them, because on this product an unverified
+            backup is a more dangerous object than a failed one.</p>
+          </div>
+        </section>
+
+        <!-- ============ COLOUR TOKENS ============ -->
+        <section class="panel">
+          <div class="panel__hd"><h2 class="panel__title">Colour tokens</h2>
+            <div class="panel__meta"><span class="caps">Dark theme · WCAG 2.2 AA</span></div></div>
+          <div class="panel__body panel__body--flush t-scroll">
+            <table class="t">
+              <caption>Surfaces and ink. Ratios computed against the darkest surface a token is permitted on and the lightest.</caption>
+              <thead><tr>
+                <th scope="col">Token</th><th scope="col">Hex</th><th scope="col">Sample</th>
+                <th scope="col">Role</th><th class="num" scope="col">vs #0A0C0D</th>
+                <th class="num" scope="col">vs #1A1E21</th><th class="num" scope="col">vs #23282C</th>
+                <th scope="col">AA</th>
+              </tr></thead>
+              <tbody>
+                <tr><th scope="row" class="mono">--c-bg-0</th><td class="mono">#0A0C0D</td>
+                  <td><span class="sw sw--bg0"></span></td>
+                  <td>Page ground</td><td class="num na">—</td><td class="num na">—</td><td class="num na">—</td><td class="na">surface</td></tr>
+                <tr><th scope="row" class="mono">--c-bg-1</th><td class="mono">#121517</td>
+                  <td><span class="sw sw--bg1"></span></td>
+                  <td>Panel</td><td class="num na">1.07</td><td class="num na">—</td><td class="num na">—</td><td class="na">surface</td></tr>
+                <tr><th scope="row" class="mono">--c-bg-2</th><td class="mono">#1A1E21</td>
+                  <td><span class="sw sw--bg2"></span></td>
+                  <td>Row, panel header</td><td class="num na">1.17</td><td class="num na">—</td><td class="num na">—</td><td class="na">surface</td></tr>
+                <tr><th scope="row" class="mono">--c-bg-3</th><td class="mono">#23282C</td>
+                  <td><span class="sw sw--bg3"></span></td>
+                  <td>Hover, track</td><td class="num na">1.32</td><td class="num na">—</td><td class="num na">—</td><td class="na">surface</td></tr>
+                <tr><th scope="row" class="mono">--c-line-strong</th><td class="mono">#454D52</td>
+                  <td><span class="sw sw--line"></span></td>
+                  <td>Panel edge, control border</td><td class="num">2.27</td><td class="num">1.95</td><td class="num">1.73</td>
+                  <td class="na">decorative only</td></tr>
+                <tr><th scope="row" class="mono">--c-ink-0</th><td class="mono">#E8EDEF</td>
+                  <td><span class="sw sw--ink0"></span></td>
+                  <td>Primary values</td><td class="num pass">16.61</td><td class="num pass">14.21</td><td class="num pass">12.61</td><td class="pass">AAA</td></tr>
+                <tr><th scope="row" class="mono">--c-ink-1</th><td class="mono">#A8B2B7</td>
+                  <td><span class="sw sw--ink1"></span></td>
+                  <td>Secondary text, prose</td><td class="num pass">9.07</td><td class="num pass">7.76</td><td class="num pass">6.88</td><td class="pass">AAA</td></tr>
+                <tr><th scope="row" class="mono">--c-ink-2</th><td class="mono">#8A959B</td>
+                  <td><span class="sw sw--ink2"></span></td>
+                  <td>Labels, units, absent text</td><td class="num pass">6.40</td><td class="num pass">5.48</td><td class="num pass">4.86</td><td class="pass">AA</td></tr>
+                <tr><th scope="row" class="mono">--c-ink-3</th><td class="mono">#6B7479</td>
+                  <td><span class="sw sw--ink3"></span></td>
+                  <td class="muted-text">Non-text only: dashed rules, disabled edges</td>
+                  <td class="num pass">4.11</td><td class="num pass">3.52</td><td class="num pass">3.12</td><td class="pass">AA non-text (≥3)</td></tr>
+              </tbody>
+            </table>
+
+            <table class="t">
+              <caption>Status hues. Each is used both as text on a dark surface and as a fill carrying
+              dark text, so both directions are given. Where a chip also ships a same-hue wash, the
+              washed surface it actually renders against is given too — the bare-surface number is the
+              upper bound, the washed number is the one on screen.</caption>
+              <thead><tr>
+                <th scope="col">Token</th><th scope="col">Hex</th><th scope="col">Sample</th>
+                <th class="num" scope="col">As text on #121517</th>
+                <th class="num" scope="col">On its own wash</th>
+                <th class="num" scope="col">#0A0C0D on fill</th>
+                <th scope="col">AA</th><th scope="col">Non-colour carrier</th>
+              </tr></thead>
+              <tbody>
+                <tr><th scope="row" class="mono">--c-prio-high</th><td class="mono">#FF6B61</td>
+                  <td><span class="sw sw--high"></span></td>
+                  <td class="num pass">6.57</td><td class="num na">—</td><td class="num pass">7.03</td><td class="pass">AA both</td>
+                  <td>Solid fill + <span class="mono">▲</span> + the word HIGH</td></tr>
+                <tr><th scope="row" class="mono">--c-prio-med</th><td class="mono">#FFB627</td>
+                  <td><span class="sw sw--med"></span></td>
+                  <td class="num pass">10.45</td><td class="num na">—</td><td class="num pass">11.18</td><td class="pass">AAA both</td>
+                  <td>Solid fill + <span class="mono">■</span> + the word MED</td></tr>
+                <tr><th scope="row" class="mono">--c-prio-low</th><td class="mono">#4FC3E8</td>
+                  <td><span class="sw sw--low"></span></td>
+                  <td class="num pass">9.00</td><td class="num pass">7.62</td><td class="num pass">9.62</td><td class="pass">AAA both</td>
+                  <td>10 % wash + <span class="mono">●</span> + the word LOW</td></tr>
+                <tr><th scope="row" class="mono">--c-unknown</th><td class="mono">#B98CFF</td>
+                  <td><span class="sw sw--unknown"></span></td>
+                  <td class="num pass">7.21</td><td class="num pass">6.03</td><td class="num pass">7.71</td><td class="pass">AA both</td>
+                  <td>45° hatch over a 12 % wash + <span class="mono">?</span> + the word UNKNOWN</td></tr>
+                <tr><th scope="row" class="mono">--c-ok</th><td class="mono">#55D6A0</td>
+                  <td><span class="sw sw--ok"></span></td>
+                  <td class="num pass">10.05</td><td class="num pass">8.39</td><td class="num pass">10.75</td><td class="pass">AAA both</td>
+                  <td>10 % wash + <span class="mono">✓</span> + the word OK. Also owns every healthy quantity: sparklines, bar fills, successful attempt ticks.</td></tr>
+                <tr><th scope="row" class="mono">--c-absent</th><td class="mono">#8A959B</td>
+                  <td><span class="sw sw--absent"></span></td>
+                  <td class="num pass">5.98</td><td class="num na">—</td><td class="num pass">6.40</td><td class="pass">AA both</td>
+                  <td>Dashed outline + <span class="mono">—</span> + the words NOT CONFIGURED</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="panel__ft">
+            <p class="prose"><b>Colour is the first read; it is never the only read.</b> Every one of
+            the six states above carries a hue, and every one also carries a wash behind it so the
+            state is legible from across a room rather than only at the chip. Grey is reserved for two
+            things and two things only: ordinary text, and something declared absent — the one state
+            that genuinely has nothing to say.</p>
+            <p class="prose"><b>On the green.</b> Healthy is mint <span class="mono">#55D6A0</span>
+            rather than a leaf green, because a blue-shifted green holds its distance from amber under
+            deuteranopia, where a true green does not. It is also never used alone: OK always appears
+            as <span class="mono">✓ OK</span> with a freshness reading beside it, so an ambiguous hue
+            still resolves to an unambiguous statement. Sparklines, bar fills and successful attempt
+            ticks all use the same mint, so a healthy quantity and a healthy status share one colour
+            and the eye only has to learn it once.</p>
+          </div>
+        </section>
+
+        <!-- ============ COLOURBLIND ============ -->
+        <section class="panel">
+          <div class="panel__hd"><h2 class="panel__title">Colour-vision verification</h2></div>
+          <div class="panel__body panel__body--flush t-scroll">
+            <table class="t">
+              <caption>Simulated with the Brettel/Viénot LMS transforms at 100% severity, then re-checked in greyscale. The pass criterion is that any two status tokens differ by ≥3:1 in luminance <em>or</em> carry different glyph and fill treatments.</caption>
+              <thead><tr><th scope="col">Pair</th><th scope="col">Deuteranopia</th><th scope="col">Protanopia</th>
+                <th scope="col">Tritanopia</th><th scope="col">Greyscale</th><th scope="col">Verdict</th></tr></thead>
+              <tbody>
+                <tr><th scope="row">high vs med</th>
+                  <td>Both shift to yellow-tan. Hue separation lost.</td>
+                  <td>High darkens sharply; separation survives on lightness.</td>
+                  <td>Distinct (pink vs yellow).</td>
+                  <td>Relative luminance 0.19 vs 0.55 — 2.3:1 apart.</td>
+                  <td class="pass">Pass on glyph ▲ vs ■ and the words HIGH / MED, not on hue. This is the classic collision and it is not left to colour.</td></tr>
+                <tr><th scope="row">high vs unknown</th><td>Tan vs blue-grey: distinct.</td><td>Distinct.</td>
+                  <td>Both move pink-red — hue separation weak.</td>
+                  <td>0.19 vs 0.36.</td>
+                  <td class="pass">Pass on fill treatment: high is a solid fill, unknown is always a 45° hatch. Distinguishable at arm's length in greyscale.</td></tr>
+                <tr><th scope="row">med vs low</th><td>Distinct.</td><td>Distinct.</td>
+                  <td>Amber → pink, cyan → blue-grey: distinct.</td><td>0.55 vs 0.50 — close.</td>
+                  <td class="pass">Pass on fill: med is filled with dark text, low is outline with light text. Opposite polarity.</td></tr>
+                <tr><th scope="row">unknown vs absent</th><td>Both blue-grey.</td><td>Both blue-grey.</td>
+                  <td>Distinct.</td><td>0.36 vs 0.29.</td>
+                  <td class="pass">Pass on border style (solid vs dashed), hatch density, and glyph ? vs —. Deliberately close in colour: these two are quiet neighbours, and the distinction that matters is carried structurally.</td></tr>
+                <tr><th scope="row">ok vs med<br><span class="muted-text">mint vs amber</span></th>
+                  <td>Mint shifts toward a pale sand, amber toward a deeper tan; the two stay roughly 2 steps apart in lightness.</td>
+                  <td>Mint holds a blue cast; separation survives.</td>
+                  <td>Mint → pale blue-grey, amber → pink. Distinct.</td>
+                  <td>Relative luminance 0.526 vs 0.549 — nearly identical.</td>
+                  <td class="pass">Pass, and not on luminance. Mint is a 10 % wash with light text; amber is a solid fill with dark text — opposite polarity. Glyphs differ (<span class="mono">✓</span> vs <span class="mono">■</span>) and both print their word. This is the pair a green-for-healthy palette usually gets wrong, and it is carried three other ways here.</td></tr>
+                <tr><th scope="row">ok vs high</th>
+                  <td>Sand vs tan, low hue separation.</td><td>Distinct — high darkens sharply.</td>
+                  <td>Distinct.</td><td>0.526 vs 0.326 — 1.5:1 apart.</td>
+                  <td class="pass">Pass on fill polarity (wash vs solid) and on glyph ✓ vs ▲.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- ============ FIVE VOCABULARIES ============ -->
+        <section class="panel">
+          <div class="panel__hd"><h2 class="panel__title">Five status vocabularies</h2>
+            <div class="panel__meta"><span class="caps">Never collapsed into one another</span></div></div>
+          <div class="panel__body stack">
+
+            <div>
+              <h3 class="caps">1 · Health assertion — can this be relied on right now?</h3>
+              <p class="prose">Three values, and only these three. A boxed monospace chip. Health
+              assertions never appear without a freshness reading beside them.</p>
+              <div class="row">
+                <span class="status status--ok"><span class="status__glyph" aria-hidden="true">✓</span> OK</span>
+                <span class="status status--high"><span class="status__glyph" aria-hidden="true">▲</span> Fault · High</span>
+                <span class="status status--med"><span class="status__glyph" aria-hidden="true">■</span> Fault · Med</span>
+                <span class="status status--low"><span class="status__glyph" aria-hidden="true">●</span> Fault · Low</span>
+                <span class="status status--unknown"><span class="status__glyph" aria-hidden="true">?</span> Unknown</span>
+              </div>
+              <hr class="divider">
+              <div class="fields fields--wide">
+                <span class="field__k">With freshness</span>
+                <span class="field__v">
+                  <span class="status status--ok"><span class="status__glyph" aria-hidden="true">✓</span> OK</span>
+                  <span class="fresh" data-since="2026-08-05T09:52:00Z" data-expect-s="600">
+                    <span class="fresh__age">4m ago</span><span class="fresh__expect">10m</span></span>
+                </span>
+                <span class="field__k">Degraded by age</span>
+                <span class="field__v">
+                  <span class="status status--unknown"><span class="status__glyph" aria-hidden="true">?</span> Unknown</span>
+                  <span class="fresh fresh--over" data-since="2026-08-05T07:14:00Z" data-expect-s="600">
+                    <span class="fresh__age">2h 42m ago</span><span class="fresh__expect">10m</span></span>
+                  <span class="lastknown lastknown--bad">Last known: <b>failing at 02:14</b> — sensor disconnected during pairing.</span>
+                </span>
+              </div>
+              <p class="prose"><b>Rule.</b> Current confidence and last known outcome are
+              two separate facts and both are shown. The console losing sight of a thing does not
+              erase what it last saw, and the reason is the only part the user can act on.</p>
+            </div>
+
+            <hr class="divider">
+
+            <div>
+              <h3 class="caps">2 · Lifecycle — what happened to this piece of work?</h3>
+              <p class="prose">A left bar, no box, sentence case. Structurally different from a
+              health chip so the two can sit side by side without being read as one thing.</p>
+              <div class="row">
+                <span class="life life--queued">Queued · position 2</span>
+                <span class="life life--running"><span class="life__pulse" aria-hidden="true"></span> Running · 04:12 elapsed</span>
+                <span class="life life--succeeded">Succeeded · 06:41</span>
+                <span class="life life--failed">Failed · rate limit</span>
+                <span class="life life--cancelled">Cancelled by operator</span>
+              </div>
+              <p class="prose"><b>Not health states.</b> A completed upload is not OK. A
+              queued job is not a question. Lifecycle answers "what happened to this run", health
+              answers "can I trust this subsystem".</p>
+            </div>
+
+            <hr class="divider">
+
+            <div>
+              <h3 class="caps">3 · Process state — what systemd says, verbatim</h3>
+              <p class="prose">Reported, not interpreted. A unit can be <span class="mono">active
+              (running)</span> and still be a health fault, which is exactly the case this console
+              exists to surface.</p>
+              <div class="row">
+                <span class="proc proc--active"><span class="proc__led" aria-hidden="true"></span> active (running)</span>
+                <span class="proc proc--activating"><span class="proc__led" aria-hidden="true"></span> activating (start)</span>
+                <span class="proc proc--failed"><span class="proc__led" aria-hidden="true"></span> failed (Result: exit-code)</span>
+                <span class="proc proc--inactive"><span class="proc__led" aria-hidden="true"></span> inactive (dead)</span>
+              </div>
+              <hr class="divider">
+              <div class="note">
+                <span class="proc proc--active"><span class="proc__led" aria-hidden="true"></span> active (running)</span>
+                &nbsp;+&nbsp;
+                <span class="status status--high"><span class="status__glyph" aria-hidden="true">▲</span> Fault · High</span>
+                &nbsp; — the collector process is alive and has written nothing for nine hours. Both facts are true and both are shown.
+              </div>
+            </div>
+
+            <hr class="divider">
+
+            <div>
+              <h3 class="caps">4 · Operator suppression</h3>
+              <p class="prose">Expected silence is muted with an expiry, by a named operator. A mute
+              is never re-badged as configuration, and it never becomes permanent by default.</p>
+              <div class="row">
+                <span class="mute">⊘ Muted until 2026-08-09 · <span class="mute__who">operator</span></span>
+                <span class="mute">⊘ Muted 6 more nights · <span class="mute__who">operator</span></span>
+              </div>
+            </div>
+
+            <hr class="divider">
+
+            <div>
+              <h3 class="caps">5 · Configuration — declared absent</h3>
+              <p class="prose">Something the user does not own, or has declared out of use. Excluded
+              from rollups. Visible, so the registry stays honest, but quiet.</p>
+              <div class="row">
+                <span class="status status--absent"><span class="status__glyph" aria-hidden="true">—</span> Not configured</span>
+                <span class="absent-note">Declared absent 2026-06-02 — no BP cuff owned.</span>
+              </div>
+              <p class="prose"><b>The distinction that protects the third state.</b> A
+              configured ring that simply went unworn last night is a benign <em>unknown</em>, muted
+              with an expiry. A device the user does not own is <em>not configured</em>. If every
+              optional thing renders as a question mark, the question mark becomes wallpaper.</p>
+            </div>
+
+          </div>
+        </section>
+
+        <!-- ============ TYPE + SPACE ============ -->
+        <div class="cols-2">
+          <section class="panel">
+            <div class="panel__hd"><h2 class="panel__title">Type scale</h2>
+              <div class="panel__meta"><span class="caps">Nothing below 14px</span></div></div>
+            <div class="panel__body panel__body--flush t-scroll">
+              <table class="t">
+                <thead><tr><th scope="col">Token</th><th class="num" scope="col">px</th><th scope="col">Face</th><th scope="col">Use</th></tr></thead>
+                <tbody>
+                  <tr><th scope="row" class="mono">--t-mega</th><td class="num">40</td><td class="mono">mono 700</td><td>The one number that matters on a screen</td></tr>
+                  <tr><th scope="row" class="mono">--t-xl</th><td class="num">28</td><td>Helvetica</td><td>Screen title</td></tr>
+                  <tr><th scope="row" class="mono">--t-lg</th><td class="num">22</td><td class="mono">mono 700</td><td>Secondary readout</td></tr>
+                  <tr><th scope="row" class="mono">--t-md</th><td class="num">18</td><td>Helvetica</td><td>Panel heading in a modal</td></tr>
+                  <tr><th scope="row" class="mono">--t-base</th><td class="num">16</td><td>Helvetica</td><td>Body prose floor</td></tr>
+                  <tr><th scope="row" class="mono">--t-data</th><td class="num">15</td><td class="mono">mono</td><td>Table cells, field values</td></tr>
+                  <tr><th scope="row" class="mono">--t-label</th><td class="num">14</td><td>Helvetica 700 caps</td><td>Labels, units, chips. Absolute floor.</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="panel__ft"><p class="prose">Two families only, both resident on the host:
+            Helvetica for language, a monospace for anything the machine produced. All numerics use
+            <span class="mono">font-variant-numeric: tabular-nums</span> so digits do not jitter on refresh.</p></div>
+          </section>
+
+          <section class="panel">
+            <div class="panel__hd"><h2 class="panel__title">Space &amp; geometry</h2></div>
+            <div class="panel__body panel__body--flush t-scroll">
+              <table class="t">
+                <thead><tr><th scope="col">Token</th><th class="num" scope="col">px</th><th scope="col">Use</th></tr></thead>
+                <tbody>
+                  <tr><th scope="row" class="mono">--s-1 … --s-3</th><td class="num">4 / 8 / 12</td><td>Inside chips, table cells, field gaps</td></tr>
+                  <tr><th scope="row" class="mono">--s-4 / --s-5</th><td class="num">16 / 20</td><td>Panel padding, gaps between panels</td></tr>
+                  <tr><th scope="row" class="mono">--s-6 … --s-12</th><td class="num">24 / 32 / 40 / 48</td><td>Page gutters, section separation</td></tr>
+                  <tr><th scope="row" class="mono">--r-0 / --r-1</th><td class="num">0 / 1</td><td>Corners. Instruments are square; 1px is permitted on chips only.</td></tr>
+                  <tr><th scope="row" class="mono">--rail-w</th><td class="num">232</td><td>Subsystem index. Fixed on every screen.</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="panel__ft"><p class="prose">No shadows anywhere. Depth is expressed by the
+            surface ramp and 1px rules, which is what survives being photographed off a screen at a
+            bad angle.</p></div>
+          </section>
+        </div>
+
+        <!-- ============ COMPONENT STATES ============ -->
+        <section class="panel">
+          <div class="panel__hd"><h2 class="panel__title">Subsystem panel — every state</h2></div>
+          <div class="panel__body">
+            <div class="cols-3">
+
+              <div class="panel" data-degrades>
+                <div class="panel__hd"><h3 class="panel__title">Default</h3>
+                  <div class="panel__meta"><span class="status status--ok"><span class="status__glyph" aria-hidden="true">✓</span> OK</span></div></div>
+                <div class="panel__body">
+                  <div class="readout"><span class="readout__k">Last sample</span>
+                    <span class="readout__v">42<span class="unit">s</span></span></div>
+                  <hr class="divider">
+                  <span class="fresh" data-since="2026-08-05T09:55:00Z" data-expect-s="120">
+                    <span class="fresh__age">42s ago</span><span class="fresh__expect">2m</span></span>
+                </div>
+              </div>
+
+              <div class="panel">
+                <div class="panel__hd"><h3 class="panel__title">Loading</h3>
+                  <div class="panel__meta"><span class="skel">·······</span></div></div>
+                <div class="panel__body">
+                  <div class="readout"><span class="readout__k">Last sample</span>
+                    <span class="readout__v"><span class="skel">····</span></span></div>
+                  <hr class="divider"><span class="skel">···········</span>
+                </div>
+              </div>
+
+              <div class="panel">
+                <div class="panel__hd"><h3 class="panel__title">Empty</h3>
+                  <div class="panel__meta"><span class="status status--unknown"><span class="status__glyph" aria-hidden="true">?</span> No data</span></div></div>
+                <div class="panel__body">
+                  <div class="empty"><h3>No samples yet</h3>
+                    <p>This source is configured and its collector is running, but it has never returned a row.</p>
+                    <button class="btn btn--sm" type="button">Run collector now</button></div>
+                </div>
+              </div>
+
+              <div class="panel panel--unknown">
+                <div class="panel__hd"><h3 class="panel__title">Stale → unknown</h3>
+                  <div class="panel__meta"><span class="status status--unknown"><span class="status__glyph" aria-hidden="true">?</span> Unknown</span></div></div>
+                <div class="panel__body">
+                  <div class="readout readout--unknown"><span class="readout__k">Last sample</span>
+                    <span class="readout__v">9<span class="unit">h 04m</span></span></div>
+                  <hr class="divider">
+                  <span class="fresh fresh--over" data-since="2026-08-05T00:52:00Z" data-expect-s="120">
+                    <span class="fresh__age">9h 4m ago</span><span class="fresh__expect">2m</span></span>
+                  <span class="lastknown">Last known: <b>OK at 00:52</b> — 118 samples, timestamp advanced.</span>
+                </div>
+              </div>
+
+              <div class="panel panel--absent">
+                <div class="panel__hd"><h3 class="panel__title">Not configured</h3>
+                  <div class="panel__meta"><span class="status status--absent"><span class="status__glyph" aria-hidden="true">—</span> N/C</span></div></div>
+                <div class="panel__body">
+                  <p class="absent-note">Declared absent 2026-06-02. No BP cuff owned. Excluded from
+                  the integrity rollup and from the report.</p>
+                  <hr class="divider">
+                  <button class="btn btn--sm" type="button">Configure a source</button>
+                </div>
+              </div>
+
+              <div class="panel panel--med">
+                <div class="panel__hd"><h3 class="panel__title">Warning</h3>
+                  <div class="panel__meta"><span class="status status--med"><span class="status__glyph" aria-hidden="true">■</span> Med</span></div></div>
+                <div class="panel__body">
+                  <div class="readout"><span class="readout__k">Spool depth</span>
+                    <span class="readout__v">14,208<span class="unit">rows</span></span></div>
+                  <hr class="divider">
+                  <span class="fresh" data-since="2026-08-05T09:54:00Z" data-expect-s="120">
+                    <span class="fresh__age">1m ago</span><span class="fresh__expect">2m</span></span>
+                  <span class="lastknown">Drain rate 210 rows/min against 340 arriving. Depth rising.</span>
+                </div>
+              </div>
+
+              <div class="panel panel--high">
+                <div class="panel__hd"><h3 class="panel__title">Critical</h3>
+                  <div class="panel__meta"><span class="status status--high"><span class="status__glyph" aria-hidden="true">▲</span> High</span></div></div>
+                <div class="panel__body">
+                  <div class="readout readout--high"><span class="readout__k">CPAP feed</span>
+                    <span class="readout__v">9<span class="unit">d silent</span></span></div>
+                  <hr class="divider">
+                  <span class="fresh fresh--over" data-since="2026-07-27T04:10:00Z" data-expect-s="86400">
+                    <span class="fresh__age">9d ago</span><span class="fresh__expect">24h</span></span>
+                  <span class="lastknown lastknown--bad">Last known: <b>OK at 04:10 on 27 Jul</b>. No attempts since — the importer timer is not firing.</span>
+                </div>
+              </div>
+
+              <div class="panel">
+                <div class="panel__hd"><h3 class="panel__title">Muted</h3>
+                  <div class="panel__meta"><span class="mute">⊘ until 09 Aug</span></div></div>
+                <div class="panel__body">
+                  <div class="readout"><span class="readout__k">Ring</span>
+                    <span class="readout__v">2<span class="unit">nights</span></span></div>
+                  <hr class="divider">
+                  <p class="absent-note">Benign unknown. Ring not worn while travelling. Muted by
+                  operator on 03 Aug; the mute expires on 09 Aug and the source returns to
+                  <span class="mono">unknown</span> on its own.</p>
+                </div>
+              </div>
+
+              <div class="panel">
+                <div class="panel__hd"><h3 class="panel__title">Suppressed rollup</h3>
+                  <div class="panel__meta"><span class="caps">2 excluded</span></div></div>
+                <div class="panel__body">
+                  <div class="fields">
+                    <span class="field__k">Counted</span><span class="field__v mono">11 sources</span>
+                    <span class="field__k">Muted</span><span class="field__v mono">1 · ring</span>
+                    <span class="field__k">Absent</span><span class="field__v mono">1 · BP cuff</span>
+                  </div>
+                  <hr class="divider">
+                  <p class="absent-note">Rollups count only sources that are configured and not
+                  currently suppressed, so a clean rollup cannot be produced by muting things.</p>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </section>
+
+        <!-- ============ BUTTONS ============ -->
+        <section class="panel">
+          <div class="panel__hd"><h2 class="panel__title">Buttons by severity</h2></div>
+          <div class="panel__body stack--tight">
+            <div class="row">
+              <button class="btn btn--primary" type="button">Save changes</button>
+              <button class="btn" type="button">Refresh now</button>
+              <button class="btn btn--ghost" type="button">Discard</button>
+              <button class="btn btn--sm" type="button">Small</button>
+              <button class="btn" type="button" disabled>Disabled</button>
+            </div>
+            <hr class="divider">
+            <p class="prose">Destructive controls are hatched, red-bordered, and physically fenced
+            from routine ones by a dashed gap — they are never adjacent to a safe action, and never
+            reachable in one click.</p>
+            <div class="actions-split">
+              <button class="btn" type="button">Reload unit</button>
+              <button class="btn" type="button">Rotate logs</button>
+              <span class="actions-split__gap" aria-hidden="true"></span>
+              <button class="btn btn--danger" type="button" data-action="open" data-target="m-restart">Restart daemon…</button>
+            </div>
+            <hr class="divider">
+            <div class="danger-zone">
+              <div class="danger-zone__hd">
+                <b>Destructive</b>
+                <p class="prose">Restoring into the live cluster overwrites the system of record.
+                Confirmation requires typing the cluster name.</p>
+              </div>
+              <button class="btn btn--danger" type="button">Restore into live cluster…</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- ============ FORM CONTROLS ============ -->
+        <section class="panel">
+          <div class="panel__hd"><h2 class="panel__title">Form controls</h2></div>
+          <div class="panel__body">
+            <form class="form" data-dirty-track onsubmit="return false">
+              <div class="form__row">
+                <label for="f1" class="req">Source ID</label>
+                <div><input class="input" id="f1" name="f1" value="polar-h10-chest" >
+                  <span class="hint">Immutable once samples exist. Used as the join key in exports.</span></div>
+              </div>
+              <div class="form__row">
+                <label for="f2" class="req">Expected cadence</label>
+                <div><input class="input" id="f2" name="f2" value="90" aria-invalid="true" aria-describedby="f2e">
+                  <span id="f2e" class="err">Below the 120 s minimum for a BLE source. A tighter cadence than the radio can deliver will show a healthy source as permanently unknown.</span></div>
+              </div>
+              <div class="form__row">
+                <label for="f3">Grace multiplier</label>
+                <div><select class="select" id="f3" name="f3">
+                  <option>1.5 ×  cadence</option><option selected>2.0 ×  cadence</option><option>3.0 ×  cadence</option>
+                </select><span class="hint">How far past the cadence a source may drift before its status degrades to unknown.</span></div>
+              </div>
+              <div class="form__row">
+                <label for="f4">Notes</label>
+                <div><textarea class="textarea" id="f4" name="f4" placeholder="Free text. Appears in the export header."></textarea></div>
+              </div>
+              <div class="form__row">
+                <span class="form__legend">Flags</span>
+                <div class="stack--tight">
+                  <div class="check"><input type="checkbox" id="f5" name="f5" checked>
+                    <label for="f5">Include in the integrity rollup</label></div>
+                  <div class="check"><input type="checkbox" id="f6" name="f6">
+                    <label for="f6">Declared absent — exclude from rollups and reports</label></div>
+                </div>
+              </div>
+              <div class="savebar" data-dirty="false">
+                <span class="savebar__state">No changes since last save.</span>
+                <button class="btn btn--ghost" type="reset" data-needs-dirty disabled>Discard</button>
+                <button class="btn btn--primary" type="submit" data-needs-dirty disabled>Save changes</button>
+              </div>
+            </form>
+          </div>
+        </section>
+
+        <!-- ============ MODALS ============ -->
+        <section class="panel">
+          <div class="panel__hd"><h2 class="panel__title">Confirmations, proportionate to consequence</h2></div>
+          <div class="panel__body stack--tight">
+            <p class="prose">Three weights. Reversible actions confirm inline. Actions with a
+            recoverable cost use a plain dialog. Actions that destroy something unrecoverable
+            require the object's name to be typed, and list what will be lost.</p>
+            <div class="row">
+              <button class="btn" type="button" data-action="open" data-target="m-plain">Level 2 · plain dialog</button>
+              <span class="actions-split__gap" aria-hidden="true"></span>
+              <button class="btn btn--danger" type="button" data-action="open" data-target="m-typed">Level 3 · typed confirmation</button>
+            </div>
+          </div>
+        </section>
+
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- Level 2 -->
+<div class="scrim" id="m-plain" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="m-plain-h">
+    <div class="modal__hd"><h2 id="m-plain-h">Delete therapy session?</h2></div>
+    <div class="modal__body">
+      <p class="prose">Thursday 14:00 with R. Alvarez, weekly. The session is removed from the
+      schedule. Past journal entries that reference it are unaffected.</p>
+      <p class="prose muted-text">This can be undone from the audit log for 30 days.</p>
+    </div>
+    <div class="modal__ft">
+      <button class="btn btn--ghost" type="button" data-action="close">Cancel</button>
+      <span class="grow"></span>
+      <button class="btn" type="button" data-action="close">Delete session</button>
+    </div>
+  </div>
+</div>
+
+<!-- Level 3 -->
+<div class="scrim" id="m-typed" hidden data-no-escape>
+  <div class="modal modal--danger" role="alertdialog" aria-modal="true" aria-labelledby="m-typed-h">
+    <div class="modal__hd"><span aria-hidden="true">▲</span><h2 id="m-typed-h">Revoke API key “home-assistant”?</h2></div>
+    <form class="modal__body" data-confirm-phrase="home-assistant" onsubmit="return false">
+      <p class="prose">Revocation takes effect immediately and cannot be undone. A new key can be
+      issued, but this one can never be restored.</p>
+      <ul class="consequences">
+        <li>Any client presenting this key starts receiving 401 at once.</li>
+        <li>The Home Assistant bridge stops writing heart-rate samples until it is re-keyed.</li>
+        <li>Samples arriving during the gap are not buffered. They are lost.</li>
+      </ul>
+      <div>
+        <label class="caps" for="m-typed-i">Type <span class="mono">home-assistant</span> to confirm</label>
+        <input class="input" id="m-typed-i" data-confirm-input autocomplete="off" placeholder="key name">
+      </div>
+      <div class="modal__ft">
+        <button class="btn btn--ghost" type="button" data-action="close">Cancel</button>
+        <span class="grow"></span>
+        <button class="btn btn--danger" type="submit" data-confirm-go disabled>Revoke permanently</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Restart -->
+<div class="scrim" id="m-restart" hidden>
+  <div class="modal modal--danger" role="alertdialog" aria-modal="true" aria-labelledby="m-restart-h">
+    <div class="modal__hd"><span aria-hidden="true">▲</span><h2 id="m-restart-h">Restart aw2-collector-chest?</h2></div>
+    <div class="modal__body">
+      <p class="prose">The chest strap must re-pair after the restart. Pairing typically takes
+      40–90 seconds and has failed on 3 of the last 20 attempts.</p>
+      <ul class="consequences">
+        <li>Estimated sample gap: 1–2 minutes, longer if pairing fails.</li>
+        <li>Tonight's HRV baseline is computed from a full night. A gap invalidates it.</li>
+      </ul>
+    </div>
+    <div class="modal__ft">
+      <button class="btn btn--ghost" type="button" data-action="close">Cancel</button>
+      <span class="grow"></span>
+      <button class="btn btn--danger" type="button" data-action="close">Restart unit</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

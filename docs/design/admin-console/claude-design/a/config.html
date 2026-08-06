@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>05 Config & access — AW2 Service Mode</title>
+<link rel="stylesheet" href="console.css">
+</head>
+<body data-feed="live">
+<a class="skip-link" href="#main">Skip to content</a>
+
+<div class="shell">
+  <div class="stickytop">
+  <header class="idstrip">
+    <div class="idstrip__brand"><b>AW2 SERVICE MODE</b><span>bedside-pi5 · 05 Config &amp; access</span></div>
+    <div class="idstrip__fields">
+      <div class="idfield"><span class="idfield__k">Host</span><span class="idfield__v">bedside-pi5</span></div>
+      <div class="idfield"><span class="idfield__k">Build</span><span class="idfield__v">aw2 2.4.11+g8c1f</span></div>
+      <div class="idfield"><span class="idfield__k">Uptime</span><span class="idfield__v">17d 04:12</span></div>
+      <div class="idfield"><span class="idfield__k">Console clock</span><span class="idfield__v" data-clock>09:56:04Z</span></div>
+      <div class="idfield"><span class="idfield__k">Feed age</span><span class="idfield__v"><span data-feed-age>2s</span> · poll 15s</span></div>
+      <div class="idstrip__spacer"></div>
+    </div>
+  </header>
+
+  <div class="docstale" role="status">
+    <span class="status status--unknown"><span class="status__glyph" aria-hidden="true">?</span> Document stale</span>
+    <span class="docstale__b">This page has not heard from the appliance for <span data-feed-age>—</span>.</span>
+    <span class="muted-text">Everything below is the last state observed, not the current state.</span>
+    <button class="btn btn--sm" type="button" data-action="refresh">Reconnect</button>
+  </div>
+  </div>
+
+  <div class="body">
+    <nav class="rail" aria-label="Console sections">
+      <div class="rail__group">
+        <span class="caps">First release</span>
+        <a class="rail__item" href="overview.html"><span class="rail__ord">01</span> Overview <span class="dot dot--med"><span class="dot__g" aria-hidden="true">■</span><span class="sr-only">Fault, medium</span></span></a>
+        <a class="rail__item" href="display.html"><span class="rail__ord">02</span> Display path <span class="dot dot--ok"><span class="dot__g" aria-hidden="true">✓</span><span class="sr-only">OK</span></span></a>
+        <a class="rail__item" href="ingest.html"><span class="rail__ord">03</span> Ingest <span class="dot dot--unknown"><span class="dot__g" aria-hidden="true">?</span><span class="sr-only">Unknown</span></span></a>
+      </div>
+      <div class="rail__group">
+        <span class="caps">Later</span>
+        <a class="rail__item" href="services.html"><span class="rail__ord">04</span> Services &amp; host <span class="dot dot--ok"><span class="dot__g" aria-hidden="true">✓</span><span class="sr-only">OK</span></span></a>
+        <a class="rail__item" href="config.html" aria-current="page"><span class="rail__ord">05</span> Config &amp; access <span class="dot dot--ok"><span class="dot__g" aria-hidden="true">✓</span><span class="sr-only">OK</span></span></a>
+        <a class="rail__item" href="data.html"><span class="rail__ord">06</span> Data <span class="dot dot--med"><span class="dot__g" aria-hidden="true">■</span><span class="sr-only">Fault, medium</span></span></a>
+        <a class="rail__item" href="analysis.html"><span class="rail__ord">07</span> Analysis <span class="dot dot--ok"><span class="dot__g" aria-hidden="true">✓</span><span class="sr-only">OK</span></span></a>
+        <a class="rail__item" href="records.html"><span class="rail__ord">08</span> Records <span class="dot dot--ok"><span class="dot__g" aria-hidden="true">✓</span><span class="sr-only">OK</span></span></a>
+        <a class="rail__item" href="recovery.html"><span class="rail__ord">09</span> Recovery <span class="dot dot--unknown"><span class="dot__g" aria-hidden="true">?</span><span class="sr-only">Unknown</span></span></a>
+      </div>
+      <div class="rail__group">
+        <span class="caps">Reference</span>
+        <a class="rail__item" href="system.html">Design system</a>
+        <a class="rail__item" href="patterns.html">Operational patterns</a>
+        <a class="rail__item" href="attempts.html">Attempt history</a>
+        <a class="rail__item" href="overview-degraded.html">Overview · degraded</a>
+        <a class="rail__item" href="firstrun.html">First run</a>
+      </div>
+    </nav>
+
+    <main class="main" id="main">
+      <div class="page-hd">
+        <div>
+          <h1>Config &amp; access</h1>
+          <p class="page-hd__sub">Credentials, the registry, flags and the audit trail.</p>
+        </div>
+        <div class="page-hd__actions">
+          <button class="btn btn--sm" type="button" data-action="refresh">Refresh</button>
+        </div>
+      </div>
+
+      <div class="stack">
+
+        <section class="panel">
+          <div class="panel__hd"><h2 class="panel__title">API keys</h2>
+            <div class="panel__meta"><span class="caps">3 active · 1 revoked</span>
+              <button class="btn btn--sm btn--primary" type="button">Issue key…</button></div></div>
+          <div class="panel__body panel__body--flush t-scroll">
+            <table class="t t--rowstate">
+              <thead><tr><th scope="col">Name</th><th scope="col">Fingerprint</th><th scope="col">Scope</th>
+                <th scope="col">Last used</th><th scope="col">Expires</th><th scope="col"><span class="sr-only">Action</span></th></tr></thead>
+              <tbody>
+                <tr><th scope="row">phone-bridge</th><td class="redact mono">SHA256:8b41…7e02 · <b>…4KpQ</b></td>
+                  <td class="mono">read+write:samples</td><td class="mono">15m ago</td><td class="mono">2027-02-11</td>
+                  <td><button class="btn btn--sm btn--danger" type="button" data-action="open" data-target="m-rev">Revoke…</button></td></tr>
+                <tr><th scope="row">home-assistant</th><td class="redact mono">SHA256:0f3a…c19d · <b>…9EgU</b></td>
+                  <td class="mono">write:samples</td><td class="mono">4m ago</td><td class="mono">2027-08-05</td>
+                  <td><button class="btn btn--sm btn--danger" type="button" data-action="open" data-target="m-rev">Revoke…</button></td></tr>
+                <tr data-state="med"><th scope="row">laptop-export</th><td class="redact mono">SHA256:cc90…11af · <b>…2Vm7</b></td>
+                  <td class="mono">read:samples</td><td class="mono">214d ago</td>
+                  <td><span class="status status--med"><span class="status__glyph" aria-hidden="true">■</span> Expires in 8d</span></td>
+                  <td><button class="btn btn--sm btn--danger" type="button" data-action="open" data-target="m-rev">Revoke…</button></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="panel__ft"><a href="patterns.html">Full credential lifecycle, including the one-time reveal →</a></div>
+        </section>
+
+        <div class="cols-main">
+          <section class="panel">
+            <div class="panel__hd"><h2 class="panel__title">Source registry</h2>
+              <div class="panel__meta"><span class="caps">Cadence, grace and rollup membership</span></div></div>
+            <div class="panel__body panel__body--flush t-scroll">
+              <table class="t t--rowstate">
+                <thead><tr><th scope="col">Source</th><th scope="col">Kind</th><th class="num" scope="col">Cadence</th>
+                  <th class="num" scope="col">Grace</th><th scope="col">In rollup</th><th scope="col">Configuration</th></tr></thead>
+                <tbody>
+                  <tr><th scope="row" class="mono">polar-h10-chest</th><td>BLE</td><td class="num">2m</td><td class="num">2.0×</td>
+                    <td>Yes</td><td><span class="status status--ok"><span class="status__glyph" aria-hidden="true">✓</span> Configured</span></td></tr>
+                  <tr><th scope="row" class="mono">wellue-o2ring</th><td>BLE</td><td class="num">2m</td><td class="num">2.0×</td>
+                    <td>Yes</td><td><span class="status status--ok"><span class="status__glyph" aria-hidden="true">✓</span> Configured</span></td></tr>
+                  <tr><th scope="row" class="mono">resmed-airsense-11</th><td>Importer</td><td class="num">24h</td><td class="num">1.5×</td>
+                    <td>Yes</td><td><span class="status status--ok"><span class="status__glyph" aria-hidden="true">✓</span> Configured</span></td></tr>
+                  <tr class="is-absent"><th scope="row" class="mono">omron-bp-cuff</th><td>BLE</td><td class="num">—</td><td class="num">—</td>
+                    <td>No</td><td><span class="status status--absent"><span class="status__glyph" aria-hidden="true">—</span> Declared absent</span></td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="panel__ft"><p class="prose">Declaring a source absent removes it from every
+            rollup and from the report. It is the only supported way to make an optional source stop
+            asking questions, and it is recorded in the audit log with a reason.</p></div>
+          </section>
+
+          <div class="stack">
+            <section class="panel">
+              <div class="panel__hd"><h2 class="panel__title">Provider credentials</h2></div>
+              <div class="panel__body panel__body--flush t-scroll">
+                <table class="t">
+                  <thead><tr><th scope="col">Provider</th><th scope="col">Key</th><th scope="col">Status</th></tr></thead>
+                  <tbody>
+                    <tr><th scope="row">Anthropic</th><td class="redact mono">present · <b>…yT4a</b></td>
+                      <td><span class="status status--ok"><span class="status__glyph" aria-hidden="true">✓</span> Verified 09:05</span></td></tr>
+                    <tr><th scope="row">Oura Cloud</th><td class="redact mono">present · <b>…Q17b</b></td>
+                      <td><span class="status status--ok"><span class="status__glyph" aria-hidden="true">✓</span> Verified 09:26</span></td></tr>
+                    <tr class="is-absent"><th scope="row">SMTP relay</th><td class="redact mono">not set</td>
+                      <td><span class="status status--absent"><span class="status__glyph" aria-hidden="true">—</span> Not configured</span></td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="panel__ft"><p class="prose">Values are never displayed or returned by the
+              API. Presence and last four characters only.</p></div>
+            </section>
+
+            <section class="panel">
+              <div class="panel__hd"><h2 class="panel__title">Feature flags</h2></div>
+              <div class="panel__body">
+                <form class="form" data-dirty-track onsubmit="return false">
+                  <div class="check"><input type="checkbox" id="fl1" name="fl1" checked>
+                    <label for="fl1">Correlation engine<span class="hint">Recomputes nightly at 01:00.</span></label></div>
+                  <div class="check"><input type="checkbox" id="fl2" name="fl2" checked>
+                    <label for="fl2">AI analysis runs<span class="hint">Requires an Anthropic key and respects the spend cap.</span></label></div>
+                  <div class="check"><input type="checkbox" id="fl3" name="fl3">
+                    <label for="fl3">Nocturnal early-warning alarm<span class="hint">In progress, scheduled last. Off.</span></label></div>
+                  <div class="check"><input type="checkbox" id="fl4" name="fl4">
+                    <label for="fl4">Anonymous telemetry<span class="hint">Off by default. Sends crash counts and version, never health data.</span></label></div>
+                  <div class="savebar" data-dirty="false">
+                    <span class="savebar__state">No changes since last save.</span>
+                    <button class="btn btn--ghost" type="reset" data-needs-dirty disabled>Discard</button>
+                    <button class="btn btn--primary" type="submit" data-needs-dirty disabled>Save flags</button>
+                  </div>
+                </form>
+              </div>
+            </section>
+          </div>
+        </div>
+
+        <section class="panel">
+          <div class="panel__hd"><h2 class="panel__title">Audit log</h2>
+            <div class="panel__meta"><span class="caps">Append-only · 30 days retained</span></div></div>
+          <div class="panel__body panel__body--flush t-scroll">
+            <table class="t">
+              <thead><tr><th scope="col">When</th><th scope="col">Action</th><th scope="col">Object</th><th scope="col">Detail</th></tr></thead>
+              <tbody>
+                <tr><td class="mono">09:52:04</td><td>key.issue</td><td class="mono">home-assistant</td><td>scope write:samples, expires 2027-08-05</td></tr>
+                <tr><td class="mono">09:26:11</td><td>source.mute</td><td class="mono">oura-ring-gen3</td><td>until 2026-08-09, reason "travelling"</td></tr>
+                <tr><td class="mono">06:26:44</td><td>backup.verify</td><td class="mono">full-20260727</td><td>failed — truncated archive</td></tr>
+                <tr><td class="mono">02 Jun 11:02</td><td>source.declare_absent</td><td class="mono">omron-bp-cuff</td><td>reason "device not owned"</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
+<div class="scrim" id="m-rev" hidden data-no-escape>
+  <div class="modal modal--danger" role="alertdialog" aria-modal="true" aria-labelledby="mrv-h">
+    <div class="modal__hd"><span aria-hidden="true">▲</span><h2 id="mrv-h">Revoke API key “phone-bridge”?</h2></div>
+    <form class="modal__body" data-confirm-phrase="phone-bridge" onsubmit="return false">
+      <p class="prose">Immediate and permanent. This key was used 15 minutes ago.</p>
+      <ul class="consequences">
+        <li>The phone stops delivering journal entries and health-store data at once.</li>
+        <li>Journal entries written while the phone is unauthenticated are held on the device, but health-store windows are not re-fetched.</li>
+      </ul>
+      <div><label class="caps" for="mrv-i">Type <span class="mono">phone-bridge</span> to confirm</label>
+        <input class="input" id="mrv-i" data-confirm-input autocomplete="off" placeholder="key name"></div>
+      <div class="modal__ft">
+        <button class="btn btn--ghost" type="button" data-action="close">Cancel</button>
+        <span class="grow"></span>
+        <button class="btn btn--danger" type="submit" data-confirm-go disabled>Revoke permanently</button>
+      </div>
+    </form>
+  </div>
+</div>
+    </main>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

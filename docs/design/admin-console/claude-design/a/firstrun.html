@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>First run — AW2 Service Mode</title>
+<link rel="stylesheet" href="console.css">
+</head>
+<body data-feed="live">
+<a class="skip-link" href="#main">Skip to content</a>
+
+<div class="shell">
+  <div class="stickytop">
+  <header class="idstrip">
+    <div class="idstrip__brand"><b>AW2 SERVICE MODE</b><span>bedside-pi5 · First run</span></div>
+    <div class="idstrip__fields">
+      <div class="idfield"><span class="idfield__k">Host</span><span class="idfield__v">bedside-pi5</span></div>
+      <div class="idfield"><span class="idfield__k">Build</span><span class="idfield__v">aw2 2.4.11+g8c1f</span></div>
+      <div class="idfield"><span class="idfield__k">Uptime</span><span class="idfield__v">17d 04:12</span></div>
+      <div class="idfield"><span class="idfield__k">Console clock</span><span class="idfield__v" data-clock>09:56:04Z</span></div>
+      <div class="idfield"><span class="idfield__k">Feed age</span><span class="idfield__v"><span data-feed-age>2s</span> · poll 15s</span></div>
+      <div class="idstrip__spacer"></div>
+    </div>
+  </header>
+
+  <div class="docstale" role="status">
+    <span class="status status--unknown"><span class="status__glyph" aria-hidden="true">?</span> Document stale</span>
+    <span class="docstale__b">This page has not heard from the appliance for <span data-feed-age>—</span>.</span>
+    <span class="muted-text">Everything below is the last state observed, not the current state.</span>
+    <button class="btn btn--sm" type="button" data-action="refresh">Reconnect</button>
+  </div>
+  </div>
+
+  <div class="body">
+    <nav class="rail" aria-label="Console sections">
+      <div class="rail__group">
+        <span class="caps">First release</span>
+        <a class="rail__item" href="overview.html"><span class="rail__ord">01</span> Overview <span class="dot dot--med"><span class="dot__g" aria-hidden="true">■</span><span class="sr-only">Fault, medium</span></span></a>
+        <a class="rail__item" href="display.html"><span class="rail__ord">02</span> Display path <span class="dot dot--ok"><span class="dot__g" aria-hidden="true">✓</span><span class="sr-only">OK</span></span></a>
+        <a class="rail__item" href="ingest.html"><span class="rail__ord">03</span> Ingest <span class="dot dot--unknown"><span class="dot__g" aria-hidden="true">?</span><span class="sr-only">Unknown</span></span></a>
+      </div>
+      <div class="rail__group">
+        <span class="caps">Later</span>
+        <a class="rail__item" href="services.html"><span class="rail__ord">04</span> Services &amp; host <span class="dot dot--ok"><span class="dot__g" aria-hidden="true">✓</span><span class="sr-only">OK</span></span></a>
+        <a class="rail__item" href="config.html"><span class="rail__ord">05</span> Config &amp; access <span class="dot dot--ok"><span class="dot__g" aria-hidden="true">✓</span><span class="sr-only">OK</span></span></a>
+        <a class="rail__item" href="data.html"><span class="rail__ord">06</span> Data <span class="dot dot--med"><span class="dot__g" aria-hidden="true">■</span><span class="sr-only">Fault, medium</span></span></a>
+        <a class="rail__item" href="analysis.html"><span class="rail__ord">07</span> Analysis <span class="dot dot--ok"><span class="dot__g" aria-hidden="true">✓</span><span class="sr-only">OK</span></span></a>
+        <a class="rail__item" href="records.html"><span class="rail__ord">08</span> Records <span class="dot dot--ok"><span class="dot__g" aria-hidden="true">✓</span><span class="sr-only">OK</span></span></a>
+        <a class="rail__item" href="recovery.html"><span class="rail__ord">09</span> Recovery <span class="dot dot--unknown"><span class="dot__g" aria-hidden="true">?</span><span class="sr-only">Unknown</span></span></a>
+      </div>
+      <div class="rail__group">
+        <span class="caps">Reference</span>
+        <a class="rail__item" href="system.html">Design system</a>
+        <a class="rail__item" href="patterns.html">Operational patterns</a>
+        <a class="rail__item" href="attempts.html">Attempt history</a>
+        <a class="rail__item" href="overview-degraded.html">Overview · degraded</a>
+        <a class="rail__item" href="firstrun.html" aria-current="page">First run</a>
+      </div>
+    </nav>
+
+    <main class="main" id="main">
+      <div class="page-hd">
+        <div>
+          <h1>First run</h1>
+          <p class="page-hd__sub">Nothing configured, no data, no attempts. Empty is not the same as broken.</p>
+        </div>
+        <div class="page-hd__actions">
+          <button class="btn btn--sm" type="button" data-action="refresh">Refresh</button>
+        </div>
+      </div>
+
+      <div class="stack">
+
+        <section class="panel">
+          <div class="panel__hd"><h2 class="panel__title">Installation state</h2>
+            <div class="panel__meta"><span class="caps">Fresh install · 00:04:12 since first boot</span></div></div>
+          <div class="panel__body">
+            <div class="cols-4">
+              <div class="readout"><span class="readout__k">Sources configured</span>
+                <span class="readout__v">0<span class="unit">of 0</span></span>
+                <span class="muted-text">The registry is empty, not broken</span></div>
+              <div class="readout"><span class="readout__k">Unresolved faults</span>
+                <span class="readout__v">0</span><span class="muted-text">Nothing is running yet</span></div>
+              <div class="readout"><span class="readout__k">Cannot vouch for</span>
+                <span class="readout__v">0</span><span class="muted-text">Nothing has been claimed yet</span></div>
+              <div class="readout readout--sm"><span class="readout__k">Database</span>
+                <span class="readout__v">Ready<span class="unit">14 MB</span></span>
+                <span class="muted-text">Schema 2.4.11, migrated cleanly</span></div>
+            </div>
+          </div>
+          <div class="panel__ft">
+            <p class="prose"><b>A fresh install must not look broken.</b> Zeroes here are stated as
+            zeroes with an explanation, not rendered as unknowns. There is no third state to report
+            because no assertion has been made yet — nothing has been configured, so nothing is
+            being watched, so there is nothing the console has failed to check.</p>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel__hd"><h2 class="panel__title">Bring-up</h2>
+            <div class="panel__meta"><span class="caps">3 of 7 done · in order</span></div></div>
+          <div class="ladder">
+            <div class="claim">
+              <span class="claim__n">1</span>
+              <span class="claim__what">Database initialised
+                <small>Postgres 16.3 on NVMe, schema migrated to 2.4.11, 0 rows.</small></span>
+              <span><span class="status status--ok"><span class="status__glyph" aria-hidden="true">✓</span> Done</span></span>
+              <span class="fresh" data-age-s="238"><span class="fresh__age">3m 58s ago</span></span>
+            </div>
+            <div class="claim">
+              <span class="claim__n">2</span>
+              <span class="claim__what">Bluetooth adapter present
+                <small>hci0, Raspberry Pi 5 on-board controller. No devices paired.</small></span>
+              <span><span class="status status--ok"><span class="status__glyph" aria-hidden="true">✓</span> Done</span></span>
+              <span class="fresh" data-age-s="210"><span class="fresh__age">3m 30s ago</span></span>
+            </div>
+            <div class="claim">
+              <span class="claim__n">3</span>
+              <span class="claim__what">Console reachable on the LAN
+                <small>Listening on 192.168.1.42:8443, self-signed certificate, valid to 2027-08-05.</small></span>
+              <span><span class="status status--ok"><span class="status__glyph" aria-hidden="true">✓</span> Done</span></span>
+              <span class="fresh" data-age-s="180"><span class="fresh__age">3m ago</span></span>
+            </div>
+            <div class="claim claim--terminal">
+              <span class="claim__n">4</span>
+              <span class="claim__what">Register your first source
+                <small>Until a source exists with a declared cadence, this console has nothing to
+                judge freshness against. Start with whatever you wear tonight.</small></span>
+              <span><button class="btn btn--sm btn--primary" type="button">Add a source</button></span>
+              <span class="muted-text">Next</span>
+            </div>
+            <div class="claim">
+              <span class="claim__n">5</span>
+              <span class="claim__what">Pair a Bluetooth device
+                <small>Needs step 4 first.</small></span>
+              <span><span class="status status--absent"><span class="status__glyph" aria-hidden="true">—</span> Not started</span></span>
+              <span class="muted-text">—</span>
+            </div>
+            <div class="claim">
+              <span class="claim__n">6</span>
+              <span class="claim__what">Issue a key for the phone
+                <small>The phone app writes journal entries and health-store data through the API.</small></span>
+              <span><span class="status status--absent"><span class="status__glyph" aria-hidden="true">—</span> Not started</span></span>
+              <span class="muted-text">—</span>
+            </div>
+            <div class="claim">
+              <span class="claim__n">7</span>
+              <span class="claim__what">Take a backup and verify it
+                <small>The verification is the point. An unverified first backup is the state this
+                console is least able to reassure you about.</small></span>
+              <span><span class="status status--absent"><span class="status__glyph" aria-hidden="true">—</span> Not started</span></span>
+              <span class="muted-text">—</span>
+            </div>
+          </div>
+        </section>
+
+        <div class="cols-main">
+          <section class="panel">
+            <div class="panel__hd"><h2 class="panel__title">Sources</h2></div>
+            <div class="panel__body">
+              <div class="empty">
+                <h3>No sources registered</h3>
+                <p>The registry is read from the deployment manifest. Nothing has been declared, so
+                nothing is expected, so nothing is missing. Adding a source is what turns this
+                console on.</p>
+                <button class="btn btn--primary" type="button">Add a source</button>
+              </div>
+            </div>
+          </section>
+
+          <div class="stack">
+            <section class="panel">
+              <div class="panel__hd"><h2 class="panel__title">Attempt history</h2></div>
+              <div class="panel__body">
+                <div class="empty">
+                  <h3>No attempts yet</h3>
+                  <p>Distinct from silence. A source that has stopped attempting is a fault; a
+                  system with no sources has nothing to attempt.</p>
+                </div>
+              </div>
+            </section>
+            <section class="panel">
+              <div class="panel__hd"><h2 class="panel__title">Alarms</h2></div>
+              <div class="panel__body">
+                <div class="empty">
+                  <h3>No alarms</h3>
+                  <p>And no suppressed alarms. Nothing is muted and nothing is hidden.</p>
+                </div>
+              </div>
+            </section>
+          </div>
+        </div>
+
+        <section class="panel">
+          <div class="panel__hd"><h2 class="panel__title">First source</h2>
+            <div class="panel__meta"><span class="caps">The cadence you set here becomes the standard every age is judged against</span></div></div>
+          <div class="panel__body">
+            <form class="form" data-dirty-track onsubmit="return false">
+              <div class="form__row"><label for="s1" class="req">Source ID</label>
+                <div><input class="input" id="s1" name="s1" placeholder="polar-h10-chest">
+                  <span class="hint">Lower case, hyphens. Becomes the join key in every export.</span></div></div>
+              <div class="form__row"><label for="s2" class="req">Kind</label>
+                <div><select class="select" id="s2" name="s2">
+                  <option>BLE device</option><option>Scheduled importer</option>
+                  <option>Cloud API</option><option>Manual entry</option></select></div></div>
+              <div class="form__row"><label for="s3" class="req">Expected cadence</label>
+                <div><input class="input" id="s3" name="s3" placeholder="2m">
+                  <span class="hint">How often a healthy source should produce data. Be honest —
+                  a cadence looser than reality is how a dead source hides.</span></div></div>
+              <div class="form__row"><span class="form__legend">Owns</span>
+                <div><input class="input" id="s4" name="s4" placeholder="Beat-to-beat RR intervals">
+                  <span class="hint">What is lost if this source stops. Appears in the fault text.</span></div></div>
+              <div class="savebar" data-dirty="false">
+                <span class="savebar__state">No changes since last save.</span>
+                <button class="btn btn--ghost" type="reset" data-needs-dirty disabled>Discard</button>
+                <button class="btn btn--primary" type="submit" data-needs-dirty disabled>Register source</button>
+              </div>
+            </form>
+          </div>
+        </section>
+
+      </div>
+    </main>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

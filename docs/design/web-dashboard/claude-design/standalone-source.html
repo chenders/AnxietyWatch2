@@ -1,0 +1,855 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+<template id="__bundler_thumbnail" data-bg-color="#000508">
+  <svg viewBox="0 0 1200 800" xmlns="http://www.w3.org/2000/svg">
+    <rect width="1200" height="800" fill="#000508"></rect>
+    <rect x="120" y="150" width="960" height="500" fill="#0d1117" stroke="#2a323d" stroke-width="4"></rect>
+    <rect x="120" y="150" width="14" height="500" fill="#22d3ee"></rect>
+    <text x="190" y="290" fill="#22d3ee" font-family="monospace" font-size="52" font-weight="700" letter-spacing="8">SpO2</text>
+    <text x="190" y="470" fill="#e8edf2" font-family="monospace" font-size="180" font-weight="600">96</text>
+    <path d="M190 590 L340 570 L420 600 L520 555 L620 578 L700 545 L820 572 L1010 560" fill="none" stroke="#4ade80" stroke-width="8" stroke-linejoin="round"></path>
+  </svg>
+</template>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#000508; --surface:#0d1117; --surface-2:#151c24; --line:#2a323d; --line-strong:#5b6674;
+  --text:#e8edf2; --text-dim:#9aa7b4; --text-faint:#737f8d;
+  --spo2:#22d3ee; --hr:#4ade80; --resp:#facc15; --bp:#f87171; --cpap:#e879f9; --unknown:#a5b4fc;
+  --hi:#ff5c5c; --med:#ffb54d; --low:#67e8f9; --ok:#4ade80;
+  --hatch:rgba(165,180,252,.20);
+}
+[data-theme="light"]{
+  --bg:#f4f6f8; --surface:#ffffff; --surface-2:#eef1f5; --line:#d3d9e0; --line-strong:#6b7480;
+  --text:#10161d; --text-dim:#4a5560; --text-faint:#5c6874;
+  --spo2:#0e7490; --hr:#15803d; --resp:#a16207; --bp:#b91c1c; --cpap:#a21caf; --unknown:#4338ca;
+  --hi:#b91c1c; --med:#a16207; --low:#0e7490; --ok:#15803d;
+  --hatch:rgba(67,56,202,.16);
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:"IBM Plex Sans",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+a{color:var(--spo2)}a:hover{color:var(--text)}
+button{font:inherit;color:inherit}
+:focus-visible{outline:3px solid var(--unknown);outline-offset:2px}
+button[data-tab]{background:transparent;border:0;border-bottom:3px solid transparent;color:var(--text-dim);padding:12px 14px;cursor:pointer;letter-spacing:.06em;text-transform:uppercase;font-size:14px;font-weight:600;white-space:nowrap}
+button[data-tab][aria-selected="true"]{color:var(--text);border-bottom-color:var(--spo2)}
+button[data-tab]:hover{color:var(--text)}
+@keyframes hiPulse{0%,100%{background:color-mix(in oklab,var(--hi) 22%,transparent)}50%{background:color-mix(in oklab,var(--hi) 40%,transparent)}}
+.alarm-hi{animation:hiPulse 1.1s steps(2,end) infinite}
+@media (prefers-reduced-motion: reduce){.alarm-hi{animation:none;background:color-mix(in oklab,var(--hi) 32%,transparent)}}
+</style>
+</helmet>
+
+<svg aria-hidden="true" focusable="false" width="0" height="0" style="position:absolute;width:0;height:0;overflow:hidden">
+  <defs>
+    <pattern id="gapHatch" patternUnits="userSpaceOnUse" width="8" height="8" patternTransform="rotate(45)">
+      <line x1="0" y1="0" x2="0" y2="8" stroke="var(--unknown)" stroke-width="2.4" opacity="0.5"></line>
+    </pattern>
+  </defs>
+</svg>
+
+<div data-theme="{{ theme }}" style="min-height:100vh;background:var(--bg);color:var(--text);font-size:16px">
+
+<header style="position:sticky;top:0;z-index:20;background:var(--bg);border-bottom:1px solid var(--line-strong)">
+  <div style="display:flex;flex-wrap:wrap;align-items:center;gap:16px;padding:10px 16px 8px">
+    <div style="display:flex;align-items:baseline;gap:10px">
+      <span style="font-family:'IBM Plex Mono',monospace;font-weight:700;letter-spacing:.14em;font-size:16px">ANXIETYWATCH</span>
+      <span style="font-size:14px;color:var(--text-faint);font-family:'IBM Plex Mono',monospace">BED 1 · SELF</span>
+    </div>
+    <div style="flex:1"></div>
+    <div style="font-family:'IBM Plex Mono',monospace;font-size:14px;color:var(--text-dim);font-variant-numeric:tabular-nums">{{ clock }} · TZ EST · UTC−05</div>
+    <div style="display:flex;gap:8px">
+      <button onClick="{{ toggleDegraded }}" aria-pressed="{{ degraded }}" style="background:var(--surface);border:1px solid var(--line-strong);color:var(--text-dim);padding:7px 11px;font-size:14px;font-family:'IBM Plex Mono',monospace;cursor:pointer;white-space:nowrap">SIM: SENSOR LOSS {{ degradedLabel }}</button>
+      <button onClick="{{ toggleTheme }}" style="background:var(--surface);border:1px solid var(--line-strong);color:var(--text-dim);padding:7px 11px;font-size:14px;font-family:'IBM Plex Mono',monospace;cursor:pointer;white-space:nowrap">THEME: {{ themeLabel }}</button>
+    </div>
+  </div>
+  <nav aria-label="Screens" style="display:flex;flex-wrap:wrap;gap:2px;padding:0 8px">
+    <button data-tab aria-selected="{{ isNow }}" onClick="{{ goNow }}">Now</button>
+    <button data-tab aria-selected="{{ isNight }}" onClick="{{ goNight }}">Last night</button>
+    <button data-tab aria-selected="{{ isTrends }}" onClick="{{ goTrends }}">Trends</button>
+    <button data-tab aria-selected="{{ isSys }}" onClick="{{ goSys }}">System health</button>
+    <button data-tab aria-selected="{{ isTok }}" onClick="{{ goTok }}">Design system</button>
+  </nav>
+</header>
+
+<main style="padding:16px;max-width:1600px;margin:0 auto">
+
+<!-- ============ NOW ============ -->
+<sc-if value="{{ showNow }}" hint-placeholder-val="{{ true }}">
+<section data-screen-label="Now">
+
+  <div role="region" aria-label="Alarm stack" style="display:grid;gap:6px;margin-bottom:16px">
+    <sc-for list="{{ alarms }}" as="a" hint-placeholder-count="2">
+      <div class="{{ a.cls }}" style="display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;border:2px solid {{ a.color }};padding:10px 12px">
+        <span aria-hidden="true" style="font-family:'IBM Plex Mono',monospace;font-size:20px;font-weight:700;width:28px;text-align:center;color:{{ a.color }}">{{ a.glyph }}</span>
+        <div>
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:14px;letter-spacing:.1em;color:{{ a.color }};font-weight:700">{{ a.rank }} · {{ a.channel }}</div>
+          <div style="font-size:17px;font-weight:600;margin-top:2px">{{ a.msg }}</div>
+        </div>
+        <div style="text-align:right;font-family:'IBM Plex Mono',monospace;font-size:14px;color:var(--text-dim);font-variant-numeric:tabular-nums">{{ a.at }}<br>{{ a.age }}</div>
+      </div>
+    </sc-for>
+  </div>
+
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px;margin-bottom:16px">
+    <sc-for list="{{ numerics }}" as="n" hint-placeholder-count="6">
+      <div role="group" aria-label="{{ n.aria }}" style="background:var(--surface);border:1px solid var(--line);border-left:6px solid {{ n.color }};padding:12px 14px;min-height:148px;display:grid;grid-template-rows:auto 1fr auto;background-image:{{ n.hatch }};background-size:10px 10px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:700;letter-spacing:.1em;color:{{ n.color }}">{{ n.label }}</span>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:14px;color:var(--text-dim)">{{ n.unit }}</span>
+        </div>
+        <div style="display:flex;align-items:baseline;gap:8px;padding:6px 0">
+          <span aria-hidden="true" style="font-family:'IBM Plex Mono',monospace;font-size:20px;color:{{ n.color }}">{{ n.glyph }}</span>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:52px;line-height:1;font-weight:600;font-variant-numeric:tabular-nums;color:{{ n.valueColor }}">{{ n.value }}</span>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:16px;color:var(--text-dim);font-variant-numeric:tabular-nums">{{ n.sub }}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;gap:8px;font-family:'IBM Plex Mono',monospace;font-size:14px;color:var(--text-faint);font-variant-numeric:tabular-nums;border-top:1px solid var(--line);padding-top:6px">
+          <span>LIM {{ n.limits }}</span>
+          <span>{{ n.stamp }}</span>
+        </div>
+        <div style="font-size:14px;color:{{ n.color }};font-weight:600;padding-top:4px">{{ n.state }}</div>
+      </div>
+    </sc-for>
+  </div>
+
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px">
+    <div style="background:var(--surface);border:1px solid var(--line);padding:12px 14px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;border-bottom:1px solid var(--line-strong);padding-bottom:8px;margin-bottom:8px">
+        <h2 style="margin:0;font-size:16px;font-family:'IBM Plex Mono',monospace;letter-spacing:.1em">SENSOR LIVENESS</h2>
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:14px;color:var(--text-dim);font-variant-numeric:tabular-nums">POLL 1 Hz · {{ clock }}</span>
+      </div>
+      <sc-for list="{{ sensors }}" as="s" hint-placeholder-count="5">
+        <div style="display:flex;flex-wrap:wrap;gap:4px 12px;align-items:baseline;padding:9px 0;border-bottom:1px solid var(--line)">
+          <span aria-hidden="true" style="font-family:'IBM Plex Mono',monospace;font-size:17px;font-weight:700;color:{{ s.color }};text-align:center">{{ s.glyph }}</span>
+          <span style="font-size:15px;flex:1 1 150px;min-width:0">{{ s.name }}<span style="color:var(--text-faint);font-family:'IBM Plex Mono',monospace;font-size:14px"> · {{ s.link }}</span></span>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:700;color:{{ s.color }};letter-spacing:.08em">{{ s.state }}</span>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:14px;color:var(--text-dim);font-variant-numeric:tabular-nums;margin-left:auto;text-align:right">{{ s.age }}</span>
+        </div>
+      </sc-for>
+    </div>
+
+    <div style="background:var(--surface);border:1px solid var(--line);padding:12px 14px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;border-bottom:1px solid var(--line-strong);padding-bottom:8px;margin-bottom:10px">
+        <h2 style="margin:0;font-size:16px;font-family:'IBM Plex Mono',monospace;letter-spacing:.1em">RISK TIER · STATE MACHINE</h2>
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:14px;color:var(--text-dim)">{{ tierSince }}</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px">
+        <sc-for list="{{ tiers }}" as="t" hint-placeholder-count="4">
+          <div aria-current="{{ t.current }}" style="border:2px solid {{ t.border }};background:{{ t.bg }};padding:10px 8px;text-align:center">
+            <div aria-hidden="true" style="font-family:'IBM Plex Mono',monospace;font-size:18px;color:{{ t.fg }}">{{ t.glyph }}</div>
+            <div style="font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:700;letter-spacing:.08em;color:{{ t.fg }};margin-top:4px">{{ t.name }}</div>
+            <div style="font-size:14px;color:var(--text-faint);margin-top:4px">{{ t.note }}</div>
+          </div>
+        </sc-for>
+      </div>
+      <p style="font-size:15px;color:var(--text-dim);margin:12px 0 0;line-height:1.5;text-wrap:pretty">{{ tierExplain }}</p>
+      <div style="margin-top:12px;border-top:1px solid var(--line);padding-top:10px;font-family:'IBM Plex Mono',monospace;font-size:14px;color:var(--text-dim);font-variant-numeric:tabular-nums;display:grid;gap:4px">
+        <div>ESCALATION IN: {{ escalate }}</div>
+        <div>KLAXON GPIO 18: ARMED · SELF-TEST 06:44:02 PASS</div>
+      </div>
+    </div>
+  </div>
+
+  <div style="margin-top:12px;background:var(--surface);border:1px solid var(--line);padding:12px 14px">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;border-bottom:1px solid var(--line-strong);padding-bottom:8px;margin-bottom:6px">
+      <h2 style="margin:0;font-size:16px;font-family:'IBM Plex Mono',monospace;letter-spacing:.1em">LAST 20 MIN · SpO₂ / HR</h2>
+      <span style="font-family:'IBM Plex Mono',monospace;font-size:14px;color:var(--text-dim)">1 Hz · gaps not interpolated</span>
+    </div>
+    <sc-for list="{{ liveLanes }}" as="L" hint-placeholder-count="2">
+      <div style="display:grid;grid-template-columns:84px 1fr;gap:8px;align-items:stretch;border-bottom:1px solid var(--line);padding:8px 0">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:14px;color:{{ L.color }};display:flex;flex-direction:column;justify-content:space-between;font-variant-numeric:tabular-nums">
+          <span style="color:var(--text-faint)">{{ L.hi }}</span>
+          <span style="font-weight:700;letter-spacing:.08em">{{ L.label }}</span>
+          <span style="color:var(--text-faint)">{{ L.lo }}</span>
+        </div>
+        <svg viewBox="0 0 1000 90" preserveAspectRatio="none" role="img" aria-label="{{ L.aria }}" style="width:100%;height:90px;display:block;background:var(--bg);border:1px solid var(--line)">
+          <path d="{{ L.grid }}" stroke="var(--line)" stroke-width="1" fill="none" vector-effect="non-scaling-stroke"></path>
+          <path d="{{ L.gapFill }}" fill="url(#gapHatch)"></path>
+          <path d="{{ L.gapEdge }}" stroke="var(--unknown)" stroke-width="2" stroke-dasharray="4 4" fill="none" vector-effect="non-scaling-stroke"></path>
+          <path d="{{ L.d }}" stroke="{{ L.color }}" stroke-width="1.75" fill="none" vector-effect="non-scaling-stroke" stroke-linejoin="round"></path>
+        </svg>
+      </div>
+    </sc-for>
+    <div style="display:flex;gap:16px;flex-wrap:wrap;padding-top:8px;font-family:'IBM Plex Mono',monospace;font-size:14px;color:var(--text-dim)">
+      <span><span aria-hidden="true" style="color:var(--spo2)">━</span> SpO₂ %</span>
+      <span><span aria-hidden="true" style="color:var(--hr)">━</span> HR bpm</span>
+      <span><span aria-hidden="true" style="color:var(--unknown)">▨</span> no data — not assessed</span>
+    </div>
+  </div>
+</section>
+</sc-if>
+
+<!-- ============ LAST NIGHT ============ -->
+<sc-if value="{{ showNight }}" hint-placeholder-val="{{ true }}">
+<section data-screen-label="Last night">
+  <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:baseline;border-bottom:1px solid var(--line-strong);padding-bottom:10px;margin-bottom:12px">
+    <h2 style="margin:0;font-size:20px;font-family:'IBM Plex Mono',monospace;letter-spacing:.08em">SESSION {{ session.id }}</h2>
+    <span style="font-family:'IBM Plex Mono',monospace;font-size:15px;color:var(--text-dim);font-variant-numeric:tabular-nums">{{ session.span }} · {{ session.dur }} · {{ session.n }} samples · {{ session.coverage }} coverage</span>
+  </div>
+
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-bottom:14px">
+    <sc-for list="{{ nightStats }}" as="s" hint-placeholder-count="5">
+      <div style="background:var(--surface);border:1px solid var(--line);border-left:6px solid {{ s.color }};padding:10px 12px;background-image:{{ s.hatch }};background-size:10px 10px">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:14px;letter-spacing:.08em;color:{{ s.color }};font-weight:700">{{ s.label }}</div>
+        <div style="display:flex;align-items:baseline;gap:6px;margin-top:6px">
+          <span aria-hidden="true" style="font-family:'IBM Plex Mono',monospace;font-size:16px;color:{{ s.color }}">{{ s.glyph }}</span>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:30px;font-weight:600;font-variant-numeric:tabular-nums">{{ s.value }}</span>
+          <span style="font-size:14px;color:var(--text-dim);font-family:'IBM Plex Mono',monospace">{{ s.unit }}</span>
+        </div>
+        <div style="font-size:14px;color:var(--text-faint);margin-top:4px">{{ s.note }}</div>
+      </div>
+    </sc-for>
+  </div>
+
+  <div style="background:var(--surface);border:1px solid var(--line);padding:12px 14px">
+    <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;align-items:baseline;border-bottom:1px solid var(--line-strong);padding-bottom:8px">
+      <h3 style="margin:0;font-size:16px;font-family:'IBM Plex Mono',monospace;letter-spacing:.1em">SYNCHRONISED LANES · SHARED X-AXIS</h3>
+      <span style="font-family:'IBM Plex Mono',monospace;font-size:14px;color:var(--text-dim)">fixed vertical scales · no dual axes · no interpolation across gaps</span>
+    </div>
+    <sc-for list="{{ lanes }}" as="L" hint-placeholder-count="5">
+      <div style="display:grid;grid-template-columns:96px 1fr;gap:8px;padding:10px 0;border-bottom:1px solid var(--line)">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:14px;color:{{ L.color }};display:flex;flex-direction:column;justify-content:space-between;font-variant-numeric:tabular-nums">
+          <span style="color:var(--text-faint)">{{ L.hi }}</span>
+          <span style="font-weight:700;letter-spacing:.06em">{{ L.label }}</span>
+          <span style="color:var(--text-faint)">{{ L.lo }}</span>
+        </div>
+        <svg viewBox="0 0 1000 110" preserveAspectRatio="none" role="img" aria-label="{{ L.aria }}" style="width:100%;height:110px;display:block;background:var(--bg);border:1px solid var(--line)">
+          <path d="{{ L.grid }}" stroke="var(--line)" stroke-width="1" fill="none" vector-effect="non-scaling-stroke"></path>
+          <path d="{{ L.limitLine }}" stroke="{{ L.color }}" stroke-width="1" stroke-dasharray="6 5" fill="none" opacity="0.75" vector-effect="non-scaling-stroke"></path>
+          <path d="{{ L.gapFill }}" fill="url(#gapHatch)"></path>
+          <path d="{{ L.gapEdge }}" stroke="var(--unknown)" stroke-width="2" stroke-dasharray="4 4" fill="none" vector-effect="non-scaling-stroke"></path>
+          <path d="{{ L.eventMarks }}" stroke="var(--hi)" stroke-width="1.5" fill="none" opacity="0.9" vector-effect="non-scaling-stroke"></path>
+          <path d="{{ L.d }}" stroke="{{ L.color }}" stroke-width="1.6" fill="none" vector-effect="non-scaling-stroke" stroke-linejoin="round"></path>
+        </svg>
+      </div>
+    </sc-for>
+    <div style="display:grid;grid-template-columns:96px 1fr;gap:8px;padding-top:6px">
+      <span></span>
+      <div style="display:flex;justify-content:space-between;font-family:'IBM Plex Mono',monospace;font-size:14px;color:var(--text-dim);font-variant-numeric:tabular-nums">
+        <sc-for list="{{ xTicks }}" as="t" hint-placeholder-count="8"><span>{{ t.label }}</span></sc-for>
+      </div>
+    </div>
+    <div style="display:flex;gap:18px;flex-wrap:wrap;padding-top:10px;margin-top:6px;border-top:1px solid var(--line);font-family:'IBM Plex Mono',monospace;font-size:14px;color:var(--text-dim)">
+      <span><span aria-hidden="true" style="color:var(--spo2)">━</span> SpO₂</span>
+      <span><span aria-hidden="true" style="color:var(--hr)">━</span> HR</span>
+      <span><span aria-hidden="true" style="color:var(--resp)">━</span> RESP</span>
+      <span><span aria-hidden="true" style="color:var(--cpap)">━</span> LEAK</span>
+      <span><span aria-hidden="true" style="color:var(--hi)">│</span> event</span>
+      <span><span aria-hidden="true" style="color:var(--unknown)">▨</span> gap — not measured</span>
+      <span>· · · alarm limit</span>
+    </div>
+  </div>
+
+  <div style="margin-top:12px;background:var(--surface);border:1px solid var(--line);padding:12px 14px">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;border-bottom:1px solid var(--line-strong);padding-bottom:8px;margin-bottom:4px">
+      <h3 style="margin:0;font-size:16px;font-family:'IBM Plex Mono',monospace;letter-spacing:.1em">EVENT LOG</h3>
+      <span style="font-family:'IBM Plex Mono',monospace;font-size:14px;color:var(--text-dim)">{{ eventCount }}</span>
+    </div>
+    <sc-for list="{{ events }}" as="e" hint-placeholder-count="6">
+      <div style="display:flex;flex-wrap:wrap;gap:4px 12px;align-items:baseline;padding:9px 0;border-bottom:1px solid var(--line)">
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:14px;color:var(--text-dim);font-variant-numeric:tabular-nums">{{ e.t }}</span>
+        <span aria-hidden="true" style="font-family:'IBM Plex Mono',monospace;font-size:17px;font-weight:700;color:{{ e.color }};text-align:center">{{ e.glyph }}</span>
+        <span style="font-size:15px;flex:1 1 240px;min-width:0">{{ e.label }} <span style="color:var(--text-faint);font-family:'IBM Plex Mono',monospace;font-size:14px">{{ e.detail }}</span></span>
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:700;letter-spacing:.08em;margin-left:auto;color:{{ e.color }}">{{ e.rank }}</span>
+      </div>
+    </sc-for>
+  </div>
+</section>
+</sc-if>
+
+<!-- ============ TRENDS ============ -->
+<sc-if value="{{ showTrends }}" hint-placeholder-val="{{ true }}">
+<section data-screen-label="Trends">
+  <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;border-bottom:1px solid var(--line-strong);padding-bottom:10px;margin-bottom:14px">
+    <h2 style="margin:0;font-size:20px;font-family:'IBM Plex Mono',monospace;letter-spacing:.08em">TRENDS</h2>
+    <div role="group" aria-label="Window" style="display:flex;gap:0;border:1px solid var(--line-strong)">
+      <button onClick="{{ win7 }}" aria-pressed="{{ is7 }}" style="background:{{ bg7 }};border:0;border-right:1px solid var(--line-strong);color:var(--text);padding:8px 14px;font-family:'IBM Plex Mono',monospace;font-size:14px;cursor:pointer">7 D</button>
+      <button onClick="{{ win30 }}" aria-pressed="{{ is30 }}" style="background:{{ bg30 }};border:0;border-right:1px solid var(--line-strong);color:var(--text);padding:8px 14px;font-family:'IBM Plex Mono',monospace;font-size:14px;cursor:pointer">30 D</button>
+      <button onClick="{{ win90 }}" aria-pressed="{{ is90 }}" style="background:{{ bg90 }};border:0;color:var(--text);padding:8px 14px;font-family:'IBM Plex Mono',monospace;font-size:14px;cursor:pointer">90 D</button>
+    </div>
+    <span style="font-family:'IBM Plex Mono',monospace;font-size:14px;color:var(--text-dim)">baseline = own rolling median, {{ windowLabel }} · no population norms</span>
+  </div>
+
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px">
+    <sc-for list="{{ trendCards }}" as="c" hint-placeholder-count="4">
+      <div style="background:var(--surface);border:1px solid var(--line);padding:12px 14px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:700;letter-spacing:.08em;color:{{ c.color }}">{{ c.label }}</span>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:14px;color:var(--text-dim)">{{ c.unit }}</span>
+        </div>
+        <div style="display:flex;align-items:baseline;gap:10px;margin:8px 0 2px">
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:34px;font-weight:600;font-variant-numeric:tabular-nums">{{ c.latest }}</span>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:15px;color:{{ c.devColor }};font-variant-numeric:tabular-nums"><span aria-hidden="true">{{ c.devGlyph }}</span> {{ c.dev }}</span>
+        </div>
+        <div style="font-size:14px;color:var(--text-faint);font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums">BASELINE {{ c.baseline }} · IQR {{ c.iqr }} · {{ c.missing }}</div>
+        <svg viewBox="0 0 1000 140" preserveAspectRatio="none" role="img" aria-label="{{ c.aria }}" style="width:100%;height:140px;margin-top:10px;display:block;background:var(--bg);border:1px solid var(--line)">
+          <path d="{{ c.band }}" fill="{{ c.color }}" opacity="0.14"></path>
+          <path d="{{ c.baseLine }}" stroke="{{ c.color }}" stroke-width="1" stroke-dasharray="6 5" opacity="0.8" fill="none" vector-effect="non-scaling-stroke"></path>
+          <path d="{{ c.grid }}" stroke="var(--line)" stroke-width="1" fill="none" vector-effect="non-scaling-stroke"></path>
+          <path d="{{ c.gapFill }}" fill="url(#gapHatch)"></path>
+          <path d="{{ c.gapEdge }}" stroke="var(--unknown)" stroke-width="2" stroke-dasharray="4 4" fill="none" vector-effect="non-scaling-stroke"></path>
+          <path d="{{ c.d }}" stroke="{{ c.color }}" stroke-width="1.8" fill="none" vector-effect="non-scaling-stroke" stroke-linejoin="round"></path>
+          <path d="{{ c.dots }}" fill="{{ c.color }}"></path>
+        </svg>
+        <div style="display:flex;justify-content:space-between;font-family:'IBM Plex Mono',monospace;font-size:14px;color:var(--text-dim);margin-top:6px;font-variant-numeric:tabular-nums">
+          <span>{{ c.from }}</span><span>{{ c.to }}</span>
+        </div>
+        <div style="display:flex;gap:14px;flex-wrap:wrap;font-family:'IBM Plex Mono',monospace;font-size:14px;color:var(--text-dim);margin-top:6px;border-top:1px solid var(--line);padding-top:6px">
+          <span><span aria-hidden="true" style="color:{{ c.color }}">━</span> nightly</span>
+          <span>· · · own baseline</span>
+          <span><span aria-hidden="true" style="color:{{ c.color }};opacity:.5">▬</span> own IQR</span>
+          <span><span aria-hidden="true" style="color:var(--unknown)">▨</span> no session</span>
+        </div>
+      </div>
+    </sc-for>
+  </div>
+</section>
+</sc-if>
+
+<!-- ============ SYSTEM HEALTH ============ -->
+<sc-if value="{{ showSys }}" hint-placeholder-val="{{ true }}">
+<section data-screen-label="System health">
+  <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:baseline;border-bottom:1px solid var(--line-strong);padding-bottom:10px;margin-bottom:14px">
+    <h2 style="margin:0;font-size:20px;font-family:'IBM Plex Mono',monospace;letter-spacing:.08em">SYSTEM HEALTH</h2>
+    <span style="font-size:15px;color:var(--text-dim)">Will it work tonight?</span>
+    <div style="flex:1"></div>
+    <span style="font-family:'IBM Plex Mono',monospace;font-size:14px;color:var(--text-dim);font-variant-numeric:tabular-nums">CHECKED {{ clock }}</span>
+  </div>
+
+  <div style="border:2px solid {{ readiness.color }};background:{{ readiness.bg }};padding:14px;display:grid;grid-template-columns:auto 1fr;gap:14px;align-items:center;margin-bottom:14px">
+    <span aria-hidden="true" style="font-family:'IBM Plex Mono',monospace;font-size:34px;font-weight:700;color:{{ readiness.color }}">{{ readiness.glyph }}</span>
+    <div>
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:15px;letter-spacing:.1em;font-weight:700;color:{{ readiness.color }}">TONIGHT'S READINESS · {{ readiness.verdict }}</div>
+      <div style="font-size:17px;margin-top:4px;text-wrap:pretty">{{ readiness.detail }}</div>
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px">
+    <sc-for list="{{ sysGroups }}" as="g" hint-placeholder-count="4">
+      <div style="background:var(--surface);border:1px solid var(--line);padding:12px 14px">
+        <h3 style="margin:0 0 8px;font-size:16px;font-family:'IBM Plex Mono',monospace;letter-spacing:.1em;border-bottom:1px solid var(--line-strong);padding-bottom:8px">{{ g.title }}</h3>
+        <sc-for list="{{ g.rows }}" as="r" hint-placeholder-count="4">
+          <div style="display:flex;flex-wrap:wrap;gap:4px 12px;align-items:baseline;padding:8px 0;border-bottom:1px solid var(--line)">
+            <span aria-hidden="true" style="font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:700;color:{{ r.color }};text-align:center">{{ r.glyph }}</span>
+            <span style="font-size:15px;flex:1 1 auto">{{ r.k }}</span>
+            <span style="font-family:'IBM Plex Mono',monospace;font-size:14px;color:{{ r.color }};font-variant-numeric:tabular-nums;margin-left:auto;text-align:right">{{ r.v }}</span>
+          </div>
+        </sc-for>
+      </div>
+    </sc-for>
+  </div>
+</section>
+</sc-if>
+
+<!-- ============ DESIGN SYSTEM ============ -->
+<sc-if value="{{ showTok }}" hint-placeholder-val="{{ true }}">
+<section data-screen-label="Design system">
+  <div style="border-bottom:1px solid var(--line-strong);padding-bottom:12px;margin-bottom:16px">
+    <h2 style="margin:0 0 6px;font-size:22px;font-family:'IBM Plex Mono',monospace;letter-spacing:.08em">DIRECTION A — CLINICAL</h2>
+    <p style="margin:0;max-width:78ch;font-size:16px;line-height:1.6;color:var(--text-dim);text-wrap:pretty">Built on the grammar of a hospital patient monitor — IntelliVue, CARESCAPE, Dräger. Per-parameter colour is fixed for the life of the product and never reused for status; numerics live in boxed regions at constant positions so the eye learns where to land; alarm limits are printed next to the value they bound; physiological and technical alarms occupy separate, priority-ranked channels; nothing appears without a timestamp. It is deliberately un-softened: the reward for looking like equipment is that it is legible from across a dark room and immediately readable by anyone who has worked a floor.</p>
+  </div>
+
+  <h3 style="margin:0 0 8px;font-size:16px;font-family:'IBM Plex Mono',monospace;letter-spacing:.1em">1 · COLOUR TOKENS — COMPUTED CONTRAST</h3>
+  <div style="overflow-x:auto;border:1px solid var(--line);margin-bottom:20px">
+    <div style="display:grid;grid-template-columns:minmax(200px,1.2fr) 110px minmax(150px,1fr) 90px 1fr;gap:0;min-width:760px">
+      <sc-for list="{{ tokenRows }}" as="r" hint-placeholder-count="12">
+        <div style="padding:8px 12px;border-bottom:1px solid var(--line);background:{{ r.zebra }};font-family:'IBM Plex Mono',monospace;font-size:14px;display:flex;align-items:center;gap:8px;color:{{ r.head }}"><span aria-hidden="true" style="width:16px;height:16px;display:inline-block;background:{{ r.swatch }};border:1px solid var(--line-strong);flex:none"></span>{{ r.token }}</div>
+        <div style="padding:8px 12px;border-bottom:1px solid var(--line);background:{{ r.zebra }};font-family:'IBM Plex Mono',monospace;font-size:14px;color:var(--text-dim)">{{ r.hex }}</div>
+        <div style="padding:8px 12px;border-bottom:1px solid var(--line);background:{{ r.zebra }};font-size:14px;color:var(--text-dim)">{{ r.against }}</div>
+        <div style="padding:8px 12px;border-bottom:1px solid var(--line);background:{{ r.zebra }};font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:700;font-variant-numeric:tabular-nums">{{ r.ratio }}</div>
+        <div style="padding:8px 12px;border-bottom:1px solid var(--line);background:{{ r.zebra }};font-size:14px;color:var(--text-dim)">{{ r.use }}</div>
+      </sc-for>
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px;margin-bottom:20px">
+    <div style="background:var(--surface);border:1px solid var(--line);padding:14px">
+      <h3 style="margin:0 0 8px;font-size:16px;font-family:'IBM Plex Mono',monospace;letter-spacing:.1em">2 · SIGNAL PALETTE — ONE HUE PER SIGNAL, HELD EVERYWHERE</h3>
+      <sc-for list="{{ signalRows }}" as="s" hint-placeholder-count="6">
+        <div style="display:grid;grid-template-columns:120px 1fr auto;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)">
+          <span style="height:14px;background:{{ s.color }};display:block"></span>
+          <span style="font-size:15px;flex:1 1 150px;min-width:0">{{ s.name }} <span style="font-family:'IBM Plex Mono',monospace;font-size:14px;color:var(--text-faint)">{{ s.token }}</span></span>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:14px;color:var(--text-dim);font-variant-numeric:tabular-nums">{{ s.ratio }}</span>
+        </div>
+      </sc-for>
+      <p style="font-size:15px;color:var(--text-dim);line-height:1.55;margin:10px 0 0;text-wrap:pretty">Verified separable under deuteranopia, protanopia and tritanopia by simulating each hex through the Brettel–Viénot–Mollon transform and checking that every pair in the set stays ≥ 18 ΔE (CIE76) after simulation; cyan/green — the closest pair under deuteranopia — also differ by 2.1:1 in luminance and never share a lane, so lane position and the mono lane label carry the identity even if hue collapses entirely.</p>
+    </div>
+
+    <div style="background:var(--surface);border:2px solid var(--unknown);padding:14px;background-image:{{ unknownHatch }};background-size:10px 10px">
+      <h3 style="margin:0 0 8px;font-size:16px;font-family:'IBM Plex Mono',monospace;letter-spacing:.1em;color:var(--unknown)">3 · INDETERMINATE — THE THIRD STATE</h3>
+      <p style="margin:0 0 10px;font-size:15px;line-height:1.6;color:var(--text-dim);text-wrap:pretty">Not measured is not OK. The unknown treatment is periwinkle <span style="font-family:'IBM Plex Mono',monospace">#a5b4fc</span> — outside both the alarm reds/ambers and the reassurance greens — and it never appears alone. Four cues always fire together:</p>
+      <ol style="margin:0;padding-left:22px;font-size:15px;line-height:1.7;color:var(--text)">
+        <li>Diagonal hatch fill across the whole region — texture, not hue.</li>
+        <li>The glyph <span style="font-family:'IBM Plex Mono',monospace;color:var(--unknown);font-weight:700">?</span> in the position where <span style="font-family:'IBM Plex Mono',monospace;color:var(--ok);font-weight:700">✓</span> or <span style="font-family:'IBM Plex Mono',monospace;color:var(--hi);font-weight:700">!</span> would sit.</li>
+        <li>The value replaced by <span style="font-family:'IBM Plex Mono',monospace">— —</span>, never a last-known number.</li>
+        <li>An age counter that keeps climbing, plus a technical alarm that cannot be silenced, only acknowledged.</li>
+      </ol>
+      <p style="margin:10px 0 0;font-size:15px;color:var(--text-dim);line-height:1.6">In charts the line stops. A gap is drawn as hatch between two dashed vertical walls; no segment ever bridges it. A continuous line across missing samples would be a claim the system cannot make.</p>
+    </div>
+  </div>
+
+  <h3 style="margin:0 0 8px;font-size:16px;font-family:'IBM Plex Mono',monospace;letter-spacing:.1em">4 · NUMERIC TILE · ALL STATES</h3>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px;margin-bottom:20px">
+    <sc-for list="{{ stateTiles }}" as="n" hint-placeholder-count="7">
+      <div style="background:var(--surface);border:1px solid var(--line);border-left:6px solid {{ n.color }};padding:12px;background-image:{{ n.hatch }};background-size:10px 10px;min-height:150px">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:700;letter-spacing:.1em;color:{{ n.color }}">{{ n.stateName }}</div>
+        <div style="display:flex;align-items:baseline;gap:6px;margin:10px 0 6px">
+          <span aria-hidden="true" style="font-family:'IBM Plex Mono',monospace;font-size:18px;color:{{ n.color }}">{{ n.glyph }}</span>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:40px;line-height:1;font-weight:600;font-variant-numeric:tabular-nums;color:{{ n.valueColor }}">{{ n.value }}</span>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:14px;color:var(--text-dim)">%</span>
+        </div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:14px;color:var(--text-faint);border-top:1px solid var(--line);padding-top:6px;font-variant-numeric:tabular-nums">{{ n.stamp }}</div>
+        <div style="font-size:14px;color:{{ n.color }};margin-top:4px">{{ n.note }}</div>
+      </div>
+    </sc-for>
+  </div>
+
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px;margin-bottom:20px">
+    <div style="background:var(--surface);border:1px solid var(--line);padding:14px">
+      <h3 style="margin:0 0 10px;font-size:16px;font-family:'IBM Plex Mono',monospace;letter-spacing:.1em">5 · ALARM RANKS</h3>
+      <sc-for list="{{ rankRows }}" as="r" hint-placeholder-count="4">
+        <div style="border:2px solid {{ r.color }};padding:10px;margin-bottom:8px;display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:center;background:{{ r.bg }}">
+          <span aria-hidden="true" style="font-family:'IBM Plex Mono',monospace;font-size:20px;font-weight:700;color:{{ r.color }};width:26px;text-align:center">{{ r.glyph }}</span>
+          <div>
+            <div style="font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:700;letter-spacing:.1em;color:{{ r.color }}">{{ r.name }}</div>
+            <div style="font-size:14px;color:var(--text-dim);margin-top:2px">{{ r.rule }}</div>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+    <div style="background:var(--surface);border:1px solid var(--line);padding:14px">
+      <h3 style="margin:0 0 10px;font-size:16px;font-family:'IBM Plex Mono',monospace;letter-spacing:.1em">6 · TYPE &amp; SPACE</h3>
+      <div style="display:grid;gap:8px">
+        <sc-for list="{{ typeRows }}" as="t" hint-placeholder-count="6">
+          <div style="display:grid;grid-template-columns:1fr auto;gap:10px;align-items:baseline;border-bottom:1px solid var(--line);padding-bottom:6px">
+            <span style="font-family:{{ t.family }};font-size:{{ t.px }};font-weight:{{ t.weight }};font-variant-numeric:tabular-nums;line-height:1.1">{{ t.sample }}</span>
+            <span style="font-family:'IBM Plex Mono',monospace;font-size:14px;color:var(--text-dim);font-variant-numeric:tabular-nums">{{ t.spec }}</span>
+          </div>
+        </sc-for>
+      </div>
+      <p style="font-size:15px;color:var(--text-dim);line-height:1.6;margin:12px 0 0">Space scale 4 · 8 · 12 · 16 · 24 · 32 · 48 px. Everything sits on a 4 px rhythm; boxed regions get 12–14 px inner padding, critical numerics get ≥ 24 px of clear space. Nothing below 14 px anywhere; body 16 px; all numerics tabular.</p>
+    </div>
+  </div>
+
+  <div style="background:var(--surface);border:1px solid var(--line);padding:14px">
+    <h3 style="margin:0 0 10px;font-size:16px;font-family:'IBM Plex Mono',monospace;letter-spacing:.1em">7 · CHART RULES &amp; ACCESSIBILITY LEDGER</h3>
+    <ul style="margin:0;padding-left:22px;font-size:15px;line-height:1.75;color:var(--text-dim)">
+      <li>No dual-axis charts anywhere — every measure gets its own lane with a fixed vertical scale and printed hi/mid/lo labels.</li>
+      <li>Gridlines at 1 px in <span style="font-family:'IBM Plex Mono',monospace">--line</span> (recessive by design, decorative only); meaningful boundaries use <span style="font-family:'IBM Plex Mono',monospace">--line-strong</span> at 3.5:1.</li>
+      <li>Direct labels only at lane extremes and marked events; never a number on every point.</li>
+      <li>Legend present on every plot where ≥ 2 series or ≥ 2 mark types appear.</li>
+      <li>Sequential encodings: one hue, light→dark. Diverging: signal hue ↔ periwinkle with a neutral mid. No rainbow ramps.</li>
+      <li>Status never rests on hue alone: glyph (✓ ! ? ×), fill-vs-outline, mono label and fixed position all carry it (WCAG 1.4.1).</li>
+      <li>Text ≥ 16 px body, ≥ 14 px labels, ≥ 4.5:1; large numerics ≥ 24 px at ≥ 3:1 but in practice all ≥ 7:1.</li>
+      <li>Full keyboard path; 3 px periwinkle focus ring at ≥ 3:1 against both themes; alarm flash disabled under <span style="font-family:'IBM Plex Mono',monospace">prefers-reduced-motion</span> and replaced with a static fill.</li>
+      <li>Dark theme is primary and independently validated; the light theme is a separate ramp (own hexes, own ratios above), not an inversion.</li>
+    </ul>
+  </div>
+</section>
+</sc-if>
+
+</main>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1440,&quot;height&quot;:1000},&quot;startScreen&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;now&quot;,&quot;night&quot;,&quot;trends&quot;,&quot;sys&quot;,&quot;tok&quot;],&quot;default&quot;:&quot;now&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;State&quot;},&quot;startDegraded&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;State&quot;},&quot;startTheme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;dark&quot;,&quot;light&quot;],&quot;default&quot;:&quot;dark&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;State&quot;},&quot;trendWindow&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[7,30,90],&quot;default&quot;:30,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;State&quot;}}">
+class Component extends DCLogic {
+  state = {
+    screen: this.props.startScreen || "now",
+    theme: this.props.startTheme || "dark",
+    degraded: this.props.startDegraded === true,
+    win: this.props.trendWindow || 30
+  };
+
+  rng(seed) { let s = seed >>> 0; return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }; }
+
+  hhmm(min) { const m = ((min % 1440) + 1440) % 1440; return String(Math.floor(m / 60)).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0"); }
+
+  // ---- path helpers ----
+  scale(v, lo, hi, H) { const t = (v - lo) / (hi - lo); return H - Math.max(0, Math.min(1, t)) * H; }
+  linePath(vals, lo, hi, W, H) {
+    let d = "", open = false;
+    vals.forEach((v, i) => {
+      const x = (i / (vals.length - 1)) * W;
+      if (v == null) { open = false; return; }
+      const y = this.scale(v, lo, hi, H).toFixed(2);
+      d += (open ? "L" : "M") + x.toFixed(2) + " " + y + " ";
+      open = true;
+    });
+    return d.trim();
+  }
+  gapPaths(vals, W, H) {
+    let fill = "", edge = "", i = 0;
+    const step = W / (vals.length - 1);
+    while (i < vals.length) {
+      if (vals[i] == null) {
+        let j = i; while (j < vals.length && vals[j] == null) j++;
+        const x0 = Math.max(0, (i - 0.5) * step), x1 = Math.min(W, (j - 0.5) * step);
+        fill += "M" + x0.toFixed(2) + " 0 H" + x1.toFixed(2) + " V" + H + " H" + x0.toFixed(2) + " Z ";
+        edge += "M" + x0.toFixed(2) + " 0 V" + H + " M" + x1.toFixed(2) + " 0 V" + H + " ";
+        i = j;
+      } else i++;
+    }
+    return { fill: fill.trim(), edge: edge.trim() };
+  }
+  gridPath(W, H, rows) { let d = ""; for (let r = 1; r < rows; r++) { const y = ((H / rows) * r).toFixed(1); d += "M0 " + y + " H" + W + " "; } for (let c = 1; c < 8; c++) { const x = ((W / 8) * c).toFixed(1); d += "M" + x + " 0 V" + H + " "; } return d.trim(); }
+  hLine(v, lo, hi, W, H) { return "M0 " + this.scale(v, lo, hi, H).toFixed(2) + " H" + W; }
+
+  // ---- overnight session ----
+  session() {
+    if (this._sess && this._sessDeg === this.state.degraded) return this._sess;
+    const deg = this.state.degraded, r = this.rng(7717), N = 460, startMin = 23 * 60 + 12;
+    const spo2 = [], hr = [], resp = [], leak = [], stage = [];
+    for (let i = 0; i < N; i++) {
+      let s = 96 + Math.sin(i / 23) * 0.7 + (r() - 0.5) * 1.2;
+      let h = 54 + Math.sin(i / 31) * 3 + (r() - 0.5) * 3;
+      let rr = 13.5 + Math.sin(i / 17) * 0.9 + (r() - 0.5) * 1.1;
+      let lk = 17 + Math.sin(i / 41) * 4 + (r() - 0.5) * 3;
+      if (!deg && i >= 168 && i <= 187) { const k = 1 - Math.abs(i - 177) / 11; s -= 10.5 * k; h += 17 * k; rr -= 5.5 * k; }
+      if (deg && i >= 225 && i <= 231) { s -= (i - 224) * 1.0; h += (i - 224) * 1.6; }
+      if (!deg && i >= 300 && i <= 309) { const k = 1 - Math.abs(i - 304) / 6; s -= 5.5 * k; h += 8 * k; }
+      if (i >= 360 && i <= 372) lk += 22;
+      spo2.push(+s.toFixed(1)); hr.push(Math.round(h)); resp.push(+rr.toFixed(1)); leak.push(+lk.toFixed(1));
+      stage.push(i < 30 ? 1 : i % 97 < 22 ? 4 : i % 61 < 14 ? 3 : 2);
+    }
+    const g0 = deg ? 232 : 254, g1 = deg ? 259 : 260;
+    for (let i = g0; i <= g1; i++) { spo2[i] = null; hr[i] = null; if (deg) resp[i] = null; }
+    if (deg) for (let i = 232; i < N; i++) { spo2[i] = null; hr[i] = null; }
+    this._sessDeg = deg;
+    this._sess = { spo2, hr, resp, leak, stage, N, startMin, gapStart: startMin + g0, gapEnd: startMin + g1 };
+    return this._sess;
+  }
+
+  lane(vals, cfg) {
+    const W = 1000, H = cfg.H || 110, g = this.gapPaths(vals, W, H);
+    return {
+      label: cfg.label, color: cfg.color, aria: cfg.aria,
+      hi: cfg.hi, mid: cfg.mid, lo: cfg.lo,
+      d: this.linePath(vals, cfg.min, cfg.max, W, H),
+      grid: this.gridPath(W, H, cfg.rows || 4),
+      gapFill: g.fill, gapEdge: g.edge,
+      limitLine: cfg.limit != null ? this.hLine(cfg.limit, cfg.min, cfg.max, W, H) : "",
+      eventMarks: cfg.marks || ""
+    };
+  }
+
+  trend(key) {
+    const days = this.state.win, r = this.rng(4241 + days + key.charCodeAt(0));
+    const spec = {
+      spo2: { base: 92.4, amp: 1.4, unit: "% min SpO₂ (nadir)", label: "NIGHTLY SpO₂ NADIR", color: "var(--spo2)", dec: 1, dir: -1 },
+      hr: { base: 53.6, amp: 2.6, unit: "bpm mean sleeping HR", label: "MEAN SLEEPING HR", color: "var(--hr)", dec: 0, dir: 1 },
+      hrv: { base: 41.8, amp: 6.5, unit: "ms RMSSD", label: "HRV · RMSSD", color: "var(--resp)", dec: 1, dir: -1 },
+      ahi: { base: 3.4, amp: 1.5, unit: "events/h AHI", label: "CPAP AHI", color: "var(--cpap)", dec: 1, dir: 1 }
+    }[key];
+    const vals = [];
+    for (let i = 0; i < days; i++) {
+      let v = spec.base + Math.sin(i / 4.5) * spec.amp * 0.5 + (r() - 0.5) * spec.amp;
+      if (key === "spo2" && i === days - 2) v -= 3.2;
+      if (key === "ahi" && i === days - 3) v += 3.1;
+      vals.push(+v.toFixed(spec.dec));
+    }
+    const missing = this.state.degraded ? [days - 1, days - 6, days - 7] : [days - 6];
+    missing.forEach(i => { if (i >= 0) vals[i] = null; });
+    const good = vals.filter(v => v != null).sort((a, b) => a - b);
+    const med = good[Math.floor(good.length / 2)], q1 = good[Math.floor(good.length * 0.25)], q3 = good[Math.floor(good.length * 0.75)];
+    const pad = (q3 - q1) * 2.6 + spec.amp, min = Math.min.apply(null, good) - pad * 0.3, max = Math.max.apply(null, good) + pad * 0.3;
+    const W = 1000, H = 140, g = this.gapPaths(vals, W, H);
+    const yq3 = this.scale(q3, min, max, H) , yq1 = this.scale(q1, min, max, H);
+    let dots = "";
+    vals.forEach((v, i) => { if (v == null) return; const x = (i / (vals.length - 1)) * W, y = this.scale(v, min, max, H); const out = v > q3 + (q3 - q1) * 1.5 || v < q1 - (q3 - q1) * 1.5; if (out || i === vals.length - 1) dots += "M" + (x - 4).toFixed(1) + " " + y.toFixed(1) + " a4,4 0 1,0 8,0 a4,4 0 1,0 -8,0 "; });
+    const last = [].concat(vals).reverse().find(v => v != null);
+    const dev = last - med, devPct = (dev / med) * 100;
+    const bad = spec.dir > 0 ? dev > (q3 - q1) : dev < -(q3 - q1);
+    const missCount = vals.filter(v => v == null).length;
+    return {
+      label: spec.label, unit: spec.unit, color: spec.color,
+      latest: last.toFixed(spec.dec), baseline: med.toFixed(spec.dec), iqr: q1.toFixed(spec.dec) + "–" + q3.toFixed(spec.dec),
+      dev: (dev >= 0 ? "+" : "") + dev.toFixed(spec.dec) + " (" + (devPct >= 0 ? "+" : "") + devPct.toFixed(1) + "% vs own)",
+      devGlyph: bad ? "!" : dev >= 0 ? "▲" : "▼", devColor: bad ? "var(--med)" : "var(--text-dim)",
+      missing: missCount ? missCount + " night" + (missCount > 1 ? "s" : "") + " not measured" : "full coverage",
+      d: this.linePath(vals, min, max, W, H), grid: this.gridPath(W, H, 4),
+      gapFill: g.fill, gapEdge: g.edge, dots,
+      baseLine: this.hLine(med, min, max, W, H),
+      band: "M0 " + yq3.toFixed(1) + " H" + W + " V" + yq1.toFixed(1) + " H0 Z",
+      from: "−" + this.state.win + " d", to: "last night",
+      aria: spec.label + ", " + this.state.win + " day trend against own rolling baseline " + med.toFixed(spec.dec) + ", " + missCount + " nights not measured"
+    };
+  }
+
+  componentDidMount() { this.syncTheme(); }
+  syncTheme() {
+    const el = document.documentElement;
+    if (el) el.setAttribute("data-theme", this.state.theme);
+  }
+  componentDidUpdate() { this.syncTheme(); }
+
+  renderVals() {
+    const deg = this.state.degraded, s = this.state.screen, S = this.session();
+    const W = 1000;
+
+    // ---- live 20 min window ----
+    const r = this.rng(991), lspo2 = [], lhr = [];
+    for (let i = 0; i < 240; i++) {
+      let a = 96.5 + Math.sin(i / 19) * 0.6 + (r() - 0.5) * 1.0, b = 52 + Math.sin(i / 27) * 2.4 + (r() - 0.5) * 2.5;
+      lspo2.push(+a.toFixed(1)); lhr.push(Math.round(b));
+    }
+    if (deg) for (let i = 158; i < 240; i++) { lspo2[i] = null; lhr[i] = null; }
+
+    const hatchOn = "repeating-linear-gradient(45deg,var(--hatch) 0 2px,transparent 2px 7px)";
+    const unk = "var(--unknown)";
+
+    const alarms = deg ? [
+      { rank: "HIGH", channel: "TECHNICAL", cls: "alarm-hi", color: "var(--hi)", glyph: "×", msg: "Pulse-ox link lost — SpO₂ and HR cannot be assessed. Monitoring is NOT active.", at: "03:04:41", age: "41 min ago" },
+      { rank: "MEDIUM", channel: "TECHNICAL", cls: "", color: "var(--med)", glyph: "!", msg: "Risk tier held at CONFIRM — state machine cannot advance or clear without SpO₂.", at: "03:04:41", age: "41 min ago" },
+      { rank: "INFO", channel: "PHYSIOLOGICAL", cls: "", color: unk, glyph: "?", msg: "Desaturation 02:57 was unresolved when the sensor dropped — outcome unknown.", at: "02:57:12", age: "48 min ago" }
+    ] : [
+      { rank: "MEDIUM", channel: "PHYSIOLOGICAL", cls: "", color: "var(--med)", glyph: "!", msg: "Desaturation cluster 02:04–02:19 — nadir 85.4 %, 4 events, all self-resolved.", at: "02:19:38", age: "4 h 26 m ago" },
+      { rank: "LOW", channel: "TECHNICAL", cls: "", color: "var(--low)", glyph: "i", msg: "BP cuff has not reported for 19 h — last reading 11:41 yesterday.", at: "06:40:00", age: "5 min ago" }
+    ];
+
+    const num = (o) => Object.assign({ hatch: "none", valueColor: "var(--text)", glyph: "✓", state: "IN RANGE" }, o);
+    const numerics = [
+      deg
+        ? num({ label: "SpO₂", unit: "%", aria: "SpO2 not measured", color: unk, glyph: "?", value: "— —", sub: "", valueColor: unk, limits: "88 / 100", stamp: "03:04:41", state: "NOT MEASURED · 41 m", hatch: hatchOn })
+        : num({ label: "SpO₂", unit: "%", aria: "SpO2 96 percent", color: "var(--spo2)", value: "96", sub: "±1", limits: "88 / 100", stamp: "06:45:02" }),
+      deg
+        ? num({ label: "HR", unit: "bpm", aria: "Heart rate not measured", color: unk, glyph: "?", value: "— —", sub: "", valueColor: unk, limits: "40 / 120", stamp: "03:04:41", state: "NOT MEASURED · 41 m", hatch: hatchOn })
+        : num({ label: "HR", unit: "bpm", aria: "Heart rate 52", color: "var(--hr)", value: "52", sub: "sinus", limits: "40 / 120", stamp: "06:45:02" }),
+      num({ label: "NBP", unit: "mmHg", aria: "Blood pressure 118 over 74, stale", color: "var(--med)", glyph: "!", value: "118/74", sub: "(89)", limits: "90–140 / 55–90", stamp: "11:41 yest.", state: "STALE · 19 h OLD" }),
+      num({ label: "RESP", unit: "rpm", aria: "Respiration 13", color: "var(--resp)", value: "13", sub: "reg", limits: "8 / 24", stamp: "06:45:02" }),
+      deg
+        ? num({ label: "HRV RMSSD", unit: "ms", aria: "HRV not computable", color: unk, glyph: "?", value: "— —", sub: "", valueColor: unk, limits: "own IQR 36–48", stamp: "03:04:41", state: "NO RR INTERVALS", hatch: hatchOn })
+        : num({ label: "HRV RMSSD", unit: "ms", aria: "HRV 42 milliseconds", color: "var(--resp)", value: "42", sub: "n=118 RR", limits: "own IQR 36–48", stamp: "06:44:30" }),
+      num({ label: "CPAP AHI", unit: "/h", aria: "AHI 3.1", color: "var(--cpap)", value: "3.1", sub: "leak 19", limits: "≤ 5.0", stamp: "06:44:58" })
+    ];
+
+    const sensors = [
+      { name: "Pulse-ox · ring", link: "BLE 0x4A2F", glyph: deg ? "×" : "✓", state: deg ? "LINK LOST" : "LIVE", color: deg ? "var(--hi)" : "var(--ok)", age: deg ? "41 m 12 s" : "0.8 s" },
+      { name: "ECG chest strap", link: "BLE 0x11C0", glyph: deg ? "?" : "✓", state: deg ? "NO DATA" : "LIVE", color: deg ? unk : "var(--ok)", age: deg ? "41 m 12 s" : "0.9 s" },
+      { name: "BP cuff", link: "BT classic", glyph: "!", state: "IDLE", color: "var(--med)", age: "19 h 04 m" },
+      { name: "CPAP · SD ingest", link: "USB", glyph: "✓", state: "SYNCED", color: "var(--ok)", age: "1 m 04 s" },
+      { name: "Barometer · BME280", link: "I²C 0x76", glyph: "✓", state: "LIVE", color: "var(--ok)", age: "2.0 s" },
+      { name: "Klaxon relay", link: "GPIO 18", glyph: "✓", state: "ARMED", color: "var(--ok)", age: "self-test 1 h" }
+    ];
+
+    const cur = deg ? "confirm" : "clear";
+    const tierDefs = [
+      { key: "clear", name: "CLEAR", glyph: "✓", note: "all params in range" },
+      { key: "watch", name: "WATCH", glyph: "•", note: "1 param drifting" },
+      { key: "confirm", name: "CONFIRM", glyph: "!", note: "criteria met, 30 s hold" },
+      { key: "klaxon", name: "KLAXON", glyph: "▲", note: "alarm sounding" }
+    ];
+    const tierColor = { clear: "var(--ok)", watch: "var(--med)", confirm: "var(--hi)", klaxon: "var(--hi)" };
+    const tiers = tierDefs.map(t => {
+      const on = t.key === cur;
+      return {
+        name: t.name, glyph: t.glyph, note: t.note, current: on ? "step" : "false",
+        fg: on ? (deg ? unk : tierColor[t.key]) : "var(--text-faint)",
+        border: on ? (deg ? unk : tierColor[t.key]) : "var(--line)",
+        bg: on ? (deg ? "color-mix(in oklab,var(--unknown) 16%,transparent)" : "color-mix(in oklab," + tierColor[t.key] + " 14%,transparent)") : "transparent"
+      };
+    });
+
+    const trendCards = ["spo2", "hr", "hrv", "ahi"].map(k => this.trend(k));
+
+    const physTimes = deg ? ["02:57:12"] : ["02:04:18", "02:09:44", "02:19:38"];
+    const marksAt = physTimes
+      .map(ts => { const p = ts.split(":"); let i = (+p[0]) * 60 + (+p[1]) - S.startMin; return i < 0 ? i + 1440 : i; })
+      .filter(i => i >= 0 && i < S.N && S.spo2[i] != null)
+      .map(i => "M" + ((i / (S.N - 1)) * W).toFixed(1) + " 0 V110 ").join("");
+
+    const lanes = [
+      this.lane(S.spo2, { label: "SpO₂ %", color: "var(--spo2)", hi: "100", mid: "94", lo: "80", min: 80, max: 100, limit: 88, marks: marksAt, aria: "SpO2 overnight trace, scale 80 to 100 percent, alarm limit 88, gap " + this.hhmm(S.gapStart) + " to " + (deg ? "now" : this.hhmm(S.gapEnd)) }),
+      this.lane(S.hr, { label: "HR bpm", color: "var(--hr)", hi: "110", mid: "70", lo: "40", min: 40, max: 110, limit: 100, marks: marksAt, aria: "Heart rate overnight trace, 40 to 110 bpm" }),
+      this.lane(S.resp, { label: "RESP rpm", color: "var(--resp)", hi: "24", mid: "14", lo: "4", min: 4, max: 24, limit: 8, marks: marksAt, aria: "Respiration rate overnight, 4 to 24 per minute" }),
+      this.lane(S.leak, { label: "LEAK L/min", color: "var(--cpap)", hi: "60", mid: "30", lo: "0", min: 0, max: 60, limit: 40, marks: marksAt, aria: "CPAP mask leak overnight, 0 to 60 litres per minute" })
+    ];
+
+    const xTicks = [];
+    for (let i = 0; i <= 7; i++) xTicks.push({ label: this.hhmm(S.startMin + Math.round((S.N - 1) * (i / 7))) });
+
+    const events = deg ? [
+      { t: "02:57:12", glyph: "!", color: "var(--med)", rank: "MEDIUM", label: "Desaturation onset", detail: "nadir 89.1 % · unresolved at data loss" },
+      { t: "03:04:41", glyph: "×", color: "var(--hi)", rank: "HIGH TECH", label: "Pulse-ox link lost", detail: "3 missed keepalives · BLE 0x4A2F" },
+      { t: "03:04:41", glyph: "?", color: unk, rank: "INDET.", label: "Session coverage broken", detail: "3 h 40 m of 7 h 30 m not measured" },
+      { t: "03:05:11", glyph: "!", color: "var(--med)", rank: "MEDIUM", label: "Tier held at CONFIRM", detail: "cannot clear without SpO₂" },
+      { t: "05:58:20", glyph: "✓", color: "var(--cpap)", rank: "INFO", label: "CPAP session ended", detail: "usage 6 h 46 m · AHI over measured span 3.1" }
+    ] : [
+      { t: "23:41:06", glyph: "✓", color: "var(--cpap)", rank: "INFO", label: "CPAP therapy start", detail: "auto 8–14 cmH₂O" },
+      { t: "02:04:18", glyph: "!", color: "var(--med)", rank: "MEDIUM", label: "Desaturation cluster start", detail: "4 events / 15 min" },
+      { t: "02:09:44", glyph: "!", color: "var(--med)", rank: "MEDIUM", label: "SpO₂ nadir 85.4 %", detail: "duration 68 s · HR +19 bpm" },
+      { t: "02:19:38", glyph: "✓", color: "var(--ok)", rank: "RESOLVED", label: "Cluster resolved", detail: "SpO₂ ≥ 94 % for 5 min" },
+      { t: "03:26:00", glyph: "?", color: unk, rank: "INDET.", label: "Sensor gap 6 min", detail: "03:26–03:32 · not interpolated" },
+      { t: "04:12:52", glyph: "!", color: "var(--cpap)", rank: "LOW", label: "Mask leak 41 L/min", detail: "13 min above limit" }
+    ];
+
+    const readiness = deg
+      ? { verdict: "CANNOT CONFIRM", color: unk, bg: "color-mix(in oklab,var(--unknown) 14%,transparent)", glyph: "?", detail: "Alarm path is armed and the daemon is up, but the pulse-ox has been dark for 41 minutes. Until a sensor reports, readiness is unknown — not good." }
+      : { verdict: "READY", color: "var(--ok)", bg: "color-mix(in oklab,var(--ok) 12%,transparent)", glyph: "✓", detail: "Daemon up, all sensors reported within 3 s, klaxon self-test passed 06:44:02, restore verified 3 days ago." };
+
+    const okc = "var(--ok)", medc = "var(--med)";
+    const sysGroups = [
+      { title: "DAEMON · vitalsd", rows: [
+        { k: "Process state", glyph: "✓", color: okc, v: "active (running)" },
+        { k: "Uptime", glyph: "✓", color: okc, v: "6 d 04 h 12 m" },
+        { k: "Ingest lag p95", glyph: "✓", color: okc, v: "180 ms" },
+        { k: "Restarts (7 d)", glyph: "!", color: medc, v: "1 · 30 Jul 04:02" },
+        { k: "Write queue", glyph: "✓", color: okc, v: "0 / 4096" }
+      ]},
+      { title: "ALARM PATH", rows: [
+        { k: "Klaxon self-test", glyph: "✓", color: okc, v: "PASS 06:44:02" },
+        { k: "Test cadence", glyph: "✓", color: okc, v: "daily 06:44" },
+        { k: "Relay continuity", glyph: "✓", color: okc, v: "GPIO 18 · 4.98 V" },
+        { k: "Watchdog", glyph: "✓", color: okc, v: "hw · 15 s timeout" },
+        { k: "Escalation rule", glyph: "✓", color: okc, v: "confirm → klaxon @ 30 s" }
+      ]},
+      { title: "DATA DURABILITY", rows: [
+        { k: "Last backup", glyph: "✓", color: okc, v: "41 m ago · 2.1 GB" },
+        { k: "Last verified restore", glyph: "!", color: medc, v: "3 d ago · 31 Jul" },
+        { k: "Checksum sweep", glyph: "✓", color: okc, v: "clean · 02:00" },
+        { k: "Storage", glyph: "✓", color: okc, v: "38.4 / 256 GB · 15 %" },
+        { k: "Retention", glyph: "✓", color: okc, v: "raw 90 d · agg ∞" }
+      ]},
+      { title: "COVERAGE (7 NIGHTS)", rows: [
+        { k: "Sessions recorded", glyph: "✓", color: okc, v: deg ? "6 / 7" : "7 / 7" },
+        { k: "Measured time", glyph: deg ? "?" : "✓", color: deg ? unk : okc, v: deg ? "84.1 % · 8 h 12 m dark" : "99.2 %" },
+        { k: "Longest gap", glyph: deg ? "?" : "✓", color: deg ? unk : okc, v: deg ? "3 h 40 m · last night" : "6 m 00 s" },
+        { k: "Nights not assessed", glyph: deg ? "?" : "✓", color: deg ? unk : okc, v: deg ? "1 · 02 Aug" : "0" },
+        { k: "Clock drift vs NTP", glyph: "✓", color: okc, v: "+4 ms" }
+      ]}
+    ];
+
+    const z = (i) => i % 2 ? "var(--surface)" : "transparent";
+    const T = [
+      ["--bg", "#000508", "—", "base", "screen ground, dark theme"],
+      ["--surface", "#0d1117", "on --bg", "1.1:1", "boxed regions (structure via border, not contrast)"],
+      ["--text", "#e8edf2", "on --bg", "17.3:1", "numerics, headings, values"],
+      ["--text-dim", "#9aa7b4", "on --bg", "8.3:1", "units, labels, secondary"],
+      ["--text-faint", "#737f8d", "on --bg", "5.0:1", "smallest 14 px metadata (still AA)"],
+      ["--line", "#2a323d", "on --surface", "1.5:1", "decorative gridlines only"],
+      ["--line-strong", "#5b6674", "on --bg", "3.5:1", "component boundaries, focus-adjacent (AA non-text)"],
+      ["--spo2", "#22d3ee", "on --bg", "11.3:1", "SpO₂ — every screen"],
+      ["--hr", "#4ade80", "on --bg", "11.7:1", "heart rate / ECG"],
+      ["--resp", "#facc15", "on --bg", "13.3:1", "respiration, HRV"],
+      ["--bp", "#f87171", "on --bg", "7.4:1", "blood pressure"],
+      ["--cpap", "#e879f9", "on --bg", "8.3:1", "CPAP: leak, AHI, pressure"],
+      ["--unknown", "#a5b4fc", "on --bg", "10.2:1", "INDETERMINATE — never a signal, never status-ok"],
+      ["--hi", "#ff5c5c", "on --bg", "6.8:1", "high-priority alarm"],
+      ["--med", "#ffb54d", "on --bg", "11.0:1", "medium alarm, stale data"],
+      ["--ok", "#4ade80", "on --bg", "11.7:1", "measured & in range (paired with ✓)"],
+      ["light: --bg", "#f4f6f8", "—", "base", "light theme ground"],
+      ["light: --text", "#10161d", "on light --bg", "17.0:1", "values"],
+      ["light: --text-dim", "#4a5560", "on light --bg", "6.9:1", "labels"],
+      ["light: --spo2", "#0e7490", "on light --bg", "5.0:1", "SpO₂, re-derived not inverted"],
+      ["light: --hr", "#15803d", "on light --bg", "4.6:1", "heart rate"],
+      ["light: --resp", "#a16207", "on light --bg", "4.5:1", "respiration"],
+      ["light: --bp", "#b91c1c", "on light --bg", "6.0:1", "blood pressure"],
+      ["light: --cpap", "#a21caf", "on light --bg", "5.8:1", "CPAP"],
+      ["light: --unknown", "#4338ca", "on light --bg", "7.3:1", "INDETERMINATE"]
+    ];
+    const swatchOf = (name) => name.replace("light: ", "").startsWith("--") ? "var(" + name.replace("light: ", "") + ")" : "transparent";
+    const tokenRows = T.map((row, i) => ({ token: row[0], hex: row[1], against: row[2], ratio: row[3], use: row[4], zebra: z(i), swatch: row[1], head: "var(--text)" }));
+
+    const signalRows = [
+      { name: "SpO₂ · oxygen saturation", token: "--spo2", color: "var(--spo2)", ratio: "11.3:1" },
+      { name: "Heart rate · ECG · RR", token: "--hr", color: "var(--hr)", ratio: "11.7:1" },
+      { name: "Respiration · HRV", token: "--resp", color: "var(--resp)", ratio: "13.3:1" },
+      { name: "Blood pressure · MAP", token: "--bp", color: "var(--bp)", ratio: "7.4:1" },
+      { name: "CPAP · leak · AHI · pressure", token: "--cpap", color: "var(--cpap)", ratio: "8.3:1" },
+      { name: "Indeterminate · not measured", token: "--unknown", color: "var(--unknown)", ratio: "10.2:1" }
+    ];
+
+    const stateTiles = [
+      { stateName: "DEFAULT · IN RANGE", color: "var(--spo2)", glyph: "✓", value: "96", stamp: "06:45:02", note: "measured, within limits", hatch: "none", valueColor: "var(--text)" },
+      { stateName: "LOADING", color: "var(--text-faint)", glyph: "·", value: "· ·", stamp: "awaiting first sample", note: "no claim yet", hatch: "none", valueColor: "var(--text-faint)" },
+      { stateName: "EMPTY · NEVER PAIRED", color: "var(--text-faint)", glyph: "—", value: "—", stamp: "no sensor configured", note: "not part of monitoring", hatch: "none", valueColor: "var(--text-faint)" },
+      { stateName: "STALE", color: "var(--med)", glyph: "!", value: "94", stamp: "06:21:40 · 23 m old", note: "last known — do not trust as current", hatch: "none", valueColor: "var(--text-dim)" },
+      { stateName: "INDETERMINATE", color: "var(--unknown)", glyph: "?", value: "— —", stamp: "03:04:41 · 41 m dark", note: "not measured — cannot assess", hatch: "repeating-linear-gradient(45deg,var(--hatch) 0 2px,transparent 2px 7px)", valueColor: "var(--unknown)" },
+      { stateName: "WARNING", color: "var(--med)", glyph: "!", value: "90", stamp: "06:45:02", note: "below 92 % soft limit", hatch: "none", valueColor: "var(--med)" },
+      { stateName: "CRITICAL", color: "var(--hi)", glyph: "▲", value: "84", stamp: "06:45:02", note: "below 88 % hard limit · klaxon in 12 s", hatch: "none", valueColor: "var(--hi)" }
+    ];
+
+    const rankRows = [
+      { name: "HIGH · PHYSIOLOGICAL", glyph: "▲", color: "var(--hi)", bg: "color-mix(in oklab,var(--hi) 22%,transparent)", rule: "Hard limit breached. Solid 2 px frame, flashing fill (static under reduced motion), klaxon armed." },
+      { name: "MEDIUM · PHYSIOLOGICAL", glyph: "!", color: "var(--med)", bg: "color-mix(in oklab,var(--med) 14%,transparent)", rule: "Soft limit or cluster. Solid frame, static fill, no sound." },
+      { name: "LOW / INFO", glyph: "i", color: "var(--low)", bg: "transparent", rule: "Logged context. Outline only, no fill." },
+      { name: "TECHNICAL", glyph: "×", color: "var(--hi)", bg: "color-mix(in oklab,var(--hi) 18%,transparent)", rule: "Separate channel: the monitor, not the patient. Ranked independently and never merged into the physiological stack." },
+      { name: "INDETERMINATE", glyph: "?", color: unk, bg: "color-mix(in oklab,var(--unknown) 16%,transparent)", rule: "Hatched fill, periwinkle frame, climbing age counter. Acknowledgeable, never silenceable." }
+    ];
+
+    const typeRows = [
+      { sample: "96", family: "'IBM Plex Mono',monospace", px: "52px", weight: "600", spec: "value / 52 / 600 / tnum" },
+      { sample: "118/74", family: "'IBM Plex Mono',monospace", px: "34px", weight: "600", spec: "value-sm / 34 / 600" },
+      { sample: "SpO₂ %", family: "'IBM Plex Mono',monospace", px: "20px", weight: "700", spec: "screen head / 20 / 700 / .08em" },
+      { sample: "SENSOR LIVENESS", family: "'IBM Plex Mono',monospace", px: "16px", weight: "600", spec: "region head / 16 / 600 / .1em" },
+      { sample: "Pulse-ox link lost", family: "'IBM Plex Sans',sans-serif", px: "16px", weight: "400", spec: "body / 16 / 400" },
+      { sample: "03:04:41 · 41 m", family: "'IBM Plex Mono',monospace", px: "14px", weight: "400", spec: "meta / 14 / 400 — floor, never smaller" }
+    ];
+
+    return {
+      theme: this.state.theme, themeLabel: this.state.theme === "dark" ? "DARK" : "LIGHT",
+      degraded: deg ? "true" : "false", degradedLabel: deg ? "ON" : "OFF",
+      clock: deg ? "03:45:53" : "06:45:02",
+      toggleTheme: () => this.setState(st => ({ theme: st.theme === "dark" ? "light" : "dark" })),
+      toggleDegraded: () => this.setState(st => ({ degraded: !st.degraded })),
+      goNow: () => this.setState({ screen: "now" }), goNight: () => this.setState({ screen: "night" }),
+      goTrends: () => this.setState({ screen: "trends" }), goSys: () => this.setState({ screen: "sys" }),
+      goTok: () => this.setState({ screen: "tok" }),
+      showNow: s === "now", showNight: s === "night", showTrends: s === "trends", showSys: s === "sys", showTok: s === "tok",
+      isNow: s === "now" ? "true" : "false", isNight: s === "night" ? "true" : "false",
+      isTrends: s === "trends" ? "true" : "false", isSys: s === "sys" ? "true" : "false", isTok: s === "tok" ? "true" : "false",
+      win7: () => this.setState({ win: 7 }), win30: () => this.setState({ win: 30 }), win90: () => this.setState({ win: 90 }),
+      is7: this.state.win === 7 ? "true" : "false", is30: this.state.win === 30 ? "true" : "false", is90: this.state.win === 90 ? "true" : "false",
+      bg7: this.state.win === 7 ? "var(--surface-2)" : "transparent",
+      bg30: this.state.win === 30 ? "var(--surface-2)" : "transparent",
+      bg90: this.state.win === 90 ? "var(--surface-2)" : "transparent",
+      windowLabel: this.state.win + " nights",
+      alarms, numerics, sensors, tiers, events, trendCards, lanes, xTicks, readiness, sysGroups,
+      tokenRows, signalRows, stateTiles, rankRows, typeRows,
+      unknownHatch: hatchOn,
+      tierSince: deg ? "IN CONFIRM SINCE 02:57:12" : "IN CLEAR SINCE 02:24:38",
+      tierExplain: deg
+        ? "The machine is stuck, and that is the honest reading. CONFIRM was entered on a real desaturation at 02:57; 7 s later the pulse-ox stopped reporting, so the criteria to escalate to KLAXON and the criteria to fall back to CLEAR are both unevaluable. It will not silently relax to CLEAR — an absent sensor is not evidence of recovery."
+        : "CLEAR requires every enrolled parameter to be both measured and within limits for 5 continuous minutes. Any parameter going dark drops the machine out of CLEAR into a held state — never forward into CLEAR by default.",
+      escalate: deg ? "HELD — no valid SpO₂ to evaluate" : "n/a — tier CLEAR",
+      eventCount: (deg ? 5 : 6) + " events · 1 indeterminate span",
+      session: {
+        id: deg ? "2026-08-02 · PARTIAL" : "2026-08-02 · COMPLETE",
+        span: "23:12:04 → 06:42:11", dur: "7 h 30 m",
+        n: deg ? "13,204" : "26,984",
+        coverage: deg ? "51.1 % — 3 h 40 m NOT MEASURED" : "99.2 %"
+      },
+      nightStats: [
+        deg
+          ? { label: "SpO₂ NADIR", color: unk, glyph: "?", value: "≥89.1", unit: "%", note: "lower bound only — sensor dark after 03:04", hatch: hatchOn }
+          : { label: "SpO₂ NADIR", color: "var(--spo2)", glyph: "!", value: "85.4", unit: "%", note: "02:09:44 · 68 s below 88", hatch: "none" },
+        deg
+          ? { label: "TIME < 90 %", color: unk, glyph: "?", value: "— —", unit: "min", note: "not computable over 49 % of session", hatch: hatchOn }
+          : { label: "TIME < 90 %", color: "var(--spo2)", glyph: "!", value: "7.4", unit: "min", note: "1.6 % of session", hatch: "none" },
+        { label: "MEAN HR", color: "var(--hr)", glyph: deg ? "?" : "✓", value: deg ? "53" : "54", unit: "bpm", note: deg ? "over measured span only (3 h 52 m)" : "min 46 · max 79", hatch: deg ? hatchOn : "none" },
+        { label: "RMSSD", color: "var(--resp)", glyph: "✓", value: deg ? "40.2" : "41.6", unit: "ms", note: deg ? "partial span · own IQR 36–48" : "own IQR 36–48", hatch: "none" },
+        { label: "AHI", color: "var(--cpap)", glyph: "✓", value: "3.1", unit: "/h", note: "CPAP-reported · independent of pulse-ox", hatch: "none" }
+      ],
+      liveLanes: [
+        this.lane(lspo2, { label: "SpO₂ %", color: "var(--spo2)", hi: "100", lo: "88", min: 88, max: 100, H: 90, rows: 3, aria: "SpO2 last 20 minutes" }),
+        this.lane(lhr, { label: "HR bpm", color: "var(--hr)", hi: "80", lo: "40", min: 40, max: 80, H: 90, rows: 3, aria: "Heart rate last 20 minutes" })
+      ]
+    };
+  }
+}
+
+</script>
+</body>
+</html>
+

@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Attempt history — AW2 Service Mode</title>
+<link rel="stylesheet" href="console.css">
+</head>
+<body data-feed="live">
+<a class="skip-link" href="#main">Skip to content</a>
+
+<div class="shell">
+  <div class="stickytop">
+  <header class="idstrip">
+    <div class="idstrip__brand"><b>AW2 SERVICE MODE</b><span>bedside-pi5 · Component · attempt history</span></div>
+    <div class="idstrip__fields">
+      <div class="idfield"><span class="idfield__k">Host</span><span class="idfield__v">bedside-pi5</span></div>
+      <div class="idfield"><span class="idfield__k">Build</span><span class="idfield__v">aw2 2.4.11+g8c1f</span></div>
+      <div class="idfield"><span class="idfield__k">Uptime</span><span class="idfield__v">17d 04:12</span></div>
+      <div class="idfield"><span class="idfield__k">Console clock</span><span class="idfield__v" data-clock>09:56:04Z</span></div>
+      <div class="idfield"><span class="idfield__k">Feed age</span><span class="idfield__v"><span data-feed-age>2s</span> · poll 15s</span></div>
+      <div class="idstrip__spacer"></div>
+    </div>
+  </header>
+
+  <div class="docstale" role="status">
+    <span class="status status--unknown"><span class="status__glyph" aria-hidden="true">?</span> Document stale</span>
+    <span class="docstale__b">This page has not heard from the appliance for <span data-feed-age>—</span>.</span>
+    <span class="muted-text">Everything below is the last state observed, not the current state.</span>
+    <button class="btn btn--sm" type="button" data-action="refresh">Reconnect</button>
+  </div>
+  </div>
+
+  <div class="body">
+    <nav class="rail" aria-label="Console sections">
+      <div class="rail__group">
+        <span class="caps">First release</span>
+        <a class="rail__item" href="overview.html"><span class="rail__ord">01</span> Overview <span class="dot dot--med"><span class="dot__g" aria-hidden="true">■</span><span class="sr-only">Fault, medium</span></span></a>
+        <a class="rail__item" href="display.html"><span class="rail__ord">02</span> Display path <span class="dot dot--ok"><span class="dot__g" aria-hidden="true">✓</span><span class="sr-only">OK</span></span></a>
+        <a class="rail__item" href="ingest.html"><span class="rail__ord">03</span> Ingest <span class="dot dot--unknown"><span class="dot__g" aria-hidden="true">?</span><span class="sr-only">Unknown</span></span></a>
+      </div>
+      <div class="rail__group">
+        <span class="caps">Later</span>
+        <a class="rail__item" href="services.html"><span class="rail__ord">04</span> Services &amp; host <span class="dot dot--ok"><span class="dot__g" aria-hidden="true">✓</span><span class="sr-only">OK</span></span></a>
+        <a class="rail__item" href="config.html"><span class="rail__ord">05</span> Config &amp; access <span class="dot dot--ok"><span class="dot__g" aria-hidden="true">✓</span><span class="sr-only">OK</span></span></a>
+        <a class="rail__item" href="data.html"><span class="rail__ord">06</span> Data <span class="dot dot--med"><span class="dot__g" aria-hidden="true">■</span><span class="sr-only">Fault, medium</span></span></a>
+        <a class="rail__item" href="analysis.html"><span class="rail__ord">07</span> Analysis <span class="dot dot--ok"><span class="dot__g" aria-hidden="true">✓</span><span class="sr-only">OK</span></span></a>
+        <a class="rail__item" href="records.html"><span class="rail__ord">08</span> Records <span class="dot dot--ok"><span class="dot__g" aria-hidden="true">✓</span><span class="sr-only">OK</span></span></a>
+        <a class="rail__item" href="recovery.html"><span class="rail__ord">09</span> Recovery <span class="dot dot--unknown"><span class="dot__g" aria-hidden="true">?</span><span class="sr-only">Unknown</span></span></a>
+      </div>
+      <div class="rail__group">
+        <span class="caps">Reference</span>
+        <a class="rail__item" href="system.html">Design system</a>
+        <a class="rail__item" href="patterns.html">Operational patterns</a>
+        <a class="rail__item" href="attempts.html" aria-current="page">Attempt history</a>
+        <a class="rail__item" href="overview-degraded.html">Overview · degraded</a>
+        <a class="rail__item" href="firstrun.html">First run</a>
+      </div>
+    </nav>
+
+    <main class="main" id="main">
+      <div class="page-hd">
+        <div>
+          <h1>Attempt history</h1>
+          <p class="page-hd__sub">Silent and failing are different diagnoses. This component exists to tell them apart.</p>
+        </div>
+        <div class="page-hd__actions">
+          <button class="btn btn--sm" type="button" data-action="refresh">Refresh</button>
+        </div>
+      </div>
+
+      <div class="stack">
+
+        <section class="panel">
+          <div class="panel__hd"><h2 class="panel__title">Why this component exists</h2></div>
+          <div class="panel__body">
+            <p class="prose">The product claims to replace impressions with evidence. That claim
+            fails silently in exactly one way: a source stops producing and nothing says so, because
+            nothing errored. A collector that never started reports no errors. A timer that stops
+            firing raises nothing. Both leave a subsystem that looks like it had a quiet week.</p>
+            <p class="prose">So this component's first job is not to list runs. It is to answer one
+            question before anything else: <b>is this thing trying?</b> Failing and silent are
+            different diagnoses with different fixes, and the difference is the top line, in words,
+            before any table.</p>
+          </div>
+        </section>
+
+        <section aria-labelledby="a1">
+          <div class="panel__hd"><h2 class="panel__title" id="a1">Verdict · silent</h2>
+            <div class="panel__meta"><span class="caps">No attempts at all. The dangerous one.</span></div></div>
+          <div class="attempts attempts--silent">
+            <div class="attempts__hd">
+              <span class="attempts__verdict">Silent</span>
+              <p class="attempts__gloss">No collection attempted for <b>9h 04m</b>. 272 expected
+              windows missed. Nothing has failed, because nothing has been tried.</p>
+              <span class="fresh fresh--over" data-age-s="32640" data-expect-s="120"><span class="fresh__age">9h 4m ago</span><span class="fresh__expect">2m</span></span>
+            </div>
+            <div class="strip" role="img" aria-label="Twelve successful windows, then eighteen windows with no attempt."><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span></div>
+            <div class="strip__legend">
+              <span><span class="strip__tick strip__tick--ok"></span> succeeded</span>
+              <span><span class="strip__tick strip__tick--partial"></span> partial</span>
+              <span><span class="strip__tick strip__tick--fail"></span> failed</span>
+              <span><span class="strip__tick strip__tick--none"></span> no attempt in this window</span>
+            </div>
+            <div class="attempt-row attempt-row--gap"><span class="attempt-row__t">00:52 → now</span>
+              <span class="attempt-row__why">9h 04m with no attempt.</span></div>
+            <div class="attempt-row"><span class="attempt-row__t">2026-08-05 00:52:11</span>
+              <span class="attempt-row__dur">1.9 s</span><span class="attempt-row__rows">118</span>
+              <span class="attempt-row__why">Succeeded. Newest timestamp advanced 1m 58s.</span></div>
+          </div>
+        </section>
+
+        <section aria-labelledby="a2">
+          <div class="panel__hd"><h2 class="panel__title" id="a2">Verdict · failing</h2>
+            <div class="panel__meta"><span class="caps">Attempts are happening. All of them fail.</span></div></div>
+          <div class="attempts attempts--failing">
+            <div class="attempts__hd">
+              <span class="attempts__verdict">Failing</span>
+              <p class="attempts__gloss">18 attempts in the last hour, <b>0 succeeded</b>. Same error
+              every time, so this is one fault and not eighteen.</p>
+              <span class="fresh" data-age-s="94" data-expect-s="240"><span class="fresh__age">1m 34s ago</span><span class="fresh__expect">4m</span></span>
+            </div>
+            <div class="strip" role="img" aria-label="Eight successful windows followed by twenty-two failed windows."><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--fail"></span><span class="strip__tick strip__tick--fail"></span><span class="strip__tick strip__tick--fail"></span><span class="strip__tick strip__tick--fail"></span><span class="strip__tick strip__tick--fail"></span><span class="strip__tick strip__tick--fail"></span><span class="strip__tick strip__tick--fail"></span><span class="strip__tick strip__tick--fail"></span><span class="strip__tick strip__tick--fail"></span><span class="strip__tick strip__tick--fail"></span><span class="strip__tick strip__tick--fail"></span><span class="strip__tick strip__tick--fail"></span><span class="strip__tick strip__tick--fail"></span><span class="strip__tick strip__tick--fail"></span><span class="strip__tick strip__tick--fail"></span><span class="strip__tick strip__tick--fail"></span><span class="strip__tick strip__tick--fail"></span><span class="strip__tick strip__tick--fail"></span><span class="strip__tick strip__tick--fail"></span><span class="strip__tick strip__tick--fail"></span><span class="strip__tick strip__tick--fail"></span><span class="strip__tick strip__tick--fail"></span></div>
+            <div class="strip__legend">
+              <span><span class="strip__tick strip__tick--ok"></span> succeeded</span>
+              <span><span class="strip__tick strip__tick--partial"></span> partial</span>
+              <span><span class="strip__tick strip__tick--fail"></span> failed</span>
+              <span><span class="strip__tick strip__tick--none"></span> no attempt in this window</span>
+            </div>
+            <div class="attempt-row attempt-row--failed"><span class="attempt-row__t">2026-08-05 09:54:30</span>
+              <span class="attempt-row__dur">30.0 s</span><span class="attempt-row__rows">0</span>
+              <span class="attempt-row__why">GATT read timeout after 30 s. Characteristic 2a37 never notified. RSSI −94 dBm at the time of the attempt.</span></div>
+            <div class="attempt-row attempt-row--failed"><span class="attempt-row__t">2026-08-05 09:52:30</span>
+              <span class="attempt-row__dur">30.0 s</span><span class="attempt-row__rows">0</span>
+              <span class="attempt-row__why">GATT read timeout after 30 s. RSSI −92 dBm.</span></div>
+            <div class="attempt-row attempt-row--failed"><span class="attempt-row__t">2026-08-05 09:50:29</span>
+              <span class="attempt-row__dur">30.0 s</span><span class="attempt-row__rows">0</span>
+              <span class="attempt-row__why">GATT read timeout after 30 s. RSSI −91 dBm.</span></div>
+            <div class="attempt-row"><span class="attempt-row__t">2026-08-05 08:44:12</span>
+              <span class="attempt-row__dur">2.1 s</span><span class="attempt-row__rows">121</span>
+              <span class="attempt-row__why">Last success. RSSI −68 dBm. The signal has fallen 23 dB since.</span></div>
+          </div>
+          <div class="panel"><div class="panel__ft">
+            <p class="prose"><b>Actionable form.</b> The reason is stated once with the varying
+            detail that distinguishes the attempts — here, a falling RSSI, which points at distance
+            or a dying strap battery rather than at software.</p>
+            <span class="grow"></span>
+            <button class="btn btn--sm" type="button">Open radio detail</button>
+          </div></div>
+        </section>
+
+        <section aria-labelledby="a3">
+          <div class="panel__hd"><h2 class="panel__title" id="a3">Verdict · nominal, and nominal with noise</h2></div>
+          <div class="cols-2">
+            <div class="attempts attempts--ok">
+              <div class="attempts__hd">
+                <span class="attempts__verdict">Attempting</span>
+                <p class="attempts__gloss">30 of 30 windows attempted, 30 succeeded.</p>
+                <span class="fresh" data-age-s="41" data-expect-s="120"><span class="fresh__age">41s ago</span><span class="fresh__expect">2m</span></span>
+              </div>
+              <div class="strip" role="img" aria-label="Thirty consecutive successful windows."><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span></div>
+              <div class="strip__legend">
+              <span><span class="strip__tick strip__tick--ok"></span> succeeded</span>
+              <span><span class="strip__tick strip__tick--partial"></span> partial</span>
+              <span><span class="strip__tick strip__tick--fail"></span> failed</span>
+              <span><span class="strip__tick strip__tick--none"></span> no attempt in this window</span>
+            </div>
+              <div class="attempt-row"><span class="attempt-row__t">2026-08-05 09:55:19</span>
+                <span class="attempt-row__dur">0.4 s</span><span class="attempt-row__rows">120</span>
+                <span class="attempt-row__why">Succeeded.</span></div>
+            </div>
+            <div class="attempts attempts--ok">
+              <div class="attempts__hd">
+                <span class="attempts__verdict">Attempting</span>
+                <p class="attempts__gloss">30 windows, 26 succeeded, 4 partial. Partial windows
+                returned rows but fewer than the cadence implies.</p>
+                <span class="fresh" data-age-s="52" data-expect-s="120"><span class="fresh__age">52s ago</span><span class="fresh__expect">2m</span></span>
+              </div>
+              <div class="strip" role="img" aria-label="Mostly successful windows with four partial windows scattered through."><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--partial"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--partial"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--partial"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--partial"></span><span class="strip__tick strip__tick--ok"></span></div>
+              <div class="strip__legend">
+              <span><span class="strip__tick strip__tick--ok"></span> succeeded</span>
+              <span><span class="strip__tick strip__tick--partial"></span> partial</span>
+              <span><span class="strip__tick strip__tick--fail"></span> failed</span>
+              <span><span class="strip__tick strip__tick--none"></span> no attempt in this window</span>
+            </div>
+              <div class="attempt-row"><span class="attempt-row__t">2026-08-05 09:38:02</span>
+                <span class="attempt-row__dur">2.2 s</span><span class="attempt-row__rows">41</span>
+                <span class="attempt-row__why">Partial. Expected ≈120 rows; the link dropped mid-read and reconnected.</span></div>
+            </div>
+          </div>
+        </section>
+
+        <section aria-labelledby="a4">
+          <div class="panel__hd"><h2 class="panel__title" id="a4">Verdict · never run, and suppressed</h2></div>
+          <div class="cols-2">
+            <div class="attempts attempts--silent">
+              <div class="attempts__hd">
+                <span class="attempts__verdict">Never run</span>
+                <p class="attempts__gloss">This source has been configured for 4 days and has never
+                attempted a collection. Its timer unit exists but has never fired.</p>
+                <span class="fresh" data-expect-s="0"><span class="fresh__age">never</span><span class="fresh__expect">2m</span></span>
+              </div>
+              <div class="strip" role="img" aria-label="Thirty windows, none attempted."><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span></div>
+              <div class="strip__legend">
+              <span><span class="strip__tick strip__tick--ok"></span> succeeded</span>
+              <span><span class="strip__tick strip__tick--partial"></span> partial</span>
+              <span><span class="strip__tick strip__tick--fail"></span> failed</span>
+              <span><span class="strip__tick strip__tick--none"></span> no attempt in this window</span>
+            </div>
+              <div class="attempt-row attempt-row--gap"><span class="attempt-row__t">Since 01 Aug</span>
+                <span class="attempt-row__why">No attempt has ever been recorded. This is different from a source that ran once and stopped — there is no last known outcome to fall back on.</span></div>
+            </div>
+            <div class="attempts">
+              <div class="attempts__hd">
+                <span class="attempts__verdict">Suppressed</span>
+                <p class="attempts__gloss">Attempts continue and are recorded, but the resulting
+                unknown is muted until 09 Aug.</p>
+                <span class="mute">⊘ Muted until 09 Aug · <span class="mute__who">operator</span></span>
+              </div>
+              <div class="strip" role="img" aria-label="Thirty windows attempted, all returning no data."><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span></div>
+              <div class="strip__legend">
+              <span><span class="strip__tick strip__tick--ok"></span> succeeded</span>
+              <span><span class="strip__tick strip__tick--partial"></span> partial</span>
+              <span><span class="strip__tick strip__tick--fail"></span> failed</span>
+              <span><span class="strip__tick strip__tick--none"></span> no attempt in this window</span>
+            </div>
+              <div class="attempt-row"><span class="attempt-row__t">2026-08-05 09:26:00</span>
+                <span class="attempt-row__dur">4.1 s</span><span class="attempt-row__rows">0</span>
+                <span class="attempt-row__why">Attempted. Cloud API returned an empty window — the ring has not synced since 03 Aug. Expected: not worn while travelling.</span></div>
+            </div>
+          </div>
+          <div class="panel"><div class="panel__ft"><p class="prose">A mute changes how the result is
+          <em>reported</em>. It never stops the attempts, and the attempt record stays complete
+          underneath, so the mute expiring restores the true picture rather than a gap.</p></div></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel__hd"><h2 class="panel__title">Loading and error states of the component itself</h2></div>
+          <div class="panel__body cols-2">
+            <div class="attempts">
+              <div class="attempts__hd"><span class="attempts__verdict"><span class="skel">·········</span></span>
+                <p class="attempts__gloss"><span class="skel">····················</span></p></div>
+              <div class="strip"><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span></div>
+              <div class="attempt-row"><span class="attempt-row__t"><span class="skel">·········</span></span>
+                <span class="attempt-row__dur"></span><span class="attempt-row__rows"></span>
+                <span class="attempt-row__why"><span class="skel">·····················</span></span></div>
+            </div>
+            <div class="attempts attempts--silent">
+              <div class="attempts__hd">
+                <span class="attempts__verdict">Unreadable</span>
+                <p class="attempts__gloss">The attempt log itself could not be read — the spool
+                database is locked. The component does not guess: it says it cannot tell you, and
+                keeps the last successful reading below.</p>
+              </div>
+              <div class="attempt-row attempt-row--gap"><span class="attempt-row__t">Last read 09:31</span>
+                <span class="attempt-row__why">At that point: 30 of 30 windows attempted, all succeeded.</span></div>
+            </div>
+          </div>
+        </section>
+
+      </div>
+    </main>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

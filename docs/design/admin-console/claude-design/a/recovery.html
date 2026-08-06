@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>09 Recovery — AW2 Service Mode</title>
+<link rel="stylesheet" href="console.css">
+</head>
+<body data-feed="live">
+<a class="skip-link" href="#main">Skip to content</a>
+
+<div class="shell">
+  <div class="stickytop">
+  <header class="idstrip">
+    <div class="idstrip__brand"><b>AW2 SERVICE MODE</b><span>bedside-pi5 · 09 Recovery</span></div>
+    <div class="idstrip__fields">
+      <div class="idfield"><span class="idfield__k">Host</span><span class="idfield__v">bedside-pi5</span></div>
+      <div class="idfield"><span class="idfield__k">Build</span><span class="idfield__v">aw2 2.4.11+g8c1f</span></div>
+      <div class="idfield"><span class="idfield__k">Uptime</span><span class="idfield__v">17d 04:12</span></div>
+      <div class="idfield"><span class="idfield__k">Console clock</span><span class="idfield__v" data-clock>09:56:04Z</span></div>
+      <div class="idfield"><span class="idfield__k">Feed age</span><span class="idfield__v"><span data-feed-age>2s</span> · poll 15s</span></div>
+      <div class="idstrip__spacer"></div>
+    </div>
+  </header>
+
+  <div class="docstale" role="status">
+    <span class="status status--unknown"><span class="status__glyph" aria-hidden="true">?</span> Document stale</span>
+    <span class="docstale__b">This page has not heard from the appliance for <span data-feed-age>—</span>.</span>
+    <span class="muted-text">Everything below is the last state observed, not the current state.</span>
+    <button class="btn btn--sm" type="button" data-action="refresh">Reconnect</button>
+  </div>
+  </div>
+
+  <div class="body">
+    <nav class="rail" aria-label="Console sections">
+      <div class="rail__group">
+        <span class="caps">First release</span>
+        <a class="rail__item" href="overview.html"><span class="rail__ord">01</span> Overview <span class="dot dot--med"><span class="dot__g" aria-hidden="true">■</span><span class="sr-only">Fault, medium</span></span></a>
+        <a class="rail__item" href="display.html"><span class="rail__ord">02</span> Display path <span class="dot dot--ok"><span class="dot__g" aria-hidden="true">✓</span><span class="sr-only">OK</span></span></a>
+        <a class="rail__item" href="ingest.html"><span class="rail__ord">03</span> Ingest <span class="dot dot--unknown"><span class="dot__g" aria-hidden="true">?</span><span class="sr-only">Unknown</span></span></a>
+      </div>
+      <div class="rail__group">
+        <span class="caps">Later</span>
+        <a class="rail__item" href="services.html"><span class="rail__ord">04</span> Services &amp; host <span class="dot dot--ok"><span class="dot__g" aria-hidden="true">✓</span><span class="sr-only">OK</span></span></a>
+        <a class="rail__item" href="config.html"><span class="rail__ord">05</span> Config &amp; access <span class="dot dot--ok"><span class="dot__g" aria-hidden="true">✓</span><span class="sr-only">OK</span></span></a>
+        <a class="rail__item" href="data.html"><span class="rail__ord">06</span> Data <span class="dot dot--med"><span class="dot__g" aria-hidden="true">■</span><span class="sr-only">Fault, medium</span></span></a>
+        <a class="rail__item" href="analysis.html"><span class="rail__ord">07</span> Analysis <span class="dot dot--ok"><span class="dot__g" aria-hidden="true">✓</span><span class="sr-only">OK</span></span></a>
+        <a class="rail__item" href="records.html"><span class="rail__ord">08</span> Records <span class="dot dot--ok"><span class="dot__g" aria-hidden="true">✓</span><span class="sr-only">OK</span></span></a>
+        <a class="rail__item" href="recovery.html" aria-current="page"><span class="rail__ord">09</span> Recovery <span class="dot dot--unknown"><span class="dot__g" aria-hidden="true">?</span><span class="sr-only">Unknown</span></span></a>
+      </div>
+      <div class="rail__group">
+        <span class="caps">Reference</span>
+        <a class="rail__item" href="system.html">Design system</a>
+        <a class="rail__item" href="patterns.html">Operational patterns</a>
+        <a class="rail__item" href="attempts.html">Attempt history</a>
+        <a class="rail__item" href="overview-degraded.html">Overview · degraded</a>
+        <a class="rail__item" href="firstrun.html">First run</a>
+      </div>
+    </nav>
+
+    <main class="main" id="main">
+      <div class="page-hd">
+        <div>
+          <h1>Recovery</h1>
+          <p class="page-hd__sub">Backups, WAL archive, and whether any of it has ever been proven to work.</p>
+        </div>
+        <div class="page-hd__actions">
+          <button class="btn btn--sm" type="button" data-action="refresh">Refresh</button>
+        </div>
+      </div>
+
+      <div class="stack">
+
+        <section class="panel panel--unknown">
+          <div class="panel__hd"><h2 class="panel__title">If this box died right now</h2>
+            <div class="panel__meta"><span class="fresh" data-age-s="44" data-expect-s="900"><span class="fresh__age">44s ago</span><span class="fresh__expect">15m</span></span></div></div>
+          <div class="panel__body">
+            <div class="cols-4">
+              <div class="readout"><span class="readout__k">You would lose</span>
+                <span class="readout__v">41<span class="unit">min</span></span>
+                <span class="muted-text">≈ 12,400 samples · 0 journal entries</span></div>
+              <div class="readout readout--sm"><span class="readout__k">Restore would take</span>
+                <span class="readout__v">~26<span class="unit">min</span></span>
+                <span class="muted-text">Estimated. Never measured — see below.</span></div>
+              <div class="readout readout--sm"><span class="readout__k">Last full backup</span>
+                <span class="readout__v">06:00<span class="unit">today</span></span>
+                <span class="muted-text">3.9 GB, checksum valid</span></div>
+              <div class="readout readout--unknown"><span class="readout__k">Known-good restore</span>
+                <span class="readout__v">None</span>
+                <span class="muted-text">No verification has ever completed</span></div>
+            </div>
+          </div>
+          <div class="panel__ft">
+            <p class="prose"><b>A backup that has never been restored is not a passing backup.</b>
+            Everything on the left of this row is green-adjacent: the job ran, the file exists, the
+            checksum matches. None of that has ever been tested against a real Postgres cluster, so
+            the honest state of this subsystem is a question mark, not an OK.</p>
+          </div>
+        </section>
+
+        <div class="cols-main">
+          <section class="panel">
+            <div class="panel__hd"><h2 class="panel__title">Restore verification history</h2>
+              <div class="panel__meta"><span class="caps">Restore into a scratch cluster, then compare row counts</span></div></div>
+            <div class="attempts attempts--silent">
+              <div class="attempts__hd">
+                <span class="attempts__verdict">Never verified</span>
+                <p class="attempts__gloss">The verification timer has been enabled for 43 days and
+                has never fired. Nothing has failed, because nothing has run.</p>
+                <span class="fresh" data-expect-s="0"><span class="fresh__age">never</span><span class="fresh__expect">7d</span></span>
+              </div>
+              <div class="attempt-row attempt-row--gap"><span class="attempt-row__t">Since 23 Jun</span>
+                <span class="attempt-row__why">6 expected verification windows, 0 attempts. The unit
+                <span class="mono">aw2-restore-verify.timer</span> is loaded but its calendar
+                expression resolves to a date in 2027.</span></div>
+            </div>
+            <div class="panel"><div class="panel__ft">
+              <p class="prose">This is the console's own central claim turned on itself: the
+              subsystem reporting no failures is the one that has never tried.</p>
+              <span class="grow"></span>
+              <button class="btn btn--sm btn--primary" type="button">Run a verification now · ~26 min</button>
+            </div></div>
+          </section>
+
+          <div class="stack">
+            <section class="panel">
+              <div class="panel__hd"><h2 class="panel__title">Backups</h2></div>
+              <div class="panel__body panel__body--flush t-scroll">
+                <table class="t t--rowstate">
+                  <thead><tr><th scope="col">Kind</th><th scope="col">When</th><th class="num" scope="col">Size</th>
+                    <th scope="col">Integrity</th></tr></thead>
+                  <tbody>
+                    <tr><th scope="row">Full</th><td class="mono">06:00 today</td><td class="num">3.9 GB</td>
+                      <td><span class="status status--ok"><span class="status__glyph" aria-hidden="true">✓</span> Checksum valid</span></td></tr>
+                    <tr><th scope="row">Incremental</th><td class="mono">09:00 today</td><td class="num">142 MB</td>
+                      <td><span class="status status--ok"><span class="status__glyph" aria-hidden="true">✓</span> Checksum valid</span></td></tr>
+                    <tr data-state="med"><th scope="row">WAL archive</th><td class="mono">lag 41m</td><td class="num">18 MB</td>
+                      <td><span class="status status--med"><span class="status__glyph" aria-hidden="true">■</span> Lag over 15m</span></td></tr>
+                    <tr data-state="unknown"><th scope="row">Off-site copy</th><td class="muted-text">never</td><td class="num">—</td>
+                      <td><span class="status status--unknown"><span class="status__glyph" aria-hidden="true">?</span> No destination set</span></td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="panel__ft"><p class="prose">All copies are on the same NVMe as the database.
+              A drive failure loses the record and every backup of it at the same moment.</p></div>
+            </section>
+
+            <section class="panel">
+              <div class="panel__hd"><h2 class="panel__title">Restore</h2></div>
+              <div class="panel__body">
+                <div class="danger-zone">
+                  <div class="danger-zone__hd"><b>Destructive</b>
+                    <p class="prose">Restoring into the live cluster replaces the system of record
+                    with the chosen archive. Everything written since that archive is gone.</p></div>
+                  <button class="btn btn--danger" type="button" data-action="open" data-target="m-restore">Restore into live cluster…</button>
+                </div>
+              </div>
+              <div class="panel__ft"><p class="prose">Restoring into a scratch cluster, by contrast,
+              is safe and is what the verification job does. It is a separate, unfenced control.</p>
+                <span class="grow"></span>
+                <button class="btn btn--sm" type="button">Restore into scratch…</button></div>
+            </section>
+          </div>
+        </div>
+      </div>
+
+<div class="scrim" id="m-restore" hidden data-no-escape>
+  <div class="modal modal--danger" role="alertdialog" aria-modal="true" aria-labelledby="mre-h">
+    <div class="modal__hd"><span aria-hidden="true">▲</span><h2 id="mre-h">Restore into the live cluster?</h2></div>
+    <form class="modal__body" data-confirm-phrase="aw2-prod" onsubmit="return false">
+      <p class="prose">Restoring <span class="mono">full-20260805-0600</span> over
+      <span class="mono">aw2-prod</span>. This archive has never been verified by a test restore.</p>
+      <ul class="consequences">
+        <li>3h 56m of samples written since 06:00 are destroyed — roughly 71,000 rows.</li>
+        <li>1 journal entry written at 07:52 is destroyed.</li>
+        <li>If the archive turns out to be unreadable, the cluster is left empty and the current data is already gone.</li>
+        <li>Estimated downtime 26 minutes. Collection continues into the spool and drains afterwards.</li>
+      </ul>
+      <div><label class="caps" for="mre-i">Type <span class="mono">aw2-prod</span> to confirm</label>
+        <input class="input" id="mre-i" data-confirm-input autocomplete="off" placeholder="cluster name"></div>
+      <div class="modal__ft">
+        <button class="btn btn--ghost" type="button" data-action="close">Cancel</button>
+        <span class="grow"></span>
+        <button class="btn btn--danger" type="submit" data-confirm-go disabled>Restore over live data</button>
+      </div>
+    </form>
+  </div>
+</div>
+    </main>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
