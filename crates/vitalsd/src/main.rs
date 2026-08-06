@@ -314,14 +314,24 @@ enum DrainLiveness {
     Unknown,
 }
 
+/// Undrained bytes older than this mark the drain as stalled — the same bound
+/// gates `drain_progressing` and the operator-facing stall message.
+const DRAIN_STALL_MAX_AGE_SECS: u64 = 300;
+
 fn finalize_drain_health(health: &mut vitals_proto::Health, liveness: DrainLiveness) {
     // Unmeasured is not measured-and-good: `lag_bytes == 0` from an early
     // return would otherwise reassure the dead-man heartbeat (amendment 05 §2.1).
     health.heartbeat.drain_progressing = liveness == DrainLiveness::Measured
-        && (health.lag_bytes == 0 || health.lag_age_seconds <= 300);
+        && (health.lag_bytes == 0 || health.lag_age_seconds <= DRAIN_STALL_MAX_AGE_SECS);
     health.heartbeat_pulsing = health
         .heartbeat
         .should_pulse(state::HEARTBEAT_MAX_AGE.as_secs());
+    // The heartbeat is unconditional outside a monitoring window, so a
+    // "heartbeat blocked" claim there would contradict heartbeat_pulsing=true.
+    // The storage facts are still surfaced by update_drain_health's entries.
+    if !health.heartbeat.monitoring_window_active {
+        return;
+    }
     if liveness == DrainLiveness::Unknown {
         health
             .degraded
@@ -390,7 +400,7 @@ fn update_drain_health(health: &mut vitals_proto::Health, spool: &Spool) -> Drai
     health.lag_bytes = lag;
     health.lag_age_seconds = oldest;
     health.last_advanced_at = advanced;
-    if lag > 0 && oldest > 300 {
+    if lag > 0 && oldest > DRAIN_STALL_MAX_AGE_SECS {
         health.degraded.push(format!("spool drain stalled: lag_bytes={lag}, lag_age_seconds={oldest}, last_advanced_at={advanced:?}; check PostgreSQL reachability, advisory lock, and schema fingerprint"));
     }
     DrainLiveness::Measured
@@ -621,6 +631,24 @@ mod tests {
                 .degraded
                 .iter()
                 .any(|item| item.contains("drain liveness unknown"))
+        );
+    }
+
+    #[test]
+    fn heartbeat_framing_is_gated_on_the_monitoring_window() {
+        let mut health = State::new(Vec::new()).health(Instant::now());
+        health.lag_bytes = 1;
+        health.lag_age_seconds = DRAIN_STALL_MAX_AGE_SECS + 1;
+        finalize_drain_health(&mut health, DrainLiveness::Unknown);
+        // Outside a window the heartbeat is unconditional; a "blocked" claim
+        // here would contradict heartbeat_pulsing.
+        assert!(!health.heartbeat.drain_progressing);
+        assert!(health.heartbeat_pulsing);
+        assert!(
+            !health
+                .degraded
+                .iter()
+                .any(|item| item.contains("heartbeat blocked"))
         );
     }
 }
