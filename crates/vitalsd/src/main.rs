@@ -285,11 +285,11 @@ fn handle(
         }
         Cmd::Health { reply } => {
             let mut health = st.health(now);
-            update_drain_health(&mut health, spool);
+            let liveness = update_drain_health(&mut health, spool);
             if let Some(blocker) = rotation_blocker {
                 health.degraded.push(blocker.clone());
             }
-            finalize_drain_health(&mut health);
+            finalize_drain_health(&mut health, liveness);
             let _ = reply.try_send(Response::Health {
                 health: Box::new(health),
             });
@@ -307,24 +307,38 @@ fn handle(
     }
 }
 
-fn finalize_drain_health(health: &mut vitals_proto::Health) {
-    health.heartbeat.drain_progressing = health.lag_bytes == 0 || health.lag_age_seconds <= 300;
+/// Whether drain liveness could actually be observed this pass.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DrainLiveness {
+    Measured,
+    Unknown,
+}
+
+fn finalize_drain_health(health: &mut vitals_proto::Health, liveness: DrainLiveness) {
+    // Unmeasured is not measured-and-good: `lag_bytes == 0` from an early
+    // return would otherwise reassure the dead-man heartbeat (amendment 05 §2.1).
+    health.heartbeat.drain_progressing = liveness == DrainLiveness::Measured
+        && (health.lag_bytes == 0 || health.lag_age_seconds <= 300);
     health.heartbeat_pulsing = health
         .heartbeat
         .should_pulse(state::HEARTBEAT_MAX_AGE.as_secs());
-    if !health.heartbeat.drain_progressing {
+    if liveness == DrainLiveness::Unknown {
+        health
+            .degraded
+            .push("heartbeat blocked: drain liveness unknown, held as not progressing".to_owned());
+    } else if !health.heartbeat.drain_progressing {
         health
             .degraded
             .push("heartbeat blocked: spool drain offset is not advancing".to_owned());
     }
 }
 
-fn update_drain_health(health: &mut vitals_proto::Health, spool: &Spool) {
+fn update_drain_health(health: &mut vitals_proto::Health, spool: &Spool) -> DrainLiveness {
     let Some(dir) = spool.segment_path().parent() else {
         health
             .degraded
             .push("drain liveness unavailable: spool has no parent directory".to_owned());
-        return;
+        return DrainLiveness::Unknown;
     };
     let now = std::time::SystemTime::now();
     let mut oldest = 0_u64;
@@ -337,7 +351,7 @@ fn update_drain_health(health: &mut vitals_proto::Health, spool: &Spool) {
                 "drain liveness unavailable: cannot read {}: {e}",
                 dir.display()
             ));
-            return;
+            return DrainLiveness::Unknown;
         }
     };
     for entry in entries.flatten() {
@@ -379,6 +393,7 @@ fn update_drain_health(health: &mut vitals_proto::Health, spool: &Spool) {
     if lag > 0 && oldest > 300 {
         health.degraded.push(format!("spool drain stalled: lag_bytes={lag}, lag_age_seconds={oldest}, last_advanced_at={advanced:?}; check PostgreSQL reachability, advisory lock, and schema fingerprint"));
     }
+    DrainLiveness::Measured
 }
 
 /// Fan out to subscribers without ever blocking the writer.
@@ -556,7 +571,10 @@ mod tests {
         std::fs::write(dir.path().join("finished.offset"), "40\n").expect("offset");
         std::fs::write(dir.path().join(".drain-status"), "12345\n").expect("status");
         let mut health = State::new(Vec::new()).health(Instant::now());
-        update_drain_health(&mut health, &spool);
+        assert_eq!(
+            update_drain_health(&mut health, &spool),
+            DrainLiveness::Measured
+        );
         assert_eq!(health.lag_bytes, 60);
         assert_eq!(health.last_advanced_at, Some(12_345));
         let json = serde_json::to_value(&health).expect("json");
@@ -578,7 +596,7 @@ mod tests {
         let mut health = state.health(Instant::now());
         health.lag_bytes = 1;
         health.lag_age_seconds = 301;
-        finalize_drain_health(&mut health);
+        finalize_drain_health(&mut health, DrainLiveness::Measured);
         assert!(!health.heartbeat.drain_progressing);
         assert!(!health.heartbeat_pulsing);
         assert!(
@@ -586,6 +604,23 @@ mod tests {
                 .degraded
                 .iter()
                 .any(|item| item.contains("drain offset is not advancing"))
+        );
+    }
+
+    #[test]
+    fn unknown_drain_liveness_blocks_heartbeat_and_names_itself() {
+        let mut state = State::new(Vec::new());
+        state.monitoring_window_active = true;
+        let mut health = state.health(Instant::now());
+        // lag_bytes stays 0, exactly the unmeasured early-return shape.
+        finalize_drain_health(&mut health, DrainLiveness::Unknown);
+        assert!(!health.heartbeat.drain_progressing);
+        assert!(!health.heartbeat_pulsing);
+        assert!(
+            health
+                .degraded
+                .iter()
+                .any(|item| item.contains("drain liveness unknown"))
         );
     }
 }
