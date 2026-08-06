@@ -26,7 +26,7 @@ real evaluation possible at all, and it is the model for both surfaces below.
 
 The three complete direction mockups live in
 [`../design/admin-console/claude-design/`](../design/admin-console/claude-design/)
-(`a/` Service Mode · `b/` Preflight · `c/` Flowpath — 16 screens + one stylesheet + one script
+(`a/` Service Mode · `b/` Preflight · `c/` Flowpath — 15 HTML pages + one stylesheet + one script
 each, vanilla, no dependencies). M1 changes from "build the console" to:
 
 1. **One view-model per screen, three renderings.** Handlers produce direction-agnostic view-model
