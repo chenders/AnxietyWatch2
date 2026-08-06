@@ -53,7 +53,7 @@ pane renders (`grep -n '^- \[' tasks.md`).
 - [ ] T-B1 — Eight-hour Polar H10 capture · implement-complex · pi · **review**
 - [x] T-C1 — PostgreSQL 16 bare metal on NVMe · implement-standard · pi · **blocked by G2**
 - [x] T-C2 — pgBackRest, three tiers · implement-standard · pi · **review**
-- [ ] T-C3 — Scheduled restore verification · implement-complex · pi · **review · gate G3 owner**
+- [x] T-C3 — Scheduled restore verification · implement-complex · pi · **review · gate G3 owner**
 - [x] T-D1 — Registry TOML and codegen · implement-standard · mac
 - [x] T-D2 — IEEE-11073 SFLOAT decoder with fuzz target · implement-complex · either · **review**
 - [x] T-D3 — COPY-binary encoder and spool · implement-complex · either · **review**
@@ -1144,6 +1144,54 @@ reading in the store.
 
 <!-- Conductor: record scope deltas, measured results, and decisions here as they happen.
      T-B1's gap histogram goes here verbatim — it is the project's foundational measurement. -->
+
+### T-C3 — Scheduled restore verification · PASSED 2026-08-05
+
+The initial completion was refuted by adversarial review and withdrawn. The verifier was redesigned
+around a fresh full backup followed by a common evidence boundary. It locks PostgreSQL catalogs
+against concurrent public DDL, takes `ACCESS EXCLUSIVE` locks on every public relation, then captures
+counts and an LSN only after all locks are granted. WAL is switched and archived, and the exact target
+segment is fetched before a targeted LSN restore. The restored cluster must promote and report a
+current WAL position at or beyond that boundary before counts, extensions, and `pg_amcheck` pass.
+This avoids comparing unrelated production and backup snapshots.
+
+Scratch PGDATA and tablespaces live inside a private ext4 loop filesystem under root-owned
+`/var/lib/vitals/restore-work`; sockets live on a private tmpfs under root-owned
+`/run/vitals-restore`. PostgreSQL can mutate only descendants inside those mounted filesystems and
+cannot rename their top-level mountpoints. Cleanup stops the scratch postmaster, unmounts whole
+scratch filesystems instead of recursively deleting postgres-mutable pathnames, and removes only
+root-parented top-level objects whose captured device/inode identity still matches. The service has
+no write access to `/var/lib/postgresql`; production PGDATA is explicitly read-only. Restored
+symlinks fail closed except immediate numeric `pg_tblspc` entries canonically contained in the mapped
+tablespace root. The service has a two-hour deadline, 15-minute TERM cleanup allowance, forced
+termination fallback, alerting, and safe stale-object recovery after a forced kill. The restore
+invocation includes the task-required pgBackRest `--delta` option.
+
+The timer is `Sun *-*-01..07 04:00:00`; twelve generated occurrences across 2026–2027 all fall on
+each month's first Sunday. Independent adversarial re-review returned PASS after the pathname,
+evidence-boundary, timer, deadline, WAL, recovery, sandbox, and symlink findings were corrected.
+
+Chris explicitly authorized a uniquely named temporary durable production fixture. The first
+sequence-aware proof attempt failed safely because the lock generator incorrectly included
+sequences, which PostgreSQL does not support in `LOCK TABLE`; the timer remained disabled, the
+fixture was preserved, and the generator was corrected to lock only base and partitioned relations.
+Sequence state is instead captured under the catalog/relation evidence transaction. The restored
+sequence must exist, cannot have a lower `last_value`, and must preserve `is_called` when values are
+equal; a recovery-advanced WAL-preallocated value must be called.
+
+The authorized `public.t_c3_restore_probe_20260805_2332` fixture had an identity primary key, text
+marker, timestamp, and two authentic rows (`probe_id` 1 and 2). After the lock fix, fresh full backup
+`20260805-233511F` restored successfully to evidence LSN `0/580000C0`. The non-vacuous result is
+`ok:true`, `tables_checked:1`, with no mismatches and successful table-count, sequence-floor,
+extension, recovery-LSN, and `pg_amcheck` checks. It is atomically retained as
+`/var/lib/vitals/restore-verify-g3.json`, outside rotating history. The exact authorized fixture table
+and its generated sequence were then dropped and both were confirmed absent. A post-drop empty-schema
+run passed; both normal empty-schema runs and daily staleness checks mechanically fail unless the
+durable artifact remains `ok:true`, non-vacuous, and records recovery-LSN and `pg_amcheck` checks.
+The exact T-C3
+Verify command exited zero. Both timers are enabled and active, staleness passes, the WAL `.ready`
+backlog is zero, all scratch objects are absent, and `vcgencmd get_throttled` remains `0x50000` with
+active mask zero. Gate G3 is open.
 
 ### T-C2 — pgBackRest, three tiers · PASSED 2026-08-05
 

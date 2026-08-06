@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily restoration-verification staleness assertion
+
+[Timer]
+OnCalendar=*-*-* 06:00:00
+Persistent=true
+Unit=verify-restore-staleness.service
+
+[Install]
+WantedBy=timers.target
