@@ -1,0 +1,41 @@
+[Unit]
+Description=Crash-safe PostgreSQL spool drainer
+Documentation=openspec/changes/pi5-vitals-core/tasks.md T-D5
+After=postgresql@16-main.service vitalsd.service
+Requires=postgresql@16-main.service
+Conflicts=sqitch-deploy.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/vitals-spool-drain --database "host=/var/run/postgresql port=5432 dbname=vitals user=vitals" --spool /var/lib/vitals/spool
+User=vitals
+Group=vitals
+Restart=always
+RestartSec=30
+
+# Storage is not the alarm path. Under pressure, sacrifice/restart the drainer
+# before vitalsd, collectors, cns-engine, or klaxond.
+OOMScoreAdjust=500
+MemoryHigh=128M
+MemoryMax=256M
+CPUWeight=20
+IOWeight=20
+Nice=10
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+ReadWritePaths=/var/lib/vitals/spool
+
+[Install]
+WantedBy=multi-user.target

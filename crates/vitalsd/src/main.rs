@@ -156,6 +156,9 @@ async fn run(args: Args) -> std::io::Result<()> {
     );
 
     let mut tick = tokio::time::interval(Duration::from_millis(250));
+    let mut rotation_blocker = spool.is_memory_only().then(|| {
+        "spool persistence unavailable: filesystem refusal watermark reached; streaming ingest is memory-only and sync-required ingest is rejected".to_owned()
+    });
 
     loop {
         tokio::select! {
@@ -172,7 +175,14 @@ async fn run(args: Args) -> std::io::Result<()> {
             }
 
             Some(cmd) = cmd_rx.recv() => {
-                handle(cmd, &mut st, &mut spool, &node_id, &mut subscribers);
+                handle(
+                    cmd,
+                    &mut st,
+                    &mut spool,
+                    &node_id,
+                    &mut subscribers,
+                    &mut rotation_blocker,
+                );
             }
 
             _ = tick.tick() => {
@@ -181,8 +191,19 @@ async fn run(args: Args) -> std::io::Result<()> {
                 if let Err(e) = spool.sync() {
                     eprintln!("vitalsd: periodic sync failed: {e}");
                 }
-                if spool.rotate_if_due().unwrap_or(false) {
-                    eprintln!("vitalsd: rotated to {}", spool.segment_path().display());
+                match spool.rotate_if_due() {
+                    Ok(true) => {
+                        eprintln!("vitalsd: rotated to {}", spool.segment_path().display());
+                        rotation_blocker = None;
+                    }
+                    Ok(false) => {}
+                    Err(e) => {
+                        let blocker = format!("spool rotation blocked: {e}");
+                        if rotation_blocker.as_deref() != Some(&blocker) {
+                            eprintln!("vitalsd: {blocker}");
+                        }
+                        rotation_blocker = Some(blocker);
+                    },
                 }
             }
         }
@@ -211,6 +232,7 @@ fn handle(
     spool: &mut Spool,
     node_id: &NodeId,
     subscribers: &mut Vec<(u64, mpsc::Sender<Response>)>,
+    rotation_blocker: &mut Option<String>,
 ) {
     let now = Instant::now();
     match cmd {
@@ -222,11 +244,28 @@ fn handle(
             let rows: Vec<Sample> = samples.iter().map(to_sample).collect();
             let resp = match spool.append(&rows, node_id, sync) {
                 Ok(()) => {
+                    if !spool.is_memory_only() {
+                        *rotation_blocker = None;
+                    }
                     st.record_appended(&samples, spool.segment_bytes(), now);
                     fan_out(&samples, st, subscribers);
                     Response::Appended {
                         count: samples.len(),
                         durable: sync,
+                    }
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::StorageFull && !sync => {
+                    *rotation_blocker = Some(format!(
+                        "spool persistence unavailable: {e}; streaming ingest is memory-only and sync-required ingest is rejected"
+                    ));
+                    // Streaming sources may continue to the in-memory alarm
+                    // path. Durability-required BP requests never enter this
+                    // arm and receive an explicit error instead.
+                    st.record_appended(&samples, spool.segment_bytes(), now);
+                    fan_out(&samples, st, subscribers);
+                    Response::Appended {
+                        count: samples.len(),
+                        durable: false,
                     }
                 }
                 Err(e) => Response::Error {
@@ -245,8 +284,14 @@ fn handle(
             subscribers.retain(|(sid, _)| *sid != id);
         }
         Cmd::Health { reply } => {
+            let mut health = st.health(now);
+            let liveness = update_drain_health(&mut health, spool);
+            if let Some(blocker) = rotation_blocker {
+                health.degraded.push(blocker.clone());
+            }
+            finalize_drain_health(&mut health, liveness);
             let _ = reply.try_send(Response::Health {
-                health: Box::new(st.health(now)),
+                health: Box::new(health),
             });
         }
         Cmd::Query { reply } => {
@@ -260,6 +305,105 @@ fn handle(
             });
         }
     }
+}
+
+/// Whether drain liveness could actually be observed this pass.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DrainLiveness {
+    Measured,
+    Unknown,
+}
+
+/// Undrained bytes older than this mark the drain as stalled — the same bound
+/// gates `drain_progressing` and the operator-facing stall message.
+const DRAIN_STALL_MAX_AGE_SECS: u64 = 300;
+
+fn finalize_drain_health(health: &mut vitals_proto::Health, liveness: DrainLiveness) {
+    // Unmeasured is not measured-and-good: `lag_bytes == 0` from an early
+    // return would otherwise reassure the dead-man heartbeat (amendment 05 §2.1).
+    health.heartbeat.drain_progressing = liveness == DrainLiveness::Measured
+        && (health.lag_bytes == 0 || health.lag_age_seconds <= DRAIN_STALL_MAX_AGE_SECS);
+    health.heartbeat_pulsing = health
+        .heartbeat
+        .should_pulse(state::HEARTBEAT_MAX_AGE.as_secs());
+    // The heartbeat is unconditional outside a monitoring window, so a
+    // "heartbeat blocked" claim there would contradict heartbeat_pulsing=true.
+    // The storage facts are still surfaced by update_drain_health's entries.
+    if !health.heartbeat.monitoring_window_active {
+        return;
+    }
+    if liveness == DrainLiveness::Unknown {
+        health
+            .degraded
+            .push("heartbeat blocked: drain liveness unknown, held as not progressing".to_owned());
+    } else if !health.heartbeat.drain_progressing {
+        health
+            .degraded
+            .push("heartbeat blocked: spool drain offset is not advancing".to_owned());
+    }
+}
+
+fn update_drain_health(health: &mut vitals_proto::Health, spool: &Spool) -> DrainLiveness {
+    let Some(dir) = spool.segment_path().parent() else {
+        health
+            .degraded
+            .push("drain liveness unavailable: spool has no parent directory".to_owned());
+        return DrainLiveness::Unknown;
+    };
+    let now = std::time::SystemTime::now();
+    let mut oldest = 0_u64;
+    let mut lag = 0_u64;
+    let mut advanced = None;
+    let entries = match std::fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(e) => {
+            health.degraded.push(format!(
+                "drain liveness unavailable: cannot read {}: {e}",
+                dir.display()
+            ));
+            return DrainLiveness::Unknown;
+        }
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|x| x.to_str()) != Some("spool")
+            || path == spool.segment_path()
+        {
+            continue;
+        }
+        let Ok(meta) = entry.metadata() else {
+            continue;
+        };
+        let mut offset = vitals_core::spool::FIRST_ROW_OFFSET;
+        let offset_path = path.with_extension("offset");
+        if let Ok(text) = std::fs::read_to_string(&offset_path)
+            && let Ok(value) = text.trim().parse::<u64>()
+        {
+            offset = value;
+        }
+        lag = lag.saturating_add(meta.len().saturating_sub(offset));
+        if let Ok(modified) = meta.modified() {
+            let age = now.duration_since(modified).map_or(0, |d| d.as_secs());
+            oldest = oldest.max(age);
+        }
+    }
+    let progress_path = dir.join(".drain-status");
+    if let Ok(text) = std::fs::read_to_string(&progress_path) {
+        match text.trim().parse::<u64>() {
+            Ok(value) => advanced = Some(value),
+            Err(e) => health.degraded.push(format!(
+                "drain liveness unavailable: invalid {}: {e}",
+                progress_path.display()
+            )),
+        }
+    }
+    health.lag_bytes = lag;
+    health.lag_age_seconds = oldest;
+    health.last_advanced_at = advanced;
+    if lag > 0 && oldest > DRAIN_STALL_MAX_AGE_SECS {
+        health.degraded.push(format!("spool drain stalled: lag_bytes={lag}, lag_age_seconds={oldest}, last_advanced_at={advanced:?}; check PostgreSQL reachability, advisory lock, and schema fingerprint"));
+    }
+    DrainLiveness::Measured
 }
 
 /// Fan out to subscribers without ever blocking the writer.
@@ -426,6 +570,85 @@ mod tests {
                 .expect("before epoch")
                 .as_micros(),
             1_000_000
+        );
+    }
+
+    #[test]
+    fn drain_health_uses_durable_status_and_excludes_active_segment() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let spool = Spool::open(dir.path()).expect("spool");
+        std::fs::write(dir.path().join("finished.spool"), vec![0_u8; 100]).expect("segment");
+        std::fs::write(dir.path().join("finished.offset"), "40\n").expect("offset");
+        std::fs::write(dir.path().join(".drain-status"), "12345\n").expect("status");
+        let mut health = State::new(Vec::new()).health(Instant::now());
+        assert_eq!(
+            update_drain_health(&mut health, &spool),
+            DrainLiveness::Measured
+        );
+        assert_eq!(health.lag_bytes, 60);
+        assert_eq!(health.last_advanced_at, Some(12_345));
+        let json = serde_json::to_value(&health).expect("json");
+        assert_eq!(json.get("lag_bytes"), Some(&serde_json::json!(60)));
+        assert_eq!(
+            json.get("lag_age_seconds"),
+            Some(&serde_json::json!(health.lag_age_seconds))
+        );
+        assert_eq!(
+            json.get("last_advanced_at"),
+            Some(&serde_json::json!(12_345))
+        );
+    }
+
+    #[test]
+    fn stalled_drain_blocks_heartbeat_inside_monitoring_window() {
+        let mut state = State::new(Vec::new());
+        state.monitoring_window_active = true;
+        let mut health = state.health(Instant::now());
+        health.lag_bytes = 1;
+        health.lag_age_seconds = 301;
+        finalize_drain_health(&mut health, DrainLiveness::Measured);
+        assert!(!health.heartbeat.drain_progressing);
+        assert!(!health.heartbeat_pulsing);
+        assert!(
+            health
+                .degraded
+                .iter()
+                .any(|item| item.contains("drain offset is not advancing"))
+        );
+    }
+
+    #[test]
+    fn unknown_drain_liveness_blocks_heartbeat_and_names_itself() {
+        let mut state = State::new(Vec::new());
+        state.monitoring_window_active = true;
+        let mut health = state.health(Instant::now());
+        // lag_bytes stays 0, exactly the unmeasured early-return shape.
+        finalize_drain_health(&mut health, DrainLiveness::Unknown);
+        assert!(!health.heartbeat.drain_progressing);
+        assert!(!health.heartbeat_pulsing);
+        assert!(
+            health
+                .degraded
+                .iter()
+                .any(|item| item.contains("drain liveness unknown"))
+        );
+    }
+
+    #[test]
+    fn heartbeat_framing_is_gated_on_the_monitoring_window() {
+        let mut health = State::new(Vec::new()).health(Instant::now());
+        health.lag_bytes = 1;
+        health.lag_age_seconds = DRAIN_STALL_MAX_AGE_SECS + 1;
+        finalize_drain_health(&mut health, DrainLiveness::Unknown);
+        // Outside a window the heartbeat is unconditional; a "blocked" claim
+        // here would contradict heartbeat_pulsing.
+        assert!(!health.heartbeat.drain_progressing);
+        assert!(health.heartbeat_pulsing);
+        assert!(
+            !health
+                .degraded
+                .iter()
+                .any(|item| item.contains("heartbeat blocked"))
         );
     }
 }

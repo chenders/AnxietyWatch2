@@ -274,6 +274,13 @@ pub struct Health {
     pub total_samples: u64,
     /// Bytes in the current spool segment.
     pub spool_bytes: u64,
+    /// Bytes waiting for the `PostgreSQL` drainer.
+    pub lag_bytes: u64,
+    /// Age of the oldest waiting segment, or zero when empty.
+    pub lag_age_seconds: u64,
+    /// UTC epoch seconds when a drain offset last advanced; unknown before the
+    /// first committed drain.
+    pub last_advanced_at: Option<u64>,
     /// Subscribers, with their drop counts.
     pub subscribers: Vec<SubscriberHealth>,
     /// Inputs to the hardware dead-man switch.
