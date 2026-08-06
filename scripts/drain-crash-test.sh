@@ -43,7 +43,11 @@ CREATE TABLE samples (
  value DOUBLE PRECISION NOT NULL, extra BYTEA, node_id BYTEA NOT NULL,
  batch_id BIGINT, PRIMARY KEY(source,type,session_id,seq)
 );
-SELECT create_hypertable('samples', 'timestamp', if_not_exists => TRUE);
+-- Production's current identity key omits the time partition column, so
+-- TimescaleDB correctly refuses create_hypertable here. This test reproduces
+-- production FKs/indexes and PostgreSQL conflict semantics; compressed-chunk
+-- conflict behavior remains a deployment migration concern until that schema
+-- incompatibility is resolved.
 CREATE INDEX samples_time_idx ON samples (source,type,timestamp DESC);
 CREATE TABLE spool_status (
  segment TEXT PRIMARY KEY, offset_bytes BIGINT NOT NULL DEFAULT 0,
