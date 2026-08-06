@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>05 Access — AW2 Preflight</title>
+<link rel="stylesheet" href="console.css">
+</head>
+<body data-feed="live">
+<a class="skip-link" href="#main">Skip to content</a>
+
+<div class="stickytop">
+<div class="docstale" role="status">
+  <span class="assert assert--unsigned">Sheet uncountersigned</span>
+  <b>This page has not heard from the appliance for <span data-feed-age>—</span>.</b>
+  <span class="muted-text">Every reading below is the last one observed. The signatures on it are still valid for the time they were made; this document is not valid for now.</span>
+  <button class="btn btn--sm" type="button" data-action="refresh">Reconnect</button>
+</div>
+
+<nav class="contents" aria-label="Sections">
+    <a class="contents__item" href="overview.html"><span class="contents__ord">01</span> Overview</a>
+    <a class="contents__item" href="display.html"><span class="contents__ord">02</span> Display</a>
+    <a class="contents__item" href="ingest.html"><span class="contents__ord">03</span> Ingest</a>
+    <a class="contents__item" href="services.html"><span class="contents__ord">04</span> Services</a>
+    <a class="contents__item" href="config.html" aria-current="page"><span class="contents__ord">05</span> Access</a>
+    <a class="contents__item" href="data.html"><span class="contents__ord">06</span> Data</a>
+    <a class="contents__item" href="analysis.html"><span class="contents__ord">07</span> Analysis</a>
+    <a class="contents__item" href="records.html"><span class="contents__ord">08</span> Records</a>
+    <a class="contents__item" href="recovery.html"><span class="contents__ord">09</span> Recovery</a>
+    <a class="contents__item" href="system.html">System</a>
+    <a class="contents__item" href="patterns.html">Patterns</a>
+    <a class="contents__item" href="attempts.html">Run sheet</a>
+    <a class="contents__item" href="overview-degraded.html">Degraded</a>
+    <a class="contents__item" href="firstrun.html">First run</a>
+  </nav>
+</div>
+
+<main class="sheet" id="main">
+
+  <div class="pagetitle">
+    <h1>Config &amp; access</h1>
+    <p>Credentials, the registry, flags and the audit trail.</p>
+  </div>
+
+  <div class="stack">
+    <section class="block">
+      <div class="block__hd"><h2>API keys</h2><span class="block__count">3 active · 1 revoked</span>
+        <div class="block__meta"><button class="btn btn--sm btn--primary" type="button">Issue key…</button></div></div>
+      <div class="t-scroll">
+        <table class="t t--rowstate">
+          <thead><tr><th scope="col">Name</th><th scope="col">Fingerprint</th><th scope="col">Scope</th>
+            <th scope="col">Last used</th><th scope="col">Expires</th><th scope="col"><span class="sr-only">Action</span></th></tr></thead>
+          <tbody>
+            <tr><th scope="row">phone-bridge</th><td class="redact">SHA256:8b41…7e02 · <b>…4KpQ</b></td>
+              <td class="mono">read + write:samples</td><td class="mono">15m ago</td><td class="mono">2027-02-11</td>
+              <td><button class="btn btn--sm btn--danger" type="button" data-action="open" data-target="m-rev">Revoke…</button></td></tr>
+            <tr><th scope="row">home-assistant</th><td class="redact">SHA256:0f3a…c19d · <b>…9EgU</b></td>
+              <td class="mono">write:samples</td><td class="mono">4m ago</td><td class="mono">2027-08-05</td>
+              <td><button class="btn btn--sm btn--danger" type="button" data-action="open" data-target="m-rev">Revoke…</button></td></tr>
+            <tr data-state="adv"><th scope="row">laptop-export</th><td class="redact">SHA256:cc90…11af · <b>…2Vm7</b></td>
+              <td class="mono">read:samples</td><td class="mono">214d ago</td>
+              <td><span class="assert assert--adv"><span aria-hidden="true">!</span> Expires in 8d</span></td>
+              <td><button class="btn btn--sm btn--danger" type="button" data-action="open" data-target="m-rev">Revoke…</button></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="block__note"><a href="patterns.html">Full credential lifecycle, including the one-time reveal →</a></div>
+    </section>
+
+    <div class="cols-main">
+      <section class="block">
+        <div class="block__hd"><h2>Source registry</h2><span class="block__count">cadence, grace, sheet membership</span></div>
+        <div class="t-scroll">
+          <table class="t t--rowstate">
+            <thead><tr><th scope="col">Source</th><th scope="col">Kind</th><th class="num" scope="col">Cadence</th>
+              <th class="num" scope="col">Grace</th><th scope="col">On the sheet</th><th scope="col">Configuration</th></tr></thead>
+            <tbody>
+              <tr><th scope="row" class="mono">polar-h10-chest</th><td>BLE</td><td class="num">2m</td><td class="num">2.0×</td>
+                <td>Counted</td><td><span class="assert assert--signed"><span aria-hidden="true">✓</span> Configured</span></td></tr>
+              <tr><th scope="row" class="mono">wellue-o2ring</th><td>BLE</td><td class="num">2m</td><td class="num">2.0×</td>
+                <td>Counted</td><td><span class="assert assert--signed"><span aria-hidden="true">✓</span> Configured</span></td></tr>
+              <tr><th scope="row" class="mono">resmed-airsense-11</th><td>Importer</td><td class="num">24h</td><td class="num">1.5×</td>
+                <td>Counted</td><td><span class="assert assert--signed"><span aria-hidden="true">✓</span> Configured</span></td></tr>
+              <tr data-state="na"><th scope="row" class="mono">omron-bp-cuff</th><td>BLE</td><td class="num">—</td><td class="num">—</td>
+                <td>Struck</td><td><span class="assert assert--na"><span aria-hidden="true">—</span> Not owned</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="block__note"><p class="prose">Striking a source removes it from the sheet count, from
+        every rollup and from the report. It is the only supported way to stop an optional source asking
+        a question, and it is recorded in the audit log with a reason.</p></div>
+      </section>
+
+      <div class="stack">
+        <section class="block">
+          <div class="block__hd"><h2>Provider credentials</h2></div>
+          <div class="card"><div class="t-scroll"><table class="t">
+            <thead><tr><th scope="col">Provider</th><th scope="col">Key</th><th scope="col">Item</th></tr></thead>
+            <tbody>
+              <tr><th scope="row">Anthropic</th><td class="redact">present · <b>…yT4a</b></td>
+                <td><span class="assert assert--signed"><span aria-hidden="true">✓</span> Verified 09:05</span></td></tr>
+              <tr><th scope="row">Oura Cloud</th><td class="redact">present · <b>…Q17b</b></td>
+                <td><span class="assert assert--signed"><span aria-hidden="true">✓</span> Verified 09:26</span></td></tr>
+              <tr data-state="na"><th scope="row">SMTP relay</th><td class="redact">not set</td>
+                <td><span class="assert assert--na"><span aria-hidden="true">—</span> Struck</span></td></tr>
+            </tbody></table></div>
+            <div class="card__ft"><p class="prose">Values are never displayed or returned by the API.
+            Presence and last four characters only.</p></div>
+          </div>
+        </section>
+
+        <section class="block">
+          <div class="block__hd"><h2>Feature flags</h2></div>
+          <div class="card"><div class="card__body">
+            <form class="form" data-dirty-track onsubmit="return false">
+              <div class="check"><input type="checkbox" id="fl1" name="fl1" checked>
+                <label for="fl1">Correlation engine<span class="hint">Recomputes nightly at 01:00.</span></label></div>
+              <div class="check"><input type="checkbox" id="fl2" name="fl2" checked>
+                <label for="fl2">AI analysis runs<span class="hint">Requires an Anthropic key; respects the spend cap.</span></label></div>
+              <div class="check"><input type="checkbox" id="fl3" name="fl3">
+                <label for="fl3">Nocturnal early-warning alarm<span class="hint">In progress, scheduled last. Off. Turning this on un-strikes its self-test item as unsigned.</span></label></div>
+              <div class="check"><input type="checkbox" id="fl4" name="fl4">
+                <label for="fl4">Anonymous telemetry<span class="hint">Off by default. Crash counts and version only, never health data.</span></label></div>
+              <div class="savebar" data-dirty="false">
+                <span class="savebar__state">No changes since last save.</span>
+                <button class="btn" type="reset" data-needs-dirty disabled>Discard</button>
+                <button class="btn btn--primary" type="submit" data-needs-dirty disabled>Save flags</button>
+              </div>
+            </form>
+          </div></div>
+        </section>
+      </div>
+    </div>
+
+    <section class="block">
+      <div class="block__hd"><h2>Audit log</h2><span class="block__count">append-only · 30 days retained</span></div>
+      <div class="t-scroll">
+        <table class="t">
+          <thead><tr><th scope="col">When</th><th scope="col">Action</th><th scope="col">Object</th><th scope="col">Detail</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">09:52:04</td><td>key.issue</td><td class="mono">home-assistant</td><td>scope write:samples, expires 2027-08-05</td></tr>
+            <tr><td class="mono">09:26:11</td><td>item.defer</td><td class="mono">oura-ring-gen3</td><td>to 2026-08-09, reason "travelling"</td></tr>
+            <tr><td class="mono">06:26:44</td><td>backup.verify</td><td class="mono">full-20260727</td><td>failed — truncated archive</td></tr>
+            <tr><td class="mono">02 Jun 11:02</td><td>item.strike</td><td class="mono">omron-bp-cuff</td><td>reason "device not owned"</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+<div class="scrim" id="m-rev" hidden data-no-escape>
+  <div class="modal modal--danger" role="alertdialog" aria-modal="true" aria-labelledby="mrv-h">
+    <div class="modal__hd"><span aria-hidden="true">✕</span><h2 id="mrv-h">Revoke API key “phone-bridge”?</h2></div>
+    <form class="modal__body" data-confirm-phrase="phone-bridge" onsubmit="return false">
+      <p class="prose">Immediate and permanent. This key was used 15 minutes ago.</p>
+      <ul class="consequences">
+        <li>The phone stops delivering journal entries and health-store data at once.</li>
+        <li>Journal entries written while the phone is unauthenticated are held on the device, but health-store windows are not re-fetched.</li>
+      </ul>
+      <div><label class="caps" for="mrv-i">Type <span class="mono">phone-bridge</span> to confirm</label>
+        <input class="input" id="mrv-i" data-confirm-input autocomplete="off" placeholder="key name"></div>
+      <div class="modal__ft"><button class="btn" type="button" data-action="close">Cancel</button>
+        <span class="grow"></span>
+        <button class="btn btn--danger" type="submit" data-confirm-go disabled>Revoke permanently</button></div>
+    </form>
+  </div>
+</div>
+
+  <hr class="divider">
+  <p class="caps">AnxietyWatch2 · bedside-pi5 · build 2.4.11+g8c1f · console clock <span data-clock class="mono">09:56:04Z</span> · feed age <span data-feed-age class="mono">2s</span> · <a href="index.html">Direction B contents</a></p>
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>

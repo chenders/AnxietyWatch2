@@ -1,0 +1,690 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Overview · degraded — AW2 Flowpath</title>
+<link rel="stylesheet" href="console.css">
+</head>
+<body data-feed="stale" data-feed-offset-s="1080">
+<a class="skip-link" href="#main">Skip to content</a>
+
+<div class="app">
+  <div class="stickytop">
+  <div class="docstale" role="status">
+    <span class="st st--severed">Console feed severed</span>
+    <b>This page has not heard from the appliance for <span data-feed-age>—</span>.</b>
+    <span class="muted-text">The graph below is the last shape the machine had. Edge states are unchanged; it is the link between you and the box that is cut.</span>
+    <button class="btn btn--sm" type="button" data-action="refresh">Reconnect <span class="btn__key">r</span></button>
+  </div>
+
+  <header class="cmdbar">
+    <span class="cmdbar__id"><b>AW2 FLOWPATH</b> · bedside-pi5 · 2.4.11+g8c1f</span>
+    <label class="sr-only" for="q">Filter nodes and sources</label>
+    <input class="input cmdbar__search" id="q" data-filter placeholder="Filter nodes, sources, units…   /">
+    <span class="cmdbar__id" data-clock>09:56:04Z</span>
+    <span class="cmdbar__id">feed <span data-feed-age>2s</span></span>
+    <span class="cmdbar__hint"><span class="kbd">j</span><span class="kbd">k</span> walk the path <span class="kbd">/</span> filter <span class="kbd">1</span>–<span class="kbd">9</span> screens <span class="kbd">?</span> keys</span>
+  </header>
+
+<nav class="tabs" aria-label="Screens">
+  <a class="tabs__item" href="overview.html" data-tabkey="1"><span class="tabs__key">1</span> Overview</a>
+  <a class="tabs__item" href="display.html" data-tabkey="2"><span class="tabs__key">2</span> Flow · display</a>
+  <a class="tabs__item" href="ingest.html" data-tabkey="3"><span class="tabs__key">3</span> Flow · ingest</a>
+  <a class="tabs__item" href="services.html" data-tabkey="4"><span class="tabs__key">4</span> Services</a>
+  <a class="tabs__item" href="config.html" data-tabkey="5"><span class="tabs__key">5</span> Access</a>
+  <a class="tabs__item" href="data.html" data-tabkey="6"><span class="tabs__key">6</span> Data</a>
+  <a class="tabs__item" href="analysis.html" data-tabkey="7"><span class="tabs__key">7</span> Analysis</a>
+  <a class="tabs__item" href="records.html" data-tabkey="8"><span class="tabs__key">8</span> Records</a>
+  <a class="tabs__item" href="recovery.html" data-tabkey="9"><span class="tabs__key">9</span> Recovery</a>
+  <a class="tabs__item" href="system.html">System</a>
+  <a class="tabs__item" href="patterns.html">Patterns</a>
+  <a class="tabs__item" href="attempts.html">Timeline</a>
+  <a class="tabs__item" href="overview-degraded.html" aria-current="page">Degraded</a>
+  <a class="tabs__item" href="firstrun.html">First run</a>
+</nav>
+  </div>
+
+  <main class="main" id="main">
+    <div class="pagehd">
+      <div>
+        <h1>Overview · degraded</h1>
+        <p>Same graph, bad night. The chest-strap edge is losing data, no backup has run for nine days, and the return path failed its first test.</p>
+      </div>
+      <div class="pagehd__act"><button class="btn btn--sm btn--ghost" type="button" data-action="refresh">Restore feed</button>
+        <button class="btn btn--sm" type="button" data-action="refresh">Refresh <span class="btn__key">r</span></button>
+      </div>
+    </div>
+
+    <div class="cols-4">
+      <div class="fig fig--fault"><span class="fig__k">Edges losing data</span>
+        <span class="fig__v">2</span><span class="muted-text">HRV capture, and the whole backup path</span></div>
+      <div class="fig fig--severed"><span class="fig__k">Edges severed</span>
+        <span class="fig__v">6<span class="unit">of 19</span></span>
+        <span class="muted-text">1 at the source, 5 downstream</span></div>
+      <div class="fig fig--degrade"><span class="fig__k">Edges impaired</span>
+        <span class="fig__v">1</span><span class="muted-text">Spool drain slower than arrival</span></div>
+      <div class="fig fig--fault"><span class="fig__k">Unbacked-up window</span>
+        <span class="fig__v">9<span class="unit">days</span></span>
+        <span class="muted-text"><a href="recovery.html">What would I lose right now →</a></span></div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="split">
+      <div class="stack">
+        <section class="pane" aria-labelledby="gh">
+          <div class="pane__hd"><h2 id="gh">Flow path</h2>
+            <span class="caps">Sensor to clinician report · <span class="kbd">j</span> <span class="kbd">k</span> to walk it</span></div>
+          <div class="pane__body--flush">
+<svg class="graph" viewBox="0 0 1180 452" role="img" aria-labelledby="gt gd">
+  <title id="gt">The path the record takes, from sensor to clinician report</title>
+  <desc id="gd">Seven sources on the left feed collectors, which feed the spool, then Postgres, then five
+  downstream sinks. The chest-strap path is drawn as losing data: its collector has failed and will not
+  restart, so heart-rate-variability samples are being lost as they occur. The oximeter path is severed
+  after nine hours with no attempt, and the ring path is severed but muted until 9 August. The
+  spool-to-store link is impaired because the drain runs slower than arrival. The backup path is drawn as
+  losing data because no backup has completed for nine days and the one verification ever attempted failed
+  today. The correlations and the clinician report are severed downstream of all of this.</desc>
+  <g class="edges">
+  <path class="e e--lost" d="M 194 46 H 248"></path>
+  <path class="e e--severed" d="M 194 106 H 248"></path>
+  <line class="e-break" x1="207" y1="97" x2="221" y2="115"></line>
+  <line class="e-break" x1="217" y1="97" x2="231" y2="115"></line>
+  <path class="e e--flowing" d="M 194 166 H 248"></path>
+  <path class="e e--severed" d="M 194 226 H 248"></path>
+  <line class="e-break" x1="207" y1="217" x2="221" y2="235"></line>
+  <line class="e-break" x1="217" y1="217" x2="231" y2="235"></line>
+  <path class="e e--flowing" d="M 194 286 H 218 V 331 H 248"></path>
+  <path class="e e--flowing" d="M 194 346 H 218 V 331 H 248"></path>
+  <path class="e e--absent" d="M 194 406 H 248"></path>
+  <path class="e e--lost" d="M 430 46 H 460 V 168 H 496"></path>
+  <path class="e e--severed" d="M 430 106 H 460 V 184 H 496"></path>
+  <path class="e e--flowing" d="M 430 166 H 460 V 200 H 496"></path>
+  <path class="e e--severed" d="M 430 226 H 460 V 216 H 496"></path>
+  <path class="e e--flowing" d="M 430 331 H 460 V 232 H 496"></path>
+  <path class="e e--impaired" d="M 660 198 H 754"></path>
+  <text class="e-label" x="668" y="174">in 340</text>
+  <text class="e-label e-label--flow" x="668" y="188">out 210</text>
+  <path class="e e--flowing" d="M 918 198 H 938 V 82 H 986"></path>
+  <path class="e e--severed" d="M 918 198 H 938 V 162 H 986"></path>
+  <line class="e-break" x1="949" y1="153" x2="963" y2="171"></line>
+  <line class="e-break" x1="959" y1="153" x2="973" y2="171"></line>
+  <path class="e e--severed" d="M 918 198 H 938 V 242 H 986"></path>
+  <line class="e-break" x1="949" y1="233" x2="963" y2="251"></line>
+  <line class="e-break" x1="959" y1="233" x2="973" y2="251"></line>
+  <path class="e e--flowing" d="M 918 198 H 938 V 322 H 986"></path>
+  <path class="e e--severed" d="M 918 198 H 938 V 402 H 986"></path>
+  <line class="e-break" x1="949" y1="393" x2="963" y2="411"></line>
+  <line class="e-break" x1="959" y1="393" x2="973" y2="411"></line>
+  </g>
+  <g class="n n--fault" data-node="src-chest" role="button" aria-label="Source Polar H10 strap, losing data, nothing for 7 hours 42 minutes" data-selected="true" tabindex="0">
+    <rect x="16" y="24" width="178" height="44" rx="2"></rect>
+    <text class="n-name" x="26" y="43">Polar H10 strap</text>
+    <text class="n-val" x="26" y="59">no data · 7h 42m</text>
+  </g>
+  <g class="n n--severed" data-node="src-ox" role="button" aria-label="Source Wellue O2Ring, severed, no data for 9 hours 4 minutes" tabindex="-1">
+    <rect x="16" y="84" width="178" height="44" rx="2"></rect>
+    <text class="n-name" x="26" y="103">Wellue O2Ring</text>
+    <text class="n-val" x="26" y="119">SpO₂ · 9h 04m</text>
+  </g>
+  <g class="n" data-node="src-cpap" role="button" aria-label="Source ResMed AirSense 11, flowing, last import 5 hours 50 minutes ago" tabindex="-1">
+    <rect x="16" y="144" width="178" height="44" rx="2"></rect>
+    <text class="n-name" x="26" y="163">ResMed AirSense 11</text>
+    <text class="n-val" x="26" y="179">AHI, leak · 5h 50m</text>
+  </g>
+  <g class="n n--severed" data-node="src-ring" role="button" aria-label="Source Oura ring, severed but muted until 9 August" tabindex="-1">
+    <rect x="16" y="204" width="178" height="44" rx="2"></rect>
+    <text class="n-name" x="26" y="223">Oura ring gen3</text>
+    <text class="n-val" x="26" y="239">sleep · 2d · muted</text>
+  </g>
+  <g class="n" data-node="src-phone" role="button" aria-label="Source phone health store, flowing, last push 15 minutes ago" tabindex="-1">
+    <rect x="16" y="264" width="178" height="44" rx="2"></rect>
+    <text class="n-name" x="26" y="283">Phone health store</text>
+    <text class="n-val" x="26" y="299">steps, HR · 15m</text>
+  </g>
+  <g class="n" data-node="src-jrnl" role="button" aria-label="Source journal and medication doses, flowing, last entry 2 hours ago" tabindex="-1">
+    <rect x="16" y="324" width="178" height="44" rx="2"></rect>
+    <text class="n-name" x="26" y="343">Journal + doses</text>
+    <text class="n-val" x="26" y="359">severity · 2h</text>
+  </g>
+  <g class="n n--absent" data-node="src-bp" role="button" aria-label="Source Omron blood-pressure cuff, not configured, declared absent" tabindex="-1">
+    <rect x="16" y="384" width="178" height="44" rx="2"></rect>
+    <text class="n-name" x="26" y="403">Omron BP cuff</text>
+    <text class="n-val" x="26" y="419">not configured</text>
+  </g>
+  <g class="n n--fault" data-node="col-chest" role="button" aria-label="Unit collector-chest, failed, start limit hit" tabindex="-1">
+    <rect x="248" y="24" width="182" height="44" rx="2"></rect>
+    <text class="n-name" x="258" y="43">collector-chest</text>
+    <text class="n-val" x="258" y="59">failed · start-limit</text>
+  </g>
+  <g class="n n--severed" data-node="col-ox" role="button" aria-label="Unit collector-oximeter, active but zero attempts in 9 hours" tabindex="-1">
+    <rect x="248" y="84" width="182" height="44" rx="2"></rect>
+    <text class="n-name" x="258" y="103">collector-oximeter</text>
+    <text class="n-val" x="258" y="119">active · 0 attempts</text>
+  </g>
+  <g class="n" data-node="imp-cpap" role="button" aria-label="Unit importer-cpap timer, waiting, next run 4am" tabindex="-1">
+    <rect x="248" y="144" width="182" height="44" rx="2"></rect>
+    <text class="n-name" x="258" y="163">importer-cpap.timer</text>
+    <text class="n-val" x="258" y="179">waiting · next 04:00</text>
+  </g>
+  <g class="n" data-node="imp-ring" role="button" aria-label="Unit importer-oura timer, attempting but returning no rows" tabindex="-1">
+    <rect x="248" y="204" width="182" height="44" rx="2"></rect>
+    <text class="n-name" x="258" y="223">importer-oura.timer</text>
+    <text class="n-val" x="258" y="239">attempting · 0 rows</text>
+  </g>
+  <g class="n" data-node="api" role="button" aria-label="Unit api-ingest, active, two keys, 5207 rows in 24 hours" tabindex="-1">
+    <rect x="248" y="294" width="182" height="74" rx="2"></rect>
+    <text class="n-name" x="258" y="313">api-ingest</text>
+    <text class="n-val" x="258" y="329">active · 5,207 rows</text>
+  </g>
+  <g class="n n--degrade" data-node="spool" role="button" aria-label="Spool, impaired, 14208 rows queued and rising" tabindex="-1">
+    <rect x="496" y="150" width="164" height="96" rx="2"></rect>
+    <text class="n-name" x="506" y="169">spool</text>
+    <text class="n-val" x="506" y="185">14,208 queued</text>
+  </g>
+  <g class="n" data-node="store" role="button" aria-label="Postgres samples_raw, flowing, 412 million rows" tabindex="-1">
+    <rect x="754" y="150" width="164" height="96" rx="2"></rect>
+    <text class="n-name" x="764" y="169">samples_raw</text>
+    <text class="n-val" x="764" y="185">412 M rows</text>
+  </g>
+  <g class="n n--sink" data-node="agg" role="button" aria-label="Daily aggregates, flowing, recomputed at 1am" tabindex="-1">
+    <rect x="986" y="60" width="178" height="44" rx="2"></rect>
+    <text class="n-name" x="996" y="79">daily aggregates</text>
+    <text class="n-val" x="996" y="95">recomputed 01:00</text>
+  </g>
+  <g class="n n--severed n--sink" data-node="corr" role="button" aria-label="Correlations, one of four computed over an incomplete window" tabindex="-1">
+    <rect x="986" y="140" width="178" height="44" rx="2"></rect>
+    <text class="n-name" x="996" y="159">correlations</text>
+    <text class="n-val" x="996" y="175">1 of 4 has holes</text>
+  </g>
+  <g class="n n--severed n--sink" data-node="report" role="button" aria-label="Clinician report, two nights incomplete" tabindex="-1">
+    <rect x="986" y="220" width="178" height="44" rx="2"></rect>
+    <text class="n-name" x="996" y="239">clinician report</text>
+    <text class="n-val" x="996" y="255">2 nights incomplete</text>
+  </g>
+  <g class="n n--sink" data-node="display" role="button" aria-label="Bedside screen, lit, 30.1 frames per second" tabindex="-1">
+    <rect x="986" y="300" width="178" height="44" rx="2"></rect>
+    <text class="n-name" x="996" y="319">bedside screen</text>
+    <text class="n-val" x="996" y="335">lit · 30.1 fps</text>
+  </g>
+  <g class="n n--severed n--sink" data-node="backup" role="button" aria-label="Backup archive, losing data, nine days old and verification failed" tabindex="-1">
+    <rect x="986" y="380" width="178" height="44" rx="2"></rect>
+    <text class="n-name" x="996" y="399">backup archive</text>
+    <text class="n-val" x="996" y="415">9d old · verify fail</text>
+  </g>
+</svg>
+<div class="graph__legend">
+        <span><span class="lg lg--flowing"></span> flowing, measured</span>
+        <span><span class="lg lg--impaired"></span> impaired — slower than arrival, nothing lost yet</span>
+        <span><span class="lg lg--lost"></span> losing data now</span>
+        <span><span class="lg lg--severed"></span> severed — nothing measurable through here</span>
+        <span><span class="lg lg--absent"></span> not configured</span>
+      </div>
+          </div>
+          <div class="pane__ft">
+            <p class="prose"><b>Read the cuts, not the boxes.</b> Two source edges are severed, and three
+            downstream edges are severed <em>because</em> of them — the correlations, the report and the
+            backup archive all inherit a cut from something upstream. Following a cut left is how you
+            find the cause; following it right is how you find what it costs.</p>
+          </div>
+        </section>
+
+        <section class="pane" aria-labelledby="dh">
+          <div class="pane__hd"><h2 id="dh">Downstream cost of each cut</h2>
+            <span class="caps">Sorted by consequence, then by state</span></div>
+          <div class="pane__body--flush t-scroll">
+            <table class="t t--rowstate">
+              <thead><tr><th scope="col">Cut at</th><th scope="col">State</th><th scope="col">Age</th>
+                <th scope="col">What stops arriving</th><th scope="col">What it costs downstream</th>
+                <th scope="col"><span class="sr-only">Go</span></th></tr></thead>
+              <tbody>
+                <tr data-state="lost">
+                  <th scope="row">chest strap → collector</th>
+                  <td><span class="st st--lost"><span aria-hidden="true">✕</span> Losing</span></td>
+                  <td><span class="fresh fresh--over" data-age-s="27720" data-expect-s="120"><span class="fresh__age">7h 42m ago</span><span class="fresh__expect">2m</span></span></td>
+                  <td>Beat-to-beat RR intervals. 7h 42m of tonight is already gone and cannot be recovered.</td>
+                  <td>HRV is the only source of beat-to-beat data. Tonight's baseline is unusable, and the HRV correlation loses a night.</td>
+                  <td><a href="services.html">Unit</a></td></tr>
+                <tr data-state="lost">
+                  <th scope="row">samples_raw → backup archive</th>
+                  <td><span class="st st--lost"><span aria-hidden="true">✕</span> Losing</span></td>
+                  <td><span class="fresh fresh--over" data-age-s="777600" data-expect-s="86400"><span class="fresh__age">9d ago</span><span class="fresh__expect">24h</span></span></td>
+                  <td>Everything written since 27 July. The timer is not scheduled, so nothing has failed and nothing has complained.</td>
+                  <td>Nine days of the record exist in one place. The 27 July archive you would fall back to failed verification this morning: truncated file.</td>
+                  <td><a href="recovery.html">Recovery</a></td></tr>
+                <tr data-state="impaired">
+                  <th scope="row">spool → samples_raw</th>
+                  <td><span class="st st--impaired"><span aria-hidden="true">▲</span> Impaired</span></td>
+                  <td><span class="fresh" data-age-s="61" data-expect-s="120"><span class="fresh__age">1m ago</span><span class="fresh__expect">2m</span></span></td>
+                  <td>Nothing yet. 14,208 rows are waiting in the buffer.</td>
+                  <td>If the partition fills in 4d 8h, the radios start dropping samples with no buffer behind them.</td>
+                  <td><a href="data.html">Storage</a></td></tr>
+                <tr data-state="severed">
+                  <th scope="row">O2Ring → collector-oximeter</th>
+                  <td><span class="st st--severed">Severed</span></td>
+                  <td><span class="fresh fresh--over" data-age-s="32640" data-expect-s="120"><span class="fresh__age">9h 4m ago</span><span class="fresh__expect">2m</span></span></td>
+                  <td>Nocturnal SpO₂. 272 windows with no attempt.</td>
+                  <td>Severs the desaturation correlation and marks two nights of the report incomplete.</td>
+                  <td><a href="ingest.html">Ingest</a></td></tr>
+                <tr data-state="severed">
+                  <th scope="row">aggregates → correlations</th>
+                  <td><span class="st st--severed">Severed</span></td>
+                  <td><span class="fresh" data-age-s="2760" data-expect-s="86400"><span class="fresh__age">46m ago</span><span class="fresh__expect">24h</span></span></td>
+                  <td>Nothing. The correlation ran and returned ρ = 0.51.</td>
+                  <td>The number is confident and computed from 34 of 41 nights. Inherited cut, not a local fault.</td>
+                  <td><a href="analysis.html">Analysis</a></td></tr>
+                <tr data-state="severed">
+                  <th scope="row">Oura ring → importer-oura</th>
+                  <td><span class="st st--severed">Severed</span> <span class="mute">⊘ to 09 Aug</span></td>
+                  <td><span class="fresh" data-age-s="176400" data-expect-s="86400"><span class="fresh__age">2d 1h ago</span><span class="fresh__expect">24h</span></span></td>
+                  <td>Sleep staging and skin temperature.</td>
+                  <td>Benign. Ring not worn while travelling; the mute expires on its own and the cut reappears if it is still real.</td>
+                  <td><a href="ingest.html">Ingest</a></td></tr>
+                <tr data-state="absent">
+                  <th scope="row">Omron BP cuff → (no collector)</th>
+                  <td><span class="st st--absent"><span aria-hidden="true">—</span> Not configured</span></td>
+                  <td class="absent-note">n/a</td>
+                  <td class="absent-note">Nothing is expected. Drawn as a dotted stub, not a cut.</td>
+                  <td class="absent-note">Declared absent 02 Jun 2026. Excluded from the rollup and from the report.</td>
+                  <td><a href="config.html">Registry</a></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="pane" aria-labelledby="nh">
+          <div class="pane__hd"><h2 id="nh">Nightly completeness · last 5 nights</h2>
+            <span class="caps">A night is complete when every unmuted configured source advanced its newest timestamp</span></div>
+          <div class="pane__body--flush t-scroll">
+            <table class="t">
+              <thead><tr><th scope="col">Night</th><th scope="col">HRV</th><th scope="col">SpO₂</th>
+                <th scope="col">CPAP</th><th scope="col">Ring</th><th scope="col">Journal</th>
+                <th scope="col">Meds</th><th class="num" scope="col">Complete</th></tr></thead>
+              <tbody>
+                <tr><th scope="row">04–05 Aug</th>
+                  <td><span class="pip pip--lost"></span><span class="sr-only">losing data</span></td>
+                  <td><span class="pip pip--severed"></span><span class="sr-only">severed</span></td>
+                  <td><span class="pip pip--flowing"></span><span class="sr-only">flowing</span></td>
+                  <td><span class="pip pip--severed"></span><span class="sr-only">severed, muted</span></td>
+                  <td><span class="pip pip--flowing"></span><span class="sr-only">flowing</span></td>
+                  <td><span class="pip pip--flowing"></span><span class="sr-only">flowing</span></td>
+                  <td class="num">3 / 5</td></tr>
+                <tr><th scope="row">03–04 Aug</th>
+                  <td><span class="pip pip--flowing"></span><span class="sr-only">flowing</span></td>
+                  <td><span class="pip pip--flowing"></span><span class="sr-only">flowing</span></td>
+                  <td><span class="pip pip--flowing"></span><span class="sr-only">flowing</span></td>
+                  <td><span class="pip pip--severed"></span><span class="sr-only">severed, muted</span></td>
+                  <td><span class="pip pip--flowing"></span><span class="sr-only">flowing</span></td>
+                  <td><span class="pip pip--flowing"></span><span class="sr-only">flowing</span></td>
+                  <td class="num">5 / 5</td></tr>
+                <tr><th scope="row">02–03 Aug</th>
+                  <td><span class="pip pip--flowing"></span><span class="sr-only">flowing</span></td>
+                  <td><span class="pip pip--flowing"></span><span class="sr-only">flowing</span></td>
+                  <td><span class="pip pip--flowing"></span><span class="sr-only">flowing</span></td>
+                  <td><span class="pip pip--flowing"></span><span class="sr-only">flowing</span></td>
+                  <td><span class="pip pip--flowing"></span><span class="sr-only">flowing</span></td>
+                  <td><span class="pip pip--flowing"></span><span class="sr-only">flowing</span></td>
+                  <td class="num">6 / 6</td></tr>
+                <tr><th scope="row">01–02 Aug</th>
+                  <td><span class="pip pip--flowing"></span><span class="sr-only">flowing</span></td>
+                  <td><span class="pip pip--flowing"></span><span class="sr-only">flowing</span></td>
+                  <td><span class="pip pip--flowing"></span><span class="sr-only">flowing</span></td>
+                  <td><span class="pip pip--flowing"></span><span class="sr-only">flowing</span></td>
+                  <td><span class="pip pip--severed"></span><span class="sr-only">severed</span></td>
+                  <td><span class="pip pip--flowing"></span><span class="sr-only">flowing</span></td>
+                  <td class="num">5 / 6</td></tr>
+                <tr><th scope="row">31 Jul–01 Aug</th>
+                  <td><span class="pip pip--flowing"></span><span class="sr-only">flowing</span></td>
+                  <td><span class="pip pip--flowing"></span><span class="sr-only">flowing</span></td>
+                  <td><span class="pip pip--flowing"></span><span class="sr-only">flowing</span></td>
+                  <td><span class="pip pip--flowing"></span><span class="sr-only">flowing</span></td>
+                  <td><span class="pip pip--flowing"></span><span class="sr-only">flowing</span></td>
+                  <td><span class="pip pip--flowing"></span><span class="sr-only">flowing</span></td>
+                  <td class="num">6 / 6</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="pane__ft"><a href="data.html">Full range →</a></div>
+        </section>
+      </div>
+
+      <div class="stack">
+
+      <div class="pane insp pane--fault" data-detail="src-chest">
+        <div class="insp__hd"><h2>Polar H10 strap</h2><span class="mono">src-chest</span>
+          <span class="st st--lost"><span aria-hidden="true">✕</span> Losing data</span></div>
+        <div class="pane__body stack--tight">
+          <div class="fig fig--fault"><span class="fig__k">HRV missing</span>
+            <span class="fig__v">7<span class="unit">h 42m</span></span></div>
+          <hr class="divider">
+          <p class="prose">This is a cut with a known cause, which is why it is drawn as losing rather than
+          severed. <span class="mono">aw2-collector-chest.service</span> entered
+          <span class="mono">failed (Result: exit-code)</span> at 02:14 after its fifth restart in ten
+          minutes, and systemd's start limit is now blocking further attempts. Nothing will retry until it
+          is reset by hand.</p>
+          <span class="lastknown lastknown--fault">Last known: <b>failing at 02:14</b> — exit code 1,
+          "device disconnected during notify".</span>
+          <hr class="divider">
+          <div class="fields">
+            <span class="field__k">Last sample</span>
+            <span class="field__v"><span class="fresh fresh--over" data-age-s="27720" data-expect-s="120"><span class="fresh__age">7h 42m ago</span><span class="fresh__expect">2m</span></span></span>
+            <span class="field__k">Process</span>
+            <span class="field__v"><span class="proc proc--failed"><span class="proc__led" aria-hidden="true"></span> failed (exit-code)</span></span>
+            <span class="field__k">Restarts</span><span class="field__v mono">5 in 10m, then start-limit-hit</span>
+            <span class="field__k">Owns</span><span class="field__v">Beat-to-beat RR intervals. The only source of true HRV.</span>
+            <span class="field__k">Downstream</span><span class="field__v">Tonight's HRV baseline is computed
+            from a full night, so it is unusable. The HRV correlation loses a night.</span>
+          </div>
+        </div>
+        <div class="pane__ft"><a href="services.html">Unit detail →</a><span class="grow"></span>
+          <div class="actions-split"><button class="btn btn--sm" type="button">Reset failed state</button>
+            <span class="actions-split__gap" aria-hidden="true"></span>
+            <button class="btn btn--sm btn--danger" type="button">Restart unit…</button></div></div>
+      </div>
+
+      <div class="pane insp pane--severed" data-detail="src-ox" hidden>
+        <div class="insp__hd"><h2>Wellue O2Ring</h2><span class="mono">src-ox</span>
+          <span class="st st--severed"><span class="pip pip--severed" aria-hidden="true"></span> Severed</span></div>
+        <div class="pane__body stack--tight">
+          <div class="fig"><span class="fig__k">Nothing through here for</span>
+            <span class="fig__v">9<span class="unit">h 04m</span></span></div>
+          <hr class="divider">
+          <p class="prose">The collector is <span class="mono">active (running)</span>, the BLE link
+          reports <span class="mono">connected</span>, and no error has been raised. Nothing has failed
+          because nothing has been attempted. The pipe is intact on paper and carrying nothing.</p>
+          <span class="lastknown">Last known: <b>flowing at 00:52</b> — 118 samples, newest timestamp advanced 1m 58s.</span>
+          <hr class="divider">
+          <div class="fields">
+            <span class="field__k">Age</span>
+            <span class="field__v"><span class="fresh fresh--over" data-age-s="32640" data-expect-s="120"><span class="fresh__age">9h 4m ago</span><span class="fresh__expect">2m</span></span></span>
+            <span class="field__k">Windows missed</span><span class="field__v mono">272</span>
+            <span class="field__k">Downstream</span><span class="field__v">Severs the SpO₂ desaturation correlation and two nights of the report.</span>
+            <span class="field__k">Likely cause</span><span class="field__v">The ring's overnight session ended without a disconnect event, leaving the collector blocked on a characteristic that will never notify again.</span>
+          </div>
+        </div>
+        <div class="pane__ft"><a href="ingest.html">Attempt timeline →</a><span class="grow"></span>
+          <div class="actions-split"><button class="btn btn--sm" type="button">Poll now</button>
+            <span class="actions-split__gap" aria-hidden="true"></span>
+            <button class="btn btn--sm btn--danger" type="button">Restart collector…</button></div></div>
+      </div>
+
+      <div class="pane insp pane--degrade" data-detail="spool" hidden>
+        <div class="insp__hd"><h2>spool</h2><span class="mono">spool</span>
+          <span class="st st--impaired"><span aria-hidden="true">▲</span> Impaired</span></div>
+        <div class="pane__body stack--tight">
+          <div class="fig fig--degrade"><span class="fig__k">Queued</span>
+            <span class="fig__v">14,208<span class="unit">rows</span></span></div>
+          <hr class="divider">
+          <p class="prose">Draining at 210 rows/min against 340 arriving, for 3h 20m. Nothing is lost
+          yet — the spool is the buffer. If the partition fills, the radios drop samples at the point of
+          capture and there is no buffer behind that.</p>
+          <div class="fields">
+            <span class="field__k">Oldest unspooled</span><span class="field__v mono">26m <span class="unit">expect ≤ 5m</span></span>
+            <span class="field__k">Drain latency</span><span class="field__v mono">1.51 s <span class="unit">per 500</span></span>
+            <span class="field__k">Partition full in</span><span class="field__v mono">4d 8h <span class="unit">at this rate</span></span>
+          </div>
+          <hr class="divider">
+          <div class="bar bar--degrade"><span class="bar__track"><span class="bar__fill" style="width:71%"></span></span>
+            <span class="bar__val">71 %</span></div>
+        </div>
+        <div class="pane__ft"><a href="services.html">Unit detail →</a></div>
+      </div>
+
+      <div class="pane insp pane--fault" data-detail="backup" hidden>
+        <div class="insp__hd"><h2>backup archive</h2><span class="mono">backup</span>
+          <span class="st st--lost"><span aria-hidden="true">✕</span> Losing data</span></div>
+        <div class="pane__body stack--tight">
+          <div class="fig fig--fault"><span class="fig__k">Unbacked-up window</span>
+            <span class="fig__v">9<span class="unit">days</span></span></div>
+          <hr class="divider">
+          <p class="prose">Two separate failures compounding. <b>No backup has completed since 27 July</b> —
+          <span class="mono">aw2-backup.timer</span> is loaded but not scheduled, so nothing has failed and
+          nothing has complained. And the first verification ever attempted, run this morning against that
+          27 July archive, <b>failed</b>: <span class="mono">pg_restore: could not read from input file: end
+          of file</span>.</p>
+          <p class="prose">There is currently no copy of this record that anything has confirmed is readable.</p>
+          <div class="fields">
+            <span class="field__k">Last full</span><span class="field__v mono">27 Jul 06:00 · 3.6 GB</span>
+            <span class="field__k">WAL lag</span><span class="field__v mono">9d <span class="unit">expect ≤ 15m</span></span>
+            <span class="field__k">Verified restore</span>
+              <span class="field__v"><span class="st st--lost"><span aria-hidden="true">✕</span> Failed 06:26</span></span>
+            <span class="field__k">Would lose</span><span class="field__v">≈ 2.1 M samples, 14 journal entries, 3 med logs.</span>
+          </div>
+        </div>
+        <div class="pane__ft"><a href="recovery.html">Recovery →</a><span class="grow"></span>
+          <button class="btn btn--sm btn--primary" type="button">Take a backup now</button></div>
+      </div>
+
+      <div class="pane insp" data-detail="src-cpap" hidden>
+        <div class="insp__hd"><h2>ResMed AirSense 11</h2><span class="mono">src-cpap</span>
+          <span class="st st--flowing"><span class="pip pip--flowing" aria-hidden="true"></span> Flowing</span></div>
+        <div class="pane__body"><div class="fields">
+          <span class="field__k">Last import</span>
+          <span class="field__v"><span class="fresh" data-age-s="21000" data-expect-s="86400"><span class="fresh__age">5h 50m ago</span><span class="fresh__expect">24h</span></span></span>
+          <span class="field__k">Rows</span><span class="field__v mono">2,406 · 1 night, 6h 41m</span>
+          <span class="field__k">Newest ts</span><span class="field__v mono">advanced 1 night</span>
+          <span class="field__k">Owns</span><span class="field__v">AHI, mask leak, pressure. Half the sleep-apnoea thesis.</span>
+        </div></div>
+        <div class="pane__ft"><a href="data.html">Upload a file →</a></div>
+      </div>
+
+      <div class="pane insp" data-detail="src-ring" hidden>
+        <div class="insp__hd"><h2>Oura ring gen3</h2><span class="mono">src-ring</span>
+          <span class="st st--severed"><span class="pip pip--severed" aria-hidden="true"></span> Severed</span>
+          <span class="mute">⊘ to 09 Aug</span></div>
+        <div class="pane__body stack--tight">
+          <p class="prose">The importer is attempting every window and the cloud API is returning empty
+          ones — the ring has not synced since 3 August because it has not been worn. That is a benign
+          severance, muted with an expiry, and on 9 August it returns to an unmuted severed edge on its
+          own.</p>
+          <p class="prose"><b>It is not re-badged as unconfigured.</b> A configured device that went
+          unworn is a different fact from a device that does not exist, and only the second one is
+          allowed to disappear from the rollup permanently.</p>
+        </div>
+        <div class="pane__ft"><span class="mute">Muted by <b>operator</b>, 03 Aug</span><span class="grow"></span>
+          <button class="btn btn--sm" type="button">End mute</button></div>
+      </div>
+
+      <div class="pane insp pane--absent" data-detail="src-bp" hidden>
+        <div class="insp__hd"><h2>Omron BP cuff</h2><span class="mono">src-bp</span>
+          <span class="st st--absent"><span aria-hidden="true">—</span> Not configured</span></div>
+        <div class="pane__body">
+          <p class="prose absent-note">Declared absent on 2 June 2026 — device not owned. Drawn as a
+          dotted stub rather than a cut pipe, because nothing is expected through it. Excluded from the
+          rollup and from the report.</p>
+        </div>
+        <div class="pane__ft"><a href="config.html">Registry →</a></div>
+      </div>
+
+      <div class="pane insp pane--severed" data-detail="corr" hidden>
+        <div class="insp__hd"><h2>correlations</h2><span class="mono">corr</span>
+          <span class="st st--severed"><span class="pip pip--severed" aria-hidden="true"></span> Partly severed</span></div>
+        <div class="pane__body stack--tight">
+          <p class="prose">Three of four correlations are computed over complete windows. The fourth —
+          SpO₂ desaturation against next-morning severity — used 34 of 41 nights, and the seven it
+          dropped are exactly the nights the oximeter was severed.</p>
+          <div class="fields"><span class="field__k">ρ = 0.51</span><span class="field__v mono">n = 34 of 41</span>
+            <span class="field__k">Computed</span><span class="field__v mono">09:05 today</span></div>
+          <p class="prose">The number is still returned, and it is still confident. Tracing the cut back
+          up the graph is the only way to see why it should not be trusted yet.</p>
+        </div>
+        <div class="pane__ft"><a href="analysis.html">Analysis →</a></div>
+      </div>
+
+      <div class="pane insp pane--severed" data-detail="report" hidden>
+        <div class="insp__hd"><h2>clinician report</h2><span class="mono">report</span>
+          <span class="st st--severed"><span class="pip pip--severed" aria-hidden="true"></span> Partly severed</span></div>
+        <div class="pane__body stack--tight">
+          <p class="prose">This is the node the product exists to fill. Two of the last fourteen nights
+          are incomplete, and the report says so in its header rather than presenting the gap as a quiet
+          week.</p>
+          <div class="fields"><span class="field__k">Range</span><span class="field__v mono">22 Jul – 05 Aug</span>
+            <span class="field__k">Complete nights</span><span class="field__v mono">12 of 14</span>
+            <span class="field__k">Caveats printed</span><span class="field__v mono">2</span></div>
+        </div>
+        <div class="pane__ft"><a href="data.html">Scoped export →</a></div>
+      </div>
+
+      <div class="pane insp" data-detail="col-chest" hidden>
+        <div class="insp__hd"><h2>collector-chest</h2><span class="mono">col-chest</span>
+          <span class="proc proc--active"><span class="proc__led" aria-hidden="true"></span> active (running)</span></div>
+        <div class="pane__body"><div class="fields">
+          <span class="field__k">Uptime</span><span class="field__v mono">2d 11:02</span>
+          <span class="field__k">Restarts 24h</span><span class="field__v mono">0</span>
+          <span class="field__k">RSS</span><span class="field__v mono">38 MB</span>
+          <span class="field__k">Last error</span><span class="field__v mono">2d ago · notify timeout</span>
+        </div></div>
+        <div class="pane__ft"><a href="services.html">Logs →</a></div>
+      </div>
+
+      <div class="pane insp pane--severed" data-detail="col-ox" hidden>
+        <div class="insp__hd"><h2>collector-oximeter</h2><span class="mono">col-ox</span>
+          <span class="proc proc--active"><span class="proc__led" aria-hidden="true"></span> active (running)</span></div>
+        <div class="pane__body stack--tight">
+          <div class="note note--severed"><span class="proc proc--active"><span class="proc__led" aria-hidden="true"></span> active (running)</span>
+            &nbsp;+&nbsp;<span class="st st--severed">Severed</span> — the process state and the health
+            assertion disagree, and both are shown. Collapsing them is how this failure stays invisible.</div>
+          <div class="fields"><span class="field__k">Uptime</span><span class="field__v mono">17d 04:10</span>
+            <span class="field__k">Restarts 24h</span><span class="field__v mono">0</span>
+            <span class="field__k">RSS</span><span class="field__v mono">31 MB</span>
+            <span class="field__k">Errors logged</span><span class="field__v mono">0 <span class="unit">in 9h</span></span>
+            <span class="field__k">Attempts logged</span><span class="field__v mono">0 <span class="unit">in 9h</span></span></div>
+        </div>
+        <div class="pane__ft"><a href="services.html">Logs →</a><span class="grow"></span>
+          <button class="btn btn--sm btn--danger" type="button">Restart unit…</button></div>
+      </div>
+
+      <div class="pane insp" data-detail="store" hidden>
+        <div class="insp__hd"><h2>samples_raw</h2><span class="mono">store</span>
+          <span class="st st--flowing"><span class="pip pip--flowing" aria-hidden="true"></span> Flowing</span></div>
+        <div class="pane__body"><div class="fields">
+          <span class="field__k">Rows</span><span class="field__v mono">412,118,904</span>
+          <span class="field__k">Size</span><span class="field__v mono">18.4 GB <span class="unit">+96 MB/day</span></span>
+          <span class="field__k">Autovacuum</span><span class="field__v mono">02:11 today</span>
+          <span class="field__k">Retention</span><span class="field__v">Raw 400 d, aggregates kept</span>
+        </div></div>
+        <div class="pane__ft"><a href="data.html">Data →</a></div>
+      </div>
+
+      <div class="pane insp" data-detail="agg" hidden>
+        <div class="insp__hd"><h2>daily aggregates</h2><span class="mono">agg</span>
+          <span class="st st--flowing"><span class="pip pip--flowing" aria-hidden="true"></span> Flowing</span></div>
+        <div class="pane__body stack--tight">
+          <p class="prose">Recomputed at 01:00 from the previous day. A frozen aggregate is the quietest
+          failure in this system: correlations keep returning confident numbers from stale inputs, so
+          this node asserts the recompute actually ran and consumed new rows.</p>
+          <div class="fields"><span class="field__k">Last recompute</span><span class="field__v mono">01:00 today</span>
+            <span class="field__k">Rows consumed</span><span class="field__v mono">312,004 <span class="unit">new</span></span>
+            <span class="field__k">Days covered</span><span class="field__v mono">1,204</span></div>
+        </div>
+      </div>
+
+      <div class="pane insp" data-detail="display" hidden>
+        <div class="insp__hd"><h2>bedside screen</h2><span class="mono">display</span>
+          <span class="st st--flowing"><span class="pip pip--flowing" aria-hidden="true"></span> Lit</span></div>
+        <div class="pane__body"><div class="fields">
+          <span class="field__k">Frames</span><span class="field__v mono">+271 <span class="unit">in 9.0 s</span></span>
+          <span class="field__k">Backlight</span><span class="field__v mono">199 / 255</span>
+          <span class="field__k">Connector</span><span class="field__v mono">HDMI-A-1 1280×800</span>
+        </div></div>
+        <div class="pane__ft"><a href="display.html">Full chain →</a></div>
+      </div>
+
+      <div class="pane insp" data-detail="imp-cpap" hidden>
+        <div class="insp__hd"><h2>importer-cpap.timer</h2><span class="mono">imp-cpap</span>
+          <span class="proc proc--inactive"><span class="proc__led" aria-hidden="true"></span> inactive (waiting)</span></div>
+        <div class="pane__body"><div class="fields">
+          <span class="field__k">Next run</span><span class="field__v mono">04:00</span>
+          <span class="field__k">Last run</span><span class="field__v mono">04:06 · accepted 2,406</span>
+          <span class="field__k">Rejected</span><span class="field__v mono">0</span>
+        </div></div>
+      </div>
+
+      <div class="pane insp" data-detail="imp-ring" hidden>
+        <div class="insp__hd"><h2>importer-oura.timer</h2><span class="mono">imp-ring</span>
+          <span class="proc proc--inactive"><span class="proc__led" aria-hidden="true"></span> inactive (waiting)</span></div>
+        <div class="pane__body"><div class="fields">
+          <span class="field__k">Last attempt</span><span class="field__v mono">30m ago · 0 rows</span>
+          <span class="field__k">Last success</span><span class="field__v mono">2d 1h ago</span>
+          <span class="field__k">Note</span><span class="field__v">Attempting normally. The cloud API has nothing to give it.</span>
+        </div></div>
+      </div>
+
+      <div class="pane insp" data-detail="src-phone" hidden>
+        <div class="insp__hd"><h2>Phone health store</h2><span class="mono">src-phone</span>
+          <span class="st st--flowing"><span class="pip pip--flowing" aria-hidden="true"></span> Flowing</span></div>
+        <div class="pane__body"><div class="fields">
+          <span class="field__k">Last push</span>
+          <span class="field__v"><span class="fresh" data-age-s="900" data-expect-s="3600"><span class="fresh__age">15m ago</span><span class="fresh__expect">1h</span></span></span>
+          <span class="field__k">Rows 24h</span><span class="field__v mono">5,204</span>
+          <span class="field__k">Newest ts</span><span class="field__v mono">advanced 58m</span>
+          <span class="field__k">Key</span><span class="field__v redact">…4KpQ</span>
+        </div></div>
+      </div>
+
+      <div class="pane insp" data-detail="src-jrnl" hidden>
+        <div class="insp__hd"><h2>Journal + med doses</h2><span class="mono">src-jrnl</span>
+          <span class="st st--flowing"><span class="pip pip--flowing" aria-hidden="true"></span> Flowing</span></div>
+        <div class="pane__body stack--tight">
+          <p class="prose">The anchor. Everything else in this graph is context around a journal entry,
+          which is why a missing morning entry is called out even though nothing technical failed.</p>
+          <div class="fields"><span class="field__k">Last entry</span><span class="field__v mono">2h ago · severity 5</span>
+            <span class="field__k">Entries 7d</span><span class="field__v mono">11 of 14 expected</span>
+            <span class="field__k">Dose logs 24h</span><span class="field__v mono">4</span></div>
+        </div>
+        <div class="pane__ft"><a href="records.html">Records →</a></div>
+      </div>
+
+      <div class="pane insp" data-detail="api" hidden>
+        <div class="insp__hd"><h2>api-ingest</h2><span class="mono">api</span>
+          <span class="proc proc--active"><span class="proc__led" aria-hidden="true"></span> active (running)</span></div>
+        <div class="pane__body"><div class="fields">
+          <span class="field__k">Rows 24h</span><span class="field__v mono">5,207</span>
+          <span class="field__k">Keys accepted</span><span class="field__v mono">2 · …4KpQ, …9EgU</span>
+          <span class="field__k">Rejected</span><span class="field__v mono">18 <span class="unit">duplicate key</span></span>
+          <span class="field__k">401s 24h</span><span class="field__v mono">0</span>
+        </div></div>
+        <div class="pane__ft"><a href="config.html">Keys →</a></div>
+      </div>
+
+        <section class="pane">
+          <div class="pane__hd"><h3>Jobs</h3><span class="caps"><a href="analysis.html">Analysis →</a></span></div>
+          <div class="pane__body stack--tight">
+            <div class="row"><span class="life life--running"><span class="life__pulse" aria-hidden="true"></span> Running 04:12</span>
+              <span class="grow muted-text">correlation-recompute · 90d</span></div>
+            <div class="row"><span class="life life--queued">Queued 1</span>
+              <span class="grow muted-text">claude-analysis · weekly</span></div>
+            <hr class="divider">
+            <div class="fields"><span class="field__k">Last 7d</span>
+              <span class="field__v mono">14 ok · 1 failed · 1 cancelled</span>
+              <span class="field__k">Spend</span><span class="field__v mono">$4.18 of $25.00</span></div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="scrim" id="keymap" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="km-h">
+    <div class="modal__hd"><h2 id="km-h">Keyboard</h2></div>
+    <div class="modal__body">
+      <div class="fields fields--wide">
+        <span class="field__k"><span class="kbd">j</span> <span class="kbd">k</span></span><span class="field__v">Walk the flow path, upstream and downstream</span>
+        <span class="field__k"><span class="kbd">↑</span> <span class="kbd">↓</span></span><span class="field__v">Same as j and k</span>
+        <span class="field__k"><span class="kbd">/</span></span><span class="field__v">Focus the node filter</span>
+        <span class="field__k"><span class="kbd">1</span>–<span class="kbd">9</span></span><span class="field__v">Jump to a screen</span>
+        <span class="field__k"><span class="kbd">r</span></span><span class="field__v">Refresh the feed</span>
+        <span class="field__k"><span class="kbd">?</span></span><span class="field__v">Show or hide this map</span>
+        <span class="field__k"><span class="kbd">esc</span></span><span class="field__v">Leave a field, or close a dialog</span>
+      </div>
+      <p class="prose muted-text">Every one of these is also reachable by tab and click. The keys are an accelerator, never the only route.</p>
+    </div>
+    <div class="modal__ft"><span class="grow"></span><button class="btn" type="button" data-action="close">Close</button></div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

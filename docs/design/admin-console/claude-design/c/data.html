@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Data — AW2 Flowpath</title>
+<link rel="stylesheet" href="console.css">
+</head>
+<body data-feed="live">
+<a class="skip-link" href="#main">Skip to content</a>
+
+<div class="app">
+  <div class="stickytop">
+  <div class="docstale" role="status">
+    <span class="st st--severed">Console feed severed</span>
+    <b>This page has not heard from the appliance for <span data-feed-age>—</span>.</b>
+    <span class="muted-text">The graph below is the last shape the machine had. Edge states are unchanged; it is the link between you and the box that is cut.</span>
+    <button class="btn btn--sm" type="button" data-action="refresh">Reconnect <span class="btn__key">r</span></button>
+  </div>
+
+  <header class="cmdbar">
+    <span class="cmdbar__id"><b>AW2 FLOWPATH</b> · bedside-pi5 · 2.4.11+g8c1f</span>
+    <label class="sr-only" for="q">Filter nodes and sources</label>
+    <input class="input cmdbar__search" id="q" data-filter placeholder="Filter nodes, sources, units…   /">
+    <span class="cmdbar__id" data-clock>09:56:04Z</span>
+    <span class="cmdbar__id">feed <span data-feed-age>2s</span></span>
+    <span class="cmdbar__hint"><span class="kbd">j</span><span class="kbd">k</span> walk the path <span class="kbd">/</span> filter <span class="kbd">1</span>–<span class="kbd">9</span> screens <span class="kbd">?</span> keys</span>
+  </header>
+
+<nav class="tabs" aria-label="Screens">
+  <a class="tabs__item" href="overview.html" data-tabkey="1"><span class="tabs__key">1</span> Overview</a>
+  <a class="tabs__item" href="display.html" data-tabkey="2"><span class="tabs__key">2</span> Flow · display</a>
+  <a class="tabs__item" href="ingest.html" data-tabkey="3"><span class="tabs__key">3</span> Flow · ingest</a>
+  <a class="tabs__item" href="services.html" data-tabkey="4"><span class="tabs__key">4</span> Services</a>
+  <a class="tabs__item" href="config.html" data-tabkey="5"><span class="tabs__key">5</span> Access</a>
+  <a class="tabs__item" href="data.html" data-tabkey="6" aria-current="page"><span class="tabs__key">6</span> Data</a>
+  <a class="tabs__item" href="analysis.html" data-tabkey="7"><span class="tabs__key">7</span> Analysis</a>
+  <a class="tabs__item" href="records.html" data-tabkey="8"><span class="tabs__key">8</span> Records</a>
+  <a class="tabs__item" href="recovery.html" data-tabkey="9"><span class="tabs__key">9</span> Recovery</a>
+  <a class="tabs__item" href="system.html">System</a>
+  <a class="tabs__item" href="patterns.html">Patterns</a>
+  <a class="tabs__item" href="attempts.html">Timeline</a>
+  <a class="tabs__item" href="overview-degraded.html">Degraded</a>
+  <a class="tabs__item" href="firstrun.html">First run</a>
+</nav>
+  </div>
+
+  <main class="main" id="main">
+    <div class="pagehd">
+      <div>
+        <h1>Data</h1>
+        <p>Targeted integrity checks, quarantine, retention and scoped export.</p>
+      </div>
+      <div class="pagehd__act">
+        <button class="btn btn--sm" type="button" data-action="refresh">Refresh <span class="btn__key">r</span></button>
+      </div>
+    </div>
+
+    <div class="stack">
+      <section class="pane">
+        <div class="pane__hd"><h2>Integrity check</h2><span class="caps">By source and date range</span></div>
+        <div class="pane__body">
+          <form class="form" onsubmit="return false">
+            <div class="row">
+              <select class="select" aria-label="Source"><option>wellue-o2ring</option>
+                <option>polar-h10-chest</option><option>resmed-airsense-11</option></select>
+              <input class="input" type="date" value="2026-07-22" aria-label="From">
+              <input class="input" type="date" value="2026-08-05" aria-label="To">
+              <button class="btn" type="submit">Check this range</button>
+            </div>
+          </form>
+          <hr class="divider">
+          <div class="cols-4">
+            <div class="fig fig--flow"><span class="fig__k">Days with data</span>
+              <span class="fig__v">12<span class="unit">of 14</span></span></div>
+            <div class="fig fig--severed"><span class="fig__k">Days with a gap</span>
+              <span class="fig__v">2</span><span class="muted-text">05 Aug · 04 Aug</span></div>
+            <div class="fig fig--severed fig--sm"><span class="fig__k">Longest gap</span>
+              <span class="fig__v">9<span class="unit">h 04m</span></span></div>
+            <div class="fig fig--sm"><span class="fig__k">Quarantined</span>
+              <span class="fig__v">312<span class="unit">rows</span></span></div>
+          </div>
+        </div>
+        <div class="pane__ft"><p class="prose">This is not a table browser. It answers one question — is the
+        record for this source over this range complete — and the export below is scoped to exactly what was
+        checked, with the gap list in its header.</p></div>
+      </section>
+
+      <div class="cols-2">
+        <section class="pane">
+          <div class="pane__hd"><h2>Quarantine</h2><span class="caps">330 rows held · not counted, not deleted</span></div>
+          <div class="pane__body--flush t-scroll">
+            <table class="t">
+              <thead><tr><th scope="col">Source</th><th scope="col">Held since</th><th class="num" scope="col">Rows</th>
+                <th scope="col">Reason</th><th scope="col"><span class="sr-only">Action</span></th></tr></thead>
+              <tbody>
+                <tr><th scope="row" class="mono">polar-h10-chest</th><td class="mono">06:40 today</td><td class="num">312</td>
+                  <td>RR interval outside 250–2500 ms</td><td><button class="btn btn--sm" type="button">Review</button></td></tr>
+                <tr><th scope="row" class="mono">resmed-airsense-11</th><td class="mono">04:06 today</td><td class="num">11</td>
+                  <td>Pressure above device ceiling</td><td><button class="btn btn--sm" type="button">Review</button></td></tr>
+                <tr><th scope="row" class="mono">healthkit-bridge</th><td class="mono">21 Jul</td><td class="num">7</td>
+                  <td>Timestamp in the future</td><td><button class="btn btn--sm" type="button">Review</button></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="pane__ft">
+            <p class="prose">Quarantined rows are excluded from correlations and from the report, and they
+            are listed here so an exclusion never becomes invisible.</p>
+            <div class="actions-split">
+              <button class="btn btn--sm" type="button">Re-admit selected</button>
+              <span class="actions-split__gap" aria-hidden="true"></span>
+              <button class="btn btn--sm btn--danger" type="button">Discard permanently…</button>
+            </div>
+          </div>
+        </section>
+
+        <div class="stack">
+          <section class="pane pane--degrade">
+            <div class="pane__hd"><h2>Storage</h2>
+              <span class="caps"><span class="st st--impaired"><span aria-hidden="true">▲</span> Spool impaired</span></span></div>
+            <div class="pane__body stack--tight">
+              <div class="fields">
+                <span class="field__k">Postgres</span><span class="field__v mono">18.4 GB <span class="unit">+96 MB/day</span></span>
+                <span class="field__k">Largest table</span><span class="field__v mono">samples_raw · 412 M rows</span>
+                <span class="field__k">Spool depth</span><span class="field__v mono">14,208 <span class="unit">rows</span></span>
+                <span class="field__k">Oldest unspooled</span><span class="field__v mono">26m <span class="unit">expect ≤ 5m</span></span>
+                <span class="field__k">Drain latency</span><span class="field__v mono">1.51 s <span class="unit">per 500</span></span>
+                <span class="field__k">Retention</span><span class="field__v">Raw 400 d, aggregates kept</span>
+                <span class="field__k">Last compaction</span><span class="field__v mono">02:11 today</span>
+              </div>
+              <hr class="divider">
+              <div class="bar bar--degrade"><span class="bar__track"><span class="bar__fill" style="width:71%"></span></span>
+                <span class="bar__val">71 % spool</span></div>
+            </div>
+          </section>
+          <section class="pane">
+            <div class="pane__hd"><h2>Upload CPAP data</h2></div>
+            <div class="pane__body"><div class="drop" data-state="idle">
+              <p class="prose">Drop a ResMed export here, or <label for="u2"><b>choose a file</b></label>.</p>
+              <input type="file" id="u2" class="sr-only">
+              <p class="muted-text"><span class="mono">.edf</span> or a DATALOG folder.</p>
+            </div></div>
+            <div class="pane__ft"><a href="patterns.html">Upload, parse and rejection states →</a></div>
+          </section>
+          <section class="pane">
+            <div class="pane__hd"><h2>Scoped export</h2></div>
+            <div class="pane__body"><p class="prose">Exports the range checked above with the gap list and
+            quarantine count in the header, so the recipient sees the holes rather than inferring
+            completeness.</p></div>
+            <div class="pane__ft"><span class="grow"></span><button class="btn" type="button">Export 22 Jul – 05 Aug</button></div>
+          </section>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="scrim" id="keymap" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="km-h">
+    <div class="modal__hd"><h2 id="km-h">Keyboard</h2></div>
+    <div class="modal__body">
+      <div class="fields fields--wide">
+        <span class="field__k"><span class="kbd">j</span> <span class="kbd">k</span></span><span class="field__v">Walk the flow path, upstream and downstream</span>
+        <span class="field__k"><span class="kbd">↑</span> <span class="kbd">↓</span></span><span class="field__v">Same as j and k</span>
+        <span class="field__k"><span class="kbd">/</span></span><span class="field__v">Focus the node filter</span>
+        <span class="field__k"><span class="kbd">1</span>–<span class="kbd">9</span></span><span class="field__v">Jump to a screen</span>
+        <span class="field__k"><span class="kbd">r</span></span><span class="field__v">Refresh the feed</span>
+        <span class="field__k"><span class="kbd">?</span></span><span class="field__v">Show or hide this map</span>
+        <span class="field__k"><span class="kbd">esc</span></span><span class="field__v">Leave a field, or close a dialog</span>
+      </div>
+      <p class="prose muted-text">Every one of these is also reachable by tab and click. The keys are an accelerator, never the only route.</p>
+    </div>
+    <div class="modal__ft"><span class="grow"></span><button class="btn" type="button" data-action="close">Close</button></div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

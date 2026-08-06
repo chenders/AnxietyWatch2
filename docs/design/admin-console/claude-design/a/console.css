@@ -1,0 +1,933 @@
+/* ==========================================================================
+   AnxietyWatch2 Service Console — DIRECTION A: "SERVICE MODE"
+   Clinical / biomedical equipment technician interface.
+   Single stylesheet, shared by every screen. Dark theme only.
+   All colour, type, space and radius values live in the token block below.
+   No raw hex appears outside :root.
+   ========================================================================== */
+
+:root {
+  /* --- Surface ramp (cool neutral, no brown) ------------------------------ */
+  --c-bg-0:        #0A0C0D;  /* page                                          */
+  --c-bg-1:        #121517;  /* panel                                         */
+  --c-bg-2:        #1A1E21;  /* row / raised                                  */
+  --c-bg-3:        #23282C;  /* hover / active row                            */
+  --c-line:        #2E3438;  /* decorative rule                               */
+  --c-line-strong: #454D52;  /* structural rule, panel edge                   */
+
+  /* --- Ink ---------------------------------------------------------------- */
+  --c-ink-0:       #E8EDEF;  /* primary value text                            */
+  --c-ink-1:       #A8B2B7;  /* secondary text                                */
+  --c-ink-2:       #8A959B;  /* labels, units, muted text (>=4.86:1 on bg-3)  */
+  --c-ink-3:       #6B7479;  /* non-text only: dashes, disabled edges         */
+  --c-ink-inv:     #0A0C0D;  /* text placed on a saturated status fill        */
+
+  /* --- Alarm priority (IEC 60601-1-8 convention, technical alarms) --------- */
+  --c-prio-high:   #FF6B61;  /* high priority — data is being lost now        */
+  --c-prio-med:    #FFB627;  /* medium priority — degradation, act soon       */
+  --c-prio-low:    #4FC3E8;  /* low priority — advisory                       */
+
+  /* --- Health assertion --------------------------------------------------- */
+  --c-ok:          #55D6A0;  /* checked and good                              */
+  --c-unknown:     #B98CFF;  /* "we do not know" — never used for anything else */
+  --c-absent:      #8A959B;  /* declared absent / not configured              */
+
+  /* --- Washes. Every status hue also has a low-alpha field fill, so a state
+     reads from across a room and not only at the chip. -------------------- */
+  --wash-ok:       rgba(85,214,160,.10);
+  --wash-high:     rgba(255,107,97,.12);
+  --wash-med:      rgba(255,182,39,.11);
+  --wash-low:      rgba(79,195,232,.10);
+  --wash-unknown:  rgba(185,140,255,.12);
+
+  /* --- Interactive: white, so no hue here collides with a status hue ------ */
+  --c-focus:       #FFFFFF;
+  --c-focus-halo:  #0A0C0D;
+  --c-ink-max:     #FFFFFF;  /* primary-button hover only            */
+  --c-scrim:       rgba(10,12,13,.82);
+  --c-print-ink:   #000000;
+  --c-print-bg:    #FFFFFF;
+  --fill-danger:   repeating-linear-gradient(135deg,
+      rgba(255,107,97,.12) 0 6px, rgba(255,107,97,0) 6px 12px);
+  --fill-danger-soft: repeating-linear-gradient(135deg,
+      rgba(255,107,97,.05) 0 8px, rgba(255,107,97,0) 8px 16px);
+  --fill-ins:      rgba(232,237,239,.14);
+
+  /* --- Hatch fill used behind every UNKNOWN region ------------------------ */
+  --fill-unknown: repeating-linear-gradient(
+      135deg, rgba(185,140,255,.16) 0 6px, rgba(185,140,255,0) 6px 12px);
+  --fill-absent: repeating-linear-gradient(
+      135deg, rgba(138,149,155,.10) 0 3px, rgba(138,149,155,0) 3px 8px);
+
+  /* --- Type --------------------------------------------------------------- */
+  --f-ui:   "Helvetica Neue", Helvetica, Arial, "Liberation Sans", sans-serif;
+  --f-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas,
+            "Liberation Mono", monospace;
+
+  --t-mega:   40px;  /* the one number that matters on a screen               */
+  --t-xl:     28px;
+  --t-lg:     22px;
+  --t-md:     18px;
+  --t-base:   16px;  /* body floor                                            */
+  --t-data:   15px;  /* tabular values                                        */
+  --t-label:  14px;  /* absolute floor. Nothing is smaller.                   */
+
+  --lh-tight: 1.15;
+  --lh-body:  1.5;
+  --ls-caps:  .09em;
+
+  /* --- Space (4px base) ---------------------------------------------------- */
+  --s-1: 4px;  --s-2: 8px;   --s-3: 12px; --s-4: 16px;
+  --s-5: 20px; --s-6: 24px;  --s-8: 32px; --s-10: 40px; --s-12: 48px;
+
+  /* --- Radii: equipment has square corners --------------------------------- */
+  --r-0: 0;
+  --r-1: 1px;  /* the only softening permitted, on chips */
+
+  --rail-w: 232px;
+  --dur: 120ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .001ms !important; animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+  }
+}
+
+/* ==========================================================================
+   Base
+   ========================================================================== */
+*, *::before, *::after { box-sizing: border-box; }
+
+/* A class-level display must never beat the hidden attribute. */
+[hidden] { display: none !important; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  background: var(--c-bg-0);
+  color: var(--c-ink-0);
+  font: var(--t-base)/var(--lh-body) var(--f-ui);
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, h4, p, ul, ol, figure, table { margin: 0; }
+ul, ol { padding: 0; list-style: none; }
+
+a { color: var(--c-ink-0); text-decoration: underline; text-underline-offset: 3px;
+    text-decoration-color: var(--c-line-strong); }
+a:hover { text-decoration-color: var(--c-ink-0); }
+
+:focus-visible {
+  outline: 2px solid var(--c-focus);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px var(--c-focus-halo);
+}
+
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+.skip-link {
+  position: absolute; left: var(--s-3); top: -100px; z-index: 90;
+  background: var(--c-ink-0); color: var(--c-ink-inv);
+  padding: var(--s-2) var(--s-4); font-weight: 700;
+}
+.skip-link:focus { top: var(--s-3); }
+
+/* Shared micro-typography ------------------------------------------------- */
+.caps {
+  font-size: var(--t-label); font-weight: 700; letter-spacing: var(--ls-caps);
+  text-transform: uppercase; color: var(--c-ink-2);
+}
+.mono { font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
+.num  { font-family: var(--f-mono); font-variant-numeric: tabular-nums;
+        text-align: right; white-space: nowrap; }
+.unit { color: var(--c-ink-2); font-size: var(--t-label); margin-left: 2px; }
+.muted-text { color: var(--c-ink-2); }
+.prose { max-width: 68ch; color: var(--c-ink-1); }
+.prose + .prose { margin-top: var(--s-3); }
+
+/* ==========================================================================
+   Shell — fixed geometry. Fields do not reflow between screens.
+   ========================================================================== */
+.shell { min-height: 100vh; display: flex; flex-direction: column; }
+
+/* Banner and chrome share ONE sticky container so they stack in normal flow.
+   No per-element top offsets: those break whenever the banner's text rewraps. */
+.stickytop { position: sticky; top: 0; z-index: 60; }
+
+.idstrip {
+  display: flex; align-items: stretch; gap: 0;
+  border-bottom: 1px solid var(--c-line-strong);
+  background: var(--c-bg-1);
+}
+.idstrip__brand {
+  display: flex; flex-direction: column; justify-content: center;
+  padding: var(--s-2) var(--s-4);
+  border-right: 1px solid var(--c-line-strong);
+  min-width: var(--rail-w);
+}
+.idstrip__brand b { font-size: var(--t-md); letter-spacing: .02em; }
+.idstrip__brand span {
+  font-size: var(--t-label); color: var(--c-ink-2); letter-spacing: var(--ls-caps);
+  text-transform: uppercase;
+}
+.idstrip__fields { display: flex; flex: 1; overflow-x: auto; }
+.idfield {
+  display: flex; flex-direction: column; justify-content: center; gap: 1px;
+  padding: var(--s-2) var(--s-4);
+  border-right: 1px solid var(--c-line);
+  white-space: nowrap;
+}
+.idfield__k {
+  font-size: var(--t-label); letter-spacing: var(--ls-caps);
+  text-transform: uppercase; color: var(--c-ink-2);
+}
+.idfield__v { font-family: var(--f-mono); font-size: var(--t-data); color: var(--c-ink-0); }
+.idstrip__spacer { flex: 1; border-right: 1px solid var(--c-line); }
+
+.body { display: flex; flex: 1; align-items: stretch; }
+
+/* Rail — fixed subsystem index, always in the same order on every screen --- */
+.rail {
+  width: var(--rail-w); flex: 0 0 var(--rail-w);
+  border-right: 1px solid var(--c-line-strong);
+  background: var(--c-bg-1);
+  padding-bottom: var(--s-8);
+}
+.rail__group { padding: var(--s-4) 0 var(--s-2); }
+.rail__group > .caps { display: block; padding: 0 var(--s-4) var(--s-2); }
+.rail__item {
+  display: flex; align-items: center; gap: var(--s-2);
+  padding: var(--s-2) var(--s-4);
+  border-left: 3px solid transparent;
+  color: var(--c-ink-1); text-decoration: none; font-size: var(--t-data);
+}
+.rail__item:hover { background: var(--c-bg-2); color: var(--c-ink-0); }
+.rail__item[aria-current="page"] {
+  background: var(--c-bg-2); color: var(--c-ink-0);
+  border-left-color: var(--c-prio-low); font-weight: 700;
+}
+.rail__item .rail__ord {
+  font-family: var(--f-mono); color: var(--c-ink-2); font-size: var(--t-label);
+  width: 2ch;
+}
+.rail__item .dot { margin-left: auto; }
+
+.main { flex: 1; min-width: 0; padding: var(--s-5) var(--s-6) var(--s-12); }
+
+.page-hd {
+  display: flex; align-items: flex-end; gap: var(--s-5);
+  padding-bottom: var(--s-4); margin-bottom: var(--s-5);
+  border-bottom: 1px solid var(--c-line-strong);
+  flex-wrap: wrap;
+}
+.page-hd h1 { font-size: var(--t-xl); line-height: var(--lh-tight); letter-spacing: -.01em; }
+.page-hd__sub { color: var(--c-ink-2); font-size: var(--t-data); }
+.page-hd__actions { margin-left: auto; display: flex; gap: var(--s-2); flex-wrap: wrap; }
+
+/* ==========================================================================
+   Layout helpers (structure only — no cosmetics, no per-screen styles)
+   ========================================================================== */
+.stack   { display: flex; flex-direction: column; gap: var(--s-5); }
+.stack--tight { gap: var(--s-3); }
+.row     { display: flex; gap: var(--s-3); align-items: center; flex-wrap: wrap; }
+.row--end{ justify-content: flex-end; }
+.cols-2  { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: var(--s-5); }
+.cols-3  { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: var(--s-5); }
+.cols-4  { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: var(--s-5); }
+.cols-main { display: grid; grid-template-columns: minmax(0,2fr) minmax(0,1fr); gap: var(--s-5); }
+.grow { flex: 1; }
+
+/* ==========================================================================
+   Panel — the only container. Square, hard-edged, titled, timestamped.
+   ========================================================================== */
+.panel {
+  background: var(--c-bg-1);
+  border: 1px solid var(--c-line-strong);
+  border-radius: var(--r-0);
+  display: flex; flex-direction: column;
+}
+.panel__hd {
+  display: flex; align-items: center; gap: var(--s-3);
+  padding: var(--s-2) var(--s-3);
+  border-bottom: 1px solid var(--c-line-strong);
+  background: var(--c-bg-2);
+  min-height: 38px;
+}
+.panel__title {
+  font-size: var(--t-label); font-weight: 700; letter-spacing: var(--ls-caps);
+  text-transform: uppercase; color: var(--c-ink-0);
+}
+.panel__meta { margin-left: auto; display: flex; align-items: center; gap: var(--s-3); }
+.panel__body { padding: var(--s-4); }
+.panel__body--flush { padding: 0; }
+.panel__ft {
+  padding: var(--s-2) var(--s-3); border-top: 1px solid var(--c-line);
+  display: flex; align-items: center; gap: var(--s-2); flex-wrap: wrap;
+}
+.panel--high { border-color: var(--c-prio-high); }
+.panel--high .panel__hd { background-color: var(--wash-high); }
+.panel--med  { border-color: var(--c-prio-med); }
+.panel--med .panel__hd { background-color: var(--wash-med); }
+.panel--unknown { border-color: var(--c-unknown); }
+.panel--unknown .panel__hd { background-color: var(--wash-unknown); }
+.panel--unknown .panel__hd { background-image: var(--fill-unknown); }
+.panel--absent { border-color: var(--c-line); }
+.panel--absent .panel__hd { background-image: var(--fill-absent); }
+.panel--absent .panel__title { color: var(--c-ink-2); }
+
+/* ==========================================================================
+   VOCABULARY 1 — HEALTH ASSERTION  (good · bad · unknown)
+   "Can this be relied on right now?" Nothing else uses these classes.
+   Colour is never the only carrier: every state has a glyph and a word.
+   ========================================================================== */
+.status {
+  display: inline-flex; align-items: center; gap: var(--s-2);
+  padding: 2px var(--s-2); min-height: 24px;
+  border: 1px solid currentColor; border-radius: var(--r-1);
+  font-family: var(--f-mono); font-size: var(--t-label);
+  font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  white-space: nowrap;
+}
+.status__glyph { font-size: 1em; line-height: 1; }
+
+.status--ok      { color: var(--c-ok);        background: var(--wash-ok); }
+.status--high    { color: var(--c-ink-inv);   background: var(--c-prio-high); border-color: var(--c-prio-high); }
+.status--med     { color: var(--c-ink-inv);   background: var(--c-prio-med);  border-color: var(--c-prio-med); }
+.status--low     { color: var(--c-prio-low);  background: var(--wash-low); }
+.status--unknown { color: var(--c-unknown);   background-image: var(--fill-unknown); }
+.status--absent  { color: var(--c-absent);    border-style: dashed; background-image: var(--fill-absent); }
+.status--muted   { color: var(--c-ink-2);     border-style: dotted; }
+
+/* Inline LED. Carries a glyph and a screen-reader status word, because
+   severity must never be encoded in hue alone (WCAG 1.4.1) — and high vs med
+   is exactly the pair that collapses under deuteranopia. */
+.dot {
+  width: 18px; height: 18px; flex: 0 0 18px;
+  display: inline-grid; place-items: center;
+  border: 1px solid currentColor;
+}
+.dot__g {
+  font: 700 var(--t-label)/1 var(--f-mono);
+  color: currentColor;
+}
+.dot--high .dot__g, .dot--med .dot__g, .dot--low .dot__g { color: var(--c-ink-inv); }
+.dot--ok      { color: var(--c-ok);      background: var(--wash-ok); }
+.dot--high    { color: var(--c-prio-high); background: var(--c-prio-high); }
+.dot--med     { color: var(--c-prio-med);  background: var(--c-prio-med); }
+.dot--low     { color: var(--c-prio-low);  background: var(--c-prio-low); }
+.dot--unknown { color: var(--c-unknown);  background-image: var(--fill-unknown); }
+.dot--absent  { color: var(--c-ink-3);    border-style: dashed; background: transparent; }
+
+/* ==========================================================================
+   FRESHNESS — no status is ever shown without one of these next to it.
+   Age, and the expectation the age is being judged against.
+   ========================================================================== */
+.fresh {
+  display: inline-flex; align-items: baseline; gap: var(--s-2);
+  font-family: var(--f-mono); font-size: var(--t-label); color: var(--c-ink-2);
+  white-space: nowrap;
+}
+.fresh__age { color: var(--c-ink-1); }
+.fresh__expect::before { content: "expect \2264 "; }
+.fresh--over .fresh__age { color: var(--c-unknown); font-weight: 700; }
+.fresh--over .fresh__expect { color: var(--c-unknown); }
+
+/* Last-known-outcome line: current confidence and last observation are
+   two separate facts, and losing the second one is a design failure. */
+.lastknown {
+  display: block; margin-top: var(--s-1);
+  font-size: var(--t-label); color: var(--c-ink-1);
+  border-left: 2px solid var(--c-line-strong); padding-left: var(--s-2);
+}
+.lastknown b { color: var(--c-ink-0); font-weight: 700; }
+.lastknown--bad { border-left-color: var(--c-prio-high); }
+
+/* ==========================================================================
+   VOCABULARY 2 — LIFECYCLE (queued · running · succeeded · failed · cancelled)
+   Deliberately a different SHAPE from .status: a left bar, no box, sentence case.
+   ========================================================================== */
+.life {
+  display: inline-flex; align-items: center; gap: var(--s-2);
+  padding-left: var(--s-2); border-left: 3px solid var(--c-ink-3);
+  font-family: var(--f-mono); font-size: var(--t-label);
+  color: var(--c-ink-1); white-space: nowrap;
+}
+.life--queued    { border-left-style: dotted; border-left-color: var(--c-ink-2); }
+.life--running   { border-left-color: var(--c-ink-0); color: var(--c-ink-0); font-weight: 700; }
+.life--succeeded { border-left-color: var(--c-ok); color: var(--c-ok); }
+.life--failed    { border-left-color: var(--c-prio-high); color: var(--c-prio-high); font-weight: 700; }
+.life--cancelled { border-left-color: var(--c-ink-3); color: var(--c-ink-2); text-decoration: line-through; }
+
+.life--running .life__pulse {
+  width: 6px; height: 6px; background: var(--c-ink-0);
+  animation: blip 1.4s steps(2, end) infinite;
+}
+@keyframes blip { 0%,49% { opacity: 1 } 50%,100% { opacity: .25 } }
+
+/* ==========================================================================
+   VOCABULARY 3 — PROCESS STATE (systemd verbatim, not a health claim)
+   ========================================================================== */
+.proc {
+  display: inline-flex; align-items: center; gap: var(--s-2);
+  font-family: var(--f-mono); font-size: var(--t-data); color: var(--c-ink-1);
+}
+.proc__led { width: 8px; height: 8px; border: 1px solid currentColor; }
+.proc--active     { color: var(--c-ok); }
+.proc--active .proc__led { background: var(--c-ok); }
+.proc--activating { color: var(--c-ink-2); }
+.proc--activating .proc__led { background: var(--c-ink-2); opacity: .5; }
+.proc--failed     { color: var(--c-prio-high); }
+.proc--failed .proc__led { background: var(--c-prio-high); }
+.proc--inactive   { color: var(--c-ink-2); }
+.proc--inactive .proc__led { background: transparent; border-style: dashed; }
+
+/* ==========================================================================
+   VOCABULARY 4 — OPERATOR SUPPRESSION
+   ========================================================================== */
+.mute {
+  display: inline-flex; align-items: center; gap: var(--s-2);
+  padding: 2px var(--s-2); border: 1px dotted var(--c-ink-3);
+  font-size: var(--t-label); color: var(--c-ink-2); font-family: var(--f-mono);
+}
+.mute__who { color: var(--c-ink-1); }
+
+/* ==========================================================================
+   VOCABULARY 5 — CONFIGURATION (declared absent). Quiet. Not a question.
+   ========================================================================== */
+.absent-note {
+  font-size: var(--t-label); color: var(--c-ink-2); font-style: normal;
+}
+.is-absent { background-image: var(--fill-absent); }
+.is-absent .field__v, .is-absent td { color: var(--c-ink-2); }
+
+/* ==========================================================================
+   Field grid — fixed label column. Values land in the same place every time.
+   ========================================================================== */
+.fields { display: grid; grid-template-columns: 15ch minmax(0,1fr); gap: var(--s-2) var(--s-4); }
+.fields--wide { grid-template-columns: 22ch minmax(0,1fr); }
+.field__k {
+  font-size: var(--t-label); letter-spacing: var(--ls-caps); text-transform: uppercase;
+  color: var(--c-ink-2); padding-top: 2px;
+}
+.field__v { font-size: var(--t-data); color: var(--c-ink-0); min-width: 0; }
+.field__v .mono, .field__v.mono { font-family: var(--f-mono); }
+
+/* The single most important number on a screen is the largest thing on it. */
+.readout { display: flex; flex-direction: column; gap: var(--s-1); }
+.readout__v {
+  font-family: var(--f-mono); font-size: var(--t-mega); line-height: 1;
+  letter-spacing: -.02em; font-weight: 700; color: var(--c-ink-0);
+}
+.readout__v .unit { font-size: var(--t-md); font-weight: 400; }
+.readout__k { font-size: var(--t-label); letter-spacing: var(--ls-caps);
+  text-transform: uppercase; color: var(--c-ink-2); }
+.readout--high .readout__v { color: var(--c-prio-high); }
+.readout--med .readout__v { color: var(--c-prio-med); }
+.readout--ok .readout__v { color: var(--c-ok); }
+.readout--unknown .readout__v { color: var(--c-unknown); }
+.readout--sm .readout__v { font-size: var(--t-lg); }
+
+/* ==========================================================================
+   Alarm bar — technical alarms only. Physiological alarms are not this
+   console's business, and the header says so rather than leaving it implied.
+   ========================================================================== */
+.alarmbar { border: 1px solid var(--c-line-strong); background: var(--c-bg-1); }
+.alarmbar__hd {
+  display: flex; align-items: center; gap: var(--s-3);
+  padding: var(--s-2) var(--s-3); border-bottom: 1px solid var(--c-line-strong);
+  background: var(--c-bg-2);
+}
+.alarm {
+  display: grid;
+  grid-template-columns: 112px minmax(0,1fr) auto;
+  gap: var(--s-3); align-items: baseline;
+  padding: var(--s-3); border-bottom: 1px solid var(--c-line);
+}
+.alarm:last-child { border-bottom: 0; }
+.alarm__prio {
+  font-family: var(--f-mono); font-size: var(--t-label); font-weight: 700;
+  letter-spacing: .06em; text-transform: uppercase;
+  display: inline-flex; align-items: center; gap: var(--s-2);
+  padding: 2px var(--s-2); border: 1px solid currentColor;
+}
+.alarm--high .alarm__prio { color: var(--c-ink-inv); background: var(--c-prio-high); }
+.alarm--med  .alarm__prio { color: var(--c-ink-inv); background: var(--c-prio-med); }
+.alarm--low  .alarm__prio { color: var(--c-prio-low); }
+.alarm--unknown .alarm__prio { color: var(--c-unknown); background-image: var(--fill-unknown); }
+.alarm--high { border-left: 3px solid var(--c-prio-high); background-color: var(--wash-high); }
+.alarm--med  { border-left: 3px solid var(--c-prio-med); background-color: var(--wash-med); }
+.alarm--low  { border-left: 3px solid var(--c-prio-low); background-color: var(--wash-low); }
+.alarm--unknown { border-left: 3px solid var(--c-unknown); background-color: var(--wash-unknown); }
+.alarm__msg { color: var(--c-ink-0); font-size: var(--t-data); }
+.alarm__msg small { display: block; color: var(--c-ink-2); font-size: var(--t-label); }
+.alarm__act { display: flex; gap: var(--s-2); align-items: center; }
+
+/* ==========================================================================
+   Document freshness overlay — the PAGE degrades, without rewriting the
+   state of every card underneath it.
+   ========================================================================== */
+.docstale {
+  display: none; align-items: center; gap: var(--s-3);
+  padding: var(--s-3) var(--s-4);
+  background: var(--c-bg-0); border-bottom: 2px solid var(--c-unknown);
+  background-image: var(--fill-unknown);
+  color: var(--c-ink-0); font-size: var(--t-data);
+}
+body[data-feed="stale"] .docstale { display: flex; }
+body[data-feed="stale"] .main { opacity: .82; }
+body[data-feed="stale"] .main::after {
+  content: ""; position: fixed; inset: 0; pointer-events: none;
+  box-shadow: inset 0 0 0 3px var(--c-unknown);
+}
+.docstale__b { font-weight: 700; }
+
+/* ==========================================================================
+   Tables — real tables. Dense, ruled, tabular figures.
+   ========================================================================== */
+.t { width: 100%; border-collapse: collapse; font-size: var(--t-data); }
+.t caption {
+  text-align: left; padding: var(--s-2) var(--s-3);
+  font-size: var(--t-label); color: var(--c-ink-2);
+  letter-spacing: var(--ls-caps); text-transform: uppercase;
+}
+.t th, .t td {
+  padding: var(--s-2) var(--s-3); text-align: left; vertical-align: top;
+  border-bottom: 1px solid var(--c-line);
+}
+.t thead th {
+  font-size: var(--t-label); letter-spacing: var(--ls-caps); text-transform: uppercase;
+  color: var(--c-ink-2); font-weight: 700; white-space: nowrap;
+  border-bottom: 1px solid var(--c-line-strong); background: var(--c-bg-1);
+  position: sticky; top: 0;
+}
+.t tbody tr:hover { background: var(--c-bg-2); }
+.t td.num, .t th.num { text-align: right; font-family: var(--f-mono); }
+.t tbody th { font-weight: 400; color: var(--c-ink-0); }
+.t--rowstate tr[data-state="high"]    { box-shadow: inset 3px 0 0 var(--c-prio-high);
+                                        background-color: var(--wash-high); }
+.t--rowstate tr[data-state="med"]     { box-shadow: inset 3px 0 0 var(--c-prio-med);
+                                        background-color: var(--wash-med); }
+.t--rowstate tr[data-state="unknown"] { box-shadow: inset 3px 0 0 var(--c-unknown);
+                                        background-color: var(--wash-unknown);
+                                        background-image: var(--fill-unknown); }
+.t--rowstate tr[data-state="absent"]  { box-shadow: inset 3px 0 0 var(--c-ink-3);
+                                        background-image: var(--fill-absent); }
+.t-scroll { overflow-x: auto; }
+
+/* ==========================================================================
+   ATTEMPT HISTORY — the component that carries the product's central claim.
+   It must make SILENT (no attempts at all) look different from FAILING
+   (attempts happening, all of them failing).
+   ========================================================================== */
+.attempts { border: 1px solid var(--c-line-strong); background: var(--c-bg-1); }
+.attempts--failing { border-left: 3px solid var(--c-prio-high); }
+.attempts--failing .attempts__hd { background-color: var(--wash-high); }
+.attempts--silent { border-left: 3px solid var(--c-unknown); }
+.attempts--silent .attempts__hd { background-color: var(--wash-unknown); }
+.attempts--ok { border-left: 3px solid var(--c-ok); }
+.attempts--ok .attempts__hd { background-color: var(--wash-ok); }
+.attempts__hd {
+  display: flex; align-items: center; gap: var(--s-3); flex-wrap: wrap;
+  padding: var(--s-3); border-bottom: 1px solid var(--c-line-strong);
+  background: var(--c-bg-2);
+}
+.attempts__verdict {
+  font-family: var(--f-mono); font-size: var(--t-md); font-weight: 700;
+  letter-spacing: .04em; text-transform: uppercase;
+}
+.attempts--failing .attempts__verdict { color: var(--c-prio-high); }
+.attempts--silent  .attempts__verdict { color: var(--c-unknown); }
+.attempts--ok      .attempts__verdict { color: var(--c-ok); }
+.attempts__gloss { color: var(--c-ink-1); font-size: var(--t-data); flex: 1 1 30ch; }
+
+/* Cadence strip: one tick per expected attempt window. Gaps are visible as
+   gaps, which is the whole point — a silent source draws nothing at all. */
+.strip {
+  display: flex; align-items: flex-end; gap: 2px; height: 34px;
+  padding: var(--s-3); background: var(--c-bg-0);
+  border-bottom: 1px solid var(--c-line);
+}
+.strip__tick { width: 8px; height: 100%; border: 1px solid var(--c-line-strong); }
+.strip__tick--ok      { background: var(--c-ok); border-color: var(--c-ok); }
+.strip__tick--fail    { background: var(--c-prio-high); border-color: var(--c-prio-high); }
+.strip__tick--partial { background: var(--c-prio-med); border-color: var(--c-prio-med); }
+/* No attempt at all: an empty slot with a dashed floor, not a coloured bar. */
+.strip__tick--none {
+  background: transparent; border: 0; border-bottom: 2px dashed var(--c-ink-3);
+  align-self: flex-end; height: 8px;
+}
+.strip__legend {
+  display: flex; gap: var(--s-4); padding: var(--s-2) var(--s-3);
+  font-size: var(--t-label); color: var(--c-ink-2); flex-wrap: wrap;
+  border-bottom: 1px solid var(--c-line);
+}
+.strip__legend span { display: inline-flex; align-items: center; gap: var(--s-2); }
+
+.attempt-row {
+  display: grid;
+  grid-template-columns: 17ch 11ch 8ch minmax(0,1fr);
+  gap: var(--s-3); align-items: baseline;
+  padding: var(--s-2) var(--s-3);
+  border-bottom: 1px solid var(--c-line);
+  font-size: var(--t-data);
+}
+.attempt-row:last-child { border-bottom: 0; }
+.attempt-row__t { font-family: var(--f-mono); color: var(--c-ink-1); }
+.attempt-row__dur { font-family: var(--f-mono); color: var(--c-ink-2); text-align: right; }
+.attempt-row__rows { font-family: var(--f-mono); color: var(--c-ink-0); text-align: right; }
+.attempt-row__why { color: var(--c-ink-1); }
+.attempt-row--failed { background: var(--c-bg-2); }
+.attempt-row--failed .attempt-row__why { color: var(--c-prio-high); }
+.attempt-row--gap {
+  background-image: var(--fill-unknown); color: var(--c-unknown);
+  grid-template-columns: 17ch minmax(0,1fr);
+}
+.attempt-row--gap .attempt-row__why { color: var(--c-unknown); font-weight: 700; }
+
+/* ==========================================================================
+   Buttons — severity is carried by border weight and separation, not colour
+   alone. Destructive controls are never adjacent to routine ones.
+   ========================================================================== */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--s-2);
+  min-height: 34px; padding: var(--s-2) var(--s-4);
+  font: 700 var(--t-label)/1 var(--f-ui); letter-spacing: .04em; text-transform: uppercase;
+  color: var(--c-ink-0); background: var(--c-bg-2);
+  border: 1px solid var(--c-line-strong); border-radius: var(--r-0);
+  cursor: pointer; text-decoration: none; transition: background var(--dur);
+}
+.btn:hover { background: var(--c-bg-3); border-color: var(--c-ink-3); }
+.btn:active { transform: translateY(1px); }
+.btn[disabled], .btn[aria-disabled="true"] {
+  color: var(--c-ink-3); border-color: var(--c-line); background: var(--c-bg-1);
+  cursor: not-allowed; pointer-events: none;
+}
+.btn--primary { background: var(--c-ink-0); color: var(--c-ink-inv); border-color: var(--c-ink-0); }
+.btn--primary:hover { background: var(--c-ink-max); border-color: var(--c-ink-max); }
+.btn--ghost { background: transparent; }
+.btn--sm { min-height: 28px; padding: var(--s-1) var(--s-2); font-size: var(--t-label); }
+.btn--block { width: 100%; }
+
+/* Danger: hatched, hard border, and physically fenced off from safe actions. */
+.btn--danger {
+  color: var(--c-prio-high); background: transparent;
+  border: 1px solid var(--c-prio-high);
+  background-image: var(--fill-danger);
+}
+.btn--danger:hover { color: var(--c-ink-inv); background: var(--c-prio-high); background-image: none; }
+
+.danger-zone {
+  border: 1px solid var(--c-prio-high); background: var(--c-bg-1);
+  background-image: var(--fill-danger-soft);
+  padding: var(--s-4); display: flex; gap: var(--s-4);
+  align-items: flex-start; flex-wrap: wrap;
+}
+.danger-zone__hd { flex: 1 1 34ch; }
+.danger-zone__hd b { display: block; color: var(--c-prio-high);
+  font-size: var(--t-label); letter-spacing: var(--ls-caps); text-transform: uppercase; }
+.actions-split {
+  display: flex; align-items: center; gap: var(--s-3); flex-wrap: wrap;
+}
+.actions-split__gap {
+  flex: 1 1 var(--s-10); min-width: var(--s-10);
+  border-top: 1px dashed var(--c-line-strong); height: 1px;
+}
+
+/* ==========================================================================
+   Forms
+   ========================================================================== */
+.form { display: flex; flex-direction: column; gap: var(--s-5); }
+.form__row { display: grid; grid-template-columns: 22ch minmax(0,1fr); gap: var(--s-4); align-items: start; }
+.form__row > label, .form__legend {
+  font-size: var(--t-label); letter-spacing: var(--ls-caps); text-transform: uppercase;
+  color: var(--c-ink-2); padding-top: var(--s-2); font-weight: 700;
+}
+.req::after { content: " *"; color: var(--c-prio-med); }
+
+.input, .select, .textarea {
+  width: 100%; min-height: 34px; padding: var(--s-2) var(--s-3);
+  font: var(--t-data)/1.4 var(--f-mono);
+  color: var(--c-ink-0); background: var(--c-bg-0);
+  border: 1px solid var(--c-line-strong); border-radius: var(--r-0);
+}
+.textarea { min-height: 120px; resize: vertical; font-family: var(--f-ui); font-size: var(--t-base); }
+.input::placeholder, .textarea::placeholder { color: var(--c-ink-3); }
+.input:hover, .select:hover, .textarea:hover { border-color: var(--c-ink-3); }
+.input[aria-invalid="true"], .textarea[aria-invalid="true"] { border-color: var(--c-prio-high); border-width: 2px; }
+.input[readonly] { color: var(--c-ink-2); background: var(--c-bg-1); }
+.select { appearance: none; padding-right: var(--s-8);
+  background-image: linear-gradient(45deg, transparent 50%, var(--c-ink-2) 50%),
+                    linear-gradient(135deg, var(--c-ink-2) 50%, transparent 50%);
+  background-position: right 18px center, right 12px center;
+  background-size: 6px 6px, 6px 6px; background-repeat: no-repeat; }
+
+.hint { display: block; margin-top: var(--s-1); font-size: var(--t-label); color: var(--c-ink-2); }
+.err  { display: flex; gap: var(--s-2); margin-top: var(--s-2);
+        font-size: var(--t-label); color: var(--c-prio-high); font-weight: 700; }
+.err::before { content: "\25B2"; }
+
+.check { display: flex; gap: var(--s-3); align-items: flex-start; }
+.check input { width: 18px; height: 18px; margin: 1px 0 0; accent-color: var(--c-ink-0); flex: 0 0 18px; }
+.check label { font-size: var(--t-data); color: var(--c-ink-0); }
+
+.fieldset { border: 1px solid var(--c-line); padding: var(--s-4); }
+.fieldset legend { padding: 0 var(--s-2); font-size: var(--t-label);
+  letter-spacing: var(--ls-caps); text-transform: uppercase; color: var(--c-ink-2); font-weight: 700; }
+
+/* Dirty state + save bar */
+.savebar {
+  position: sticky; bottom: 0; z-index: 30;
+  display: flex; align-items: center; gap: var(--s-3); flex-wrap: wrap;
+  padding: var(--s-3) var(--s-4);
+  background: var(--c-bg-2); border: 1px solid var(--c-line-strong);
+}
+.savebar__state { font-size: var(--t-data); color: var(--c-ink-2); flex: 1; }
+.savebar[data-dirty="true"] { border-color: var(--c-prio-med); }
+.savebar[data-dirty="true"] .savebar__state { color: var(--c-prio-med); font-weight: 700; }
+.dirty-mark { color: var(--c-prio-med); font-weight: 700; }
+
+/* ==========================================================================
+   Modal / confirmation. Severity is proportionate: a routine confirm is a
+   short question; a destructive one demands the object's name be typed.
+   ========================================================================== */
+.scrim {
+  position: fixed; inset: 0; z-index: 80; background: var(--c-scrim);
+  display: flex; align-items: center; justify-content: center; padding: var(--s-6);
+}
+.modal {
+  width: 100%; max-width: 560px; background: var(--c-bg-1);
+  border: 1px solid var(--c-line-strong); border-radius: var(--r-0);
+}
+.modal__hd {
+  display: flex; align-items: center; gap: var(--s-3);
+  padding: var(--s-3) var(--s-4); border-bottom: 1px solid var(--c-line-strong);
+  background: var(--c-bg-2);
+}
+.modal__hd h2 { font-size: var(--t-md); }
+.modal__body { padding: var(--s-5); display: flex; flex-direction: column; gap: var(--s-4); }
+.modal__ft { padding: var(--s-3) var(--s-4); border-top: 1px solid var(--c-line-strong);
+  display: flex; gap: var(--s-3); align-items: center; }
+.modal--danger { border: 2px solid var(--c-prio-high); }
+.modal--danger .modal__hd { background: var(--c-prio-high); color: var(--c-ink-inv); }
+.modal--danger .modal__hd h2 { color: var(--c-ink-inv); }
+.consequences { border-left: 3px solid var(--c-prio-high); padding-left: var(--s-3);
+  display: flex; flex-direction: column; gap: var(--s-2); }
+.consequences li { font-size: var(--t-data); color: var(--c-ink-0); }
+.consequences li::before { content: "\2013\00a0"; color: var(--c-prio-high); }
+
+/* One-time secret reveal */
+.secret {
+  border: 2px solid var(--c-prio-med); background: var(--c-bg-0);
+  padding: var(--s-4); display: flex; flex-direction: column; gap: var(--s-3);
+}
+.secret__value {
+  font-family: var(--f-mono); font-size: var(--t-md); word-break: break-all;
+  color: var(--c-ink-0); background: var(--c-bg-2); padding: var(--s-3);
+  border: 1px solid var(--c-line-strong); user-select: all;
+}
+.secret__value[data-hidden="true"] { color: transparent; text-shadow: 0 0 12px var(--c-ink-1); user-select: none; }
+.secret__warn { color: var(--c-prio-med); font-size: var(--t-data); font-weight: 700; }
+.secret__timer { font-family: var(--f-mono); color: var(--c-ink-2); font-size: var(--t-label); }
+
+/* ==========================================================================
+   Charts. One colour per metric, held across every screen — a healthy quantity
+   uses the same mint as a healthy status, so the eye learns it once. Fault hues
+   replace it only when the plotted value is itself the fault.
+   ========================================================================== */
+.bar { display: flex; align-items: center; gap: var(--s-3); }
+.bar__track { flex: 1; height: 10px; background: var(--c-bg-3); border: 1px solid var(--c-line-strong); }
+.bar__fill  { height: 100%; background: var(--c-ok); }
+.bar--high .bar__fill { background: var(--c-prio-high); }
+.bar--med  .bar__fill { background: var(--c-prio-med); }
+.bar--unknown .bar__track { background-image: var(--fill-unknown); }
+.bar__val { font-family: var(--f-mono); font-size: var(--t-data); min-width: 9ch; text-align: right; }
+
+.spark { display: block; width: 100%; height: 44px; }
+.spark__line { fill: none; stroke: var(--c-ok); stroke-width: 1.5; }
+.spark__line--high { stroke: var(--c-prio-high); }
+.spark__thresh { stroke: var(--c-prio-med); stroke-width: 1; stroke-dasharray: 3 3; }
+.spark__gap { fill: var(--c-unknown); opacity: .18; }
+.spark__axis { stroke: var(--c-line-strong); stroke-width: 1; }
+
+/* ==========================================================================
+   Misc components
+   ========================================================================== */
+.tag {
+  display: inline-block; padding: 1px var(--s-2); font-family: var(--f-mono);
+  font-size: var(--t-label); color: var(--c-ink-1);
+  border: 1px solid var(--c-line-strong); background: var(--c-bg-2);
+}
+.redact { color: var(--c-ink-2); font-family: var(--f-mono); }
+.redact b { color: var(--c-ink-0); }
+
+.log {
+  margin: 0; padding: var(--s-3); background: var(--c-bg-0);
+  border: 1px solid var(--c-line); overflow-x: auto;
+  font: var(--t-label)/1.6 var(--f-mono); color: var(--c-ink-1);
+  max-height: 320px;
+}
+.log b { color: var(--c-ink-0); font-weight: 400; }
+.log .log--err { color: var(--c-prio-high); display: block; }
+.log .log--warn { color: var(--c-prio-med); display: block; }
+.log .log--redacted { color: var(--c-ink-3); }
+
+.empty {
+  padding: var(--s-8) var(--s-5); text-align: center;
+  border: 1px dashed var(--c-line-strong); background: var(--c-bg-1);
+}
+.empty h3 { font-size: var(--t-md); margin-bottom: var(--s-2); }
+.empty p { color: var(--c-ink-2); font-size: var(--t-data); max-width: 56ch; margin: 0 auto var(--s-4); }
+
+.skel {
+  background: var(--c-bg-3); color: transparent; display: inline-block;
+  min-height: 1em; min-width: 8ch; animation: pulse 1.6s ease-in-out infinite;
+}
+@keyframes pulse { 0%,100% { opacity: .45 } 50% { opacity: .8 } }
+
+.note {
+  border-left: 3px solid var(--c-line-strong); padding: var(--s-2) var(--s-3);
+  font-size: var(--t-data); color: var(--c-ink-1); background: var(--c-bg-1);
+}
+.note--unknown { border-left-color: var(--c-unknown); background-image: var(--fill-unknown); }
+
+.steps { display: flex; gap: 0; border: 1px solid var(--c-line-strong); }
+.steps li {
+  flex: 1; padding: var(--s-2) var(--s-3); font-size: var(--t-label);
+  color: var(--c-ink-2); border-right: 1px solid var(--c-line);
+  font-family: var(--f-mono);
+}
+.steps li:last-child { border-right: 0; }
+.steps li[aria-current="step"] { background: var(--c-bg-3); color: var(--c-ink-0); font-weight: 700; }
+.steps li[data-done="true"] { color: var(--c-ink-1); }
+.steps li[data-done="true"]::before { content: "\2713\00a0"; }
+
+.divider { height: 1px; background: var(--c-line); border: 0; margin: var(--s-2) 0; }
+
+/* Claim ladder — used where "the service is up" and "the thing is actually
+   happening" are different assertions and must be shown as different rows. */
+.ladder { border: 1px solid var(--c-line-strong); background: var(--c-bg-1); }
+.claim {
+  display: grid; grid-template-columns: 3ch minmax(0,1fr) 20ch auto;
+  gap: var(--s-3); align-items: baseline;
+  padding: var(--s-3); border-bottom: 1px solid var(--c-line);
+}
+.claim:last-child { border-bottom: 0; }
+.claim__n { font-family: var(--f-mono); color: var(--c-ink-2); font-size: var(--t-label); }
+.claim__what { font-size: var(--t-data); color: var(--c-ink-0); }
+.claim__what small { display: block; color: var(--c-ink-2); font-size: var(--t-label); margin-top: 2px; }
+.claim__what em { color: var(--c-ink-1); font-style: normal; }
+.claim--terminal { background: var(--c-bg-2); }
+.claim--terminal .claim__what { font-weight: 700; }
+.claim--weak { background-image: var(--fill-unknown); }
+@media (max-width: 860px) {
+  .claim { grid-template-columns: 3ch minmax(0,1fr); }
+  .claim > :nth-child(3), .claim > :nth-child(4) { grid-column: 2; }
+}
+
+/* Cost preview — shown before spending, never after */
+.cost { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px,1fr)); gap: var(--s-4);
+  padding: var(--s-4); border: 1px dashed var(--c-line-strong); background: var(--c-bg-0); }
+
+/* Side-by-side review (AI content): prior version stays visible */
+.diff { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 0;
+  border: 1px solid var(--c-line-strong); }
+.diff__side { padding: var(--s-4); border-right: 1px solid var(--c-line-strong); min-width: 0; }
+.diff__side:last-child { border-right: 0; }
+.diff__side--new { background: var(--c-bg-2); }
+.diff__hd { display: flex; align-items: center; gap: var(--s-2); margin-bottom: var(--s-3); }
+.diff__hd .caps { color: var(--c-ink-0); }
+.diff__body { color: var(--c-ink-1); font-size: var(--t-base); }
+.diff__body p + p { margin-top: var(--s-3); }
+.diff ins { text-decoration: none; background: var(--fill-ins); color: var(--c-ink-0);
+  box-shadow: inset 2px 0 0 var(--c-ink-0); padding-left: 4px; }
+.diff del { color: var(--c-ink-2); text-decoration: line-through; }
+@media (max-width: 860px) {
+  .diff { grid-template-columns: minmax(0,1fr); }
+  .diff__side { border-right: 0; border-bottom: 1px solid var(--c-line-strong); }
+}
+
+/* Dropzone */
+.drop {
+  border: 2px dashed var(--c-line-strong); background: var(--c-bg-0);
+  padding: var(--s-8) var(--s-5); text-align: center;
+}
+.drop[data-state="active"] { border-color: var(--c-ink-0); }
+.drop[data-state="busy"] { border-style: solid; }
+.progress { height: 12px; background: var(--c-bg-3); border: 1px solid var(--c-line-strong); }
+.progress__fill { height: 100%; background: var(--c-ink-1); }
+
+/* Gallery / index page ----------------------------------------------------- */
+.gallery { max-width: 1080px; margin: 0 auto; padding: var(--s-12) var(--s-6); }
+.gallery h1 { font-size: var(--t-xl); margin-bottom: var(--s-2); }
+.gallery__list { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px,1fr)); gap: var(--s-3); }
+.gallery__item {
+  display: block; padding: var(--s-4); border: 1px solid var(--c-line-strong);
+  background: var(--c-bg-1); text-decoration: none;
+}
+.gallery__item:hover { background: var(--c-bg-2); border-color: var(--c-ink-3); }
+.gallery__item b { display: block; font-size: var(--t-md); }
+.gallery__item span { display: block; color: var(--c-ink-2); font-size: var(--t-label); margin-top: var(--s-1); }
+
+/* Swatch documentation (design system page) -------------------------------- */
+.sw { width: 26px; height: 18px; display: inline-block; border: 1px solid var(--c-line-strong); }
+.sw--bg0 { background: var(--c-bg-0); }
+.sw--bg1 { background: var(--c-bg-1); }
+.sw--bg2 { background: var(--c-bg-2); }
+.sw--bg3 { background: var(--c-bg-3); }
+.sw--line { background: var(--c-line-strong); }
+.sw--ink0 { background: var(--c-ink-0); }
+.sw--ink1 { background: var(--c-ink-1); }
+.sw--ink2 { background: var(--c-ink-2); }
+.sw--ink3 { background: var(--c-ink-3); }
+.sw--high { background: var(--c-prio-high); }
+.sw--med { background: var(--c-prio-med); }
+.sw--low { background: var(--c-prio-low); }
+.sw--unknown { background: var(--c-unknown); }
+.sw--ok { background: var(--c-ok); }
+.sw--absent { background: var(--c-absent); }
+
+.swatch { display: flex; align-items: center; gap: var(--s-3); }
+.swatch__chip { width: 40px; height: 40px; border: 1px solid var(--c-line-strong); flex: 0 0 40px; }
+.pass { color: var(--c-ink-0); font-weight: 700; }
+.fail { color: var(--c-prio-high); font-weight: 700; }
+.na   { color: var(--c-ink-2); }
+
+/* ==========================================================================
+   Responsive — desktop primary, phone secondary (it gets checked from bed).
+   ========================================================================== */
+@media (max-width: 1180px) {
+  .cols-main, .cols-3, .cols-4 { grid-template-columns: repeat(2, minmax(0,1fr)); }
+}
+@media (max-width: 860px) {
+  .body { flex-direction: column; }
+  .rail {
+    width: 100%; flex: none; border-right: 0;
+    border-bottom: 1px solid var(--c-line-strong);
+    display: flex; overflow-x: auto; padding: 0;
+  }
+  .rail__group { display: flex; padding: 0; }
+  .rail__group > .caps { display: none; }
+  .rail__item { border-left: 0; border-bottom: 3px solid transparent; white-space: nowrap; }
+  .rail__item[aria-current="page"] { border-left-color: transparent; border-bottom-color: var(--c-ink-0); }
+  .idstrip { flex-direction: column; }
+  .idstrip__brand { min-width: 0; border-right: 0; border-bottom: 1px solid var(--c-line); }
+  .main { padding: var(--s-4) var(--s-3) var(--s-10); }
+  .cols-2, .cols-3, .cols-4, .cols-main { grid-template-columns: minmax(0,1fr); }
+  .fields, .fields--wide, .form__row { grid-template-columns: minmax(0,1fr); gap: var(--s-1); }
+  .form__row > label { padding-top: 0; }
+  .attempt-row { grid-template-columns: minmax(0,1fr) auto; }
+  .attempt-row__why { grid-column: 1 / -1; }
+  .alarm { grid-template-columns: minmax(0,1fr); }
+  :root { --t-mega: 34px; }
+}
+@media print {
+  .rail, .page-hd__actions, .savebar { display: none; }
+  body { background: var(--c-print-bg); color: var(--c-print-ink); }
+}

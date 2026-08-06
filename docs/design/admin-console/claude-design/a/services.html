@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>04 Services & host — AW2 Service Mode</title>
+<link rel="stylesheet" href="console.css">
+</head>
+<body data-feed="live">
+<a class="skip-link" href="#main">Skip to content</a>
+
+<div class="shell">
+  <div class="stickytop">
+  <header class="idstrip">
+    <div class="idstrip__brand"><b>AW2 SERVICE MODE</b><span>bedside-pi5 · 04 Services &amp; host</span></div>
+    <div class="idstrip__fields">
+      <div class="idfield"><span class="idfield__k">Host</span><span class="idfield__v">bedside-pi5</span></div>
+      <div class="idfield"><span class="idfield__k">Build</span><span class="idfield__v">aw2 2.4.11+g8c1f</span></div>
+      <div class="idfield"><span class="idfield__k">Uptime</span><span class="idfield__v">17d 04:12</span></div>
+      <div class="idfield"><span class="idfield__k">Console clock</span><span class="idfield__v" data-clock>09:56:04Z</span></div>
+      <div class="idfield"><span class="idfield__k">Feed age</span><span class="idfield__v"><span data-feed-age>2s</span> · poll 15s</span></div>
+      <div class="idstrip__spacer"></div>
+    </div>
+  </header>
+
+  <div class="docstale" role="status">
+    <span class="status status--unknown"><span class="status__glyph" aria-hidden="true">?</span> Document stale</span>
+    <span class="docstale__b">This page has not heard from the appliance for <span data-feed-age>—</span>.</span>
+    <span class="muted-text">Everything below is the last state observed, not the current state.</span>
+    <button class="btn btn--sm" type="button" data-action="refresh">Reconnect</button>
+  </div>
+  </div>
+
+  <div class="body">
+    <nav class="rail" aria-label="Console sections">
+      <div class="rail__group">
+        <span class="caps">First release</span>
+        <a class="rail__item" href="overview.html"><span class="rail__ord">01</span> Overview <span class="dot dot--med"><span class="dot__g" aria-hidden="true">■</span><span class="sr-only">Fault, medium</span></span></a>
+        <a class="rail__item" href="display.html"><span class="rail__ord">02</span> Display path <span class="dot dot--ok"><span class="dot__g" aria-hidden="true">✓</span><span class="sr-only">OK</span></span></a>
+        <a class="rail__item" href="ingest.html"><span class="rail__ord">03</span> Ingest <span class="dot dot--unknown"><span class="dot__g" aria-hidden="true">?</span><span class="sr-only">Unknown</span></span></a>
+      </div>
+      <div class="rail__group">
+        <span class="caps">Later</span>
+        <a class="rail__item" href="services.html" aria-current="page"><span class="rail__ord">04</span> Services &amp; host <span class="dot dot--ok"><span class="dot__g" aria-hidden="true">✓</span><span class="sr-only">OK</span></span></a>
+        <a class="rail__item" href="config.html"><span class="rail__ord">05</span> Config &amp; access <span class="dot dot--ok"><span class="dot__g" aria-hidden="true">✓</span><span class="sr-only">OK</span></span></a>
+        <a class="rail__item" href="data.html"><span class="rail__ord">06</span> Data <span class="dot dot--med"><span class="dot__g" aria-hidden="true">■</span><span class="sr-only">Fault, medium</span></span></a>
+        <a class="rail__item" href="analysis.html"><span class="rail__ord">07</span> Analysis <span class="dot dot--ok"><span class="dot__g" aria-hidden="true">✓</span><span class="sr-only">OK</span></span></a>
+        <a class="rail__item" href="records.html"><span class="rail__ord">08</span> Records <span class="dot dot--ok"><span class="dot__g" aria-hidden="true">✓</span><span class="sr-only">OK</span></span></a>
+        <a class="rail__item" href="recovery.html"><span class="rail__ord">09</span> Recovery <span class="dot dot--unknown"><span class="dot__g" aria-hidden="true">?</span><span class="sr-only">Unknown</span></span></a>
+      </div>
+      <div class="rail__group">
+        <span class="caps">Reference</span>
+        <a class="rail__item" href="system.html">Design system</a>
+        <a class="rail__item" href="patterns.html">Operational patterns</a>
+        <a class="rail__item" href="attempts.html">Attempt history</a>
+        <a class="rail__item" href="overview-degraded.html">Overview · degraded</a>
+        <a class="rail__item" href="firstrun.html">First run</a>
+      </div>
+    </nav>
+
+    <main class="main" id="main">
+      <div class="page-hd">
+        <div>
+          <h1>Services &amp; host</h1>
+          <p class="page-hd__sub">Daemons, and the host conditions that stop recording without a crash.</p>
+        </div>
+        <div class="page-hd__actions">
+          <button class="btn btn--sm" type="button" data-action="refresh">Refresh</button>
+        </div>
+      </div>
+
+      <div class="stack">
+
+        <section class="panel" aria-labelledby="s-host">
+          <div class="panel__hd"><h2 class="panel__title" id="s-host">Host</h2>
+            <div class="panel__meta"><span class="caps">The ways this box stops recording without any process crashing</span>
+              <span class="fresh" data-age-s="20" data-expect-s="60"><span class="fresh__age">20s ago</span><span class="fresh__expect">1m</span></span></div></div>
+          <div class="panel__body">
+            <div class="cols-4">
+              <div class="readout"><span class="readout__k">NVMe free</span>
+                <span class="readout__v">62.1<span class="unit">GB</span></span>
+                <span class="muted-text">of 233 GB · full in ~1y 9m at 96 MB/day</span></div>
+              <div class="readout readout--sm"><span class="readout__k">NVMe wear</span>
+                <span class="readout__v">4<span class="unit">% used</span></span>
+                <span class="muted-text">Rated life to 2034-01</span></div>
+              <div class="readout readout--sm"><span class="readout__k">SoC temperature</span>
+                <span class="readout__v">52.4<span class="unit">°C</span></span>
+                <span class="muted-text">Throttle at 80 °C · peak 24h 61.2 °C</span></div>
+              <div class="readout readout--sm"><span class="readout__k">Supply</span>
+                <span class="readout__v">5.08<span class="unit">V</span></span>
+                <span class="muted-text">Mains, official 27 W PSU. No UPS fitted.</span></div>
+            </div>
+            <hr class="divider">
+            <div class="cols-3">
+              <div class="fields">
+                <span class="field__k">Undervoltage</span>
+                <span class="field__v"><span class="status status--ok"><span class="status__glyph" aria-hidden="true">✓</span> None</span> <span class="muted-text">since boot</span></span>
+                <span class="field__k">Throttled</span>
+                <span class="field__v"><span class="status status--ok"><span class="status__glyph" aria-hidden="true">✓</span> Never</span></span>
+              </div>
+              <div class="fields">
+                <span class="field__k">Watchdog</span>
+                <span class="field__v"><span class="status status--ok"><span class="status__glyph" aria-hidden="true">✓</span> Armed</span> <span class="muted-text">bcm2835_wdt, 15 s</span></span>
+                <span class="field__k">Last reset</span><span class="field__v mono">none · 17d uptime</span>
+              </div>
+              <div class="fields">
+                <span class="field__k">Network</span><span class="field__v mono">wlan0 · −52 dBm · 1.2 Gb/s</span>
+                <span class="field__k">Link flaps</span><span class="field__v mono">0 <span class="unit">in 24h</span></span>
+              </div>
+            </div>
+          </div>
+          <div class="panel__ft"><p class="prose">No UPS is fitted, so a mains interruption is an
+          immediate unclean shutdown. That is a configuration fact rather than a fault, and it is
+          stated here rather than raised as an alarm.</p></div>
+        </section>
+
+        <section class="panel" aria-labelledby="s-units">
+          <div class="panel__hd"><h2 class="panel__title" id="s-units">Units</h2>
+            <div class="panel__meta"><span class="caps">Derived from the deployment manifest · 9 units</span></div></div>
+          <div class="panel__body panel__body--flush t-scroll">
+            <table class="t t--rowstate">
+              <thead><tr><th scope="col">Unit</th><th scope="col">Process state</th><th scope="col">Health</th>
+                <th class="num" scope="col">Uptime</th><th class="num" scope="col">Restarts 24h</th>
+                <th class="num" scope="col">RSS</th><th scope="col">Last error</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead>
+              <tbody>
+                <tr><th scope="row" class="mono">aw2-samplestore</th>
+                  <td><span class="proc proc--active"><span class="proc__led" aria-hidden="true"></span> active (running)</span></td>
+                  <td><span class="status status--ok"><span class="status__glyph" aria-hidden="true">✓</span> OK</span></td>
+                  <td class="num">17d 04:12</td><td class="num">0</td><td class="num">184 MB</td>
+                  <td class="muted-text">none</td>
+                  <td><button class="btn btn--sm" type="button">Logs</button></td></tr>
+                <tr><th scope="row" class="mono">aw2-collector-chest</th>
+                  <td><span class="proc proc--active"><span class="proc__led" aria-hidden="true"></span> active (running)</span></td>
+                  <td><span class="status status--ok"><span class="status__glyph" aria-hidden="true">✓</span> OK</span></td>
+                  <td class="num">2d 11:02</td><td class="num">0</td><td class="num">38 MB</td>
+                  <td class="muted-text">2d ago · notify timeout</td>
+                  <td><button class="btn btn--sm" type="button">Logs</button></td></tr>
+                <tr data-state="unknown"><th scope="row" class="mono">aw2-collector-oximeter</th>
+                  <td><span class="proc proc--active"><span class="proc__led" aria-hidden="true"></span> active (running)</span></td>
+                  <td><span class="status status--unknown"><span class="status__glyph" aria-hidden="true">?</span> Unknown</span></td>
+                  <td class="num">17d 04:10</td><td class="num">0</td><td class="num">31 MB</td>
+                  <td class="muted-text">none reported</td>
+                  <td><button class="btn btn--sm" type="button">Logs</button></td></tr>
+                <tr data-state="med"><th scope="row" class="mono">aw2-spool-drain</th>
+                  <td><span class="proc proc--active"><span class="proc__led" aria-hidden="true"></span> active (running)</span></td>
+                  <td><span class="status status--med"><span class="status__glyph" aria-hidden="true">■</span> Med</span></td>
+                  <td class="num">17d 04:11</td><td class="num">0</td><td class="num">96 MB</td>
+                  <td>3h ago · write contention on samples_raw</td>
+                  <td><button class="btn btn--sm" type="button">Logs</button></td></tr>
+                <tr><th scope="row" class="mono">aw2-importer-cpap.timer</th>
+                  <td><span class="proc proc--inactive"><span class="proc__led" aria-hidden="true"></span> inactive (waiting)</span></td>
+                  <td><span class="status status--ok"><span class="status__glyph" aria-hidden="true">✓</span> OK</span></td>
+                  <td class="num">—</td><td class="num">—</td><td class="num">—</td>
+                  <td class="muted-text">next run 04:00</td>
+                  <td><button class="btn btn--sm" type="button">Logs</button></td></tr>
+                <tr class="is-absent"><th scope="row" class="mono">aw2-alarm-nocturnal</th>
+                  <td><span class="proc proc--inactive"><span class="proc__led" aria-hidden="true"></span> inactive (dead)</span></td>
+                  <td><span class="status status--absent"><span class="status__glyph" aria-hidden="true">—</span> Not configured</span></td>
+                  <td class="num">—</td><td class="num">—</td><td class="num">—</td>
+                  <td><span class="absent-note">Feature flag off. Scheduled last.</span></td>
+                  <td><span class="absent-note">—</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <div class="cols-main">
+          <section class="panel" aria-labelledby="s-detail">
+            <div class="panel__hd"><h2 class="panel__title" id="s-detail">aw2-spool-drain · detail</h2>
+              <div class="panel__meta"><span class="status status--med"><span class="status__glyph" aria-hidden="true">■</span> Fault · Med</span></div></div>
+            <div class="panel__body stack--tight">
+              <div class="fields fields--wide">
+                <span class="field__k">Fragment</span><span class="field__v mono">/etc/systemd/system/aw2-spool-drain.service</span>
+                <span class="field__k">Exec</span><span class="field__v mono">/usr/lib/aw2/spool-drain --batch 500</span>
+                <span class="field__k">Main PID</span><span class="field__v mono">944</span>
+                <span class="field__k">CPU, 1h mean</span><span class="field__v mono">14.2 %</span>
+              </div>
+              <hr class="divider">
+              <span class="caps">Resident memory · 24 h</span>
+              <svg class="spark" viewBox="0 0 600 44" preserveAspectRatio="none" role="img" aria-label="Resident memory rising steadily from 48 to 96 megabytes over 24 hours.">
+                <line class="spark__axis" x1="0" y1="43" x2="600" y2="43"></line>
+                <polyline class="spark__line" points="0,34 60,33 120,31 180,29 240,27 300,24 360,21 420,18 480,14 540,11 600,8"></polyline>
+              </svg>
+              <p class="prose">Memory has climbed monotonically for 24 hours while the spool backlog
+              grew. The two are almost certainly the same problem rather than a leak.</p>
+              <hr class="divider">
+              <span class="caps">Recent output</span>
+              <pre class="log"><b>09:54:02</b> drain: batch 500 committed in 1.42s
+<b>09:54:04</b> drain: queue depth 14208 oldest 26m
+<span class="log--warn">09:54:04 drain: WARN arrival rate 340/min exceeds drain rate 210/min</span>
+<b>09:55:31</b> drain: batch 500 committed in 1.51s
+<span class="log--warn">09:55:31 drain: WARN queue depth increased by 130 since last batch</span>
+<b>09:56:02</b> auth: token accepted for client <span class="log--redacted">[redacted ·9EgU]</span></pre>
+            </div>
+            <div class="panel__ft">
+              <div class="actions-split">
+                <button class="btn btn--sm" type="button">Follow logs</button>
+                <button class="btn btn--sm" type="button">Reload unit</button>
+                <span class="actions-split__gap" aria-hidden="true"></span>
+                <button class="btn btn--sm btn--danger" type="button" data-action="open" data-target="m-rs">Restart unit…</button>
+              </div>
+            </div>
+          </section>
+
+          <div class="stack">
+            <section class="panel">
+              <div class="panel__hd"><h2 class="panel__title">Logs</h2>
+                <div class="panel__meta"><span class="caps">Credentials redacted at write time</span></div></div>
+              <div class="panel__body stack--tight">
+                <div class="row">
+                  <select class="select" aria-label="Filter by unit"><option>All units</option>
+                    <option>aw2-samplestore</option><option selected>aw2-spool-drain</option></select>
+                  <select class="select" aria-label="Filter by severity"><option>warning and above</option>
+                    <option>error only</option><option>everything</option></select>
+                </div>
+                <p class="prose muted-text">Redaction happens before the line reaches the journal, so
+                a leaked key cannot be recovered from the logs even with root.</p>
+              </div>
+            </section>
+            <section class="panel">
+              <div class="panel__hd"><h2 class="panel__title">Radios</h2></div>
+              <div class="panel__body panel__body--flush t-scroll">
+                <table class="t">
+                  <thead><tr><th scope="col">Device</th><th class="num" scope="col">RSSI</th>
+                    <th scope="col">Link</th><th class="num" scope="col">Reconnects 24h</th></tr></thead>
+                  <tbody>
+                    <tr><th scope="row">Polar H10 · E4:22:…:9C</th><td class="num">−61 dBm</td>
+                      <td><span class="status status--ok"><span class="status__glyph" aria-hidden="true">✓</span> Connected</span></td><td class="num">2</td></tr>
+                    <tr><th scope="row">O2Ring · C8:1F:…:04</th><td class="num">−74 dBm</td>
+                      <td><span class="status status--unknown"><span class="status__glyph" aria-hidden="true">?</span> Connected, silent</span></td><td class="num">0</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="panel__ft"><p class="prose">A connected link that delivers nothing is the
+              case the connection state alone cannot express, so it is spelled out.</p></div>
+            </section>
+          </div>
+        </div>
+      </div>
+
+<div class="scrim" id="m-rs" hidden>
+  <div class="modal modal--danger" role="alertdialog" aria-modal="true" aria-labelledby="mrs-h">
+    <div class="modal__hd"><span aria-hidden="true">▲</span><h2 id="mrs-h">Restart aw2-spool-drain?</h2></div>
+    <div class="modal__body">
+      <p class="prose">The drain stops for the duration of the restart. Nothing is lost — the spool
+      is the buffer — but the backlog grows while it is down.</p>
+      <ul class="consequences">
+        <li>14,208 rows currently queued. Expect roughly 700 more during a 2-minute restart.</li>
+        <li>The in-flight batch is rolled back, not partially committed.</li>
+      </ul>
+    </div>
+    <div class="modal__ft">
+      <button class="btn btn--ghost" type="button" data-action="close">Cancel</button>
+      <span class="grow"></span>
+      <button class="btn btn--danger" type="button" data-action="close">Restart unit</button>
+    </div>
+  </div>
+</div>
+    </main>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

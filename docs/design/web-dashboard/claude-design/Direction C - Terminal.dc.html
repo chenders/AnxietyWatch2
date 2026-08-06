@@ -1,0 +1,791 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#06080b; --panel:#0c1116; --sunk:#030507; --rule:#1d242c; --rule-strong:#5a6672;
+  --text:#dbe4ea; --dim:#93a1ac; --faint:#6f7c88;
+  --spo2:#4fd6d6; --hr:#a3e35c; --resp:#f2b13c; --bp:#ff7b7b; --cpap:#c98bff; --unknown:#9aa6ff;
+  --hi:#ff5f56; --med:#f2b13c; --ok:#a3e35c;
+  --hatch:rgba(154,166,255,.22);
+}
+[data-theme="light"]{
+  --bg:#eff2f5; --panel:#ffffff; --sunk:#e3e8ee; --rule:#ccd3db; --rule-strong:#5f6a76;
+  --text:#0d1114; --dim:#454f59; --faint:#57616c;
+  --spo2:#0c6f76; --hr:#3d6b12; --resp:#8a5406; --bp:#ad1f1f; --cpap:#6f2bbf; --unknown:#2f3bb8;
+  --hi:#ad1f1f; --med:#8a5406; --ok:#3d6b12;
+  --hatch:rgba(47,59,184,.16);
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:"JetBrains Mono",ui-monospace,monospace;font-size:16px;font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}
+a{color:var(--spo2)}a:hover{color:var(--text)}
+button{font:inherit;color:inherit}
+:focus-visible{outline:3px solid var(--unknown);outline-offset:2px}
+kbd{border:1px solid var(--rule-strong);padding:1px 5px;font-size:14px;color:var(--text);background:var(--panel)}
+footer span{white-space:nowrap}
+button[data-k]{background:transparent;border:1px solid var(--rule);color:var(--dim);padding:6px 10px;cursor:pointer;font-size:14px;white-space:nowrap}
+button[data-k][aria-selected="true"]{border-color:var(--spo2);color:var(--text);background:var(--panel)}
+button[data-k]:hover{color:var(--text);border-color:var(--rule-strong)}
+</style>
+</helmet>
+
+<svg aria-hidden="true" focusable="false" width="0" height="0" style="position:absolute;width:0;height:0;overflow:hidden">
+  <defs>
+    <pattern id="gapHatch" patternUnits="userSpaceOnUse" width="8" height="8" patternTransform="rotate(45)">
+      <line x1="0" y1="0" x2="0" y2="8" stroke="var(--unknown)" stroke-width="2.4" opacity="0.5"></line>
+    </pattern>
+  </defs>
+</svg>
+
+<div data-theme="{{ theme }}" style="min-height:100vh;background:var(--bg);color:var(--text);display:flex;flex-direction:column">
+
+<header style="border-bottom:1px solid var(--rule-strong);padding:10px 16px;display:flex;flex-wrap:wrap;gap:12px;align-items:center;position:sticky;top:0;background:var(--bg);z-index:20">
+  <span style="color:var(--dim);font-size:15px">root@aw-pi4</span>
+  <span style="color:var(--faint)">:</span>
+  <span style="font-size:15px;color:var(--text)">~/vitalsd/{{ route }}</span>
+  <span style="color:{{ statusColor }};font-size:15px;font-weight:700">[{{ statusWord }}]</span>
+  <div style="flex:1"></div>
+  <span style="font-size:15px;color:var(--dim)">{{ clock }}</span>
+  <nav aria-label="Screens" style="display:flex;gap:6px;flex-wrap:wrap">
+    <button data-k aria-selected="{{ isNow }}" onClick="{{ goNow }}">1 now</button>
+    <button data-k aria-selected="{{ isNight }}" onClick="{{ goNight }}">2 night</button>
+    <button data-k aria-selected="{{ isTrends }}" onClick="{{ goTrends }}">3 trend</button>
+    <button data-k aria-selected="{{ isSys }}" onClick="{{ goSys }}">4 sys</button>
+    <button data-k aria-selected="{{ isTok }}" onClick="{{ goTok }}">5 tokens</button>
+  </nav>
+</header>
+
+<main style="flex:1;padding:16px;max-width:1500px;width:100%;margin:0 auto">
+
+<!-- ===== 1 NOW ===== -->
+<sc-if value="{{ showNow }}" hint-placeholder-val="{{ true }}">
+<section data-screen-label="Now">
+  <div style="border:1px solid {{ banner.color }};background:{{ banner.bg }};padding:12px 14px;background-image:{{ banner.hatch }};background-size:8px 8px">
+    <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:baseline">
+      <span aria-hidden="true" style="color:{{ banner.color }};font-weight:700;font-size:18px">{{ banner.glyph }}</span>
+      <span style="color:{{ banner.color }};font-weight:700;font-size:15px;letter-spacing:.08em">{{ banner.code }}</span>
+      <span style="color:var(--faint);font-size:15px">{{ banner.at }}</span>
+    </div>
+    <div style="font-size:17px;margin-top:6px;line-height:1.5;text-wrap:pretty">{{ banner.msg }}</div>
+    <div style="font-size:15px;color:var(--dim);margin-top:6px">assert: {{ banner.assertion }}</div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(228px,1fr));gap:10px;margin-top:14px">
+    <sc-for list="{{ numerics }}" as="n" hint-placeholder-count="6">
+      <div style="border:1px solid var(--rule);border-top:3px solid {{ n.color }};background:var(--panel);padding:12px;background-image:{{ n.hatch }};background-size:8px 8px">
+        <div style="display:flex;justify-content:space-between;font-size:15px;color:{{ n.color }}">
+          <span><span aria-hidden="true">{{ n.glyph }}</span> {{ n.key }}</span><span style="color:var(--faint)">{{ n.unit }}</span>
+        </div>
+        <div style="display:flex;align-items:baseline;gap:8px;margin:12px 0 8px">
+          <span style="font-size:44px;line-height:1;font-weight:500;color:{{ n.valueColor }}">{{ n.value }}</span>
+          <span style="font-size:15px;color:var(--dim)">{{ n.sub }}</span>
+        </div>
+        <div style="font-size:14px;color:var(--faint);border-top:1px solid var(--rule);padding-top:6px;display:flex;justify-content:space-between;gap:8px">
+          <span>{{ n.limits }}</span><span>{{ n.stamp }}</span>
+        </div>
+        <div style="font-size:14px;color:{{ n.color }};margin-top:4px">{{ n.state }}</div>
+      </div>
+    </sc-for>
+  </div>
+
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:14px;margin-top:14px">
+    <div style="border:1px solid var(--rule);background:var(--panel);padding:12px">
+      <div style="display:flex;justify-content:space-between;border-bottom:1px solid var(--rule-strong);padding-bottom:7px;font-size:15px">
+        <span style="color:var(--dim)">$ vitalsctl sensors --watch</span><span style="color:var(--faint)">1 Hz</span>
+      </div>
+      <sc-for list="{{ sensors }}" as="s" hint-placeholder-count="6">
+        <div style="display:flex;flex-wrap:wrap;gap:4px 12px;align-items:baseline;padding:8px 0;border-bottom:1px solid var(--rule);font-size:15px">
+          <span aria-hidden="true" style="color:{{ s.color }};font-weight:700">{{ s.glyph }}</span>
+          <span style="flex:1 1 150px;min-width:0">{{ s.name }}<span style="color:var(--faint)"> {{ s.link }}</span></span>
+          <span style="color:{{ s.color }};font-weight:700">{{ s.state }}</span>
+          <span style="color:var(--dim);margin-left:auto;text-align:right">{{ s.age }}</span>
+        </div>
+      </sc-for>
+      <div style="font-size:14px;color:var(--faint);padding-top:8px">age = wall-clock since last accepted sample. no value is ever carried forward.</div>
+    </div>
+
+    <div style="border:1px solid var(--rule);background:var(--panel);padding:12px">
+      <div style="display:flex;justify-content:space-between;border-bottom:1px solid var(--rule-strong);padding-bottom:7px;font-size:15px">
+        <span style="color:var(--dim)">$ vitalsctl tier</span><span style="color:var(--faint)">{{ tierSince }}</span>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:12px 0 6px;font-size:15px">
+        <sc-for list="{{ tiers }}" as="t" hint-placeholder-count="4">
+          <span style="border:1px solid {{ t.border }};color:{{ t.fg }};background:{{ t.bg }};padding:7px 10px;font-weight:700"><span aria-hidden="true">{{ t.glyph }}</span> {{ t.name }}</span>
+        </sc-for>
+      </div>
+      <pre style="margin:10px 0 0;font-family:inherit;font-size:15px;color:var(--dim);white-space:pre-wrap;line-height:1.6">{{ tierTrace }}</pre>
+    </div>
+  </div>
+
+  <div style="border:1px solid var(--rule);background:var(--panel);padding:12px;margin-top:14px">
+    <div style="display:flex;justify-content:space-between;border-bottom:1px solid var(--rule-strong);padding-bottom:7px;font-size:15px">
+      <span style="color:var(--dim)">$ vitalsctl plot --last 20m --lanes spo2,hr</span><span style="color:var(--faint)">no interpolation</span>
+    </div>
+    <sc-for list="{{ liveLanes }}" as="L" hint-placeholder-count="2">
+      <div style="display:grid;grid-template-columns:110px 1fr;gap:8px;padding:9px 0;border-bottom:1px solid var(--rule)">
+        <div style="font-size:14px;color:{{ L.color }};display:flex;flex-direction:column;justify-content:space-between">
+          <span style="color:var(--faint)">{{ L.hi }}</span><span style="font-weight:700">{{ L.label }}</span><span style="color:var(--faint)">{{ L.lo }}</span>
+        </div>
+        <svg viewBox="0 0 1000 84" preserveAspectRatio="none" role="img" aria-label="{{ L.aria }}" style="width:100%;height:84px;display:block;background:var(--sunk);border:1px solid var(--rule)">
+          <path d="{{ L.grid }}" stroke="var(--rule)" stroke-width="1" fill="none" vector-effect="non-scaling-stroke"></path>
+          <path d="{{ L.gapFill }}" fill="url(#gapHatch)"></path>
+          <path d="{{ L.gapEdge }}" stroke="var(--unknown)" stroke-width="2" stroke-dasharray="4 4" fill="none" vector-effect="non-scaling-stroke"></path>
+          <path d="{{ L.d }}" stroke="{{ L.color }}" stroke-width="1.7" fill="none" vector-effect="non-scaling-stroke" stroke-linejoin="round"></path>
+        </svg>
+      </div>
+    </sc-for>
+    <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:14px;color:var(--dim);padding-top:8px">
+      <span><span aria-hidden="true" style="color:var(--spo2)">━</span> spo2</span>
+      <span><span aria-hidden="true" style="color:var(--hr)">━</span> hr</span>
+      <span><span aria-hidden="true" style="color:var(--unknown)">▨</span> null — not measured</span>
+    </div>
+  </div>
+</section>
+</sc-if>
+
+<!-- ===== 2 NIGHT ===== -->
+<sc-if value="{{ showNight }}" hint-placeholder-val="{{ true }}">
+<section data-screen-label="Last night">
+  <div style="border:1px solid var(--rule);background:var(--panel);padding:12px">
+    <div style="font-size:15px;color:var(--dim)">$ vitalsctl session show {{ session.id }} --lanes spo2,hr,resp,leak</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px;margin-top:10px;font-size:15px">
+      <sc-for list="{{ sessionKV }}" as="k" hint-placeholder-count="5">
+        <div style="border-left:3px solid {{ k.color }};padding-left:10px">
+          <div style="color:var(--faint);font-size:14px">{{ k.k }}</div>
+          <div style="font-size:19px;color:{{ k.color }};margin-top:2px">{{ k.v }}</div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+  <div style="border:1px solid var(--rule);background:var(--panel);padding:12px;margin-top:14px">
+    <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;border-bottom:1px solid var(--rule-strong);padding-bottom:7px;font-size:15px">
+      <span style="color:var(--dim)">lanes — shared x-axis, fixed y per lane, no dual axes</span>
+      <span style="color:var(--faint)">{{ session.n }} samples · {{ session.rate }}</span>
+    </div>
+    <sc-for list="{{ lanes }}" as="L" hint-placeholder-count="4">
+      <div style="display:grid;grid-template-columns:118px 1fr;gap:8px;padding:9px 0;border-bottom:1px solid var(--rule)">
+        <div style="font-size:14px;color:{{ L.color }};display:flex;flex-direction:column;justify-content:space-between">
+          <span style="color:var(--faint)">{{ L.hi }}</span>
+          <span style="font-weight:700">{{ L.label }}</span>
+          <span style="color:var(--faint)">{{ L.lo }}</span>
+        </div>
+        <svg viewBox="0 0 1000 {{ L.H }}" preserveAspectRatio="none" role="img" aria-label="{{ L.aria }}" style="width:100%;height:{{ L.Hpx }};display:block;background:var(--sunk);border:1px solid var(--rule)">
+          <path d="{{ L.grid }}" stroke="var(--rule)" stroke-width="1" fill="none" vector-effect="non-scaling-stroke"></path>
+          <path d="{{ L.limitLine }}" stroke="{{ L.color }}" stroke-width="1" stroke-dasharray="6 5" opacity=".7" fill="none" vector-effect="non-scaling-stroke"></path>
+          <path d="{{ L.gapFill }}" fill="url(#gapHatch)"></path>
+          <path d="{{ L.gapEdge }}" stroke="var(--unknown)" stroke-width="2" stroke-dasharray="4 4" fill="none" vector-effect="non-scaling-stroke"></path>
+          <path d="{{ L.eventMarks }}" stroke="var(--hi)" stroke-width="1.4" fill="none" opacity=".85" vector-effect="non-scaling-stroke"></path>
+          <path d="{{ L.d }}" stroke="{{ L.color }}" stroke-width="1.6" fill="none" vector-effect="non-scaling-stroke" stroke-linejoin="round"></path>
+        </svg>
+      </div>
+    </sc-for>
+    <div style="display:grid;grid-template-columns:118px 1fr;gap:8px">
+      <span></span>
+      <div style="display:flex;justify-content:space-between;font-size:14px;color:var(--faint);padding-top:5px">
+        <sc-for list="{{ xTicks }}" as="t" hint-placeholder-count="8"><span>{{ t.label }}</span></sc-for>
+      </div>
+    </div>
+    <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:14px;color:var(--dim);padding-top:10px;margin-top:6px;border-top:1px solid var(--rule)">
+      <span><span aria-hidden="true" style="color:var(--spo2)">━</span> spo2 %</span>
+      <span><span aria-hidden="true" style="color:var(--hr)">━</span> hr bpm</span>
+      <span><span aria-hidden="true" style="color:var(--resp)">━</span> resp rpm</span>
+      <span><span aria-hidden="true" style="color:var(--cpap)">━</span> leak L/min</span>
+      <span><span aria-hidden="true" style="color:var(--hi)">│</span> event</span>
+      <span><span aria-hidden="true" style="color:var(--unknown)">▨</span> null span</span>
+      <span>· · · limit</span>
+    </div>
+  </div>
+
+  <div style="border:1px solid var(--rule);background:var(--panel);padding:12px;margin-top:14px">
+    <div style="display:flex;justify-content:space-between;border-bottom:1px solid var(--rule-strong);padding-bottom:7px;font-size:15px">
+      <span style="color:var(--dim)">$ journalctl -u vitalsd --since 23:00 --grep EVENT</span><span style="color:var(--faint)">{{ eventCount }}</span>
+    </div>
+    <sc-for list="{{ events }}" as="e" hint-placeholder-count="6">
+      <div style="display:flex;flex-wrap:wrap;gap:4px 12px;align-items:baseline;padding:8px 0;border-bottom:1px solid var(--rule);font-size:15px">
+        <span style="color:var(--faint)">{{ e.t }}</span>
+        <span aria-hidden="true" style="color:{{ e.color }};font-weight:700">{{ e.glyph }}</span>
+        <span style="color:{{ e.color }};font-weight:700">{{ e.rank }}</span>
+        <span style="flex:1 1 260px;min-width:0">{{ e.label }}<span style="color:var(--faint)"> {{ e.detail }}</span></span>
+      </div>
+    </sc-for>
+  </div>
+</section>
+</sc-if>
+
+<!-- ===== 3 TRENDS ===== -->
+<sc-if value="{{ showTrends }}" hint-placeholder-val="{{ true }}">
+<section data-screen-label="Trends">
+  <div style="border:1px solid var(--rule);background:var(--panel);padding:12px;display:flex;flex-wrap:wrap;gap:14px;align-items:center">
+    <span style="font-size:15px;color:var(--dim)">$ vitalsctl trend --window {{ windowLabel }} --baseline self</span>
+    <div role="group" aria-label="Window" style="display:flex;gap:6px">
+      <button data-k aria-selected="{{ is7 }}" onClick="{{ win7 }}">7 · 7d</button>
+      <button data-k aria-selected="{{ is30 }}" onClick="{{ win30 }}">3 · 30d</button>
+      <button data-k aria-selected="{{ is90 }}" onClick="{{ win90 }}">9 · 90d</button>
+    </div>
+    <span style="font-size:14px;color:var(--faint)">baseline = own rolling median + IQR. population norms: not implemented, by design.</span>
+  </div>
+
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:14px;margin-top:14px">
+    <sc-for list="{{ trendCards }}" as="c" hint-placeholder-count="4">
+      <div style="border:1px solid var(--rule);border-top:3px solid {{ c.color }};background:var(--panel);padding:12px">
+        <div style="display:flex;justify-content:space-between;font-size:15px">
+          <span style="color:{{ c.color }};font-weight:700">{{ c.label }}</span><span style="color:var(--faint)">{{ c.unit }}</span>
+        </div>
+        <div style="display:flex;align-items:baseline;gap:10px;margin:10px 0 4px">
+          <span style="font-size:34px;line-height:1;font-weight:500">{{ c.latest }}</span>
+          <span style="font-size:15px;color:{{ c.devColor }};font-weight:700"><span aria-hidden="true">{{ c.devGlyph }}</span> {{ c.dev }}</span>
+        </div>
+        <div style="font-size:14px;color:var(--faint)">base={{ c.baseline }} iqr={{ c.iqr }} <span style="color:{{ c.missColor }}">null={{ c.missing }}</span></div>
+        <svg viewBox="0 0 1000 140" preserveAspectRatio="none" role="img" aria-label="{{ c.aria }}" style="width:100%;height:140px;margin-top:10px;display:block;background:var(--sunk);border:1px solid var(--rule)">
+          <path d="{{ c.band }}" fill="{{ c.color }}" opacity=".15"></path>
+          <path d="{{ c.baseLine }}" stroke="{{ c.color }}" stroke-width="1" stroke-dasharray="6 5" opacity=".85" fill="none" vector-effect="non-scaling-stroke"></path>
+          <path d="{{ c.grid }}" stroke="var(--rule)" stroke-width="1" fill="none" vector-effect="non-scaling-stroke"></path>
+          <path d="{{ c.gapFill }}" fill="url(#gapHatch)"></path>
+          <path d="{{ c.gapEdge }}" stroke="var(--unknown)" stroke-width="2" stroke-dasharray="4 4" fill="none" vector-effect="non-scaling-stroke"></path>
+          <path d="{{ c.d }}" stroke="{{ c.color }}" stroke-width="1.8" fill="none" vector-effect="non-scaling-stroke" stroke-linejoin="round"></path>
+          <path d="{{ c.dots }}" fill="{{ c.color }}"></path>
+        </svg>
+        <div style="display:flex;justify-content:space-between;font-size:14px;color:var(--faint);margin-top:6px">
+          <span>{{ c.from }}</span><span>{{ c.to }}</span>
+        </div>
+        <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:14px;color:var(--dim);margin-top:6px;border-top:1px solid var(--rule);padding-top:6px">
+          <span><span aria-hidden="true" style="color:{{ c.color }}">━</span> nightly</span><span>· · · own median</span>
+          <span><span aria-hidden="true" style="color:{{ c.color }};opacity:.55">▬</span> own IQR</span>
+          <span><span aria-hidden="true" style="color:var(--unknown)">▨</span> null</span>
+        </div>
+      </div>
+    </sc-for>
+  </div>
+</section>
+</sc-if>
+
+<!-- ===== 4 SYS ===== -->
+<sc-if value="{{ showSys }}" hint-placeholder-val="{{ true }}">
+<section data-screen-label="System health">
+  <div style="border:1px solid {{ readiness.color }};background:{{ readiness.bg }};padding:12px 14px;background-image:{{ readiness.hatch }};background-size:8px 8px">
+    <div style="font-size:15px;color:var(--dim)">$ vitalsctl preflight --tonight</div>
+    <div style="display:flex;gap:12px;align-items:baseline;margin-top:8px;flex-wrap:wrap">
+      <span aria-hidden="true" style="color:{{ readiness.color }};font-size:24px;font-weight:700">{{ readiness.glyph }}</span>
+      <span style="color:{{ readiness.color }};font-weight:700;font-size:19px;letter-spacing:.06em">{{ readiness.verdict }}</span>
+      <span style="font-size:15px;color:var(--dim)">exit {{ readiness.exit }}</span>
+    </div>
+    <div style="font-size:16px;line-height:1.55;margin-top:8px;max-width:88ch;text-wrap:pretty">{{ readiness.detail }}</div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;margin-top:14px">
+    <sc-for list="{{ sysGroups }}" as="g" hint-placeholder-count="4">
+      <div style="border:1px solid var(--rule);background:var(--panel);padding:12px">
+        <div style="border-bottom:1px solid var(--rule-strong);padding-bottom:7px;font-size:15px;color:var(--dim)">{{ g.title }}</div>
+        <sc-for list="{{ g.rows }}" as="r" hint-placeholder-count="5">
+          <div style="display:flex;flex-wrap:wrap;gap:4px 12px;align-items:baseline;padding:8px 0;border-bottom:1px solid var(--rule);font-size:15px">
+            <span aria-hidden="true" style="color:{{ r.color }};font-weight:700">{{ r.glyph }}</span>
+            <span style="color:var(--dim);flex:1 1 auto">{{ r.k }}</span>
+            <span style="color:{{ r.color }};margin-left:auto;text-align:right">{{ r.v }}</span>
+          </div>
+        </sc-for>
+      </div>
+    </sc-for>
+  </div>
+</section>
+</sc-if>
+
+<!-- ===== 5 TOKENS ===== -->
+<sc-if value="{{ showTok }}" hint-placeholder-val="{{ true }}">
+<section data-screen-label="Design system">
+  <div style="border:1px solid var(--rule);background:var(--panel);padding:14px">
+    <div style="font-size:15px;color:var(--dim)">$ man 7 anxietywatch-ui</div>
+    <h1 style="font-size:24px;font-weight:700;letter-spacing:.04em;margin:10px 0 8px">DIRECTION C — TERMINAL</h1>
+    <p style="font-size:16px;line-height:1.65;color:var(--dim);margin:0;max-width:92ch;text-wrap:pretty">The bet: the person reading this at 3 a.m. is the person who wrote the daemon, and the fastest interface for them is the one that looks like the tool they already trust. One monospace grid, one column of panels, every panel headed by the command that produced it, every value printed as <span style="color:var(--text)">key=value</span> with its units and its timestamp. Navigation is keyboard-first — digits jump screens, <kbd>d</kbd> simulates sensor loss, <kbd>t</kbd> swaps theme, <kbd>?</kbd> lists the map — and the mouse is a fallback, not the design. Because everything is one typeface at one width, the only variables left for meaning are colour, glyph and position, so the system spends them carefully: null is periwinkle-hatched, alarms are ranked by frame weight, and nothing is decorative.</p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;font-size:15px;color:var(--dim)">
+      <span><kbd>1</kbd>–<kbd>5</kbd> screens</span><span><kbd>7</kbd>/<kbd>3</kbd>/<kbd>9</kbd> trend window</span><span><kbd>d</kbd> degrade sim</span><span><kbd>t</kbd> theme</span><span><kbd>?</kbd> keymap</span>
+    </div>
+  </div>
+
+  <div style="border:1px solid var(--rule);background:var(--panel);padding:12px;margin-top:14px">
+    <div style="border-bottom:1px solid var(--rule-strong);padding-bottom:7px;font-size:15px;color:var(--dim)">colour tokens — measured contrast (WCAG 2.2, sRGB)</div>
+    <div style="overflow-x:auto">
+      <div style="display:grid;grid-template-columns:minmax(180px,1fr) 96px minmax(130px,.9fr) 76px 1.4fr;min-width:720px">
+        <sc-for list="{{ tokenRows }}" as="r" hint-placeholder-count="12">
+          <div style="padding:8px 10px 8px 0;border-bottom:1px solid var(--rule);display:flex;align-items:center;gap:8px;font-size:14px"><span aria-hidden="true" style="width:14px;height:14px;background:{{ r.swatch }};border:1px solid var(--rule-strong);flex:none"></span>{{ r.token }}</div>
+          <div style="padding:8px 10px;border-bottom:1px solid var(--rule);font-size:14px;color:var(--dim)">{{ r.hex }}</div>
+          <div style="padding:8px 10px;border-bottom:1px solid var(--rule);font-size:14px;color:var(--dim)">{{ r.against }}</div>
+          <div style="padding:8px 10px;border-bottom:1px solid var(--rule);font-size:14px;font-weight:700">{{ r.ratio }}</div>
+          <div style="padding:8px 0 8px 10px;border-bottom:1px solid var(--rule);font-size:14px;color:var(--dim)">{{ r.use }}</div>
+        </sc-for>
+      </div>
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px;margin-top:14px">
+    <div style="border:1px solid var(--rule);background:var(--panel);padding:12px">
+      <div style="border-bottom:1px solid var(--rule-strong);padding-bottom:7px;font-size:15px;color:var(--dim)">signal palette — one hue per signal, global</div>
+      <sc-for list="{{ signalRows }}" as="s" hint-placeholder-count="6">
+        <div style="display:grid;grid-template-columns:100px 1fr auto;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--rule);font-size:15px">
+          <span style="height:12px;background:{{ s.color }};display:block"></span>
+          <span>{{ s.name }} <span style="color:var(--faint);font-size:14px">{{ s.token }}</span></span>
+          <span style="color:var(--dim);font-size:14px">{{ s.ratio }}</span>
+        </div>
+      </sc-for>
+      <p style="font-size:15px;line-height:1.6;color:var(--dim);margin:10px 0 0;text-wrap:pretty">Verification: each hex simulated through Brettel–Viénot–Mollon for deuteranopia, protanopia and tritanopia, then checked pairwise for ≥ 20 ΔE (CIE76) and ≥ 1.4:1 luminance separation. Teal vs lime is the tightest pair and clears both; under tritanopia teal and periwinkle converge in hue, which is why null is additionally hatched and glyph-marked. Lane labels and fixed lane order carry identity independently of colour.</p>
+    </div>
+    <div style="border:2px solid var(--unknown);background:var(--panel);padding:12px;background-image:{{ unknownHatch }};background-size:8px 8px">
+      <div style="border-bottom:1px solid var(--unknown);padding-bottom:7px;font-size:15px;color:var(--unknown);font-weight:700">null — the third state</div>
+      <pre style="font-family:inherit;font-size:15px;line-height:1.7;color:var(--dim);white-space:pre-wrap;margin:10px 0 0">{{ nullSpec }}</pre>
+      <div style="display:grid;gap:8px;margin-top:12px">
+        <sc-for list="{{ unknownExamples }}" as="u" hint-placeholder-count="4">
+          <div style="border-left:3px solid var(--unknown);padding-left:10px;font-size:15px;line-height:1.5">
+            <span style="color:var(--unknown);font-weight:700">{{ u.where }}</span> — {{ u.how }}
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </div>
+
+  <div style="border:1px solid var(--rule);background:var(--panel);padding:12px;margin-top:14px">
+    <div style="border-bottom:1px solid var(--rule-strong);padding-bottom:7px;font-size:15px;color:var(--dim)">value cell — every state</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-top:12px">
+      <sc-for list="{{ stateTiles }}" as="n" hint-placeholder-count="7">
+        <div style="border:1px solid var(--rule);border-top:3px solid {{ n.color }};padding:11px;background-image:{{ n.hatch }};background-size:8px 8px;min-height:158px">
+          <div style="font-size:14px;color:{{ n.color }};font-weight:700"><span aria-hidden="true">{{ n.glyph }}</span> {{ n.stateName }}</div>
+          <div style="display:flex;align-items:baseline;gap:6px;margin:12px 0 6px">
+            <span style="font-size:36px;line-height:1;color:{{ n.valueColor }}">{{ n.value }}</span>
+            <span style="font-size:14px;color:var(--dim)">%</span>
+          </div>
+          <div style="font-size:14px;color:var(--faint);border-top:1px solid var(--rule);padding-top:6px">{{ n.stamp }}</div>
+          <div style="font-size:14px;color:{{ n.color }};margin-top:4px">{{ n.note }}</div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px;margin-top:14px">
+    <div style="border:1px solid var(--rule);background:var(--panel);padding:12px">
+      <div style="border-bottom:1px solid var(--rule-strong);padding-bottom:7px;font-size:15px;color:var(--dim)">alarm ranks — frame weight, not just hue</div>
+      <sc-for list="{{ rankRows }}" as="r" hint-placeholder-count="5">
+        <div style="border:{{ r.frame }};background:{{ r.bg }};padding:10px;margin-top:9px">
+          <div style="font-size:15px;color:{{ r.color }};font-weight:700"><span aria-hidden="true">{{ r.glyph }}</span> {{ r.name }}</div>
+          <div style="font-size:14px;color:var(--dim);margin-top:4px;line-height:1.5">{{ r.rule }}</div>
+        </div>
+      </sc-for>
+    </div>
+    <div style="border:1px solid var(--rule);background:var(--panel);padding:12px">
+      <div style="border-bottom:1px solid var(--rule-strong);padding-bottom:7px;font-size:15px;color:var(--dim)">type &amp; space — one family, JetBrains Mono</div>
+      <sc-for list="{{ typeRows }}" as="t" hint-placeholder-count="6">
+        <div style="display:grid;grid-template-columns:1fr auto;gap:10px;align-items:baseline;border-bottom:1px solid var(--rule);padding:8px 0">
+          <span style="font-size:{{ t.px }};font-weight:{{ t.weight }};line-height:1.15">{{ t.sample }}</span>
+          <span style="font-size:14px;color:var(--faint)">{{ t.spec }}</span>
+        </div>
+      </sc-for>
+      <p style="font-size:15px;line-height:1.6;color:var(--dim);margin:10px 0 0">Space scale 4 · 8 · 10 · 14 · 22 · 32 px on a 2ch rhythm. One family means the type scale is doing the hierarchy work alone: 44/36/24/19/16/15/14. Nothing below 14 px; every figure tabular by default at the body rule, so a ticking value never shifts its neighbours.</p>
+      <ul style="margin:12px 0 0;padding-left:20px;font-size:15px;line-height:1.7;color:var(--dim)">
+        <li>No dual axes; one lane per measure, fixed y, printed hi/mid/lo.</li>
+        <li>Nulls are never bridged, never zero-filled, never forward-filled.</li>
+        <li>Legend on every plot; direct labels at extremes only.</li>
+        <li>Sequential = one hue light→dark; diverging = signal hue ↔ periwinkle across neutral grey. No rainbow.</li>
+        <li>Focus ring 3 px periwinkle, visible on every interactive element; full keyboard map, no mouse-only affordance.</li>
+        <li><span style="color:var(--text)">prefers-reduced-motion</span>: no transitions anywhere in this direction to begin with — nothing moves except values.</li>
+        <li>Dark primary; light theme re-derived against #eff2f5 with its own ratios listed above.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+</sc-if>
+
+</main>
+
+<footer style="border-top:1px solid var(--rule-strong);padding:9px 16px;display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 16px;font-size:14px;color:var(--dim);background:var(--panel);position:sticky;bottom:0">
+  <span><kbd>1</kbd>–<kbd>5</kbd> screen</span>
+  <span><kbd>7</kbd>/<kbd>3</kbd>/<kbd>9</kbd> window</span>
+  <span><kbd>d</kbd> degrade {{ degradedLabel }}</span>
+  <span><kbd>t</kbd> theme {{ themeLabel }}</span>
+  <div style="flex:1"></div>
+  <span style="color:{{ statusColor }}">{{ footerStatus }}</span>
+</footer>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1440,&quot;height&quot;:1000},&quot;startScreen&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;now&quot;,&quot;night&quot;,&quot;trends&quot;,&quot;sys&quot;,&quot;tok&quot;],&quot;default&quot;:&quot;now&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;State&quot;},&quot;startDegraded&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;State&quot;},&quot;startTheme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;dark&quot;,&quot;light&quot;],&quot;default&quot;:&quot;dark&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;State&quot;},&quot;trendWindow&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[7,30,90],&quot;default&quot;:30,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;State&quot;}}">
+class Component extends DCLogic {
+  state = {
+    screen: this.props.startScreen || "now",
+    theme: this.props.startTheme || "dark",
+    degraded: this.props.startDegraded === true,
+    win: this.props.trendWindow || 30
+  };
+
+  componentDidMount() {
+    this._key = (e) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const t = e.target;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
+      if (e.key === "1") this.setState({ screen: "now" });
+      else if (e.key === "2") this.setState({ screen: "night" });
+      else if (e.key === "4") this.setState({ screen: "sys" });
+      else if (e.key === "5") this.setState({ screen: "tok" });
+      else if (e.key === "d" || e.key === "D") this.setState(s => ({ degraded: !s.degraded }));
+      else if (e.key === "t" || e.key === "T") this.setState(s => ({ theme: s.theme === "dark" ? "light" : "dark" }));
+      else if (e.key === "7") this.setState({ screen: "trends", win: 7 });
+      else if (e.key === "3") this.setState({ screen: "trends", win: 30 });
+      else if (e.key === "9") this.setState({ screen: "trends", win: 90 });
+      else return;
+      e.preventDefault();
+    };
+    window.addEventListener("keydown", this._key);
+    this.syncTheme();
+  }
+  componentWillUnmount() { window.removeEventListener("keydown", this._key); }
+
+  rng(seed) { let s = seed >>> 0; return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }; }
+  hhmm(min) { const m = ((min % 1440) + 1440) % 1440; return String(Math.floor(m / 60)).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0"); }
+  scale(v, lo, hi, H) { const t = (v - lo) / (hi - lo); return H - Math.max(0, Math.min(1, t)) * H; }
+  linePath(vals, lo, hi, W, H) {
+    let d = "", open = false;
+    vals.forEach((v, i) => {
+      const x = (i / (vals.length - 1)) * W;
+      if (v == null) { open = false; return; }
+      d += (open ? "L" : "M") + x.toFixed(2) + " " + this.scale(v, lo, hi, H).toFixed(2) + " ";
+      open = true;
+    });
+    return d.trim();
+  }
+  gapPaths(vals, W, H) {
+    let fill = "", edge = "", i = 0; const step = W / (vals.length - 1);
+    while (i < vals.length) {
+      if (vals[i] == null) {
+        let j = i; while (j < vals.length && vals[j] == null) j++;
+        const x0 = Math.max(0, (i - .5) * step), x1 = Math.min(W, (j - .5) * step);
+        fill += "M" + x0.toFixed(2) + " 0 H" + x1.toFixed(2) + " V" + H + " H" + x0.toFixed(2) + " Z ";
+        edge += "M" + x0.toFixed(2) + " 0 V" + H + " M" + x1.toFixed(2) + " 0 V" + H + " ";
+        i = j;
+      } else i++;
+    }
+    return { fill: fill.trim(), edge: edge.trim() };
+  }
+  gridPath(W, H, rows) { let d = ""; for (let r = 1; r < rows; r++) { const y = ((H / rows) * r).toFixed(1); d += "M0 " + y + " H" + W + " "; } for (let c = 1; c < 8; c++) { const x = ((W / 8) * c).toFixed(1); d += "M" + x + " 0 V" + H + " "; } return d.trim(); }
+  hLine(v, lo, hi, W, H) { return "M0 " + this.scale(v, lo, hi, H).toFixed(2) + " H" + W; }
+
+  session() {
+    if (this._s && this._sd === this.state.degraded) return this._s;
+    const deg = this.state.degraded, r = this.rng(7717), N = 460, startMin = 23 * 60 + 12;
+    const spo2 = [], hr = [], resp = [], leak = [];
+    for (let i = 0; i < N; i++) {
+      let s = 96 + Math.sin(i / 23) * .7 + (r() - .5) * 1.2;
+      let h = 54 + Math.sin(i / 31) * 3 + (r() - .5) * 3;
+      let rr = 13.5 + Math.sin(i / 17) * .9 + (r() - .5) * 1.1;
+      let lk = 17 + Math.sin(i / 41) * 4 + (r() - .5) * 3;
+      if (!deg && i >= 168 && i <= 187) { const k = 1 - Math.abs(i - 177) / 11; s -= 10.5 * k; h += 17 * k; rr -= 5.5 * k; }
+      if (deg && i >= 225 && i <= 231) { s -= (i - 224) * 1.0; h += (i - 224) * 1.6; }
+      if (!deg && i >= 300 && i <= 309) { const k = 1 - Math.abs(i - 304) / 6; s -= 5.5 * k; h += 8 * k; }
+      if (i >= 360 && i <= 372) lk += 22;
+      spo2.push(+s.toFixed(1)); hr.push(Math.round(h)); resp.push(+rr.toFixed(1)); leak.push(+lk.toFixed(1));
+    }
+    const g0 = deg ? 232 : 254, g1 = deg ? 259 : 260;
+    for (let i = g0; i <= g1; i++) { spo2[i] = null; hr[i] = null; if (deg) resp[i] = null; }
+    if (deg) for (let i = 232; i < N; i++) { spo2[i] = null; hr[i] = null; }
+    this._sd = deg; this._s = { spo2, hr, resp, leak, N, startMin };
+    return this._s;
+  }
+
+  lane(vals, cfg) {
+    const W = 1000, H = cfg.H || 100, g = this.gapPaths(vals, W, H);
+    return {
+      label: cfg.label, color: cfg.color, aria: cfg.aria, hi: cfg.hi, mid: cfg.mid, lo: cfg.lo, H: H, Hpx: H + "px",
+      d: this.linePath(vals, cfg.min, cfg.max, W, H), grid: this.gridPath(W, H, cfg.rows || 4),
+      gapFill: g.fill, gapEdge: g.edge,
+      limitLine: cfg.limit != null ? this.hLine(cfg.limit, cfg.min, cfg.max, W, H) : "",
+      eventMarks: cfg.marks || ""
+    };
+  }
+
+  trend(key) {
+    const days = this.state.win, deg = this.state.degraded, r = this.rng(4241 + days + key.charCodeAt(0));
+    const spec = {
+      spo2: { base: 92.4, amp: 1.4, unit: "% spo2_nadir", label: "spo2.nadir", color: "var(--spo2)", dec: 1, dir: -1 },
+      hr: { base: 53.6, amp: 2.6, unit: "bpm hr_mean_sleep", label: "hr.mean_sleep", color: "var(--hr)", dec: 0, dir: 1 },
+      hrv: { base: 41.8, amp: 6.5, unit: "ms rmssd", label: "hrv.rmssd", color: "var(--resp)", dec: 1, dir: -1 },
+      ahi: { base: 3.4, amp: 1.5, unit: "ev/h cpap_ahi", label: "cpap.ahi", color: "var(--cpap)", dec: 1, dir: 1 }
+    }[key];
+    const vals = [];
+    for (let i = 0; i < days; i++) {
+      let v = spec.base + Math.sin(i / 4.5) * spec.amp * .5 + (r() - .5) * spec.amp;
+      if (key === "spo2" && i === days - 2) v -= 3.2;
+      if (key === "ahi" && i === days - 3) v += 3.1;
+      vals.push(+v.toFixed(spec.dec));
+    }
+    (deg ? [days - 1, days - 6, days - 7] : [days - 6]).forEach(i => { if (i >= 0) vals[i] = null; });
+    const good = vals.filter(v => v != null).sort((a, b) => a - b);
+    const med = good[Math.floor(good.length / 2)], q1 = good[Math.floor(good.length * .25)], q3 = good[Math.floor(good.length * .75)];
+    const pad = (q3 - q1) * 1.6 + spec.amp, min = Math.min.apply(null, good) - pad * .4, max = Math.max.apply(null, good) + pad * .4;
+    const W = 1000, H = 140, g = this.gapPaths(vals, W, H);
+    let dots = "";
+    vals.forEach((v, i) => {
+      if (v == null) return;
+      const x = (i / (vals.length - 1)) * W, y = this.scale(v, min, max, H);
+      if (v > q3 + (q3 - q1) * 1.5 || v < q1 - (q3 - q1) * 1.5 || i === vals.length - 1) dots += "M" + (x - 3.5).toFixed(1) + " " + y.toFixed(1) + " a3.5,3.5 0 1,0 7,0 a3.5,3.5 0 1,0 -7,0 ";
+    });
+    const last = [].concat(vals).reverse().find(v => v != null);
+    const dev = last - med, pct = (dev / med) * 100, bad = spec.dir > 0 ? dev > (q3 - q1) : dev < -(q3 - q1);
+    const miss = vals.filter(v => v == null).length;
+    return {
+      label: spec.label, unit: spec.unit, color: spec.color,
+      latest: last.toFixed(spec.dec), baseline: med.toFixed(spec.dec), iqr: q1.toFixed(spec.dec) + "–" + q3.toFixed(spec.dec),
+      dev: (dev >= 0 ? "+" : "") + dev.toFixed(spec.dec) + " / " + (pct >= 0 ? "+" : "") + pct.toFixed(1) + "%",
+      devGlyph: bad ? "!" : dev >= 0 ? "▲" : "▼", devColor: bad ? "var(--med)" : "var(--dim)",
+      missing: miss + "/" + days, missColor: miss ? "var(--unknown)" : "var(--dim)",
+      d: this.linePath(vals, min, max, W, H), grid: this.gridPath(W, H, 4), gapFill: g.fill, gapEdge: g.edge, dots,
+      baseLine: this.hLine(med, min, max, W, H),
+      band: "M0 " + this.scale(q3, min, max, H).toFixed(1) + " H" + W + " V" + this.scale(q1, min, max, H).toFixed(1) + " H0 Z",
+      from: "t−" + days + "d", to: "t−0 (last night)",
+      aria: spec.label + " over " + days + " nights vs own median " + med.toFixed(spec.dec) + ", " + miss + " null nights drawn as gaps"
+    };
+  }
+
+  syncTheme() {
+    const el = document.documentElement;
+    if (el) el.setAttribute("data-theme", this.state.theme);
+  }
+  componentDidUpdate() { this.syncTheme(); }
+
+  renderVals() {
+    const deg = this.state.degraded, s = this.state.screen, S = this.session(), W = 1000;
+    const hatchOn = "repeating-linear-gradient(45deg,var(--hatch) 0 2px,transparent 2px 6px)";
+    const unk = "var(--unknown)";
+
+    const r = this.rng(991), lspo2 = [], lhr = [];
+    for (let i = 0; i < 240; i++) { lspo2.push(+(96.5 + Math.sin(i / 19) * .6 + (r() - .5)).toFixed(1)); lhr.push(Math.round(52 + Math.sin(i / 27) * 2.4 + (r() - .5) * 2.5)); }
+    if (deg) for (let i = 158; i < 240; i++) { lspo2[i] = null; lhr[i] = null; }
+
+    const banner = deg
+      ? { code: "E_SENSOR_LOST · rank=high · chan=technical", color: "var(--hi)", bg: "color-mix(in oklab,var(--hi) 16%,transparent)", hatch: "none", glyph: "×", at: "raised 03:04:41 · 41m12s ago · unacked",
+          msg: "pulse-ox link down. spo2=null hr=null rmssd=null. monitoring is NOT active.",
+          assertion: "cannot_assess(spo2) ∧ cannot_assess(hr) ⇒ tier held at CONFIRM. absence ≠ recovery." }
+      : { code: "OK · rank=none · chan=—", color: "var(--ok)", bg: "transparent", hatch: "none", glyph: "✓", at: "last transition 02:24:38 · 4h20m ago",
+          msg: "5/6 sources live within 1.0 s. tier=clear. one stale source: nbp, 19h04m old.",
+          assertion: "all_enrolled_params(measured ∧ in_range) for 5m ⇒ tier=clear" };
+
+    const num = (o) => Object.assign({ hatch: "none", valueColor: "var(--text)", glyph: "✓", state: "measured · in range" }, o);
+    const numerics = [
+      deg ? num({ key: "spo2", unit: "%", glyph: "?", color: unk, value: "null", sub: "", valueColor: unk, limits: "lim 88–100", stamp: "03:04:41", state: "not measured · 41m", hatch: hatchOn })
+          : num({ key: "spo2", unit: "%", color: "var(--spo2)", value: "96", sub: "±1", limits: "lim 88–100", stamp: "06:45:02" }),
+      deg ? num({ key: "hr", unit: "bpm", glyph: "?", color: unk, value: "null", sub: "", valueColor: unk, limits: "lim 40–120", stamp: "03:04:41", state: "not measured · 41m", hatch: hatchOn })
+          : num({ key: "hr", unit: "bpm", color: "var(--hr)", value: "52", sub: "sinus", limits: "lim 40–120", stamp: "06:45:02" }),
+      num({ key: "nbp", unit: "mmHg", glyph: "!", color: "var(--med)", value: "118/74", sub: "map 89", limits: "lim 90–140/55–90", stamp: "11:41−1d", state: "stale · 19h04m" }),
+      num({ key: "resp", unit: "rpm", color: "var(--resp)", value: "13", sub: "reg", limits: "lim 8–24", stamp: "06:45:02" }),
+      deg ? num({ key: "rmssd", unit: "ms", glyph: "?", color: unk, value: "null", sub: "", valueColor: unk, limits: "own iqr 36–48", stamp: "03:04:41", state: "no rr intervals", hatch: hatchOn })
+          : num({ key: "rmssd", unit: "ms", color: "var(--resp)", value: "42", sub: "n=118 rr", limits: "own iqr 36–48", stamp: "06:44:30" }),
+      num({ key: "cpap.ahi", unit: "ev/h", color: "var(--cpap)", value: "3.1", sub: "leak 19", limits: "lim ≤5.0", stamp: "06:44:58" })
+    ];
+
+    const sensors = [
+      { name: "pulse_ox", link: "ble:4a2f", glyph: deg ? "×" : "✓", state: deg ? "LOST" : "LIVE", color: deg ? "var(--hi)" : "var(--ok)", age: deg ? "41m12s" : "0.8s" },
+      { name: "ecg_strap", link: "ble:11c0", glyph: deg ? "?" : "✓", state: deg ? "NULL" : "LIVE", color: deg ? unk : "var(--ok)", age: deg ? "41m12s" : "0.9s" },
+      { name: "nbp_cuff", link: "bt:classic", glyph: "!", state: "IDLE", color: "var(--med)", age: "19h04m" },
+      { name: "cpap_sd", link: "usb:sd0", glyph: "✓", state: "SYNC", color: "var(--ok)", age: "1m04s" },
+      { name: "baro_bme280", link: "i2c:0x76", glyph: "✓", state: "LIVE", color: "var(--ok)", age: "2.0s" },
+      { name: "klaxon", link: "gpio:18", glyph: "✓", state: "ARMED", color: "var(--ok)", age: "test 1h" }
+    ];
+
+    const cur = deg ? "confirm" : "clear";
+    const tierMeta = { clear: "var(--ok)", watch: "var(--med)", confirm: "var(--hi)", klaxon: "var(--hi)" };
+    const tiers = [["clear", "✓"], ["watch", "•"], ["confirm", "!"], ["klaxon", "▲"]].map(([k, glyph]) => {
+      const on = k === cur, c = deg && on ? unk : tierMeta[k];
+      return { name: k, glyph, fg: on ? c : "var(--faint)", border: on ? c : "var(--rule)", bg: on ? "color-mix(in oklab," + c + " 16%,transparent)" : "transparent" };
+    });
+
+    const physTimes = deg ? ["02:57:12"] : ["02:04:18", "02:09:44", "02:19:38"];
+    const marks = physTimes
+      .map(ts => { const p = ts.split(":"); let i = (+p[0]) * 60 + (+p[1]) - S.startMin; return i < 0 ? i + 1440 : i; })
+      .filter(i => i >= 0 && i < S.N && S.spo2[i] != null)
+      .map(i => "M" + ((i / (S.N - 1)) * W).toFixed(1) + " 0 V170 ").join("");
+    const lanes = [
+      this.lane(S.spo2, { label: "spo2 %", color: "var(--spo2)", hi: "100", mid: "90", lo: "80", min: 80, max: 100, limit: 88, H: 150, marks, aria: "spo2 overnight, 80 to 100 percent, limit 88, null spans hatched" }),
+      this.lane(S.hr, { label: "hr bpm", color: "var(--hr)", hi: "110", mid: "75", lo: "40", min: 40, max: 110, limit: 100, H: 110, marks, aria: "heart rate overnight, 40 to 110" }),
+      this.lane(S.resp, { label: "resp rpm", color: "var(--resp)", hi: "24", mid: "14", lo: "4", min: 4, max: 24, limit: 8, H: 92, marks, aria: "respiration rate overnight" }),
+      this.lane(S.leak, { label: "leak L/min", color: "var(--cpap)", hi: "60", mid: "30", lo: "0", min: 0, max: 60, limit: 40, H: 92, marks, aria: "cpap mask leak overnight" })
+    ];
+    const xTicks = []; for (let i = 0; i <= 7; i++) xTicks.push({ label: this.hhmm(S.startMin + Math.round((S.N - 1) * (i / 7))) });
+
+    const events = deg ? [
+      { t: "02:57:12", glyph: "!", color: "var(--med)", rank: "MED/PHYS", label: "desat_onset", detail: "spo2 91.8→89.1 · unresolved at data loss" },
+      { t: "03:04:41", glyph: "×", color: "var(--hi)", rank: "HIGH/TECH", label: "sensor_lost", detail: "ble:4a2f · 3 missed keepalives · reconnect attempts 412" },
+      { t: "03:04:41", glyph: "?", color: unk, rank: "NULL", label: "coverage_break", detail: "3h40m of 7h30m unmeasured · 48.9%" },
+      { t: "03:05:11", glyph: "!", color: "var(--med)", rank: "MED/TECH", label: "tier_hold", detail: "confirm → confirm · clear predicate unevaluable" },
+      { t: "05:58:20", glyph: "✓", color: "var(--cpap)", rank: "INFO", label: "cpap_end", detail: "usage 6h46m · ahi 3.1 over cpap-measured span" }
+    ] : [
+      { t: "23:41:06", glyph: "✓", color: "var(--cpap)", rank: "INFO", label: "cpap_start", detail: "mode auto 8–14 cmH2O" },
+      { t: "02:04:18", glyph: "!", color: "var(--med)", rank: "MED/PHYS", label: "desat_cluster", detail: "4 events / 15m" },
+      { t: "02:09:44", glyph: "!", color: "var(--med)", rank: "MED/PHYS", label: "spo2_nadir", detail: "85.4% · 68s · hr +19 bpm" },
+      { t: "02:19:38", glyph: "✓", color: "var(--ok)", rank: "RESOLVED", label: "cluster_clear", detail: "spo2 ≥94% for 5m · tier confirm→clear" },
+      { t: "03:26:00", glyph: "?", color: unk, rank: "NULL", label: "gap", detail: "6m00s · ble dropout · not interpolated" },
+      { t: "04:12:52", glyph: "!", color: "var(--cpap)", rank: "LOW/TECH", label: "leak_high", detail: "41 L/min · 13m above limit · spo2 unaffected" }
+    ];
+
+    const ok = "var(--ok)", med = "var(--med)";
+    const readiness = deg
+      ? { verdict: "CANNOT CONFIRM", exit: "75 (EX_TEMPFAIL)", color: unk, bg: "color-mix(in oklab,var(--unknown) 14%,transparent)", hatch: hatchOn,
+          detail: "daemon=up alarm_path=pass backup=41m restore_verified=3d — but sensor_coverage=0 for 41m. preflight refuses to return 0: an armed alarm with no input is not a working monitor. open item: repair ble:4a2f." }
+      : { verdict: "READY", exit: "0", color: ok, bg: "transparent", hatch: "none",
+          detail: "daemon=up(6d04h) ingest_p95=180ms alarm_selftest=pass(06:44:02) backup=41m restore_verified=3d storage=15% clock_drift=+4ms. oldest item on this page is the verified restore — repeat it this week." };
+
+    const sysGroups = [
+      { title: "$ systemctl status vitalsd", rows: [
+        { k: "state", glyph: "✓", color: ok, v: "active (running)" },
+        { k: "uptime", glyph: "✓", color: ok, v: "6d 04:12" },
+        { k: "ingest_lag_p95", glyph: "✓", color: ok, v: "180 ms" },
+        { k: "restarts_7d", glyph: "!", color: med, v: "1 · 30 Jul 04:02" },
+        { k: "write_queue", glyph: "✓", color: ok, v: "0/4096" }
+      ]},
+      { title: "$ vitalsctl alarm --selftest --history", rows: [
+        { k: "last_selftest", glyph: "✓", color: ok, v: "pass 06:44:02" },
+        { k: "cadence", glyph: "✓", color: ok, v: "daily 06:44" },
+        { k: "relay_continuity", glyph: "✓", color: ok, v: "4.98 V" },
+        { k: "hw_watchdog", glyph: "✓", color: ok, v: "15 s" },
+        { k: "escalation", glyph: "✓", color: ok, v: "confirm→klaxon @30s" }
+      ]},
+      { title: "$ vitalsctl backup verify", rows: [
+        { k: "last_backup", glyph: "✓", color: ok, v: "41m · 2.1 GB" },
+        { k: "last_verified_restore", glyph: "!", color: med, v: "3d · 31 Jul" },
+        { k: "checksum_sweep", glyph: "✓", color: ok, v: "clean 02:00" },
+        { k: "storage", glyph: "✓", color: ok, v: "38.4/256 GB" },
+        { k: "retention", glyph: "✓", color: ok, v: "raw 90d · agg keep" }
+      ]},
+      { title: "$ vitalsctl coverage --last 7", rows: [
+        { k: "sessions", glyph: "✓", color: ok, v: deg ? "6/7" : "7/7" },
+        { k: "measured_time", glyph: deg ? "?" : "✓", color: deg ? unk : ok, v: deg ? "84.1% · 8h12m null" : "99.2%" },
+        { k: "longest_gap", glyph: deg ? "?" : "✓", color: deg ? unk : ok, v: deg ? "3h40m" : "6m00s" },
+        { k: "nights_not_assessed", glyph: deg ? "?" : "✓", color: deg ? unk : ok, v: deg ? "1 · 02 Aug" : "0" },
+        { k: "clock_drift_ntp", glyph: "✓", color: ok, v: "+4 ms" }
+      ]}
+    ];
+
+    const T = [
+      ["--bg", "#06080b", "—", "base", "terminal ground, dark primary"],
+      ["--panel", "#0c1116", "on --bg", "1.2:1", "panel field (separated by 1px rule, not contrast)"],
+      ["--sunk", "#030507", "on --panel", "1.3:1", "plot field"],
+      ["--text", "#dbe4ea", "on --bg", "15.5:1", "values, headings"],
+      ["--dim", "#93a1ac", "on --bg", "7.6:1", "keys, prose, command echoes"],
+      ["--faint", "#6f7c88", "on --bg", "4.6:1", "14 px metadata (AA normal text)"],
+      ["--rule", "#1d242c", "on --bg", "1.4:1", "gridlines, row rules (decorative)"],
+      ["--rule-strong", "#5a6672", "on --bg", "3.3:1", "panel and control borders (AA non-text)"],
+      ["--spo2", "#4fd6d6", "on --bg", "11.3:1", "spo2"],
+      ["--hr", "#a3e35c", "on --bg", "13.0:1", "hr, rr intervals"],
+      ["--resp", "#f2b13c", "on --bg", "10.6:1", "resp, hrv"],
+      ["--bp", "#ff7b7b", "on --bg", "7.9:1", "nbp, map"],
+      ["--cpap", "#c98bff", "on --bg", "8.2:1", "cpap leak/ahi/pressure"],
+      ["--unknown", "#9aa6ff", "on --bg", "8.8:1", "null only — never a signal, never ok"],
+      ["--hi", "#ff5f56", "on --bg", "6.6:1", "high-rank alarm"],
+      ["--med", "#f2b13c", "on --bg", "10.6:1", "medium alarm, stale"],
+      ["--ok", "#a3e35c", "on --bg", "13.0:1", "measured ∧ in range (always with ✓)"],
+      ["light: --bg", "#eff2f5", "—", "base", "light theme ground"],
+      ["light: --text", "#0d1114", "on light --bg", "17.4:1", "values"],
+      ["light: --dim", "#454f59", "on light --bg", "7.6:1", "keys, prose"],
+      ["light: --faint", "#57616c", "on light --bg", "6.1:1", "metadata"],
+      ["light: --spo2", "#0c6f76", "on light --bg", "5.3:1", "spo2 — re-derived, not inverted"],
+      ["light: --hr", "#3d6b12", "on light --bg", "5.5:1", "hr"],
+      ["light: --resp", "#8a5406", "on light --bg", "5.9:1", "resp, hrv"],
+      ["light: --bp", "#ad1f1f", "on light --bg", "6.7:1", "nbp"],
+      ["light: --cpap", "#6f2bbf", "on light --bg", "7.5:1", "cpap"],
+      ["light: --unknown", "#2f3bb8", "on light --bg", "7.9:1", "null"]
+    ];
+
+    return {
+      theme: this.state.theme, themeLabel: this.state.theme === "dark" ? "dark" : "light",
+      degradedLabel: deg ? "on" : "off",
+      clock: deg ? "2026-08-02 03:45:53 EST" : "2026-08-02 06:45:02 EST",
+      route: s === "now" ? "now" : s === "night" ? "sessions/2026-08-02" : s === "trends" ? "trend/" + this.state.win + "d" : s === "sys" ? "system" : "ui/tokens",
+      statusWord: deg ? "CANNOT ASSESS" : "clear",
+      statusColor: deg ? unk : "var(--ok)",
+      footerStatus: deg ? "? spo2=null hr=null · tier held · 1 unacked technical alarm" : "✓ 5/6 live · tier=clear · nbp stale 19h",
+      toggleDegraded: () => this.setState(st => ({ degraded: !st.degraded })),
+      goNow: () => this.setState({ screen: "now" }), goNight: () => this.setState({ screen: "night" }),
+      goTrends: () => this.setState({ screen: "trends" }), goSys: () => this.setState({ screen: "sys" }), goTok: () => this.setState({ screen: "tok" }),
+      showNow: s === "now", showNight: s === "night", showTrends: s === "trends", showSys: s === "sys", showTok: s === "tok",
+      isNow: s === "now" ? "true" : "false", isNight: s === "night" ? "true" : "false", isTrends: s === "trends" ? "true" : "false",
+      isSys: s === "sys" ? "true" : "false", isTok: s === "tok" ? "true" : "false",
+      win7: () => this.setState({ win: 7 }), win30: () => this.setState({ win: 30 }), win90: () => this.setState({ win: 90 }),
+      is7: this.state.win === 7 ? "true" : "false", is30: this.state.win === 30 ? "true" : "false", is90: this.state.win === 90 ? "true" : "false",
+      windowLabel: this.state.win + "d",
+      banner, numerics, sensors, tiers, lanes, xTicks, events, readiness, sysGroups,
+      trendCards: ["spo2", "hr", "hrv", "ahi"].map(k => this.trend(k)),
+      tierSince: deg ? "since 02:57:12" : "since 02:24:38",
+      tierTrace: deg
+        ? "02:57:12  clear   → confirm   spo2 91.8 < 92.0 soft\n03:04:41  confirm → confirm   spo2=null  predicate=unevaluable\n03:05:11  HOLD              escalate? unknown · clear? unknown\n> policy: never transition to clear on absent evidence"
+        : "02:04:18  clear   → watch     spo2 91.4 < 92.0 soft\n02:09:44  watch   → confirm   spo2 85.4 < 88.0 hard · 68 s\n02:10:52  confirm → watch     spo2 recovered 94.1\n02:24:38  watch   → clear     all params measured ∧ in range 5m\n> escalation to klaxon armed at 30 s in confirm — not reached",
+      eventCount: (deg ? "5 rows · 1 null span" : "6 rows · 1 null span"),
+      liveLanes: [
+        this.lane(lspo2, { label: "spo2 %", color: "var(--spo2)", hi: "100", lo: "88", min: 88, max: 100, H: 84, rows: 3, aria: "spo2 last 20 minutes" }),
+        this.lane(lhr, { label: "hr bpm", color: "var(--hr)", hi: "80", lo: "40", min: 40, max: 80, H: 84, rows: 3, aria: "heart rate last 20 minutes" })
+      ],
+      session: {
+        id: "2026-08-02",
+        n: deg ? "13,204" : "26,984",
+        rate: "1 Hz · 30k pts decimated to 460 for display (min/max preserving)"
+      },
+      sessionKV: [
+        { k: "span", v: "23:12:04 → 06:42:11", color: "var(--text)" },
+        { k: "duration", v: "7h30m07s", color: "var(--text)" },
+        { k: "coverage", v: deg ? "51.1% · 3h40m null" : "99.2% · 6m null", color: deg ? unk : "var(--ok)" },
+        { k: "spo2.nadir", v: deg ? "≥89.1 (lower bound)" : "85.4 % @02:09:44", color: deg ? unk : "var(--spo2)" },
+        { k: "events", v: deg ? "2 phys · 2 tech · 1 null" : "4 phys · 1 tech · 1 null", color: "var(--med)" }
+      ],
+      tokenRows: T.map(row => ({ token: row[0], hex: row[1], against: row[2], ratio: row[3], use: row[4], swatch: row[1] })),
+      signalRows: [
+        { name: "spo2", token: "--spo2", color: "var(--spo2)", ratio: "11.3:1" },
+        { name: "hr · rr", token: "--hr", color: "var(--hr)", ratio: "13.0:1" },
+        { name: "resp · hrv", token: "--resp", color: "var(--resp)", ratio: "10.6:1" },
+        { name: "nbp · map", token: "--bp", color: "var(--bp)", ratio: "7.9:1" },
+        { name: "cpap", token: "--cpap", color: "var(--cpap)", ratio: "8.2:1" },
+        { name: "null", token: "--unknown", color: "var(--unknown)", ratio: "8.8:1" }
+      ],
+      nullSpec: "state ∈ {ok, alert, null}\n  ok    → value + ✓ + limits + timestamp\n  alert → value + ! or ▲ + rank + frame\n  null  → \"null\" + ? + hatch + age counter\n\nnull is NOT: 0 · last-known · interpolated · hidden · green\nnull IS: printed, hatched, counted, and unsilenceable",
+      unknownExamples: [
+        { where: "cell", how: "value prints literal null in periwinkle, 45° hatch across the cell, ? glyph, age counter instead of a timestamp." },
+        { where: "plot", how: "path breaks; hatch band between two dashed walls; no bridge segment is ever emitted." },
+        { where: "aggregate", how: "derived stats refuse: spo2.nadir returns \"≥89.1 (lower bound)\" rather than a false complete minimum." },
+        { where: "state machine", how: "predicates return unevaluable; tier holds. clear is only reachable from positive evidence." }
+      ],
+      stateTiles: [
+        { stateName: "default", color: "var(--spo2)", glyph: "✓", value: "96", stamp: "06:45:02", note: "measured · in range", hatch: "none", valueColor: "var(--text)" },
+        { stateName: "loading", color: "var(--faint)", glyph: "·", value: "· ·", stamp: "awaiting first sample", note: "no claim yet", hatch: "none", valueColor: "var(--faint)" },
+        { stateName: "empty", color: "var(--faint)", glyph: "—", value: "—", stamp: "no source enrolled", note: "not monitored", hatch: "none", valueColor: "var(--faint)" },
+        { stateName: "stale", color: "var(--med)", glyph: "!", value: "94", stamp: "06:21:40 · 23m", note: "last known · not current", hatch: "none", valueColor: "var(--dim)" },
+        { stateName: "null", color: unk, glyph: "?", value: "null", stamp: "03:04:41 · 41m", note: "not measured · cannot assess", hatch: hatchOn, valueColor: unk },
+        { stateName: "warning", color: "var(--med)", glyph: "!", value: "90", stamp: "06:45:02", note: "< 92 soft floor", hatch: "none", valueColor: "var(--med)" },
+        { stateName: "critical", color: "var(--hi)", glyph: "▲", value: "84", stamp: "06:45:02", note: "< 88 hard · klaxon in 12s", hatch: "none", valueColor: "var(--hi)" }
+      ],
+      rankRows: [
+        { name: "HIGH / PHYS", glyph: "▲", color: "var(--hi)", frame: "2px solid var(--hi)", bg: "color-mix(in oklab,var(--hi) 18%,transparent)", rule: "hard limit breached. 2 px frame + fill + klaxon armed. no flashing — this direction encodes urgency in weight, not motion." },
+        { name: "MED / PHYS", glyph: "!", color: "var(--med)", frame: "1px solid var(--med)", bg: "color-mix(in oklab,var(--med) 12%,transparent)", rule: "soft limit or cluster. 1 px frame + light fill, no sound." },
+        { name: "LOW / INFO", glyph: "i", color: "var(--spo2)", frame: "1px dashed var(--rule-strong)", bg: "transparent", rule: "logged context. dashed frame, no fill." },
+        { name: "HIGH / TECH", glyph: "×", color: "var(--hi)", frame: "2px double var(--hi)", bg: "color-mix(in oklab,var(--hi) 14%,transparent)", rule: "separate channel: the rig, not the body. double frame distinguishes it from physiological at the same rank." },
+        { name: "NULL", glyph: "?", color: unk, frame: "2px solid var(--unknown)", bg: "color-mix(in oklab,var(--unknown) 14%,transparent)", rule: "hatched fill, climbing age. acknowledgeable, never silenceable, never auto-clearing." }
+      ],
+      typeRows: [
+        { sample: "96", px: "44px", weight: "500", spec: "value / 44 / 500" },
+        { sample: "118/74", px: "36px", weight: "500", spec: "value-sm / 36 / 500" },
+        { sample: "DIRECTION C", px: "24px", weight: "700", spec: "h1 / 24 / 700 / .04em" },
+        { sample: "$ vitalsctl tier", px: "15px", weight: "400", spec: "panel head / 15 / 400" },
+        { sample: "spo2=96 % @06:45:02", px: "16px", weight: "400", spec: "body / 16 / 400" },
+        { sample: "41m12s null", px: "14px", weight: "400", spec: "meta / 14 — hard floor" }
+      ],
+      unknownHatch: hatchOn
+    };
+  }
+}
+
+</script>
+</body>
+</html>
+

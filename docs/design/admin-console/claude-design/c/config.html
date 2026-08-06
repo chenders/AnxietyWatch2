@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Access — AW2 Flowpath</title>
+<link rel="stylesheet" href="console.css">
+</head>
+<body data-feed="live">
+<a class="skip-link" href="#main">Skip to content</a>
+
+<div class="app">
+  <div class="stickytop">
+  <div class="docstale" role="status">
+    <span class="st st--severed">Console feed severed</span>
+    <b>This page has not heard from the appliance for <span data-feed-age>—</span>.</b>
+    <span class="muted-text">The graph below is the last shape the machine had. Edge states are unchanged; it is the link between you and the box that is cut.</span>
+    <button class="btn btn--sm" type="button" data-action="refresh">Reconnect <span class="btn__key">r</span></button>
+  </div>
+
+  <header class="cmdbar">
+    <span class="cmdbar__id"><b>AW2 FLOWPATH</b> · bedside-pi5 · 2.4.11+g8c1f</span>
+    <label class="sr-only" for="q">Filter nodes and sources</label>
+    <input class="input cmdbar__search" id="q" data-filter placeholder="Filter nodes, sources, units…   /">
+    <span class="cmdbar__id" data-clock>09:56:04Z</span>
+    <span class="cmdbar__id">feed <span data-feed-age>2s</span></span>
+    <span class="cmdbar__hint"><span class="kbd">j</span><span class="kbd">k</span> walk the path <span class="kbd">/</span> filter <span class="kbd">1</span>–<span class="kbd">9</span> screens <span class="kbd">?</span> keys</span>
+  </header>
+
+<nav class="tabs" aria-label="Screens">
+  <a class="tabs__item" href="overview.html" data-tabkey="1"><span class="tabs__key">1</span> Overview</a>
+  <a class="tabs__item" href="display.html" data-tabkey="2"><span class="tabs__key">2</span> Flow · display</a>
+  <a class="tabs__item" href="ingest.html" data-tabkey="3"><span class="tabs__key">3</span> Flow · ingest</a>
+  <a class="tabs__item" href="services.html" data-tabkey="4"><span class="tabs__key">4</span> Services</a>
+  <a class="tabs__item" href="config.html" data-tabkey="5" aria-current="page"><span class="tabs__key">5</span> Access</a>
+  <a class="tabs__item" href="data.html" data-tabkey="6"><span class="tabs__key">6</span> Data</a>
+  <a class="tabs__item" href="analysis.html" data-tabkey="7"><span class="tabs__key">7</span> Analysis</a>
+  <a class="tabs__item" href="records.html" data-tabkey="8"><span class="tabs__key">8</span> Records</a>
+  <a class="tabs__item" href="recovery.html" data-tabkey="9"><span class="tabs__key">9</span> Recovery</a>
+  <a class="tabs__item" href="system.html">System</a>
+  <a class="tabs__item" href="patterns.html">Patterns</a>
+  <a class="tabs__item" href="attempts.html">Timeline</a>
+  <a class="tabs__item" href="overview-degraded.html">Degraded</a>
+  <a class="tabs__item" href="firstrun.html">First run</a>
+</nav>
+  </div>
+
+  <main class="main" id="main">
+    <div class="pagehd">
+      <div>
+        <h1>Config &amp; access</h1>
+        <p>Credentials, the registry, flags and the audit trail.</p>
+      </div>
+      <div class="pagehd__act">
+        <button class="btn btn--sm" type="button" data-action="refresh">Refresh <span class="btn__key">r</span></button>
+      </div>
+    </div>
+
+    <div class="stack">
+      <section class="pane">
+        <div class="pane__hd"><h2>API keys</h2><span class="caps">3 active · 1 revoked ·
+          <button class="btn btn--sm btn--primary" type="button">Issue key…</button></span></div>
+        <div class="pane__body--flush t-scroll">
+          <table class="t t--rowstate">
+            <thead><tr><th scope="col">Name</th><th scope="col">Fingerprint</th><th scope="col">Scope</th>
+              <th scope="col">Last used</th><th scope="col">Expires</th><th scope="col"><span class="sr-only">Action</span></th></tr></thead>
+            <tbody>
+              <tr><th scope="row">phone-bridge</th><td class="redact">SHA256:8b41…7e02 · <b>…4KpQ</b></td>
+                <td class="mono">read + write:samples</td><td class="mono">15m ago</td><td class="mono">2027-02-11</td>
+                <td><button class="btn btn--sm btn--danger" type="button" data-action="open" data-target="m-rev">Revoke…</button></td></tr>
+              <tr><th scope="row">home-assistant</th><td class="redact">SHA256:0f3a…c19d · <b>…9EgU</b></td>
+                <td class="mono">write:samples</td><td class="mono">4m ago</td><td class="mono">2027-08-05</td>
+                <td><button class="btn btn--sm btn--danger" type="button" data-action="open" data-target="m-rev">Revoke…</button></td></tr>
+              <tr data-state="impaired"><th scope="row">laptop-export</th><td class="redact">SHA256:cc90…11af · <b>…2Vm7</b></td>
+                <td class="mono">read:samples</td><td class="mono">214d ago</td>
+                <td><span class="st st--impaired"><span aria-hidden="true">▲</span> Expires in 8d</span></td>
+                <td><button class="btn btn--sm btn--danger" type="button" data-action="open" data-target="m-rev">Revoke…</button></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="pane__ft"><a href="patterns.html">Full credential lifecycle, including the one-time reveal →</a></div>
+      </section>
+
+      <div class="cols-2">
+        <section class="pane">
+          <div class="pane__hd"><h2>Source registry</h2><span class="caps">Cadence, grace, rollup membership</span></div>
+          <div class="pane__body--flush t-scroll">
+            <table class="t t--rowstate">
+              <thead><tr><th scope="col">Source</th><th scope="col">Kind</th><th class="num" scope="col">Cadence</th>
+                <th class="num" scope="col">Grace</th><th scope="col">In rollup</th><th scope="col">Configuration</th></tr></thead>
+              <tbody>
+                <tr><th scope="row" class="mono">polar-h10-chest</th><td>BLE</td><td class="num">2m</td><td class="num">2.0×</td>
+                  <td>Counted</td><td><span class="st st--flowing"><span aria-hidden="true">✓</span> Configured</span></td></tr>
+                <tr><th scope="row" class="mono">wellue-o2ring</th><td>BLE</td><td class="num">2m</td><td class="num">2.0×</td>
+                  <td>Counted</td><td><span class="st st--flowing"><span aria-hidden="true">✓</span> Configured</span></td></tr>
+                <tr><th scope="row" class="mono">resmed-airsense-11</th><td>Importer</td><td class="num">24h</td><td class="num">1.5×</td>
+                  <td>Counted</td><td><span class="st st--flowing"><span aria-hidden="true">✓</span> Configured</span></td></tr>
+                <tr data-state="absent"><th scope="row" class="mono">omron-bp-cuff</th><td>BLE</td><td class="num">—</td><td class="num">—</td>
+                  <td>Excluded</td><td><span class="st st--absent"><span aria-hidden="true">—</span> Declared absent</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="pane__ft"><p class="prose">Declaring a source absent replaces its cut edge with a
+          dotted stub and removes it from every rollup and from the report. It is the only supported way to
+          make an optional source stop asking, and it is recorded in the audit log with a reason.</p></div>
+        </section>
+
+        <div class="stack">
+          <section class="pane">
+            <div class="pane__hd"><h2>Provider credentials</h2></div>
+            <div class="pane__body--flush t-scroll">
+              <table class="t t--rowstate">
+                <thead><tr><th scope="col">Provider</th><th scope="col">Key</th><th scope="col">Edge</th></tr></thead>
+                <tbody>
+                  <tr><th scope="row">Anthropic</th><td class="redact">present · <b>…yT4a</b></td>
+                    <td><span class="st st--flowing"><span aria-hidden="true">✓</span> Verified 09:05</span></td></tr>
+                  <tr><th scope="row">Oura Cloud</th><td class="redact">present · <b>…Q17b</b></td>
+                    <td><span class="st st--flowing"><span aria-hidden="true">✓</span> Verified 09:26</span></td></tr>
+                  <tr data-state="absent"><th scope="row">SMTP relay</th><td class="redact">not set</td>
+                    <td><span class="st st--absent"><span aria-hidden="true">—</span> Not configured</span></td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="pane__ft"><p class="prose">Values are never displayed or returned by the API.
+            Presence and last four characters only.</p></div>
+          </section>
+
+          <section class="pane">
+            <div class="pane__hd"><h2>Feature flags</h2></div>
+            <div class="pane__body">
+              <form class="form" data-dirty-track onsubmit="return false">
+                <div class="check"><input type="checkbox" id="fl1" name="fl1" checked>
+                  <label for="fl1">Correlation engine<span class="hint">Recomputes nightly at 01:00.</span></label></div>
+                <div class="check"><input type="checkbox" id="fl2" name="fl2" checked>
+                  <label for="fl2">AI analysis runs<span class="hint">Requires an Anthropic key; respects the spend cap.</span></label></div>
+                <div class="check"><input type="checkbox" id="fl3" name="fl3">
+                  <label for="fl3">Nocturnal early-warning alarm<span class="hint">In progress, scheduled last. Off. Turning it on adds a self-test edge, which starts severed.</span></label></div>
+                <div class="check"><input type="checkbox" id="fl4" name="fl4">
+                  <label for="fl4">Anonymous telemetry<span class="hint">Off by default. Crash counts and version only, never health data.</span></label></div>
+                <div class="savebar" data-dirty="false">
+                  <span class="savebar__state">No changes since last save.</span>
+                  <button class="btn btn--ghost" type="reset" data-needs-dirty disabled>Discard</button>
+                  <button class="btn btn--primary" type="submit" data-needs-dirty disabled>Save flags</button>
+                </div>
+              </form>
+            </div>
+          </section>
+        </div>
+      </div>
+
+      <section class="pane">
+        <div class="pane__hd"><h2>Audit log</h2><span class="caps">Append-only · 30 days retained</span></div>
+        <div class="pane__body--flush t-scroll">
+          <table class="t">
+            <thead><tr><th scope="col">When</th><th scope="col">Action</th><th scope="col">Object</th><th scope="col">Detail</th></tr></thead>
+            <tbody>
+              <tr><td class="mono">09:52:04</td><td>key.issue</td><td class="mono">home-assistant</td><td>scope write:samples, expires 2027-08-05</td></tr>
+              <tr><td class="mono">09:26:11</td><td>edge.mute</td><td class="mono">oura-ring-gen3</td><td>to 2026-08-09, reason "travelling"</td></tr>
+              <tr><td class="mono">06:26:44</td><td>backup.verify</td><td class="mono">full-20260727</td><td>failed — truncated archive</td></tr>
+              <tr><td class="mono">02 Jun 11:02</td><td>source.declare_absent</td><td class="mono">omron-bp-cuff</td><td>reason "device not owned"</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+<div class="scrim" id="m-rev" hidden data-no-escape>
+  <div class="modal modal--danger" role="alertdialog" aria-modal="true" aria-labelledby="mrv-h">
+    <div class="modal__hd"><span aria-hidden="true">✕</span><h2 id="mrv-h">Revoke API key “phone-bridge”?</h2></div>
+    <form class="modal__body" data-confirm-phrase="phone-bridge" onsubmit="return false">
+      <p class="prose">Immediate and permanent. This key was used 15 minutes ago.</p>
+      <ul class="consequences">
+        <li>The phone stops delivering journal entries and health-store data at once — two edges go severed within the hour.</li>
+        <li>Journal entries written while the phone is unauthenticated are held on the device, but health-store windows are not re-fetched.</li>
+      </ul>
+      <div><label class="caps" for="mrv-i">Type <span class="mono">phone-bridge</span> to confirm</label>
+        <input class="input" id="mrv-i" data-confirm-input autocomplete="off" placeholder="key name"></div>
+      <div class="modal__ft"><button class="btn btn--ghost" type="button" data-action="close">Cancel</button>
+        <span class="grow"></span>
+        <button class="btn btn--danger" type="submit" data-confirm-go disabled>Revoke permanently</button></div>
+    </form>
+  </div>
+</div>
+  </main>
+</div>
+
+<div class="scrim" id="keymap" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="km-h">
+    <div class="modal__hd"><h2 id="km-h">Keyboard</h2></div>
+    <div class="modal__body">
+      <div class="fields fields--wide">
+        <span class="field__k"><span class="kbd">j</span> <span class="kbd">k</span></span><span class="field__v">Walk the flow path, upstream and downstream</span>
+        <span class="field__k"><span class="kbd">↑</span> <span class="kbd">↓</span></span><span class="field__v">Same as j and k</span>
+        <span class="field__k"><span class="kbd">/</span></span><span class="field__v">Focus the node filter</span>
+        <span class="field__k"><span class="kbd">1</span>–<span class="kbd">9</span></span><span class="field__v">Jump to a screen</span>
+        <span class="field__k"><span class="kbd">r</span></span><span class="field__v">Refresh the feed</span>
+        <span class="field__k"><span class="kbd">?</span></span><span class="field__v">Show or hide this map</span>
+        <span class="field__k"><span class="kbd">esc</span></span><span class="field__v">Leave a field, or close a dialog</span>
+      </div>
+      <p class="prose muted-text">Every one of these is also reachable by tab and click. The keys are an accelerator, never the only route.</p>
+    </div>
+    <div class="modal__ft"><span class="grow"></span><button class="btn" type="button" data-action="close">Close</button></div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

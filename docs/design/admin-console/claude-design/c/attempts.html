@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Attempt timeline — AW2 Flowpath</title>
+<link rel="stylesheet" href="console.css">
+</head>
+<body data-feed="live">
+<a class="skip-link" href="#main">Skip to content</a>
+
+<div class="app">
+  <div class="stickytop">
+  <div class="docstale" role="status">
+    <span class="st st--severed">Console feed severed</span>
+    <b>This page has not heard from the appliance for <span data-feed-age>—</span>.</b>
+    <span class="muted-text">The graph below is the last shape the machine had. Edge states are unchanged; it is the link between you and the box that is cut.</span>
+    <button class="btn btn--sm" type="button" data-action="refresh">Reconnect <span class="btn__key">r</span></button>
+  </div>
+
+  <header class="cmdbar">
+    <span class="cmdbar__id"><b>AW2 FLOWPATH</b> · bedside-pi5 · 2.4.11+g8c1f</span>
+    <label class="sr-only" for="q">Filter nodes and sources</label>
+    <input class="input cmdbar__search" id="q" data-filter placeholder="Filter nodes, sources, units…   /">
+    <span class="cmdbar__id" data-clock>09:56:04Z</span>
+    <span class="cmdbar__id">feed <span data-feed-age>2s</span></span>
+    <span class="cmdbar__hint"><span class="kbd">j</span><span class="kbd">k</span> walk the path <span class="kbd">/</span> filter <span class="kbd">1</span>–<span class="kbd">9</span> screens <span class="kbd">?</span> keys</span>
+  </header>
+
+<nav class="tabs" aria-label="Screens">
+  <a class="tabs__item" href="overview.html" data-tabkey="1"><span class="tabs__key">1</span> Overview</a>
+  <a class="tabs__item" href="display.html" data-tabkey="2"><span class="tabs__key">2</span> Flow · display</a>
+  <a class="tabs__item" href="ingest.html" data-tabkey="3"><span class="tabs__key">3</span> Flow · ingest</a>
+  <a class="tabs__item" href="services.html" data-tabkey="4"><span class="tabs__key">4</span> Services</a>
+  <a class="tabs__item" href="config.html" data-tabkey="5"><span class="tabs__key">5</span> Access</a>
+  <a class="tabs__item" href="data.html" data-tabkey="6"><span class="tabs__key">6</span> Data</a>
+  <a class="tabs__item" href="analysis.html" data-tabkey="7"><span class="tabs__key">7</span> Analysis</a>
+  <a class="tabs__item" href="records.html" data-tabkey="8"><span class="tabs__key">8</span> Records</a>
+  <a class="tabs__item" href="recovery.html" data-tabkey="9"><span class="tabs__key">9</span> Recovery</a>
+  <a class="tabs__item" href="system.html">System</a>
+  <a class="tabs__item" href="patterns.html">Patterns</a>
+  <a class="tabs__item" href="attempts.html" aria-current="page">Timeline</a>
+  <a class="tabs__item" href="overview-degraded.html">Degraded</a>
+  <a class="tabs__item" href="firstrun.html">First run</a>
+</nav>
+  </div>
+
+  <main class="main" id="main">
+    <div class="pagehd">
+      <div>
+        <h1>Attempt timeline</h1>
+        <p>Windows drawn as pipe. Where no attempt was made, no pipe is drawn.</p>
+      </div>
+      <div class="pagehd__act">
+        <button class="btn btn--sm" type="button" data-action="refresh">Refresh <span class="btn__key">r</span></button>
+      </div>
+    </div>
+
+    <div class="stack">
+      <section class="pane">
+        <div class="pane__hd"><h2>The pipe is the argument</h2></div>
+        <div class="pane__body">
+          <p class="prose">A conventional attempt log lists what happened. The failure this product has
+          to survive is the opposite: what did not happen, at the times it was supposed to. So this
+          component draws the expected windows as a pipe, left to right, and simply does not draw a pipe
+          where no attempt was made. A run of red is a pipe carrying failures. A run of nothing is a pipe
+          that was never laid.</p>
+          <p class="prose">The verdict is a single word before any rows, because <em>silent</em> and
+          <em>failing</em> are different diagnoses with different repairs. Failing gives you an error to
+          read. Silent gives you nothing, which is exactly why it needs to be stated rather than
+          inferred from an empty table.</p>
+        </div>
+      </section>
+
+      <section class="pane" aria-labelledby="t1">
+        <div class="pane__hd"><h2 id="t1">Silent</h2><span class="caps">no attempts at all · the dangerous one</span></div>
+        <div class="pane__body--flush">
+          <div class="timeline timeline--silent">
+            <div class="timeline__hd">
+              <div class="timeline__verdict"><b>Silent</b><span>wellue-o2ring</span></div>
+              <p class="timeline__gloss">No collection attempted for <b>9h 04m</b>. 272 expected windows,
+              272 with no pipe. Nothing has failed because nothing was tried, so every mechanism that
+              would raise an error is reporting success by silence.</p>
+              <span class="fresh fresh--over" data-age-s="32640" data-expect-s="120"><span class="fresh__age">9h 4m ago</span><span class="fresh__expect">2m</span></span>
+            </div>
+            <div class="strip" role="img" aria-label="Twelve windows flowing, then eighteen windows with no attempt drawn as a hairline gap."><span class="seg seg--ok"></span><span class="seg seg--ok"></span><span class="seg seg--ok"></span><span class="seg seg--ok"></span><span class="seg seg--ok"></span><span class="seg seg--ok"></span><span class="seg seg--ok"></span><span class="seg seg--ok"></span><span class="seg seg--ok"></span><span class="seg seg--ok"></span><span class="seg seg--ok"></span><span class="seg seg--ok"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span></div>
+            <div class="strip__legend">
+          <span><span class="seg seg--ok seg-key"></span> attempted, flowing</span>
+          <span><span class="seg seg--partial seg-key"></span> attempted, partial</span>
+          <span><span class="seg seg--fail seg-key"></span> attempted, failed</span>
+          <span><span class="seg seg--none seg-key"></span> no attempt — no pipe drawn, because none existed</span>
+        </div>
+            <div class="attempt-row attempt-row--gap"><span class="attempt-row__t">00:52 → now</span>
+              <span class="attempt-row__why">9h 04m with no attempt. 272 windows carry nothing.</span></div>
+            <div class="attempt-row"><span class="attempt-row__t">2026-08-05 00:52:11</span>
+              <span class="attempt-row__dur">1.9 s</span><span class="attempt-row__rows">118</span>
+              <span class="attempt-row__why">Flowing. Newest sample timestamp 00:52:09, advanced 1m 58s.</span></div>
+            <div class="attempt-row"><span class="attempt-row__t">2026-08-05 00:50:12</span>
+              <span class="attempt-row__dur">2.0 s</span><span class="attempt-row__rows">120</span>
+              <span class="attempt-row__why">Flowing.</span></div>
+          </div>
+        </div>
+        <div class="pane__ft"><p class="prose">Likely cause: the ring's overnight session ended without a
+        disconnect event, leaving the collector blocked on a characteristic that will never notify again.
+        The link still reports connected, which is why the radio node is clean while this is cut.</p></div>
+      </section>
+
+      <section class="pane" aria-labelledby="t2">
+        <div class="pane__hd"><h2 id="t2">Failing</h2><span class="caps">attempts happening, all failing</span></div>
+        <div class="pane__body--flush">
+          <div class="timeline timeline--failing">
+            <div class="timeline__hd">
+              <div class="timeline__verdict"><b>Failing</b><span>polar-h10-chest</span></div>
+              <p class="timeline__gloss">18 attempts in the last hour, <b>0 succeeded</b>. The same error
+              each time, so this is one fault and not eighteen. The varying detail is the signal: RSSI has
+              fallen 23 dB since the last success, which points at distance or a dying strap battery
+              rather than at software.</p>
+              <span class="fresh" data-age-s="94" data-expect-s="240"><span class="fresh__age">1m 34s ago</span><span class="fresh__expect">4m</span></span>
+            </div>
+            <div class="strip" role="img" aria-label="Eight windows flowing, then twenty-two windows attempted and failed."><span class="seg seg--ok"></span><span class="seg seg--ok"></span><span class="seg seg--ok"></span><span class="seg seg--ok"></span><span class="seg seg--ok"></span><span class="seg seg--ok"></span><span class="seg seg--ok"></span><span class="seg seg--ok"></span><span class="seg seg--fail"></span><span class="seg seg--fail"></span><span class="seg seg--fail"></span><span class="seg seg--fail"></span><span class="seg seg--fail"></span><span class="seg seg--fail"></span><span class="seg seg--fail"></span><span class="seg seg--fail"></span><span class="seg seg--fail"></span><span class="seg seg--fail"></span><span class="seg seg--fail"></span><span class="seg seg--fail"></span><span class="seg seg--fail"></span><span class="seg seg--fail"></span><span class="seg seg--fail"></span><span class="seg seg--fail"></span><span class="seg seg--fail"></span><span class="seg seg--fail"></span><span class="seg seg--fail"></span><span class="seg seg--fail"></span><span class="seg seg--fail"></span><span class="seg seg--fail"></span></div>
+            <div class="strip__legend">
+          <span><span class="seg seg--ok seg-key"></span> attempted, flowing</span>
+          <span><span class="seg seg--partial seg-key"></span> attempted, partial</span>
+          <span><span class="seg seg--fail seg-key"></span> attempted, failed</span>
+          <span><span class="seg seg--none seg-key"></span> no attempt — no pipe drawn, because none existed</span>
+        </div>
+            <div class="attempt-row attempt-row--failed"><span class="attempt-row__t">09:54:30</span>
+              <span class="attempt-row__dur">30.0 s</span><span class="attempt-row__rows">0</span>
+              <span class="attempt-row__why">GATT read timeout after 30 s. Characteristic 2a37 never notified. RSSI −94 dBm.</span></div>
+            <div class="attempt-row attempt-row--failed"><span class="attempt-row__t">09:52:30</span>
+              <span class="attempt-row__dur">30.0 s</span><span class="attempt-row__rows">0</span>
+              <span class="attempt-row__why">GATT read timeout after 30 s. RSSI −92 dBm.</span></div>
+            <div class="attempt-row attempt-row--failed"><span class="attempt-row__t">09:50:29</span>
+              <span class="attempt-row__dur">30.0 s</span><span class="attempt-row__rows">0</span>
+              <span class="attempt-row__why">GATT read timeout after 30 s. RSSI −91 dBm.</span></div>
+            <div class="attempt-row"><span class="attempt-row__t">08:44:12</span>
+              <span class="attempt-row__dur">2.1 s</span><span class="attempt-row__rows">121</span>
+              <span class="attempt-row__why">Last success. RSSI −68 dBm.</span></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="pane" aria-labelledby="t3">
+        <div class="pane__hd"><h2 id="t3">Nominal, and nominal with noise</h2></div>
+        <div class="pane__body cols-2">
+          <div class="timeline timeline--nominal">
+            <div class="timeline__hd">
+              <div class="timeline__verdict"><b>Flowing</b><span>healthkit-bridge</span></div>
+              <p class="timeline__gloss">30 of 30 windows attempted, 30 flowing.</p></div>
+            <div class="strip" role="img" aria-label="Thirty windows, all flowing."><span class="seg seg--ok"></span><span class="seg seg--ok"></span><span class="seg seg--ok"></span><span class="seg seg--ok"></span><span class="seg seg--ok"></span><span class="seg seg--ok"></span><span class="seg seg--ok"></span><span class="seg seg--ok"></span><span class="seg seg--ok"></span><span class="seg seg--ok"></span><span class="seg seg--ok"></span><span class="seg seg--ok"></span><span class="seg seg--ok"></span><span class="seg seg--ok"></span><span class="seg seg--ok"></span><span class="seg seg--ok"></span><span class="seg seg--ok"></span><span class="seg seg--ok"></span><span class="seg seg--ok"></span><span class="seg seg--ok"></span><span class="seg seg--ok"></span><span class="seg seg--ok"></span><span class="seg seg--ok"></span><span class="seg seg--ok"></span><span class="seg seg--ok"></span><span class="seg seg--ok"></span><span class="seg seg--ok"></span><span class="seg seg--ok"></span><span class="seg seg--ok"></span><span class="seg seg--ok"></span></div>
+            <div class="strip__legend">
+          <span><span class="seg seg--ok seg-key"></span> attempted, flowing</span>
+          <span><span class="seg seg--partial seg-key"></span> attempted, partial</span>
+          <span><span class="seg seg--fail seg-key"></span> attempted, failed</span>
+          <span><span class="seg seg--none seg-key"></span> no attempt — no pipe drawn, because none existed</span>
+        </div>
+            <div class="attempt-row"><span class="attempt-row__t">09:55:19</span>
+              <span class="attempt-row__dur">0.4 s</span><span class="attempt-row__rows">120</span>
+              <span class="attempt-row__why">Flowing.</span></div>
+          </div>
+          <div class="timeline timeline--nominal">
+            <div class="timeline__hd">
+              <div class="timeline__verdict"><b>Flowing</b><span>with partials</span></div>
+              <p class="timeline__gloss">30 windows, 26 flowing, 4 partial — the pipe carried rows, just
+              fewer than the cadence implies.</p></div>
+            <div class="strip" role="img" aria-label="Mostly flowing windows with four partial windows."><span class="seg seg--ok"></span><span class="seg seg--ok"></span><span class="seg seg--ok"></span><span class="seg seg--partial"></span><span class="seg seg--ok"></span><span class="seg seg--ok"></span><span class="seg seg--ok"></span><span class="seg seg--ok"></span><span class="seg seg--ok"></span><span class="seg seg--ok"></span><span class="seg seg--ok"></span><span class="seg seg--partial"></span><span class="seg seg--ok"></span><span class="seg seg--ok"></span><span class="seg seg--ok"></span><span class="seg seg--ok"></span><span class="seg seg--ok"></span><span class="seg seg--ok"></span><span class="seg seg--ok"></span><span class="seg seg--ok"></span><span class="seg seg--partial"></span><span class="seg seg--ok"></span><span class="seg seg--ok"></span><span class="seg seg--ok"></span><span class="seg seg--ok"></span><span class="seg seg--ok"></span><span class="seg seg--ok"></span><span class="seg seg--ok"></span><span class="seg seg--partial"></span><span class="seg seg--ok"></span></div>
+            <div class="strip__legend">
+          <span><span class="seg seg--ok seg-key"></span> attempted, flowing</span>
+          <span><span class="seg seg--partial seg-key"></span> attempted, partial</span>
+          <span><span class="seg seg--fail seg-key"></span> attempted, failed</span>
+          <span><span class="seg seg--none seg-key"></span> no attempt — no pipe drawn, because none existed</span>
+        </div>
+            <div class="attempt-row"><span class="attempt-row__t">09:38:02</span>
+              <span class="attempt-row__dur">2.2 s</span><span class="attempt-row__rows">41</span>
+              <span class="attempt-row__why">Partial. Expected ≈120 rows; the link dropped mid-read and reconnected.</span></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="pane" aria-labelledby="t4">
+        <div class="pane__hd"><h2 id="t4">Never run, and muted</h2></div>
+        <div class="pane__body cols-2">
+          <div class="timeline timeline--silent">
+            <div class="timeline__hd">
+              <div class="timeline__verdict"><b>Never run</b><span>aw2-restore-verify</span></div>
+              <p class="timeline__gloss">Enabled 43 days ago. No window has ever carried anything. There
+              is no last known outcome to fall back on, which is what separates this from a source that
+              ran once and stopped.</p>
+              <span class="fresh fresh--over"><span class="fresh__age">never run</span><span class="fresh__expect">7d</span></span></div>
+            <div class="strip" role="img" aria-label="Thirty windows, none attempted."><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span></div>
+            <div class="strip__legend">
+          <span><span class="seg seg--ok seg-key"></span> attempted, flowing</span>
+          <span><span class="seg seg--partial seg-key"></span> attempted, partial</span>
+          <span><span class="seg seg--fail seg-key"></span> attempted, failed</span>
+          <span><span class="seg seg--none seg-key"></span> no attempt — no pipe drawn, because none existed</span>
+        </div>
+            <div class="attempt-row attempt-row--gap"><span class="attempt-row__t">Since 23 Jun</span>
+              <span class="attempt-row__why">The timer unit is loaded, but its calendar expression resolves to a date in 2027.</span></div>
+          </div>
+          <div class="timeline">
+            <div class="timeline__hd">
+              <div class="timeline__verdict"><b>Muted</b><span>oura-ring-gen3</span></div>
+              <p class="timeline__gloss">Attempts continue and are recorded. The resulting severance is
+              muted until 9 August, so it does not count in the rollup — but the timeline underneath stays
+              complete, so the expiry restores the real picture rather than a hole.</p>
+              <span class="mute">⊘ Muted to 09 Aug · <b>operator</b></span></div>
+            <div class="strip" role="img" aria-label="Thirty windows attempted, none carrying rows."><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span></div>
+            <div class="strip__legend">
+          <span><span class="seg seg--ok seg-key"></span> attempted, flowing</span>
+          <span><span class="seg seg--partial seg-key"></span> attempted, partial</span>
+          <span><span class="seg seg--fail seg-key"></span> attempted, failed</span>
+          <span><span class="seg seg--none seg-key"></span> no attempt — no pipe drawn, because none existed</span>
+        </div>
+            <div class="attempt-row"><span class="attempt-row__t">09:26:00</span>
+              <span class="attempt-row__dur">4.1 s</span><span class="attempt-row__rows">0</span>
+              <span class="attempt-row__why">Attempted. Cloud API returned an empty window — the ring has not synced since 03 Aug.</span></div>
+          </div>
+        </div>
+        <div class="pane__ft"><p class="prose">A mute changes how the result is reported, never whether the
+        attempt is made. The record underneath is untouched, so a mute cannot be used to manufacture a
+        clean rollup.</p></div>
+      </section>
+
+      <section class="pane" aria-labelledby="t5">
+        <div class="pane__hd"><h2 id="t5">The component's own states</h2></div>
+        <div class="pane__body cols-2">
+          <div class="timeline">
+            <div class="timeline__hd">
+              <div class="timeline__verdict"><b><span class="skel">·······</span></b><span><span class="skel">······</span></span></div>
+              <p class="timeline__gloss"><span class="skel">·························</span></p></div>
+            <div class="strip"><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span><span class="seg seg--none"></span></div>
+            <div class="attempt-row"><span class="attempt-row__t"><span class="skel">········</span></span>
+              <span class="attempt-row__dur"></span><span class="attempt-row__rows"></span>
+              <span class="attempt-row__why"><span class="skel">···················</span></span></div>
+          </div>
+          <div class="timeline timeline--silent">
+            <div class="timeline__hd">
+              <div class="timeline__verdict"><b>Unreadable</b><span>spool db locked</span></div>
+              <p class="timeline__gloss">The timeline itself could not be read. The component does not
+              render an empty strip and let it be mistaken for silence — it says it cannot tell you, and
+              keeps the last successful reading below.</p></div>
+            <div class="attempt-row attempt-row--gap"><span class="attempt-row__t">Last read 09:31</span>
+              <span class="attempt-row__why">At that point: 30 of 30 windows attempted, all flowing.</span></div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+</div>
+
+<div class="scrim" id="keymap" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="km-h">
+    <div class="modal__hd"><h2 id="km-h">Keyboard</h2></div>
+    <div class="modal__body">
+      <div class="fields fields--wide">
+        <span class="field__k"><span class="kbd">j</span> <span class="kbd">k</span></span><span class="field__v">Walk the flow path, upstream and downstream</span>
+        <span class="field__k"><span class="kbd">↑</span> <span class="kbd">↓</span></span><span class="field__v">Same as j and k</span>
+        <span class="field__k"><span class="kbd">/</span></span><span class="field__v">Focus the node filter</span>
+        <span class="field__k"><span class="kbd">1</span>–<span class="kbd">9</span></span><span class="field__v">Jump to a screen</span>
+        <span class="field__k"><span class="kbd">r</span></span><span class="field__v">Refresh the feed</span>
+        <span class="field__k"><span class="kbd">?</span></span><span class="field__v">Show or hide this map</span>
+        <span class="field__k"><span class="kbd">esc</span></span><span class="field__v">Leave a field, or close a dialog</span>
+      </div>
+      <p class="prose muted-text">Every one of these is also reachable by tab and click. The keys are an accelerator, never the only route.</p>
+    </div>
+    <div class="modal__ft"><span class="grow"></span><button class="btn" type="button" data-action="close">Close</button></div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

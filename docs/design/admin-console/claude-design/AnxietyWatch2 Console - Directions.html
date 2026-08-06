@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>AnxietyWatch2 admin console — three design directions</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #0A0C0D; display: flex; align-items: center; justify-content: center; min-height: 100vh; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+    #__bundler_loading { position: fixed; bottom: 20px; right: 20px; font: 13px/1.4 -apple-system, BlinkMacSystemFont, sans-serif; color: #666; background: #fff; padding: 8px 14px; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.12); z-index: 10000; }
+    #__bundler_thumbnail { position: fixed; inset: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; background: #0A0C0D; z-index: 9999; }
+    #__bundler_thumbnail svg { width: 100%; height: 100%; object-fit: contain; }
+    #__bundler_placeholder { color: #999; font-size: 14px; }
+  </style>
+  <noscript>
+    <style>#__bundler_loading { display: none; }</style>
+    <div style="position:fixed;bottom:12px;left:12px;font:13px/1.4 -apple-system,BlinkMacSystemFont,sans-serif;color:#999;background:rgba(255,255,255,0.9);padding:6px 12px;border-radius:6px;box-shadow:0 1px 4px rgba(0,0,0,0.08);z-index:10000;">
+      This page requires JavaScript to display.
+    </div>
+  </noscript>
+</head>
+<body>
+  <div id="__bundler_thumbnail">
+  <svg viewBox="0 0 1200 800" xmlns="http://www.w3.org/2000/svg">
+    <rect width="1200" height="800" fill="#0A0C0D"></rect>
+    <rect x="180" y="230" width="840" height="340" fill="#121517" stroke="#454D52" stroke-width="4"></rect>
+    <rect x="180" y="230" width="840" height="70" fill="#1A1E21"></rect>
+    <rect x="220" y="256" width="240" height="18" fill="#8A959B"></rect>
+    <rect x="220" y="350" width="300" height="46" fill="#E8EDEF"></rect>
+    <rect x="220" y="430" width="480" height="14" fill="#8A959B"></rect>
+    <rect x="220" y="470" width="380" height="14" fill="#8A959B"></rect>
+    <rect x="820" y="346" width="160" height="54" fill="#B98CFF"></rect>
+  </svg>
+</div>
+  <div id="__bundler_loading">Unpacking...</div>
+
+  <script>
+    
+document.addEventListener('DOMContentLoaded', async function() {
+  const loading = document.getElementById('__bundler_loading');
+  function setStatus(msg) { if (loading) loading.textContent = msg; }
+
+  const FONT_MIME = /^(font[/]|application[/](x-)?font-|application[/]vnd\.ms-fontobject)/i;
+  const MIME_TOKEN = /^[\w.+-]+[/][\w.+-]+$/;
+  function toBase64(bytes) {
+    let bin = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) {
+      bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    }
+    return btoa(bin);
+  }
+
+  // Error sink persists across replaceWith since it's on window, not the DOM.
+  window.addEventListener('error', function(e) {
+    // Failed resource loads (CSP-blocked links, scripts, images) fire plain
+    // events at the element — warn only; real JS errors carry message/error.
+    if (!e.message && !e.error && e.target && e.target !== window) {
+      console.warn('[bundle] resource failed to load:',
+        e.target.tagName, String(e.target.src || e.target.href || ''));
+      return;
+    }
+    var p = document.body || document.documentElement;
+    var d = document.getElementById('__bundler_err') || p.appendChild(document.createElement('div'));
+    d.id = '__bundler_err';
+    d.style.cssText = 'position:fixed;bottom:12px;left:12px;right:12px;font:12px/1.4 ui-monospace,monospace;background:#2a1215;color:#ff8a80;padding:10px 14px;border-radius:8px;border:1px solid #5c2b2e;z-index:99999;white-space:pre-wrap;max-height:40vh;overflow:auto';
+    d.textContent = (d.textContent ? d.textContent + String.fromCharCode(10) : '') +
+      '[bundle] ' + (e.message || e.type) +
+      (e.filename ? ' (' + e.filename.slice(0, 60) + ':' + e.lineno + ')' : '');
+  }, true);
+
+  try {
+    const manifestEl = document.querySelector('script[type="__bundler/manifest"]');
+    const templateEl = document.querySelector('script[type="__bundler/template"]');
+    if (!manifestEl || !templateEl) {
+      setStatus('Error: missing bundle data');
+      console.error('[bundler] Missing script tags — manifestEl:', !!manifestEl, 'templateEl:', !!templateEl);
+      return;
+    }
+
+    const manifest = JSON.parse(manifestEl.textContent);
+    let template = JSON.parse(templateEl.textContent);
+
+    // Nested page bundles (iframe targets). Each ships ONCE, in the ROOT
+    // document's manifest; frame srcs carry an about:blank#<uuid> marker
+    // instead of a substitutable uuid. Every document mints the blobs for
+    // its OWN frames — from local text at the root, or text obtained from
+    // its DIRECT parent over the relay protocol below — so each frame
+    // navigation stays same-origin with its initiator and a deduped page
+    // loads at any depth on any host, including a file:// download's
+    // opaque origins (where a blob minted by one document cannot be
+    // navigated to by another).
+    const pageOrderEl = document.querySelector('script[type="__bundler/page_order"]');
+    const pageOrder = pageOrderEl ? JSON.parse(pageOrderEl.textContent) : [];
+    const pageSet = new Set(pageOrder);
+    const pageTexts = {};
+
+    // ── Nested-page text protocol (parent-chain relay) ──
+    // Page bundles ship once, in the ROOT document's manifest. Every
+    // document mints the blobs for its OWN frames, obtaining page text
+    // through a strict parent-chain relay: a document only ever SENDS to
+    // its direct parent (which, for every document the publisher's own
+    // runtime minted, is another publisher document) and only ACCEPTS
+    // text from that direct parent; requests from below are honored only
+    // for the document's own child frames, and the ROOT never sends
+    // upward at all. That last rule is load-bearing: the artifact host's
+    // frame-ancestors allows claude.ai (and friends) to frame an
+    // artifact, so window.top can be a FOREIGN document — a top-addressed
+    // protocol would hand page uuids to that ancestor and accept forged
+    // "page text" from it, minting attacker HTML as an artifact-origin
+    // blob document. The chain never touches the ancestor: requests stop
+    // at the root, replies are origin-addressed per hop (never '*' when
+    // an origin exists), and both directions are origin-gated (on https
+    // a foreign sender's origin can never equal this document's; in
+    // opaque contexts — file:// — everything serializes as 'null', where
+    // an embedded EXTERNAL frame still fails the gate by carrying its
+    // own real origin, and a sandboxed child of such a frame is excluded
+    // by the own-child-frames check plus uuid unguessability). Shape is
+    // deny-by-default: one request form, one reply form, no error
+    // replies.
+    // window.origin is the SERIALIZED SECURITY origin ('null' in opaque
+    // contexts such as a sandboxed preview iframe) — location.origin is
+    // computed from the URL and stays 'https://…' even when the document
+    // is sandboxed, which would misgate every opaque chain.
+    const OWN_TARGET = /^https?:[/][/]/.test(window.origin || '')
+      ? window.origin
+      : '*';
+    function trustedOrigin(e) {
+      if (e.origin === window.origin) return true; // https chains; opaque==opaque
+      // file:// trees: Chrome serializes the file document's origin as
+      // 'file://' while the blob: documents it mints serialize as 'null',
+      // so the two legitimate shapes can never string-match — accept the
+      // pair in both directions. https origins never serialize as either,
+      // and sender identity (own child frame / direct parent) is checked
+      // separately.
+      return (
+        (e.origin === 'null' &&
+          (window.origin === 'file://' ||
+            window.location.protocol === 'file:')) ||
+        (/^file:/.test(e.origin) && window.origin === 'null')
+      );
+    }
+    // Non-empty only in the root document (nested bundles ship an empty
+    // island), so it doubles as the root marker: the root answers from
+    // local text and treats a miss as authoritative — never relaying to
+    // its (possibly foreign) parent.
+    const isPageRoot = pageOrder.length > 0;
+    const blobUrls = {};
+    const resourceBlobs = {};
+    const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+    const pendingFrames = {}; // uuid -> [{el, frag}] awaiting text for own frames
+    const pendingRelays = {}; // uuid -> [childWindow] awaiting text to pass down
+    function mountPage(el, frag, text) {
+      const pageBlob = new Blob([text], { type: 'text/html' });
+      const u = URL.createObjectURL(pageBlob);
+      resourceBlobs[u] = pageBlob;
+      el.src = u + frag;
+    }
+    function deliverPage(uuid, text) {
+      const frames = pendingFrames[uuid];
+      delete pendingFrames[uuid];
+      if (frames) for (const f of frames) mountPage(f.el, f.frag, text);
+      const relays = pendingRelays[uuid];
+      delete pendingRelays[uuid];
+      if (relays) {
+        for (const cw of relays) {
+          try { cw.postMessage({ __bundler_page: uuid, __bundler_text: text }, OWN_TARGET); } catch (err) { /* gone */ }
+        }
+      }
+    }
+    function ownFrameWindows() {
+      const out = [];
+      for (const f of Array.from(document.querySelectorAll('iframe'))) {
+        try { if (f.contentWindow) out.push(f.contentWindow); } catch (err) { /* detached */ }
+      }
+      return out;
+    }
+    window.addEventListener('message', function (e) {
+      const d = e.data;
+      if (!d || typeof d !== 'object' || !e.source) return;
+      // Origin gate first; the structural checks below (own-child-frames
+      // for requests, direct-parent + solicited-uuid for replies, the
+      // root's never-relay rule) are what hold in fully opaque chains
+      // where origin strings can't discriminate — a sandboxed root's
+      // FOREIGN wrapper still fails all three even though both serialize
+      // as real-vs-'null' rather than matching.
+      if (!trustedOrigin(e)) return;
+      if (typeof d.__bundler_need === 'string' && UUID_SHAPE.test(d.__bundler_need)) {
+        // Requests are honored only for this document's own child frames.
+        if (ownFrameWindows().indexOf(e.source) < 0) return;
+        const uuid = d.__bundler_need;
+        const text = pageTexts[uuid];
+        if (typeof text === 'string') {
+          try { e.source.postMessage({ __bundler_page: uuid, __bundler_text: text }, OWN_TARGET); } catch (err) { /* gone */ }
+          return;
+        }
+        if (isPageRoot || window.parent === window) return; // authoritative miss
+        const waiting = pendingRelays[uuid];
+        if (waiting) {
+          if (waiting.indexOf(e.source) < 0) waiting.push(e.source);
+          return;
+        }
+        // Never-answered uuids would otherwise accumulate forever under a
+        // request spray; past the cap (far above any real page count) new
+        // relays are dropped rather than remembered.
+        if (Object.keys(pendingRelays).length >= 128) return;
+        pendingRelays[uuid] = [e.source];
+        window.parent.postMessage({ __bundler_need: uuid }, OWN_TARGET);
+      } else if (
+        typeof d.__bundler_page === 'string' &&
+        UUID_SHAPE.test(d.__bundler_page) &&
+        typeof d.__bundler_text === 'string'
+      ) {
+        // The shape test is load-bearing beyond tidiness: the solicited
+        // check below uses the in operator, which matches prototype keys
+        // ('__proto__', 'constructor') — an unshaped key would reach
+        // deliverPage and throw, painting the error banner.
+        // Text is accepted only from the direct parent — the document
+        // that minted this one.
+        if (e.source !== window.parent || window.parent === window) return;
+        if (!(d.__bundler_page in pendingFrames) && !(d.__bundler_page in pendingRelays)) return;
+        deliverPage(d.__bundler_page, d.__bundler_text);
+      }
+    });
+
+    const uuids = Object.keys(manifest);
+    setStatus('Unpacking ' + uuids.length + ' assets...');
+
+    await Promise.all(uuids.map(async (uuid) => {
+      const entry = manifest[uuid];
+      try {
+        const binaryStr = atob(entry.data);
+        const bytes = new Uint8Array(binaryStr.length);
+        for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+
+        let finalBytes = bytes;
+        if (entry.compressed) {
+          if (typeof DecompressionStream !== 'undefined') {
+            const ds = new DecompressionStream('gzip');
+            const writer = ds.writable.getWriter();
+            const reader = ds.readable.getReader();
+            writer.write(bytes);
+            writer.close();
+            const chunks = [];
+            let totalLen = 0;
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              chunks.push(value);
+              totalLen += value.length;
+            }
+            finalBytes = new Uint8Array(totalLen);
+            let offset = 0;
+            for (const chunk of chunks) { finalBytes.set(chunk, offset); offset += chunk.length; }
+          } else {
+            console.warn('DecompressionStream not available, asset ' + uuid + ' may not render');
+          }
+        }
+
+        if (pageSet.has(uuid)) {
+          pageTexts[uuid] = new TextDecoder().decode(finalBytes);
+          return;
+        }
+        if (FONT_MIME.test(entry.mime) && MIME_TOKEN.test(entry.mime)) {
+          // Strict artifact hosts allow font-src data: but not blob:.
+          blobUrls[uuid] = 'data:' + entry.mime + ';base64,' +
+            (entry.compressed ? toBase64(finalBytes) : entry.data);
+        } else {
+          const blob = new Blob([finalBytes], { type: entry.mime });
+          blobUrls[uuid] = URL.createObjectURL(blob);
+          resourceBlobs[blobUrls[uuid]] = blob;
+        }
+      } catch (err) {
+        console.error('Failed to decode asset ' + uuid + ':', err);
+        const blob = new Blob([], { type: entry.mime });
+        blobUrls[uuid] = URL.createObjectURL(blob);
+        resourceBlobs[blobUrls[uuid]] = blob;
+      }
+    }));
+
+    const extResEl = document.querySelector('script[type="__bundler/ext_resources"]');
+    const extResources = extResEl ? JSON.parse(extResEl.textContent) : [];
+    const resourceMap = {};
+    for (const entry of extResources) {
+      if (blobUrls[entry.uuid]) resourceMap[entry.id] = blobUrls[entry.uuid];
+    }
+
+    // Artifact-host CSP (connect-src 'self') refuses fetch() of blob: URLs —
+    // consumers read these Blobs directly. Survives the swap like the error sink.
+    window.__resourceBlobs = resourceBlobs;
+
+    setStatus('Rendering...');
+    // Page uuids have no blob here — they ride inside about:blank#<uuid>
+    // frame markers the pass below resolves after the swap.
+    for (const uuid of uuids) {
+      if (pageSet.has(uuid)) continue;
+      template = template.split(uuid).join(blobUrls[uuid]);
+    }
+
+    // Strip integrity + crossorigin — blob URLs from a file:// document inherit
+    // a null origin, so crossorigin forces a CORS fetch that SRI then rejects.
+    // The manifest bytes are ours; SRI protects against CDN compromise, not this.
+    template = template.replace(/\s+integrity="[^"]*"/gi, '').replace(/\s+crossorigin="[^"]*"/gi, '');
+
+    const resourceScript = '<script>window.__resources = ' +
+      JSON.stringify(resourceMap).replace(/<\//g, '<\\/') +
+      ';</' + 'script>';
+    // Inject after <head> so the DOCTYPE stays first; prepending the script
+    // would push the parser into quirks mode. DOMParser always emits a <head>
+    // (synthesizing one if the source HTML omitted it) but may carry
+    // attributes through, so match the full opening tag. slice() rather than
+    // replace() keeps us clear of $-pattern substitution in resourceScript.
+    const headOpen = template.match(/<head[^>]*>/i);
+    if (headOpen) {
+      const i = headOpen.index + headOpen[0].length;
+      template = template.slice(0, i) + resourceScript + template.slice(i);
+    }
+
+    // Parse the template and swap the root element. Scripts inserted via
+    // DOMParser/replaceWith are inert per spec — re-create each with
+    // createElement so they execute, awaiting onload for src scripts to
+    // preserve ordering (React before ReactDOM before Babel before text/babel).
+    const doc = new DOMParser().parseFromString(template, 'text/html');
+    document.documentElement.replaceWith(doc.documentElement);
+
+    // Resolve page-frame markers: mint this document's own blob for each
+    // framed page — from local text when this is the root, otherwise by
+    // asking the direct parent over the relay protocol above. An
+    // unanswered request leaves the frame on about:blank, the same
+    // degraded state as a refused embed.
+    {
+      const MARKER = /^about:blank#([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(#.*)?$/;
+      const needed = [];
+      for (const el of Array.from(document.querySelectorAll('iframe'))) {
+        const m = MARKER.exec(el.getAttribute('src') || '');
+        if (!m) continue;
+        const text = pageTexts[m[1]];
+        if (typeof text === 'string') {
+          mountPage(el, m[2] || '', text);
+        } else if (window.parent !== window && !isPageRoot) {
+          const had = pendingFrames[m[1]];
+          (pendingFrames[m[1]] = had || []).push({ el: el, frag: m[2] || '' });
+          if (!had) needed.push(m[1]);
+        }
+      }
+      for (const uuid of needed) {
+        window.parent.postMessage({ __bundler_need: uuid }, OWN_TARGET);
+      }
+    }
+
+    const dead = Array.from(document.scripts);
+    for (const old of dead) {
+      const s = document.createElement('script');
+      for (const a of old.attributes) s.setAttribute(a.name, a.value);
+      s.textContent = old.textContent;
+      // text/babel scripts with a src: read and inline. transformScriptTags
+      // does XHR against the src, but blob:null/ from a file:// origin is
+      // silently dropped. Inlining makes it a plain inline babel script,
+      // which transformScriptTags handles unconditionally.
+      if ((s.type === 'text/babel' || s.type === 'text/jsx') && s.src) {
+        const pre = resourceBlobs[s.src.split('#')[0]];
+        s.textContent = pre ? await pre.text() : await (await fetch(s.src)).text();
+        s.removeAttribute('src');
+      }
+      const p = s.src ? new Promise(function(r) { s.onload = s.onerror = r; }) : null;
+      old.replaceWith(s);
+      if (p) await p;
+    }
+    // Babel standalone auto-transforms type=text/babel on DOMContentLoaded,
+    // which fired before we swapped the document. Trigger manually if present.
+    if (window.Babel && typeof window.Babel.transformScriptTags === 'function') {
+      window.Babel.transformScriptTags();
+    }
+  } catch (err) {
+    setStatus('Error unpacking: ' + err.message);
+    console.error('Bundle unpack error:', err);
+  }
+});
+
+  </script>
+
+  <script type="__bundler/manifest">
+{}
+  </script>
+
+  <script type="__bundler/ext_resources">
+[]
+  </script>
+
+  <script type="__bundler/page_order">
+[]
+  </script>
+
+  <script type="__bundler/template">
+"<!DOCTYPE html>\n<html lang=\"en\"><head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>AnxietyWatch2 admin console — three design directions<\u002Ftitle>\n<style>/* ==========================================================================\n   AnxietyWatch2 Service Console — DIRECTION A: \"SERVICE MODE\"\n   Clinical / biomedical equipment technician interface.\n   Single stylesheet, shared by every screen. Dark theme only.\n   All colour, type, space and radius values live in the token block below.\n   No raw hex appears outside :root.\n   ========================================================================== */\n\n:root {\n  /* --- Surface ramp (cool neutral, no brown) ------------------------------ */\n  --c-bg-0:        #0A0C0D;  /* page                                          */\n  --c-bg-1:        #121517;  /* panel                                         */\n  --c-bg-2:        #1A1E21;  /* row / raised                                  */\n  --c-bg-3:        #23282C;  /* hover / active row                            */\n  --c-line:        #2E3438;  /* decorative rule                               */\n  --c-line-strong: #454D52;  /* structural rule, panel edge                   */\n\n  /* --- Ink ---------------------------------------------------------------- */\n  --c-ink-0:       #E8EDEF;  /* primary value text                            */\n  --c-ink-1:       #A8B2B7;  /* secondary text                                */\n  --c-ink-2:       #8A959B;  /* labels, units, muted text (>=4.86:1 on bg-3)  */\n  --c-ink-3:       #6B7479;  /* non-text only: dashes, disabled edges         */\n  --c-ink-inv:     #0A0C0D;  /* text placed on a saturated status fill        */\n\n  /* --- Alarm priority (IEC 60601-1-8 convention, technical alarms) --------- */\n  --c-prio-high:   #FF6B61;  /* high priority — data is being lost now        */\n  --c-prio-med:    #FFB627;  /* medium priority — degradation, act soon       */\n  --c-prio-low:    #4FC3E8;  /* low priority — advisory                       */\n\n  /* --- Health assertion --------------------------------------------------- */\n  --c-ok:          #A8B2B7;  /* deliberately achromatic. See system.html.     */\n  --c-unknown:     #B98CFF;  /* \"we do not know\" — never used for anything else */\n  --c-absent:      #8A959B;  /* declared absent / not configured              */\n\n  /* --- Interactive (achromatic on purpose: no hue collides with status) --- */\n  --c-focus:       #FFFFFF;\n  --c-focus-halo:  #0A0C0D;\n\n  /* --- Hatch fill used behind every UNKNOWN region ------------------------ */\n  --fill-unknown: repeating-linear-gradient(\n      135deg, rgba(185,140,255,.16) 0 6px, rgba(185,140,255,0) 6px 12px);\n  --fill-absent: repeating-linear-gradient(\n      135deg, rgba(138,149,155,.10) 0 3px, rgba(138,149,155,0) 3px 8px);\n\n  /* --- Type --------------------------------------------------------------- */\n  --f-ui:   \"Helvetica Neue\", Helvetica, Arial, \"Liberation Sans\", sans-serif;\n  --f-mono: ui-monospace, \"SF Mono\", SFMono-Regular, Menlo, Consolas,\n            \"Liberation Mono\", monospace;\n\n  --t-mega:   40px;  /* the one number that matters on a screen               */\n  --t-xl:     28px;\n  --t-lg:     22px;\n  --t-md:     18px;\n  --t-base:   16px;  /* body floor                                            */\n  --t-data:   15px;  /* tabular values                                        */\n  --t-label:  14px;  /* absolute floor. Nothing is smaller.                   */\n\n  --lh-tight: 1.15;\n  --lh-body:  1.5;\n  --ls-caps:  .09em;\n\n  /* --- Space (4px base) ---------------------------------------------------- */\n  --s-1: 4px;  --s-2: 8px;   --s-3: 12px; --s-4: 16px;\n  --s-5: 20px; --s-6: 24px;  --s-8: 32px; --s-10: 40px; --s-12: 48px;\n\n  /* --- Radii: equipment has square corners --------------------------------- */\n  --r-0: 0;\n  --r-1: 1px;  /* the only softening permitted, on chips */\n\n  --rail-w: 232px;\n  --dur: 120ms;\n}\n\n@media (prefers-reduced-motion: reduce) {\n  *, *::before, *::after {\n    animation-duration: .001ms !important; animation-iteration-count: 1 !important;\n    transition-duration: .001ms !important;\n  }\n}\n\n/* ==========================================================================\n   Base\n   ========================================================================== */\n*, *::before, *::after { box-sizing: border-box; }\n\nhtml { -webkit-text-size-adjust: 100%; }\n\nbody {\n  margin: 0;\n  background: var(--c-bg-0);\n  color: var(--c-ink-0);\n  font: var(--t-base)/var(--lh-body) var(--f-ui);\n  font-variant-numeric: tabular-nums;\n  -webkit-font-smoothing: antialiased;\n}\n\nh1, h2, h3, h4, p, ul, ol, figure, table { margin: 0; }\nul, ol { padding: 0; list-style: none; }\n\na { color: var(--c-ink-0); text-decoration: underline; text-underline-offset: 3px;\n    text-decoration-color: var(--c-line-strong); }\na:hover { text-decoration-color: var(--c-ink-0); }\n\n:focus-visible {\n  outline: 2px solid var(--c-focus);\n  outline-offset: 2px;\n  box-shadow: 0 0 0 4px var(--c-focus-halo);\n}\n\n.sr-only {\n  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;\n  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;\n}\n\n.skip-link {\n  position: absolute; left: var(--s-3); top: -100px; z-index: 90;\n  background: var(--c-ink-0); color: var(--c-ink-inv);\n  padding: var(--s-2) var(--s-4); font-weight: 700;\n}\n.skip-link:focus { top: var(--s-3); }\n\n/* Shared micro-typography ------------------------------------------------- */\n.caps {\n  font-size: var(--t-label); font-weight: 700; letter-spacing: var(--ls-caps);\n  text-transform: uppercase; color: var(--c-ink-2);\n}\n.mono { font-family: var(--f-mono); font-variant-numeric: tabular-nums; }\n.num  { font-family: var(--f-mono); font-variant-numeric: tabular-nums;\n        text-align: right; white-space: nowrap; }\n.unit { color: var(--c-ink-2); font-size: .85em; margin-left: 2px; }\n.muted-text { color: var(--c-ink-2); }\n.prose { max-width: 68ch; color: var(--c-ink-1); }\n.prose + .prose { margin-top: var(--s-3); }\n\n/* ==========================================================================\n   Shell — fixed geometry. Fields do not reflow between screens.\n   ========================================================================== */\n.shell { min-height: 100vh; display: flex; flex-direction: column; }\n\n.idstrip {\n  display: flex; align-items: stretch; gap: 0;\n  border-bottom: 1px solid var(--c-line-strong);\n  background: var(--c-bg-1);\n  position: sticky; top: 0; z-index: 40;\n}\n.idstrip__brand {\n  display: flex; flex-direction: column; justify-content: center;\n  padding: var(--s-2) var(--s-4);\n  border-right: 1px solid var(--c-line-strong);\n  min-width: var(--rail-w);\n}\n.idstrip__brand b { font-size: var(--t-md); letter-spacing: .02em; }\n.idstrip__brand span {\n  font-size: var(--t-label); color: var(--c-ink-2); letter-spacing: var(--ls-caps);\n  text-transform: uppercase;\n}\n.idstrip__fields { display: flex; flex: 1; overflow-x: auto; }\n.idfield {\n  display: flex; flex-direction: column; justify-content: center; gap: 1px;\n  padding: var(--s-2) var(--s-4);\n  border-right: 1px solid var(--c-line);\n  white-space: nowrap;\n}\n.idfield__k {\n  font-size: var(--t-label); letter-spacing: var(--ls-caps);\n  text-transform: uppercase; color: var(--c-ink-2);\n}\n.idfield__v { font-family: var(--f-mono); font-size: var(--t-data); color: var(--c-ink-0); }\n.idstrip__spacer { flex: 1; border-right: 1px solid var(--c-line); }\n\n.body { display: flex; flex: 1; align-items: stretch; }\n\n/* Rail — fixed subsystem index, always in the same order on every screen --- */\n.rail {\n  width: var(--rail-w); flex: 0 0 var(--rail-w);\n  border-right: 1px solid var(--c-line-strong);\n  background: var(--c-bg-1);\n  padding-bottom: var(--s-8);\n}\n.rail__group { padding: var(--s-4) 0 var(--s-2); }\n.rail__group > .caps { display: block; padding: 0 var(--s-4) var(--s-2); }\n.rail__item {\n  display: flex; align-items: center; gap: var(--s-2);\n  padding: var(--s-2) var(--s-4);\n  border-left: 3px solid transparent;\n  color: var(--c-ink-1); text-decoration: none; font-size: var(--t-data);\n}\n.rail__item:hover { background: var(--c-bg-2); color: var(--c-ink-0); }\n.rail__item[aria-current=\"page\"] {\n  background: var(--c-bg-2); color: var(--c-ink-0);\n  border-left-color: var(--c-ink-0); font-weight: 700;\n}\n.rail__item .rail__ord {\n  font-family: var(--f-mono); color: var(--c-ink-2); font-size: var(--t-label);\n  width: 2ch;\n}\n.rail__item .dot { margin-left: auto; }\n\n.main { flex: 1; min-width: 0; padding: var(--s-5) var(--s-6) var(--s-12); }\n\n.page-hd {\n  display: flex; align-items: flex-end; gap: var(--s-5);\n  padding-bottom: var(--s-4); margin-bottom: var(--s-5);\n  border-bottom: 1px solid var(--c-line-strong);\n  flex-wrap: wrap;\n}\n.page-hd h1 { font-size: var(--t-xl); line-height: var(--lh-tight); letter-spacing: -.01em; }\n.page-hd__sub { color: var(--c-ink-2); font-size: var(--t-data); }\n.page-hd__actions { margin-left: auto; display: flex; gap: var(--s-2); flex-wrap: wrap; }\n\n/* ==========================================================================\n   Layout helpers (structure only — no cosmetics, no per-screen styles)\n   ========================================================================== */\n.stack   { display: flex; flex-direction: column; gap: var(--s-5); }\n.stack--tight { gap: var(--s-3); }\n.row     { display: flex; gap: var(--s-3); align-items: center; flex-wrap: wrap; }\n.row--end{ justify-content: flex-end; }\n.cols-2  { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: var(--s-5); }\n.cols-3  { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: var(--s-5); }\n.cols-4  { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: var(--s-5); }\n.cols-main { display: grid; grid-template-columns: minmax(0,2fr) minmax(0,1fr); gap: var(--s-5); }\n.grow { flex: 1; }\n\n/* ==========================================================================\n   Panel — the only container. Square, hard-edged, titled, timestamped.\n   ========================================================================== */\n.panel {\n  background: var(--c-bg-1);\n  border: 1px solid var(--c-line-strong);\n  border-radius: var(--r-0);\n  display: flex; flex-direction: column;\n}\n.panel__hd {\n  display: flex; align-items: center; gap: var(--s-3);\n  padding: var(--s-2) var(--s-3);\n  border-bottom: 1px solid var(--c-line-strong);\n  background: var(--c-bg-2);\n  min-height: 38px;\n}\n.panel__title {\n  font-size: var(--t-label); font-weight: 700; letter-spacing: var(--ls-caps);\n  text-transform: uppercase; color: var(--c-ink-0);\n}\n.panel__meta { margin-left: auto; display: flex; align-items: center; gap: var(--s-3); }\n.panel__body { padding: var(--s-4); }\n.panel__body--flush { padding: 0; }\n.panel__ft {\n  padding: var(--s-2) var(--s-3); border-top: 1px solid var(--c-line);\n  display: flex; align-items: center; gap: var(--s-2); flex-wrap: wrap;\n}\n.panel--high { border-color: var(--c-prio-high); }\n.panel--med  { border-color: var(--c-prio-med); }\n.panel--unknown { border-color: var(--c-unknown); }\n.panel--unknown .panel__hd { background-image: var(--fill-unknown); }\n.panel--absent { border-color: var(--c-line); }\n.panel--absent .panel__hd { background-image: var(--fill-absent); }\n.panel--absent .panel__title { color: var(--c-ink-2); }\n\n/* ==========================================================================\n   VOCABULARY 1 — HEALTH ASSERTION  (good · bad · unknown)\n   \"Can this be relied on right now?\" Nothing else uses these classes.\n   Colour is never the only carrier: every state has a glyph and a word.\n   ========================================================================== */\n.status {\n  display: inline-flex; align-items: center; gap: var(--s-2);\n  padding: 2px var(--s-2); min-height: 24px;\n  border: 1px solid currentColor; border-radius: var(--r-1);\n  font-family: var(--f-mono); font-size: var(--t-label);\n  font-weight: 700; letter-spacing: .04em; text-transform: uppercase;\n  white-space: nowrap;\n}\n.status__glyph { font-size: 1em; line-height: 1; }\n\n.status--ok      { color: var(--c-ok);        background: transparent; }\n.status--high    { color: var(--c-ink-inv);   background: var(--c-prio-high); border-color: var(--c-prio-high); }\n.status--med     { color: var(--c-ink-inv);   background: var(--c-prio-med);  border-color: var(--c-prio-med); }\n.status--low     { color: var(--c-prio-low);  background: transparent; }\n.status--unknown { color: var(--c-unknown);   background-image: var(--fill-unknown); }\n.status--absent  { color: var(--c-absent);    border-style: dashed; background-image: var(--fill-absent); }\n.status--muted   { color: var(--c-ink-2);     border-style: dotted; }\n\n/* Inline LED — must always sit beside a text label, never alone */\n.dot {\n  width: 10px; height: 10px; flex: 0 0 10px; display: inline-block;\n  border: 1px solid currentColor;\n}\n.dot--ok      { color: var(--c-ok);      background: transparent; }\n.dot--high    { color: var(--c-prio-high); background: var(--c-prio-high); }\n.dot--med     { color: var(--c-prio-med);  background: var(--c-prio-med); }\n.dot--low     { color: var(--c-prio-low);  background: var(--c-prio-low); }\n.dot--unknown { color: var(--c-unknown);  background-image: var(--fill-unknown); }\n.dot--absent  { color: var(--c-ink-3);    border-style: dashed; background: transparent; }\n\n/* ==========================================================================\n   FRESHNESS — no status is ever shown without one of these next to it.\n   Age, and the expectation the age is being judged against.\n   ========================================================================== */\n.fresh {\n  display: inline-flex; align-items: baseline; gap: var(--s-2);\n  font-family: var(--f-mono); font-size: var(--t-label); color: var(--c-ink-2);\n  white-space: nowrap;\n}\n.fresh__age { color: var(--c-ink-1); }\n.fresh__expect::before { content: \"expect \\2264 \"; }\n.fresh--over .fresh__age { color: var(--c-unknown); font-weight: 700; }\n.fresh--over .fresh__expect { color: var(--c-unknown); }\n\n/* Last-known-outcome line: current confidence and last observation are\n   two separate facts, and losing the second one is a design failure. */\n.lastknown {\n  display: block; margin-top: var(--s-1);\n  font-size: var(--t-label); color: var(--c-ink-1);\n  border-left: 2px solid var(--c-line-strong); padding-left: var(--s-2);\n}\n.lastknown b { color: var(--c-ink-0); font-weight: 700; }\n.lastknown--bad { border-left-color: var(--c-prio-high); }\n\n/* ==========================================================================\n   VOCABULARY 2 — LIFECYCLE (queued · running · succeeded · failed · cancelled)\n   Deliberately a different SHAPE from .status: a left bar, no box, sentence case.\n   ========================================================================== */\n.life {\n  display: inline-flex; align-items: center; gap: var(--s-2);\n  padding-left: var(--s-2); border-left: 3px solid var(--c-ink-3);\n  font-family: var(--f-mono); font-size: var(--t-label);\n  color: var(--c-ink-1); white-space: nowrap;\n}\n.life--queued    { border-left-style: dotted; border-left-color: var(--c-ink-2); }\n.life--running   { border-left-color: var(--c-ink-0); color: var(--c-ink-0); font-weight: 700; }\n.life--succeeded { border-left-color: var(--c-ink-1); color: var(--c-ink-0); }\n.life--failed    { border-left-color: var(--c-prio-high); color: var(--c-prio-high); font-weight: 700; }\n.life--cancelled { border-left-color: var(--c-ink-3); color: var(--c-ink-2); text-decoration: line-through; }\n\n.life--running .life__pulse {\n  width: 6px; height: 6px; background: var(--c-ink-0);\n  animation: blip 1.4s steps(2, end) infinite;\n}\n@keyframes blip { 0%,49% { opacity: 1 } 50%,100% { opacity: .25 } }\n\n/* ==========================================================================\n   VOCABULARY 3 — PROCESS STATE (systemd verbatim, not a health claim)\n   ========================================================================== */\n.proc {\n  display: inline-flex; align-items: center; gap: var(--s-2);\n  font-family: var(--f-mono); font-size: var(--t-data); color: var(--c-ink-1);\n}\n.proc__led { width: 8px; height: 8px; border: 1px solid currentColor; }\n.proc--active     { color: var(--c-ink-0); }\n.proc--active .proc__led { background: var(--c-ink-0); }\n.proc--activating { color: var(--c-ink-2); }\n.proc--activating .proc__led { background: var(--c-ink-2); opacity: .5; }\n.proc--failed     { color: var(--c-prio-high); }\n.proc--failed .proc__led { background: var(--c-prio-high); }\n.proc--inactive   { color: var(--c-ink-2); }\n.proc--inactive .proc__led { background: transparent; border-style: dashed; }\n\n/* ==========================================================================\n   VOCABULARY 4 — OPERATOR SUPPRESSION\n   ========================================================================== */\n.mute {\n  display: inline-flex; align-items: center; gap: var(--s-2);\n  padding: 2px var(--s-2); border: 1px dotted var(--c-ink-3);\n  font-size: var(--t-label); color: var(--c-ink-2); font-family: var(--f-mono);\n}\n.mute__who { color: var(--c-ink-1); }\n\n/* ==========================================================================\n   VOCABULARY 5 — CONFIGURATION (declared absent). Quiet. Not a question.\n   ========================================================================== */\n.absent-note {\n  font-size: var(--t-label); color: var(--c-ink-2); font-style: normal;\n}\n.is-absent { background-image: var(--fill-absent); }\n.is-absent .field__v, .is-absent td { color: var(--c-ink-2); }\n\n/* ==========================================================================\n   Field grid — fixed label column. Values land in the same place every time.\n   ========================================================================== */\n.fields { display: grid; grid-template-columns: 15ch minmax(0,1fr); gap: var(--s-2) var(--s-4); }\n.fields--wide { grid-template-columns: 22ch minmax(0,1fr); }\n.field__k {\n  font-size: var(--t-label); letter-spacing: var(--ls-caps); text-transform: uppercase;\n  color: var(--c-ink-2); padding-top: 2px;\n}\n.field__v { font-size: var(--t-data); color: var(--c-ink-0); min-width: 0; }\n.field__v .mono, .field__v.mono { font-family: var(--f-mono); }\n\n/* The single most important number on a screen is the largest thing on it. */\n.readout { display: flex; flex-direction: column; gap: var(--s-1); }\n.readout__v {\n  font-family: var(--f-mono); font-size: var(--t-mega); line-height: 1;\n  letter-spacing: -.02em; font-weight: 700; color: var(--c-ink-0);\n}\n.readout__v .unit { font-size: var(--t-md); font-weight: 400; }\n.readout__k { font-size: var(--t-label); letter-spacing: var(--ls-caps);\n  text-transform: uppercase; color: var(--c-ink-2); }\n.readout--high .readout__v { color: var(--c-prio-high); }\n.readout--unknown .readout__v { color: var(--c-unknown); }\n.readout--sm .readout__v { font-size: var(--t-lg); }\n\n/* ==========================================================================\n   Alarm bar — technical alarms only. Physiological alarms are not this\n   console's business, and the header says so rather than leaving it implied.\n   ========================================================================== */\n.alarmbar { border: 1px solid var(--c-line-strong); background: var(--c-bg-1); }\n.alarmbar__hd {\n  display: flex; align-items: center; gap: var(--s-3);\n  padding: var(--s-2) var(--s-3); border-bottom: 1px solid var(--c-line-strong);\n  background: var(--c-bg-2);\n}\n.alarm {\n  display: grid;\n  grid-template-columns: 112px minmax(0,1fr) auto;\n  gap: var(--s-3); align-items: baseline;\n  padding: var(--s-3); border-bottom: 1px solid var(--c-line);\n}\n.alarm:last-child { border-bottom: 0; }\n.alarm__prio {\n  font-family: var(--f-mono); font-size: var(--t-label); font-weight: 700;\n  letter-spacing: .06em; text-transform: uppercase;\n  display: inline-flex; align-items: center; gap: var(--s-2);\n  padding: 2px var(--s-2); border: 1px solid currentColor;\n}\n.alarm--high .alarm__prio { color: var(--c-ink-inv); background: var(--c-prio-high); }\n.alarm--med  .alarm__prio { color: var(--c-ink-inv); background: var(--c-prio-med); }\n.alarm--low  .alarm__prio { color: var(--c-prio-low); }\n.alarm--unknown .alarm__prio { color: var(--c-unknown); background-image: var(--fill-unknown); }\n.alarm--high { border-left: 3px solid var(--c-prio-high); }\n.alarm--med  { border-left: 3px solid var(--c-prio-med); }\n.alarm--low  { border-left: 3px solid var(--c-prio-low); }\n.alarm--unknown { border-left: 3px solid var(--c-unknown); }\n.alarm__msg { color: var(--c-ink-0); font-size: var(--t-data); }\n.alarm__msg small { display: block; color: var(--c-ink-2); font-size: var(--t-label); }\n.alarm__act { display: flex; gap: var(--s-2); align-items: center; }\n\n/* ==========================================================================\n   Document freshness overlay — the PAGE degrades, without rewriting the\n   state of every card underneath it.\n   ========================================================================== */\n.docstale {\n  position: sticky; top: 0; z-index: 60;\n  display: none; align-items: center; gap: var(--s-3);\n  padding: var(--s-3) var(--s-4);\n  background: var(--c-bg-0); border-bottom: 2px solid var(--c-unknown);\n  background-image: var(--fill-unknown);\n  color: var(--c-ink-0); font-size: var(--t-data);\n}\nbody[data-feed=\"stale\"] .docstale { display: flex; }\nbody[data-feed=\"stale\"] .main { opacity: .82; }\nbody[data-feed=\"stale\"] .main::after {\n  content: \"\"; position: fixed; inset: 0; pointer-events: none;\n  box-shadow: inset 0 0 0 3px var(--c-unknown);\n}\n.docstale__b { font-weight: 700; }\n\n/* ==========================================================================\n   Tables — real tables. Dense, ruled, tabular figures.\n   ========================================================================== */\n.t { width: 100%; border-collapse: collapse; font-size: var(--t-data); }\n.t caption {\n  text-align: left; padding: var(--s-2) var(--s-3);\n  font-size: var(--t-label); color: var(--c-ink-2);\n  letter-spacing: var(--ls-caps); text-transform: uppercase;\n}\n.t th, .t td {\n  padding: var(--s-2) var(--s-3); text-align: left; vertical-align: top;\n  border-bottom: 1px solid var(--c-line);\n}\n.t thead th {\n  font-size: var(--t-label); letter-spacing: var(--ls-caps); text-transform: uppercase;\n  color: var(--c-ink-2); font-weight: 700; white-space: nowrap;\n  border-bottom: 1px solid var(--c-line-strong); background: var(--c-bg-1);\n  position: sticky; top: 0;\n}\n.t tbody tr:hover { background: var(--c-bg-2); }\n.t td.num, .t th.num { text-align: right; font-family: var(--f-mono); }\n.t tbody th { font-weight: 400; color: var(--c-ink-0); }\n.t--rowstate tr[data-state=\"high\"]    { box-shadow: inset 3px 0 0 var(--c-prio-high); }\n.t--rowstate tr[data-state=\"med\"]     { box-shadow: inset 3px 0 0 var(--c-prio-med); }\n.t--rowstate tr[data-state=\"unknown\"] { box-shadow: inset 3px 0 0 var(--c-unknown);\n                                        background-image: var(--fill-unknown); }\n.t--rowstate tr[data-state=\"absent\"]  { box-shadow: inset 3px 0 0 var(--c-ink-3);\n                                        background-image: var(--fill-absent); }\n.t-scroll { overflow-x: auto; }\n\n/* ==========================================================================\n   ATTEMPT HISTORY — the component that carries the product's central claim.\n   It must make SILENT (no attempts at all) look different from FAILING\n   (attempts happening, all of them failing).\n   ========================================================================== */\n.attempts { border: 1px solid var(--c-line-strong); background: var(--c-bg-1); }\n.attempts__hd {\n  display: flex; align-items: center; gap: var(--s-3); flex-wrap: wrap;\n  padding: var(--s-3); border-bottom: 1px solid var(--c-line-strong);\n  background: var(--c-bg-2);\n}\n.attempts__verdict {\n  font-family: var(--f-mono); font-size: var(--t-md); font-weight: 700;\n  letter-spacing: .04em; text-transform: uppercase;\n}\n.attempts--failing .attempts__verdict { color: var(--c-prio-high); }\n.attempts--silent  .attempts__verdict { color: var(--c-unknown); }\n.attempts--ok      .attempts__verdict { color: var(--c-ink-0); }\n.attempts__gloss { color: var(--c-ink-1); font-size: var(--t-data); flex: 1 1 30ch; }\n\n/* Cadence strip: one tick per expected attempt window. Gaps are visible as\n   gaps, which is the whole point — a silent source draws nothing at all. */\n.strip {\n  display: flex; align-items: flex-end; gap: 2px; height: 34px;\n  padding: var(--s-3); background: var(--c-bg-0);\n  border-bottom: 1px solid var(--c-line);\n}\n.strip__tick { width: 8px; height: 100%; border: 1px solid var(--c-line-strong); }\n.strip__tick--ok      { background: var(--c-ink-1); border-color: var(--c-ink-1); }\n.strip__tick--fail    { background: var(--c-prio-high); border-color: var(--c-prio-high); }\n.strip__tick--partial { background: var(--c-prio-med); border-color: var(--c-prio-med); }\n/* No attempt at all: an empty slot with a dashed floor, not a coloured bar. */\n.strip__tick--none {\n  background: transparent; border: 0; border-bottom: 2px dashed var(--c-ink-3);\n  align-self: flex-end; height: 8px;\n}\n.strip__legend {\n  display: flex; gap: var(--s-4); padding: var(--s-2) var(--s-3);\n  font-size: var(--t-label); color: var(--c-ink-2); flex-wrap: wrap;\n  border-bottom: 1px solid var(--c-line);\n}\n.strip__legend span { display: inline-flex; align-items: center; gap: var(--s-2); }\n\n.attempt-row {\n  display: grid;\n  grid-template-columns: 17ch 11ch 8ch minmax(0,1fr);\n  gap: var(--s-3); align-items: baseline;\n  padding: var(--s-2) var(--s-3);\n  border-bottom: 1px solid var(--c-line);\n  font-size: var(--t-data);\n}\n.attempt-row:last-child { border-bottom: 0; }\n.attempt-row__t { font-family: var(--f-mono); color: var(--c-ink-1); }\n.attempt-row__dur { font-family: var(--f-mono); color: var(--c-ink-2); text-align: right; }\n.attempt-row__rows { font-family: var(--f-mono); color: var(--c-ink-0); text-align: right; }\n.attempt-row__why { color: var(--c-ink-1); }\n.attempt-row--failed { background: var(--c-bg-2); }\n.attempt-row--failed .attempt-row__why { color: var(--c-prio-high); }\n.attempt-row--gap {\n  background-image: var(--fill-unknown); color: var(--c-unknown);\n  grid-template-columns: 17ch minmax(0,1fr);\n}\n.attempt-row--gap .attempt-row__why { color: var(--c-unknown); font-weight: 700; }\n\n/* ==========================================================================\n   Buttons — severity is carried by border weight and separation, not colour\n   alone. Destructive controls are never adjacent to routine ones.\n   ========================================================================== */\n.btn {\n  display: inline-flex; align-items: center; justify-content: center; gap: var(--s-2);\n  min-height: 34px; padding: var(--s-2) var(--s-4);\n  font: 700 var(--t-label)/1 var(--f-ui); letter-spacing: .04em; text-transform: uppercase;\n  color: var(--c-ink-0); background: var(--c-bg-2);\n  border: 1px solid var(--c-line-strong); border-radius: var(--r-0);\n  cursor: pointer; text-decoration: none; transition: background var(--dur);\n}\n.btn:hover { background: var(--c-bg-3); border-color: var(--c-ink-3); }\n.btn:active { transform: translateY(1px); }\n.btn[disabled], .btn[aria-disabled=\"true\"] {\n  color: var(--c-ink-3); border-color: var(--c-line); background: var(--c-bg-1);\n  cursor: not-allowed; pointer-events: none;\n}\n.btn--primary { background: var(--c-ink-0); color: var(--c-ink-inv); border-color: var(--c-ink-0); }\n.btn--primary:hover { background: #fff; border-color: #fff; }\n.btn--ghost { background: transparent; }\n.btn--sm { min-height: 28px; padding: var(--s-1) var(--s-2); font-size: var(--t-label); }\n.btn--block { width: 100%; }\n\n/* Danger: hatched, hard border, and physically fenced off from safe actions. */\n.btn--danger {\n  color: var(--c-prio-high); background: transparent;\n  border: 1px solid var(--c-prio-high);\n  background-image: repeating-linear-gradient(135deg,\n    rgba(255,107,97,.12) 0 6px, rgba(255,107,97,0) 6px 12px);\n}\n.btn--danger:hover { color: var(--c-ink-inv); background: var(--c-prio-high); background-image: none; }\n\n.danger-zone {\n  border: 1px solid var(--c-prio-high); background: var(--c-bg-1);\n  background-image: repeating-linear-gradient(135deg,\n    rgba(255,107,97,.05) 0 8px, rgba(255,107,97,0) 8px 16px);\n  padding: var(--s-4); display: flex; gap: var(--s-4);\n  align-items: flex-start; flex-wrap: wrap;\n}\n.danger-zone__hd { flex: 1 1 34ch; }\n.danger-zone__hd b { display: block; color: var(--c-prio-high);\n  font-size: var(--t-label); letter-spacing: var(--ls-caps); text-transform: uppercase; }\n.actions-split {\n  display: flex; align-items: center; gap: var(--s-3); flex-wrap: wrap;\n}\n.actions-split__gap {\n  flex: 1 1 var(--s-10); min-width: var(--s-10);\n  border-top: 1px dashed var(--c-line-strong); height: 1px;\n}\n\n/* ==========================================================================\n   Forms\n   ========================================================================== */\n.form { display: flex; flex-direction: column; gap: var(--s-5); }\n.form__row { display: grid; grid-template-columns: 22ch minmax(0,1fr); gap: var(--s-4); align-items: start; }\n.form__row > label, .form__legend {\n  font-size: var(--t-label); letter-spacing: var(--ls-caps); text-transform: uppercase;\n  color: var(--c-ink-2); padding-top: var(--s-2); font-weight: 700;\n}\n.req::after { content: \" *\"; color: var(--c-prio-med); }\n\n.input, .select, .textarea {\n  width: 100%; min-height: 34px; padding: var(--s-2) var(--s-3);\n  font: var(--t-data)/1.4 var(--f-mono);\n  color: var(--c-ink-0); background: var(--c-bg-0);\n  border: 1px solid var(--c-line-strong); border-radius: var(--r-0);\n}\n.textarea { min-height: 120px; resize: vertical; font-family: var(--f-ui); font-size: var(--t-base); }\n.input::placeholder, .textarea::placeholder { color: var(--c-ink-3); }\n.input:hover, .select:hover, .textarea:hover { border-color: var(--c-ink-3); }\n.input[aria-invalid=\"true\"], .textarea[aria-invalid=\"true\"] { border-color: var(--c-prio-high); border-width: 2px; }\n.input[readonly] { color: var(--c-ink-2); background: var(--c-bg-1); }\n.select { appearance: none; padding-right: var(--s-8);\n  background-image: linear-gradient(45deg, transparent 50%, var(--c-ink-2) 50%),\n                    linear-gradient(135deg, var(--c-ink-2) 50%, transparent 50%);\n  background-position: right 18px center, right 12px center;\n  background-size: 6px 6px, 6px 6px; background-repeat: no-repeat; }\n\n.hint { display: block; margin-top: var(--s-1); font-size: var(--t-label); color: var(--c-ink-2); }\n.err  { display: flex; gap: var(--s-2); margin-top: var(--s-2);\n        font-size: var(--t-label); color: var(--c-prio-high); font-weight: 700; }\n.err::before { content: \"\\25B2\"; }\n\n.check { display: flex; gap: var(--s-3); align-items: flex-start; }\n.check input { width: 18px; height: 18px; margin: 1px 0 0; accent-color: var(--c-ink-0); flex: 0 0 18px; }\n.check label { font-size: var(--t-data); color: var(--c-ink-0); }\n\n.fieldset { border: 1px solid var(--c-line); padding: var(--s-4); }\n.fieldset legend { padding: 0 var(--s-2); font-size: var(--t-label);\n  letter-spacing: var(--ls-caps); text-transform: uppercase; color: var(--c-ink-2); font-weight: 700; }\n\n/* Dirty state + save bar */\n.savebar {\n  position: sticky; bottom: 0; z-index: 30;\n  display: flex; align-items: center; gap: var(--s-3); flex-wrap: wrap;\n  padding: var(--s-3) var(--s-4);\n  background: var(--c-bg-2); border: 1px solid var(--c-line-strong);\n}\n.savebar__state { font-size: var(--t-data); color: var(--c-ink-2); flex: 1; }\n.savebar[data-dirty=\"true\"] { border-color: var(--c-prio-med); }\n.savebar[data-dirty=\"true\"] .savebar__state { color: var(--c-prio-med); font-weight: 700; }\n.dirty-mark { color: var(--c-prio-med); font-weight: 700; }\n\n/* ==========================================================================\n   Modal / confirmation. Severity is proportionate: a routine confirm is a\n   short question; a destructive one demands the object's name be typed.\n   ========================================================================== */\n.scrim {\n  position: fixed; inset: 0; z-index: 80; background: rgba(10,12,13,.82);\n  display: flex; align-items: center; justify-content: center; padding: var(--s-6);\n}\n.modal {\n  width: 100%; max-width: 560px; background: var(--c-bg-1);\n  border: 1px solid var(--c-line-strong); border-radius: var(--r-0);\n}\n.modal__hd {\n  display: flex; align-items: center; gap: var(--s-3);\n  padding: var(--s-3) var(--s-4); border-bottom: 1px solid var(--c-line-strong);\n  background: var(--c-bg-2);\n}\n.modal__hd h2 { font-size: var(--t-md); }\n.modal__body { padding: var(--s-5); display: flex; flex-direction: column; gap: var(--s-4); }\n.modal__ft { padding: var(--s-3) var(--s-4); border-top: 1px solid var(--c-line-strong);\n  display: flex; gap: var(--s-3); align-items: center; }\n.modal--danger { border: 2px solid var(--c-prio-high); }\n.modal--danger .modal__hd { background: var(--c-prio-high); color: var(--c-ink-inv); }\n.modal--danger .modal__hd h2 { color: var(--c-ink-inv); }\n.consequences { border-left: 3px solid var(--c-prio-high); padding-left: var(--s-3);\n  display: flex; flex-direction: column; gap: var(--s-2); }\n.consequences li { font-size: var(--t-data); color: var(--c-ink-0); }\n.consequences li::before { content: \"\\2013\\00a0\"; color: var(--c-prio-high); }\n\n/* One-time secret reveal */\n.secret {\n  border: 2px solid var(--c-prio-med); background: var(--c-bg-0);\n  padding: var(--s-4); display: flex; flex-direction: column; gap: var(--s-3);\n}\n.secret__value {\n  font-family: var(--f-mono); font-size: var(--t-md); word-break: break-all;\n  color: var(--c-ink-0); background: var(--c-bg-2); padding: var(--s-3);\n  border: 1px solid var(--c-line-strong); user-select: all;\n}\n.secret__value[data-hidden=\"true\"] { color: transparent; text-shadow: 0 0 12px var(--c-ink-1); user-select: none; }\n.secret__warn { color: var(--c-prio-med); font-size: var(--t-data); font-weight: 700; }\n.secret__timer { font-family: var(--f-mono); color: var(--c-ink-2); font-size: var(--t-label); }\n\n/* ==========================================================================\n   Charts. Achromatic by default — see the rationale on system.html.\n   One colour per metric, held across every screen; colour enters only on fault.\n   ========================================================================== */\n.bar { display: flex; align-items: center; gap: var(--s-3); }\n.bar__track { flex: 1; height: 10px; background: var(--c-bg-3); border: 1px solid var(--c-line-strong); }\n.bar__fill  { height: 100%; background: var(--c-ink-1); }\n.bar--high .bar__fill { background: var(--c-prio-high); }\n.bar--med  .bar__fill { background: var(--c-prio-med); }\n.bar--unknown .bar__track { background-image: var(--fill-unknown); }\n.bar__val { font-family: var(--f-mono); font-size: var(--t-data); min-width: 9ch; text-align: right; }\n\n.spark { display: block; width: 100%; height: 44px; }\n.spark__line { fill: none; stroke: var(--c-ink-1); stroke-width: 1.5; }\n.spark__line--high { stroke: var(--c-prio-high); }\n.spark__thresh { stroke: var(--c-prio-med); stroke-width: 1; stroke-dasharray: 3 3; }\n.spark__gap { fill: var(--c-unknown); opacity: .18; }\n.spark__axis { stroke: var(--c-line-strong); stroke-width: 1; }\n\n/* ==========================================================================\n   Misc components\n   ========================================================================== */\n.tag {\n  display: inline-block; padding: 1px var(--s-2); font-family: var(--f-mono);\n  font-size: var(--t-label); color: var(--c-ink-1);\n  border: 1px solid var(--c-line-strong); background: var(--c-bg-2);\n}\n.redact { color: var(--c-ink-2); font-family: var(--f-mono); }\n.redact b { color: var(--c-ink-0); }\n\n.log {\n  margin: 0; padding: var(--s-3); background: var(--c-bg-0);\n  border: 1px solid var(--c-line); overflow-x: auto;\n  font: var(--t-label)/1.6 var(--f-mono); color: var(--c-ink-1);\n  max-height: 320px;\n}\n.log b { color: var(--c-ink-0); font-weight: 400; }\n.log .log--err { color: var(--c-prio-high); display: block; }\n.log .log--warn { color: var(--c-prio-med); display: block; }\n.log .log--redacted { color: var(--c-ink-3); }\n\n.empty {\n  padding: var(--s-8) var(--s-5); text-align: center;\n  border: 1px dashed var(--c-line-strong); background: var(--c-bg-1);\n}\n.empty h3 { font-size: var(--t-md); margin-bottom: var(--s-2); }\n.empty p { color: var(--c-ink-2); font-size: var(--t-data); max-width: 56ch; margin: 0 auto var(--s-4); }\n\n.skel {\n  background: var(--c-bg-3); color: transparent; display: inline-block;\n  min-height: 1em; min-width: 8ch; animation: pulse 1.6s ease-in-out infinite;\n}\n@keyframes pulse { 0%,100% { opacity: .45 } 50% { opacity: .8 } }\n\n.note {\n  border-left: 3px solid var(--c-line-strong); padding: var(--s-2) var(--s-3);\n  font-size: var(--t-data); color: var(--c-ink-1); background: var(--c-bg-1);\n}\n.note--unknown { border-left-color: var(--c-unknown); background-image: var(--fill-unknown); }\n\n.steps { display: flex; gap: 0; border: 1px solid var(--c-line-strong); }\n.steps li {\n  flex: 1; padding: var(--s-2) var(--s-3); font-size: var(--t-label);\n  color: var(--c-ink-2); border-right: 1px solid var(--c-line);\n  font-family: var(--f-mono);\n}\n.steps li:last-child { border-right: 0; }\n.steps li[aria-current=\"step\"] { background: var(--c-bg-3); color: var(--c-ink-0); font-weight: 700; }\n.steps li[data-done=\"true\"] { color: var(--c-ink-1); }\n.steps li[data-done=\"true\"]::before { content: \"\\2713\\00a0\"; }\n\n.divider { height: 1px; background: var(--c-line); border: 0; margin: var(--s-2) 0; }\n\n/* Claim ladder — used where \"the service is up\" and \"the thing is actually\n   happening\" are different assertions and must be shown as different rows. */\n.ladder { border: 1px solid var(--c-line-strong); background: var(--c-bg-1); }\n.claim {\n  display: grid; grid-template-columns: 3ch minmax(0,1fr) 20ch auto;\n  gap: var(--s-3); align-items: baseline;\n  padding: var(--s-3); border-bottom: 1px solid var(--c-line);\n}\n.claim:last-child { border-bottom: 0; }\n.claim__n { font-family: var(--f-mono); color: var(--c-ink-2); font-size: var(--t-label); }\n.claim__what { font-size: var(--t-data); color: var(--c-ink-0); }\n.claim__what small { display: block; color: var(--c-ink-2); font-size: var(--t-label); margin-top: 2px; }\n.claim__what em { color: var(--c-ink-1); font-style: normal; }\n.claim--terminal { background: var(--c-bg-2); }\n.claim--terminal .claim__what { font-weight: 700; }\n.claim--weak { background-image: var(--fill-unknown); }\n@media (max-width: 860px) {\n  .claim { grid-template-columns: 3ch minmax(0,1fr); }\n  .claim > :nth-child(3), .claim > :nth-child(4) { grid-column: 2; }\n}\n\n/* Cost preview — shown before spending, never after */\n.cost { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px,1fr)); gap: var(--s-4);\n  padding: var(--s-4); border: 1px dashed var(--c-line-strong); background: var(--c-bg-0); }\n\n/* Side-by-side review (AI content): prior version stays visible */\n.diff { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 0;\n  border: 1px solid var(--c-line-strong); }\n.diff__side { padding: var(--s-4); border-right: 1px solid var(--c-line-strong); min-width: 0; }\n.diff__side:last-child { border-right: 0; }\n.diff__side--new { background: var(--c-bg-2); }\n.diff__hd { display: flex; align-items: center; gap: var(--s-2); margin-bottom: var(--s-3); }\n.diff__hd .caps { color: var(--c-ink-0); }\n.diff__body { color: var(--c-ink-1); font-size: var(--t-base); }\n.diff__body p + p { margin-top: var(--s-3); }\n.diff ins { text-decoration: none; background: rgba(232,237,239,.14); color: var(--c-ink-0);\n  box-shadow: inset 2px 0 0 var(--c-ink-0); padding-left: 4px; }\n.diff del { color: var(--c-ink-2); text-decoration: line-through; }\n@media (max-width: 860px) {\n  .diff { grid-template-columns: minmax(0,1fr); }\n  .diff__side { border-right: 0; border-bottom: 1px solid var(--c-line-strong); }\n}\n\n/* Dropzone */\n.drop {\n  border: 2px dashed var(--c-line-strong); background: var(--c-bg-0);\n  padding: var(--s-8) var(--s-5); text-align: center;\n}\n.drop[data-state=\"active\"] { border-color: var(--c-ink-0); }\n.drop[data-state=\"busy\"] { border-style: solid; }\n.progress { height: 12px; background: var(--c-bg-3); border: 1px solid var(--c-line-strong); }\n.progress__fill { height: 100%; background: var(--c-ink-1); }\n\n/* Gallery / index page ----------------------------------------------------- */\n.gallery { max-width: 1080px; margin: 0 auto; padding: var(--s-12) var(--s-6); }\n.gallery h1 { font-size: var(--t-xl); margin-bottom: var(--s-2); }\n.gallery__list { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px,1fr)); gap: var(--s-3); }\n.gallery__item {\n  display: block; padding: var(--s-4); border: 1px solid var(--c-line-strong);\n  background: var(--c-bg-1); text-decoration: none;\n}\n.gallery__item:hover { background: var(--c-bg-2); border-color: var(--c-ink-3); }\n.gallery__item b { display: block; font-size: var(--t-md); }\n.gallery__item span { display: block; color: var(--c-ink-2); font-size: var(--t-label); margin-top: var(--s-1); }\n\n/* Swatch documentation (design system page) -------------------------------- */\n.sw { width: 26px; height: 18px; display: inline-block; border: 1px solid var(--c-line-strong); }\n.sw--bg0 { background: var(--c-bg-0); }\n.sw--bg1 { background: var(--c-bg-1); }\n.sw--bg2 { background: var(--c-bg-2); }\n.sw--bg3 { background: var(--c-bg-3); }\n.sw--line { background: var(--c-line-strong); }\n.sw--ink0 { background: var(--c-ink-0); }\n.sw--ink1 { background: var(--c-ink-1); }\n.sw--ink2 { background: var(--c-ink-2); }\n.sw--ink3 { background: var(--c-ink-3); }\n.sw--high { background: var(--c-prio-high); }\n.sw--med { background: var(--c-prio-med); }\n.sw--low { background: var(--c-prio-low); }\n.sw--unknown { background: var(--c-unknown); }\n.sw--ok { background: var(--c-ok); }\n.sw--absent { background: var(--c-absent); }\n\n.swatch { display: flex; align-items: center; gap: var(--s-3); }\n.swatch__chip { width: 40px; height: 40px; border: 1px solid var(--c-line-strong); flex: 0 0 40px; }\n.pass { color: var(--c-ink-0); font-weight: 700; }\n.fail { color: var(--c-prio-high); font-weight: 700; }\n.na   { color: var(--c-ink-2); }\n\n/* ==========================================================================\n   Responsive — desktop primary, phone secondary (it gets checked from bed).\n   ========================================================================== */\n@media (max-width: 1180px) {\n  .cols-main, .cols-3, .cols-4 { grid-template-columns: repeat(2, minmax(0,1fr)); }\n}\n@media (max-width: 860px) {\n  .body { flex-direction: column; }\n  .rail {\n    width: 100%; flex: none; border-right: 0;\n    border-bottom: 1px solid var(--c-line-strong);\n    display: flex; overflow-x: auto; padding: 0;\n  }\n  .rail__group { display: flex; padding: 0; }\n  .rail__group > .caps { display: none; }\n  .rail__item { border-left: 0; border-bottom: 3px solid transparent; white-space: nowrap; }\n  .rail__item[aria-current=\"page\"] { border-left-color: transparent; border-bottom-color: var(--c-ink-0); }\n  .idstrip { flex-direction: column; }\n  .idstrip__brand { min-width: 0; border-right: 0; border-bottom: 1px solid var(--c-line); }\n  .main { padding: var(--s-4) var(--s-3) var(--s-10); }\n  .cols-2, .cols-3, .cols-4, .cols-main { grid-template-columns: minmax(0,1fr); }\n  .fields, .fields--wide, .form__row { grid-template-columns: minmax(0,1fr); gap: var(--s-1); }\n  .form__row > label { padding-top: 0; }\n  .attempt-row { grid-template-columns: minmax(0,1fr) auto; }\n  .attempt-row__why { grid-column: 1 / -1; }\n  .alarm { grid-template-columns: minmax(0,1fr); }\n  :root { --t-mega: 34px; }\n}\n@media print {\n  .rail, .page-hd__actions, .savebar { display: none; }\n  body { background: #fff; color: #000; }\n}\n<\u002Fstyle>\n\n<\u002Fhead>\n<body>\n<main class=\"gallery\">\n  <h1>AnxietyWatch2 admin console<\u002Fh1>\n  <p class=\"prose\">Three design directions, each a complete design system delivered as vanilla\n  HTML and CSS. One stylesheet per direction, tokens on <span class=\"mono\">:root<\u002Fspan>, semantic\n  class names, no inline styles except values computed per datum, no build step and no\n  dependencies.<\u002Fp>\n  <hr class=\"divider\">\n  <div class=\"gallery__list\">\n    <a class=\"gallery__item\" href=\"a/index.html\"><b>Direction A · Service Mode<\u002Fb>\n      <span>Clinical / biomedical equipment. Complete: design system, 9 screens, degraded state, first run, attempt-history component, all four operational patterns.<\u002Fspan><\u002Fa>\n    <span class=\"gallery__item\"><b>Direction B<\u002Fb><span class=\"muted-text\">Not started.<\u002Fspan><\u002Fspan>\n    <span class=\"gallery__item\"><b>Direction C<\u002Fb><span class=\"muted-text\">Not started.<\u002Fspan><\u002Fspan>\n  <\u002Fdiv>\n<\u002Fmain>\n\n\n<\u002Fbody><\u002Fhtml>"
+  </script>
+</body>
+</html>

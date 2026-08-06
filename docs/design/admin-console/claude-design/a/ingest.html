@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>03 Ingest — AW2 Service Mode</title>
+<link rel="stylesheet" href="console.css">
+</head>
+<body data-feed="live">
+<a class="skip-link" href="#main">Skip to content</a>
+
+<div class="shell">
+  <div class="stickytop">
+  <header class="idstrip">
+    <div class="idstrip__brand"><b>AW2 SERVICE MODE</b><span>bedside-pi5 · 03 Ingest</span></div>
+    <div class="idstrip__fields">
+      <div class="idfield"><span class="idfield__k">Host</span><span class="idfield__v">bedside-pi5</span></div>
+      <div class="idfield"><span class="idfield__k">Build</span><span class="idfield__v">aw2 2.4.11+g8c1f</span></div>
+      <div class="idfield"><span class="idfield__k">Uptime</span><span class="idfield__v">17d 04:12</span></div>
+      <div class="idfield"><span class="idfield__k">Console clock</span><span class="idfield__v" data-clock>09:56:04Z</span></div>
+      <div class="idfield"><span class="idfield__k">Feed age</span><span class="idfield__v"><span data-feed-age>2s</span> · poll 15s</span></div>
+      <div class="idstrip__spacer"></div>
+    </div>
+  </header>
+
+  <div class="docstale" role="status">
+    <span class="status status--unknown"><span class="status__glyph" aria-hidden="true">?</span> Document stale</span>
+    <span class="docstale__b">This page has not heard from the appliance for <span data-feed-age>—</span>.</span>
+    <span class="muted-text">Everything below is the last state observed, not the current state.</span>
+    <button class="btn btn--sm" type="button" data-action="refresh">Reconnect</button>
+  </div>
+  </div>
+
+  <div class="body">
+    <nav class="rail" aria-label="Console sections">
+      <div class="rail__group">
+        <span class="caps">First release</span>
+        <a class="rail__item" href="overview.html"><span class="rail__ord">01</span> Overview <span class="dot dot--med"><span class="dot__g" aria-hidden="true">■</span><span class="sr-only">Fault, medium</span></span></a>
+        <a class="rail__item" href="display.html"><span class="rail__ord">02</span> Display path <span class="dot dot--ok"><span class="dot__g" aria-hidden="true">✓</span><span class="sr-only">OK</span></span></a>
+        <a class="rail__item" href="ingest.html" aria-current="page"><span class="rail__ord">03</span> Ingest <span class="dot dot--unknown"><span class="dot__g" aria-hidden="true">?</span><span class="sr-only">Unknown</span></span></a>
+      </div>
+      <div class="rail__group">
+        <span class="caps">Later</span>
+        <a class="rail__item" href="services.html"><span class="rail__ord">04</span> Services &amp; host <span class="dot dot--ok"><span class="dot__g" aria-hidden="true">✓</span><span class="sr-only">OK</span></span></a>
+        <a class="rail__item" href="config.html"><span class="rail__ord">05</span> Config &amp; access <span class="dot dot--ok"><span class="dot__g" aria-hidden="true">✓</span><span class="sr-only">OK</span></span></a>
+        <a class="rail__item" href="data.html"><span class="rail__ord">06</span> Data <span class="dot dot--med"><span class="dot__g" aria-hidden="true">■</span><span class="sr-only">Fault, medium</span></span></a>
+        <a class="rail__item" href="analysis.html"><span class="rail__ord">07</span> Analysis <span class="dot dot--ok"><span class="dot__g" aria-hidden="true">✓</span><span class="sr-only">OK</span></span></a>
+        <a class="rail__item" href="records.html"><span class="rail__ord">08</span> Records <span class="dot dot--ok"><span class="dot__g" aria-hidden="true">✓</span><span class="sr-only">OK</span></span></a>
+        <a class="rail__item" href="recovery.html"><span class="rail__ord">09</span> Recovery <span class="dot dot--unknown"><span class="dot__g" aria-hidden="true">?</span><span class="sr-only">Unknown</span></span></a>
+      </div>
+      <div class="rail__group">
+        <span class="caps">Reference</span>
+        <a class="rail__item" href="system.html">Design system</a>
+        <a class="rail__item" href="patterns.html">Operational patterns</a>
+        <a class="rail__item" href="attempts.html">Attempt history</a>
+        <a class="rail__item" href="overview-degraded.html">Overview · degraded</a>
+        <a class="rail__item" href="firstrun.html">First run</a>
+      </div>
+    </nav>
+
+    <main class="main" id="main">
+      <div class="page-hd">
+        <div>
+          <h1>Ingest</h1>
+          <p class="page-hd__sub">What arrived, what was attempted, and what advanced.</p>
+        </div>
+        <div class="page-hd__actions">
+          <button class="btn btn--sm" type="button" data-action="refresh">Refresh</button>
+        </div>
+      </div>
+
+      <div class="stack">
+
+        <section class="panel" aria-labelledby="h-i1">
+          <div class="panel__hd"><h2 class="panel__title" id="h-i1">Sources</h2>
+            <div class="panel__meta"><span class="caps">11 counted · 1 muted · 1 declared absent</span></div></div>
+          <div class="panel__body panel__body--flush t-scroll">
+            <table class="t t--rowstate">
+              <caption>Last attempt and last success are separate columns on purpose. A source that is attempting and failing looks nothing like a source that has stopped attempting, and only this pair tells them apart.</caption>
+              <thead><tr>
+                <th scope="col">Source</th><th scope="col">Health</th>
+                <th scope="col">Last attempt</th><th scope="col">Last success</th>
+                <th class="num" scope="col">Rows, 24h</th><th scope="col">Newest ts advanced</th>
+                <th scope="col">Uniquely owns</th>
+              </tr></thead>
+              <tbody>
+                <tr>
+                  <th scope="row">polar-h10-chest</th>
+                  <td><span class="status status--ok"><span class="status__glyph" aria-hidden="true">✓</span> OK</span></td>
+                  <td><span class="fresh" data-age-s="41" data-expect-s="120"><span class="fresh__age">41s ago</span><span class="fresh__expect">2m</span></span></td>
+                  <td><span class="fresh" data-age-s="41" data-expect-s="120"><span class="fresh__age">41s ago</span><span class="fresh__expect">2m</span></span></td>
+                  <td class="num">86,402</td>
+                  <td><span class="status status--ok"><span class="status__glyph" aria-hidden="true">✓</span> +41s</span></td>
+                  <td>Beat-to-beat RR intervals. The only source of true HRV.</td>
+                </tr>
+                <tr data-state="unknown">
+                  <th scope="row">wellue-o2ring</th>
+                  <td><span class="status status--unknown"><span class="status__glyph" aria-hidden="true">?</span> Unknown</span></td>
+                  <td><span class="fresh fresh--over" data-age-s="32640" data-expect-s="120"><span class="fresh__age">9h 4m ago</span><span class="fresh__expect">2m</span></span></td>
+                  <td><span class="fresh fresh--over" data-age-s="32640" data-expect-s="120"><span class="fresh__age">9h 4m ago</span><span class="fresh__expect">2m</span></span></td>
+                  <td class="num">4,118</td>
+                  <td><span class="status status--unknown"><span class="status__glyph" aria-hidden="true">?</span> No new rows</span></td>
+                  <td>Nocturnal SpO₂ desaturation index.</td>
+                </tr>
+                <tr>
+                  <th scope="row">resmed-airsense-11</th>
+                  <td><span class="status status--ok"><span class="status__glyph" aria-hidden="true">✓</span> OK</span></td>
+                  <td><span class="fresh" data-age-s="21000" data-expect-s="86400"><span class="fresh__age">5h 50m ago</span><span class="fresh__expect">24h</span></span></td>
+                  <td><span class="fresh" data-age-s="21000" data-expect-s="86400"><span class="fresh__age">5h 50m ago</span><span class="fresh__expect">24h</span></span></td>
+                  <td class="num">2,406</td>
+                  <td><span class="status status--ok"><span class="status__glyph" aria-hidden="true">✓</span> +1 night</span></td>
+                  <td>AHI, mask leak, pressure. Half the sleep-apnoea thesis.</td>
+                </tr>
+                <tr data-state="med">
+                  <th scope="row">oura-ring-gen3</th>
+                  <td><span class="status status--unknown"><span class="status__glyph" aria-hidden="true">?</span> Unknown</span> <span class="mute">⊘ until 09 Aug</span></td>
+                  <td><span class="fresh" data-age-s="1800" data-expect-s="86400"><span class="fresh__age">30m ago</span><span class="fresh__expect">24h</span></span></td>
+                  <td><span class="fresh fresh--over" data-age-s="176400" data-expect-s="86400"><span class="fresh__age">2d 1h ago</span><span class="fresh__expect">24h</span></span></td>
+                  <td class="num">0</td>
+                  <td><span class="status status--unknown"><span class="status__glyph" aria-hidden="true">?</span> No new rows</span></td>
+                  <td>Sleep staging and skin temperature.</td>
+                </tr>
+                <tr>
+                  <th scope="row">healthkit-bridge</th>
+                  <td><span class="status status--ok"><span class="status__glyph" aria-hidden="true">✓</span> OK</span></td>
+                  <td><span class="fresh" data-age-s="900" data-expect-s="3600"><span class="fresh__age">15m ago</span><span class="fresh__expect">1h</span></span></td>
+                  <td><span class="fresh" data-age-s="900" data-expect-s="3600"><span class="fresh__age">15m ago</span><span class="fresh__expect">1h</span></span></td>
+                  <td class="num">5,204</td>
+                  <td><span class="status status--ok"><span class="status__glyph" aria-hidden="true">✓</span> +58m</span></td>
+                  <td>Steps, workouts, resting HR from the phone.</td>
+                </tr>
+                <tr>
+                  <th scope="row">journal-app</th>
+                  <td><span class="status status--ok"><span class="status__glyph" aria-hidden="true">✓</span> OK</span></td>
+                  <td><span class="fresh" data-age-s="7200" data-expect-s="86400"><span class="fresh__age">2h ago</span><span class="fresh__expect">24h</span></span></td>
+                  <td><span class="fresh" data-age-s="7200" data-expect-s="86400"><span class="fresh__age">2h ago</span><span class="fresh__expect">24h</span></span></td>
+                  <td class="num">3</td>
+                  <td><span class="status status--ok"><span class="status__glyph" aria-hidden="true">✓</span> +2h</span></td>
+                  <td>Reported severity. The anchor everything else is context for.</td>
+                </tr>
+                <tr>
+                  <th scope="row">med-doses</th>
+                  <td><span class="status status--ok"><span class="status__glyph" aria-hidden="true">✓</span> OK</span></td>
+                  <td><span class="fresh" data-age-s="12600" data-expect-s="86400"><span class="fresh__age">3h 30m ago</span><span class="fresh__expect">24h</span></span></td>
+                  <td><span class="fresh" data-age-s="12600" data-expect-s="86400"><span class="fresh__age">3h 30m ago</span><span class="fresh__expect">24h</span></span></td>
+                  <td class="num">4</td>
+                  <td><span class="status status--ok"><span class="status__glyph" aria-hidden="true">✓</span> +3h</span></td>
+                  <td>Dose times and efficacy follow-up.</td>
+                </tr>
+                <tr>
+                  <th scope="row">labs-manual</th>
+                  <td><span class="status status--ok"><span class="status__glyph" aria-hidden="true">✓</span> OK</span></td>
+                  <td><span class="fresh" data-age-s="1555200" data-expect-s="7776000"><span class="fresh__age">18d ago</span><span class="fresh__expect">90d</span></span></td>
+                  <td><span class="fresh" data-age-s="1555200" data-expect-s="7776000"><span class="fresh__age">18d ago</span><span class="fresh__expect">90d</span></span></td>
+                  <td class="num">0</td>
+                  <td><span class="status status--ok"><span class="status__glyph" aria-hidden="true">✓</span> +1 panel</span></td>
+                  <td>Thyroid and ferritin. Entered by hand.</td>
+                </tr>
+                <tr class="is-absent" data-state="absent">
+                  <th scope="row">omron-bp-cuff</th>
+                  <td><span class="status status--absent"><span class="status__glyph" aria-hidden="true">—</span> Not configured</span></td>
+                  <td><span class="absent-note">n/a</span></td><td><span class="absent-note">n/a</span></td>
+                  <td class="num"><span class="absent-note">n/a</span></td>
+                  <td><span class="absent-note">n/a</span></td>
+                  <td><span class="absent-note">Declared absent 2026-06-02. Not owned.</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section aria-labelledby="h-i2">
+          <div class="panel__hd"><h2 class="panel__title" id="h-i2">wellue-o2ring · attempt history</h2>
+            <div class="panel__meta">
+              <span class="caps">Selected source</span>
+              <a class="btn btn--sm" href="attempts.html">Component reference</a></div></div>
+          <div class="attempts attempts--silent">
+            <div class="attempts__hd">
+              <span class="attempts__verdict">Silent</span>
+              <p class="attempts__gloss">No collection has been attempted for <b>9h 04m</b>. This is
+              not a run of failures — the collector has not tried. Everything that would report an
+              error is therefore reporting nothing.</p>
+              <span class="fresh fresh--over" data-age-s="32640" data-expect-s="120"><span class="fresh__age">9h 4m ago</span><span class="fresh__expect">2m</span></span>
+            </div>
+            <div class="strip" role="img" aria-label="Attempt strip: 24 successful attempts up to 00:52, then 272 expected windows with no attempt at all.">
+              <span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span>
+              <span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span>
+              <span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span>
+              <span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span>
+              <span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span>
+              <span class="strip__tick strip__tick--ok"></span><span class="strip__tick strip__tick--ok"></span>
+              <span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span>
+              <span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span>
+              <span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span>
+              <span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span>
+              <span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span>
+              <span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span>
+              <span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span>
+              <span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span>
+              <span class="strip__tick strip__tick--none"></span><span class="strip__tick strip__tick--none"></span>
+            </div>
+            <div class="strip__legend">
+              <span><span class="strip__tick strip__tick--ok"></span> succeeded</span>
+              <span><span class="strip__tick strip__tick--partial"></span> partial</span>
+              <span><span class="strip__tick strip__tick--fail"></span> failed</span>
+              <span><span class="strip__tick strip__tick--none"></span> no attempt in this window</span>
+              <span class="muted-text">One tick per 20-minute window, 10 hours shown.</span>
+            </div>
+            <div class="attempt-row attempt-row--gap">
+              <span class="attempt-row__t">00:52 → now</span>
+              <span class="attempt-row__why">9h 04m with no attempt. 272 expected windows missed.</span>
+            </div>
+            <div class="attempt-row">
+              <span class="attempt-row__t">2026-08-05 00:52:11</span>
+              <span class="attempt-row__dur">1.9 s</span><span class="attempt-row__rows">118</span>
+              <span class="attempt-row__why">Succeeded. Newest sample timestamp 00:52:09, advanced by 1m 58s.</span>
+            </div>
+            <div class="attempt-row">
+              <span class="attempt-row__t">2026-08-05 00:50:12</span>
+              <span class="attempt-row__dur">2.0 s</span><span class="attempt-row__rows">120</span>
+              <span class="attempt-row__why">Succeeded.</span>
+            </div>
+            <div class="attempt-row">
+              <span class="attempt-row__t">2026-08-05 00:48:11</span>
+              <span class="attempt-row__dur">1.8 s</span><span class="attempt-row__rows">119</span>
+              <span class="attempt-row__why">Succeeded.</span>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel__ft">
+              <p class="prose">The BLE link still reports <span class="mono">connected</span> and the
+              collector is <span class="mono">active (running)</span>. The most likely cause is the
+              ring's own overnight session ending without a disconnect event, which leaves the
+              collector waiting on a characteristic that will never notify again.</p>
+              <span class="grow"></span>
+              <div class="actions-split">
+                <button class="btn btn--sm" type="button">Poll now</button>
+                <span class="actions-split__gap" aria-hidden="true"></span>
+                <button class="btn btn--sm btn--danger" type="button">Restart collector…</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <div class="cols-main">
+          <section class="panel" aria-labelledby="h-i3">
+            <div class="panel__hd"><h2 class="panel__title" id="h-i3">Rejected samples · last 24 hours</h2>
+              <div class="panel__meta"><a href="data.html">Quarantine →</a></div></div>
+            <div class="panel__body panel__body--flush t-scroll">
+              <table class="t">
+                <thead><tr><th scope="col">Source</th><th class="num" scope="col">Rejected</th>
+                  <th class="num" scope="col">of</th><th scope="col">Reason</th><th scope="col">Disposition</th></tr></thead>
+                <tbody>
+                  <tr><th scope="row">polar-h10-chest</th><td class="num">312</td><td class="num">86,714</td>
+                    <td>RR interval outside 250–2500 ms. Motion artefact during the 06:40 walk.</td>
+                    <td>Quarantined, reviewable</td></tr>
+                  <tr><th scope="row">healthkit-bridge</th><td class="num">18</td><td class="num">5,222</td>
+                    <td>Duplicate primary key — the phone re-sent a window it had already delivered.</td>
+                    <td>Dropped, idempotent</td></tr>
+                  <tr><th scope="row">resmed-airsense-11</th><td class="num">0</td><td class="num">2,406</td>
+                    <td class="muted-text">—</td><td class="muted-text">—</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="panel" aria-labelledby="h-i4">
+            <div class="panel__hd"><h2 class="panel__title" id="h-i4">Cadence registry</h2>
+              <div class="panel__meta"><a href="config.html">Edit →</a></div></div>
+            <div class="panel__body panel__body--flush t-scroll">
+              <table class="t">
+                <caption>The expectation each age is judged against.</caption>
+                <thead><tr><th scope="col">Source</th><th class="num" scope="col">Cadence</th>
+                  <th class="num" scope="col">Grace</th><th class="num" scope="col">Degrades at</th></tr></thead>
+                <tbody>
+                  <tr><th scope="row">polar-h10-chest</th><td class="num">2m</td><td class="num">2.0×</td><td class="num">4m</td></tr>
+                  <tr><th scope="row">wellue-o2ring</th><td class="num">2m</td><td class="num">2.0×</td><td class="num">4m</td></tr>
+                  <tr><th scope="row">resmed-airsense-11</th><td class="num">24h</td><td class="num">1.5×</td><td class="num">36h</td></tr>
+                  <tr><th scope="row">oura-ring-gen3</th><td class="num">24h</td><td class="num">2.0×</td><td class="num">48h</td></tr>
+                  <tr><th scope="row">healthkit-bridge</th><td class="num">1h</td><td class="num">3.0×</td><td class="num">3h</td></tr>
+                  <tr><th scope="row">labs-manual</th><td class="num">90d</td><td class="num">1.5×</td><td class="num">135d</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="panel__ft"><p class="prose">A loose cadence is how a dead source hides. Every
+            age on this screen is printed with its expectation beside it so the standard is never
+            implicit.</p></div>
+          </section>
+        </div>
+
+      </div>
+    </main>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
