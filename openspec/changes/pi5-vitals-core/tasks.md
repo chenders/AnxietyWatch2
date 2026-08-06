@@ -1011,6 +1011,11 @@ not an inventory: completed rows are retained as audit evidence and segments not
 row. Therefore amendment 04 §7 migrations must guard by stopping the writer/drainer and checking the
 published `.spool` inventory on disk; they must not infer "spool empty" from `spool_status` alone.
 
+**Coverage disposition:** T-D5 adds focused drainer, framing, argv, health serialization, and stalled
+heartbeat tests. The repository's hard line-coverage threshold remains decoder-only by deliberate CI
+policy; workspace coverage is still reported, but expanding the global threshold belongs to a separate
+CI-policy change rather than silently changing this task's exact Verify contract.
+
 **Follow-up (database schema owner, discovered by T-D5 crash testing):** reconcile
 `db/deploy/samples_hypertable.sql` with the identity key. TimescaleDB rejects a hypertable whose unique
 primary key `(source,type,session_id,seq)` omits partition column `timestamp`; until the schema owner

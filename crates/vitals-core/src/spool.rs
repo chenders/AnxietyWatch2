@@ -437,7 +437,15 @@ impl Spool {
                     self.bytes = bytes;
                     self.opened = Instant::now();
                 }
-                Err(e) => return Err(e),
+                Err(e) if e.kind() == io::ErrorKind::StorageFull => return Err(e),
+                Err(e) => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::StorageFull,
+                        format!(
+                            "spool append is memory-only: segment creation/capacity check failed: {e}"
+                        ),
+                    ));
+                }
             }
         } else if self.rotation_due() {
             match self.disk_used_percent() {
