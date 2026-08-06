@@ -1006,6 +1006,17 @@ Single writer. Every collector connects; `vitalsd` alone touches the database.
 6. On Postgres unreachable: log, sleep 30 s, retry forever. **Never advance the offset. Never drop
    from the spool.**
 
+**Implementation note — migration guard source of truth:** `spool_status` is a transactional cursor,
+not an inventory: completed rows are retained as audit evidence and segments not yet visited have no
+row. Therefore amendment 04 §7 migrations must guard by stopping the writer/drainer and checking the
+published `.spool` inventory on disk; they must not infer "spool empty" from `spool_status` alone.
+
+**Follow-up (database schema owner, discovered by T-D5 crash testing):** reconcile
+`db/deploy/samples_hypertable.sql` with the identity key. TimescaleDB rejects a hypertable whose unique
+primary key `(source,type,session_id,seq)` omits partition column `timestamp`; until the schema owner
+chooses an identity-preserving design, compressed-chunk conflict behavior cannot be represented in the
+T-D5 scratch test. This is a T-C1/database migration defect, not permission to weaken T-D5 identity.
+
 **Verify:** `ssh "$PI_HOST" 'cargo test -p vitals-drain && ~/AnxietyWatch2/scripts/drain-crash-test.sh'`
 **Expect:** exit 0. The crash test encodes 10 000 samples, drains, `SIGKILL`s mid-batch, restarts,
 and asserts exactly 10 000 rows with no duplicates and the offset at EOF.

@@ -400,6 +400,11 @@ impl Segment {
         let target = dir.join(".drain-status");
         let temporary = dir.join(format!(".drain-status.{}.tmp", std::process::id()));
         let advanced = epoch_seconds();
+        match fs::remove_file(&temporary) {
+            Ok(()) => {}
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+            Err(e) => return Err(e.into()),
+        }
         let mut file = OpenOptions::new()
             .create_new(true)
             .write(true)

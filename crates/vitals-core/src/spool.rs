@@ -439,13 +439,24 @@ impl Spool {
                 }
                 Err(e) => return Err(e),
             }
-        } else if self.rotation_due() && self.disk_used_percent()? >= REFUSE_SEGMENT_PERCENT {
-            return Err(io::Error::new(
-                io::ErrorKind::StorageFull,
-                format!(
-                    "spool append is memory-only: filesystem is at least {REFUSE_SEGMENT_PERCENT}% used"
-                ),
-            ));
+        } else if self.rotation_due() {
+            match self.disk_used_percent() {
+                Ok(used) if used < REFUSE_SEGMENT_PERCENT => {}
+                Ok(used) => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::StorageFull,
+                        format!("spool append is memory-only: filesystem is {used}% used"),
+                    ));
+                }
+                Err(e) => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::StorageFull,
+                        format!(
+                            "spool append is memory-only: filesystem capacity check failed: {e}"
+                        ),
+                    ));
+                }
+            }
         }
 
         let mut buf = Vec::with_capacity(rows.len() * 96);

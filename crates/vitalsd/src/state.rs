@@ -78,12 +78,6 @@ pub struct State {
     pub monitoring_window_active: bool,
     /// Last tier evaluation from `cns-engine`. `None` until one arrives.
     pub last_tier_evaluation: Option<Instant>,
-    /// Whether the drain offset advanced, or the spool is empty.
-    ///
-    /// Defaults to **true** so a system with nothing yet spooled is not
-    /// reported as stuck; the drainer sets it false when it observes a
-    /// non-empty spool that is not advancing.
-    pub drain_progressing: bool,
     /// Sources whose samples count as "primary" for the heartbeat: `SpO2` and
     /// respiratory rate. HR and HRV corroborate but must never launder a
     /// missing primary into "all clear" (amendment 05 §2.1).
@@ -115,7 +109,6 @@ impl State {
             stale_after: DEFAULT_STALE_AFTER,
             monitoring_window_active: false,
             last_tier_evaluation: None,
-            drain_progressing: true,
             primary_sources,
         }
     }
@@ -206,7 +199,8 @@ impl State {
             tier_evaluation_age_secs: self
                 .last_tier_evaluation
                 .map(|t| now.saturating_duration_since(t).as_secs()),
-            drain_progressing: self.drain_progressing,
+            // The daemon overlays actual spool lag before publishing health.
+            drain_progressing: true,
         }
     }
 
@@ -445,8 +439,14 @@ mod tests {
     fn every_blocker_appears_in_degraded() {
         let mut s = state();
         s.monitoring_window_active = true;
-        s.drain_progressing = false;
-        let h = s.health(Instant::now());
+        let mut h = s.health(Instant::now());
+        h.heartbeat.drain_progressing = false;
+        h.degraded.extend(
+            h.heartbeat
+                .blockers(HEARTBEAT_MAX_AGE.as_secs())
+                .into_iter()
+                .map(|b| format!("heartbeat blocked: {b}")),
+        );
         assert!(h.degraded.iter().any(|d| d.contains("no primary sample")));
         assert!(
             h.degraded
