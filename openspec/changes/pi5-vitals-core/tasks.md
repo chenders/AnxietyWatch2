@@ -58,7 +58,7 @@ pane renders (`grep -n '^- \[' tasks.md`).
 - [x] T-D2 — IEEE-11073 SFLOAT decoder with fuzz target · implement-complex · either · **review**
 - [x] T-D3 — COPY-binary encoder and spool · implement-complex · either · **review**
 - [x] T-D4 — vitalsd daemon and socket protocol · implement-complex · pi · **review**
-- [ ] T-D5 — spool drainer · implement-complex · pi · **review · blocked by G3**
+- [x] T-D5 — spool drainer · implement-complex · pi · **review · blocked by G3**
 - [ ] T-D6 — bp-collector end to end · implement-complex · pi · **review · blocked by G3**
 
 Parallelism: T-D1 and T-D2 have no hardware dependency and may run on separate workers concurrently
