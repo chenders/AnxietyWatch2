@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<style>
+  body { margin:0; background:#141311; color:#D6D2CB; font-family:"Helvetica Neue",Helvetica,Arial,sans-serif; -webkit-font-smoothing:antialiased; }
+  a { color:#C98A3C; text-decoration:none; border-bottom:1px solid #5A4526; }
+  a:hover { color:#E0A227; }
+  @keyframes pen { 0%,49%{opacity:1} 50%,100%{opacity:.3} }
+</style>
+</helmet>
+
+<div style="padding:56px 64px 96px;display:flex;flex-direction:column;gap:56px;width:1760px;box-sizing:border-box;background:#141311;min-height:100vh">
+
+  <div style="display:flex;flex-direction:column;gap:20px;max-width:1020px">
+    <div style="display:flex;align-items:center;gap:14px">
+      <span style="font-size:14px;font-weight:700;letter-spacing:1.6px;color:#000;background:#C98A3C;padding:5px 9px">1b</span>
+      <span style="font-size:14px;letter-spacing:2.4px;color:#9BA3AB">DIRECTION B</span>
+    </div>
+    <h1 style="margin:0;font-size:64px;font-weight:400;letter-spacing:-1.5px;line-height:1;color:#E8E4DC">Penumbra</h1>
+    <p style="margin:0;font-size:19px;line-height:1.6;color:#B4AFA6;text-wrap:pretty">An almost-invisible object. Left alone at 3 a.m. the panel is black except for a single hairline of light and one word — about 1% of the field emitting, dim enough to sit on a nightstand without registering as a screen. Everything else is withheld until something changes or a hand arrives. The bet is that a bedside instrument should behave like a room does: quiet by default, and unmistakable when it isn't.</p>
+    <p style="margin:0;font-size:19px;line-height:1.6;color:#B4AFA6;text-wrap:pretty">The resolution of the tension is <strong style="color:#E8E4DC;font-weight:700">geometry instead of luminance.</strong> One horizontal line carries the tier: its thickness, continuity and segmentation change, and those are readable at three feet from the corner of a half-open eye at a contrast ratio well under what text needs. Escalation makes the line thicker and longer, not more saturated — the whole system spans 3 px to 44 px of lit height, and only the final tier is allowed to move. Absence has its own geometry: the line <em style="color:#D6D2CB">breaks</em>. A gap is the one thing that cannot be mistaken for calm, because calm here is literally an unbroken line.</p>
+  </div>
+
+  <div style="height:1px;background:#2A2724"></div>
+
+  <div style="display:flex;flex-direction:column;gap:28px">
+    <h2 style="margin:0;font-size:15px;font-weight:700;letter-spacing:2.4px;color:#9BA3AB">DESIGN SYSTEM</h2>
+
+    <div style="display:flex;gap:24px;flex-wrap:wrap">
+      <div style="flex:1 1 720px;min-width:560px;border:1px solid #2A2724">
+        <div style="display:grid;grid-template-columns:52px 1fr 118px 88px 1.5fr;gap:12px;padding:11px 14px;background:#0E0D0C;font-size:14px;letter-spacing:1.4px;color:#9BA3AB;font-weight:700">
+          <span></span><span>TOKEN</span><span>HEX</span><span>ON #000</span><span>ROLE</span>
+        </div>
+        <sc-for list="{{ tokens }}" as="t" hint-placeholder-count="10">
+          <div style="display:grid;grid-template-columns:52px 1fr 118px 88px 1.5fr;gap:12px;padding:9px 14px;border-top:1px solid #201E1C;align-items:center">
+            <span style="{{ t.swatch }}"></span>
+            <span style="font-size:15px;color:#D6D2CB;font-family:ui-monospace,Menlo,monospace">{{ t.name }}</span>
+            <span style="font-size:15px;color:#9C968E;font-family:ui-monospace,Menlo,monospace">{{ t.hex }}</span>
+            <span style="{{ t.ratioStyle }}">{{ t.ratio }}</span>
+            <span style="font-size:14.5px;color:#8E8A83;line-height:1.4">{{ t.role }}</span>
+          </div>
+        </sc-for>
+      </div>
+
+      <div style="flex:1 1 380px;min-width:340px;display:flex;flex-direction:column;gap:22px">
+        <div style="border:1px solid #2A2724;padding:16px 18px;display:flex;flex-direction:column;gap:12px">
+          <span style="font-size:14px;font-weight:700;letter-spacing:1.6px;color:#9BA3AB">TYPE SCALE — 3 FT / 914 MM</span>
+          <sc-for list="{{ typeScale }}" as="r" hint-placeholder-count="6">
+            <div style="display:flex;align-items:baseline;gap:14px;border-top:1px solid #201E1C;padding-top:10px">
+              <span style="{{ r.demo }}">{{ r.sample }}</span>
+              <span style="margin-left:auto;font-size:14px;color:#9C968E;font-family:ui-monospace,Menlo,monospace;white-space:nowrap">{{ r.spec }}</span>
+              <span style="font-size:14px;color:#9BA3AB;width:112px;text-align:right">{{ r.use }}</span>
+            </div>
+          </sc-for>
+          <span style="font-size:14px;color:#8E8A83;line-height:1.5">One family, one weight (Helvetica regular) for words; monospace with <code style="font-family:ui-monospace,Menlo,monospace;color:#B4AFA6">tabular-nums</code> for every figure. No bold anywhere except the 14px badges — weight is not a hierarchy tool here, size and emission are. Nothing below 14px. Spacing: 40px side margins, 34/30 top/bottom, one 26–30px gap around the line; the layout is mostly empty on purpose.</span>
+        </div>
+
+        <div style="border:1px solid #2A2724;padding:16px 18px;display:flex;flex-direction:column;gap:12px">
+          <span style="font-size:14px;font-weight:700;letter-spacing:1.6px;color:#9BA3AB">TOUCH</span>
+          <div style="display:flex;align-items:flex-end;gap:14px">
+            <div style="width:220px;height:56px;border-top:2px solid #C98A3C;display:flex;align-items:center;font-size:14px;color:#9C968E;font-family:ui-monospace,Menlo,monospace">720 × 56</div>
+            <div style="width:120px;height:80px;border:2px dashed #4A463F;display:flex;align-items:center;justify-content:center;font-size:14px;color:#9C968E;font-family:ui-monospace,Menlo,monospace;text-align:center">wake:<br>800 × 480</div>
+          </div>
+          <span style="font-size:14px;color:#8E8A83;line-height:1.5">Two targets, both enormous. The whole 800 × 480 surface is the wake target, so a hand landing anywhere works. When an alarm is active the bottom strip — 720 × 56, the full content width — becomes the hold-to-silence region. They never overlap in meaning: touching to wake never begins a silence, because the hold only counts while the alarm bar is lit and the panel is already awake.</span>
+        </div>
+      </div>
+    </div>
+
+    <div style="border:1px dashed #8B97A3;padding:22px 24px;display:flex;flex-direction:column;gap:20px">
+      <span style="font-size:14px;font-weight:700;letter-spacing:1.6px;color:#B9C0C7">THE INDETERMINATE TREATMENT — ABSENCE IS A BREAK IN THE LINE</span>
+      <div style="display:flex;gap:26px;flex-wrap:wrap;align-items:flex-start">
+        <div style="width:300px;display:flex;flex-direction:column;gap:12px">
+          <span style="font-size:14px;letter-spacing:1.2px;color:#9BA3AB">MEASURED — UNBROKEN</span>
+          <div style="background:#000;padding:26px 18px;display:flex;align-items:center"><div style="width:100%;height:3px;background:#585F52"></div></div>
+          <span style="font-size:14px;color:#8E8A83;line-height:1.45">Continuous line, 3 px, 3.17:1. Reads as one object.</span>
+        </div>
+        <div style="width:300px;display:flex;flex-direction:column;gap:12px">
+          <span style="font-size:14px;letter-spacing:1.2px;color:#B9C0C7">NOT MEASURED — BROKEN</span>
+          <div style="background:#000;padding:26px 18px;display:flex;align-items:center;gap:10px">
+            <div style="flex:3;height:3px;background:#8B97A3"></div>
+            <div style="flex:1.4;height:0;border-top:3px dashed #8B97A3;position:relative"><span style="position:absolute;left:50%;top:-30px;transform:translateX(-50%);font-size:22px;font-weight:700;color:#B9C0C7">?</span></div>
+            <div style="flex:2;height:3px;background:#8B97A3"></div>
+          </div>
+          <span style="font-size:14px;color:#8E8A83;line-height:1.45">The line stops, dots across the unknown span, resumes. A <strong style="color:#B9C0C7">?</strong> sits over the break. Hue drops to neutral slate — nothing here depends on colour, so it survives grayscale and all three dichromacies.</span>
+        </div>
+        <div style="width:280px;display:flex;flex-direction:column;gap:12px">
+          <span style="font-size:14px;letter-spacing:1.2px;color:#B9C0C7">VALUES AND TRENDS</span>
+          <div style="background:#000;padding:16px 18px;display:flex;align-items:flex-end;gap:14px">
+            <span style="font-family:ui-monospace,Menlo,monospace;font-size:76px;line-height:.82;letter-spacing:-3px;color:#8B97A3;border-bottom:2px dashed #8B97A3">?</span>
+            <span style="font-size:14px;font-family:ui-monospace,Menlo,monospace;color:#B9C0C7">NO DATA<br>6 m 12 s</span>
+          </div>
+          <span style="font-size:14px;color:#8E8A83;line-height:1.45">A missing figure is replaced by <strong style="color:#B9C0C7">?</strong> at the same size in the same box — the geometry of the layout never changes, so the eye still knows where to look. Trends terminate at the last real sample with a hollow cap and dotted continuation; a line is never drawn across a gap.</span>
+        </div>
+        <div style="flex:1 1 300px;min-width:280px;display:flex;flex-direction:column;gap:12px">
+          <span style="font-size:14px;letter-spacing:1.2px;color:#B9C0C7">WHY IT CANNOT READ AS FINE</span>
+          <span style="font-size:14.5px;color:#8E8A83;line-height:1.5">At rest, “fine” is one unbroken hairline in a warm-neutral olive at minimum emission. “Can’t assess” is a broken line in cool slate at higher emission, with a question mark floating above the break, the word CAN’T ASSESS where CLEAR was, and a dashed hollow mark instead of a solid one. Four independent channels — continuity, hue temperature, emission, and word — all change at once. Grayscale luminance separation between the two: 2.2:1.</span>
+        </div>
+      </div>
+      <span style="font-size:15px;color:#B4AFA6;line-height:1.55;max-width:1040px">Absence does not escalate to an alarm and does not stay silent: it is the one state that <em>brightens the resting panel without sounding anything</em>. The line is allowed to wake itself to report that it can no longer see.</span>
+    </div>
+
+    <div style="border:1px solid #2A2724;padding:16px 18px;display:flex;flex-direction:column;gap:10px;max-width:1040px">
+      <span style="font-size:14px;font-weight:700;letter-spacing:1.6px;color:#9BA3AB">THE LINE — ONE VARIABLE, FIVE VALUES</span>
+      <sc-for list="{{ ladder }}" as="l" hint-placeholder-count="5">
+        <div style="display:grid;grid-template-columns:140px 300px 1fr;gap:18px;align-items:center;border-top:1px solid #201E1C;padding-top:11px">
+          <span style="{{ l.tierStyle }}">{{ l.tier }}</span>
+          <div style="background:#000;height:56px;display:flex;align-items:center;padding:0 10px"><div style="{{ l.lineStyle }}"></div></div>
+          <span style="font-size:14.5px;color:#8E8A83;line-height:1.4">{{ l.desc }}</span>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+  <div style="height:1px;background:#2A2724"></div>
+
+  <div style="display:flex;flex-direction:column;gap:22px">
+    <h2 style="margin:0;font-size:15px;font-weight:700;letter-spacing:2.4px;color:#9BA3AB">THE FIVE STATES — 800 × 480</h2>
+    <div style="display:flex;flex-wrap:wrap;gap:28px">
+      <sc-for list="{{ states }}" as="st" hint-placeholder-count="5">
+        <div style="display:flex;flex-direction:column;gap:10px;width:800px">
+          <div style="display:flex;align-items:baseline;gap:12px">
+            <span style="font-size:16px;font-weight:700;letter-spacing:1.6px;color:#D6D2CB">{{ st.caption }}</span>
+            <span style="font-size:14.5px;color:#8E8A83;line-height:1.4">{{ st.note }}</span>
+          </div>
+          <dc-import name="PenumbraPanel" s="{{ st }}" hint-size="800px,480px" style="width:800px;height:480px"></dc-import>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+  <div style="height:1px;background:#2A2724"></div>
+
+  <div style="display:flex;flex-direction:column;gap:22px">
+    <h2 style="margin:0;font-size:15px;font-weight:700;letter-spacing:2.4px;color:#9BA3AB">HOLD TO SILENCE — LIVE</h2>
+    <p style="margin:0;font-size:16px;line-height:1.6;color:#8E8A83;max-width:800px">Press and hold the bottom strip for 3 seconds. The fill is the only element in this direction that moves horizontally, so progress is unmistakable; release resets it to zero.</p>
+    <dc-import name="PenumbraPanel" s="{{ live }}" hint-size="800px,480px" style="width:800px;height:480px"></dc-import>
+
+    <h2 style="margin:24px 0 0;font-size:15px;font-weight:700;letter-spacing:2.4px;color:#9BA3AB">HOLD TO SILENCE — THE FOUR STATES</h2>
+    <div style="display:flex;flex-wrap:wrap;gap:28px">
+      <sc-for list="{{ holdShots }}" as="h" hint-placeholder-count="4">
+        <div style="display:flex;flex-direction:column;gap:10px;width:800px">
+          <div style="display:flex;align-items:baseline;gap:12px">
+            <span style="font-size:16px;font-weight:700;letter-spacing:1.6px;color:#D6D2CB">{{ h.caption }}</span>
+            <span style="font-size:14.5px;color:#8E8A83">{{ h.note }}</span>
+          </div>
+          <dc-import name="PenumbraPanel" s="{{ h }}" hint-size="800px,480px" style="width:800px;height:480px"></dc-import>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+  <div style="height:1px;background:#2A2724"></div>
+
+  <div style="display:flex;flex-direction:column;gap:22px">
+    <h2 style="margin:0;font-size:15px;font-weight:700;letter-spacing:2.4px;color:#9BA3AB">RESTING VS AWAKE</h2>
+    <p style="margin:0;font-size:16px;line-height:1.6;color:#8E8A83;max-width:1040px">Resting is the default and the design’s whole premise: one 3 px line, one 46px word, nothing else — roughly 1% of the field lit. Touch fades the rest in over 140 ms, holds it 20 seconds after the last contact, then fades back over 600 ms so nothing snaps in a dark room. A tier change wakes the panel instantly with no fade at all: the abruptness is the signal. Nothing dims while an alarm is active.</p>
+    <div style="display:flex;flex-wrap:wrap;gap:28px">
+      <sc-for list="{{ wake }}" as="w" hint-placeholder-count="2">
+        <div style="display:flex;flex-direction:column;gap:10px;width:800px">
+          <div style="display:flex;align-items:baseline;gap:12px">
+            <span style="font-size:16px;font-weight:700;letter-spacing:1.6px;color:#D6D2CB">{{ w.caption }}</span>
+            <span style="font-size:14.5px;color:#8E8A83">{{ w.note }}</span>
+          </div>
+          <dc-import name="PenumbraPanel" s="{{ w }}" hint-size="800px,480px" style="width:800px;height:480px"></dc-import>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{}">
+const MONO = "ui-monospace,SFMono-Regular,Menlo,Consolas,monospace";
+const SANS = "Helvetica Neue, Helvetica, Arial, sans-serif";
+const HOLD_MS = 3000;
+const OLIVE = '#8E9A86', REST = '#585F52', EMBER = '#C98A3C', AM = '#E0A227', RD = '#E2453C', SL = '#8B97A3', BONE = '#D6D2CB';
+
+const SYS_OK = 'SELF-TEST 02:00 PASS · BACKUP 21 m\nRESTORE VERIFIED 3 d · DISK 62 %';
+const SENSORS_OK = [
+  { name: 'POLAR H10', age: '2 s', ok: true },
+  { name: 'EMAY SpO₂', age: '4 s', ok: true },
+  { name: 'A&D CUFF', age: '37 m', ok: true },
+  { name: 'HEALTHKIT', age: '1 m', ok: true }
+];
+
+class Component extends DCLogic {
+  state = { p: 0, phase: 'idle' };
+  componentWillUnmount() { cancelAnimationFrame(this.raf); clearTimeout(this.tid); }
+
+  down = () => {
+    if (this.state.phase === 'done') return;
+    this.t0 = performance.now();
+    this.setState({ phase: 'holding', p: 0 });
+    const step = () => {
+      const p = Math.min(1, (performance.now() - this.t0) / HOLD_MS);
+      if (p >= 1) { this.setState({ p: 1, phase: 'done' }); return; }
+      this.setState({ p });
+      this.raf = requestAnimationFrame(step);
+    };
+    this.raf = requestAnimationFrame(step);
+  };
+  up = () => {
+    cancelAnimationFrame(this.raf);
+    if (this.state.phase === 'holding') {
+      this.setState({ p: 0, phase: 'released' });
+      clearTimeout(this.tid);
+      this.tid = setTimeout(() => this.setState({ phase: 'idle' }), 1600);
+    }
+  };
+
+  renderVals() {
+    const tokens = [
+      ['--ground', '#000000', '—', 'The room. Pure black, and most of the panel is this most of the time.'],
+      ['--calm', '#585F52', '3.17 : 1', 'The resting line and resting word. Warm-neutral olive-grey, deliberately at the floor of AA-large.'],
+      ['--live', '#8E9A86', '7.12 : 1', 'Woken “everything measured” line and parameter labels.'],
+      ['--value', '#D6D2CB', '13.94 : 1', 'Figures. The brightest thing on the panel, and only ~3% of its area.'],
+      ['--quiet', '#7F7A72', '4.93 : 1', '14px supporting text: ages, sensor names, system line. Clears 4.5:1.'],
+      ['--unknown', '#8B97A3', '7.05 : 1', 'INDETERMINATE. Cool slate against an otherwise warm-neutral system — a temperature shift, not a hue code.'],
+      ['--unknown-hi', '#B9C0C7', '11.43 : 1', 'The “?” and the NO DATA caption.'],
+      ['--rise', '#C98A3C', '7.18 : 1', 'Watch. First appearance of warmth; ember, never blue.'],
+      ['--urgent', '#E0A227', '9.37 : 1', 'Confirm. Thicker line, brighter ember.'],
+      ['--klaxon', '#E2453C', '5.15 : 1', 'Klaxon only. The single saturated colour in the system.']
+    ].map(r => ({
+      name: r[0], hex: r[1], ratio: r[2], role: r[3],
+      swatch: { display: 'block', width: '52px', height: '26px', background: r[1], border: '1px solid #2A2724' },
+      ratioStyle: { fontSize: '15px', fontFamily: MONO, fontVariantNumeric: 'tabular-nums', color: r[2] === '—' ? '#9BA3AB' : '#B4AFA6' }
+    }));
+
+    const ts = [
+      ['97', 30, MONO, '104 / 0.82 · −3 track', 'live figure'],
+      ['CAN’T ASSESS', 26, SANS, '62 / 1.0', 'awake tier word'],
+      ['CLEAR', 22, SANS, '46 / 1.0 · +2', 'resting tier word'],
+      ['HOLD 3 s TO SILENCE', 19, SANS, '24 / 1.0 · +1.4', 'action'],
+      ['118/76 · MAP 90', 17, MONO, '34 / 1.1', 'secondary figure'],
+      ['EMAY SpO₂  ·  4 s', 14, SANS, '14–15 / 1.4', 'labels, ages, system']
+    ].map(r => ({
+      sample: r[0], spec: r[3], use: r[4],
+      demo: { fontFamily: r[2], fontSize: r[1] + 'px', color: '#D6D2CB', fontVariantNumeric: 'tabular-nums', lineHeight: 1, letterSpacing: '.5px' }
+    }));
+
+    const line = (h, color, segs, dash) => ({
+      height: h + 'px', background: color, width: '100%',
+      display: 'block'
+    });
+
+    const ladder = [
+      ['CLEAR', REST, 'One line, 3 px, unbroken, minimum emission. The night-time default.', { height: '3px', background: REST, width: '100%' }],
+      ['CAN’T ASSESS', SL, 'The line breaks. Same thickness, cooler, brighter, with a question mark over the gap.', { height: '3px', background: 'linear-gradient(90deg,' + SL + ' 0 46%,rgba(0,0,0,0) 46% 62%,' + SL + ' 62% 100%)', width: '100%' }],
+      ['WATCH', EMBER, 'Line splits into three 6 px segments — a rhythm the eye catches peripherally without any brightness jump.', { height: '6px', width: '100%', background: 'repeating-linear-gradient(90deg,' + EMBER + ' 0 30%,rgba(0,0,0,0) 30% 35%)' }],
+      ['CONFIRM', AM, 'Whole again but 14 px thick and brighter: mass, not motion.', { height: '14px', background: AM, width: '100%' }],
+      ['KLAXON', RD, '44 px field, flashing at 1 Hz — the only motion anywhere in the system.', { height: '44px', background: RD, width: '100%', animation: 'pen 1s steps(1,end) infinite' }]
+    ].map(r => ({
+      tier: r[0], desc: r[2], lineStyle: r[3],
+      tierStyle: { fontSize: '17px', letterSpacing: '1.6px', color: r[1] }
+    }));
+
+    const base = { clock: '03:14:22', sensors: SENSORS_OK, sys: SYS_OK, silence: {} };
+
+    const clear = Object.assign({}, base, {
+      caption: 'clear', note: 'Awake, everything measured. The line is whole.',
+      tier: 'CLEAR', accent: OLIVE, markSolid: true, chan: 'ALARMS ARMED',
+      sub: 'STABLE 4 H 06 M', barH: 3, bar: [{ w: 1 }], barCap: 'ALL SOURCES REPORTING · LAST GAP 19 H AGO',
+      params: [
+        { name: 'SpO₂', unit: '%', val: '97', color: BONE, note: 'steady 30 m', trend: [97, 96, 97, 98, 97, 98, 97, 96, 97, 97] },
+        { name: 'HR', unit: 'bpm', val: '58', color: BONE, note: 'steady 30 m', trend: [60, 59, 58, 59, 57, 58, 58, 59, 58, 58] }
+      ],
+      bp: { name: 'LAST BP', val: '118/76', age: 'MAP 90 · 37 m ago' }
+    });
+
+    const cant = Object.assign({}, base, {
+      caption: 'can’t assess', note: 'The oximeter stopped reporting six minutes ago. The line is broken and the panel woke itself to say so.',
+      tier: 'CAN’T ASSESS', accent: SL, markDashed: true, markW: '26px', markH: '26px',
+      chan: 'TECHNICAL · SENSOR LOST', chanColor: '#B9C0C7', sub: 'SINCE 03:08:41', subColor: '#B9C0C7',
+      barH: 3, bar: [{ w: 3 }, { w: 1.4, gap: true }, { w: 2 }],
+      barCap: 'SpO₂ UNKNOWN 6 M 12 S · HR STILL REPORTING', barCapColor: '#B9C0C7',
+      params: [
+        { name: 'SpO₂', unit: '%', stale: true, val: '?', note: 'NO DATA 6 m', trend: [96, 95, 96, 95, 96, null, null, null, null, null] },
+        { name: 'HR', unit: 'bpm', val: '61', color: BONE, note: 'steady 30 m', trend: [59, 60, 61, 60, 62, 61, 60, 61, 61, 61] }
+      ],
+      bp: { name: 'LAST BP', val: '118/76', age: 'MAP 90 · 4 h 12 m ago', stale: true },
+      sensors: [
+        { name: 'POLAR H10', age: '2 s', ok: true },
+        { name: 'EMAY SpO₂', age: 'no data 6 m', ok: false },
+        { name: 'A&D CUFF', age: '4 h 12 m', ok: false },
+        { name: 'HEALTHKIT', age: 'stale 22 m', ok: false }
+      ],
+      sys: 'SELF-TEST 02:00 PASS · BACKUP 21 m\nRESTORE VERIFIED 17 d ? · DISK 62 %'
+    });
+
+    const watch = Object.assign({}, base, {
+      caption: 'watch', note: 'Measured and drifting. The line splits; nothing moves, nothing sounds.',
+      tier: 'WATCH', accent: EMBER, markSolid: true, markW: '24px', markH: '24px',
+      chan: 'PHYSIOLOGICAL', chanColor: EMBER, sub: 'SINCE 03:11:50',
+      barH: 6, bar: [{ w: 1 }, { w: 1 }, { w: 1 }], barCap: 'SpO₂ BELOW 94 FOR 8 MIN · WATCHING', barCapColor: '#9C968E',
+      params: [
+        { name: 'SpO₂', unit: '%', val: '91', color: BONE, note: '↓6 in 8 m', trend: [95, 94, 94, 93, 93, 92, 92, 91, 91, 91] },
+        { name: 'HR', unit: 'bpm', val: '64', color: BONE, note: '↑5 in 8 m', trend: [59, 60, 60, 61, 62, 62, 63, 64, 64, 64] }
+      ],
+      bp: { name: 'LAST BP', val: '118/76', age: 'MAP 90 · 41 m ago' }
+    });
+
+    const confirm = Object.assign({}, base, {
+      caption: 'confirm', note: 'Thickness, not motion. The silence bar arms itself here.',
+      tier: 'CONFIRM', accent: AM, markSolid: true, markW: '24px', markH: '24px',
+      chan: 'PHYSIOLOGICAL · HIGH', chanColor: AM, sub: 'SINCE 03:13:04',
+      barH: 14, bar: [{ w: 1 }], barCap: 'SpO₂ 88 · HR RISING · CONFIRM WITH A SECOND READING', barCapColor: '#9C968E',
+      params: [
+        { name: 'SpO₂', unit: '%', val: '88', color: BONE, note: '↓9 in 11 m', trend: [93, 92, 91, 90, 89, 89, 88, 88, 88, 88] },
+        { name: 'HR', unit: 'bpm', val: '102', color: BONE, note: '↑44 in 11 m', trend: [66, 72, 78, 84, 89, 93, 97, 100, 102, 102] }
+      ],
+      bp: { name: 'LAST BP', val: '118/76', age: 'MAP 90 · RE-TAKE' },
+      silence: { active: true, text: 'HOLD 3 s TO SILENCE', sub: 'AUDIO 2 MIN · ALARM CONTINUES', color: AM, fill: '#2E2410' }
+    });
+
+    const klaxon = Object.assign({}, base, {
+      caption: 'klaxon', note: '44 px of red at 1 Hz. This is the only moving, only saturated state in the system.',
+      tier: 'KLAXON', accent: RD, markSolid: true, markW: '30px', markH: '30px', flash: true,
+      chan: 'PHYSIOLOGICAL · AUDIO ON', chanColor: RD, sub: 'SINCE 03:14:02',
+      barH: 44, bar: [{ w: 1 }], barCap: 'SpO₂ 82 AND FALLING · HR 121', barCapColor: '#B4AFA6',
+      params: [
+        { name: 'SpO₂', unit: '%', val: '82', color: BONE, note: '↓15 in 13 m', trend: [90, 88, 87, 86, 85, 84, 83, 82, 82, 82] },
+        { name: 'HR', unit: 'bpm', val: '121', color: BONE, note: '↑63 in 13 m', trend: [70, 80, 90, 98, 105, 111, 116, 119, 121, 121] }
+      ],
+      bp: { name: 'LAST BP', val: '118/76', age: 'MAP 90 · RE-TAKE NOW' },
+      silence: { active: true, text: 'HOLD 3 s TO SILENCE', sub: 'AUDIO 2 MIN · ALARM CONTINUES', color: RD, textColor: RD, fill: '#2C110F' }
+    });
+
+    const holdSil = (p, phase) => {
+      if (phase === 'done') return { active: true, p: 1, text: 'AUDIO SILENCED 2:00', sub: 'ALARM STILL ACTIVE · RE-SOUNDS 03:16:11', color: AM, textColor: AM, fill: '#2E2410' };
+      if (phase === 'released') return { active: true, p: 0, text: 'RELEASED — RESET TO 0', sub: 'NO PARTIAL CREDIT · HOLD THE FULL 3 s', color: SL, textColor: '#B9C0C7' };
+      if (phase === 'holding') return { active: true, p: p, text: 'KEEP HOLDING — ' + (3 - p * 3).toFixed(1) + ' s', sub: 'RELEASE NOW AND THIS RESETS TO ZERO', color: RD, textColor: BONE, fill: '#2C110F' };
+      return klaxon.silence;
+    };
+
+    const holdShots = [
+      Object.assign({}, klaxon, { caption: '1 · idle — armed', note: 'The strip states the requirement before it is touched. A tap does nothing.', silence: holdSil(0, 'idle') }),
+      Object.assign({}, klaxon, { caption: '2 · in progress — 1.2 s of 3 s', note: 'A hard-edged fill sweeps right; the label counts down; the reset warning is visible while the finger is down.', silence: holdSil(0.4, 'holding') }),
+      Object.assign({}, klaxon, { caption: '3 · completed', note: 'Audio only, for two minutes. The red field stops flashing but does not go away.', flash: false, silence: holdSil(1, 'done') }),
+      Object.assign({}, klaxon, { caption: '4 · released early', note: 'Back to zero, stated in words for 1.6 s.', silence: holdSil(0, 'released') })
+    ];
+
+    const live = Object.assign({}, klaxon, {
+      flash: this.state.phase !== 'done',
+      silence: Object.assign(holdSil(this.state.p, this.state.phase), { onDown: this.down, onUp: this.up })
+    });
+
+    const rest = {
+      caption: 'resting — untouched at clear', note: '~1% of the field lit: one 3 px line and one word.',
+      detail: false, tier: 'CLEAR', accent: REST, markSolid: true, barH: 3, bar: [{ w: 1 }], silence: {}
+    };
+    const awake = Object.assign({}, clear, { caption: 'awake — hand on the panel', note: 'Everything fades in over 140 ms and back out 20 s after the last touch.' });
+
+    return { tokens, typeScale: ts, ladder, states: [clear, cant, watch, confirm, klaxon], holdShots, live, wake: [rest, awake] };
+  }
+}
+</script>
+</body>
+</html>

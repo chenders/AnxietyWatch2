@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AnxietyWatch2 admin console — three design directions</title>
+<link rel="stylesheet" href="a/console.css">
+<template id="__bundler_thumbnail" data-bg-color="#0A0C0D">
+  <svg viewBox="0 0 1200 800" xmlns="http://www.w3.org/2000/svg">
+    <rect width="1200" height="800" fill="#0A0C0D"/>
+    <rect x="180" y="230" width="840" height="340" fill="#121517" stroke="#454D52" stroke-width="4"/>
+    <rect x="180" y="230" width="840" height="70" fill="#1A1E21"/>
+    <rect x="220" y="256" width="240" height="18" fill="#8A959B"/>
+    <rect x="220" y="350" width="300" height="46" fill="#E8EDEF"/>
+    <rect x="220" y="430" width="480" height="14" fill="#8A959B"/>
+    <rect x="220" y="470" width="380" height="14" fill="#8A959B"/>
+    <rect x="820" y="346" width="160" height="54" fill="#B98CFF"/>
+  </svg>
+</template>
+</head>
+<body>
+<main class="gallery">
+  <h1>AnxietyWatch2 admin console</h1>
+  <p class="prose">Three design directions, each a complete design system delivered as vanilla HTML and
+  CSS. One stylesheet per direction, tokens on <span class="mono">:root</span>, semantic class names, no
+  inline styles except values computed per datum (a bar width, a sparkline point), no build step and no
+  dependencies. Each direction takes a different position on the hardest requirement in the brief —
+  making "we don't know" impossible to read as "healthy":</p>
+  <ul class="prose">
+    <li><b>A · Service Mode</b> makes unknown violet, on alarm-priority terms alongside high, medium and low.</li>
+    <li><b>B · Preflight</b> makes unknown periwinkle, and draws it as an empty signature box.</li>
+    <li><b>C · Flowpath</b> makes unknown violet, and draws it as a visible cut in a pipe.</li>
+  </ul>
+  <p class="prose">In all three, colour is the first read and never the only one: every state also
+  carries a glyph, a fill polarity or a stroke pattern that survives greyscale and every dichromacy.
+  Grey is reserved for the one state with nothing to assert — something declared absent.</p>
+  <hr class="divider">
+  <div class="gallery__list">
+    <a class="gallery__item" href="a/index.html"><b>Direction A · Service Mode</b>
+      <span>Clinical / biomedical equipment. Complete: design system, 9 screens, degraded state, first run, attempt-history component, all four operational patterns.</span></a>
+    <a class="gallery__item" href="b/index.html"><b>Direction B · Preflight</b>
+      <span>Inspection checklist. Four dispositions, four hues, four stamp shapes — unsigned is a periwinkle empty signature box. Complete: design system, 9 screens, degraded state, first run, run-sheet component, all four operational patterns.</span></a>
+    <a class="gallery__item" href="c/index.html"><b>Direction C · Flowpath</b>
+      <span>The machine as a live dataflow graph, keyboard-first. Four edge hues with four stroke grammars — unknown is a violet severed pipe. Complete: design system, 9 screens, degraded state, first run, attempt-timeline component, all four operational patterns.</span></a>
+  </div>
+</main>
+</body>
+</html>

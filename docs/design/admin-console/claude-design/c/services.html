@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Services — AW2 Flowpath</title>
+<link rel="stylesheet" href="console.css">
+</head>
+<body data-feed="live">
+<a class="skip-link" href="#main">Skip to content</a>
+
+<div class="app">
+  <div class="stickytop">
+  <div class="docstale" role="status">
+    <span class="st st--severed">Console feed severed</span>
+    <b>This page has not heard from the appliance for <span data-feed-age>—</span>.</b>
+    <span class="muted-text">The graph below is the last shape the machine had. Edge states are unchanged; it is the link between you and the box that is cut.</span>
+    <button class="btn btn--sm" type="button" data-action="refresh">Reconnect <span class="btn__key">r</span></button>
+  </div>
+
+  <header class="cmdbar">
+    <span class="cmdbar__id"><b>AW2 FLOWPATH</b> · bedside-pi5 · 2.4.11+g8c1f</span>
+    <label class="sr-only" for="q">Filter nodes and sources</label>
+    <input class="input cmdbar__search" id="q" data-filter placeholder="Filter nodes, sources, units…   /">
+    <span class="cmdbar__id" data-clock>09:56:04Z</span>
+    <span class="cmdbar__id">feed <span data-feed-age>2s</span></span>
+    <span class="cmdbar__hint"><span class="kbd">j</span><span class="kbd">k</span> walk the path <span class="kbd">/</span> filter <span class="kbd">1</span>–<span class="kbd">9</span> screens <span class="kbd">?</span> keys</span>
+  </header>
+
+<nav class="tabs" aria-label="Screens">
+  <a class="tabs__item" href="overview.html" data-tabkey="1"><span class="tabs__key">1</span> Overview</a>
+  <a class="tabs__item" href="display.html" data-tabkey="2"><span class="tabs__key">2</span> Flow · display</a>
+  <a class="tabs__item" href="ingest.html" data-tabkey="3"><span class="tabs__key">3</span> Flow · ingest</a>
+  <a class="tabs__item" href="services.html" data-tabkey="4" aria-current="page"><span class="tabs__key">4</span> Services</a>
+  <a class="tabs__item" href="config.html" data-tabkey="5"><span class="tabs__key">5</span> Access</a>
+  <a class="tabs__item" href="data.html" data-tabkey="6"><span class="tabs__key">6</span> Data</a>
+  <a class="tabs__item" href="analysis.html" data-tabkey="7"><span class="tabs__key">7</span> Analysis</a>
+  <a class="tabs__item" href="records.html" data-tabkey="8"><span class="tabs__key">8</span> Records</a>
+  <a class="tabs__item" href="recovery.html" data-tabkey="9"><span class="tabs__key">9</span> Recovery</a>
+  <a class="tabs__item" href="system.html">System</a>
+  <a class="tabs__item" href="patterns.html">Patterns</a>
+  <a class="tabs__item" href="attempts.html">Timeline</a>
+  <a class="tabs__item" href="overview-degraded.html">Degraded</a>
+  <a class="tabs__item" href="firstrun.html">First run</a>
+</nav>
+  </div>
+
+  <main class="main" id="main">
+    <div class="pagehd">
+      <div>
+        <h1>Services &amp; host</h1>
+        <p>Daemons, and the host conditions that stop recording without a crash.</p>
+      </div>
+      <div class="pagehd__act">
+        <button class="btn btn--sm" type="button" data-action="refresh">Refresh <span class="btn__key">r</span></button>
+      </div>
+    </div>
+
+    <div class="stack">
+      <section class="pane" aria-labelledby="sh">
+        <div class="pane__hd"><h2 id="sh">Host</h2>
+          <span class="caps">The ways this box stops recording without any process crashing ·
+            <span class="fresh" data-age-s="20" data-expect-s="60"><span class="fresh__age">20s ago</span><span class="fresh__expect">1m</span></span></span></div>
+        <div class="pane__body">
+          <div class="cols-4">
+            <div class="fig"><span class="fig__k">NVMe free</span>
+              <span class="fig__v">62.1<span class="unit">GB</span></span>
+              <span class="muted-text">of 233 GB · full in ~1y 9m at 96 MB/day</span></div>
+            <div class="fig fig--sm"><span class="fig__k">NVMe wear</span>
+              <span class="fig__v">4<span class="unit">% used</span></span><span class="muted-text">Rated life to 2034-01</span></div>
+            <div class="fig fig--sm"><span class="fig__k">SoC temperature</span>
+              <span class="fig__v">52.4<span class="unit">°C</span></span><span class="muted-text">Throttle at 80 °C · 24h peak 61.2</span></div>
+            <div class="fig fig--sm"><span class="fig__k">Supply</span>
+              <span class="fig__v">5.08<span class="unit">V</span></span><span class="muted-text">Mains, 27 W PSU. No UPS fitted.</span></div>
+          </div>
+          <hr class="divider">
+          <div class="cols-3">
+            <div class="fields"><span class="field__k">Undervoltage</span>
+              <span class="field__v"><span class="st st--flowing"><span aria-hidden="true">✓</span> None</span> <span class="muted-text">since boot</span></span>
+              <span class="field__k">Throttled</span>
+              <span class="field__v"><span class="st st--flowing"><span aria-hidden="true">✓</span> Never</span></span></div>
+            <div class="fields"><span class="field__k">Watchdog</span>
+              <span class="field__v"><span class="st st--flowing"><span aria-hidden="true">✓</span> Armed</span> <span class="muted-text">bcm2835_wdt, 15 s</span></span>
+              <span class="field__k">Last reset</span><span class="field__v mono">none · 17d uptime</span></div>
+            <div class="fields"><span class="field__k">Network</span><span class="field__v mono">wlan0 · −52 dBm · 1.2 Gb/s</span>
+              <span class="field__k">Link flaps</span><span class="field__v mono">0 <span class="unit">in 24h</span></span></div>
+          </div>
+        </div>
+        <div class="pane__ft"><p class="prose">No UPS is fitted, so a mains interruption is an immediate
+        unclean shutdown. That is a configuration fact rather than a fault, and it is stated here rather
+        than raised.</p></div>
+      </section>
+
+      <section class="pane" aria-labelledby="uh">
+        <div class="pane__hd"><h2 id="uh">Units</h2>
+          <span class="caps">Derived from the deployment manifest · 9 units</span></div>
+        <div class="pane__body--flush t-scroll">
+          <table class="t t--rowstate">
+            <thead><tr><th scope="col">Unit</th><th scope="col">Process state</th><th scope="col">Outgoing edge</th>
+              <th class="num" scope="col">Uptime</th><th class="num" scope="col">Restarts 24h</th>
+              <th class="num" scope="col">RSS</th><th scope="col">Last error</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead>
+            <tbody>
+              <tr><th scope="row" class="mono">aw2-samplestore</th>
+                <td><span class="proc proc--active"><span class="proc__led" aria-hidden="true"></span> active (running)</span></td>
+                <td><span class="st st--flowing"><span class="pip pip--flowing" aria-hidden="true"></span> Flowing</span></td>
+                <td class="num">17d 04:12</td><td class="num">0</td><td class="num">184 MB</td>
+                <td class="muted-text">none</td><td><button class="btn btn--sm" type="button">Logs</button></td></tr>
+              <tr><th scope="row" class="mono">aw2-collector-chest</th>
+                <td><span class="proc proc--active"><span class="proc__led" aria-hidden="true"></span> active (running)</span></td>
+                <td><span class="st st--flowing"><span class="pip pip--flowing" aria-hidden="true"></span> Flowing</span></td>
+                <td class="num">2d 11:02</td><td class="num">0</td><td class="num">38 MB</td>
+                <td class="muted-text">2d ago · notify timeout</td><td><button class="btn btn--sm" type="button">Logs</button></td></tr>
+              <tr data-state="severed"><th scope="row" class="mono">aw2-collector-oximeter</th>
+                <td><span class="proc proc--active"><span class="proc__led" aria-hidden="true"></span> active (running)</span></td>
+                <td><span class="st st--severed"><span class="pip pip--severed" aria-hidden="true"></span> Severed</span></td>
+                <td class="num">17d 04:10</td><td class="num">0</td><td class="num">31 MB</td>
+                <td class="muted-text">none reported</td><td><button class="btn btn--sm" type="button">Logs</button></td></tr>
+              <tr data-state="impaired"><th scope="row" class="mono">aw2-spool-drain</th>
+                <td><span class="proc proc--active"><span class="proc__led" aria-hidden="true"></span> active (running)</span></td>
+                <td><span class="st st--impaired"><span aria-hidden="true">▲</span> Impaired</span></td>
+                <td class="num">17d 04:11</td><td class="num">0</td><td class="num">96 MB</td>
+                <td>3h ago · write contention on samples_raw</td><td><button class="btn btn--sm" type="button">Logs</button></td></tr>
+              <tr><th scope="row" class="mono">aw2-importer-cpap.timer</th>
+                <td><span class="proc proc--inactive"><span class="proc__led" aria-hidden="true"></span> inactive (waiting)</span></td>
+                <td><span class="st st--flowing"><span class="pip pip--flowing" aria-hidden="true"></span> Flowing</span></td>
+                <td class="num">—</td><td class="num">—</td><td class="num">—</td>
+                <td class="muted-text">next run 04:00</td><td><button class="btn btn--sm" type="button">Logs</button></td></tr>
+              <tr data-state="absent"><th scope="row" class="mono">aw2-alarm-nocturnal</th>
+                <td><span class="proc proc--inactive"><span class="proc__led" aria-hidden="true"></span> inactive (dead)</span></td>
+                <td><span class="st st--absent"><span aria-hidden="true">—</span> Not configured</span></td>
+                <td class="num">—</td><td class="num">—</td><td class="num">—</td>
+                <td class="absent-note">Feature flag off. Scheduled last.</td><td class="absent-note">—</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="pane__ft"><p class="prose">Process state and outgoing-edge state are separate columns
+        because they disagree, and the row where they disagree is the interesting one.</p></div>
+      </section>
+
+      <div class="cols-2">
+        <section class="pane pane--degrade" aria-labelledby="dh">
+          <div class="pane__hd"><h2 id="dh">aw2-spool-drain · detail</h2>
+            <span class="caps"><span class="st st--impaired"><span aria-hidden="true">▲</span> Impaired</span></span></div>
+          <div class="pane__body stack--tight">
+            <div class="fields fields--wide">
+              <span class="field__k">Fragment</span><span class="field__v mono">/etc/systemd/system/aw2-spool-drain.service</span>
+              <span class="field__k">Exec</span><span class="field__v mono">/usr/lib/aw2/spool-drain --batch 500</span>
+              <span class="field__k">Main PID</span><span class="field__v mono">944</span>
+              <span class="field__k">CPU, 1h mean</span><span class="field__v mono">14.2 %</span>
+            </div>
+            <hr class="divider">
+            <span class="caps">Resident memory · 24 h</span>
+            <svg class="spark" viewBox="0 0 600 48" preserveAspectRatio="none" role="img" aria-label="Resident memory rising steadily from 48 to 96 megabytes over 24 hours.">
+              <line class="spark__axis" x1="0" y1="47" x2="600" y2="47"></line>
+              <polyline class="spark__line" points="0,38 60,36 120,34 180,31 240,29 300,26 360,23 420,19 480,15 540,12 600,9"></polyline>
+            </svg>
+            <p class="prose">Memory has climbed monotonically for 24 hours while the backlog grew. The two
+            are almost certainly the same problem rather than a leak.</p>
+            <hr class="divider">
+            <span class="caps">Recent output</span>
+            <pre class="log"><b>09:54:02</b> drain: batch 500 committed in 1.42s
+<b>09:54:04</b> drain: queue depth 14208 oldest 26m
+<span class="log--warn">09:54:04 drain: WARN arrival 340/min exceeds drain 210/min</span>
+<b>09:55:31</b> drain: batch 500 committed in 1.51s
+<span class="log--warn">09:55:31 drain: WARN queue depth +130 since last batch</span>
+<b>09:56:02</b> auth: token accepted for client <span class="log--redacted">[redacted ·9EgU]</span></pre>
+          </div>
+          <div class="pane__ft"><div class="actions-split">
+            <button class="btn btn--sm" type="button">Follow logs</button>
+            <button class="btn btn--sm" type="button">Reload unit</button>
+            <span class="actions-split__gap" aria-hidden="true"></span>
+            <button class="btn btn--sm btn--danger" type="button" data-action="open" data-target="m-rs">Restart unit…</button>
+          </div></div>
+        </section>
+
+        <div class="stack">
+          <section class="pane">
+            <div class="pane__hd"><h2>Logs</h2><span class="caps">Credentials redacted at write time</span></div>
+            <div class="pane__body stack--tight">
+              <div class="row">
+                <select class="select" aria-label="Filter by unit"><option>All units</option>
+                  <option>aw2-samplestore</option><option selected>aw2-spool-drain</option></select>
+                <select class="select" aria-label="Filter by severity"><option>warning and above</option>
+                  <option>error only</option><option>everything</option></select>
+              </div>
+              <p class="prose muted-text">Redaction happens before the line reaches the journal, so a leaked
+              key cannot be recovered from the logs even with root.</p>
+            </div>
+          </section>
+          <section class="pane">
+            <div class="pane__hd"><h2>Radios</h2></div>
+            <div class="pane__body--flush t-scroll">
+              <table class="t">
+                <thead><tr><th scope="col">Device</th><th class="num" scope="col">RSSI</th>
+                  <th scope="col">Link</th><th class="num" scope="col">Reconnects 24h</th></tr></thead>
+                <tbody>
+                  <tr><th scope="row">Polar H10 · E4:22:…:9C</th><td class="num">−61 dBm</td>
+                    <td><span class="st st--flowing"><span aria-hidden="true">✓</span> Connected</span></td><td class="num">2</td></tr>
+                  <tr data-state="severed"><th scope="row">O2Ring · C8:1F:…:04</th><td class="num">−74 dBm</td>
+                    <td><span class="st st--severed">Connected, silent</span></td><td class="num">0</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="pane__ft"><p class="prose">A bonded, connected link that delivers nothing is the
+            case a connection state cannot express, so the edge is drawn cut regardless of what BlueZ
+            says.</p></div>
+          </section>
+        </div>
+      </div>
+    </div>
+
+<div class="scrim" id="m-rs" hidden>
+  <div class="modal modal--danger" role="alertdialog" aria-modal="true" aria-labelledby="mrs-h">
+    <div class="modal__hd"><span aria-hidden="true">✕</span><h2 id="mrs-h">Restart aw2-spool-drain?</h2></div>
+    <div class="modal__body">
+      <p class="prose">The drain stops for the duration of the restart. Nothing is lost — the spool is the
+      buffer — but the backlog grows while it is down.</p>
+      <ul class="consequences">
+        <li>14,208 rows queued now. Expect roughly 700 more during a 2-minute restart.</li>
+        <li>The in-flight batch is rolled back, not partially committed.</li>
+      </ul></div>
+    <div class="modal__ft"><button class="btn btn--ghost" type="button" data-action="close">Cancel</button>
+      <span class="grow"></span><button class="btn btn--danger" type="button" data-action="close">Restart unit</button></div>
+  </div>
+</div>
+  </main>
+</div>
+
+<div class="scrim" id="keymap" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="km-h">
+    <div class="modal__hd"><h2 id="km-h">Keyboard</h2></div>
+    <div class="modal__body">
+      <div class="fields fields--wide">
+        <span class="field__k"><span class="kbd">j</span> <span class="kbd">k</span></span><span class="field__v">Walk the flow path, upstream and downstream</span>
+        <span class="field__k"><span class="kbd">↑</span> <span class="kbd">↓</span></span><span class="field__v">Same as j and k</span>
+        <span class="field__k"><span class="kbd">/</span></span><span class="field__v">Focus the node filter</span>
+        <span class="field__k"><span class="kbd">1</span>–<span class="kbd">9</span></span><span class="field__v">Jump to a screen</span>
+        <span class="field__k"><span class="kbd">r</span></span><span class="field__v">Refresh the feed</span>
+        <span class="field__k"><span class="kbd">?</span></span><span class="field__v">Show or hide this map</span>
+        <span class="field__k"><span class="kbd">esc</span></span><span class="field__v">Leave a field, or close a dialog</span>
+      </div>
+      <p class="prose muted-text">Every one of these is also reachable by tab and click. The keys are an accelerator, never the only route.</p>
+    </div>
+    <div class="modal__ft"><span class="grow"></span><button class="btn" type="button" data-action="close">Close</button></div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

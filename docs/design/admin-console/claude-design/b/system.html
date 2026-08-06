@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Design system — AW2 Preflight</title>
+<link rel="stylesheet" href="console.css">
+</head>
+<body data-feed="live">
+<a class="skip-link" href="#main">Skip to content</a>
+
+<div class="stickytop">
+<div class="docstale" role="status">
+  <span class="assert assert--unsigned">Sheet uncountersigned</span>
+  <b>This page has not heard from the appliance for <span data-feed-age>—</span>.</b>
+  <span class="muted-text">Every reading below is the last one observed. The signatures on it are still valid for the time they were made; this document is not valid for now.</span>
+  <button class="btn btn--sm" type="button" data-action="refresh">Reconnect</button>
+</div>
+
+<nav class="contents" aria-label="Sections">
+    <a class="contents__item" href="overview.html"><span class="contents__ord">01</span> Overview</a>
+    <a class="contents__item" href="display.html"><span class="contents__ord">02</span> Display</a>
+    <a class="contents__item" href="ingest.html"><span class="contents__ord">03</span> Ingest</a>
+    <a class="contents__item" href="services.html"><span class="contents__ord">04</span> Services</a>
+    <a class="contents__item" href="config.html"><span class="contents__ord">05</span> Access</a>
+    <a class="contents__item" href="data.html"><span class="contents__ord">06</span> Data</a>
+    <a class="contents__item" href="analysis.html"><span class="contents__ord">07</span> Analysis</a>
+    <a class="contents__item" href="records.html"><span class="contents__ord">08</span> Records</a>
+    <a class="contents__item" href="recovery.html"><span class="contents__ord">09</span> Recovery</a>
+    <a class="contents__item" href="system.html" aria-current="page">System</a>
+    <a class="contents__item" href="patterns.html">Patterns</a>
+    <a class="contents__item" href="attempts.html">Run sheet</a>
+    <a class="contents__item" href="overview-degraded.html">Degraded</a>
+    <a class="contents__item" href="firstrun.html">First run</a>
+  </nav>
+</div>
+
+<main class="sheet" id="main">
+
+  <div class="pagetitle">
+    <h1>Direction B — Preflight</h1>
+    <p>Every assertion is a line item that is signed, open, or visibly unsigned.</p>
+  </div>
+
+  <div class="stack">
+
+    <section class="block">
+      <div class="block__hd"><h2>Rationale</h2></div>
+      <div class="block__note">
+        <p class="prose">A pre-flight checklist solves a problem that looks like this one. A person is
+        responsible for a machine they cannot fully see, the failure modes are quiet, and the
+        acceptable answer is not "it seemed fine" but "these forty-one things were checked, by name, and
+        here is who checked each one and when." The checklist's power is that an unchecked item is
+        structurally impossible to confuse with a passed one, because a passed item has a mark in the
+        box and an unchecked item has an empty box.</p>
+        <p class="prose">That gives this direction its answer to the three-state problem, and it works
+        at two ranges at once. Up close, <b>unsigned is an empty signature box</b> — the absence of a
+        mark, which cannot be mistaken for a mark in greyscale, in a photograph, or under any
+        colour-vision condition. From across a room, that box is <b>periwinkle</b>, a hue used for
+        nothing else in the system. Four dispositions, four hues, four stamp shapes: the colour gets
+        you to the right row in a second, and the shape is what still tells you the truth when the
+        colour is gone.</p>
+        <p class="prose">The layout follows from the same idea. There is no dashboard grid: the sheet
+        is a document, read top to bottom, ordered by what each item costs the record. It opens with a
+        sentence rather than a light — "Not signed off. Three items are unsigned and one is open" —
+        because that is the output of a checklist, and it is legible from bed in about a second.</p>
+      </div>
+    </section>
+
+    <section class="block">
+      <div class="block__hd"><h2>Colour tokens</h2>
+        <div class="block__meta"><span class="caps">Dark theme only · WCAG 2.2 AA</span></div></div>
+      <div class="t-scroll">
+        <table class="t">
+          <caption>Ratios computed with the WCAG 2.x relative-luminance formula. Each ink is measured
+          against every surface it is permitted to sit on; the worst of those is the one that has to pass.</caption>
+          <thead><tr><th scope="col">Token</th><th scope="col">Hex</th><th scope="col">Swatch</th><th scope="col">Role</th>
+            <th class="num" scope="col">on #0B0E12</th><th class="num" scope="col">on #141920</th>
+            <th class="num" scope="col">on #1C232B</th><th class="num" scope="col">on #262F39</th>
+            <th scope="col">Verdict</th></tr></thead>
+          <tbody>
+            <tr><th scope="row" class="mono">--c-bg-0</th><td class="mono">#0B0E12</td><td><span class="sw sw--bg0"></span></td>
+              <td>Sheet ground</td><td class="num na">—</td><td class="num na">—</td><td class="num na">—</td><td class="num na">—</td><td class="na">surface</td></tr>
+            <tr><th scope="row" class="mono">--c-bg-1</th><td class="mono">#141920</td><td><span class="sw sw--bg1"></span></td>
+              <td>Card</td><td class="num na">1.10</td><td class="num na">—</td><td class="num na">—</td><td class="num na">—</td><td class="na">surface</td></tr>
+            <tr><th scope="row" class="mono">--c-bg-2</th><td class="mono">#1C232B</td><td><span class="sw sw--bg2"></span></td>
+              <td>Raised, save bar</td><td class="num na">1.22</td><td class="num na">—</td><td class="num na">—</td><td class="num na">—</td><td class="na">surface</td></tr>
+            <tr><th scope="row" class="mono">--c-bg-3</th><td class="mono">#262F39</td><td><span class="sw sw--bg3"></span></td>
+              <td>Track, hover</td><td class="num na">1.43</td><td class="num na">—</td><td class="num na">—</td><td class="num na">—</td><td class="na">surface</td></tr>
+            <tr><th scope="row" class="mono">--c-line</th><td class="mono">#333E48</td><td><span class="sw sw--line"></span></td>
+              <td>Hairline rule</td><td class="num">1.77</td><td class="num">1.62</td><td class="num">1.45</td><td class="num">1.24</td>
+              <td class="na">decorative only — never carries meaning alone</td></tr>
+            <tr><th scope="row" class="mono">--c-rule</th><td class="mono">#4A5763</td><td><span class="sw sw--rule"></span></td>
+              <td>Structural rule, empty stamp border, input underline</td>
+              <td class="num pass">3.02</td><td class="num pass">2.76</td><td class="num">2.48</td><td class="num">2.12</td>
+              <td class="pass">AA non-text on #0B0E12 and #141920 (≥3). Not used on the two lighter surfaces.</td></tr>
+            <tr><th scope="row" class="mono">--c-ink-0</th><td class="mono">#EAEFF3</td><td><span class="sw sw--ink0"></span></td>
+              <td>Item titles, values, signed marks</td>
+              <td class="num pass">16.71</td><td class="num pass">15.25</td><td class="num pass">13.69</td><td class="num pass">11.72</td><td class="pass">AAA</td></tr>
+            <tr><th scope="row" class="mono">--c-ink-1</th><td class="mono">#A9B5C0</td><td><span class="sw sw--ink1"></span></td>
+              <td>Body prose, unsigned stamp border, chart ink</td>
+              <td class="num pass">9.26</td><td class="num pass">8.45</td><td class="num pass">7.59</td><td class="num pass">6.50</td><td class="pass">AAA</td></tr>
+            <tr><th scope="row" class="mono">--c-ink-2</th><td class="mono">#8C99A5</td><td><span class="sw sw--ink2"></span></td>
+              <td>Labels, units, struck text</td>
+              <td class="num pass">6.64</td><td class="num pass">6.06</td><td class="num pass">5.45</td><td class="num pass">4.66</td><td class="pass">AA at every step</td></tr>
+            <tr><th scope="row" class="mono">--c-ink-3</th><td class="mono">#6D7A86</td><td><span class="sw sw--ink3"></span></td>
+              <td class="muted-text">Non-text only: dashed borders, disabled edges</td>
+              <td class="num pass">4.40</td><td class="num pass">4.02</td><td class="num pass">3.61</td><td class="num pass">3.09</td>
+              <td class="pass">AA non-text (≥3) at every step. Never used for text.</td></tr>
+          </tbody>
+        </table>
+
+        <table class="t">
+          <caption>The four disposition hues. Each is used as text on dark and as a fill carrying dark
+          text, so both directions are given. Where a chip also ships a same-hue wash, the washed surface
+          it actually renders against is given too — the bare-surface number is the upper bound, the
+          washed number is the one on screen.</caption>
+          <thead><tr><th scope="col">Token</th><th scope="col">Hex</th><th scope="col">Swatch</th>
+            <th class="num" scope="col">as text on #141920</th>
+            <th class="num" scope="col">on its own wash</th>
+            <th class="num" scope="col">#0B0E12 on fill</th>
+            <th scope="col">Verdict</th><th scope="col">Carrier that is not colour</th></tr></thead>
+          <tbody>
+            <tr><th scope="row" class="mono">--c-open</th><td class="mono">#FF7A85</td><td><span class="sw sw--open"></span></td>
+              <td class="num pass">7.04</td><td class="num na">—</td><td class="num pass">7.71</td><td class="pass">AAA text, AAA on fill</td>
+              <td>Filled stamp + <span class="mono">✕</span> + the word OPEN in the signature column</td></tr>
+            <tr><th scope="row" class="mono">--c-adv</th><td class="mono">#E8B33C</td><td><span class="sw sw--adv"></span></td>
+              <td class="num pass">9.20</td><td class="num na">—</td><td class="num pass">10.08</td><td class="pass">AAA text, AAA on fill</td>
+              <td>Filled stamp + <span class="mono">!</span> + a named signer, since advisories are still signed</td></tr>
+            <tr><th scope="row" class="mono">--c-signed</th><td class="mono">#5FD3C4</td><td><span class="sw sw--signed"></span></td>
+              <td class="num pass">9.75</td><td class="num pass">7.99</td><td class="num pass">10.68</td><td class="pass">AAA both</td>
+              <td>10 % wash + outlined stamp + <span class="mono">✓</span> + initials and a timestamp</td></tr>
+            <tr><th scope="row" class="mono">--c-unsigned</th><td class="mono">#A9B0FF</td><td><span class="sw sw--unsigned"></span></td>
+              <td class="num pass">8.69</td><td class="num pass">6.76</td><td class="num pass">9.52</td><td class="pass">AAA both</td>
+              <td><b>An empty box.</b> 45° hatch, no glyph, and the word UNSIGNED where a signature would be. The hue gets you there; the emptiness is the evidence.</td></tr>
+            <tr><th scope="row">struck (N/A)</th><td class="mono">#6D7A86 <span class="muted-text">border only</span></td>
+              <td><span class="sw sw--ink3"></span></td>
+              <td class="num pass">4.02</td><td class="num na">—</td><td class="num na">—</td><td class="pass">AA non-text</td>
+              <td>Dashed box + <span class="mono">—</span> + strikethrough on the item title</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="block__note">
+        <p class="prose"><b>Why signed gets a colour.</b> A sheet where only faults are coloured tells
+        you what is wrong but not that anything was checked, and this product's claim is the second
+        thing. Teal <span class="mono">#5FD3C4</span> makes "thirty-three of forty-one items were signed
+        by a named prober" a visible fact rather than an arithmetic one. It is deliberately blue-shifted:
+        a true green sits on top of amber under deuteranopia, and teal does not.</p>
+        <p class="prose">Grey is now reserved for exactly two things: ordinary text, and an item struck
+        as not applicable. Struck is the only state in the system with nothing to assert, so it is the
+        only one that stays colourless — which also means a grey row on this sheet always means "this
+        does not apply to me", never "we have not looked".</p>
+      </div>
+    </section>
+
+    <section class="block">
+      <div class="block__hd"><h2>Colour-vision verification</h2></div>
+      <div class="t-scroll">
+        <table class="t">
+          <caption>Simulated with the Brettel–Viénot–Mollon LMS transform at 100 % severity for each
+          dichromacy, then re-checked as greyscale. Four disposition hues make five pairs worth testing;
+          the pass criterion is that each pair differs in stamp shape or fill polarity as well as hue, so
+          no pair depends on colour alone.</caption>
+          <thead><tr><th scope="col">Pair</th><th scope="col">Deuteranopia</th><th scope="col">Protanopia</th>
+            <th scope="col">Tritanopia</th><th scope="col">Greyscale</th><th scope="col">Verdict</th></tr></thead>
+          <tbody>
+            <tr><th scope="row">open vs advisory<br><span class="muted-text">rose vs amber</span></th>
+              <td>Both collapse to a similar yellow-tan. Hue separation is lost entirely.</td>
+              <td>Rose darkens noticeably; some separation survives on lightness.</td>
+              <td>Rose → pink, amber → pale yellow. Distinct.</td>
+              <td>Relative luminance 0.369 vs 0.497 — 1.3:1 apart, i.e. not reliably distinguishable.</td>
+              <td class="pass">Pass, but not on colour. The glyph differs (<span class="mono">✕</span> vs <span class="mono">!</span>), the signature column reads OPEN versus a signer's name, and the two live in separately headed blocks on every screen. Colour is the third carrier, not the first.</td></tr>
+            <tr><th scope="row">signed vs advisory<br><span class="muted-text">teal vs amber</span></th>
+              <td>Teal keeps a blue cast; amber goes tan. Separation survives.</td>
+              <td>Distinct.</td><td>Teal → blue-grey, amber → pink. Distinct.</td>
+              <td>Luminance 0.530 vs 0.497 — very close.</td>
+              <td class="pass">Pass, and not on luminance. Signed is a 10 % wash carrying light text; advisory is a solid fill carrying dark text. Glyphs ✓ vs ! and signer-name vs no-signer differ too.</td></tr>
+            <tr><th scope="row">unsigned vs signed<br><span class="muted-text">periwinkle vs teal</span></th>
+              <td>Both retain blue; periwinkle reads cooler and darker.</td><td>Distinct.</td>
+              <td>Periwinkle → grey-blue, teal → pale blue. Weakest of the four pairs.</td>
+              <td>0.467 vs 0.530.</td>
+              <td class="pass">Pass on content, which is the whole point of the direction: signed holds a tick and initials, unsigned holds nothing. Presence versus absence of a mark is the distinction, and no colour-vision condition affects it.</td></tr>
+            <tr><th scope="row">open vs unsigned</th>
+              <td colspan="3">Rose vs periwinkle: distinct in every simulation.</td>
+              <td>Filled box at 0.369 vs an empty hatched box.</td>
+              <td class="pass">Pass on hue and on fill polarity — filled versus empty survives greyscale printing and photography.</td></tr>
+            <tr><th scope="row">unsigned vs struck</th>
+              <td colspan="3">Periwinkle vs neutral grey. Distinct once colour is present at all; under tritanopia the gap narrows.</td>
+              <td>Hatch density and border style differ; struck also strikes through its title text.</td>
+              <td class="pass">Pass on border style (solid vs dashed), hatch pitch, strikethrough, and the words UNSIGNED versus STRUCK. Struck is the only colourless state in the system, which is itself the signal.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="block">
+      <div class="block__hd"><h2>Five vocabularies</h2>
+        <div class="block__meta"><span class="caps">Each has its own shape. A component may show two at once; it never merges them.</span></div></div>
+
+      <div class="stack">
+        <div>
+          <h3 class="caps">1 · Health assertion — can this be relied on right now?</h3>
+          <p class="prose">Three values, carried by the stamp. Never appears without a freshness
+          reading and a signer.</p>
+          <div class="row">
+            <span class="assert assert--signed"><span aria-hidden="true">✓</span> Signed</span>
+            <span class="assert assert--open"><span aria-hidden="true">✕</span> Open</span>
+            <span class="assert assert--adv"><span aria-hidden="true">!</span> Advisory</span>
+            <span class="assert assert--unsigned">Unsigned</span>
+            <span class="assert assert--na"><span aria-hidden="true">—</span> Struck</span>
+          </div>
+          <hr class="divider">
+          <div class="item">
+            <span class="stamp stamp--signed" aria-hidden="true">✓</span>
+            <span class="item__what"><b>Signed, with its standard</b>
+              <span>Age and expectation together. Age alone hides what it is being judged against.</span></span>
+            <span class="item__read">41<span class="unit">s</span>
+              <small><span class="fresh" data-age-s="41" data-expect-s="120"><span class="fresh__age">41s ago</span><span class="fresh__expect">2m</span></span></small></span>
+            <span class="sig"><span class="sig__by">aw2-samplestore</span><span class="sig__at">09:55:23</span></span>
+          </div>
+          <div class="item item--unsigned">
+            <span class="stamp stamp--unsigned" aria-hidden="true"></span>
+            <span class="item__what"><b>Signature expired, so the item is unsigned</b>
+              <span>A status whose underlying check is older than its expected interval loses its
+              signature automatically. Nobody has to decide this.</span>
+              <span class="lastknown lastknown--open">Last known: <b>failing at 02:14</b> — sensor disconnected during pairing.</span></span>
+            <span class="item__read">2h 42m
+              <small><span class="fresh fresh--over" data-age-s="9720" data-expect-s="600"><span class="fresh__age">2h 42m ago</span><span class="fresh__expect">10m</span></span></small></span>
+            <span class="sig sig--none"><b>Unsigned</b><span>expired 02:24</span></span>
+          </div>
+          <p class="prose"><b>Current confidence and last known outcome are separate facts and both
+          stay on screen.</b> Losing sight of something does not erase what was last seen, and the
+          reason is the only part that can be acted on.</p>
+        </div>
+
+        <hr class="divider">
+
+        <div>
+          <h3 class="caps">2 · Lifecycle — what happened to a piece of work?</h3>
+          <p class="prose">A left bar and a state word. Never a stamp, because a run is not an
+          assertion about the machine's health.</p>
+          <div class="row">
+            <span class="life life--queued">Queued · position 2</span>
+            <span class="life life--running"><span class="life__pulse" aria-hidden="true"></span> Running · 04:12 elapsed</span>
+            <span class="life life--succeeded">Succeeded · 06:41</span>
+            <span class="life life--failed">Failed · rate limit</span>
+            <span class="life life--cancelled">Cancelled by operator</span>
+          </div>
+          <p class="prose">A finished upload is not signed. A queued job is not unsigned. A failed run
+          becomes an unsigned <em>item</em> only if the thing it should have produced is now stale.</p>
+        </div>
+
+        <hr class="divider">
+
+        <div>
+          <h3 class="caps">3 · Process state — systemd's own words</h3>
+          <p class="prose">Reported, never interpreted.</p>
+          <div class="row">
+            <span class="proc proc--active"><span class="proc__led" aria-hidden="true"></span> active (running)</span>
+            <span class="proc proc--activating"><span class="proc__led" aria-hidden="true"></span> activating (start)</span>
+            <span class="proc proc--failed"><span class="proc__led" aria-hidden="true"></span> failed (Result: exit-code)</span>
+            <span class="proc proc--inactive"><span class="proc__led" aria-hidden="true"></span> inactive (dead)</span>
+          </div>
+          <hr class="divider">
+          <div class="note note--unsigned">
+            <span class="proc proc--active"><span class="proc__led" aria-hidden="true"></span> active (running)</span>
+            &nbsp;+&nbsp;<span class="assert assert--unsigned">Unsigned</span>
+            &nbsp;— the collector is alive, reports no error, and has written nothing for nine hours.
+            Both facts are true. Collapsing them into one status is how this failure stays invisible.
+          </div>
+        </div>
+
+        <hr class="divider">
+
+        <div>
+          <h3 class="caps">4 · Operator suppression — a deferral</h3>
+          <p class="prose">Expected silence is deferred with an expiry and a named signer. A deferral
+          suppresses the report, never the attempts, and it is never re-badged as configuration.</p>
+          <div class="row">
+            <span class="defer">Deferred to 09 Aug · <b>operator</b></span>
+            <span class="defer">Deferred 6 more nights · <b>operator</b></span>
+          </div>
+        </div>
+
+        <hr class="divider">
+
+        <div>
+          <h3 class="caps">5 · Configuration — struck from the sheet</h3>
+          <p class="prose">Something not owned, or declared out of use. Struck, with a reason and a
+          date. Removed from the count and from the report; still visible, so the sheet stays honest.</p>
+          <div class="row">
+            <span class="assert assert--na"><span aria-hidden="true">—</span> Struck</span>
+            <span class="na-note">Struck 02 June 2026 — no BP cuff owned.</span>
+          </div>
+          <p class="prose"><b>The distinction that protects the third state.</b> A configured ring that
+          went unworn is a deferred unsigned item with an expiry. A device that does not exist is
+          struck. If every optional thing renders as an empty box, the empty box becomes wallpaper and
+          the sheet stops working.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="block">
+      <div class="block__hd"><h2>Type and space</h2></div>
+      <div class="cols-2">
+        <div class="t-scroll">
+          <table class="t">
+            <thead><tr><th scope="col">Token</th><th class="num" scope="col">px</th><th scope="col">Face</th><th scope="col">Use</th></tr></thead>
+            <tbody>
+              <tr><th scope="row" class="mono">--t-mega</th><td class="num">44</td><td>Helvetica 700</td><td>The sheet verdict. The largest thing on the screen, and it is a sentence.</td></tr>
+              <tr><th scope="row" class="mono">--t-xl</th><td class="num">26</td><td>Helvetica 700</td><td>Screen title</td></tr>
+              <tr><th scope="row" class="mono">--t-lg</th><td class="num">20</td><td>Helvetica 700</td><td>Block heading, run-sheet verdict</td></tr>
+              <tr><th scope="row" class="mono">--t-md</th><td class="num">18</td><td>Helvetica</td><td>Card heading</td></tr>
+              <tr><th scope="row" class="mono">--t-base</th><td class="num">16</td><td>Helvetica</td><td>Item titles and body prose. Floor for language.</td></tr>
+              <tr><th scope="row" class="mono">--t-data</th><td class="num">15</td><td>mono</td><td>Readings, table cells</td></tr>
+              <tr><th scope="row" class="mono">--t-label</th><td class="num">14</td><td>Helvetica 700 caps</td><td>Labels, signatures, chips. Absolute floor.</td></tr>
+              <tr><th scope="row">window mark glyph</th><td class="num">14</td><td>mono 700</td>
+                <td>The ✓ / ! / ✕ inside a run-sheet box, in a 20 px square. Also at the floor — nothing in
+                this system renders below 14 px — and every mark's meaning is restated in the legend and in
+                the attempt rows beneath, so the strip is never the only place a result appears.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="t-scroll">
+          <table class="t">
+            <thead><tr><th scope="col">Token</th><th class="num" scope="col">px</th><th scope="col">Use</th></tr></thead>
+            <tbody>
+              <tr><th scope="row" class="mono">--s-1 … --s-3</th><td class="num">4 / 8 / 12</td><td>Chip padding, table cells, item rows</td></tr>
+              <tr><th scope="row" class="mono">--s-4 / --s-5</th><td class="num">16 / 20</td><td>Card padding, field gaps</td></tr>
+              <tr><th scope="row" class="mono">--s-6 … --s-12</th><td class="num">28 / 36 / 48 / 64</td><td>Block separation, page gutters</td></tr>
+              <tr><th scope="row" class="mono">--stamp</th><td class="num">30</td><td>The signature box. Identical on every screen, at every size, so an empty one is recognisable without reading anything.</td></tr>
+              <tr><th scope="row" class="mono">--sign-col</th><td class="num">108</td><td>Signature column</td></tr>
+              <tr><th scope="row" class="mono">--r-0</th><td class="num">0</td><td>Every corner. A form is not a card.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="block__note"><p class="prose">No shadows and almost no boxes. Hierarchy is carried
+      by rules, weight and the fixed stamp column. All numerics use
+      <span class="mono">tabular-nums</span> so a value does not jitter as it refreshes.</p></div>
+    </section>
+
+    <section class="block">
+      <div class="block__hd"><h2>Item, in every state</h2></div>
+      <div>
+        <div class="item">
+          <span class="stamp stamp--signed" aria-hidden="true">✓</span>
+          <span class="item__what"><b>Default — signed</b><span>Signed by a named prober, with an age and its standard.</span></span>
+          <span class="item__read">41<span class="unit">s</span><small><span class="fresh" data-age-s="41" data-expect-s="120"><span class="fresh__age">41s ago</span><span class="fresh__expect">2m</span></span></small></span>
+          <span class="sig"><span class="sig__by">host-probe</span><span class="sig__at">09:55:44</span></span>
+        </div>
+        <div class="item">
+          <span class="stamp stamp--pending" aria-hidden="true">·</span>
+          <span class="item__what"><b>Loading</b><span><span class="skel">·······················</span></span></span>
+          <span class="item__read"><span class="skel">·····</span></span>
+          <span class="sig"><span class="skel">········</span></span>
+        </div>
+        <div class="item item--unsigned">
+          <span class="stamp stamp--unsigned" aria-hidden="true"></span>
+          <span class="item__what"><b>Empty — configured, never produced</b>
+            <span>The collector is running and the source has never returned a row. There is no last
+            known outcome, so there is nothing to inherit.</span></span>
+          <span class="item__read">0<span class="unit">rows ever</span></span>
+          <span class="sig sig--none"><b>Unsigned</b><span>never signed</span></span>
+        </div>
+        <div class="item item--unsigned">
+          <span class="stamp stamp--unsigned" aria-hidden="true"></span>
+          <span class="item__what"><b>Stale — signature expired</b>
+            <span class="lastknown">Last known: <b>signed at 00:52</b> — 118 samples, timestamp advanced.</span></span>
+          <span class="item__read">9h 04m<small><span class="fresh fresh--over" data-age-s="32640" data-expect-s="120"><span class="fresh__age">9h 4m ago</span><span class="fresh__expect">2m</span></span></small></span>
+          <span class="sig sig--none"><b>Unsigned</b><span>expired 00:56</span></span>
+        </div>
+        <div class="item item--na">
+          <span class="stamp stamp--na" aria-hidden="true">—</span>
+          <span class="item__what"><b>Struck — not configured</b>
+            <span class="na-note">Struck 02 Jun 2026 — device not owned. Out of the count and out of the report.</span></span>
+          <span class="item__read na-note">n/a</span>
+          <span class="sig"><span class="sig__by na">struck</span><span class="sig__at">operator, 02 Jun</span></span>
+        </div>
+        <div class="item">
+          <span class="stamp stamp--adv" aria-hidden="true">!</span>
+          <span class="item__what"><b>Advisory</b><span>Noted and signed. Act at leisure.</span></span>
+          <span class="item__read">4<span class="unit">% wear</span><small><span class="fresh" data-age-s="1980" data-expect-s="86400"><span class="fresh__age">33m ago</span><span class="fresh__expect">24h</span></span></small></span>
+          <span class="sig"><span class="sig__by">smartctl</span><span class="sig__at">09:23:11</span></span>
+        </div>
+        <div class="item item--open">
+          <span class="stamp stamp--open" aria-hidden="true">✕</span>
+          <span class="item__what"><b>Open finding</b>
+            <span>The record is being damaged now, or will be within a known horizon.</span>
+            <span class="lastknown lastknown--open">Projected full: <b>4d 8h</b>.</span></span>
+          <span class="item__read">14,208<span class="unit">rows</span><small>oldest 26m · expect ≤ 5m</small></span>
+          <span class="sig sig--open"><b>Open</b><span>raised 06:36</span></span>
+        </div>
+        <div class="item">
+          <span class="stamp stamp--pending" aria-hidden="true">⊘</span>
+          <span class="item__what"><b>Deferred</b>
+            <span>A benign unsigned item, suppressed with an expiry. Attempts continue underneath.</span></span>
+          <span class="item__read">2d 1h<small>0 rows returned</small></span>
+          <span class="sig"><span class="defer">to 09 Aug</span><span class="sig__at">operator, 03 Aug</span></span>
+        </div>
+      </div>
+    </section>
+
+    <section class="block">
+      <div class="block__hd"><h2>Buttons and destructive controls</h2></div>
+      <div class="stack--tight">
+        <div class="row">
+          <button class="btn btn--primary" type="button">Sign off</button>
+          <button class="btn" type="button">Re-check now</button>
+          <button class="btn btn--sm" type="button">Small</button>
+          <button class="btn" type="button" disabled>Disabled</button>
+        </div>
+        <hr class="divider">
+        <p class="prose">Destructive controls are hatched, rose-bordered, and separated from safe
+        controls by a dashed gap. They are never adjacent to a routine action and never one click from
+        completion.</p>
+        <div class="actions-split">
+          <button class="btn" type="button">Reload unit</button>
+          <button class="btn" type="button">Rotate logs</button>
+          <span class="actions-split__gap" aria-hidden="true"></span>
+          <button class="btn btn--danger" type="button" data-action="open" data-target="m-restart">Restart daemon…</button>
+        </div>
+        <hr class="divider">
+        <div class="danger-zone">
+          <div class="danger-zone__hd"><b>Destructive</b>
+            <p class="prose">Restoring into the live cluster overwrites the system of record.
+            Confirmation requires typing the cluster name.</p></div>
+          <button class="btn btn--danger" type="button">Restore into live cluster…</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="block">
+      <div class="block__hd"><h2>Form controls</h2></div>
+      <form class="form" data-dirty-track onsubmit="return false">
+        <div class="form__row"><label for="f1" class="req">Source ID</label>
+          <div><input class="input" id="f1" name="f1" value="polar-h10-chest">
+            <span class="hint">Immutable once samples exist. Used as the join key in exports.</span></div></div>
+        <div class="form__row"><label for="f2" class="req">Expected cadence</label>
+          <div><input class="input" id="f2" name="f2" value="90" aria-invalid="true" aria-describedby="f2e">
+            <span id="f2e" class="err">Below the 120 s minimum for a BLE source. A cadence tighter than the radio can deliver turns a healthy source into a permanently unsigned item.</span></div></div>
+        <div class="form__row"><label for="f3">Grace multiplier</label>
+          <div><select class="select" id="f3" name="f3"><option>1.5 × cadence</option>
+            <option selected>2.0 × cadence</option><option>3.0 × cadence</option></select>
+            <span class="hint">How far past the cadence a signature survives before it expires.</span></div></div>
+        <div class="form__row"><label for="f4">Notes</label>
+          <div><textarea class="textarea" id="f4" name="f4" placeholder="Free text. Appears in the export header."></textarea></div></div>
+        <div class="form__row"><span class="form__legend">Flags</span>
+          <div class="stack--tight">
+            <div class="check"><input type="checkbox" id="f5" name="f5" checked>
+              <label for="f5">Count this item on the sheet</label></div>
+            <div class="check"><input type="checkbox" id="f6" name="f6">
+              <label for="f6">Strike this item — not applicable to this installation</label></div>
+          </div></div>
+        <div class="savebar" data-dirty="false">
+          <span class="savebar__state">No changes since last save.</span>
+          <button class="btn" type="reset" data-needs-dirty disabled>Discard</button>
+          <button class="btn btn--primary" type="submit" data-needs-dirty disabled>Save changes</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="block">
+      <div class="block__hd"><h2>Confirmations, proportionate to consequence</h2></div>
+      <div class="stack--tight">
+        <p class="prose">Three weights. Reversible actions confirm inline. A recoverable cost gets a
+        plain dialog. Anything unrecoverable lists what will be lost and requires the object's name to
+        be typed.</p>
+        <div class="row">
+          <button class="btn" type="button" data-action="open" data-target="m-plain">Level 2 · plain dialog</button>
+          <span class="actions-split__gap" aria-hidden="true"></span>
+          <button class="btn btn--danger" type="button" data-action="open" data-target="m-typed">Level 3 · typed confirmation</button>
+        </div>
+      </div>
+    </section>
+  </div>
+
+<div class="scrim" id="m-plain" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="mp-h">
+    <div class="modal__hd"><h2 id="mp-h">Delete therapy session?</h2></div>
+    <div class="modal__body">
+      <p class="prose">Thursday 14:00 with R. Alvarez, weekly. Removed from the schedule. Past journal
+      entries that reference it are unaffected.</p>
+      <p class="prose muted-text">Recoverable from the audit log for 30 days.</p>
+    </div>
+    <div class="modal__ft"><button class="btn" type="button" data-action="close">Cancel</button>
+      <span class="grow"></span>
+      <button class="btn" type="button" data-action="close">Delete session</button></div>
+  </div>
+</div>
+
+<div class="scrim" id="m-typed" hidden data-no-escape>
+  <div class="modal modal--danger" role="alertdialog" aria-modal="true" aria-labelledby="mt-h">
+    <div class="modal__hd"><span aria-hidden="true">✕</span><h2 id="mt-h">Revoke API key “home-assistant”?</h2></div>
+    <form class="modal__body" data-confirm-phrase="home-assistant" onsubmit="return false">
+      <p class="prose">Immediate and permanent. A replacement can be issued; this key cannot be restored.</p>
+      <ul class="consequences">
+        <li>Any client presenting this key receives 401 at once.</li>
+        <li>The Home Assistant bridge stops writing heart-rate samples until it is re-keyed.</li>
+        <li>Samples arriving during the gap are not buffered. They are lost.</li>
+      </ul>
+      <div><label class="caps" for="mt-i">Type <span class="mono">home-assistant</span> to confirm</label>
+        <input class="input" id="mt-i" data-confirm-input autocomplete="off" placeholder="key name"></div>
+      <div class="modal__ft"><button class="btn" type="button" data-action="close">Cancel</button>
+        <span class="grow"></span>
+        <button class="btn btn--danger" type="submit" data-confirm-go disabled>Revoke permanently</button></div>
+    </form>
+  </div>
+</div>
+
+<div class="scrim" id="m-restart" hidden>
+  <div class="modal modal--danger" role="alertdialog" aria-modal="true" aria-labelledby="mrst-h">
+    <div class="modal__hd"><span aria-hidden="true">✕</span><h2 id="mrst-h">Restart aw2-collector-chest?</h2></div>
+    <div class="modal__body">
+      <p class="prose">The chest strap must re-pair after the restart. Pairing typically takes 40–90
+      seconds and has failed on 3 of the last 20 attempts.</p>
+      <ul class="consequences">
+        <li>Estimated sample gap 1–2 minutes, longer if pairing fails.</li>
+        <li>Tonight's HRV baseline is computed from a full night. A gap invalidates it.</li>
+      </ul>
+    </div>
+    <div class="modal__ft"><button class="btn" type="button" data-action="close">Cancel</button>
+      <span class="grow"></span>
+      <button class="btn btn--danger" type="button" data-action="close">Restart unit</button></div>
+  </div>
+</div>
+
+  <hr class="divider">
+  <p class="caps">AnxietyWatch2 · bedside-pi5 · build 2.4.11+g8c1f · console clock <span data-clock class="mono">09:56:04Z</span> · feed age <span data-feed-age class="mono">2s</span> · <a href="index.html">Direction B contents</a></p>
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>

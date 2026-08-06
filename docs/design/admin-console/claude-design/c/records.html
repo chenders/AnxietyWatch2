@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Records — AW2 Flowpath</title>
+<link rel="stylesheet" href="console.css">
+</head>
+<body data-feed="live">
+<a class="skip-link" href="#main">Skip to content</a>
+
+<div class="app">
+  <div class="stickytop">
+  <div class="docstale" role="status">
+    <span class="st st--severed">Console feed severed</span>
+    <b>This page has not heard from the appliance for <span data-feed-age>—</span>.</b>
+    <span class="muted-text">The graph below is the last shape the machine had. Edge states are unchanged; it is the link between you and the box that is cut.</span>
+    <button class="btn btn--sm" type="button" data-action="refresh">Reconnect <span class="btn__key">r</span></button>
+  </div>
+
+  <header class="cmdbar">
+    <span class="cmdbar__id"><b>AW2 FLOWPATH</b> · bedside-pi5 · 2.4.11+g8c1f</span>
+    <label class="sr-only" for="q">Filter nodes and sources</label>
+    <input class="input cmdbar__search" id="q" data-filter placeholder="Filter nodes, sources, units…   /">
+    <span class="cmdbar__id" data-clock>09:56:04Z</span>
+    <span class="cmdbar__id">feed <span data-feed-age>2s</span></span>
+    <span class="cmdbar__hint"><span class="kbd">j</span><span class="kbd">k</span> walk the path <span class="kbd">/</span> filter <span class="kbd">1</span>–<span class="kbd">9</span> screens <span class="kbd">?</span> keys</span>
+  </header>
+
+<nav class="tabs" aria-label="Screens">
+  <a class="tabs__item" href="overview.html" data-tabkey="1"><span class="tabs__key">1</span> Overview</a>
+  <a class="tabs__item" href="display.html" data-tabkey="2"><span class="tabs__key">2</span> Flow · display</a>
+  <a class="tabs__item" href="ingest.html" data-tabkey="3"><span class="tabs__key">3</span> Flow · ingest</a>
+  <a class="tabs__item" href="services.html" data-tabkey="4"><span class="tabs__key">4</span> Services</a>
+  <a class="tabs__item" href="config.html" data-tabkey="5"><span class="tabs__key">5</span> Access</a>
+  <a class="tabs__item" href="data.html" data-tabkey="6"><span class="tabs__key">6</span> Data</a>
+  <a class="tabs__item" href="analysis.html" data-tabkey="7"><span class="tabs__key">7</span> Analysis</a>
+  <a class="tabs__item" href="records.html" data-tabkey="8" aria-current="page"><span class="tabs__key">8</span> Records</a>
+  <a class="tabs__item" href="recovery.html" data-tabkey="9"><span class="tabs__key">9</span> Recovery</a>
+  <a class="tabs__item" href="system.html">System</a>
+  <a class="tabs__item" href="patterns.html">Patterns</a>
+  <a class="tabs__item" href="attempts.html">Timeline</a>
+  <a class="tabs__item" href="overview-degraded.html">Degraded</a>
+  <a class="tabs__item" href="firstrun.html">First run</a>
+</nav>
+  </div>
+
+  <main class="main" id="main">
+    <div class="pagehd">
+      <div>
+        <h1>Records</h1>
+        <p>Journal, medication, prescriptions and schedule. CRUD with AI assist.</p>
+      </div>
+      <div class="pagehd__act">
+        <button class="btn btn--sm" type="button" data-action="refresh">Refresh <span class="btn__key">r</span></button>
+      </div>
+    </div>
+
+    <div class="stack">
+      <section class="pane">
+        <div class="pane__hd"><h2>Record types</h2>
+          <span class="caps">Freshness applies here too — a table nobody has written to is a hole in the report</span></div>
+        <div class="pane__body--flush t-scroll">
+          <table class="t t--rowstate">
+            <thead><tr><th scope="col">Type</th><th class="num" scope="col">Rows</th><th scope="col">Last written</th>
+              <th scope="col">Expected</th><th scope="col">Inbound edge</th><th scope="col"><span class="sr-only">Open</span></th></tr></thead>
+            <tbody>
+              <tr><th scope="row">Journal entries</th><td class="num">1,204</td>
+                <td><span class="fresh" data-age-s="7200" data-expect-s="86400"><span class="fresh__age">2h ago</span><span class="fresh__expect">24h</span></span></td>
+                <td>Daily</td><td><span class="st st--flowing"><span class="pip pip--flowing" aria-hidden="true"></span> Flowing</span></td>
+                <td><button class="btn btn--sm" type="button">Open</button></td></tr>
+              <tr><th scope="row">Medication doses</th><td class="num">3,880</td>
+                <td><span class="fresh" data-age-s="12600" data-expect-s="43200"><span class="fresh__age">3h 30m ago</span><span class="fresh__expect">12h</span></span></td>
+                <td>Twice daily</td><td><span class="st st--flowing"><span class="pip pip--flowing" aria-hidden="true"></span> Flowing</span></td>
+                <td><button class="btn btn--sm" type="button">Open</button></td></tr>
+              <tr data-state="severed"><th scope="row">Dose efficacy follow-up</th><td class="num">602</td>
+                <td><span class="fresh fresh--over" data-age-s="561600" data-expect-s="86400"><span class="fresh__age">6d 12h ago</span><span class="fresh__expect">24h</span></span></td>
+                <td>Per dose</td><td><span class="st st--severed"><span class="pip pip--severed" aria-hidden="true"></span> Severed</span></td>
+                <td><button class="btn btn--sm" type="button">Open</button></td></tr>
+              <tr><th scope="row">Prescriptions</th><td class="num">14</td>
+                <td><span class="fresh" data-age-s="1900800" data-expect-s="7776000"><span class="fresh__age">22d ago</span><span class="fresh__expect">90d</span></span></td>
+                <td>On change</td><td><span class="st st--flowing"><span class="pip pip--flowing" aria-hidden="true"></span> Flowing</span></td>
+                <td><button class="btn btn--sm" type="button">Open</button></td></tr>
+              <tr><th scope="row">Pharmacies</th><td class="num">3</td>
+                <td><span class="fresh" data-age-s="8467200"><span class="fresh__age">98d ago</span></span></td>
+                <td>On change</td><td><span class="st st--flowing"><span class="pip pip--flowing" aria-hidden="true"></span> Flowing</span></td>
+                <td><button class="btn btn--sm" type="button">Open</button></td></tr>
+              <tr><th scope="row">Therapy schedule</th><td class="num">1</td>
+                <td><span class="fresh" data-age-s="604800"><span class="fresh__age">7d ago</span></span></td>
+                <td>Weekly</td><td><span class="st st--flowing"><span class="pip pip--flowing" aria-hidden="true"></span> Flowing</span></td>
+                <td><button class="btn btn--sm" type="button">Open</button></td></tr>
+              <tr><th scope="row">Profiles</th><td class="num">1</td>
+                <td><span class="fresh" data-age-s="1036800"><span class="fresh__age">12d ago</span></span></td>
+                <td>Rarely</td><td><span class="st st--flowing"><span class="pip pip--flowing" aria-hidden="true"></span> Flowing</span></td>
+                <td><button class="btn btn--sm" type="button">Open</button></td></tr>
+              <tr><th scope="row">Songs</th><td class="num">88</td>
+                <td><span class="fresh" data-age-s="259200"><span class="fresh__age">3d ago</span></span></td>
+                <td>Ad hoc</td><td><span class="st st--flowing"><span class="pip pip--flowing" aria-hidden="true"></span> Flowing</span></td>
+                <td><button class="btn btn--sm" type="button">Open</button></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="pane__ft"><p class="prose">Dose efficacy follow-up has gone unanswered for six days.
+        Nothing technical failed — the prompt simply stopped being answered — but the dose-timing correlation
+        draws from this table, so the edge is cut rather than shown as an empty column.</p></div>
+      </section>
+
+      <div class="cols-2">
+        <section class="pane">
+          <div class="pane__hd"><h2>Edit prescription</h2><span class="caps">sertraline 100 mg</span></div>
+          <div class="pane__body">
+            <form class="form" data-dirty-track onsubmit="return false">
+              <div class="form__row"><label for="r1" class="req">Drug</label>
+                <div><input class="input" id="r1" name="r1" value="Sertraline"></div></div>
+              <div class="form__row"><label for="r2" class="req">Dose</label>
+                <div><input class="input" id="r2" name="r2" value="100 mg"></div></div>
+              <div class="form__row"><label for="r3" class="req">Schedule</label>
+                <div><select class="select" id="r3" name="r3"><option selected>Once daily, morning</option>
+                  <option>Once daily, evening</option><option>Twice daily</option><option>As needed</option></select></div></div>
+              <div class="form__row"><label for="r4">Prescriber</label>
+                <div><input class="input" id="r4" name="r4" value="Dr M. Okafor"></div></div>
+              <div class="form__row"><label for="r5">Started</label>
+                <div><input class="input" id="r5" name="r5" type="date" value="2025-11-04"></div></div>
+              <div class="form__row"><label for="r6">Notes</label>
+                <div><textarea class="textarea" id="r6" name="r6">Titrated up from 50 mg on 2026-01-12.</textarea>
+                  <div class="row"><button class="btn btn--sm" type="button">Draft a summary with AI</button>
+                    <span class="hint">Generated text is reviewed before it is saved.</span></div></div></div>
+              <div class="savebar" data-dirty="false">
+                <span class="savebar__state">No changes since last save.</span>
+                <button class="btn btn--ghost" type="reset" data-needs-dirty disabled>Discard</button>
+                <button class="btn btn--primary" type="submit" data-needs-dirty disabled>Save prescription</button>
+              </div>
+            </form>
+          </div>
+          <div class="pane__ft"><div class="danger-zone">
+            <div class="danger-zone__hd"><b>Destructive</b>
+              <p class="prose">Deleting a prescription removes it from every past report. Dose records that
+              reference it are kept but become unattributed.</p></div>
+            <button class="btn btn--danger" type="button" data-action="open" data-target="m-del">Delete prescription…</button>
+          </div></div>
+        </section>
+
+        <div class="stack">
+          <section class="pane">
+            <div class="pane__hd"><h2>Recent journal entries</h2>
+              <span class="caps">The anchor everything else is context for</span></div>
+            <div class="pane__body--flush">
+              <div class="attempt-row"><span class="attempt-row__t">05 Aug 07:52</span>
+                <span class="attempt-row__dur">sev 5</span><span class="attempt-row__rows">2m</span>
+                <span class="attempt-row__why">Woke tense, settled after coffee and a walk.</span></div>
+              <div class="attempt-row"><span class="attempt-row__t">04 Aug 22:40</span>
+                <span class="attempt-row__dur">sev 3</span><span class="attempt-row__rows">4m</span>
+                <span class="attempt-row__why">Quiet evening. No notable triggers.</span></div>
+              <div class="attempt-row attempt-row--gap"><span class="attempt-row__t">04 Aug morning</span>
+                <span class="attempt-row__why">No entry. The anchor for that day is missing.</span></div>
+            </div>
+            <div class="pane__ft"><span class="grow"></span><button class="btn btn--sm btn--primary" type="button">New entry</button></div>
+          </section>
+          <section class="pane">
+            <div class="pane__hd"><h2>Therapy schedule</h2></div>
+            <div class="pane__body"><div class="fields">
+              <span class="field__k">Weekly</span><span class="field__v">Thursday 14:00 · R. Alvarez</span>
+              <span class="field__k">Next</span><span class="field__v mono">06 Aug 14:00</span>
+              <span class="field__k">Attended</span><span class="field__v mono">31 of 33</span>
+            </div></div>
+            <div class="pane__ft"><div class="actions-split">
+              <button class="btn btn--sm" type="button">Edit</button>
+              <span class="actions-split__gap" aria-hidden="true"></span>
+              <button class="btn btn--sm btn--danger" type="button" data-action="open" data-target="m-sess">Delete session…</button>
+            </div></div>
+          </section>
+        </div>
+      </div>
+    </div>
+
+<div class="scrim" id="m-sess" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="msx-h">
+    <div class="modal__hd"><h2 id="msx-h">Delete therapy session?</h2></div>
+    <div class="modal__body">
+      <p class="prose">Thursday 14:00 with R. Alvarez, weekly. Removed from the schedule. Past journal
+      entries that reference it are unaffected.</p>
+      <p class="prose muted-text">Recoverable from the audit log for 30 days.</p></div>
+    <div class="modal__ft"><button class="btn btn--ghost" type="button" data-action="close">Cancel</button>
+      <span class="grow"></span><button class="btn" type="button" data-action="close">Delete session</button></div>
+  </div>
+</div>
+
+<div class="scrim" id="m-del" hidden data-no-escape>
+  <div class="modal modal--danger" role="alertdialog" aria-modal="true" aria-labelledby="mdx-h">
+    <div class="modal__hd"><span aria-hidden="true">✕</span><h2 id="mdx-h">Delete prescription “Sertraline 100 mg”?</h2></div>
+    <form class="modal__body" data-confirm-phrase="Sertraline" onsubmit="return false">
+      <p class="prose">Active for 274 days and referenced by 548 dose records.</p>
+      <ul class="consequences">
+        <li>548 dose records become unattributed. They are not deleted.</li>
+        <li>Every past report that named this prescription will no longer resolve it.</li>
+        <li>The dose-timing correlation is recomputed without it.</li>
+      </ul>
+      <div><label class="caps" for="mdx-i">Type <span class="mono">Sertraline</span> to confirm</label>
+        <input class="input" id="mdx-i" data-confirm-input autocomplete="off" placeholder="drug name"></div>
+      <div class="modal__ft"><button class="btn btn--ghost" type="button" data-action="close">Cancel</button>
+        <span class="grow"></span>
+        <button class="btn btn--danger" type="submit" data-confirm-go disabled>Delete permanently</button></div>
+    </form>
+  </div>
+</div>
+  </main>
+</div>
+
+<div class="scrim" id="keymap" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="km-h">
+    <div class="modal__hd"><h2 id="km-h">Keyboard</h2></div>
+    <div class="modal__body">
+      <div class="fields fields--wide">
+        <span class="field__k"><span class="kbd">j</span> <span class="kbd">k</span></span><span class="field__v">Walk the flow path, upstream and downstream</span>
+        <span class="field__k"><span class="kbd">↑</span> <span class="kbd">↓</span></span><span class="field__v">Same as j and k</span>
+        <span class="field__k"><span class="kbd">/</span></span><span class="field__v">Focus the node filter</span>
+        <span class="field__k"><span class="kbd">1</span>–<span class="kbd">9</span></span><span class="field__v">Jump to a screen</span>
+        <span class="field__k"><span class="kbd">r</span></span><span class="field__v">Refresh the feed</span>
+        <span class="field__k"><span class="kbd">?</span></span><span class="field__v">Show or hide this map</span>
+        <span class="field__k"><span class="kbd">esc</span></span><span class="field__v">Leave a field, or close a dialog</span>
+      </div>
+      <p class="prose muted-text">Every one of these is also reachable by tab and click. The keys are an accelerator, never the only route.</p>
+    </div>
+    <div class="modal__ft"><span class="grow"></span><button class="btn" type="button" data-action="close">Close</button></div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
