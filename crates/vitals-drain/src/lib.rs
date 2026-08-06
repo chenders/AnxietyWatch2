@@ -492,4 +492,91 @@ mod tests {
             open_segment(spool.segment_path()).expect_err("active segment must remain locked");
         assert!(error.to_string().contains("segment lock held"));
     }
+
+    fn published_segment(dir: &Path) -> PathBuf {
+        let mut spool = Spool::open(dir).expect("spool");
+        let sample = Sample {
+            source: 1,
+            r#type: 1,
+            session_id: 1,
+            seq: 1,
+            timestamp: UNIX_EPOCH,
+            value: 1.0,
+            extra: None,
+            batch_id: None,
+        };
+        spool
+            .append(&[sample], &NodeId::from_bytes([1; 16]), true)
+            .expect("append");
+        let path = spool.segment_path().to_path_buf();
+        drop(spool);
+        path
+    }
+
+    #[test]
+    fn rejects_bad_magic_version_and_truncation() {
+        let d = tempfile::tempdir().expect("tempdir");
+        let path = published_segment(d.path());
+        let original = fs::read(&path).expect("read");
+
+        let mut bad = original.clone();
+        *bad.first_mut().expect("magic byte") ^= 1;
+        fs::write(&path, &bad).expect("bad magic");
+        assert!(
+            open_segment(&path)
+                .expect_err("magic")
+                .to_string()
+                .contains("magic")
+        );
+
+        let mut bad = original.clone();
+        bad.get_mut(8..10)
+            .expect("version bytes")
+            .copy_from_slice(&99_u16.to_be_bytes());
+        fs::write(&path, &bad).expect("bad version");
+        assert!(
+            open_segment(&path)
+                .expect_err("version")
+                .to_string()
+                .contains("version")
+        );
+
+        fs::write(&path, original.get(..10).expect("truncated prefix")).expect("truncate");
+        assert!(
+            open_segment(&path)
+                .expect_err("truncated")
+                .to_string()
+                .contains("I/O")
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_and_out_of_range_offsets() {
+        let d = tempfile::tempdir().expect("tempdir");
+        let path = published_segment(d.path());
+        let offset = path.with_extension("offset");
+        fs::write(&offset, "not-a-number\n").expect("invalid offset");
+        assert!(
+            open_segment(&path)
+                .expect_err("invalid")
+                .to_string()
+                .contains("invalid offset")
+        );
+        fs::write(&offset, "0\n").expect("small offset");
+        assert!(
+            open_segment(&path)
+                .expect_err("range")
+                .to_string()
+                .contains("outside")
+        );
+    }
+
+    #[test]
+    fn undrained_segment_is_never_removed() {
+        let d = tempfile::tempdir().expect("tempdir");
+        let path = published_segment(d.path());
+        let segment = open_segment(&path).expect("open");
+        assert!(!segment.remove_if_drained().expect("refuse removal"));
+        assert!(path.exists());
+    }
 }
