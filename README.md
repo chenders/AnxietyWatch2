@@ -20,20 +20,20 @@ The most transferable materials are the [accepted architecture amendments](docs/
 
 ## Status: what is real, and what is still a design
 
-**Under active development. Twelve of the fifteen Stage 0–3 tasks are complete.** The next software task is `bp-collector`. Follow the [task index](openspec/changes/pi5-vitals-core/tasks.md) for acceptance evidence and the [amendment index](docs/specs/AMENDMENTS.md) for current decisions.
+**Under active development. Eleven of the fifteen Stage 0–3 tasks are complete.** The next software task is `vitals-spool-drain` (T-D5). Follow the [task index](openspec/changes/pi5-vitals-core/tasks.md) for acceptance evidence and the [amendment index](docs/specs/AMENDMENTS.md) for current decisions.
 
 ### Built and tested
 - Generated, strongly typed registries for eight vital types and five sources.
 - Pure `no_std` decoders for IEEE-11073 SFLOAT, BLE heart-rate/RR, and EMAY SleepO2, with rigorous fuzz targets.
 - PostgreSQL binary `COPY` encoding, an append-only spool with schema fingerprints, and restart-safe session identity.
 - `vitalsd`, its Unix-socket CBOR protocol, health surface, and single-writer ingest path.
-- `vitals-spool-drain`: single-drainer locking, private transactional `COPY` staging, live-schema fingerprint verification, disk-watermark degradation, and drain-liveness reporting.
 - Sqitch schema definitions and encrypted pgBackRest backups with scheduled restore verification.
 
 ### Present, but pending deployment reconciliation
 - The TimescaleDB hypertable, compression, one-minute aggregates, and raw-data retention are defined in migrations, but this chain is **not claimed as verified-deployed** while primary-key reconciliation remains open.
 
 ### Designed, not built
+- `vitals-spool-drain` (T-D5): single-drainer locking, transactional `COPY` staging, live-schema fingerprint verification, disk-watermark degradation, and drain-liveness reporting. Blocked by G3.
 - `bp-collector` and the production collector fleet.
 - `cns-engine`: quality gate, personal baseline, fusion, and hysteretic tier machine.
 - `klaxond`: supervised alarm channels and the hardware dead-man switch.
