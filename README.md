@@ -60,7 +60,7 @@ The repository distrusts plausible success. As an example, the EMAY SleepO2 chec
 
 A decoder using `0xFF` accepts the reference frame and the 27-frame awake capture. It then silently rejects every frame in the illustrated sleeping region as the wearer's pulse falls into the 40s. The correct mask came from decompiling the vendor app; no awake capture could have proved it. 
 
-This is why this project demands receipts. Its CI mutation-tests gates that once reported green without compiling Rust. Every radio decoder gets a [fuzz target](crates/vitals-decode/src/emay.rs). A backup is not trusted merely because it was written: the project schedules a restore into a scratch cluster and checks the result.
+This is why this project demands receipts. Its CI mutation-tests gates that once reported green without compiling Rust. Every radio decoder gets a [fuzz target](fuzz/fuzz_targets/fuzz_emay.rs). A backup is not trusted merely because it was written: the project schedules a restore into a scratch cluster and checks the result.
 
 ## The Signal Path
 
