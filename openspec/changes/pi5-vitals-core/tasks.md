@@ -1142,6 +1142,20 @@ reading in the store.
 <!-- Conductor: record scope deltas, measured results, and decisions here as they happen.
      T-B1's gap histogram goes here verbatim — it is the project's foundational measurement. -->
 
+### T-D3 follow-up — stable spool writer lock · 2026-08-06
+
+CI run 31066450014 exposed that the writer lock was scoped to a wall-clock-selected segment, not to
+its spool directory. The lock itself worked: the failure crossed a one-second naming boundary, so
+the second `Spool::open` selected and locked a different file. Production now additionally locks a
+stable `.writer.lock` for the lifetime of `Spool`; rotation retains that lock without reacquiring it.
+Segments remain individually locked. Each is initialized and synced under a non-discoverable
+`*.tmp` name, atomically published with a no-replace rename, and followed by a directory fsync;
+collisions use a fixed-width sequence before the final `.spool` extension rather than reopening an
+undrained segment, so lexical discovery order remains creation order. Deterministic tests cover
+cross-name concurrent opens, same-name restart/rotation, collisions through 11 with the active final
+segment sorting last, extension-based discovery, and a separate-process lock contender. T-D3 remains ticked from its original acceptance;
+no Group C status changed.
+
 ### T-A3 — Sena UD100-G03 · PASSED 2026-08-03
 
 Verify exited 0: two controllers present, `hci1` UP RUNNING. **Gate G1 is open.**

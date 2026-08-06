@@ -113,6 +113,10 @@ pub fn samples_fingerprint() -> SchemaFingerprint {
 #[derive(Debug)]
 pub struct Spool {
     dir: PathBuf,
+    // The writer lock belongs to the directory, not the current segment. A
+    // segment changes on rotation (and its name is time-derived), but the
+    // single-writer invariant must not have either of those scopes.
+    writer_lock: File,
     file: File,
     path: PathBuf,
     bytes: u64,
@@ -125,10 +129,10 @@ pub struct Spool {
 impl Spool {
     /// Opens `dir`, creating it and a fresh segment if needed.
     ///
-    /// Takes an exclusive advisory lock on the segment. A second writer fails
-    /// here rather than interleaving partial rows into the same file, where the
-    /// damage would be undetectable — binary `COPY` has no record boundaries a
-    /// reader can resynchronise on.
+    /// Takes an exclusive advisory lock on the spool directory and on the new
+    /// segment. A second writer fails even if it selects a differently named
+    /// segment; otherwise both writers could publish independent, concurrent
+    /// streams and violate the single-writer ingest invariant.
     ///
     /// # Errors
     /// I/O failure, or the lock already being held by another process.
@@ -142,20 +146,26 @@ impl Spool {
     /// # Errors
     /// I/O failure, or the lock already being held.
     pub fn open_with(dir: &Path, fingerprint: SchemaFingerprint) -> io::Result<Self> {
+        Self::open_with_segment_name(dir, fingerprint, &Self::segment_name())
+    }
+
+    fn open_with_segment_name(
+        dir: &Path,
+        fingerprint: SchemaFingerprint,
+        segment_name: &str,
+    ) -> io::Result<Self> {
         fs::create_dir_all(dir)?;
-        let path = dir.join(Self::segment_name());
-        let mut file = OpenOptions::new()
+        let lock_path = dir.join(".writer.lock");
+        let writer_lock = OpenOptions::new()
             .create(true)
-            .append(true)
-            .read(true)
-            .open(&path)?;
-        // `try_lock_exclusive` returns io::Result<bool>: Ok(false) means the
-        // lock was NOT acquired. An earlier version only handled Err, so
-        // Ok(false) passed and the spool ran unlocked — a guard against
-        // undetectable interleaved writes that silently did not guard. Caught
-        // by `a_second_writer_is_refused`, which is why that test exists.
-        let locked = file.try_lock_exclusive().map_err(|e| {
-            io::Error::other(format!("{}: locking the spool failed: {e}", path.display()))
+            .truncate(false)
+            .write(true)
+            .open(&lock_path)?;
+        let locked = writer_lock.try_lock_exclusive().map_err(|e| {
+            io::Error::other(format!(
+                "{}: locking the spool directory failed: {e}",
+                lock_path.display()
+            ))
         })?;
         if !locked {
             return Err(io::Error::new(
@@ -163,23 +173,16 @@ impl Spool {
                 format!(
                     "{}: another writer holds the spool lock — two writers would \
                      interleave partial rows with no way to resynchronise",
-                    path.display()
+                    lock_path.display()
                 ),
             ));
         }
 
-        let mut bytes = file.metadata()?.len();
-        if bytes == 0 {
-            let header = Self::segment_header(fingerprint);
-            file.write_all(&header)?;
-            file.write_all(&copybin::copy_header())?;
-            file.sync_all()?;
-            bytes = header.len() as u64 + 19;
-        }
-
+        let (file, path, bytes) = Self::create_segment(dir, segment_name, fingerprint)?;
         let now = Instant::now();
         Ok(Self {
             dir: dir.to_path_buf(),
+            writer_lock,
             file,
             path,
             bytes,
@@ -188,6 +191,136 @@ impl Spool {
             dirty: false,
             fingerprint,
         })
+    }
+
+    fn create_segment(
+        dir: &Path,
+        segment_name: &str,
+        fingerprint: SchemaFingerprint,
+    ) -> io::Result<(File, PathBuf, u64)> {
+        // Initialise under an excluded suffix. A drainer that discovers only
+        // `*.spool` can therefore never observe an empty or partial header.
+        let mut staging_collision = 0_u64;
+        let (mut file, staging_path) = loop {
+            let staging_path = dir.join(format!(".{segment_name}.init-{staging_collision}.tmp"));
+            match OpenOptions::new()
+                .create_new(true)
+                .append(true)
+                .read(true)
+                .open(&staging_path)
+            {
+                Ok(file) => break (file, staging_path),
+                Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
+                    staging_collision = Self::next_collision(staging_collision, dir)?;
+                }
+                Err(e) => return Err(e),
+            }
+        };
+
+        let initialized = (|| {
+            let locked = file.try_lock_exclusive().map_err(|e| {
+                io::Error::other(format!(
+                    "{}: locking the staged segment failed: {e}",
+                    staging_path.display()
+                ))
+            })?;
+            if !locked {
+                return Err(io::Error::new(
+                    io::ErrorKind::WouldBlock,
+                    format!(
+                        "{}: the staged spool segment could not be locked",
+                        staging_path.display()
+                    ),
+                ));
+            }
+            let header = Self::segment_header(fingerprint);
+            file.write_all(&header)?;
+            file.write_all(&copybin::copy_header())?;
+            file.sync_all()?;
+            Ok(header.len() as u64 + 19)
+        })();
+        let bytes = match initialized {
+            Ok(bytes) => bytes,
+            Err(e) => return Err(Self::remove_staging_after_error(&staging_path, e)),
+        };
+
+        // NOREPLACE is an atomic publication and collision check: unlike
+        // ordinary rename, it cannot overwrite an undrained segment that
+        // appeared at the target. Renaming also removes the staging entry in
+        // the same metadata operation.
+        let mut collision = 0_u64;
+        let path = loop {
+            let path = dir.join(Self::collision_name(segment_name, collision));
+            match rustix::fs::renameat_with(
+                rustix::fs::CWD,
+                &staging_path,
+                rustix::fs::CWD,
+                &path,
+                rustix::fs::RenameFlags::NOREPLACE,
+            ) {
+                Ok(()) => break path,
+                Err(e) if e == rustix::io::Errno::EXIST => {
+                    collision = match Self::next_collision(collision, dir) {
+                        Ok(next) => next,
+                        Err(exhausted) => {
+                            return Err(Self::remove_staging_after_error(&staging_path, exhausted));
+                        }
+                    };
+                }
+                Err(e) => {
+                    return Err(Self::remove_staging_after_error(
+                        &staging_path,
+                        io::Error::from_raw_os_error(e.raw_os_error()),
+                    ));
+                }
+            }
+        };
+
+        // Persist both the final directory entry and removal of the staging
+        // entry before reporting a usable segment. The inode was synced first.
+        File::open(dir)
+            .and_then(|directory| directory.sync_all())
+            .map_err(|e| {
+                io::Error::new(
+                    e.kind(),
+                    format!(
+                        "{}: syncing published segment directory failed: {e}",
+                        path.display()
+                    ),
+                )
+            })?;
+        Ok((file, path, bytes))
+    }
+
+    fn collision_name(segment_name: &str, collision: u64) -> String {
+        // Every name, including the first, carries the same-width sequence so
+        // lexical discovery order is creation order after collisions exceed 9.
+        match segment_name.strip_suffix(".spool") {
+            Some(stem) => format!("{stem}-{collision:020}.spool"),
+            None => format!("{segment_name}-{collision:020}"),
+        }
+    }
+
+    fn next_collision(collision: u64, dir: &Path) -> io::Result<u64> {
+        collision.checked_add(1).ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::AlreadyExists,
+                format!("{}: exhausted unique segment names", dir.display()),
+            )
+        })
+    }
+
+    fn remove_staging_after_error(staging_path: &Path, cause: io::Error) -> io::Error {
+        match fs::remove_file(staging_path) {
+            Ok(()) => cause,
+            Err(cleanup) => io::Error::new(
+                cause.kind(),
+                format!(
+                    "segment initialization failed: {cause}; cleanup of {} also failed: {cleanup}",
+                    staging_path.display()
+                ),
+            ),
+        }
     }
 
     fn segment_header(fp: SchemaFingerprint) -> Vec<u8> {
@@ -199,12 +332,12 @@ impl Spool {
     }
 
     fn segment_name() -> String {
-        // Monotonic within a boot is not enough — a name must not be reused
-        // after a restart, or a new segment appends into an undrained one.
-        let secs = SystemTime::now()
+        // `create_new` below is the uniqueness guarantee; nanoseconds merely
+        // keep collisions (including after a restart or RTC rollback) rare.
+        let nanos = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .map_or(0, |d| d.as_secs());
-        format!("segment-{secs:010}.spool")
+            .map_or(0, |d| d.as_nanos());
+        format!("segment-{nanos:020}.spool")
     }
 
     /// This segment's path.
@@ -297,13 +430,27 @@ impl Spool {
     /// # Errors
     /// I/O failure, or the new segment's lock being unavailable.
     pub fn rotate_if_due(&mut self) -> io::Result<bool> {
+        self.rotate_if_due_with_segment_name(&Self::segment_name())
+    }
+
+    fn rotate_if_due_with_segment_name(&mut self, segment_name: &str) -> io::Result<bool> {
         if !self.rotation_due() {
             return Ok(false);
         }
         self.sync()?;
+        let (file, path, bytes) = Self::create_segment(&self.dir, segment_name, self.fingerprint)?;
+        // Keep the old segment locked until its replacement is fully created
+        // and durable. The directory lock stays on the same file description:
+        // rotation neither releases nor reacquires it. If creation fails, this
+        // Spool therefore remains the sole locked writer.
         FileExt::unlock(&self.file)?;
-        let next = Self::open_with(&self.dir, self.fingerprint)?;
-        *self = next;
+        self.file = file;
+        self.path = path;
+        self.bytes = bytes;
+        let now = Instant::now();
+        self.opened = now;
+        self.last_sync = now;
+        self.dirty = false;
         Ok(true)
     }
 }
@@ -314,6 +461,7 @@ impl Drop for Spool {
         // unsynced on a clean drop would lose data no error ever mentioned.
         let _ = self.sync();
         let _ = FileExt::unlock(&self.file);
+        let _ = FileExt::unlock(&self.writer_lock);
     }
 }
 
@@ -329,6 +477,7 @@ impl Drop for Spool {
 mod tests {
     use super::*;
     use crate::{NodeId, Sample};
+    use std::process::Command;
     use std::time::UNIX_EPOCH;
     use tempfile::tempdir;
 
@@ -469,6 +618,99 @@ mod tests {
         );
     }
 
+    /// The writer lock covers the spool directory, not the time-selected
+    /// segment. The old segment lock let a second writer through whenever its
+    /// call crossed a wall-clock second boundary and selected another file.
+    #[test]
+    fn a_second_writer_is_refused_even_when_it_selects_a_different_segment() {
+        let d = tempdir().expect("tempdir");
+        let _first =
+            Spool::open_with_segment_name(d.path(), samples_fingerprint(), "segment-first.spool")
+                .expect("first opens");
+        let err = Spool::open_with_segment_name(
+            d.path(),
+            samples_fingerprint(),
+            "segment-next-second.spool",
+        )
+        .expect_err("directory lock must refuse a writer targeting another segment");
+        assert_eq!(err.kind(), io::ErrorKind::WouldBlock);
+        assert!(!d.path().join("segment-next-second.spool").exists());
+    }
+
+    #[test]
+    fn an_existing_segment_name_is_never_reopened_for_append() {
+        let d = tempdir().expect("tempdir");
+        let first_path = {
+            let first = Spool::open_with_segment_name(
+                d.path(),
+                samples_fingerprint(),
+                "segment-same-instant.spool",
+            )
+            .expect("first opens");
+            first.segment_path().to_path_buf()
+        };
+        let second = Spool::open_with_segment_name(
+            d.path(),
+            samples_fingerprint(),
+            "segment-same-instant.spool",
+        )
+        .expect("reopen after the writer exits");
+        assert_ne!(second.segment_path(), first_path);
+        assert_eq!(fs::metadata(&first_path).expect("stat first").len(), 37);
+        assert_eq!(
+            second.segment_path().extension().and_then(|x| x.to_str()),
+            Some("spool")
+        );
+        let discovered = discoverable_segments(d.path());
+        assert_eq!(discovered.len(), 2);
+        assert!(discovered.contains(&first_path));
+        assert!(discovered.contains(&second.segment_path().to_path_buf()));
+        assert!(
+            fs::read_dir(d.path())
+                .expect("list")
+                .filter_map(Result::ok)
+                .all(|entry| !entry.file_name().to_string_lossy().ends_with(".tmp")),
+            "successful publication must leave no staging files"
+        );
+    }
+
+    fn discoverable_segments(dir: &Path) -> Vec<PathBuf> {
+        let mut segments: Vec<_> = fs::read_dir(dir)
+            .expect("list")
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .filter(|path| path.extension().is_some_and(|x| x == "spool"))
+            .collect();
+        segments.sort();
+        segments
+    }
+
+    #[test]
+    fn cross_process_lock_helper() {
+        let Some(dir) = std::env::var_os("VITALS_TEST_LOCKED_SPOOL") else {
+            return;
+        };
+        let err = Spool::open(Path::new(&dir)).expect_err("other process must hold lock");
+        assert_eq!(err.kind(), io::ErrorKind::WouldBlock);
+    }
+
+    #[test]
+    fn a_writer_in_another_process_is_refused() {
+        let d = tempdir().expect("tempdir");
+        let _first = Spool::open(d.path()).expect("first opens");
+        let output = Command::new(std::env::current_exe().expect("test executable"))
+            .args(["--exact", "spool::tests::cross_process_lock_helper"])
+            .env("VITALS_TEST_LOCKED_SPOOL", d.path())
+            .output()
+            .expect("run lock helper");
+        assert!(
+            output.status.success(),
+            "cross-process helper failed: stdout={} stderr={}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
     #[test]
     fn a_failed_row_writes_nothing() {
         let d = tempdir().expect("tempdir");
@@ -512,5 +754,62 @@ mod tests {
         let mut s = Spool::open(d.path()).expect("open");
         s.bytes = MAX_SEGMENT_BYTES;
         assert!(s.rotation_due());
+    }
+
+    #[test]
+    fn lexical_discovery_order_matches_creation_order_through_double_digits() {
+        let d = tempdir().expect("tempdir");
+        let mut created = Vec::new();
+        let mut active = None;
+        for collision in 0..=11 {
+            let spool = Spool::open_with_segment_name(
+                d.path(),
+                samples_fingerprint(),
+                "segment-lexical.spool",
+            )
+            .expect("open sequential writer");
+            assert_eq!(
+                spool.segment_path().file_name().and_then(|n| n.to_str()),
+                Some(format!("segment-lexical-{collision:020}.spool").as_str())
+            );
+            created.push(spool.segment_path().to_path_buf());
+            if collision == 11 {
+                active = Some(spool);
+            }
+        }
+        let active = active.expect("last segment remains active");
+        let discovered = discoverable_segments(d.path());
+        assert_eq!(discovered, created);
+        assert_eq!(
+            discovered.last(),
+            Some(&active.segment_path().to_path_buf())
+        );
+    }
+
+    #[test]
+    fn rotation_sequences_a_colliding_name_and_retains_the_directory_lock() {
+        let d = tempdir().expect("tempdir");
+        let mut first =
+            Spool::open_with_segment_name(d.path(), samples_fingerprint(), "segment-fixed.spool")
+                .expect("first opens");
+        let old_path = first.segment_path().to_path_buf();
+        first.bytes = MAX_SEGMENT_BYTES;
+        assert!(
+            first
+                .rotate_if_due_with_segment_name("segment-fixed.spool")
+                .expect("rotate")
+        );
+        assert_ne!(first.segment_path(), old_path);
+        assert_eq!(
+            first.segment_path().file_name().and_then(|n| n.to_str()),
+            Some("segment-fixed-00000000000000000001.spool")
+        );
+        let discovered = discoverable_segments(d.path());
+        assert_eq!(discovered.len(), 2);
+        assert!(discovered.contains(&old_path));
+        assert!(discovered.contains(&first.segment_path().to_path_buf()));
+
+        let err = Spool::open(d.path()).expect_err("rotation must retain the writer lock");
+        assert_eq!(err.kind(), io::ErrorKind::WouldBlock);
     }
 }
