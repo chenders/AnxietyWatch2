@@ -58,7 +58,7 @@ pane renders (`grep -n '^- \[' tasks.md`).
 - [x] T-D2 — IEEE-11073 SFLOAT decoder with fuzz target · implement-complex · either · **review**
 - [x] T-D3 — COPY-binary encoder and spool · implement-complex · either · **review**
 - [x] T-D4 — vitalsd daemon and socket protocol · implement-complex · pi · **review**
-- [ ] T-D5 — spool drainer · implement-complex · pi · **review · blocked by G3**
+- [x] T-D5 — spool drainer · implement-complex · pi · **review · blocked by G3**
 - [ ] T-D6 — bp-collector end to end · implement-complex · pi · **review · blocked by G3**
 
 Parallelism: T-D1 and T-D2 have no hardware dependency and may run on separate workers concurrently
@@ -1005,6 +1005,22 @@ Single writer. Every collector connects; `vitalsd` alone touches the database.
    that discover the disk is full.
 6. On Postgres unreachable: log, sleep 30 s, retry forever. **Never advance the offset. Never drop
    from the spool.**
+
+**Implementation note — migration guard source of truth:** `spool_status` is a transactional cursor,
+not an inventory: completed rows are retained as audit evidence and segments not yet visited have no
+row. Therefore amendment 04 §7 migrations must guard by stopping the writer/drainer and checking the
+published `.spool` inventory on disk; they must not infer "spool empty" from `spool_status` alone.
+
+**Coverage disposition:** T-D5 adds focused drainer, framing, argv, health serialization, and stalled
+heartbeat tests. The repository's hard line-coverage threshold remains decoder-only by deliberate CI
+policy; workspace coverage is still reported, but expanding the global threshold belongs to a separate
+CI-policy change rather than silently changing this task's exact Verify contract.
+
+**Follow-up (database schema owner, discovered by T-D5 crash testing):** reconcile
+`db/deploy/samples_hypertable.sql` with the identity key. TimescaleDB rejects a hypertable whose unique
+primary key `(source,type,session_id,seq)` omits partition column `timestamp`; until the schema owner
+chooses an identity-preserving design, compressed-chunk conflict behavior cannot be represented in the
+T-D5 scratch test. This is a T-C1/database migration defect, not permission to weaken T-D5 identity.
 
 **Verify:** `ssh "$PI_HOST" 'cargo test -p vitals-drain && ~/AnxietyWatch2/scripts/drain-crash-test.sh'`
 **Expect:** exit 0. The crash test encodes 10 000 samples, drains, `SIGKILL`s mid-batch, restarts,

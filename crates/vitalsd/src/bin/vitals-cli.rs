@@ -133,6 +133,12 @@ fn health_json(h: &vitals_proto::Health) -> String {
     let _ = write!(o, "{{\"uptime_secs\":{}", h.uptime_secs);
     let _ = write!(o, ",\"total_samples\":{}", h.total_samples);
     let _ = write!(o, ",\"spool_bytes\":{}", h.spool_bytes);
+    let _ = write!(o, ",\"lag_bytes\":{}", h.lag_bytes);
+    let _ = write!(o, ",\"lag_age_seconds\":{}", h.lag_age_seconds);
+    let advanced = h
+        .last_advanced_at
+        .map_or_else(|| "null".to_owned(), |v| v.to_string());
+    let _ = write!(o, ",\"last_advanced_at\":{advanced}");
     let _ = write!(o, ",\"heartbeat_pulsing\":{}", h.heartbeat_pulsing);
     o.push_str(",\"sources\":[");
     for (i, s) in h.sources.iter().enumerate() {
@@ -168,4 +174,38 @@ fn health_json(h: &vitals_proto::Health) -> String {
     }
     o.push_str("]}");
     o
+}
+
+#[cfg(test)]
+#[expect(clippy::expect_used, reason = "test setup must fail loudly")]
+mod tests {
+    use super::*;
+    use vitals_proto::HeartbeatInputs;
+
+    #[test]
+    fn health_json_emits_drain_liveness_fields() {
+        let health = vitals_proto::Health {
+            uptime_secs: 1,
+            sources: Vec::new(),
+            total_samples: 2,
+            spool_bytes: 3,
+            lag_bytes: 4,
+            lag_age_seconds: 5,
+            last_advanced_at: Some(6),
+            subscribers: Vec::new(),
+            heartbeat: HeartbeatInputs {
+                monitoring_window_active: false,
+                primary_sample_age_secs: None,
+                tier_evaluation_age_secs: None,
+                drain_progressing: true,
+            },
+            heartbeat_pulsing: true,
+            degraded: Vec::new(),
+        };
+        let value: serde_json::Value =
+            serde_json::from_str(&health_json(&health)).expect("valid JSON");
+        assert_eq!(value.get("lag_bytes"), Some(&serde_json::json!(4)));
+        assert_eq!(value.get("lag_age_seconds"), Some(&serde_json::json!(5)));
+        assert_eq!(value.get("last_advanced_at"), Some(&serde_json::json!(6)));
+    }
 }

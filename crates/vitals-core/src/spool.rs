@@ -45,12 +45,36 @@ pub const MAX_SEGMENT_AGE: Duration = Duration::from_hours(1);
 /// Upper bound on unsynced data in the default (non-`sync`) path.
 pub const SYNC_INTERVAL: Duration = Duration::from_millis(250);
 
+/// Disk usage at which opening a new segment is refused.
+pub const REFUSE_SEGMENT_PERCENT: u64 = 95;
+/// Disk usage at which rotation emits an operator warning.
+pub const WARN_SEGMENT_PERCENT: u64 = 80;
+
 /// Magic at the head of every segment, before the fingerprint.
-const SEGMENT_MAGIC: &[u8; 8] = b"VITSPOOL";
+pub const SEGMENT_MAGIC: &[u8; 8] = b"VITSPOOL";
 
 /// Bumped when the segment framing itself changes — distinct from the schema
 /// fingerprint, which tracks the *table*.
-const SEGMENT_FORMAT_VERSION: u16 = 1;
+pub const SEGMENT_FORMAT_VERSION: u16 = 1;
+
+/// Bytes before the first COPY row: framing plus `PostgreSQL`'s header.
+pub const FIRST_ROW_OFFSET: u64 = SEGMENT_HEADER_BYTES as u64 + 19;
+
+/// Bytes in the spool-specific magic/version/fingerprint header.
+pub const SEGMENT_HEADER_BYTES: usize = 18;
+
+/// Canonical `samples` field names and `PostgreSQL` type OIDs.
+pub const SAMPLES_LAYOUT: [(&str, u32); 9] = [
+    ("source", 23),
+    ("type", 23),
+    ("session_id", 20),
+    ("seq", 20),
+    ("timestamp", 1184),
+    ("value", 701),
+    ("extra", 17),
+    ("node_id", 17),
+    ("batch_id", 20),
+];
 
 /// Identifies the exact table layout a segment's rows were encoded against.
 ///
@@ -85,6 +109,12 @@ impl SchemaFingerprint {
         Self(h)
     }
 
+    /// Reconstructs a fingerprint read from a validated segment header.
+    #[must_use]
+    pub const fn from_value(value: u64) -> Self {
+        Self(value)
+    }
+
     /// The raw value, for the segment header and for reporting a mismatch.
     #[must_use]
     pub const fn value(self) -> u64 {
@@ -96,17 +126,7 @@ impl SchemaFingerprint {
 /// OIDs: int4 = 23, int8 = 20, timestamptz = 1184, float8 = 701, bytea = 17.
 #[must_use]
 pub fn samples_fingerprint() -> SchemaFingerprint {
-    SchemaFingerprint::of(&[
-        ("source", 23),
-        ("type", 23),
-        ("session_id", 20),
-        ("seq", 20),
-        ("timestamp", 1184),
-        ("value", 701),
-        ("extra", 17),
-        ("node_id", 17),
-        ("batch_id", 20),
-    ])
+    SchemaFingerprint::of(&SAMPLES_LAYOUT)
 }
 
 /// An append-only spool directory holding one open segment.
@@ -117,7 +137,7 @@ pub struct Spool {
     // segment changes on rotation (and its name is time-derived), but the
     // single-writer invariant must not have either of those scopes.
     writer_lock: File,
-    file: File,
+    file: Option<File>,
     path: PathBuf,
     bytes: u64,
     opened: Instant,
@@ -146,7 +166,7 @@ impl Spool {
     /// # Errors
     /// I/O failure, or the lock already being held.
     pub fn open_with(dir: &Path, fingerprint: SchemaFingerprint) -> io::Result<Self> {
-        Self::open_with_segment_name(dir, fingerprint, &Self::segment_name())
+        Self::open_with_segment_name(dir, fingerprint, &Self::segment_name()?)
     }
 
     fn open_with_segment_name(
@@ -178,7 +198,17 @@ impl Spool {
             ));
         }
 
-        let (file, path, bytes) = Self::create_segment(dir, segment_name, fingerprint)?;
+        let created = Self::create_segment(dir, segment_name, fingerprint);
+        let (file, path, bytes) = match created {
+            Ok((file, path, bytes)) => (Some(file), path, bytes),
+            Err(e) if e.kind() == io::ErrorKind::StorageFull => {
+                // Keep the writer lock and start the socket service. Appends
+                // remain available to in-memory subscribers but are explicitly
+                // non-durable until space falls below the refusal watermark.
+                (None, dir.join(".memory-only"), 0)
+            }
+            Err(e) => return Err(e),
+        };
         let now = Instant::now();
         Ok(Self {
             dir: dir.to_path_buf(),
@@ -198,6 +228,7 @@ impl Spool {
         segment_name: &str,
         fingerprint: SchemaFingerprint,
     ) -> io::Result<(File, PathBuf, u64)> {
+        Self::check_segment_watermark(dir)?;
         // Initialise under an excluded suffix. A drainer that discovers only
         // `*.spool` can therefore never observe an empty or partial header.
         let mut staging_collision = 0_u64;
@@ -331,13 +362,21 @@ impl Spool {
         h
     }
 
-    fn segment_name() -> String {
+    fn segment_name() -> io::Result<String> {
         // `create_new` below is the uniqueness guarantee; nanoseconds merely
         // keep collisions (including after a restart or RTC rollback) rare.
         let nanos = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_or(0, |d| d.as_nanos());
-        format!("segment-{nanos:020}.spool")
+        // Random provenance prevents an old spool_status row from ever being
+        // mistaken for this segment after RTC rollback or restored files.
+        let mut nonce = [0_u8; 8];
+        getrandom::fill(&mut nonce)
+            .map_err(|e| io::Error::other(format!("random segment identity failed: {e}")))?;
+        Ok(format!(
+            "segment-{nanos:020}-{:016x}.spool",
+            u64::from_be_bytes(nonce)
+        ))
     }
 
     /// This segment's path.
@@ -350,6 +389,12 @@ impl Spool {
     #[must_use]
     pub const fn segment_bytes(&self) -> u64 {
         self.bytes
+    }
+
+    /// Whether no durable segment is currently available.
+    #[must_use]
+    pub const fn is_memory_only(&self) -> bool {
+        self.file.is_none()
     }
 
     /// The fingerprint this spool encodes against.
@@ -384,13 +429,54 @@ impl Spool {
             return Ok(());
         }
 
+        if self.file.is_none() {
+            match Self::create_segment(&self.dir, &Self::segment_name()?, self.fingerprint) {
+                Ok((file, path, bytes)) => {
+                    self.file = Some(file);
+                    self.path = path;
+                    self.bytes = bytes;
+                    self.opened = Instant::now();
+                }
+                Err(e) if e.kind() == io::ErrorKind::StorageFull => return Err(e),
+                Err(e) => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::StorageFull,
+                        format!(
+                            "spool append is memory-only: segment creation/capacity check failed: {e}"
+                        ),
+                    ));
+                }
+            }
+        } else if self.rotation_due() {
+            match self.disk_used_percent() {
+                Ok(used) if used < REFUSE_SEGMENT_PERCENT => {}
+                Ok(used) => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::StorageFull,
+                        format!("spool append is memory-only: filesystem is {used}% used"),
+                    ));
+                }
+                Err(e) => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::StorageFull,
+                        format!(
+                            "spool append is memory-only: filesystem capacity check failed: {e}"
+                        ),
+                    ));
+                }
+            }
+        }
+
         let mut buf = Vec::with_capacity(rows.len() * 96);
         for s in rows {
             copybin::encode_row(&mut buf, s, node_id)
                 .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
         }
 
-        self.file.write_all(&buf)?;
+        let file = self.file.as_mut().ok_or_else(|| {
+            io::Error::other("spool file unavailable after successful segment creation")
+        })?;
+        file.write_all(&buf)?;
         self.bytes += buf.len() as u64;
         self.dirty = true;
 
@@ -406,17 +492,64 @@ impl Spool {
     /// I/O failure.
     pub fn sync(&mut self) -> io::Result<()> {
         if self.dirty {
-            self.file.sync_all()?;
+            let file = self
+                .file
+                .as_ref()
+                .ok_or_else(|| io::Error::other("dirty spool has no backing segment"))?;
+            file.sync_all()?;
             self.dirty = false;
         }
         self.last_sync = Instant::now();
         Ok(())
     }
 
+    fn check_segment_watermark(dir: &Path) -> io::Result<u64> {
+        let total = fs4::total_space(dir)?;
+        if total == 0 {
+            return Err(io::Error::other(format!(
+                "{}: filesystem reports zero total bytes",
+                dir.display()
+            )));
+        }
+        let available = fs4::available_space(dir)?;
+        let used = total.saturating_sub(available).saturating_mul(100) / total;
+        if used >= REFUSE_SEGMENT_PERCENT {
+            return Err(io::Error::new(
+                io::ErrorKind::StorageFull,
+                format!(
+                    "spool segment creation refused: filesystem is {used}% used (limit {REFUSE_SEGMENT_PERCENT}%)"
+                ),
+            ));
+        }
+        if used >= WARN_SEGMENT_PERCENT {
+            eprintln!(
+                "vitals spool disk warning: filesystem is {used}% used (warning {WARN_SEGMENT_PERCENT}%)"
+            );
+        }
+        Ok(used)
+    }
+
+    /// Filesystem use percentage for this spool.
+    ///
+    /// # Errors
+    /// The filesystem statistics could not be read, or reported zero capacity.
+    pub fn disk_used_percent(&self) -> io::Result<u64> {
+        let total = fs4::total_space(&self.dir)?;
+        if total == 0 {
+            return Err(io::Error::other(format!(
+                "{}: filesystem reports zero total bytes",
+                self.dir.display()
+            )));
+        }
+        let available = fs4::available_space(&self.dir)?;
+        Ok(total.saturating_sub(available).saturating_mul(100) / total)
+    }
+
     /// Whether the current segment is due for rotation.
     #[must_use]
     pub fn rotation_due(&self) -> bool {
-        self.bytes >= MAX_SEGMENT_BYTES || self.opened.elapsed() >= MAX_SEGMENT_AGE
+        self.file.is_some()
+            && (self.bytes >= MAX_SEGMENT_BYTES || self.opened.elapsed() >= MAX_SEGMENT_AGE)
     }
 
     /// Rotates if due. The finished segment is fsynced and its lock released
@@ -430,7 +563,7 @@ impl Spool {
     /// # Errors
     /// I/O failure, or the new segment's lock being unavailable.
     pub fn rotate_if_due(&mut self) -> io::Result<bool> {
-        self.rotate_if_due_with_segment_name(&Self::segment_name())
+        self.rotate_if_due_with_segment_name(&Self::segment_name()?)
     }
 
     fn rotate_if_due_with_segment_name(&mut self, segment_name: &str) -> io::Result<bool> {
@@ -443,8 +576,10 @@ impl Spool {
         // and durable. The directory lock stays on the same file description:
         // rotation neither releases nor reacquires it. If creation fails, this
         // Spool therefore remains the sole locked writer.
-        FileExt::unlock(&self.file)?;
-        self.file = file;
+        if let Some(old) = &self.file {
+            FileExt::unlock(old)?;
+        }
+        self.file = Some(file);
         self.path = path;
         self.bytes = bytes;
         let now = Instant::now();
@@ -460,7 +595,9 @@ impl Drop for Spool {
         // Best effort. A failure here cannot be reported, but leaving bytes
         // unsynced on a clean drop would lose data no error ever mentioned.
         let _ = self.sync();
-        let _ = FileExt::unlock(&self.file);
+        if let Some(file) = &self.file {
+            let _ = FileExt::unlock(file);
+        }
         let _ = FileExt::unlock(&self.writer_lock);
     }
 }
