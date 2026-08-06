@@ -1,0 +1,33 @@
+[Unit]
+Description=Monthly isolated pgBackRest restoration verification
+After=postgresql@16-main.service
+ConditionACPower=true
+OnFailure=verify-restore-alert.service
+
+[Service]
+Type=oneshot
+Nice=15
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+CPUWeight=10
+IOWeight=10
+OOMScoreAdjust=850
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+PrivateMounts=true
+CapabilityBoundingSet=CAP_SYS_ADMIN CAP_SETUID CAP_SETGID CAP_CHOWN CAP_DAC_OVERRIDE CAP_DAC_READ_SEARCH CAP_FOWNER
+AmbientCapabilities=CAP_SYS_ADMIN CAP_SETUID CAP_SETGID CAP_CHOWN CAP_DAC_OVERRIDE CAP_DAC_READ_SEARCH CAP_FOWNER
+ReadWritePaths=/var/lib/vitals /var/lib/pgbackrest /var/log/pgbackrest /run/vitals-restore
+ReadOnlyPaths=/var/lib/postgresql/16/main /etc/postgresql
+TimeoutStartSec=2h
+TimeoutStopSec=15min
+KillSignal=SIGTERM
+SendSIGKILL=yes
+ExecStart=/usr/local/bin/verify-restore.sh

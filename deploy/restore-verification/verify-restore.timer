@@ -1,0 +1,11 @@
+[Unit]
+Description=Monthly isolated pgBackRest restoration verification
+
+[Timer]
+OnCalendar=Sun *-*-01..07 04:00:00
+Persistent=true
+RandomizedDelaySec=0
+Unit=verify-restore.service
+
+[Install]
+WantedBy=timers.target
