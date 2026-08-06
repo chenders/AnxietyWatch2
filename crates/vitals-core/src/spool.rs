@@ -45,6 +45,11 @@ pub const MAX_SEGMENT_AGE: Duration = Duration::from_hours(1);
 /// Upper bound on unsynced data in the default (non-`sync`) path.
 pub const SYNC_INTERVAL: Duration = Duration::from_millis(250);
 
+/// Disk usage at which opening a new segment is refused.
+pub const REFUSE_SEGMENT_PERCENT: u64 = 95;
+/// Disk usage at which rotation emits an operator warning.
+pub const WARN_SEGMENT_PERCENT: u64 = 80;
+
 /// Magic at the head of every segment, before the fingerprint.
 const SEGMENT_MAGIC: &[u8; 8] = b"VITSPOOL";
 
@@ -83,6 +88,12 @@ impl SchemaFingerprint {
             mix(b"\x1f"); // separator: ("ab","c") must not equal ("a","bc")
         }
         Self(h)
+    }
+
+    /// Reconstructs a fingerprint read from a validated segment header.
+    #[must_use]
+    pub const fn from_value(value: u64) -> Self {
+        Self(value)
     }
 
     /// The raw value, for the segment header and for reporting a mismatch.
@@ -198,6 +209,7 @@ impl Spool {
         segment_name: &str,
         fingerprint: SchemaFingerprint,
     ) -> io::Result<(File, PathBuf, u64)> {
+        Self::check_segment_watermark(dir)?;
         // Initialise under an excluded suffix. A drainer that discovers only
         // `*.spool` can therefore never observe an empty or partial header.
         let mut staging_collision = 0_u64;
@@ -411,6 +423,48 @@ impl Spool {
         }
         self.last_sync = Instant::now();
         Ok(())
+    }
+
+    fn check_segment_watermark(dir: &Path) -> io::Result<u64> {
+        let total = fs4::total_space(dir)?;
+        if total == 0 {
+            return Err(io::Error::other(format!(
+                "{}: filesystem reports zero total bytes",
+                dir.display()
+            )));
+        }
+        let available = fs4::available_space(dir)?;
+        let used = total.saturating_sub(available).saturating_mul(100) / total;
+        if used >= REFUSE_SEGMENT_PERCENT {
+            return Err(io::Error::new(
+                io::ErrorKind::StorageFull,
+                format!(
+                    "spool segment creation refused: filesystem is {used}% used (limit {REFUSE_SEGMENT_PERCENT}%)"
+                ),
+            ));
+        }
+        if used >= WARN_SEGMENT_PERCENT {
+            eprintln!(
+                "vitals spool disk warning: filesystem is {used}% used (warning {WARN_SEGMENT_PERCENT}%)"
+            );
+        }
+        Ok(used)
+    }
+
+    /// Filesystem use percentage for this spool.
+    ///
+    /// # Errors
+    /// The filesystem statistics could not be read, or reported zero capacity.
+    pub fn disk_used_percent(&self) -> io::Result<u64> {
+        let total = fs4::total_space(&self.dir)?;
+        if total == 0 {
+            return Err(io::Error::other(format!(
+                "{}: filesystem reports zero total bytes",
+                self.dir.display()
+            )));
+        }
+        let available = fs4::available_space(&self.dir)?;
+        Ok(total.saturating_sub(available).saturating_mul(100) / total)
     }
 
     /// Whether the current segment is due for rotation.

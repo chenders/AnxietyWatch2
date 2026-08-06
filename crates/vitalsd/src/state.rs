@@ -266,6 +266,11 @@ impl State {
             sources,
             total_samples: self.total_samples,
             spool_bytes: self.spool_bytes,
+            // T-D5 derives these from locked-segment offsets in the daemon
+            // loop; unknown must not be presented as healthy progress.
+            lag_bytes: 0,
+            lag_age_seconds: 0,
+            last_advanced_at: None,
             subscribers,
             heartbeat_pulsing: heartbeat.should_pulse(max_age),
             heartbeat,

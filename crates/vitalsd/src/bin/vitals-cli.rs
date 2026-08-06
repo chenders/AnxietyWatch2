@@ -133,6 +133,12 @@ fn health_json(h: &vitals_proto::Health) -> String {
     let _ = write!(o, "{{\"uptime_secs\":{}", h.uptime_secs);
     let _ = write!(o, ",\"total_samples\":{}", h.total_samples);
     let _ = write!(o, ",\"spool_bytes\":{}", h.spool_bytes);
+    let _ = write!(o, ",\"lag_bytes\":{}", h.lag_bytes);
+    let _ = write!(o, ",\"lag_age_seconds\":{}", h.lag_age_seconds);
+    let advanced = h
+        .last_advanced_at
+        .map_or_else(|| "null".to_owned(), |v| v.to_string());
+    let _ = write!(o, ",\"last_advanced_at\":{advanced}");
     let _ = write!(o, ",\"heartbeat_pulsing\":{}", h.heartbeat_pulsing);
     o.push_str(",\"sources\":[");
     for (i, s) in h.sources.iter().enumerate() {

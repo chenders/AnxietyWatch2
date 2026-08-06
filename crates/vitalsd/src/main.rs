@@ -181,8 +181,10 @@ async fn run(args: Args) -> std::io::Result<()> {
                 if let Err(e) = spool.sync() {
                     eprintln!("vitalsd: periodic sync failed: {e}");
                 }
-                if spool.rotate_if_due().unwrap_or(false) {
-                    eprintln!("vitalsd: rotated to {}", spool.segment_path().display());
+                match spool.rotate_if_due() {
+                    Ok(true) => eprintln!("vitalsd: rotated to {}", spool.segment_path().display()),
+                    Ok(false) => {}
+                    Err(e) => eprintln!("vitalsd: spool rotation blocked: {e}"),
                 }
             }
         }
@@ -245,8 +247,20 @@ fn handle(
             subscribers.retain(|(sid, _)| *sid != id);
         }
         Cmd::Health { reply } => {
+            let mut health = st.health(now);
+            update_drain_health(&mut health, spool);
+            health.heartbeat.drain_progressing =
+                health.lag_bytes == 0 || health.lag_age_seconds <= 300;
+            health.heartbeat_pulsing = health
+                .heartbeat
+                .should_pulse(state::HEARTBEAT_MAX_AGE.as_secs());
+            if !health.heartbeat.drain_progressing {
+                health
+                    .degraded
+                    .push("heartbeat blocked: spool drain offset is not advancing".to_owned());
+            }
             let _ = reply.try_send(Response::Health {
-                health: Box::new(st.health(now)),
+                health: Box::new(health),
             });
         }
         Cmd::Query { reply } => {
@@ -259,6 +273,67 @@ fn handle(
                     .to_owned(),
             });
         }
+    }
+}
+
+fn update_drain_health(health: &mut vitals_proto::Health, spool: &Spool) {
+    let Some(dir) = spool.segment_path().parent() else {
+        health
+            .degraded
+            .push("drain liveness unavailable: spool has no parent directory".to_owned());
+        return;
+    };
+    let now = std::time::SystemTime::now();
+    let mut oldest = 0_u64;
+    let mut lag = 0_u64;
+    let mut advanced = None;
+    let entries = match std::fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(e) => {
+            health.degraded.push(format!(
+                "drain liveness unavailable: cannot read {}: {e}",
+                dir.display()
+            ));
+            return;
+        }
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|x| x.to_str()) != Some("spool")
+            || path == spool.segment_path()
+        {
+            continue;
+        }
+        let Ok(meta) = entry.metadata() else {
+            continue;
+        };
+        let mut offset = 37_u64;
+        let offset_path = path.with_extension("offset");
+        if let Ok(text) = std::fs::read_to_string(&offset_path)
+            && let Ok(value) = text.trim().parse::<u64>()
+        {
+            offset = value;
+        }
+        lag = lag.saturating_add(meta.len().saturating_sub(offset));
+        if let Ok(modified) = meta.modified() {
+            let age = now.duration_since(modified).map_or(0, |d| d.as_secs());
+            oldest = oldest.max(age);
+        }
+        if let Ok(meta) = std::fs::metadata(offset_path)
+            && let Ok(modified) = meta
+                .modified()
+                .and_then(|t| t.duration_since(UNIX_EPOCH).map_err(std::io::Error::other))
+        {
+            advanced = Some(advanced.map_or(modified.as_secs(), |prior: u64| {
+                prior.max(modified.as_secs())
+            }));
+        }
+    }
+    health.lag_bytes = lag;
+    health.lag_age_seconds = oldest;
+    health.last_advanced_at = advanced;
+    if lag > 0 && oldest > 300 {
+        health.degraded.push(format!("spool drain stalled: lag_bytes={lag}, lag_age_seconds={oldest}, last_advanced_at={advanced:?}; check PostgreSQL reachability, advisory lock, and schema fingerprint"));
     }
 }
 
