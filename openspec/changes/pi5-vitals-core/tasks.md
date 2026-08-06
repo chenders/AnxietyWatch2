@@ -45,7 +45,7 @@ The conductor ticks a box **only after running that task's `Verify` command itse
 0.** A worker's report is a claim; the exit code is the evidence. This is also what the herdr shell
 pane renders (`grep -n '^- \[' tasks.md`).
 
-- [ ] T-A1 — Migrate root filesystem to NVMe · human · pi
+- [x] T-A1 — Migrate root filesystem to NVMe · human · pi
 - [ ] T-A2 — Audio output path · human · pi
 - [x] T-A3 — Bring up the Sena UD100-G03 · implement-standard · pi · **gate G1 owner**
 - [x] T-A4 — Disable onboard Bluetooth · mechanical · pi · **blocked by G1**
@@ -1472,3 +1472,28 @@ than inventing a number.
    decompile, not because any frame demonstrated it.
 
 **Still requires you:** wear the oximeter overnight and run the capture under `systemd-run --pipe`.
+
+### T-A1 (2026-08-05) — root on NVMe, verified
+
+Geekworm X1001 + Samsung 990 EVO Plus 4 TB (from stock; passed the plan's NVMe checklist — M-key,
+990-family, non-blacklisted controller). Verify command exits 0: root on `/dev/nvme0n1p1`, 3.6 TB,
+`rw,noatime`, 15 G copied (rsync exit 0, `to-chk=0/288107`). Boot partition stays on the SD;
+`BOOT_ORDER=0xf461` untouched, as the brief predicted.
+
+Findings worth keeping:
+
+- **The X1001 needs `dtparam=pciex1` added manually** — it has no HAT+ EEPROM, so nothing
+  auto-enables the external PCIe connector. Symptom of omission: controller absent from lspci.
+- **The FPC cable's ends are not interchangeable.** With the "RPi5"-printed end in the X1001 the
+  connectors lock normally at both ends and the link trains never (`link down` at Gen 2 *and* the
+  `pciex1_gen=1` fallback). Swapping ends fixed it instantly: `link up, 5.0 GT/s x1`. The hinged
+  connectors clamp a wrong cable as happily as a right one — lock state proves nothing.
+- **Firmware injects `nvme.max_host_mem_size_mb=0`** (HMB off) on the Pi 5 — deliberate upstream
+  default after corruption reports with DRAM-less drives. The 990 EVO Plus logs
+  "min host memory (16 MiB) above limit (0 MiB)" and runs HMB-less. Left as-is on purpose.
+- **First post-migration boot latched under-voltage** (`get_throttled=0x50005` during the boot +
+  docker-start peak, settling to `0x50000` historical, ~0.879 V core, 58 °C). Pre-NVMe this box
+  read 0x0. Steady state is clean; peak headroom on the 5 V rail is now thin. If the latch
+  reappears routinely, upgrade the supply feeding the X1202 before trusting overnight capture.
+
+Gate **G2 is open** — Group C (Postgres on NVMe, pgBackRest, restore verification) is unblocked.
