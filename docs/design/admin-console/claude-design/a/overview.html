@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>01 Overview — AW2 Service Mode</title>
+<link rel="stylesheet" href="console.css">
+</head>
+<body data-feed="live">
+<a class="skip-link" href="#main">Skip to content</a>
+
+<div class="shell">
+  <div class="stickytop">
+  <header class="idstrip">
+    <div class="idstrip__brand"><b>AW2 SERVICE MODE</b><span>bedside-pi5 · 01 Overview</span></div>
+    <div class="idstrip__fields">
+      <div class="idfield"><span class="idfield__k">Host</span><span class="idfield__v">bedside-pi5</span></div>
+      <div class="idfield"><span class="idfield__k">Build</span><span class="idfield__v">aw2 2.4.11+g8c1f</span></div>
+      <div class="idfield"><span class="idfield__k">Uptime</span><span class="idfield__v">17d 04:12</span></div>
+      <div class="idfield"><span class="idfield__k">Console clock</span><span class="idfield__v" data-clock>09:56:04Z</span></div>
+      <div class="idfield"><span class="idfield__k">Feed age</span><span class="idfield__v"><span data-feed-age>2s</span> · poll 15s</span></div>
+      <div class="idstrip__spacer"></div>
+    </div>
+  </header>
+
+  <div class="docstale" role="status">
+    <span class="status status--unknown"><span class="status__glyph" aria-hidden="true">?</span> Document stale</span>
+    <span class="docstale__b">This page has not heard from the appliance for <span data-feed-age>—</span>.</span>
+    <span class="muted-text">Everything below is the last state observed, not the current state. Card-level status is unchanged; it is this document that cannot be vouched for.</span>
+    <button class="btn btn--sm" type="button" data-action="refresh">Reconnect</button>
+  </div>
+  </div>
+
+  <div class="body">
+    <nav class="rail" aria-label="Console sections">
+      <div class="rail__group">
+        <span class="caps">First release</span>
+        <a class="rail__item" href="overview.html" aria-current="page"><span class="rail__ord">01</span> Overview <span class="dot dot--med"><span class="dot__g" aria-hidden="true">■</span><span class="sr-only">Fault, medium</span></span></a>
+        <a class="rail__item" href="display.html"><span class="rail__ord">02</span> Display path <span class="dot dot--ok"><span class="dot__g" aria-hidden="true">✓</span><span class="sr-only">OK</span></span></a>
+        <a class="rail__item" href="ingest.html"><span class="rail__ord">03</span> Ingest <span class="dot dot--unknown"><span class="dot__g" aria-hidden="true">?</span><span class="sr-only">Unknown</span></span></a>
+      </div>
+      <div class="rail__group">
+        <span class="caps">Later</span>
+        <a class="rail__item" href="services.html"><span class="rail__ord">04</span> Services &amp; host <span class="dot dot--ok"><span class="dot__g" aria-hidden="true">✓</span><span class="sr-only">OK</span></span></a>
+        <a class="rail__item" href="config.html"><span class="rail__ord">05</span> Config &amp; access <span class="dot dot--ok"><span class="dot__g" aria-hidden="true">✓</span><span class="sr-only">OK</span></span></a>
+        <a class="rail__item" href="data.html"><span class="rail__ord">06</span> Data <span class="dot dot--med"><span class="dot__g" aria-hidden="true">■</span><span class="sr-only">Fault, medium</span></span></a>
+        <a class="rail__item" href="analysis.html"><span class="rail__ord">07</span> Analysis <span class="dot dot--ok"><span class="dot__g" aria-hidden="true">✓</span><span class="sr-only">OK</span></span></a>
+        <a class="rail__item" href="records.html"><span class="rail__ord">08</span> Records <span class="dot dot--ok"><span class="dot__g" aria-hidden="true">✓</span><span class="sr-only">OK</span></span></a>
+        <a class="rail__item" href="recovery.html"><span class="rail__ord">09</span> Recovery <span class="dot dot--unknown"><span class="dot__g" aria-hidden="true">?</span><span class="sr-only">Unknown</span></span></a>
+      </div>
+      <div class="rail__group">
+        <span class="caps">Reference</span>
+        <a class="rail__item" href="system.html">Design system</a>
+        <a class="rail__item" href="patterns.html">Operational patterns</a>
+        <a class="rail__item" href="attempts.html">Attempt history</a>
+        <a class="rail__item" href="overview-degraded.html">Overview · degraded</a>
+        <a class="rail__item" href="firstrun.html">First run</a>
+      </div>
+    </nav>
+
+    <main class="main" id="main">
+      <div class="page-hd">
+        <div>
+          <h1>Overview</h1>
+          <p class="page-hd__sub">The whole machine and the state of the record.</p>
+        </div>
+        <div class="page-hd__actions">
+          <button class="btn btn--sm" type="button" data-action="refresh">Refresh</button>
+          <button class="btn btn--sm btn--ghost" type="button" data-action="kill-feed">Simulate feed loss</button>
+        </div>
+      </div>
+
+      <div class="stack">
+
+        <!-- ===== The four numbers that answer "is the record intact" ===== -->
+        <section class="panel" aria-labelledby="h-roll">
+          <div class="panel__hd"><h2 class="panel__title" id="h-roll">Record integrity</h2>
+            <div class="panel__meta">
+              <span class="fresh" data-age-s="44" data-since="2026-08-05T09:55:20Z" data-expect-s="900">
+                <span class="fresh__age">44s ago</span><span class="fresh__expect">15m</span></span>
+            </div>
+          </div>
+          <div class="panel__body">
+            <div class="cols-4">
+              <div class="readout"><span class="readout__k">Unresolved faults</span>
+                <span class="readout__v">1</span>
+                <span class="muted-text">0 high · 1 med · 0 low</span></div>
+              <div class="readout readout--unknown"><span class="readout__k">Cannot vouch for</span>
+                <span class="readout__v">3<span class="unit">of 13</span></span>
+                <span class="muted-text">2 stale · 1 never checked</span></div>
+              <div class="readout"><span class="readout__k">Last complete night</span>
+                <span class="readout__v">04<span class="unit">Aug</span></span>
+                <span class="muted-text">All 6 nightly sources present</span></div>
+              <div class="readout"><span class="readout__k">Unbacked-up window</span>
+                <span class="readout__v">41<span class="unit">min</span></span>
+                <span class="muted-text"><a href="recovery.html">What would I lose right now →</a></span></div>
+            </div>
+          </div>
+          <div class="panel__ft">
+            <p class="prose">Two sources are excluded from these counts: the BP cuff is
+            <span class="status status--absent"><span class="status__glyph" aria-hidden="true">—</span> not configured</span>,
+            and the ring is <span class="mute">⊘ muted until 09 Aug</span>.</p>
+          </div>
+        </section>
+
+        <!-- ===== Alarms, severity first then state ===== -->
+        <section class="alarmbar" aria-labelledby="h-alarm">
+          <div class="alarmbar__hd">
+            <h2 class="panel__title" id="h-alarm">Technical alarms</h2>
+            <span class="caps">Machine and record integrity only — no physiological alarms are raised here</span>
+            <span class="panel__meta"><span class="caps">4 active · sorted by severity</span></span>
+          </div>
+
+          <div class="alarm alarm--med">
+            <span class="alarm__prio"><span aria-hidden="true">■</span> Med</span>
+            <p class="alarm__msg">Spool depth rising for 3h 20m — drain is slower than arrival.
+              <small>14,208 rows queued, oldest unspooled 26m. At the current rate the spool
+              partition fills in 4d 8h. Nothing is lost yet; if the spool fills, samples are dropped at the radio.</small></p>
+            <span class="alarm__act">
+              <span class="fresh" data-age-s="61" data-since="2026-08-05T09:55:00Z" data-expect-s="120"><span class="fresh__age">1m ago</span><span class="fresh__expect">2m</span></span>
+              <a class="btn btn--sm" href="data.html">Storage</a></span>
+          </div>
+
+          <div class="alarm alarm--unknown">
+            <span class="alarm__prio"><span aria-hidden="true">?</span> Unknown</span>
+            <p class="alarm__msg">Restore verification has never run on this deployment.
+              <small>A backup that has never been restored is not a passing backup. The last full
+              backup completed 06:00 today and its checksum is valid, which is a different and
+              much weaker claim.</small></p>
+            <span class="alarm__act">
+              <span class="fresh fresh--over"><span class="fresh__age">never run</span><span class="fresh__expect">7d</span></span>
+              <a class="btn btn--sm" href="recovery.html">Recovery</a></span>
+          </div>
+
+          <div class="alarm alarm--unknown">
+            <span class="alarm__prio"><span aria-hidden="true">?</span> Unknown</span>
+            <p class="alarm__msg">Oximeter has produced no samples for 9h 04m against a 2m cadence.
+              <small>Last known: OK at 00:52, 118 samples, newest timestamp advanced. The collector
+              is still <span class="mono">active (running)</span> and reports no error, which is
+              why this is a question and not a fault.</small></p>
+            <span class="alarm__act">
+              <span class="fresh fresh--over" data-age-s="32640" data-since="2026-08-05T00:52:00Z" data-expect-s="120"><span class="fresh__age">9h 4m ago</span><span class="fresh__expect">2m</span></span>
+              <a class="btn btn--sm" href="ingest.html">Ingest</a></span>
+          </div>
+
+          <div class="alarm alarm--low">
+            <span class="alarm__prio"><span aria-hidden="true">●</span> Low</span>
+            <p class="alarm__msg">NVMe wear indicator advanced to 4% used.
+              <small>Projected end of rated life 2034-01. Informational.</small></p>
+            <span class="alarm__act">
+              <span class="fresh" data-age-s="1980" data-since="2026-08-05T09:23:00Z" data-expect-s="86400"><span class="fresh__age">33m ago</span><span class="fresh__expect">24h</span></span>
+              <a class="btn btn--sm" href="services.html">Host</a></span>
+          </div>
+        </section>
+
+        <!-- ===== Subsystem matrix: fixed rows, same order on every load ===== -->
+        <section class="panel" aria-labelledby="h-sub">
+          <div class="panel__hd"><h2 class="panel__title" id="h-sub">Subsystems</h2>
+            <div class="panel__meta"><span class="caps">Row order is fixed. A subsystem never moves.</span></div></div>
+          <div class="panel__body panel__body--flush t-scroll">
+            <table class="t t--rowstate">
+              <thead><tr>
+                <th scope="col">Subsystem</th><th scope="col">Health</th><th scope="col">Observed</th>
+                <th scope="col">Process</th><th scope="col">Last known outcome</th><th scope="col"><span class="sr-only">Go to</span></th>
+              </tr></thead>
+              <tbody>
+                <tr>
+                  <th scope="row">Sample store</th>
+                  <td><span class="status status--ok"><span class="status__glyph" aria-hidden="true">✓</span> OK</span></td>
+                  <td><span class="fresh" data-age-s="12" data-expect-s="60"><span class="fresh__age">12s ago</span><span class="fresh__expect">1m</span></span></td>
+                  <td><span class="proc proc--active"><span class="proc__led" aria-hidden="true"></span> active (running)</span></td>
+                  <td>Wrote 340 rows in the last minute.</td>
+                  <td><a href="services.html">Detail</a></td>
+                </tr>
+                <tr>
+                  <th scope="row">Chest strap · Polar H10</th>
+                  <td><span class="status status--ok"><span class="status__glyph" aria-hidden="true">✓</span> OK</span></td>
+                  <td><span class="fresh" data-age-s="41" data-expect-s="120"><span class="fresh__age">41s ago</span><span class="fresh__expect">2m</span></span></td>
+                  <td><span class="proc proc--active"><span class="proc__led" aria-hidden="true"></span> active (running)</span></td>
+                  <td>RR intervals advancing. RSSI −61 dBm.</td>
+                  <td><a href="ingest.html">Detail</a></td>
+                </tr>
+                <tr data-state="unknown">
+                  <th scope="row">Oximeter · Wellue O2Ring</th>
+                  <td><span class="status status--unknown"><span class="status__glyph" aria-hidden="true">?</span> Unknown</span></td>
+                  <td><span class="fresh fresh--over" data-age-s="32640" data-expect-s="120"><span class="fresh__age">9h 4m ago</span><span class="fresh__expect">2m</span></span></td>
+                  <td><span class="proc proc--active"><span class="proc__led" aria-hidden="true"></span> active (running)</span></td>
+                  <td><b>Last known: OK at 00:52.</b> No attempts logged since; the BLE link shows connected.</td>
+                  <td><a href="ingest.html">Detail</a></td>
+                </tr>
+                <tr class="is-absent" data-state="absent">
+                  <th scope="row">BP cuff · Omron</th>
+                  <td><span class="status status--absent"><span class="status__glyph" aria-hidden="true">—</span> Not configured</span></td>
+                  <td><span class="absent-note">n/a</span></td>
+                  <td><span class="proc proc--inactive"><span class="proc__led" aria-hidden="true"></span> inactive (dead)</span></td>
+                  <td><span class="absent-note">Declared absent 2026-06-02. Not owned. Excluded from rollups and from the report.</span></td>
+                  <td><a href="config.html">Registry</a></td>
+                </tr>
+                <tr>
+                  <th scope="row">Ring · Oura</th>
+                  <td><span class="status status--unknown"><span class="status__glyph" aria-hidden="true">?</span> Unknown</span>
+                      <span class="mute">⊘ until 09 Aug</span></td>
+                  <td><span class="fresh" data-age-s="176400" data-expect-s="86400"><span class="fresh__age">2d 1h ago</span><span class="fresh__expect">24h</span></span></td>
+                  <td><span class="proc proc--active"><span class="proc__led" aria-hidden="true"></span> active (running)</span></td>
+                  <td>Benign. Ring not worn while travelling. The mute expires on 09 Aug and this returns to an unmuted unknown.</td>
+                  <td><a href="ingest.html">Detail</a></td>
+                </tr>
+                <tr>
+                  <th scope="row">CPAP · ResMed AirSense 11</th>
+                  <td><span class="status status--ok"><span class="status__glyph" aria-hidden="true">✓</span> OK</span></td>
+                  <td><span class="fresh" data-age-s="21000" data-expect-s="86400"><span class="fresh__age">5h 50m ago</span><span class="fresh__expect">24h</span></span></td>
+                  <td><span class="proc proc--inactive"><span class="proc__led" aria-hidden="true"></span> inactive (timer)</span></td>
+                  <td>Nightly import at 04:06 accepted 1 night, 6h 41m of data.</td>
+                  <td><a href="ingest.html">Detail</a></td>
+                </tr>
+                <tr>
+                  <th scope="row">Health store bridge</th>
+                  <td><span class="status status--ok"><span class="status__glyph" aria-hidden="true">✓</span> OK</span></td>
+                  <td><span class="fresh" data-age-s="900" data-expect-s="3600"><span class="fresh__age">15m ago</span><span class="fresh__expect">1h</span></span></td>
+                  <td><span class="proc proc--active"><span class="proc__led" aria-hidden="true"></span> active (running)</span></td>
+                  <td>Phone pushed 214 rows. Newest timestamp advanced by 58m.</td>
+                  <td><a href="ingest.html">Detail</a></td>
+                </tr>
+                <tr data-state="med">
+                  <th scope="row">Spool drain</th>
+                  <td><span class="status status--med"><span class="status__glyph" aria-hidden="true">■</span> Fault · Med</span></td>
+                  <td><span class="fresh" data-age-s="61" data-expect-s="120"><span class="fresh__age">1m ago</span><span class="fresh__expect">2m</span></span></td>
+                  <td><span class="proc proc--active"><span class="proc__led" aria-hidden="true"></span> active (running)</span></td>
+                  <td>Draining 210 rows/min against 340 arriving. Depth 14,208 and rising.</td>
+                  <td><a href="data.html">Detail</a></td>
+                </tr>
+                <tr>
+                  <th scope="row">Display path</th>
+                  <td><span class="status status--ok"><span class="status__glyph" aria-hidden="true">✓</span> OK</span></td>
+                  <td><span class="fresh" data-age-s="9" data-expect-s="30"><span class="fresh__age">9s ago</span><span class="fresh__expect">30s</span></span></td>
+                  <td><span class="proc proc--active"><span class="proc__led" aria-hidden="true"></span> active (running)</span></td>
+                  <td>Screen lit, frame counter advancing. Verified by frame callback, not by service state.</td>
+                  <td><a href="display.html">Detail</a></td>
+                </tr>
+                <tr>
+                  <th scope="row">Host · NVMe, thermal, power</th>
+                  <td><span class="status status--ok"><span class="status__glyph" aria-hidden="true">✓</span> OK</span></td>
+                  <td><span class="fresh" data-age-s="20" data-expect-s="60"><span class="fresh__age">20s ago</span><span class="fresh__expect">1m</span></span></td>
+                  <td><span class="proc proc--active"><span class="proc__led" aria-hidden="true"></span> active (running)</span></td>
+                  <td>62.1 GB free, 4% wear, 52.4 °C, no undervoltage, watchdog armed.</td>
+                  <td><a href="services.html">Detail</a></td>
+                </tr>
+                <tr>
+                  <th scope="row">Postgres</th>
+                  <td><span class="status status--ok"><span class="status__glyph" aria-hidden="true">✓</span> OK</span></td>
+                  <td><span class="fresh" data-age-s="34" data-expect-s="300"><span class="fresh__age">34s ago</span><span class="fresh__expect">5m</span></span></td>
+                  <td><span class="proc proc--active"><span class="proc__led" aria-hidden="true"></span> active (running)</span></td>
+                  <td>18.4 GB, growing 96 MB/day. Autovacuum last ran 02:11.</td>
+                  <td><a href="data.html">Detail</a></td>
+                </tr>
+                <tr data-state="unknown">
+                  <th scope="row">Backups</th>
+                  <td><span class="status status--unknown"><span class="status__glyph" aria-hidden="true">?</span> Unverified</span></td>
+                  <td><span class="fresh" data-age-s="14160" data-expect-s="86400"><span class="fresh__age">3h 56m ago</span><span class="fresh__expect">24h</span></span></td>
+                  <td><span class="proc proc--inactive"><span class="proc__led" aria-hidden="true"></span> inactive (timer)</span></td>
+                  <td><b>Last full completed 06:00, checksum valid.</b> Never restored into a scratch cluster, so nothing has confirmed it is usable.</td>
+                  <td><a href="recovery.html">Detail</a></td>
+                </tr>
+                <tr>
+                  <th scope="row">Nocturnal alarm path</th>
+                  <td><span class="status status--absent"><span class="status__glyph" aria-hidden="true">—</span> Not configured</span></td>
+                  <td><span class="absent-note">n/a</span></td>
+                  <td><span class="proc proc--inactive"><span class="proc__led" aria-hidden="true"></span> inactive (dead)</span></td>
+                  <td><span class="absent-note">Feature not enabled. Scheduled after the correlation work.</span></td>
+                  <td><a href="config.html">Flags</a></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <div class="cols-main">
+          <!-- ===== Nightly record completeness ===== -->
+          <section class="panel" aria-labelledby="h-nights">
+            <div class="panel__hd"><h2 class="panel__title" id="h-nights">Nightly completeness · last 14 nights</h2>
+              <div class="panel__meta"><span class="caps">Sources present per night</span></div></div>
+            <div class="panel__body panel__body--flush t-scroll">
+              <table class="t">
+                <thead><tr>
+                  <th scope="col">Night</th><th scope="col">HRV</th><th scope="col">SpO₂</th>
+                  <th scope="col">CPAP</th><th scope="col">Ring</th><th scope="col">Journal</th>
+                  <th scope="col">Meds</th><th class="num" scope="col">Complete</th>
+                </tr></thead>
+                <tbody>
+                  <tr><th scope="row">04–05 Aug</th>
+                    <td><span class="status status--ok"><span aria-hidden="true">✓</span><span class="sr-only">OK</span></span></td>
+                    <td><span class="status status--unknown"><span aria-hidden="true">?</span><span class="sr-only">Unknown</span></span></td>
+                    <td><span class="status status--ok"><span aria-hidden="true">✓</span><span class="sr-only">OK</span></span></td>
+                    <td><span class="status status--unknown"><span aria-hidden="true">?</span><span class="sr-only">Unknown</span></span></td>
+                    <td><span class="status status--ok"><span aria-hidden="true">✓</span><span class="sr-only">OK</span></span></td>
+                    <td><span class="status status--ok"><span aria-hidden="true">✓</span><span class="sr-only">OK</span></span></td>
+                    <td class="num">4 / 6</td></tr>
+                  <tr><th scope="row">03–04 Aug</th>
+                    <td><span class="status status--ok"><span aria-hidden="true">✓</span><span class="sr-only">OK</span></span></td><td><span class="status status--ok"><span aria-hidden="true">✓</span><span class="sr-only">OK</span></span></td>
+                    <td><span class="status status--ok"><span aria-hidden="true">✓</span><span class="sr-only">OK</span></span></td><td><span class="status status--unknown"><span aria-hidden="true">?</span><span class="sr-only">Unknown</span></span></td>
+                    <td><span class="status status--ok"><span aria-hidden="true">✓</span><span class="sr-only">OK</span></span></td><td><span class="status status--ok"><span aria-hidden="true">✓</span><span class="sr-only">OK</span></span></td>
+                    <td class="num">5 / 6</td></tr>
+                  <tr><th scope="row">02–03 Aug</th>
+                    <td><span class="status status--ok"><span aria-hidden="true">✓</span><span class="sr-only">OK</span></span></td><td><span class="status status--ok"><span aria-hidden="true">✓</span><span class="sr-only">OK</span></span></td>
+                    <td><span class="status status--ok"><span aria-hidden="true">✓</span><span class="sr-only">OK</span></span></td><td><span class="status status--ok"><span aria-hidden="true">✓</span><span class="sr-only">OK</span></span></td>
+                    <td><span class="status status--ok"><span aria-hidden="true">✓</span><span class="sr-only">OK</span></span></td><td><span class="status status--ok"><span aria-hidden="true">✓</span><span class="sr-only">OK</span></span></td>
+                    <td class="num">6 / 6</td></tr>
+                  <tr><th scope="row">01–02 Aug</th>
+                    <td><span class="status status--ok"><span aria-hidden="true">✓</span><span class="sr-only">OK</span></span></td><td><span class="status status--ok"><span aria-hidden="true">✓</span><span class="sr-only">OK</span></span></td>
+                    <td><span class="status status--ok"><span aria-hidden="true">✓</span><span class="sr-only">OK</span></span></td><td><span class="status status--ok"><span aria-hidden="true">✓</span><span class="sr-only">OK</span></span></td>
+                    <td><span class="status status--unknown"><span aria-hidden="true">?</span><span class="sr-only">Unknown</span></span></td><td><span class="status status--ok"><span aria-hidden="true">✓</span><span class="sr-only">OK</span></span></td>
+                    <td class="num">5 / 6</td></tr>
+                  <tr><th scope="row">31 Jul–01 Aug</th>
+                    <td><span class="status status--ok"><span aria-hidden="true">✓</span><span class="sr-only">OK</span></span></td><td><span class="status status--ok"><span aria-hidden="true">✓</span><span class="sr-only">OK</span></span></td>
+                    <td><span class="status status--ok"><span aria-hidden="true">✓</span><span class="sr-only">OK</span></span></td><td><span class="status status--ok"><span aria-hidden="true">✓</span><span class="sr-only">OK</span></span></td>
+                    <td><span class="status status--ok"><span aria-hidden="true">✓</span><span class="sr-only">OK</span></span></td><td><span class="status status--ok"><span aria-hidden="true">✓</span><span class="sr-only">OK</span></span></td>
+                    <td class="num">6 / 6</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="panel__ft">
+              <p class="prose">A night counts as complete when every source that is configured and
+              unmuted produced data whose newest timestamp advanced. Journal entries are the
+              anchor; a night without one is still counted, but flagged in the report.</p>
+              <span class="grow"></span><a class="btn btn--sm" href="data.html">Full range</a>
+            </div>
+          </section>
+
+          <div class="stack">
+            <!-- ===== Jobs ===== -->
+            <section class="panel" aria-labelledby="h-jobs">
+              <div class="panel__hd"><h2 class="panel__title" id="h-jobs">Jobs</h2>
+                <div class="panel__meta"><a href="analysis.html">Analysis →</a></div></div>
+              <div class="panel__body stack--tight">
+                <div class="row">
+                  <span class="life life--running"><span class="life__pulse" aria-hidden="true"></span> Running · 04:12</span>
+                  <span class="grow">Correlation recompute · 90-day window</span>
+                </div>
+                <div class="row">
+                  <span class="life life--queued">Queued · 1</span>
+                  <span class="grow">Claude analysis · weekly narrative</span>
+                </div>
+                <hr class="divider">
+                <div class="fields">
+                  <span class="field__k">Last 7 days</span><span class="field__v mono">14 succeeded · 1 failed · 1 cancelled</span>
+                  <span class="field__k">Spend, month</span><span class="field__v mono">$4.18 <span class="unit">of $25.00 cap</span></span>
+                </div>
+              </div>
+            </section>
+
+            <!-- ===== Recovery summary ===== -->
+            <section class="panel panel--unknown" aria-labelledby="h-rec">
+              <div class="panel__hd"><h2 class="panel__title" id="h-rec">If this box died right now</h2>
+                <div class="panel__meta"><a href="recovery.html">Recovery →</a></div></div>
+              <div class="panel__body">
+                <div class="readout"><span class="readout__k">You would lose</span>
+                  <span class="readout__v">41<span class="unit">min</span></span>
+                  <span class="muted-text">≈ 12,400 samples and 0 journal entries.</span></div>
+                <hr class="divider">
+                <div class="fields">
+                  <span class="field__k">Last full</span><span class="field__v mono">06:00 today · 3.9 GB</span>
+                  <span class="field__k">WAL lag</span><span class="field__v mono">41m <span class="unit">expect ≤ 15m</span></span>
+                  <span class="field__k">Verified restore</span>
+                    <span class="field__v"><span class="status status--unknown"><span class="status__glyph" aria-hidden="true">?</span> Never run</span></span>
+                </div>
+              </div>
+            </section>
+          </div>
+        </div>
+
+      </div>
+    </main>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

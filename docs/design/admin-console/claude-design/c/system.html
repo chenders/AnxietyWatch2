@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Design system — AW2 Flowpath</title>
+<link rel="stylesheet" href="console.css">
+</head>
+<body data-feed="live">
+<a class="skip-link" href="#main">Skip to content</a>
+
+<div class="app">
+  <div class="stickytop">
+  <div class="docstale" role="status">
+    <span class="st st--severed">Console feed severed</span>
+    <b>This page has not heard from the appliance for <span data-feed-age>—</span>.</b>
+    <span class="muted-text">The graph below is the last shape the machine had. Edge states are unchanged; it is the link between you and the box that is cut.</span>
+    <button class="btn btn--sm" type="button" data-action="refresh">Reconnect <span class="btn__key">r</span></button>
+  </div>
+
+  <header class="cmdbar">
+    <span class="cmdbar__id"><b>AW2 FLOWPATH</b> · bedside-pi5 · 2.4.11+g8c1f</span>
+    <label class="sr-only" for="q">Filter nodes and sources</label>
+    <input class="input cmdbar__search" id="q" data-filter placeholder="Filter nodes, sources, units…   /">
+    <span class="cmdbar__id" data-clock>09:56:04Z</span>
+    <span class="cmdbar__id">feed <span data-feed-age>2s</span></span>
+    <span class="cmdbar__hint"><span class="kbd">j</span><span class="kbd">k</span> walk the path <span class="kbd">/</span> filter <span class="kbd">1</span>–<span class="kbd">9</span> screens <span class="kbd">?</span> keys</span>
+  </header>
+
+<nav class="tabs" aria-label="Screens">
+  <a class="tabs__item" href="overview.html" data-tabkey="1"><span class="tabs__key">1</span> Overview</a>
+  <a class="tabs__item" href="display.html" data-tabkey="2"><span class="tabs__key">2</span> Flow · display</a>
+  <a class="tabs__item" href="ingest.html" data-tabkey="3"><span class="tabs__key">3</span> Flow · ingest</a>
+  <a class="tabs__item" href="services.html" data-tabkey="4"><span class="tabs__key">4</span> Services</a>
+  <a class="tabs__item" href="config.html" data-tabkey="5"><span class="tabs__key">5</span> Access</a>
+  <a class="tabs__item" href="data.html" data-tabkey="6"><span class="tabs__key">6</span> Data</a>
+  <a class="tabs__item" href="analysis.html" data-tabkey="7"><span class="tabs__key">7</span> Analysis</a>
+  <a class="tabs__item" href="records.html" data-tabkey="8"><span class="tabs__key">8</span> Records</a>
+  <a class="tabs__item" href="recovery.html" data-tabkey="9"><span class="tabs__key">9</span> Recovery</a>
+  <a class="tabs__item" href="system.html" aria-current="page">System</a>
+  <a class="tabs__item" href="patterns.html">Patterns</a>
+  <a class="tabs__item" href="attempts.html">Timeline</a>
+  <a class="tabs__item" href="overview-degraded.html">Degraded</a>
+  <a class="tabs__item" href="firstrun.html">First run</a>
+</nav>
+  </div>
+
+  <main class="main" id="main">
+    <div class="pagehd">
+      <div>
+        <h1>Direction C — Flowpath</h1>
+        <p>Health is a property of an edge. Four edge hues, four stroke grammars — unknown is a violet severed pipe.</p>
+      </div>
+      <div class="pagehd__act">
+        <button class="btn btn--sm" type="button" data-action="refresh">Refresh <span class="btn__key">r</span></button>
+      </div>
+    </div>
+
+    <div class="stack">
+      <section class="pane">
+        <div class="pane__hd"><h2>Rationale</h2></div>
+        <div class="pane__body">
+          <p class="prose">Every failure in the brief is the same shape: the record stops arriving
+          somewhere, and nothing announces it. So this direction stops modelling the machine as a list of
+          subsystems and models it as the path the record takes — sensor, radio, collector, spool,
+          database, aggregate, correlation, report. Health is not a badge attached to a component. It is
+          a property of an <em>edge</em>: is the record moving through here, and how fast.</p>
+          <p class="prose">That reframing gives the third state a natural form. Unknown is a
+          <b>severed pipe</b> — a violet hairline with a visible cut in it. The hue takes you to the
+          break from across a room; the cut is what tells you it is a break rather than a slow link, and
+          it keeps telling you that in greyscale. You can trace it left to find the cause or right to
+          find what it costs: a stale backup here is not an amber badge beside a green database, it is
+          the last edge in the chain, cut, with the report hanging off the end of it.</p>
+          <p class="prose">Each of the four edge states owns a hue and a stroke grammar at the same time.
+          Flowing is mint and continuous. Impaired is amber and long-dashed. Losing is rose, solid, and
+          the heaviest stroke on the canvas. Severed is violet, hairline, and broken. Weight rises with
+          consequence, so the ranking survives losing colour entirely.</p>
+          <p class="prose">It is keyboard-first, because the graph is a path and paths are walked.
+          <span class="kbd">j</span> and <span class="kbd">k</span> move upstream and downstream, and the
+          inspector follows. Everything is equally reachable by tab and click; the keys are an
+          accelerator, never the only route.</p>
+        </div>
+      </section>
+
+      <section class="pane">
+        <div class="pane__hd"><h2>Colour tokens</h2><span class="caps">Dark theme only · WCAG 2.2 AA</span></div>
+        <div class="pane__body--flush t-scroll">
+          <table class="t">
+            <caption>Ratios from the WCAG 2.x relative-luminance formula. Each ink is measured against
+            every surface it is allowed to sit on; the worst of those has to pass.</caption>
+            <thead><tr><th scope="col">Token</th><th scope="col">Hex</th><th scope="col">Swatch</th><th scope="col">Role</th>
+              <th class="num" scope="col">on #0D0E14</th><th class="num" scope="col">on #16181F</th>
+              <th class="num" scope="col">on #1E212A</th><th class="num" scope="col">on #282C37</th>
+              <th scope="col">Verdict</th></tr></thead>
+            <tbody>
+              <tr><th scope="row" class="mono">--c-bg-0</th><td class="mono">#0D0E14</td><td><span class="sw sw--bg0"></span></td>
+                <td>Page and graph ground</td><td class="num na">—</td><td class="num na">—</td><td class="num na">—</td><td class="num na">—</td><td class="na">surface</td></tr>
+              <tr><th scope="row" class="mono">--c-bg-1</th><td class="mono">#16181F</td><td><span class="sw sw--bg1"></span></td>
+                <td>Pane</td><td class="num na">1.09</td><td class="num na">—</td><td class="num na">—</td><td class="num na">—</td><td class="na">surface</td></tr>
+              <tr><th scope="row" class="mono">--c-bg-2</th><td class="mono">#1E212A</td><td><span class="sw sw--bg2"></span></td>
+                <td>Node fill, row hover</td><td class="num na">1.20</td><td class="num na">—</td><td class="num na">—</td><td class="num na">—</td><td class="na">surface</td></tr>
+              <tr><th scope="row" class="mono">--c-bg-3</th><td class="mono">#282C37</td><td><span class="sw sw--bg3"></span></td>
+                <td>Sink node fill, track</td><td class="num na">1.38</td><td class="num na">—</td><td class="num na">—</td><td class="num na">—</td><td class="na">surface</td></tr>
+              <tr><th scope="row" class="mono">--c-line</th><td class="mono">#343846</td><td><span class="sw sw--line"></span></td>
+                <td>Hairline rule</td><td class="num">1.65</td><td class="num">1.52</td><td class="num">1.38</td><td class="num">1.20</td>
+                <td class="na">decorative only — never the sole carrier of meaning</td></tr>
+              <tr><th scope="row" class="mono">--c-rule</th><td class="mono">#474C5E</td><td><span class="sw sw--rule"></span></td>
+                <td>Node border, control border</td><td class="num pass">3.01</td><td class="num pass">2.76</td><td class="num">2.50</td><td class="num">2.17</td>
+                <td class="pass">AA non-text on #0D0E14 and #16181F. Not used on the lighter two.</td></tr>
+              <tr><th scope="row" class="mono">--c-ink-0</th><td class="mono">#ECEDF2</td><td><span class="sw sw--ink0"></span></td>
+                <td>Values, node names, severed labels</td>
+                <td class="num pass">16.48</td><td class="num pass">15.16</td><td class="num pass">13.75</td><td class="num pass">11.93</td><td class="pass">AAA</td></tr>
+              <tr><th scope="row" class="mono">--c-ink-1</th><td class="mono">#ADB0BF</td><td><span class="sw sw--ink1"></span></td>
+                <td>Body prose, and the severed-pipe stroke</td>
+                <td class="num pass">8.93</td><td class="num pass">8.22</td><td class="num pass">7.46</td><td class="num pass">6.47</td><td class="pass">AAA</td></tr>
+              <tr><th scope="row" class="mono">--c-ink-2</th><td class="mono">#8F93A3</td><td><span class="sw sw--ink2"></span></td>
+                <td>Labels, units, node subtitles</td>
+                <td class="num pass">6.30</td><td class="num pass">5.80</td><td class="num pass">5.26</td><td class="num pass">4.56</td><td class="pass">AA at every step</td></tr>
+              <tr><th scope="row" class="mono">--c-ink-3</th><td class="mono">#71768A</td><td><span class="sw sw--ink3"></span></td>
+                <td class="muted-text">Non-text only: absent stubs, dashed borders, disabled edges</td>
+                <td class="num pass">4.28</td><td class="num pass">3.93</td><td class="num pass">3.57</td><td class="num pass">3.10</td>
+                <td class="pass">AA non-text (≥3) at every step. Never used for text.</td></tr>
+            </tbody>
+          </table>
+
+          <table class="t">
+            <caption>Four edge hues plus one metric hue. Each is used as text on dark and as a fill
+            carrying dark text, so both directions are given. Where a chip also ships a same-hue wash, the
+            washed surface it actually renders against is given too — the bare-surface number is the upper
+            bound, the washed number is the one on screen.</caption>
+            <thead><tr><th scope="col">Token</th><th scope="col">Hex</th><th scope="col">Swatch</th>
+              <th class="num" scope="col">as text on #16181F</th>
+              <th class="num" scope="col">on its own wash</th>
+              <th class="num" scope="col">#0D0E14 on fill</th>
+              <th scope="col">Verdict</th><th scope="col">Carrier that is not colour</th></tr></thead>
+            <tbody>
+              <tr><th scope="row" class="mono">--c-fault</th><td class="mono">#FF6E8A</td><td><span class="sw sw--fault"></span></td>
+                <td class="num pass">6.63</td><td class="num na">—</td><td class="num pass">7.20</td><td class="pass">AA text, AAA on fill</td>
+                <td>Thickest stroke in the graph (3.5 px, solid), filled chip, and the word LOST or FAILED</td></tr>
+              <tr><th scope="row" class="mono">--c-degrade</th><td class="mono">#FFC957</td><td><span class="sw sw--degrade"></span></td>
+                <td class="num pass">11.60</td><td class="num na">—</td><td class="num pass">12.61</td><td class="pass">AAA both</td>
+                <td>Long-dash stroke (10-4), filled chip, <span class="mono">▲</span>, and the word IMPAIRED</td></tr>
+              <tr><th scope="row" class="mono">--c-flowing</th><td class="mono">#5FD9A4</td><td><span class="sw sw--flowing"></span></td>
+                <td class="num pass">10.09</td><td class="num pass">8.33</td><td class="num pass">10.96</td><td class="pass">AAA both</td>
+                <td>Continuous 2.5 px stroke — the only unbroken line in the system — plus a 10 % wash and the word FLOWING</td></tr>
+              <tr><th scope="row" class="mono">--c-severed</th><td class="mono">#B4A0FF</td><td><span class="sw sw--severed"></span></td>
+                <td class="num pass">7.95</td><td class="num pass">6.28</td><td class="num pass">8.64</td><td class="pass">AA text, AAA on fill</td>
+                <td><b>A cut in the line.</b> 1.5 px hairline, 5-6 dash, and two drawn slash marks across the break. Dashed chip over a striped wash.</td></tr>
+              <tr><th scope="row" class="mono">--c-flow</th><td class="mono">#77C7E8</td><td><span class="sw sw--flow"></span></td>
+                <td class="num pass">9.39</td><td class="num na">—</td><td class="num pass">10.20</td><td class="pass">AAA both</td>
+                <td><b>Metric hue, not a status.</b> Reserved for a throughput plotted over time. It never appears on a status component and is never a chart category.</td></tr>
+              <tr><th scope="row">not configured</th><td class="mono">#71768A <span class="muted-text">stroke only</span></td>
+                <td><span class="sw sw--ink3"></span></td>
+                <td class="num pass">3.93</td><td class="num na">—</td><td class="num na">—</td><td class="pass">AA non-text</td>
+                <td>1 px dotted stub that stops short of any node, dotted chip, and the words NOT CONFIGURED</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="pane__ft">
+          <p class="prose"><b>Why flowing gets a colour.</b> A graph where only the faults are coloured
+          shows you the breaks but not the shape of the thing that is working, and reading this console is
+          mostly the second task: following a healthy path until it stops. Mint marks every edge the
+          record is actually moving through, which makes the cuts read as interruptions in something
+          rather than as isolated badges. It is blue-shifted on purpose — a true green sits on top of
+          amber under deuteranopia.</p>
+          <p class="prose">The metric hue stays separate from all four. Cyan
+          <span class="mono">#77C7E8</span> is only ever a rate plotted over time, never a state, and no
+          status hue is ever reused as a chart category. Grey is left for one thing: a source declared
+          absent, where there is no edge to have a state.</p>
+        </div>
+      </section>
+
+      <section class="pane">
+        <div class="pane__hd"><h2>Colour-vision verification</h2></div>
+        <div class="pane__body--flush t-scroll">
+          <table class="t">
+            <caption>Simulated with the Brettel–Viénot–Mollon LMS transform at 100 % severity for each
+            dichromacy, then re-checked as greyscale. Every edge state also differs in stroke weight and
+            dash pattern, which is what carries the distinction on a printed or photographed screen.</caption>
+            <thead><tr><th scope="col">Pair</th><th scope="col">Deuteranopia</th><th scope="col">Protanopia</th>
+              <th scope="col">Tritanopia</th><th scope="col">Greyscale</th><th scope="col">Verdict</th></tr></thead>
+            <tbody>
+              <tr><th scope="row">fault vs impaired<br><span class="muted-text">rose vs amber</span></th>
+                <td>Both collapse toward yellow-tan; hue separation is lost.</td>
+                <td>Rose darkens; partial separation survives on lightness.</td>
+                <td>Rose → pink, amber → pale yellow. Distinct.</td>
+                <td>Relative luminance 0.342 vs 0.637 — 1.9:1 apart.</td>
+                <td class="pass">Pass, and not on hue. Stroke weight differs (3.5 px solid vs 2.5 px long-dash), the chip glyph differs, and the words LOST and IMPAIRED are always printed. This is the classic collision and it is carried three other ways.</td></tr>
+              <tr><th scope="row">flowing vs impaired<br><span class="muted-text">mint vs amber</span></th>
+                <td>Mint goes pale sand, amber goes tan; roughly two lightness steps apart.</td>
+                <td>Mint holds a blue cast. Distinct.</td>
+                <td>Mint → pale blue, amber → pink. Distinct.</td>
+                <td>0.547 vs 0.637 — close.</td>
+                <td class="pass">Pass on dash pattern: flowing is a continuous stroke, impaired is 10-4 dashed. Continuity versus interruption is the graph's primary grammar and it is independent of hue.</td></tr>
+              <tr><th scope="row">flowing vs severed<br><span class="muted-text">mint vs violet</span></th>
+                <td>Sand vs blue-grey. Distinct.</td><td>Distinct.</td>
+                <td>Both drift toward pale blue — weakest of the pairs.</td>
+                <td>0.547 vs 0.421.</td>
+                <td class="pass">Pass on stroke: 2.5 px continuous versus a 1.5 px hairline with two slash marks drawn through the break. Presence versus absence of an unbroken line survives greyscale, photography and a dim room.</td></tr>
+              <tr><th scope="row">severed vs not configured<br><span class="muted-text">violet vs grey</span></th>
+                <td>Violet keeps saturation; grey has none. Distinct.</td><td>Distinct.</td>
+                <td>Narrower, but violet still reads cooler.</td>
+                <td>0.421 vs 0.294; dash pitch 5-6 vs 2-6; the absent stub stops short of the node.</td>
+                <td class="pass">Pass on hue, stroke weight, dash pitch and termination. Absent is the only colourless edge in the system, which is itself the signal: grey means "no edge expected", never "we cannot tell".</td></tr>
+              <tr><th scope="row">fault vs severed<br><span class="muted-text">rose vs violet</span></th>
+                <td>Tan vs blue-grey. Distinct.</td><td>Distinct.</td>
+                <td>Both move pink — hue separation weak.</td>
+                <td>0.342 vs 0.421.</td>
+                <td class="pass">Pass on weight and continuity: 3.5 px solid versus 1.5 px broken. The heaviest stroke on the canvas is always the one losing data.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="pane">
+        <div class="pane__hd"><h2>Five vocabularies</h2>
+          <span class="caps">Each has its own shape. Two may appear side by side; they are never merged.</span></div>
+        <div class="pane__body stack">
+          <div>
+            <h3 class="caps">1 · Health assertion — is the record moving through here?</h3>
+            <p class="prose">Three values, drawn as a pipe. Never shown without a freshness reading.</p>
+            <div class="row">
+              <span class="st st--flowing"><span class="pip pip--flowing" aria-hidden="true"></span> Flowing</span>
+              <span class="st st--lost"><span aria-hidden="true">✕</span> Lost</span>
+              <span class="st st--impaired"><span aria-hidden="true">▲</span> Impaired</span>
+              <span class="st st--severed"><span class="pip pip--severed" aria-hidden="true"></span> Severed</span>
+              <span class="st st--absent"><span aria-hidden="true">—</span> Not configured</span>
+            </div>
+            <hr class="divider">
+            <div class="fields fields--wide">
+              <span class="field__k">With freshness</span>
+              <span class="field__v"><span class="st st--flowing"><span class="pip pip--flowing" aria-hidden="true"></span> Flowing</span>
+                <span class="fresh" data-age-s="41" data-expect-s="120"><span class="fresh__age">41s ago</span><span class="fresh__expect">2m</span></span></span>
+              <span class="field__k">Severed by age</span>
+              <span class="field__v"><span class="st st--severed"><span class="pip pip--severed" aria-hidden="true"></span> Severed</span>
+                <span class="fresh fresh--over" data-age-s="9720" data-expect-s="600"><span class="fresh__age">2h 42m ago</span><span class="fresh__expect">10m</span></span>
+                <span class="lastknown lastknown--fault">Last known: <b>failing at 02:14</b> — sensor disconnected during pairing.</span></span>
+            </div>
+            <p class="prose"><b>Current confidence and last known outcome are separate facts and both stay
+            on screen.</b> An edge going dark does not erase what last came through it, and the reason is
+            the only part that can be acted on. An edge whose own check is older than its expected
+            interval severs itself; nobody has to decide that.</p>
+          </div>
+
+          <hr class="divider">
+
+          <div>
+            <h3 class="caps">2 · Lifecycle — what happened to a piece of work?</h3>
+            <p class="prose">A filled pill, no pipe and no cut. A run is not an edge.</p>
+            <div class="row">
+              <span class="life life--queued">Queued · position 2</span>
+              <span class="life life--running"><span class="life__pulse" aria-hidden="true"></span> Running · 04:12</span>
+              <span class="life life--succeeded">Succeeded · 06:41</span>
+              <span class="life life--failed">Failed · rate limit</span>
+              <span class="life life--cancelled">Cancelled by operator</span>
+            </div>
+            <p class="prose">A finished upload is not flowing. A queued job is not severed. A failed run
+            severs an edge only if the thing it should have produced is now stale.</p>
+          </div>
+
+          <hr class="divider">
+
+          <div>
+            <h3 class="caps">3 · Process state — systemd's own words</h3>
+            <p class="prose">Reported, never interpreted.</p>
+            <div class="row">
+              <span class="proc proc--active"><span class="proc__led" aria-hidden="true"></span> active (running)</span>
+              <span class="proc proc--activating"><span class="proc__led" aria-hidden="true"></span> activating (start)</span>
+              <span class="proc proc--failed"><span class="proc__led" aria-hidden="true"></span> failed (Result: exit-code)</span>
+              <span class="proc proc--inactive"><span class="proc__led" aria-hidden="true"></span> inactive (dead)</span>
+            </div>
+            <hr class="divider">
+            <div class="note note--severed">
+              <span class="proc proc--active"><span class="proc__led" aria-hidden="true"></span> active (running)</span>
+              &nbsp;+&nbsp;<span class="st st--severed"><span class="pip pip--severed" aria-hidden="true"></span> Severed</span>
+              &nbsp;— the process is alive and its outgoing edge is cut. Both are true. Collapsing them is
+              how tonight's failure would have stayed invisible.
+            </div>
+          </div>
+
+          <hr class="divider">
+
+          <div>
+            <h3 class="caps">4 · Operator suppression</h3>
+            <p class="prose">A severed edge can be muted with an expiry and a named operator. The mute
+            stops the reporting, never the attempts, and it is never re-badged as configuration.</p>
+            <div class="row">
+              <span class="mute">⊘ Muted to 09 Aug · <b>operator</b></span>
+              <span class="mute">⊘ Muted 6 more nights · <b>operator</b></span>
+            </div>
+          </div>
+
+          <hr class="divider">
+
+          <div>
+            <h3 class="caps">5 · Configuration — no edge to draw</h3>
+            <p class="prose">A source that does not exist gets a dotted stub that terminates in open
+            space, because there is no downstream to reach. Excluded from the rollup and from the report.</p>
+            <div class="row">
+              <span class="st st--absent"><span aria-hidden="true">—</span> Not configured</span>
+              <span class="absent-note">Declared absent 02 June 2026 — no BP cuff owned.</span>
+            </div>
+            <p class="prose"><b>The distinction that protects the third state.</b> A configured ring that
+            went unworn is a muted severed edge with an expiry. A device that does not exist is a stub. If
+            every optional thing renders as a cut pipe, cuts become wallpaper and the graph stops
+            working.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="pane">
+        <div class="pane__hd"><h2>Type and space</h2></div>
+        <div class="pane__body cols-2">
+          <div class="t-scroll"><table class="t">
+            <thead><tr><th scope="col">Token</th><th class="num" scope="col">px</th><th scope="col">Face</th><th scope="col">Use</th></tr></thead>
+            <tbody>
+              <tr><th scope="row" class="mono">--t-mega</th><td class="num">42</td><td>mono 700</td><td>The one number that matters on a screen</td></tr>
+              <tr><th scope="row" class="mono">--t-xl</th><td class="num">25</td><td>Helvetica 700</td><td>Screen title</td></tr>
+              <tr><th scope="row" class="mono">--t-lg</th><td class="num">19</td><td>mono 700</td><td>Timeline verdict</td></tr>
+              <tr><th scope="row" class="mono">--t-md</th><td class="num">17</td><td>Helvetica</td><td>Pane heading</td></tr>
+              <tr><th scope="row" class="mono">--t-base</th><td class="num">16</td><td>Helvetica</td><td>Body prose floor</td></tr>
+              <tr><th scope="row" class="mono">--t-data</th><td class="num">15</td><td>mono</td><td>Table cells, field values</td></tr>
+              <tr><th scope="row" class="mono">--t-label</th><td class="num">14</td><td>Helvetica 700 caps</td><td>Labels, chips, key hints. Absolute floor.</td></tr>
+              <tr><th scope="row">graph node and edge labels</th><td class="num">14</td><td>mono</td>
+                <td>Node names, node readings and edge labels inside the diagram all sit at
+                <span class="mono">--t-label</span>. Nothing in this system renders below 14 px, including
+                inside SVG — and every node's text is duplicated verbatim in the inspector and in the table
+                beneath the graph, so the diagram is never the only place a value appears.</td></tr>
+            </tbody>
+          </table></div>
+          <div class="t-scroll"><table class="t">
+            <thead><tr><th scope="col">Token</th><th class="num" scope="col">px</th><th scope="col">Use</th></tr></thead>
+            <tbody>
+              <tr><th scope="row" class="mono">--s-1 … --s-3</th><td class="num">4 / 8 / 12</td><td>Chips, table cells, field gaps</td></tr>
+              <tr><th scope="row" class="mono">--s-4 / --s-5</th><td class="num">16 / 20</td><td>Pane padding, gaps between panes</td></tr>
+              <tr><th scope="row" class="mono">--s-6 … --s-12</th><td class="num">24 / 32 / 44 / 60</td><td>Section separation, page gutters</td></tr>
+              <tr><th scope="row" class="mono">--insp-w</th><td class="num">400</td><td>Inspector column. Fixed, so the graph never reflows as you walk it.</td></tr>
+              <tr><th scope="row" class="mono">--r-1</th><td class="num">2</td><td>The only radius. Nodes and panes share it so a node reads as the same object in both places.</td></tr>
+            </tbody>
+          </table></div>
+        </div>
+        <div class="pane__ft"><p class="prose">Edge stroke weights are part of the type system, not
+        decoration: 1.5 px severed, 2.5 px flowing and impaired, 3.5 px losing. Weight rises with
+        consequence, so severity survives losing all colour.</p></div>
+      </section>
+
+      <section class="pane">
+        <div class="pane__hd"><h2>Node and pane, in every state</h2></div>
+        <div class="pane__body cols-3">
+          <div class="pane"><div class="pane__hd"><h3>Default</h3>
+            <span class="caps"><span class="st st--flowing"><span class="pip pip--flowing" aria-hidden="true"></span> Flowing</span></span></div>
+            <div class="pane__body stack--tight">
+              <div class="fig fig--flow"><span class="fig__k">Arriving</span><span class="fig__v">340<span class="unit">rows/min</span></span></div>
+              <hr class="divider">
+              <span class="fresh" data-age-s="41" data-expect-s="120"><span class="fresh__age">41s ago</span><span class="fresh__expect">2m</span></span></div></div>
+          <div class="pane"><div class="pane__hd"><h3>Loading</h3><span class="caps"><span class="skel">······</span></span></div>
+            <div class="pane__body stack--tight">
+              <div class="fig"><span class="fig__k">Arriving</span><span class="fig__v"><span class="skel">····</span></span></div>
+              <hr class="divider"><span class="skel">···········</span></div></div>
+          <div class="pane"><div class="pane__hd"><h3>Empty</h3>
+            <span class="caps"><span class="st st--severed">No data yet</span></span></div>
+            <div class="pane__body"><div class="empty"><h3>Nothing has ever flowed</h3>
+              <p>Configured, collector running, and it has never returned a row. There is no last known
+              outcome to inherit.</p>
+              <button class="btn btn--sm" type="button">Run collector now</button></div></div></div>
+          <div class="pane pane--severed"><div class="pane__hd"><h3>Severed by staleness</h3>
+            <span class="caps"><span class="st st--severed"><span class="pip pip--severed" aria-hidden="true"></span> Severed</span></span></div>
+            <div class="pane__body stack--tight">
+              <div class="fig"><span class="fig__k">Nothing through for</span><span class="fig__v">9<span class="unit">h 04m</span></span></div>
+              <hr class="divider">
+              <span class="fresh fresh--over" data-age-s="32640" data-expect-s="120"><span class="fresh__age">9h 4m ago</span><span class="fresh__expect">2m</span></span>
+              <span class="lastknown">Last known: <b>flowing at 00:52</b> — 118 samples, timestamp advanced.</span></div></div>
+          <div class="pane pane--absent"><div class="pane__hd"><h3>Not configured</h3>
+            <span class="caps"><span class="st st--absent"><span aria-hidden="true">—</span> N/C</span></span></div>
+            <div class="pane__body"><p class="absent-note">Declared absent 02 Jun 2026 — no BP cuff owned.
+              Excluded from the rollup and from the report. Drawn as a stub, not a cut.</p>
+              <hr class="divider"><button class="btn btn--sm" type="button">Configure a source</button></div></div>
+          <div class="pane pane--degrade"><div class="pane__hd"><h3>Impaired</h3>
+            <span class="caps"><span class="st st--impaired"><span aria-hidden="true">▲</span> Impaired</span></span></div>
+            <div class="pane__body stack--tight">
+              <div class="fig fig--degrade"><span class="fig__k">Spool depth</span><span class="fig__v">14,208<span class="unit">rows</span></span></div>
+              <hr class="divider">
+              <span class="fresh" data-age-s="61" data-expect-s="120"><span class="fresh__age">1m ago</span><span class="fresh__expect">2m</span></span>
+              <span class="lastknown">Drain 210/min against 340 arriving. Nothing lost yet.</span></div></div>
+          <div class="pane pane--fault"><div class="pane__hd"><h3>Losing data</h3>
+            <span class="caps"><span class="st st--lost"><span aria-hidden="true">✕</span> Lost</span></span></div>
+            <div class="pane__body stack--tight">
+              <div class="fig fig--fault"><span class="fig__k">HRV missing</span><span class="fig__v">7<span class="unit">h 42m</span></span></div>
+              <hr class="divider">
+              <span class="fresh fresh--over" data-age-s="27720" data-expect-s="120"><span class="fresh__age">7h 42m ago</span><span class="fresh__expect">2m</span></span>
+              <span class="lastknown lastknown--fault">Last known: <b>failing at 02:14</b> — start-limit-hit after 5 restarts.</span></div></div>
+          <div class="pane"><div class="pane__hd"><h3>Muted</h3><span class="caps"><span class="mute">⊘ to 09 Aug</span></span></div>
+            <div class="pane__body stack--tight">
+              <div class="fig"><span class="fig__k">Ring</span><span class="fig__v">2<span class="unit">nights</span></span></div>
+              <hr class="divider">
+              <p class="absent-note">Benign severance. Ring not worn while travelling. The mute expires on
+              09 Aug and the edge returns to an unmuted cut on its own.</p></div></div>
+          <div class="pane"><div class="pane__hd"><h3>Rollup arithmetic</h3><span class="caps">2 excluded</span></div>
+            <div class="pane__body stack--tight">
+              <div class="fields"><span class="field__k">Counted</span><span class="field__v mono">17 edges</span>
+                <span class="field__k">Muted</span><span class="field__v mono">1 · ring</span>
+                <span class="field__k">Absent</span><span class="field__v mono">1 · BP cuff</span></div>
+              <hr class="divider">
+              <p class="absent-note">Rollups count only edges that are configured and unmuted, so a clean
+              rollup cannot be produced by muting things.</p></div></div>
+        </div>
+      </section>
+
+      <section class="pane">
+        <div class="pane__hd"><h2>Buttons and destructive controls</h2></div>
+        <div class="pane__body stack--tight">
+          <div class="row">
+            <button class="btn btn--primary" type="button">Save changes</button>
+            <button class="btn" type="button">Refresh <span class="btn__key">r</span></button>
+            <button class="btn btn--ghost" type="button">Discard</button>
+            <button class="btn btn--sm" type="button">Small</button>
+            <button class="btn" type="button" disabled>Disabled</button>
+          </div>
+          <hr class="divider">
+          <p class="prose">Destructive controls are hatched, rose-bordered, and separated from safe ones by
+          a dashed gap. Never adjacent to a routine action, never one click from completion, and never
+          bound to a bare keystroke.</p>
+          <div class="actions-split">
+            <button class="btn" type="button">Reload unit</button>
+            <button class="btn" type="button">Rotate logs</button>
+            <span class="actions-split__gap" aria-hidden="true"></span>
+            <button class="btn btn--danger" type="button" data-action="open" data-target="m-restart">Restart daemon…</button>
+          </div>
+          <hr class="divider">
+          <div class="danger-zone">
+            <div class="danger-zone__hd"><b>Destructive</b>
+              <p class="prose">Restoring into the live cluster overwrites the system of record.
+              Confirmation requires typing the cluster name.</p></div>
+            <button class="btn btn--danger" type="button">Restore into live cluster…</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="pane">
+        <div class="pane__hd"><h2>Form controls</h2></div>
+        <div class="pane__body">
+          <form class="form" data-dirty-track onsubmit="return false">
+            <div class="form__row"><label for="f1" class="req">Source ID</label>
+              <div><input class="input" id="f1" name="f1" value="polar-h10-chest">
+                <span class="hint">Immutable once samples exist. Used as the join key in exports.</span></div></div>
+            <div class="form__row"><label for="f2" class="req">Expected cadence</label>
+              <div><input class="input" id="f2" name="f2" value="90" aria-invalid="true" aria-describedby="f2e">
+                <span id="f2e" class="err">Below the 120 s minimum for a BLE source. A cadence tighter than the radio can deliver draws a healthy source as permanently severed.</span></div></div>
+            <div class="form__row"><label for="f3">Grace multiplier</label>
+              <div><select class="select" id="f3" name="f3"><option>1.5 × cadence</option>
+                <option selected>2.0 × cadence</option><option>3.0 × cadence</option></select>
+                <span class="hint">How far past the cadence an edge may drift before it is drawn cut.</span></div></div>
+            <div class="form__row"><label for="f4">Notes</label>
+              <div><textarea class="textarea" id="f4" name="f4" placeholder="Free text. Appears in the export header."></textarea></div></div>
+            <div class="form__row"><span class="form__legend">Flags</span>
+              <div class="stack--tight">
+                <div class="check"><input type="checkbox" id="f5" name="f5" checked>
+                  <label for="f5">Count this edge in the rollup</label></div>
+                <div class="check"><input type="checkbox" id="f6" name="f6">
+                  <label for="f6">Declared absent — draw as a stub, exclude from rollups and reports</label></div>
+              </div></div>
+            <div class="savebar" data-dirty="false">
+              <span class="savebar__state">No changes since last save.</span>
+              <button class="btn btn--ghost" type="reset" data-needs-dirty disabled>Discard</button>
+              <button class="btn btn--primary" type="submit" data-needs-dirty disabled>Save changes</button>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <section class="pane">
+        <div class="pane__hd"><h2>Confirmations, proportionate to consequence</h2></div>
+        <div class="pane__body stack--tight">
+          <p class="prose">Three weights. Reversible actions confirm inline. A recoverable cost gets a plain
+          dialog. Anything unrecoverable lists what will be lost and requires the object's name typed.</p>
+          <div class="row">
+            <button class="btn" type="button" data-action="open" data-target="m-plain">Level 2 · plain dialog</button>
+            <span class="actions-split__gap" aria-hidden="true"></span>
+            <button class="btn btn--danger" type="button" data-action="open" data-target="m-typed">Level 3 · typed confirmation</button>
+          </div>
+        </div>
+      </section>
+    </div>
+
+<div class="scrim" id="m-plain" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="mp-h">
+    <div class="modal__hd"><h2 id="mp-h">Delete therapy session?</h2></div>
+    <div class="modal__body">
+      <p class="prose">Thursday 14:00 with R. Alvarez, weekly. Removed from the schedule. Past journal
+      entries that reference it are unaffected.</p>
+      <p class="prose muted-text">Recoverable from the audit log for 30 days.</p></div>
+    <div class="modal__ft"><button class="btn btn--ghost" type="button" data-action="close">Cancel</button>
+      <span class="grow"></span><button class="btn" type="button" data-action="close">Delete session</button></div>
+  </div>
+</div>
+
+<div class="scrim" id="m-typed" hidden data-no-escape>
+  <div class="modal modal--danger" role="alertdialog" aria-modal="true" aria-labelledby="mt-h">
+    <div class="modal__hd"><span aria-hidden="true">✕</span><h2 id="mt-h">Revoke API key “home-assistant”?</h2></div>
+    <form class="modal__body" data-confirm-phrase="home-assistant" onsubmit="return false">
+      <p class="prose">Immediate and permanent. A replacement can be issued; this key cannot be restored.</p>
+      <ul class="consequences">
+        <li>Any client presenting this key receives 401 at once.</li>
+        <li>The Home Assistant bridge stops writing heart-rate samples until re-keyed.</li>
+        <li>Samples arriving during the gap are not buffered. They are lost.</li>
+      </ul>
+      <div><label class="caps" for="mt-i">Type <span class="mono">home-assistant</span> to confirm</label>
+        <input class="input" id="mt-i" data-confirm-input autocomplete="off" placeholder="key name"></div>
+      <div class="modal__ft"><button class="btn btn--ghost" type="button" data-action="close">Cancel</button>
+        <span class="grow"></span>
+        <button class="btn btn--danger" type="submit" data-confirm-go disabled>Revoke permanently</button></div>
+    </form>
+  </div>
+</div>
+
+<div class="scrim" id="m-restart" hidden>
+  <div class="modal modal--danger" role="alertdialog" aria-modal="true" aria-labelledby="mrst-h">
+    <div class="modal__hd"><span aria-hidden="true">✕</span><h2 id="mrst-h">Restart aw2-collector-chest?</h2></div>
+    <div class="modal__body">
+      <p class="prose">The chest strap must re-pair after the restart. Pairing typically takes 40–90
+      seconds and has failed on 3 of the last 20 attempts.</p>
+      <ul class="consequences">
+        <li>Estimated sample gap 1–2 minutes, longer if pairing fails.</li>
+        <li>Tonight's HRV baseline is computed from a full night. A gap invalidates it.</li>
+      </ul></div>
+    <div class="modal__ft"><button class="btn btn--ghost" type="button" data-action="close">Cancel</button>
+      <span class="grow"></span><button class="btn btn--danger" type="button" data-action="close">Restart unit</button></div>
+  </div>
+</div>
+  </main>
+</div>
+
+<div class="scrim" id="keymap" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="km-h">
+    <div class="modal__hd"><h2 id="km-h">Keyboard</h2></div>
+    <div class="modal__body">
+      <div class="fields fields--wide">
+        <span class="field__k"><span class="kbd">j</span> <span class="kbd">k</span></span><span class="field__v">Walk the flow path, upstream and downstream</span>
+        <span class="field__k"><span class="kbd">↑</span> <span class="kbd">↓</span></span><span class="field__v">Same as j and k</span>
+        <span class="field__k"><span class="kbd">/</span></span><span class="field__v">Focus the node filter</span>
+        <span class="field__k"><span class="kbd">1</span>–<span class="kbd">9</span></span><span class="field__v">Jump to a screen</span>
+        <span class="field__k"><span class="kbd">r</span></span><span class="field__v">Refresh the feed</span>
+        <span class="field__k"><span class="kbd">?</span></span><span class="field__v">Show or hide this map</span>
+        <span class="field__k"><span class="kbd">esc</span></span><span class="field__v">Leave a field, or close a dialog</span>
+      </div>
+      <p class="prose muted-text">Every one of these is also reachable by tab and click. The keys are an accelerator, never the only route.</p>
+    </div>
+    <div class="modal__ft"><span class="grow"></span><button class="btn" type="button" data-action="close">Close</button></div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

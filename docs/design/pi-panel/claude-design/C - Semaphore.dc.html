@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<style>
+  body { margin:0; background:#131414; color:#D6D2CB; font-family:"Helvetica Neue",Helvetica,Arial,sans-serif; -webkit-font-smoothing:antialiased; }
+  a { color:#B9C0C7; text-decoration:none; border-bottom:1px solid #4A4F52; }
+  a:hover { color:#E8E4DC; }
+  @keyframes sem { 0%,49%{opacity:1} 50%,100%{opacity:.26} }
+</style>
+</helmet>
+
+<div style="padding:56px 64px 96px;display:flex;flex-direction:column;gap:56px;width:1760px;box-sizing:border-box;background:#131414;min-height:100vh">
+
+  <div style="display:flex;flex-direction:column;gap:20px;max-width:1020px">
+    <div style="display:flex;align-items:center;gap:14px">
+      <span style="font-size:14px;font-weight:700;letter-spacing:1.6px;color:#000;background:#D6D2CB;padding:5px 9px">1c</span>
+      <span style="font-size:14px;letter-spacing:2.4px;color:#9BA3AB">DIRECTION C</span>
+    </div>
+    <h1 style="margin:0;font-size:64px;font-weight:700;letter-spacing:-2px;line-height:1;color:#E8E4DC">Semaphore</h1>
+    <p style="margin:0;font-size:19px;line-height:1.6;color:#B4AFA6;text-wrap:pretty">A grayscale instrument. There is no colour code in this direction at all — the tier is carried by a single abstract form on the left: one mass, two bars, three bars, a full field, or a dashed empty outline. Shape is read faster than a word and survives everything a word does not: a wrong pair of glasses, a phone-lit room, a photograph, a colourblind eye, a printer. The right side is nothing but type, set in one family at two weights, with no boxes, no rules, no chrome of any kind.</p>
+    <p style="margin:0;font-size:19px;line-height:1.6;color:#B4AFA6;text-wrap:pretty">Its position on the brightness problem: <strong style="color:#E8E4DC;font-weight:700">make the display brightness a hardware dial rather than a design variable.</strong> Because nothing here depends on hue and the state ladder is also a luminance ladder — 3.17 : 1 at <code style="font-family:ui-monospace,Menlo,monospace">clear</code>, 6.99 at <code style="font-family:ui-monospace,Menlo,monospace">watch</code>, 13.94 at <code style="font-family:ui-monospace,Menlo,monospace">confirm</code> — the panel keeps its full meaning at 25% backlight, where a colour-coded design would collapse. Escalation is the panel spending more of its own contrast budget, and the one saturated colour in the system, at <code style="font-family:ui-monospace,Menlo,monospace">klaxon</code>, is a deliberate break in an otherwise colourless object.</p>
+  </div>
+
+  <div style="height:1px;background:#26292A"></div>
+
+  <div style="display:flex;flex-direction:column;gap:28px">
+    <h2 style="margin:0;font-size:15px;font-weight:700;letter-spacing:2.4px;color:#9BA3AB">DESIGN SYSTEM</h2>
+
+    <div style="display:flex;gap:24px;flex-wrap:wrap">
+      <div style="flex:1 1 700px;min-width:560px;border:1px solid #26292A">
+        <div style="display:grid;grid-template-columns:52px 1fr 118px 88px 1.5fr;gap:12px;padding:11px 14px;background:#0D0E0E;font-size:14px;letter-spacing:1.4px;color:#9BA3AB;font-weight:700">
+          <span></span><span>TOKEN</span><span>HEX</span><span>ON #000</span><span>ROLE</span>
+        </div>
+        <sc-for list="{{ tokens }}" as="t" hint-placeholder-count="8">
+          <div style="display:grid;grid-template-columns:52px 1fr 118px 88px 1.5fr;gap:12px;padding:9px 14px;border-top:1px solid #1E2021;align-items:center">
+            <span style="{{ t.swatch }}"></span>
+            <span style="font-size:15px;color:#D6D2CB;font-family:ui-monospace,Menlo,monospace">{{ t.name }}</span>
+            <span style="font-size:15px;color:#9BA3AB;font-family:ui-monospace,Menlo,monospace">{{ t.hex }}</span>
+            <span style="{{ t.ratioStyle }}">{{ t.ratio }}</span>
+            <span style="font-size:14.5px;color:#8E8A83;line-height:1.4">{{ t.role }}</span>
+          </div>
+        </sc-for>
+      </div>
+
+      <div style="flex:1 1 380px;min-width:340px;display:flex;flex-direction:column;gap:22px">
+        <div style="border:1px solid #26292A;padding:16px 18px;display:flex;flex-direction:column;gap:12px">
+          <span style="font-size:14px;font-weight:700;letter-spacing:1.6px;color:#9BA3AB">TYPE SCALE — 3 FT / 914 MM</span>
+          <sc-for list="{{ typeScale }}" as="r" hint-placeholder-count="6">
+            <div style="display:flex;align-items:baseline;gap:14px;border-top:1px solid #1E2021;padding-top:10px">
+              <span style="{{ r.demo }}">{{ r.sample }}</span>
+              <span style="margin-left:auto;font-size:14px;color:#9BA3AB;font-family:ui-monospace,Menlo,monospace;white-space:nowrap">{{ r.spec }}</span>
+              <span style="font-size:14px;color:#9BA3AB;width:106px;text-align:right">{{ r.use }}</span>
+            </div>
+          </sc-for>
+          <span style="font-size:14px;color:#8E8A83;line-height:1.5">Two weights of one grotesque, and monospace for anything that ticks. Hierarchy comes only from size, weight and position — there is not a single border, card or box in the panel, so type has to do all of the work. Grid: 38px side margins, 212px glyph column, 44px column gap, everything else set from a 6px baseline unit. Nothing below 14px.</span>
+        </div>
+
+        <div style="border:1px solid #26292A;padding:16px 18px;display:flex;flex-direction:column;gap:12px">
+          <span style="font-size:14px;font-weight:700;letter-spacing:1.6px;color:#9BA3AB">TOUCH</span>
+          <div style="display:flex;align-items:flex-end;gap:14px">
+            <div style="width:240px;height:56px;border-top:3px solid #D6D2CB;display:flex;align-items:center;font-size:14px;color:#9BA3AB;font-family:ui-monospace,Menlo,monospace">724 × 56 · silence</div>
+            <div style="width:110px;height:76px;border:2px dashed #4A4F52;display:flex;align-items:center;justify-content:center;font-size:14px;color:#9BA3AB;font-family:ui-monospace,Menlo,monospace;text-align:center">800 × 480<br>wake</div>
+          </div>
+          <span style="font-size:14px;color:#8E8A83;line-height:1.5">The silence strip spans the full content width at 56 px tall and is the only control; the rest of the surface wakes the panel. Because there is no chrome, the strip is defined by a 3 px rule and its own text — dashed when nothing is silenceable, solid when armed. Nothing is adjacent to it, so a clumsy finger has nothing else to hit.</span>
+        </div>
+      </div>
+    </div>
+
+    <div style="border:1px solid #26292A;padding:20px 22px;display:flex;flex-direction:column;gap:14px">
+      <span style="font-size:14px;font-weight:700;letter-spacing:1.6px;color:#9BA3AB">THE GLYPH LADDER — SHAPE FIRST, LUMINANCE SECOND, HUE NEVER</span>
+      <div style="display:flex;gap:18px;flex-wrap:wrap">
+        <sc-for list="{{ ladder }}" as="l" hint-placeholder-count="5">
+          <div style="width:250px;display:flex;flex-direction:column;gap:12px">
+            <div style="{{ l.stage }}">
+              <sc-if value="{{ l.question }}" hint-placeholder-val="{{ true }}">
+                <div style="{{ l.qBox }}">?</div>
+              </sc-if>
+              <sc-for list="{{ l.bars }}" as="b" hint-placeholder-count="1">
+                <div style="{{ b.style }}"></div>
+              </sc-for>
+            </div>
+            <span style="{{ l.tierStyle }}">{{ l.tier }}</span>
+            <span style="font-size:14px;color:#8E8A83;line-height:1.45">{{ l.desc }}</span>
+          </div>
+        </sc-for>
+      </div>
+      <span style="font-size:14.5px;color:#8E8A83;line-height:1.55;max-width:1040px">Verification: the five glyphs were compared as silhouettes with all colour removed — they differ in count (1 / 2 / 3 / 1 / 1), in fill (solid vs 5 px dashed outline) and in area (13.9k / 20.5k / 20.5k / 33.4k / 31k px²), so no two are confusable in grayscale. Under deuteranopia, protanopia and tritanopia simulation the grays are unchanged by definition and #E2453C darkens to ≈ #8A7C2C / #6E6B27 / #E14A56 — in every case still the largest, brightest, only-moving form on the panel. Hue carries no information in this direction, so there is nothing for a dichromat to lose.</span>
+    </div>
+
+    <div style="border:1px dashed #8B97A3;padding:22px 24px;display:flex;flex-direction:column;gap:18px">
+      <span style="font-size:14px;font-weight:700;letter-spacing:1.6px;color:#B9C0C7">THE INDETERMINATE TREATMENT — THE ONLY HOLLOW FORM IN THE SYSTEM</span>
+      <div style="display:flex;gap:26px;flex-wrap:wrap;align-items:flex-start">
+        <div style="width:300px;display:flex;flex-direction:column;gap:12px">
+          <span style="font-size:14px;letter-spacing:1.2px;color:#9BA3AB">MEASURED</span>
+          <div style="background:#000;padding:20px;display:flex;align-items:flex-end;gap:8px">
+            <span style="font-size:78px;font-weight:700;letter-spacing:-3px;line-height:.88;color:#D6D2CB;font-variant-numeric:tabular-nums;border-bottom:3px solid rgba(0,0,0,0)">97</span>
+            <span style="font-size:15px;color:#9BA3AB;padding-bottom:9px">%</span>
+          </div>
+          <span style="font-size:14px;color:#8E8A83;line-height:1.45">Solid figure, bone white, no underline.</span>
+        </div>
+        <div style="width:300px;display:flex;flex-direction:column;gap:12px">
+          <span style="font-size:14px;letter-spacing:1.2px;color:#B9C0C7">NOT MEASURED</span>
+          <div style="background:#000;padding:20px;display:flex;align-items:flex-end;gap:8px">
+            <span style="font-size:78px;font-weight:700;letter-spacing:-3px;line-height:.88;color:#8B97A3;border-bottom:3px dashed #8B97A3">?</span>
+            <span style="font-size:15px;color:#B9C0C7;padding-bottom:9px">NO DATA 6 m 12 s</span>
+          </div>
+          <span style="font-size:14px;color:#8E8A83;line-height:1.45">The figure is replaced by <strong style="color:#B9C0C7">?</strong> at identical size and position, cooled to slate, and underscored with a dashed rule. Dashed means unknown everywhere in the system and means nothing else anywhere.</span>
+        </div>
+        <div style="flex:1 1 320px;min-width:300px;display:flex;flex-direction:column;gap:12px">
+          <span style="font-size:14px;letter-spacing:1.2px;color:#B9C0C7">WHY IT CANNOT READ AS FINE</span>
+          <span style="font-size:14.5px;color:#8E8A83;line-height:1.55">“Fine” is a single filled block. “Can’t assess” is the same footprint <em style="color:#B4AFA6">emptied out</em> — a dashed outline with a 116px question mark inside it, at higher luminance than the calm state, alongside the words CAN’T ASSESS. Solid versus hollow is the single most robust distinction available at three feet in the dark: it survives blur, defocus, grayscale, and every dichromacy, and it is the one shape transition in the system that no physiological tier uses. Trends stop dead at the last real sample with a hollow cap and a dotted continuation; the sensor line that failed gets a dashed underline and its age in words.</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="height:1px;background:#26292A"></div>
+
+  <div style="display:flex;flex-direction:column;gap:22px">
+    <h2 style="margin:0;font-size:15px;font-weight:700;letter-spacing:2.4px;color:#9BA3AB">THE FIVE STATES — 800 × 480</h2>
+    <div style="display:flex;flex-wrap:wrap;gap:28px">
+      <sc-for list="{{ states }}" as="st" hint-placeholder-count="5">
+        <div style="display:flex;flex-direction:column;gap:10px;width:800px">
+          <div style="display:flex;align-items:baseline;gap:12px">
+            <span style="font-size:16px;font-weight:700;letter-spacing:1.6px;color:#D6D2CB">{{ st.caption }}</span>
+            <span style="font-size:14.5px;color:#8E8A83;line-height:1.4">{{ st.note }}</span>
+          </div>
+          <dc-import name="SemaphorePanel" s="{{ st }}" hint-size="800px,480px" style="width:800px;height:480px"></dc-import>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+  <div style="height:1px;background:#26292A"></div>
+
+  <div style="display:flex;flex-direction:column;gap:22px">
+    <h2 style="margin:0;font-size:15px;font-weight:700;letter-spacing:2.4px;color:#9BA3AB">HOLD TO SILENCE — LIVE</h2>
+    <p style="margin:0;font-size:16px;line-height:1.6;color:#8E8A83;max-width:800px">Press and hold the bottom strip for 3 seconds. Release before the end and it returns to zero.</p>
+    <dc-import name="SemaphorePanel" s="{{ live }}" hint-size="800px,480px" style="width:800px;height:480px"></dc-import>
+
+    <h2 style="margin:24px 0 0;font-size:15px;font-weight:700;letter-spacing:2.4px;color:#9BA3AB">HOLD TO SILENCE — THE FOUR STATES</h2>
+    <div style="display:flex;flex-wrap:wrap;gap:28px">
+      <sc-for list="{{ holdShots }}" as="h" hint-placeholder-count="4">
+        <div style="display:flex;flex-direction:column;gap:10px;width:800px">
+          <div style="display:flex;align-items:baseline;gap:12px">
+            <span style="font-size:16px;font-weight:700;letter-spacing:1.6px;color:#D6D2CB">{{ h.caption }}</span>
+            <span style="font-size:14.5px;color:#8E8A83">{{ h.note }}</span>
+          </div>
+          <dc-import name="SemaphorePanel" s="{{ h }}" hint-size="800px,480px" style="width:800px;height:480px"></dc-import>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+  <div style="height:1px;background:#26292A"></div>
+
+  <div style="display:flex;flex-direction:column;gap:22px">
+    <h2 style="margin:0;font-size:15px;font-weight:700;letter-spacing:2.4px;color:#9BA3AB">RESTING VS AWAKE</h2>
+    <p style="margin:0;font-size:16px;line-height:1.6;color:#8E8A83;max-width:1040px">At rest the panel keeps only the glyph and the tier word, both at the calm end of the luminance ladder: the shape is the status light, and it is legible without any text at all. Touch brings the type in at 120 ms and holds it 20 seconds past the last contact. A tier change replaces the glyph instantly — the form on the left literally changes shape, which is visible from across the room without reading anything. Nothing dims while an alarm is active.</p>
+    <div style="display:flex;flex-wrap:wrap;gap:28px">
+      <sc-for list="{{ wake }}" as="w" hint-placeholder-count="2">
+        <div style="display:flex;flex-direction:column;gap:10px;width:800px">
+          <div style="display:flex;align-items:baseline;gap:12px">
+            <span style="font-size:16px;font-weight:700;letter-spacing:1.6px;color:#D6D2CB">{{ w.caption }}</span>
+            <span style="font-size:14.5px;color:#8E8A83">{{ w.note }}</span>
+          </div>
+          <dc-import name="SemaphorePanel" s="{{ w }}" hint-size="800px,480px" style="width:800px;height:480px"></dc-import>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{}">
+const MONO = "ui-monospace,SFMono-Regular,Menlo,Consolas,monospace";
+const SANS = "Helvetica Neue, Helvetica, Arial, sans-serif";
+const HOLD_MS = 3000;
+const BONE = '#D6D2CB', WARM = '#9A948C', QUIET = '#7F7A72', DIM = '#585F52', SL = '#8B97A3', HI = '#B9C0C7', RD = '#E2453C';
+
+const SENSORS_OK = [
+  { name: 'POLAR H10', age: '2 s', ok: true },
+  { name: 'EMAY SpO₂', age: '4 s', ok: true },
+  { name: 'A&D CUFF', age: '37 m', ok: true },
+  { name: 'HEALTHKIT', age: '1 m', ok: true }
+];
+const SYS_OK = 'SELF-TEST PASS 02:00 · BACKUP 21 m · RESTORE 3 d · DISK 62 %';
+
+class Component extends DCLogic {
+  state = { p: 0, phase: 'idle' };
+  componentWillUnmount() { cancelAnimationFrame(this.raf); clearTimeout(this.tid); }
+
+  down = () => {
+    if (this.state.phase === 'done') return;
+    this.t0 = performance.now();
+    this.setState({ phase: 'holding', p: 0 });
+    const step = () => {
+      const p = Math.min(1, (performance.now() - this.t0) / HOLD_MS);
+      if (p >= 1) { this.setState({ p: 1, phase: 'done' }); return; }
+      this.setState({ p });
+      this.raf = requestAnimationFrame(step);
+    };
+    this.raf = requestAnimationFrame(step);
+  };
+  up = () => {
+    cancelAnimationFrame(this.raf);
+    if (this.state.phase === 'holding') {
+      this.setState({ p: 0, phase: 'released' });
+      clearTimeout(this.tid);
+      this.tid = setTimeout(() => this.setState({ phase: 'idle' }), 1600);
+    }
+  };
+
+  renderVals() {
+    const tokens = [
+      ['--ground', '#000000', '—', 'Everything sits on true black; the glyph is the only large lit form.'],
+      ['--calm', '#585F52', '3.17 : 1', 'CLEAR glyph and resting tier word. Large-form only (≥ 24px / ≥ 118px block), so 3:1 applies.'],
+      ['--watch', '#9A948C', '6.99 : 1', 'WATCH glyph and word. One step up the luminance ladder, no hue shift.'],
+      ['--confirm', '#D6D2CB', '13.94 : 1', 'CONFIRM glyph and word, and every live figure. The brightest gray in the system.'],
+      ['--quiet', '#7F7A72', '4.93 : 1', '14–15px labels, ages, system line. Clears 4.5:1 for normal text.'],
+      ['--unknown', '#8B97A3', '7.05 : 1', 'INDETERMINATE. The only cool gray, and the only hollow form.'],
+      ['--unknown-hi', '#B9C0C7', '11.43 : 1', 'NO DATA captions and stale ages — deliberately brighter than live labels.'],
+      ['--klaxon', '#E2453C', '5.15 : 1', 'The single colour in the direction. Used for one tier, at full field, flashing.'],
+      ['--hair', '#262A25', '1.24 : 1', 'The one decorative rule above the BP line. Carries no meaning, so exempt from 3:1.']
+    ].map(r => ({
+      name: r[0], hex: r[1], ratio: r[2], role: r[3],
+      swatch: { display: 'block', width: '52px', height: '26px', background: r[1], border: '1px solid #26292A' },
+      ratioStyle: { fontSize: '15px', fontFamily: MONO, fontVariantNumeric: 'tabular-nums', color: r[2] === '—' ? '#9BA3AB' : '#B4AFA6' }
+    }));
+
+    const typeScale = [
+      ['97', 32, SANS, 700, '90 / 0.88 · −3 track', 'live figure'],
+      ['CAN’T ASSESS', 26, SANS, 700, '58 / 1.0 · −1', 'tier word'],
+      ['HOLD 3 s', 20, SANS, 700, '25 / 1.0', 'action'],
+      ['118/76', 18, SANS, 700, '30 / 1.1', 'BP figure'],
+      ['SpO₂', 15, SANS, 400, '15 / 1.0 · +3 track', 'parameter label'],
+      ['EMAY SpO₂ 4 s', 14, MONO, 400, '14–15 / 1.4', 'ages, system line']
+    ].map(r => ({
+      sample: r[0], spec: r[4], use: r[5],
+      demo: { fontFamily: r[2], fontWeight: r[3], fontSize: r[1] + 'px', color: '#D6D2CB', fontVariantNumeric: 'tabular-nums', lineHeight: 1, letterSpacing: '-.2px' }
+    }));
+
+    const stage = { background: '#000', height: '150px', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'center', gap: '10px', padding: '0 20px' };
+    const bar = (w, h, c, flash) => ({ style: { width: w + 'px', height: h + 'px', background: c, flex: '0 0 auto', animation: flash ? 'sem 1s steps(1,end) infinite' : 'none' } });
+    const ladder = [
+      { tier: 'CLEAR', c: DIM, bars: [bar(88, 88, DIM)], desc: 'One solid mass. Smallest lit area in the system (13.9k px²), lowest luminance.', stage, question: false },
+      { tier: 'CAN’T ASSESS', c: SL, bars: [], question: true, desc: 'The mass emptied out: 5 px dashed outline, question mark inside. The only hollow form.', stage },
+      { tier: 'WATCH', c: WARM, bars: [bar(140, 40, WARM), bar(140, 40, WARM)], desc: 'The mass splits in two. Count, not colour, is the escalation.', stage },
+      { tier: 'CONFIRM', c: BONE, bars: [bar(140, 26, BONE), bar(140, 26, BONE), bar(140, 26, BONE)], desc: 'Three bars at full bone white. Denser, brighter, still static.', stage },
+      { tier: 'KLAXON', c: RD, bars: [bar(140, 108, RD, true)], desc: 'Full field, flashing at 1 Hz, and the only saturated colour that exists here.', stage }
+    ].map(l => ({
+      tier: l.tier, desc: l.desc, bars: l.bars, question: l.question, stage: l.stage,
+      qBox: { width: '104px', height: '104px', border: '4px dashed ' + SL, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '66px', fontWeight: 700, color: SL, lineHeight: 1 },
+      tierStyle: { fontSize: '17px', fontWeight: 700, letterSpacing: '-.2px', color: l.c }
+    }));
+
+    const base = { clock: '03:14:22', sensors: SENSORS_OK, sys: SYS_OK, silence: {} };
+
+    const clear = Object.assign({}, base, {
+      caption: 'clear', note: 'One mass. Everything measured, everything in range.',
+      tier: 'CLEAR', tierColor: DIM, sub: 'STABLE 4 H 06 M · ALARMS ARMED',
+      glyph: { bars: [{ w: 118, h: 118 }], color: DIM, cap: 'ONE MASS · ALL MEASURED' },
+      params: [
+        { name: 'SpO₂', unit: '%', val: '97', note: 'steady 30 m', trend: [97, 96, 97, 98, 97, 98, 97, 96, 97, 97] },
+        { name: 'HR', unit: 'bpm', val: '58', note: 'steady 30 m', trend: [60, 59, 58, 59, 57, 58, 58, 59, 58, 58] }
+      ],
+      bp: { name: 'LAST BP', val: '118/76', age: 'MAP 90 · 37 m ago' }
+    });
+
+    const cant = Object.assign({}, base, {
+      caption: 'can’t assess', note: 'The mass is hollow. Not fine, not an alarm — a question.',
+      tier: 'CAN’T ASSESS', tierColor: SL, sub: 'SpO₂ NOT MEASURED SINCE 03:08:41', subColor: HI,
+      glyph: { question: true, color: SL, cap: 'HOLLOW · NOT MEASURED', capColor: HI },
+      params: [
+        { name: 'SpO₂', unit: 'NO DATA 6 m 12 s', stale: true, note: 'stopped 03:08', trend: [96, 95, 96, 95, 96, null, null, null, null, null] },
+        { name: 'HR', unit: 'bpm', val: '61', note: 'steady 30 m', trend: [59, 60, 61, 60, 62, 61, 60, 61, 61, 61] }
+      ],
+      bp: { name: 'LAST BP', val: '118/76', age: 'MAP 90 · 4 h 12 m ago · STALE', stale: true },
+      sensors: [
+        { name: 'POLAR H10', age: '2 s', ok: true },
+        { name: 'EMAY SpO₂', age: 'no data 6 m', ok: false },
+        { name: 'A&D CUFF', age: '4 h 12 m', ok: false },
+        { name: 'HEALTHKIT', age: 'stale 22 m', ok: false }
+      ],
+      sys: 'SELF-TEST PASS 02:00 · BACKUP 21 m · RESTORE 17 d ? · DISK 62 %',
+      silence: { active: false, text: 'NOTHING TO SILENCE', sub: 'FIX THE SENSOR · NO ALARM IS SOUNDING', color: SL, textColor: HI }
+    });
+
+    const watch = Object.assign({}, base, {
+      caption: 'watch', note: 'Two bars. Measured and drifting; no motion, no sound.',
+      tier: 'WATCH', tierColor: WARM, sub: 'SpO₂ BELOW 94 SINCE 03:11:50',
+      glyph: { bars: [{ w: 176, h: 62 }, { w: 176, h: 62 }], color: WARM, gap: 20, cap: 'TWO BARS · DRIFTING' },
+      params: [
+        { name: 'SpO₂', unit: '%', val: '91', note: '↓6 in 8 m', trend: [95, 94, 94, 93, 93, 92, 92, 91, 91, 91] },
+        { name: 'HR', unit: 'bpm', val: '64', note: '↑5 in 8 m', trend: [59, 60, 60, 61, 62, 62, 63, 64, 64, 64] }
+      ],
+      bp: { name: 'LAST BP', val: '118/76', age: 'MAP 90 · 41 m ago' }
+    });
+
+    const confirm = Object.assign({}, base, {
+      caption: 'confirm', note: 'Three bars at full white. The silence strip arms here.',
+      tier: 'CONFIRM', tierColor: BONE, sub: 'SpO₂ 88 · HR RISING · CONFIRM WITH A SECOND READING',
+      glyph: { bars: [{ w: 176, h: 40 }, { w: 176, h: 40 }, { w: 176, h: 40 }], color: BONE, gap: 18, cap: 'THREE BARS · CONFIRM', capColor: '#9A948C' },
+      params: [
+        { name: 'SpO₂', unit: '%', val: '88', note: '↓9 in 11 m', trend: [93, 92, 91, 90, 89, 89, 88, 88, 88, 88] },
+        { name: 'HR', unit: 'bpm', val: '102', note: '↑44 in 11 m', trend: [66, 72, 78, 84, 89, 93, 97, 100, 102, 102] }
+      ],
+      bp: { name: 'LAST BP', val: '118/76', age: 'MAP 90 · 43 m ago · RE-TAKE' },
+      silence: { active: true, text: 'HOLD 3 s TO SILENCE', sub: 'AUDIO 2 MIN · ALARM CONTINUES', color: BONE, textColor: BONE, fill: '#232421' }
+    });
+
+    const klaxon = Object.assign({}, base, {
+      caption: 'klaxon', note: 'Full field, flashing, red — the one break in a colourless system.',
+      tier: 'KLAXON', tierColor: RD, sub: 'SpO₂ 82 AND FALLING · SINCE 03:14:02', subColor: HI, frame: RD,
+      glyph: { bars: [{ w: 176, h: 176 }], color: RD, flash: true, cap: 'FULL FIELD · 1 HZ', capColor: HI },
+      params: [
+        { name: 'SpO₂', unit: '%', val: '82', note: '↓15 in 13 m', trend: [90, 88, 87, 86, 85, 84, 83, 82, 82, 82] },
+        { name: 'HR', unit: 'bpm', val: '121', note: '↑63 in 13 m', trend: [70, 80, 90, 98, 105, 111, 116, 119, 121, 121] }
+      ],
+      bp: { name: 'LAST BP', val: '118/76', age: 'MAP 90 · RE-TAKE NOW' },
+      silence: { active: true, text: 'HOLD 3 s TO SILENCE', sub: 'AUDIO 2 MIN · ALARM CONTINUES', color: RD, textColor: RD, fill: '#2C110F' }
+    });
+
+    const holdSil = (p, phase) => {
+      if (phase === 'done') return { active: true, p: 1, text: 'AUDIO SILENCED 2:00', sub: 'ALARM STILL ACTIVE · RE-SOUNDS 03:16:11', color: BONE, textColor: BONE, fill: '#232421' };
+      if (phase === 'released') return { active: true, p: 0, text: 'RELEASED — RESET TO 0', sub: 'NO PARTIAL CREDIT · HOLD THE FULL 3 s', color: SL, textColor: HI };
+      if (phase === 'holding') return { active: true, p: p, text: 'KEEP HOLDING — ' + (3 - p * 3).toFixed(1) + ' s', sub: 'RELEASE NOW AND THIS RESETS TO ZERO', color: RD, textColor: BONE, fill: '#2C110F' };
+      return klaxon.silence;
+    };
+
+    const noFlash = g => Object.assign({}, g, { flash: false });
+    const holdShots = [
+      Object.assign({}, klaxon, { caption: '1 · idle — armed', note: 'The requirement is printed before contact. A tap does nothing.', silence: holdSil(0, 'idle') }),
+      Object.assign({}, klaxon, { caption: '2 · in progress — 1.2 s of 3 s', note: 'Hard-edged fill, countdown in the label, reset warning while the finger is down.', silence: holdSil(0.4, 'holding') }),
+      Object.assign({}, klaxon, { caption: '3 · completed', note: 'Audio silenced for two minutes; the glyph stops flashing but the red field stays.', glyph: noFlash(klaxon.glyph), silence: holdSil(1, 'done') }),
+      Object.assign({}, klaxon, { caption: '4 · released early', note: 'Zero, stated in words for 1.6 s, then back to idle.', silence: holdSil(0, 'released') })
+    ];
+
+    const live = Object.assign({}, klaxon, {
+      glyph: this.state.phase === 'done' ? noFlash(klaxon.glyph) : klaxon.glyph,
+      silence: Object.assign(holdSil(this.state.p, this.state.phase), { onDown: this.down, onUp: this.up })
+    });
+
+    const rest = {
+      caption: 'resting — untouched at clear', note: 'Glyph and word only, both at 3.17:1. The shape alone is the status light.',
+      detail: false, tier: 'CLEAR', tierColor: DIM,
+      glyph: { bars: [{ w: 118, h: 118 }], color: DIM }, silence: {}
+    };
+    const awake = Object.assign({}, clear, { caption: 'awake — hand on the panel', note: 'Type fades in over 120 ms, out 20 s after the last contact.' });
+
+    return { tokens, typeScale, ladder, states: [clear, cant, watch, confirm, klaxon], holdShots, live, wake: [rest, awake] };
+  }
+}
+</script>
+</body>
+</html>

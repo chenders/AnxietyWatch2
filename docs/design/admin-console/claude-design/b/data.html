@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>06 Data — AW2 Preflight</title>
+<link rel="stylesheet" href="console.css">
+</head>
+<body data-feed="live">
+<a class="skip-link" href="#main">Skip to content</a>
+
+<div class="stickytop">
+<div class="docstale" role="status">
+  <span class="assert assert--unsigned">Sheet uncountersigned</span>
+  <b>This page has not heard from the appliance for <span data-feed-age>—</span>.</b>
+  <span class="muted-text">Every reading below is the last one observed. The signatures on it are still valid for the time they were made; this document is not valid for now.</span>
+  <button class="btn btn--sm" type="button" data-action="refresh">Reconnect</button>
+</div>
+
+<nav class="contents" aria-label="Sections">
+    <a class="contents__item" href="overview.html"><span class="contents__ord">01</span> Overview</a>
+    <a class="contents__item" href="display.html"><span class="contents__ord">02</span> Display</a>
+    <a class="contents__item" href="ingest.html"><span class="contents__ord">03</span> Ingest</a>
+    <a class="contents__item" href="services.html"><span class="contents__ord">04</span> Services</a>
+    <a class="contents__item" href="config.html"><span class="contents__ord">05</span> Access</a>
+    <a class="contents__item" href="data.html" aria-current="page"><span class="contents__ord">06</span> Data</a>
+    <a class="contents__item" href="analysis.html"><span class="contents__ord">07</span> Analysis</a>
+    <a class="contents__item" href="records.html"><span class="contents__ord">08</span> Records</a>
+    <a class="contents__item" href="recovery.html"><span class="contents__ord">09</span> Recovery</a>
+    <a class="contents__item" href="system.html">System</a>
+    <a class="contents__item" href="patterns.html">Patterns</a>
+    <a class="contents__item" href="attempts.html">Run sheet</a>
+    <a class="contents__item" href="overview-degraded.html">Degraded</a>
+    <a class="contents__item" href="firstrun.html">First run</a>
+  </nav>
+</div>
+
+<main class="sheet" id="main">
+
+  <div class="pagetitle">
+    <h1>Data</h1>
+    <p>Targeted integrity checks, quarantine, retention and scoped export.</p>
+  </div>
+
+  <div class="stack">
+    <section class="block">
+      <div class="block__hd"><h2>Integrity check</h2><span class="block__count">by source and date range</span></div>
+      <form class="form" onsubmit="return false">
+        <div class="row">
+          <select class="select" aria-label="Source"><option>wellue-o2ring</option>
+            <option>polar-h10-chest</option><option>resmed-airsense-11</option></select>
+          <input class="input" type="date" value="2026-07-22" aria-label="From">
+          <input class="input" type="date" value="2026-08-05" aria-label="To">
+          <button class="btn" type="submit">Check this range</button>
+        </div>
+      </form>
+      <hr class="divider">
+      <div class="cols-4">
+        <div class="figure"><span class="figure__k">Days with data</span>
+          <span class="figure__v">12<span class="unit">of 14</span></span></div>
+        <div class="figure figure--unsigned"><span class="figure__k">Days with a gap</span>
+          <span class="figure__v">2</span><span class="muted-text">05 Aug · 04 Aug</span></div>
+        <div class="figure figure--sm"><span class="figure__k">Longest gap</span>
+          <span class="figure__v">9<span class="unit">h 04m</span></span></div>
+        <div class="figure figure--sm"><span class="figure__k">Quarantined</span>
+          <span class="figure__v">312<span class="unit">rows</span></span></div>
+      </div>
+      <div class="block__note"><p class="prose">This is not a table browser. It answers one question —
+      is the record for this source over this range complete — and the export below is scoped to
+      exactly what was checked, with the gap list in its header.</p></div>
+    </section>
+
+    <div class="cols-main">
+      <section class="block">
+        <div class="block__hd"><h2>Quarantine</h2><span class="block__count">330 rows held · not counted, not deleted</span></div>
+        <div class="t-scroll">
+          <table class="t">
+            <thead><tr><th scope="col">Source</th><th scope="col">Held since</th><th class="num" scope="col">Rows</th>
+              <th scope="col">Reason</th><th scope="col"><span class="sr-only">Action</span></th></tr></thead>
+            <tbody>
+              <tr><th scope="row" class="mono">polar-h10-chest</th><td class="mono">06:40 today</td><td class="num">312</td>
+                <td>RR interval outside 250–2500 ms</td><td><button class="btn btn--sm" type="button">Review</button></td></tr>
+              <tr><th scope="row" class="mono">resmed-airsense-11</th><td class="mono">04:06 today</td><td class="num">11</td>
+                <td>Pressure above device ceiling</td><td><button class="btn btn--sm" type="button">Review</button></td></tr>
+              <tr><th scope="row" class="mono">healthkit-bridge</th><td class="mono">21 Jul</td><td class="num">7</td>
+                <td>Timestamp in the future</td><td><button class="btn btn--sm" type="button">Review</button></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="block__note">
+          <p class="prose">Quarantined rows are excluded from correlations and from the report, and they
+          are listed here so an exclusion never becomes invisible.</p>
+          <div class="actions-split">
+            <button class="btn btn--sm" type="button">Re-admit selected</button>
+            <span class="actions-split__gap" aria-hidden="true"></span>
+            <button class="btn btn--sm btn--danger" type="button">Discard permanently…</button>
+          </div>
+        </div>
+      </section>
+
+      <div class="stack">
+        <section class="block">
+          <div class="block__hd"><h2>Storage</h2></div>
+          <div class="card"><div class="card__body stack--tight">
+            <div class="fields">
+              <span class="field__k">Postgres</span><span class="field__v mono">18.4 GB <span class="unit">+96 MB/day</span></span>
+              <span class="field__k">Largest table</span><span class="field__v mono">samples_raw · 412 M rows</span>
+              <span class="field__k">Spool depth</span><span class="field__v mono">14,208 <span class="unit">rows</span></span>
+              <span class="field__k">Oldest unspooled</span><span class="field__v mono">26m <span class="unit">expect ≤ 5m</span></span>
+              <span class="field__k">Drain latency</span><span class="field__v mono">1.51 s <span class="unit">per 500</span></span>
+              <span class="field__k">Retention</span><span class="field__v">Raw 400 d, aggregates kept</span>
+              <span class="field__k">Last compaction</span><span class="field__v mono">02:11 today</span>
+            </div>
+            <hr class="divider">
+            <div class="bar bar--adv"><span class="bar__track"><span class="bar__fill" style="width:71%"></span></span>
+              <span class="bar__val">71 % spool</span></div>
+          </div></div>
+        </section>
+        <section class="block">
+          <div class="block__hd"><h2>Upload CPAP data</h2></div>
+          <div class="card"><div class="card__body">
+            <div class="drop" data-state="idle">
+              <p class="prose">Drop a ResMed export here, or <label for="u2"><b>choose a file</b></label>.</p>
+              <input type="file" id="u2" class="sr-only">
+              <p class="muted-text"><span class="mono">.edf</span> or a DATALOG folder.</p>
+            </div></div>
+            <div class="card__ft"><a href="patterns.html">Upload, parse and rejection states →</a></div>
+          </div>
+        </section>
+        <section class="block">
+          <div class="block__hd"><h2>Scoped export</h2></div>
+          <div class="card"><div class="card__body stack--tight">
+            <p class="prose">Exports the range checked above, with the gap list and quarantine count in
+            the header so the recipient sees the holes rather than inferring completeness.</p>
+          </div>
+            <div class="card__ft"><span class="grow"></span><button class="btn" type="button">Export 22 Jul – 05 Aug</button></div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <hr class="divider">
+  <p class="caps">AnxietyWatch2 · bedside-pi5 · build 2.4.11+g8c1f · console clock <span data-clock class="mono">09:56:04Z</span> · feed age <span data-feed-age class="mono">2s</span> · <a href="index.html">Direction B contents</a></p>
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>

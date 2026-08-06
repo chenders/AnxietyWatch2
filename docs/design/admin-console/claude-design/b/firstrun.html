@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>First run — AW2 Preflight</title>
+<link rel="stylesheet" href="console.css">
+</head>
+<body data-feed="live">
+<a class="skip-link" href="#main">Skip to content</a>
+
+<div class="stickytop">
+<div class="docstale" role="status">
+  <span class="assert assert--unsigned">Sheet uncountersigned</span>
+  <b>This page has not heard from the appliance for <span data-feed-age>—</span>.</b>
+  <span class="muted-text">Every reading below is the last one observed. The signatures on it are still valid for the time they were made; this document is not valid for now.</span>
+  <button class="btn btn--sm" type="button" data-action="refresh">Reconnect</button>
+</div>
+
+<nav class="contents" aria-label="Sections">
+    <a class="contents__item" href="overview.html"><span class="contents__ord">01</span> Overview</a>
+    <a class="contents__item" href="display.html"><span class="contents__ord">02</span> Display</a>
+    <a class="contents__item" href="ingest.html"><span class="contents__ord">03</span> Ingest</a>
+    <a class="contents__item" href="services.html"><span class="contents__ord">04</span> Services</a>
+    <a class="contents__item" href="config.html"><span class="contents__ord">05</span> Access</a>
+    <a class="contents__item" href="data.html"><span class="contents__ord">06</span> Data</a>
+    <a class="contents__item" href="analysis.html"><span class="contents__ord">07</span> Analysis</a>
+    <a class="contents__item" href="records.html"><span class="contents__ord">08</span> Records</a>
+    <a class="contents__item" href="recovery.html"><span class="contents__ord">09</span> Recovery</a>
+    <a class="contents__item" href="system.html">System</a>
+    <a class="contents__item" href="patterns.html">Patterns</a>
+    <a class="contents__item" href="attempts.html">Run sheet</a>
+    <a class="contents__item" href="overview-degraded.html">Degraded</a>
+    <a class="contents__item" href="firstrun.html" aria-current="page">First run</a>
+  </nav>
+</div>
+
+<main class="sheet" id="main">
+
+  <div class="pagetitle">
+    <h1>First run</h1>
+    <p>Nothing configured, no data, no attempts. Empty is not the same as broken.</p>
+  </div>
+
+  <div class="stack">
+    <section class="block">
+      <div class="block__hd"><h2>Installation state</h2><span class="block__count">fresh install · 00:04:12 since first boot</span></div>
+      <div class="cols-4">
+        <div class="figure"><span class="figure__k">Items on the sheet</span>
+          <span class="figure__v">7<span class="unit">bring-up</span></span>
+          <span class="muted-text">The monitoring sheet appears once a source exists</span></div>
+        <div class="figure figure--sm"><span class="figure__k">Open findings</span>
+          <span class="figure__v">0</span><span class="muted-text">Nothing is running yet</span></div>
+        <div class="figure figure--sm"><span class="figure__k">Unsigned</span>
+          <span class="figure__v">0</span><span class="muted-text">Nothing has been asserted yet</span></div>
+        <div class="figure figure--sm"><span class="figure__k">Database</span>
+          <span class="figure__v">Ready<span class="unit">14 MB</span></span>
+          <span class="muted-text">Schema 2.4.11, migrated cleanly</span></div>
+      </div>
+      <div class="block__note"><p class="prose"><b>A fresh install must not look broken.</b> Zeroes here
+      are zeroes with an explanation, not empty boxes. There is nothing unsigned because nothing has been
+      configured, so nothing is being watched, so there is nothing the console has failed to check. The
+      sheet you see is a bring-up sheet, and it replaces itself with the monitoring sheet once step 4 is
+      done.</p></div>
+    </section>
+
+    <section class="block">
+      <div class="block__hd"><h2>Bring-up</h2><span class="block__count">3 of 7 signed · in order</span></div>
+      <div class="item">
+        <span class="stamp stamp--signed" aria-hidden="true">✓</span>
+        <span class="item__what"><b>1 · Database initialised</b>
+          <span>Postgres 16.3 on NVMe, schema migrated to 2.4.11, 0 rows.</span></span>
+        <span class="item__read">14<span class="unit">MB</span></span>
+        <span class="sig"><span class="sig__by">installer</span><span class="sig__at">3m 58s ago</span></span>
+      </div>
+      <div class="item">
+        <span class="stamp stamp--signed" aria-hidden="true">✓</span>
+        <span class="item__what"><b>2 · Bluetooth adapter present</b>
+          <span>hci0, Raspberry Pi 5 on-board controller. No devices paired.</span></span>
+        <span class="item__read">hci0</span>
+        <span class="sig"><span class="sig__by">bluez-probe</span><span class="sig__at">3m 30s ago</span></span>
+      </div>
+      <div class="item">
+        <span class="stamp stamp--signed" aria-hidden="true">✓</span>
+        <span class="item__what"><b>3 · Console reachable on the LAN</b>
+          <span>Listening on 192.168.1.42:8443, self-signed certificate valid to 2027-08-05.</span></span>
+        <span class="item__read">8443</span>
+        <span class="sig"><span class="sig__by">net-probe</span><span class="sig__at">3m ago</span></span>
+      </div>
+      <div class="item">
+        <span class="stamp stamp--pending" aria-hidden="true">→</span>
+        <span class="item__what"><b>4 · Register your first source</b>
+          <span>Until a source exists with a declared cadence, this console has nothing to judge
+          freshness against and nothing to sign. Start with whatever you wear tonight.</span></span>
+        <span class="item__read"><button class="btn btn--sm btn--primary" type="button">Add a source</button></span>
+        <span class="sig"><span class="sig__by">next</span></span>
+      </div>
+      <div class="item item--na">
+        <span class="stamp stamp--na" aria-hidden="true">—</span>
+        <span class="item__what"><b>5 · Pair a Bluetooth device</b>
+          <span class="na-note">Blocked on step 4. Not unsigned — not yet reachable.</span></span>
+        <span class="item__read na-note">—</span>
+        <span class="sig"><span class="sig__by na">not started</span></span>
+      </div>
+      <div class="item item--na">
+        <span class="stamp stamp--na" aria-hidden="true">—</span>
+        <span class="item__what"><b>6 · Issue a key for the phone</b>
+          <span class="na-note">The phone app writes journal entries and health-store data through the API.</span></span>
+        <span class="item__read na-note">—</span>
+        <span class="sig"><span class="sig__by na">not started</span></span>
+      </div>
+      <div class="item item--na">
+        <span class="stamp stamp--na" aria-hidden="true">—</span>
+        <span class="item__what"><b>7 · Take a backup and verify it</b>
+          <span class="na-note">The verification is the point. An unverified first backup is the state
+          this console is least able to reassure you about.</span></span>
+        <span class="item__read na-note">—</span>
+        <span class="sig"><span class="sig__by na">not started</span></span>
+      </div>
+    </section>
+
+    <div class="cols-main">
+      <section class="block">
+        <div class="block__hd"><h2>First source</h2>
+          <div class="block__meta"><span class="caps">The cadence set here becomes the standard every signature is judged by</span></div></div>
+        <form class="form" data-dirty-track onsubmit="return false">
+          <div class="form__row"><label for="s1" class="req">Source ID</label>
+            <div><input class="input" id="s1" name="s1" placeholder="polar-h10-chest">
+              <span class="hint">Lower case, hyphens. Becomes the join key in every export.</span></div></div>
+          <div class="form__row"><label for="s2" class="req">Kind</label>
+            <div><select class="select" id="s2" name="s2"><option>BLE device</option>
+              <option>Scheduled importer</option><option>Cloud API</option><option>Manual entry</option></select></div></div>
+          <div class="form__row"><label for="s3" class="req">Expected cadence</label>
+            <div><input class="input" id="s3" name="s3" placeholder="2m">
+              <span class="hint">How often a healthy source should produce data. Be honest — a cadence
+              looser than reality is how a dead source hides.</span></div></div>
+          <div class="form__row"><label for="s4">Uniquely owns</label>
+            <div><input class="input" id="s4" name="s4" placeholder="Beat-to-beat RR intervals">
+              <span class="hint">What is lost if this source stops. Appears in the item text.</span></div></div>
+          <div class="savebar" data-dirty="false">
+            <span class="savebar__state">No changes since last save.</span>
+            <button class="btn" type="reset" data-needs-dirty disabled>Discard</button>
+            <button class="btn btn--primary" type="submit" data-needs-dirty disabled>Register source</button>
+          </div>
+        </form>
+      </section>
+
+      <div class="stack">
+        <section class="block">
+          <div class="block__hd"><h2>Sources</h2></div>
+          <div class="empty"><h3>No sources registered</h3>
+            <p>The registry is read from the deployment manifest. Nothing has been declared, so nothing
+            is expected, so nothing is missing.</p>
+            <button class="btn btn--primary" type="button">Add a source</button></div>
+        </section>
+        <section class="block">
+          <div class="block__hd"><h2>Run sheet</h2></div>
+          <div class="empty"><h3>No windows yet</h3>
+            <p>Distinct from silence. A source that stopped attempting leaves a run of empty boxes; a
+            system with no sources has no windows to draw.</p></div>
+        </section>
+        <section class="block">
+          <div class="block__hd"><h2>Findings</h2></div>
+          <div class="empty"><h3>None</h3>
+            <p>And nothing deferred. Nothing is suppressed and nothing is hidden.</p></div>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <hr class="divider">
+  <p class="caps">AnxietyWatch2 · bedside-pi5 · build 2.4.11+g8c1f · console clock <span data-clock class="mono">09:56:04Z</span> · feed age <span data-feed-age class="mono">2s</span> · <a href="index.html">Direction B contents</a></p>
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>

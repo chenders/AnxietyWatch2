@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>09 Recovery — AW2 Preflight</title>
+<link rel="stylesheet" href="console.css">
+</head>
+<body data-feed="live">
+<a class="skip-link" href="#main">Skip to content</a>
+
+<div class="stickytop">
+<div class="docstale" role="status">
+  <span class="assert assert--unsigned">Sheet uncountersigned</span>
+  <b>This page has not heard from the appliance for <span data-feed-age>—</span>.</b>
+  <span class="muted-text">Every reading below is the last one observed. The signatures on it are still valid for the time they were made; this document is not valid for now.</span>
+  <button class="btn btn--sm" type="button" data-action="refresh">Reconnect</button>
+</div>
+
+<nav class="contents" aria-label="Sections">
+    <a class="contents__item" href="overview.html"><span class="contents__ord">01</span> Overview</a>
+    <a class="contents__item" href="display.html"><span class="contents__ord">02</span> Display</a>
+    <a class="contents__item" href="ingest.html"><span class="contents__ord">03</span> Ingest</a>
+    <a class="contents__item" href="services.html"><span class="contents__ord">04</span> Services</a>
+    <a class="contents__item" href="config.html"><span class="contents__ord">05</span> Access</a>
+    <a class="contents__item" href="data.html"><span class="contents__ord">06</span> Data</a>
+    <a class="contents__item" href="analysis.html"><span class="contents__ord">07</span> Analysis</a>
+    <a class="contents__item" href="records.html"><span class="contents__ord">08</span> Records</a>
+    <a class="contents__item" href="recovery.html" aria-current="page"><span class="contents__ord">09</span> Recovery</a>
+    <a class="contents__item" href="system.html">System</a>
+    <a class="contents__item" href="patterns.html">Patterns</a>
+    <a class="contents__item" href="attempts.html">Run sheet</a>
+    <a class="contents__item" href="overview-degraded.html">Degraded</a>
+    <a class="contents__item" href="firstrun.html">First run</a>
+  </nav>
+</div>
+
+<main class="sheet" id="main">
+
+  <div class="pagetitle">
+    <h1>Recovery</h1>
+    <p>Backups, WAL archive, and whether any of it has ever been proven to work.</p>
+  </div>
+
+  <div class="stack">
+    <section class="block">
+      <div class="block__hd"><h2>If this box died right now</h2>
+        <div class="block__meta"><span class="fresh" data-age-s="44" data-expect-s="900"><span class="fresh__age">44s ago</span><span class="fresh__expect">15m</span></span></div></div>
+      <div class="cols-4">
+        <div class="figure"><span class="figure__k">You would lose</span>
+          <span class="figure__v">41<span class="unit">min</span></span>
+          <span class="muted-text">≈ 12,400 samples · 0 journal entries</span></div>
+        <div class="figure figure--sm"><span class="figure__k">Restore would take</span>
+          <span class="figure__v">~26<span class="unit">min</span></span>
+          <span class="muted-text">Estimated. Never measured — see below.</span></div>
+        <div class="figure figure--sm"><span class="figure__k">Last full backup</span>
+          <span class="figure__v">06:00<span class="unit">today</span></span>
+          <span class="muted-text">3.9 GB, checksum valid</span></div>
+        <div class="figure figure--unsigned"><span class="figure__k">Proven restore</span>
+          <span class="figure__v">None</span><span class="muted-text">No verification has ever completed</span></div>
+      </div>
+      <div class="block__note"><p class="prose"><b>A backup that has never been restored is not a passing
+      backup.</b> Three of those four figures are reassuring: the job ran, the file exists, the checksum
+      matches. None of it has been tested against a real Postgres cluster, so the item is unsigned — and
+      the 41 minutes above assumes an archive that has never been proven readable.</p></div>
+    </section>
+
+    <div class="cols-main">
+      <section class="block">
+        <div class="block__hd"><h2>Restore verification history</h2>
+          <span class="block__count">restore into a scratch cluster, then compare row counts</span></div>
+        <div class="runsheet runsheet--silent">
+          <div class="runsheet__hd">
+            <div class="runsheet__verdict"><b>Never verified</b><span>aw2-restore-verify</span></div>
+            <p class="runsheet__gloss">The verification timer has been enabled for 43 days and has never
+            fired. Nothing has failed, because nothing has run. This is the console's own central claim
+            turned on itself: the subsystem reporting no failures is the one that has never tried.</p>
+            <span class="fresh fresh--over"><span class="fresh__age">never run</span><span class="fresh__expect">7d</span></span>
+          </div>
+          <div class="marks" role="img" aria-label="Six expected verification windows, none attempted.">
+            <span class="mark mark--none" aria-hidden="true"></span><span class="mark mark--none" aria-hidden="true"></span>
+            <span class="mark mark--none" aria-hidden="true"></span><span class="mark mark--none" aria-hidden="true"></span>
+            <span class="mark mark--none" aria-hidden="true"></span><span class="mark mark--none" aria-hidden="true"></span>
+          </div>
+          <div class="marks__legend"><span><span class="mark mark--none" aria-hidden="true"></span> no attempt — one box per weekly window since 23 Jun</span></div>
+          <div class="attempt-row attempt-row--gap"><span class="attempt-row__t">Since 23 Jun</span>
+            <span class="attempt-row__why">6 expected windows, 0 attempts. The unit
+            <span class="mono">aw2-restore-verify.timer</span> is loaded, but its calendar expression
+            resolves to a date in 2027.</span></div>
+        </div>
+        <div class="block__note"><div class="actions-split">
+          <span class="grow"><p class="prose">Fixing the calendar expression is the actual repair. Running
+          one now signs the item for this week.</p></span>
+          <button class="btn btn--primary" type="button">Run a verification now · ~26 min</button>
+        </div></div>
+      </section>
+
+      <div class="stack">
+        <section class="block">
+          <div class="block__hd"><h2>Backups</h2></div>
+          <div class="card">
+            <div class="t-scroll"><table class="t t--rowstate">
+              <thead><tr><th scope="col">Kind</th><th scope="col">When</th><th class="num" scope="col">Size</th>
+                <th scope="col">Item</th></tr></thead>
+              <tbody>
+                <tr><th scope="row">Full</th><td class="mono">06:00 today</td><td class="num">3.9 GB</td>
+                  <td><span class="assert assert--signed"><span aria-hidden="true">✓</span> Checksum valid</span></td></tr>
+                <tr><th scope="row">Incremental</th><td class="mono">09:00 today</td><td class="num">142 MB</td>
+                  <td><span class="assert assert--signed"><span aria-hidden="true">✓</span> Checksum valid</span></td></tr>
+                <tr data-state="adv"><th scope="row">WAL archive</th><td class="mono">lag 41m</td><td class="num">18 MB</td>
+                  <td><span class="assert assert--adv"><span aria-hidden="true">!</span> Lag over 15m</span></td></tr>
+                <tr data-state="unsigned"><th scope="row">Off-site copy</th><td class="muted-text">never</td><td class="num">—</td>
+                  <td><span class="assert assert--unsigned">No destination set</span></td></tr>
+              </tbody></table></div>
+            <div class="card__ft"><p class="prose">All copies are on the same NVMe as the database. A drive
+            failure loses the record and every backup of it in the same moment.</p></div>
+          </div>
+        </section>
+
+        <section class="block">
+          <div class="block__hd"><h2>Restore</h2></div>
+          <div class="card"><div class="card__body">
+            <div class="danger-zone">
+              <div class="danger-zone__hd"><b>Destructive</b>
+                <p class="prose">Restoring into the live cluster replaces the system of record with the
+                chosen archive. Everything written since that archive is gone.</p></div>
+              <button class="btn btn--danger" type="button" data-action="open" data-target="m-restore">Restore into live cluster…</button>
+            </div></div>
+            <div class="card__ft"><p class="prose">Restoring into a scratch cluster is safe and is what the
+            verification job does. It is a separate, unfenced control.</p>
+              <span class="grow"></span>
+              <button class="btn btn--sm" type="button">Restore into scratch…</button></div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+
+<div class="scrim" id="m-restore" hidden data-no-escape>
+  <div class="modal modal--danger" role="alertdialog" aria-modal="true" aria-labelledby="mre-h">
+    <div class="modal__hd"><span aria-hidden="true">✕</span><h2 id="mre-h">Restore into the live cluster?</h2></div>
+    <form class="modal__body" data-confirm-phrase="aw2-prod" onsubmit="return false">
+      <p class="prose">Restoring <span class="mono">full-20260805-0600</span> over
+      <span class="mono">aw2-prod</span>. This archive has never been verified by a test restore.</p>
+      <ul class="consequences">
+        <li>3h 56m of samples written since 06:00 are destroyed — roughly 71,000 rows.</li>
+        <li>1 journal entry written at 07:52 is destroyed.</li>
+        <li>If the archive turns out to be unreadable, the cluster is left empty and the current data is already gone.</li>
+        <li>Estimated downtime 26 minutes. Collection continues into the spool and drains afterwards.</li>
+      </ul>
+      <div><label class="caps" for="mre-i">Type <span class="mono">aw2-prod</span> to confirm</label>
+        <input class="input" id="mre-i" data-confirm-input autocomplete="off" placeholder="cluster name"></div>
+      <div class="modal__ft"><button class="btn" type="button" data-action="close">Cancel</button>
+        <span class="grow"></span>
+        <button class="btn btn--danger" type="submit" data-confirm-go disabled>Restore over live data</button></div>
+    </form>
+  </div>
+</div>
+
+  <hr class="divider">
+  <p class="caps">AnxietyWatch2 · bedside-pi5 · build 2.4.11+g8c1f · console clock <span data-clock class="mono">09:56:04Z</span> · feed age <span data-feed-age class="mono">2s</span> · <a href="index.html">Direction B contents</a></p>
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>

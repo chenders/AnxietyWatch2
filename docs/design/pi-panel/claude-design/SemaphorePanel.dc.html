@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+@keyframes sem { 0%,49%{opacity:1} 50%,100%{opacity:.26} }
+</style>
+</helmet>
+<div style="{{ v.root }}">
+  <div style="display:flex;gap:44px;flex:1 1 auto;min-height:0">
+    <div style="{{ v.glyphZone }}">
+      <sc-if value="{{ v.isQuestion }}" hint-placeholder-val="{{ true }}">
+        <div style="{{ v.qBox }}">?</div>
+      </sc-if>
+      <sc-for list="{{ v.bars }}" as="b" hint-placeholder-count="1">
+        <div style="{{ b.style }}"></div>
+      </sc-for>
+      <span style="{{ v.glyphCapStyle }}">{{ v.glyphCap }}</span>
+    </div>
+
+    <div style="flex:1 1 auto;display:flex;flex-direction:column;min-width:0;overflow:hidden">
+      <div style="display:flex;align-items:baseline;gap:16px">
+        <span style="{{ v.tierStyle }}">{{ v.tier }}</span>
+        <span style="{{ v.clockStyle }}">{{ v.clock }}</span>
+      </div>
+      <span style="{{ v.subStyle }}">{{ v.sub }}</span>
+
+      <sc-if value="{{ v.detail }}" hint-placeholder-val="{{ true }}">
+        <div style="display:flex;gap:24px;margin-top:8px">
+          <sc-for list="{{ v.params }}" as="p" hint-placeholder-count="2">
+            <div style="display:flex;flex-direction:column">
+              <span style="{{ p.labelStyle }}">{{ p.name }}</span>
+              <div style="display:flex;align-items:flex-end;gap:6px">
+                <span style="{{ p.valStyle }}">{{ p.val }}</span>
+                <span style="{{ p.unitStyle }}">{{ p.unit }}</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:9px">
+                <span style="display:block">{{ p.spark }}</span>
+                <span style="{{ p.noteStyle }}">{{ p.note }}</span>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+
+        <div style="{{ v.bpRow }}">
+          <span style="{{ v.bpLabel }}">{{ v.bpName }}</span>
+          <span style="{{ v.bpValStyle }}">{{ v.bpVal }}</span>
+          <span style="{{ v.bpNoteStyle }}">{{ v.bpAge }}</span>
+        </div>
+
+        <div style="margin-top:auto;display:flex;flex-direction:column;gap:6px">
+          <div style="display:flex;flex-wrap:wrap;gap:6px 20px">
+            <sc-for list="{{ v.sensors }}" as="d" hint-placeholder-count="4">
+              <span style="{{ d.style }}">{{ d.text }}</span>
+            </sc-for>
+          </div>
+          <span style="{{ v.sysStyle }}">{{ v.sys }}</span>
+        </div>
+      </sc-if>
+    </div>
+  </div>
+
+  <div style="{{ v.silOuter }}" onPointerDown="{{ v.onDown }}" onPointerUp="{{ v.onUp }}" onPointerLeave="{{ v.onUp }}" onPointerCancel="{{ v.onUp }}">
+    <div style="{{ v.silFill }}"></div>
+    <div style="position:relative;height:100%;display:flex;align-items:center;gap:18px">
+      <span style="{{ v.silTextStyle }}">{{ v.silText }}</span>
+      <span style="{{ v.silSubStyle }}">{{ v.silSub }}</span>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:800,&quot;height&quot;:480},&quot;s&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;PanelState&quot;}}">
+const MONO = "ui-monospace,SFMono-Regular,Menlo,Consolas,monospace";
+const SANS = "Helvetica Neue, Helvetica, Arial, sans-serif";
+const BONE = '#D6D2CB', QUIET = '#7F7A72', DIM = '#585F52', SL = '#8B97A3', HI = '#B9C0C7', RD = '#E2453C';
+
+class Component extends DCLogic {
+  spark(vals, color, w) {
+    w = w || 106; const h = 20;
+    const nums = vals.filter(v => v != null);
+    if (!nums.length) return null;
+    const min = Math.min.apply(null, nums) - 1.5, max = Math.max.apply(null, nums) + 1.5;
+    const step = w / (vals.length - 1);
+    const y = v => h - ((v - min) / (max - min || 1)) * h;
+    const pts = []; let cut = -1;
+    vals.forEach((v, i) => { if (cut < 0 && v != null) pts.push([i * step, y(v)]); else if (cut < 0) cut = i; });
+    const last = pts[pts.length - 1] || [0, h / 2];
+    const kids = [React.createElement('polyline', { key: 'p', points: pts.map(q => q[0].toFixed(1) + ',' + q[1].toFixed(1)).join(' '), fill: 'none', stroke: color, strokeWidth: 2 })];
+    if (cut >= 0) {
+      kids.push(React.createElement('line', { key: 'g', x1: last[0], y1: last[1], x2: w, y2: last[1], stroke: SL, strokeWidth: 2, strokeDasharray: '2 7' }));
+      kids.push(React.createElement('circle', { key: 'c', cx: last[0], cy: last[1], r: 3.5, fill: '#000', stroke: SL, strokeWidth: 2 }));
+      kids.push(React.createElement('text', { key: 'q', x: w, y: last[1] - 8, textAnchor: 'end', fill: HI, fontSize: 15, fontWeight: 700, fontFamily: 'Helvetica' }, '?'));
+    }
+    return React.createElement('svg', { width: w, height: h + 10, viewBox: '0 0 ' + w + ' ' + (h + 10) }, kids);
+  }
+
+  renderVals() {
+    const s = this.props.s || {};
+    const detail = s.detail !== false;
+    const g = s.glyph || {};
+    const gc = g.color || DIM;
+
+    const bars = (g.bars || []).map(b => ({
+      style: {
+        width: b.w + 'px', height: b.h + 'px', background: gc, flex: '0 0 auto',
+        animation: g.flash ? 'sem 1s steps(1,end) infinite' : 'none'
+      }
+    }));
+
+    const param = (p) => ({
+      name: p.name, unit: p.unit, val: p.stale ? '?' : p.val, note: p.note,
+      labelStyle: { fontSize: '15px', letterSpacing: '3px', color: p.stale ? HI : QUIET, fontFamily: SANS },
+      valStyle: {
+        fontFamily: SANS, fontVariantNumeric: 'tabular-nums', fontWeight: 700, fontSize: '90px',
+        lineHeight: 0.88, letterSpacing: '-3px', color: p.stale ? SL : (s.valColor || BONE),
+        borderBottom: p.stale ? '3px dashed ' + SL : '3px solid rgba(0,0,0,0)'
+      },
+      unitStyle: { fontSize: '16px', color: p.stale ? HI : QUIET, paddingBottom: '10px', letterSpacing: '.6px' },
+      noteStyle: { fontSize: '14px', fontFamily: MONO, fontVariantNumeric: 'tabular-nums', color: p.stale ? HI : QUIET, whiteSpace: 'nowrap' },
+      spark: p.trend ? this.spark(p.trend, p.stale ? SL : (s.valColor || BONE)) : null
+    });
+
+    const sil = s.silence || {};
+    const p = Math.max(0, Math.min(1, sil.p || 0));
+    const silColor = sil.color || DIM;
+
+    return {
+      v: {
+        detail,
+        root: {
+          width: '800px', height: '480px', boxSizing: 'border-box', background: '#000',
+          padding: '30px 38px 20px', display: 'flex', flexDirection: 'column', gap: '0',
+          fontFamily: SANS, overflow: 'hidden', position: 'relative',
+          border: s.frame ? '6px solid ' + s.frame : '6px solid rgba(0,0,0,0)'
+        },
+        glyphZone: {
+          width: '212px', flex: '0 0 auto', display: 'flex', flexDirection: 'column',
+          alignItems: 'flex-start', justifyContent: 'center', gap: (g.gap || 18) + 'px', position: 'relative'
+        },
+        isQuestion: !!g.question,
+        qBox: {
+          width: '176px', height: '176px', border: '5px dashed ' + gc, display: 'flex',
+          alignItems: 'center', justifyContent: 'center', fontSize: '116px', fontWeight: 700,
+          color: gc, lineHeight: 1, fontFamily: SANS
+        },
+        bars,
+        glyphCap: g.cap, glyphCapStyle: { position: 'absolute', bottom: '-4px', left: 0, fontSize: '14px', letterSpacing: '1.6px', color: g.capColor || QUIET, display: g.cap ? 'block' : 'none', whiteSpace: 'nowrap' },
+        tier: s.tier,
+        tierStyle: {
+          fontSize: detail ? '58px' : '52px', fontWeight: 700, letterSpacing: '-1px', lineHeight: 1,
+          color: s.tierColor || DIM, whiteSpace: 'nowrap',
+          animation: g.flash ? 'sem 1s steps(1,end) infinite' : 'none'
+        },
+        clock: s.clock, clockStyle: { marginLeft: 'auto', fontSize: '16px', fontFamily: MONO, fontVariantNumeric: 'tabular-nums', color: QUIET, display: detail ? 'block' : 'none' },
+        sub: s.sub, subStyle: { fontSize: '15px', letterSpacing: '1.8px', color: s.subColor || QUIET, marginTop: '6px', display: s.sub ? 'block' : 'none' },
+        params: (s.params || []).map(param),
+        bpRow: { display: 'flex', alignItems: 'baseline', gap: '14px', marginTop: '8px', borderTop: '1px solid #262A25', paddingTop: '8px' },
+        bpName: (s.bp || {}).name, bpLabel: { fontSize: '15px', letterSpacing: '2.4px', color: (s.bp || {}).stale ? HI : QUIET, whiteSpace: 'nowrap' },
+        bpVal: (s.bp || {}).val, bpValStyle: { fontSize: '30px', fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: (s.bp || {}).stale ? SL : BONE, borderBottom: (s.bp || {}).stale ? '2px dashed ' + SL : 'none', letterSpacing: '-.5px', whiteSpace: 'nowrap' },
+        bpAge: (s.bp || {}).age, bpNoteStyle: { marginLeft: 'auto', fontSize: '15px', fontFamily: MONO, fontVariantNumeric: 'tabular-nums', color: (s.bp || {}).stale ? HI : QUIET, whiteSpace: 'nowrap' },
+        sensors: (s.sensors || []).map(d => ({
+          text: d.name + (d.ok ? ' ' + d.age : ' ? ' + d.age),
+          style: {
+            fontSize: '15px', fontFamily: MONO, fontVariantNumeric: 'tabular-nums',
+            color: d.ok ? QUIET : HI, whiteSpace: 'nowrap',
+            borderBottom: d.ok ? '2px solid #262A25' : '2px dashed ' + SL, paddingBottom: '2px'
+          }
+        })),
+        sys: s.sys, sysStyle: { fontSize: '14px', fontFamily: MONO, fontVariantNumeric: 'tabular-nums', color: QUIET, whiteSpace: 'pre', lineHeight: 1.5 },
+        silOuter: {
+          position: 'relative', height: sil.text ? '56px' : '0px', flex: '0 0 auto', marginTop: '10px',
+          overflow: 'hidden', touchAction: 'none', userSelect: 'none', display: sil.text ? 'block' : 'none',
+          borderTop: '3px ' + (sil.active ? 'solid' : 'dashed') + ' ' + silColor
+        },
+        silFill: { position: 'absolute', left: 0, top: 0, bottom: 0, width: (p * 100).toFixed(1) + '%', background: sil.fill || 'rgba(0,0,0,0)', borderRight: p > 0 ? '3px solid ' + silColor : 'none' },
+        silText: sil.text, silTextStyle: { fontSize: '25px', fontWeight: 700, letterSpacing: '-.3px', color: sil.textColor || silColor, whiteSpace: 'nowrap' },
+        silSub: sil.sub, silSubStyle: { marginLeft: 'auto', fontSize: '14px', fontFamily: MONO, fontVariantNumeric: 'tabular-nums', color: sil.subColor || QUIET, whiteSpace: 'nowrap' },
+        onDown: sil.onDown, onUp: sil.onUp
+      }
+    };
+  }
+}
+</script>
+</body>
+</html>
