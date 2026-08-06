@@ -51,7 +51,7 @@ pane renders (`grep -n '^- \[' tasks.md`).
 - [x] T-A4 — Disable onboard Bluetooth · mechanical · pi · **blocked by G1**
 - [x] T-A5 — Watchdog, governor, update policy · mechanical · pi
 - [ ] T-B1 — Eight-hour Polar H10 capture · implement-complex · pi · **review**
-- [ ] T-C1 — PostgreSQL 16 bare metal on NVMe · implement-standard · pi · **blocked by G2**
+- [x] T-C1 — PostgreSQL 16 bare metal on NVMe · implement-standard · pi · **blocked by G2**
 - [ ] T-C2 — pgBackRest, three tiers · implement-standard · pi · **review**
 - [ ] T-C3 — Scheduled restore verification · implement-complex · pi · **review · gate G3 owner**
 - [x] T-D1 — Registry TOML and codegen · implement-standard · mac
@@ -1141,6 +1141,56 @@ reading in the store.
 
 <!-- Conductor: record scope deltas, measured results, and decisions here as they happen.
      T-B1's gap histogram goes here verbatim — it is the project's foundational measurement. -->
+
+### T-C1 — PostgreSQL 16 bare metal on NVMe · PASSED 2026-08-05
+
+Gate G2 was checked before installation: `/` and the resulting
+`/var/lib/postgresql/16/main` both resolve through `findmnt` to `/dev/nvme0n1p1` (ext4). PostgreSQL
+16.14 and its client were installed from PGDG, with TimescaleDB 2.29.1, TimescaleDB Toolkit 1.24.0,
+and pg_cron 1.6.7. The repositories use scoped `signed-by` keyrings; the verified key fingerprints
+were PGDG `B97B 0AFC AA1A 47F0 44F2 44A0 7FCC 7D46 ACCC 4CF8` and Timescale
+`1005 FB68 604C E9B8 F687 9CF7 59F1 8EDF 47F2 4417`. The packagecloud installer script was not
+executed. `timescaledb-tune` was unnecessary and was not run, avoiding machine-owning defaults.
+
+`/etc/postgresql/16/main/conf.d/vitals.conf` contains the task's bounded 8 GB/NVMe settings and
+preloads `timescaledb,pg_stat_statements,pg_cron`; direct `SHOW` assertions confirmed 2 GB shared
+buffers, 4 GB effective cache, 32 MB work memory, 512 MB maintenance work memory, 40 connections,
+UTC, the requested WAL/checkpoint/archive settings, `cron.database_name=vitals`, and four
+TimescaleDB background workers. Role/database `vitals` exist, the database is owned by that role,
+and its extension list is exactly the expected project set plus `plpgsql`:
+`pg_cron pg_stat_statements plpgsql timescaledb timescaledb_toolkit`.
+
+Amendment 04's positive PostgreSQL OOM policy required correcting Debian's default postmaster
+protection, not merely adding a systemd value. Debian's root path in `pg_ctlcluster` writes `-900`
+after systemd applies `OOMScoreAdjust`; PostgreSQL then resets children independently. The
+instance drop-in therefore runs `pg_ctlcluster` as its cluster owner with `OOMScoreAdjust=500`,
+avoiding that root-only override, while the supported cluster environment sets
+`PG_OOM_ADJUST_VALUE=500` for PostgreSQL's child reset. After a clean restart, `/proc` reported
+`500` for the postmaster and every child, including representative checkpointer, background writer,
+pg_cron, and TimescaleDB workers. The earlier PID-file `ExecStartPost` experiment was removed; no
+PID mutation remains.
+
+The exact T-C1 `Verify:` command exited 0. Simpler extension/config/storage assertions also passed.
+A 20-second `pgbench` run at scale 5 with 8 clients and 4 threads completed 55,404 transactions,
+0 failures, and 2,770.55 TPS; its temporary tables were removed. `vcgencmd get_throttled` remained
+`0x50000` before package installation, after configuration/restarts, before load, and after load.
+The active low nibble was always zero. The pre-existing historical latch has both bit 16
+(under-voltage has occurred) and bit 18 (throttling has occurred) set; neither condition was active
+during T-C1.
+
+**Immediate T-C2 handoff:** T-C1 deliberately leaves the prescribed `archive_mode=on` and
+`archive_command='pgbackrest --stanza=vitals archive-push %p'` active even though pgBackRest is not
+installed until T-C2. PostgreSQL is consequently accumulating `.ready` archive-status entries: nine
+were present at the post-review check. This task state is prescribed and its acceptance passes, so
+T-C1 remains ticked rather than silently changing the brief. T-C2 must follow immediately, establish
+the stanza, and explicitly verify that the existing `.ready` backlog drains to zero.
+
+**Out-of-scope safety debt — container OOM propagation:** T-A5's positive scores on the Docker and
+containerd services do not propagate to convenience-container payload processes. The observed
+LiteLLM PostgreSQL postmaster, workers, and sessions remain at `oom_score_adj=0`, while this
+bare-metal PostgreSQL postmaster and workers are at `500`. Do not disrupt the working gateway during
+T-C1; a follow-up must apply and verify positive OOM scores inside convenience containers so they
+are selected before ordinary host processes and the life-safety units protected by Amendment 04.
 
 ### T-D3 follow-up — stable spool writer lock · 2026-08-06
 
