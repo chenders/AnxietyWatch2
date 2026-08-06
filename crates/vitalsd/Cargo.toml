@@ -17,6 +17,7 @@ serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["rt", "net", "io-util", "macros", "time", "signal", "sync"] }
 
 [dev-dependencies]
+serde_json = "1"
 tempfile = "3"
 tokio = { version = "1", features = ["rt", "net", "io-util", "macros", "time", "sync"] }
 
