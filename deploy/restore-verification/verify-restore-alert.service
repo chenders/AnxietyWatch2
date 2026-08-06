@@ -1,0 +1,12 @@
+[Unit]
+Description=Record restoration-verification alarm state
+
+[Service]
+Type=oneshot
+UMask=0022
+ExecStart=/bin/sh -c 'printf "restore verification alert at %%s\n" "$(date -u +%%Y-%%m-%%dT%%H:%%M:%%SZ)" >&2; touch /var/lib/vitals/restore-verify.alert'
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/vitals
