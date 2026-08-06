@@ -51,11 +51,14 @@ pub const REFUSE_SEGMENT_PERCENT: u64 = 95;
 pub const WARN_SEGMENT_PERCENT: u64 = 80;
 
 /// Magic at the head of every segment, before the fingerprint.
-const SEGMENT_MAGIC: &[u8; 8] = b"VITSPOOL";
+pub const SEGMENT_MAGIC: &[u8; 8] = b"VITSPOOL";
 
 /// Bumped when the segment framing itself changes — distinct from the schema
 /// fingerprint, which tracks the *table*.
-const SEGMENT_FORMAT_VERSION: u16 = 1;
+pub const SEGMENT_FORMAT_VERSION: u16 = 1;
+
+/// Bytes before the first COPY row: framing plus PostgreSQL's header.
+pub const FIRST_ROW_OFFSET: u64 = 18 + 19;
 
 /// Identifies the exact table layout a segment's rows were encoded against.
 ///
@@ -128,7 +131,7 @@ pub struct Spool {
     // segment changes on rotation (and its name is time-derived), but the
     // single-writer invariant must not have either of those scopes.
     writer_lock: File,
-    file: File,
+    file: Option<File>,
     path: PathBuf,
     bytes: u64,
     opened: Instant,
@@ -189,7 +192,17 @@ impl Spool {
             ));
         }
 
-        let (file, path, bytes) = Self::create_segment(dir, segment_name, fingerprint)?;
+        let created = Self::create_segment(dir, segment_name, fingerprint);
+        let (file, path, bytes) = match created {
+            Ok((file, path, bytes)) => (Some(file), path, bytes),
+            Err(e) if e.kind() == io::ErrorKind::StorageFull => {
+                // Keep the writer lock and start the socket service. Appends
+                // remain available to in-memory subscribers but are explicitly
+                // non-durable until space falls below the refusal watermark.
+                (None, dir.join(".memory-only"), 0)
+            }
+            Err(e) => return Err(e),
+        };
         let now = Instant::now();
         Ok(Self {
             dir: dir.to_path_buf(),
@@ -364,6 +377,12 @@ impl Spool {
         self.bytes
     }
 
+    /// Whether no durable segment is currently available.
+    #[must_use]
+    pub const fn is_memory_only(&self) -> bool {
+        self.file.is_none()
+    }
+
     /// The fingerprint this spool encodes against.
     #[must_use]
     pub const fn fingerprint(&self) -> SchemaFingerprint {
@@ -396,13 +415,35 @@ impl Spool {
             return Ok(());
         }
 
+        if self.file.is_none() {
+            match Self::create_segment(&self.dir, &Self::segment_name(), self.fingerprint) {
+                Ok((file, path, bytes)) => {
+                    self.file = Some(file);
+                    self.path = path;
+                    self.bytes = bytes;
+                    self.opened = Instant::now();
+                }
+                Err(e) => return Err(e),
+            }
+        } else if self.rotation_due() && self.disk_used_percent()? >= REFUSE_SEGMENT_PERCENT {
+            return Err(io::Error::new(
+                io::ErrorKind::StorageFull,
+                format!(
+                    "spool append is memory-only: filesystem is at least {REFUSE_SEGMENT_PERCENT}% used"
+                ),
+            ));
+        }
+
         let mut buf = Vec::with_capacity(rows.len() * 96);
         for s in rows {
             copybin::encode_row(&mut buf, s, node_id)
                 .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
         }
 
-        self.file.write_all(&buf)?;
+        let file = self.file.as_mut().ok_or_else(|| {
+            io::Error::other("spool file unavailable after successful segment creation")
+        })?;
+        file.write_all(&buf)?;
         self.bytes += buf.len() as u64;
         self.dirty = true;
 
@@ -418,7 +459,11 @@ impl Spool {
     /// I/O failure.
     pub fn sync(&mut self) -> io::Result<()> {
         if self.dirty {
-            self.file.sync_all()?;
+            let file = self
+                .file
+                .as_ref()
+                .ok_or_else(|| io::Error::other("dirty spool has no backing segment"))?;
+            file.sync_all()?;
             self.dirty = false;
         }
         self.last_sync = Instant::now();
@@ -470,7 +515,8 @@ impl Spool {
     /// Whether the current segment is due for rotation.
     #[must_use]
     pub fn rotation_due(&self) -> bool {
-        self.bytes >= MAX_SEGMENT_BYTES || self.opened.elapsed() >= MAX_SEGMENT_AGE
+        self.file.is_some()
+            && (self.bytes >= MAX_SEGMENT_BYTES || self.opened.elapsed() >= MAX_SEGMENT_AGE)
     }
 
     /// Rotates if due. The finished segment is fsynced and its lock released
@@ -497,8 +543,10 @@ impl Spool {
         // and durable. The directory lock stays on the same file description:
         // rotation neither releases nor reacquires it. If creation fails, this
         // Spool therefore remains the sole locked writer.
-        FileExt::unlock(&self.file)?;
-        self.file = file;
+        if let Some(old) = &self.file {
+            FileExt::unlock(old)?;
+        }
+        self.file = Some(file);
         self.path = path;
         self.bytes = bytes;
         let now = Instant::now();
@@ -514,7 +562,9 @@ impl Drop for Spool {
         // Best effort. A failure here cannot be reported, but leaving bytes
         // unsynced on a clean drop would lose data no error ever mentioned.
         let _ = self.sync();
-        let _ = FileExt::unlock(&self.file);
+        if let Some(file) = &self.file {
+            let _ = FileExt::unlock(file);
+        }
         let _ = FileExt::unlock(&self.writer_lock);
     }
 }

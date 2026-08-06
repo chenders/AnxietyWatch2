@@ -156,6 +156,7 @@ async fn run(args: Args) -> std::io::Result<()> {
     );
 
     let mut tick = tokio::time::interval(Duration::from_millis(250));
+    let mut rotation_blocker: Option<String> = None;
 
     loop {
         tokio::select! {
@@ -172,7 +173,14 @@ async fn run(args: Args) -> std::io::Result<()> {
             }
 
             Some(cmd) = cmd_rx.recv() => {
-                handle(cmd, &mut st, &mut spool, &node_id, &mut subscribers);
+                handle(
+                    cmd,
+                    &mut st,
+                    &mut spool,
+                    &node_id,
+                    &mut subscribers,
+                    rotation_blocker.as_deref(),
+                );
             }
 
             _ = tick.tick() => {
@@ -182,9 +190,18 @@ async fn run(args: Args) -> std::io::Result<()> {
                     eprintln!("vitalsd: periodic sync failed: {e}");
                 }
                 match spool.rotate_if_due() {
-                    Ok(true) => eprintln!("vitalsd: rotated to {}", spool.segment_path().display()),
+                    Ok(true) => {
+                        eprintln!("vitalsd: rotated to {}", spool.segment_path().display());
+                        rotation_blocker = None;
+                    }
                     Ok(false) => {}
-                    Err(e) => eprintln!("vitalsd: spool rotation blocked: {e}"),
+                    Err(e) => {
+                        let blocker = format!("spool rotation blocked: {e}");
+                        if rotation_blocker.as_deref() != Some(&blocker) {
+                            eprintln!("vitalsd: {blocker}");
+                        }
+                        rotation_blocker = Some(blocker);
+                    },
                 }
             }
         }
@@ -213,6 +230,7 @@ fn handle(
     spool: &mut Spool,
     node_id: &NodeId,
     subscribers: &mut Vec<(u64, mpsc::Sender<Response>)>,
+    rotation_blocker: Option<&str>,
 ) {
     let now = Instant::now();
     match cmd {
@@ -229,6 +247,17 @@ fn handle(
                     Response::Appended {
                         count: samples.len(),
                         durable: sync,
+                    }
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::StorageFull && !sync => {
+                    // Streaming sources may continue to the in-memory alarm
+                    // path. Durability-required BP requests never enter this
+                    // arm and receive an explicit error instead.
+                    st.record_appended(&samples, spool.segment_bytes(), now);
+                    fan_out(&samples, st, subscribers);
+                    Response::Appended {
+                        count: samples.len(),
+                        durable: false,
                     }
                 }
                 Err(e) => Response::Error {
@@ -249,6 +278,9 @@ fn handle(
         Cmd::Health { reply } => {
             let mut health = st.health(now);
             update_drain_health(&mut health, spool);
+            if let Some(blocker) = rotation_blocker {
+                health.degraded.push(blocker.to_owned());
+            }
             health.heartbeat.drain_progressing =
                 health.lag_bytes == 0 || health.lag_age_seconds <= 300;
             health.heartbeat_pulsing = health
