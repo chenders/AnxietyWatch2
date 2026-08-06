@@ -7,13 +7,10 @@ use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 use vitals_core::copybin;
-use vitals_core::spool::{SchemaFingerprint, samples_fingerprint};
-
-const FRAME_BYTES: u64 = 18;
-const COPY_HEADER_BYTES: u64 = 19;
-const FIRST_ROW_OFFSET: u64 = FRAME_BYTES + COPY_HEADER_BYTES;
-const MAGIC: &[u8; 8] = b"VITSPOOL";
-const FORMAT_VERSION: u16 = 1;
+use vitals_core::spool::{
+    FIRST_ROW_OFFSET, SAMPLES_LAYOUT, SEGMENT_FORMAT_VERSION, SEGMENT_HEADER_BYTES, SEGMENT_MAGIC,
+    SchemaFingerprint, samples_fingerprint,
+};
 const ADVISORY_LOCK: i64 = 0x5641_4C53;
 
 /// A validated segment and its durable local offset file.
@@ -49,7 +46,11 @@ pub enum DrainError {
         expected: u64,
         /// Fingerprint recorded in the segment.
         actual: u64,
+        /// Operator-actionable source of the incompatible schema.
+        context: String,
     },
+    /// Live `samples` differs from the canonical positional COPY layout.
+    SchemaMismatch(String),
     /// `PostgreSQL` reported an impossible offset.
     InvalidOffset {
         /// Segment whose status is invalid.
@@ -68,10 +69,17 @@ impl std::fmt::Display for DrainError {
                 f,
                 "drain blocked: PostgreSQL advisory lock 0x56414c53 is held"
             ),
-            Self::FingerprintMismatch { expected, actual } => write!(
+            Self::FingerprintMismatch {
+                expected,
+                actual,
+                context,
+            } => write!(
                 f,
-                "drain blocked: samples schema fingerprint differs: expected {expected:016x}, spool {actual:016x}"
+                "drain blocked: {context}: expected samples fingerprint {expected:016x}, found {actual:016x}; drain with the matching pre-migration schema or migrate the segment explicitly"
             ),
+            Self::SchemaMismatch(detail) => {
+                write!(f, "drain blocked: live samples schema mismatch: {detail}")
+            }
             Self::InvalidOffset { segment, offset } => write!(
                 f,
                 "drain blocked: spool_status offset {offset} is invalid for segment {segment}"
@@ -115,17 +123,6 @@ pub fn connect_locked(dsn: &str) -> Result<Client, DrainError> {
 /// # Errors
 /// Returns a database error or names the first field mismatch.
 pub fn live_fingerprint(client: &mut Client) -> Result<SchemaFingerprint, DrainError> {
-    const EXPECTED: [(&str, u32); 9] = [
-        ("source", 23),
-        ("type", 23),
-        ("session_id", 20),
-        ("seq", 20),
-        ("timestamp", 1184),
-        ("value", 701),
-        ("extra", 17),
-        ("node_id", 17),
-        ("batch_id", 20),
-    ];
     let rows = client.query(
         "SELECT a.attname, a.atttypid::bigint FROM pg_attribute a WHERE a.attrelid='samples'::regclass AND a.attnum>0 AND NOT a.attisdropped ORDER BY a.attnum",
         &[],
@@ -142,44 +139,32 @@ pub fn live_fingerprint(client: &mut Client) -> Result<SchemaFingerprint, DrainE
         })?;
         owned.push((name, oid));
     }
-    for (index, (expected_name, expected_oid)) in EXPECTED.iter().enumerate() {
+    for (index, (expected_name, expected_oid)) in SAMPLES_LAYOUT.iter().enumerate() {
         match owned.get(index) {
             Some((actual_name, actual_oid))
                 if actual_name == expected_name && actual_oid == expected_oid => {}
             Some((actual_name, actual_oid)) => {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    format!(
-                        "samples fingerprint mismatch at field {}: expected {expected_name} oid {expected_oid}, found {actual_name} oid {actual_oid}",
-                        index + 1
-                    ),
-                )
-                .into());
+                return Err(DrainError::SchemaMismatch(format!(
+                    "field {} expected {expected_name} oid {expected_oid}, found {actual_name} oid {actual_oid}",
+                    index + 1
+                )));
             }
             None => {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    format!(
-                        "samples fingerprint mismatch at field {}: expected {expected_name} oid {expected_oid}, found end of table",
-                        index + 1
-                    ),
-                )
-                .into());
+                return Err(DrainError::SchemaMismatch(format!(
+                    "field {} expected {expected_name} oid {expected_oid}, found end of table",
+                    index + 1
+                )));
             }
         }
     }
-    if owned.len() != EXPECTED.len() {
-        let (name, oid) = owned.get(EXPECTED.len()).ok_or_else(|| {
-            io::Error::new(io::ErrorKind::InvalidData, "samples column count changed")
-        })?;
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!(
-                "samples fingerprint mismatch at field {}: unexpected {name} oid {oid}",
-                EXPECTED.len() + 1
-            ),
-        )
-        .into());
+    if owned.len() != SAMPLES_LAYOUT.len() {
+        let (name, oid) = owned
+            .get(SAMPLES_LAYOUT.len())
+            .ok_or_else(|| DrainError::SchemaMismatch("samples column count changed".to_owned()))?;
+        return Err(DrainError::SchemaMismatch(format!(
+            "field {} is unexpected: {name} oid {oid}",
+            SAMPLES_LAYOUT.len() + 1
+        )));
     }
     let borrowed: Vec<_> = owned.iter().map(|(n, o)| (n.as_str(), *o)).collect();
     Ok(SchemaFingerprint::of(&borrowed))
@@ -218,9 +203,9 @@ pub fn open_segment(path: &Path) -> Result<Segment, DrainError> {
         )
         .into());
     }
-    let mut header = [0_u8; 18];
+    let mut header = [0_u8; SEGMENT_HEADER_BYTES];
     file.read_exact(&mut header)?;
-    if header.get(..8) != Some(MAGIC) {
+    if header.get(..8) != Some(SEGMENT_MAGIC) {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
             format!("{}: VITSPOOL magic missing", path.display()),
@@ -228,11 +213,11 @@ pub fn open_segment(path: &Path) -> Result<Segment, DrainError> {
         .into());
     }
     let version = u16::from_be_bytes([header[8], header[9]]);
-    if version != FORMAT_VERSION {
+    if version != SEGMENT_FORMAT_VERSION {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
             format!(
-                "{}: spool format version {version}, expected {FORMAT_VERSION}",
+                "{}: spool format version {version}, expected {SEGMENT_FORMAT_VERSION}",
                 path.display()
             ),
         )
@@ -333,6 +318,10 @@ impl Segment {
             return Err(DrainError::FingerprintMismatch {
                 expected: expected.value(),
                 actual: self.fingerprint.value(),
+                context: format!(
+                    "segment {} predates or differs from the live schema",
+                    self.name
+                ),
             });
         }
         let db_offset = client
@@ -360,6 +349,7 @@ impl Segment {
         }
         if start == self.length {
             self.persist_offset(start)?;
+            self.persist_progress()?;
             return Ok(0);
         }
         self.file.seek(SeekFrom::Start(start))?;
@@ -396,7 +386,29 @@ impl Segment {
         tx.execute("INSERT INTO spool_status(segment,offset_bytes,drained,fingerprint,last_advanced) VALUES($1,$2,TRUE,$3,clock_timestamp()) ON CONFLICT(segment) DO UPDATE SET offset_bytes=EXCLUDED.offset_bytes,drained=TRUE,fingerprint=EXCLUDED.fingerprint,last_advanced=EXCLUDED.last_advanced", &[&self.name, &end, &fp])?;
         tx.commit()?;
         self.persist_offset(self.length)?;
+        self.persist_progress()?;
         Ok(inserted)
+    }
+
+    fn persist_progress(&self) -> Result<(), DrainError> {
+        let dir = self.path.parent().ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "segment has no parent directory",
+            )
+        })?;
+        let target = dir.join(".drain-status");
+        let temporary = dir.join(format!(".drain-status.{}.tmp", std::process::id()));
+        let advanced = epoch_seconds();
+        let mut file = OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(&temporary)?;
+        writeln!(file, "{advanced}")?;
+        file.sync_all()?;
+        fs::rename(&temporary, &target)?;
+        File::open(dir)?.sync_all()?;
+        Ok(())
     }
 
     fn persist_offset(&mut self, offset: u64) -> Result<(), DrainError> {

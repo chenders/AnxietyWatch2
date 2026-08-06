@@ -57,8 +57,24 @@ pub const SEGMENT_MAGIC: &[u8; 8] = b"VITSPOOL";
 /// fingerprint, which tracks the *table*.
 pub const SEGMENT_FORMAT_VERSION: u16 = 1;
 
-/// Bytes before the first COPY row: framing plus PostgreSQL's header.
-pub const FIRST_ROW_OFFSET: u64 = 18 + 19;
+/// Bytes before the first COPY row: framing plus `PostgreSQL`'s header.
+pub const FIRST_ROW_OFFSET: u64 = SEGMENT_HEADER_BYTES as u64 + 19;
+
+/// Bytes in the spool-specific magic/version/fingerprint header.
+pub const SEGMENT_HEADER_BYTES: usize = 18;
+
+/// Canonical `samples` field names and `PostgreSQL` type OIDs.
+pub const SAMPLES_LAYOUT: [(&str, u32); 9] = [
+    ("source", 23),
+    ("type", 23),
+    ("session_id", 20),
+    ("seq", 20),
+    ("timestamp", 1184),
+    ("value", 701),
+    ("extra", 17),
+    ("node_id", 17),
+    ("batch_id", 20),
+];
 
 /// Identifies the exact table layout a segment's rows were encoded against.
 ///
@@ -110,17 +126,7 @@ impl SchemaFingerprint {
 /// OIDs: int4 = 23, int8 = 20, timestamptz = 1184, float8 = 701, bytea = 17.
 #[must_use]
 pub fn samples_fingerprint() -> SchemaFingerprint {
-    SchemaFingerprint::of(&[
-        ("source", 23),
-        ("type", 23),
-        ("session_id", 20),
-        ("seq", 20),
-        ("timestamp", 1184),
-        ("value", 701),
-        ("extra", 17),
-        ("node_id", 17),
-        ("batch_id", 20),
-    ])
+    SchemaFingerprint::of(&SAMPLES_LAYOUT)
 }
 
 /// An append-only spool directory holding one open segment.
@@ -160,7 +166,7 @@ impl Spool {
     /// # Errors
     /// I/O failure, or the lock already being held.
     pub fn open_with(dir: &Path, fingerprint: SchemaFingerprint) -> io::Result<Self> {
-        Self::open_with_segment_name(dir, fingerprint, &Self::segment_name())
+        Self::open_with_segment_name(dir, fingerprint, &Self::segment_name()?)
     }
 
     fn open_with_segment_name(
@@ -356,13 +362,21 @@ impl Spool {
         h
     }
 
-    fn segment_name() -> String {
+    fn segment_name() -> io::Result<String> {
         // `create_new` below is the uniqueness guarantee; nanoseconds merely
         // keep collisions (including after a restart or RTC rollback) rare.
         let nanos = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_or(0, |d| d.as_nanos());
-        format!("segment-{nanos:020}.spool")
+        // Random provenance prevents an old spool_status row from ever being
+        // mistaken for this segment after RTC rollback or restored files.
+        let mut nonce = [0_u8; 8];
+        getrandom::fill(&mut nonce)
+            .map_err(|e| io::Error::other(format!("random segment identity failed: {e}")))?;
+        Ok(format!(
+            "segment-{nanos:020}-{:016x}.spool",
+            u64::from_be_bytes(nonce)
+        ))
     }
 
     /// This segment's path.
@@ -416,7 +430,7 @@ impl Spool {
         }
 
         if self.file.is_none() {
-            match Self::create_segment(&self.dir, &Self::segment_name(), self.fingerprint) {
+            match Self::create_segment(&self.dir, &Self::segment_name()?, self.fingerprint) {
                 Ok((file, path, bytes)) => {
                     self.file = Some(file);
                     self.path = path;
@@ -530,7 +544,7 @@ impl Spool {
     /// # Errors
     /// I/O failure, or the new segment's lock being unavailable.
     pub fn rotate_if_due(&mut self) -> io::Result<bool> {
-        self.rotate_if_due_with_segment_name(&Self::segment_name())
+        self.rotate_if_due_with_segment_name(&Self::segment_name()?)
     }
 
     fn rotate_if_due_with_segment_name(&mut self, segment_name: &str) -> io::Result<bool> {

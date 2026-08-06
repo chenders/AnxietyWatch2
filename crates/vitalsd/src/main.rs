@@ -156,7 +156,9 @@ async fn run(args: Args) -> std::io::Result<()> {
     );
 
     let mut tick = tokio::time::interval(Duration::from_millis(250));
-    let mut rotation_blocker: Option<String> = None;
+    let mut rotation_blocker = spool.is_memory_only().then(|| {
+        "spool persistence unavailable: filesystem refusal watermark reached; streaming ingest is memory-only and sync-required ingest is rejected".to_owned()
+    });
 
     loop {
         tokio::select! {
@@ -179,7 +181,7 @@ async fn run(args: Args) -> std::io::Result<()> {
                     &mut spool,
                     &node_id,
                     &mut subscribers,
-                    rotation_blocker.as_deref(),
+                    &mut rotation_blocker,
                 );
             }
 
@@ -230,7 +232,7 @@ fn handle(
     spool: &mut Spool,
     node_id: &NodeId,
     subscribers: &mut Vec<(u64, mpsc::Sender<Response>)>,
-    rotation_blocker: Option<&str>,
+    rotation_blocker: &mut Option<String>,
 ) {
     let now = Instant::now();
     match cmd {
@@ -242,6 +244,9 @@ fn handle(
             let rows: Vec<Sample> = samples.iter().map(to_sample).collect();
             let resp = match spool.append(&rows, node_id, sync) {
                 Ok(()) => {
+                    if !spool.is_memory_only() {
+                        *rotation_blocker = None;
+                    }
                     st.record_appended(&samples, spool.segment_bytes(), now);
                     fan_out(&samples, st, subscribers);
                     Response::Appended {
@@ -250,6 +255,9 @@ fn handle(
                     }
                 }
                 Err(e) if e.kind() == std::io::ErrorKind::StorageFull && !sync => {
+                    *rotation_blocker = Some(format!(
+                        "spool persistence unavailable: {e}; streaming ingest is memory-only and sync-required ingest is rejected"
+                    ));
                     // Streaming sources may continue to the in-memory alarm
                     // path. Durability-required BP requests never enter this
                     // arm and receive an explicit error instead.
@@ -279,7 +287,7 @@ fn handle(
             let mut health = st.health(now);
             update_drain_health(&mut health, spool);
             if let Some(blocker) = rotation_blocker {
-                health.degraded.push(blocker.to_owned());
+                health.degraded.push(blocker.clone());
             }
             health.heartbeat.drain_progressing =
                 health.lag_bytes == 0 || health.lag_age_seconds <= 300;
@@ -339,7 +347,7 @@ fn update_drain_health(health: &mut vitals_proto::Health, spool: &Spool) {
         let Ok(meta) = entry.metadata() else {
             continue;
         };
-        let mut offset = 37_u64;
+        let mut offset = vitals_core::spool::FIRST_ROW_OFFSET;
         let offset_path = path.with_extension("offset");
         if let Ok(text) = std::fs::read_to_string(&offset_path)
             && let Ok(value) = text.trim().parse::<u64>()
@@ -351,14 +359,15 @@ fn update_drain_health(health: &mut vitals_proto::Health, spool: &Spool) {
             let age = now.duration_since(modified).map_or(0, |d| d.as_secs());
             oldest = oldest.max(age);
         }
-        if let Ok(meta) = std::fs::metadata(offset_path)
-            && let Ok(modified) = meta
-                .modified()
-                .and_then(|t| t.duration_since(UNIX_EPOCH).map_err(std::io::Error::other))
-        {
-            advanced = Some(advanced.map_or(modified.as_secs(), |prior: u64| {
-                prior.max(modified.as_secs())
-            }));
+    }
+    let progress_path = dir.join(".drain-status");
+    if let Ok(text) = std::fs::read_to_string(&progress_path) {
+        match text.trim().parse::<u64>() {
+            Ok(value) => advanced = Some(value),
+            Err(e) => health.degraded.push(format!(
+                "drain liveness unavailable: invalid {}: {e}",
+                progress_path.display()
+            )),
         }
     }
     health.lag_bytes = lag;

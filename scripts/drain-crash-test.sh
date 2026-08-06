@@ -31,12 +31,20 @@ cargo build -p vitals-drain --bins
 sudo install -o postgres -g postgres -m 0755 target/debug/vitals-spool-drain "$drainer"
 sudo -u postgres createdb "$db"
 sudo -u postgres psql -v ON_ERROR_STOP=1 -d "$db" <<'SQL'
+CREATE EXTENSION IF NOT EXISTS timescaledb;
+CREATE TABLE vitals_source (id INTEGER PRIMARY KEY);
+CREATE TABLE vitals_type (id INTEGER PRIMARY KEY);
+INSERT INTO vitals_source VALUES (901005);
+INSERT INTO vitals_type VALUES (902005);
 CREATE TABLE samples (
- source INTEGER NOT NULL, type INTEGER NOT NULL, session_id BIGINT NOT NULL,
+ source INTEGER NOT NULL REFERENCES vitals_source(id),
+ type INTEGER NOT NULL REFERENCES vitals_type(id), session_id BIGINT NOT NULL,
  seq BIGINT NOT NULL, timestamp TIMESTAMPTZ NOT NULL,
  value DOUBLE PRECISION NOT NULL, extra BYTEA, node_id BYTEA NOT NULL,
  batch_id BIGINT, PRIMARY KEY(source,type,session_id,seq)
 );
+SELECT create_hypertable('samples', 'timestamp', if_not_exists => TRUE);
+CREATE INDEX samples_time_idx ON samples (source,type,timestamp DESC);
 CREATE TABLE spool_status (
  segment TEXT PRIMARY KEY, offset_bytes BIGINT NOT NULL DEFAULT 0,
  drained BOOLEAN NOT NULL DEFAULT FALSE, fingerprint BYTEA NOT NULL,
