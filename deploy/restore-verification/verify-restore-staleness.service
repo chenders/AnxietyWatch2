@@ -1,0 +1,7 @@
+[Unit]
+Description=Assert restoration verification is successful and no older than 45 days
+OnFailure=verify-restore-alert.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/verify-restore.sh --staleness-check
