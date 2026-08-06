@@ -13,6 +13,8 @@ repository.workspace = true
 fs4 = "0.13"
 # node_id is provenance and is generated exactly once, ever.
 getrandom = "0.3"
+# Atomic no-replace publication keeps partially initialized segments hidden.
+rustix = { version = "1", features = ["fs"] }
 
 [dev-dependencies]
 tempfile = "3"
