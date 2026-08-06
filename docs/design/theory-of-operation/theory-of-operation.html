@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Theory of Operation — nightstand monitoring platform</title>
+<style>
+  html, body { margin: 0; padding: 0; background: #0a0b0c; }
+  ::selection { background: #8fb4c9; color: #0a0b0c; }
+  a { color: #8fb4c9; text-decoration: underline; text-underline-offset: 2px; }
+  a:hover { color: #e6e8ea; }
+  @media print {
+    * { background-color: transparent !important; color: #000 !important; border-color: #000 !important; box-shadow: none !important; }
+    html, body { background: #fff !important; }
+    [data-hatch] { background-image: repeating-linear-gradient(45deg, #000 0 1.5px, #fff 1.5px 5px) !important; }
+    [data-solid] { background: #000 !important; }
+    [data-half] { background-image: repeating-linear-gradient(90deg, #000 0 1px, #fff 1px 4px) !important; }
+    [data-sheet] { font-size: 8.2pt !important; padding: 0 !important; max-width: none !important; }
+    [data-avoid-break] { break-inside: avoid; }
+    [data-screen-only] { display: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<!--
+  CONTRAST AUDIT — WCAG 2.1 ratios computed against the actual surfaces on this page.
+    surface        #0a0b0c  (page)
+    body text      #e6e8ea on surface  = 15.7:1  (AAA)
+    accent         #8fb4c9 on surface  =  8.9:1  (AAA) — cool blue-grey; text, rules, hatch
+    secondary      #8e959c on surface  =  6.5:1  (AA / AAA at the 18px+ sizes used)
+    faint label    #656c73 on surface  =  3.7:1  — 10-12px mono uppercase column heads and ticks only
+    hairline       #23262a on surface  =  1.27:1 — non-text borders only, never type
+    inverse chip   #0a0b0c on #8fb4c9  =  8.9:1  (AAA)
+  Print path: all colour is forced to #000 on #fff (21:1). State is carried by hatch / solid /
+  half-tone fill and by shape, not by hue, so the sheet reads on a monochrome laser printer.
+-->
+
+<div data-sheet="1" style="max-width: 1180px; margin: 0 auto; padding: 56px 40px 96px; background: #0a0b0c; color: #e6e8ea; font-family: 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, serif; font-size: 15px; line-height: 1.5; text-wrap: pretty; -webkit-font-smoothing: antialiased;">
+
+  <div style="display: grid; grid-template-columns: 1fr 300px; gap: 40px; align-items: end; border-bottom: 2px solid #8fb4c9; padding-bottom: 18px;">
+    <div>
+      <div style="font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase; color: #8fb4c9;">Theory of operation</div>
+      <h1 style="margin: 10px 0 6px; font-size: 40px; line-height: 1.04; font-weight: 600; letter-spacing: -0.01em;">Nightstand monitoring platform</h1>
+      <div style="font-size: 18px; color: #8e959c;">One Raspberry Pi 5 is the system of record for one person&#8217;s physiology. It captures every night, judges continuously, sounds a klaxon when the pattern demands it, answers &#8220;what happened last night&#8221; every morning, and proves to itself that it still works.</div>
+    </div>
+    <div style="font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 12px; line-height: 1.7; color: #8e959c;">
+      <div style="display: grid; grid-template-columns: 92px 1fr; gap: 2px 10px;">
+        <span style="color: #656c73;">HOST</span><span>Raspberry Pi 5 · NVMe</span>
+        <span style="color: #656c73;">STORE</span><span>PostgreSQL 16 / TimescaleDB</span>
+        <span style="color: #656c73;">RADIO</span><span>1 &#215; Sena UD100-G03</span>
+        <span style="color: #656c73;">PATIENTS</span><span>1</span>
+        <span style="color: #656c73;">TEST POINTS</span><span>TP1 &#8211; TP14</span>
+        <span style="color: #656c73;">PATH BUDGET</span><span>p99 &lt; 2 s, radio &#8594; tier</span>
+      </div>
+    </div>
+  </div>
+
+  <div style="display: grid; grid-template-columns: 1.35fr 1fr; gap: 44px; padding: 26px 0 30px; border-bottom: 1px solid #23262a;">
+    <div>
+      <div style="font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: #8fb4c9; margin-bottom: 10px;">How to read this sheet</div>
+      <p style="margin: 0 0 12px;">The signal path is instrumented at fourteen test points, TP1 at the skin and TP14 at the bedside glass. Each point states what passes through it, what a healthy reading looks like, what the <em>absence</em> of a reading means, and which screen shows it. A fault is located by walking the register in order until a point&#8217;s healthy condition fails.</p>
+      <p style="margin: 0;">Three loops share this plumbing and serve different masters. The <strong style="font-weight: 600;">night path</strong> (TP1&#8211;TP12) serves the alarm. The <strong style="font-weight: 600;">morning path</strong> (TP6, TP13&#8211;TP14) serves understanding. The <strong style="font-weight: 600;">trust loop</strong> reads every point and serves the other two. Where they compete for the machine, the night path wins.</p>
+    </div>
+    <div data-avoid-break="1">
+      <div style="font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: #8fb4c9; margin-bottom: 10px;">Three states, not two</div>
+      <div style="display: grid; grid-template-columns: 34px 1fr; gap: 9px 12px; align-items: center; font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 12.5px;">
+        <div style="height: 20px; border: 1px solid #656c73;"></div>
+        <div>MEASURED &amp; FINE — quietest thing on any screen</div>
+        <div data-solid="1" style="height: 20px; background: #e6e8ea;"></div>
+        <div>MEASURED &amp; BAD — solid, unmistakable</div>
+        <div data-hatch="1" style="height: 20px; background-image: repeating-linear-gradient(45deg, #8fb4c9 0 3px, transparent 3px 7px); outline: 1px solid #8fb4c9;"></div>
+        <div style="color: #8fb4c9;">NOT MEASURED — hatched, and louder than fine</div>
+      </div>
+      <p style="margin: 12px 0 0; font-size: 14px; color: #8e959c;">The invariant that outranks every other rule here: <strong style="font-weight: 600; color: #e6e8ea;">unknown never looks like healthy.</strong> Wherever the third state appears — a NULL in the store, a stale source on the panel, a gated sample in the detector — it is drawn heavier than the first.</p>
+    </div>
+  </div>
+
+  <div style="display: flex; align-items: baseline; gap: 16px; margin: 40px 0 4px;">
+    <div style="font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: #8fb4c9;">I · Register of test points — night path</div>
+    <div style="flex: 1; height: 1px; background: #23262a;"></div>
+  </div>
+
+  <div style="display: grid; grid-template-columns: 58px 220px 1fr 1fr 160px; gap: 0 20px; padding: 10px 0 8px; font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; color: #656c73; border-bottom: 1px solid #23262a;">
+    <div>TP</div><div>Point</div><div>Healthy reading</div><div>Absence means</div><div>Read at</div>
+  </div>
+
+  <div data-avoid-break="1" style="display: grid; grid-template-columns: 58px 220px 1fr 1fr 160px; gap: 0 20px; padding: 16px 0; border-bottom: 1px solid #23262a;">
+    <div style="font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 19px; color: #8fb4c9;">TP1</div>
+    <div><div style="font-weight: 600;">Body surface</div><div style="font-size: 13.5px; color: #8e959c;">Polar H10 chest strap: beat-to-beat RR intervals, continuous — the only true HRV source. EMAY SleepO2: SpO&#8322; and pulse, ~1/s. A&amp;D UA-651BLE cuff: on demand. AirSense 11 CPAP: one import per night (AHI, mask leak, pressure). HealthKit bridge: hourly push. Oura via cloud: daily. Journal entries and medication doses, entered by hand.</div></div>
+    <div style="font-size: 14px;">Every source reporting at its registered cadence. The hand-entered journal is the anchor: the physiology is context for it, not the reverse.</div>
+    <div style="font-size: 14px;">Strap off the body, or the oximeter dark, means no HRV and no SpO&#8322;. The tier machine holds at <code style="font-family: ui-monospace, monospace; font-size: 13px; color: #8fb4c9;">can't assess</code>. It does not clear.</div>
+    <div style="font-size: 13.5px; color: #8e959c;">Panel source list · cadence registry</div>
+  </div>
+
+  <div data-avoid-break="1" style="display: grid; grid-template-columns: 58px 220px 1fr 1fr 160px; gap: 0 20px; padding: 16px 0; border-bottom: 1px solid #23262a;">
+    <div style="font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 19px; color: #8fb4c9;">TP2</div>
+    <div><div style="font-weight: 600;">Radio</div><div style="font-size: 13.5px; color: #8e959c;">One long-range BLE dongle, Sena UD100-G03. It is the only radio in the system.</div></div>
+    <div style="font-size: 14px;">Dongle enumerated; every expected peripheral connected; packet arrival matching each device&#8217;s advertised interval.</div>
+    <div style="font-size: 14px;">All BLE sources going dark in the same second is a radio fault, not a physiological event, and the machine says so in that language.</div>
+    <div style="font-size: 13.5px; color: #8e959c;">Admin console — technical alarm</div>
+  </div>
+
+  <div data-avoid-break="1" style="display: grid; grid-template-columns: 58px 220px 1fr 1fr 160px; gap: 0 20px; padding: 16px 0; border-bottom: 1px solid #23262a;">
+    <div style="font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 19px; color: #8fb4c9;">TP3</div>
+    <div><div style="font-weight: 600;">Collector / decode</div><div style="font-size: 13.5px; color: #8e959c;">One collector per device protocol. Each emits rows <strong style="font-weight: 600; color: #e6e8ea;">already encoded in PostgreSQL binary COPY format</strong> — the wire format of the store is produced at the edge, not later.</div></div>
+    <div style="font-size: 14px;">Decoded row rate tracks the source cadence 1:1. No re-encoding stage exists downstream to go wrong.</div>
+    <div style="font-size: 14px;">Peripheral connected but no rows emitted isolates the fault to protocol decode — a code fault, not a hardware one.</div>
+    <div style="font-size: 13.5px; color: #8e959c;">Admin console · <code style="font-family: ui-monospace, monospace; font-size: 13px;">Health</code></div>
+  </div>
+
+  <div data-avoid-break="1" style="display: grid; grid-template-columns: 58px 220px 1fr 1fr 160px; gap: 0 20px; padding: 16px 0; border-bottom: 1px solid #23262a;">
+    <div style="font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 19px; color: #8fb4c9;">TP4</div>
+    <div><div style="font-weight: 600;">Spool</div><div style="font-size: 13.5px; color: #8e959c;">Append-only, fsync&#8217;d to NVMe. This is the durability line: <strong style="font-weight: 600; color: #e6e8ea;">a sample survives a crash from the moment it is spooled</strong>, before any database is involved.</div></div>
+    <div style="font-size: 14px;">Spool depth near zero, write offsets monotonic, fsync latency inside its normal band.</div>
+    <div style="font-size: 14px;">A growing spool is a drain problem, not a data-loss problem. Nothing spooled is lost to a power cut.</div>
+    <div style="font-size: 13.5px; color: #8e959c;">Admin console — spool depth</div>
+  </div>
+
+  <div data-avoid-break="1" style="display: grid; grid-template-columns: 58px 220px 1fr 1fr 160px; gap: 0 20px; padding: 16px 0; border-bottom: 1px solid #23262a;">
+    <div style="font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 19px; color: #8fb4c9;">TP5</div>
+    <div><div style="font-weight: 600;">Drain</div><div style="font-size: 13.5px; color: #8e959c;">Streams spool bytes straight into TimescaleDB. Because the bytes are already COPY-formatted, the drain parses nothing.</div></div>
+    <div style="font-size: 14px;">Cycle completes, committed offset advances, spool truncates behind it.</div>
+    <div style="font-size: 14px;">A stalled drain shows as backpressure at TP4 and stale freshness at TP6 — never as missing physiology.</div>
+    <div style="font-size: 13.5px; color: #8e959c;">Admin console — drain cycles</div>
+  </div>
+
+  <div data-avoid-break="1" style="display: grid; grid-template-columns: 58px 220px 1fr 1fr 160px; gap: 0 20px; padding: 16px 0; border-bottom: 1px solid #23262a;">
+    <div style="font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 19px; color: #8fb4c9;">TP6</div>
+    <div><div style="font-weight: 600;">Store</div><div style="font-size: 13.5px; color: #8e959c;">TimescaleDB on PostgreSQL 16. Hypertable on NVMe, compressed after 7 days, raw dropped at 2 years.</div></div>
+    <div style="font-size: 14px;">Chunk written and queryable; compression job current; retention job current.</div>
+    <div style="font-size: 14px;">Gaps are <strong style="font-weight: 600;">stored and served as NULL</strong>. Nothing interpolates across missing physiology, and every reader renders NULL as not-measured.</div>
+    <div style="font-size: 13.5px; color: #8e959c;">Every readout, via TP13</div>
+  </div>
+
+  <div data-avoid-break="1" style="display: grid; grid-template-columns: 58px 220px 1fr 1fr 160px; gap: 0 20px; padding: 16px 0; border-bottom: 1px solid #23262a;">
+    <div style="font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 19px; color: #8fb4c9;">TP7</div>
+    <div><div style="font-weight: 600;">Quality gate</div><div style="font-size: 13.5px; color: #8e959c;">Per source. First stage of the detection pipeline, which reads the live stream, not the stored table.</div></div>
+    <div style="font-size: 14px;">Sample admitted with a quality flag attached; the flag travels with it to TP8 and TP9.</div>
+    <div style="font-size: 14px;">A gated or artifact sample can <em>never</em> escalate a tier and can <em>never</em> clear one. It holds.</div>
+    <div style="font-size: 13.5px; color: #8e959c;">Admin console — gate rates</div>
+  </div>
+
+  <div data-avoid-break="1" style="display: grid; grid-template-columns: 58px 220px 1fr 1fr 160px; gap: 0 20px; padding: 16px 0; border-bottom: 1px solid #23262a;">
+    <div style="font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 19px; color: #8fb4c9;">TP8</div>
+    <div><div style="font-weight: 600;">Severity scoring</div><div style="font-size: 13.5px; color: #8e959c;">Baseline-relative, against this person&#8217;s own rolling median. Population norms are never used, at any point on this sheet.</div></div>
+    <div style="font-size: 14px;">Score expressed as a departure from that baseline, carrying the baseline window it was computed against.</div>
+    <div style="font-size: 14px;">Too little history to hold a baseline is itself a not-measured state, not a benign one.</div>
+    <div style="font-size: 13.5px; color: #8e959c;">Dashboard — trends</div>
+  </div>
+
+  <div data-avoid-break="1" style="display: grid; grid-template-columns: 58px 220px 1fr 1fr 160px; gap: 0 20px; padding: 16px 0; border-bottom: 1px solid #23262a;">
+    <div style="font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 19px; color: #8fb4c9;">TP9</div>
+    <div><div style="font-weight: 600;">Cross-sensor fusion</div><div style="font-size: 13.5px; color: #8e959c;">Combines the scored streams and weighs their agreement.</div></div>
+    <div style="font-size: 14px;">Two independent sources agreeing on a departure. Agreement is what buys the machine the right to escalate.</div>
+    <div style="font-size: 14px;">One source alone, or sources disagreeing, yields a candidate the tier machine may hold on but not fire from.</div>
+    <div style="font-size: 13.5px; color: #8e959c;">Admin console — fusion trace</div>
+  </div>
+
+  <div data-avoid-break="1" style="display: grid; grid-template-columns: 58px 220px 1fr 1fr 160px; gap: 0 20px; padding: 16px 0; border-bottom: 1px solid #23262a;">
+    <div style="font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 19px; color: #8fb4c9;">TP10</div>
+    <div><div style="font-weight: 600;">Tier machine</div><div style="font-size: 13.5px; color: #8e959c;">Hysteretic, five tiers. The only component authorised to decide that a person is in trouble.</div></div>
+    <div style="font-size: 14px;">Tier stated with the evidence that set it and the time it entered that tier. Only observed primary evidence — SpO&#8322;, respiration — moves it past <code style="font-family: ui-monospace, monospace; font-size: 13px;">watch</code> in either direction.</div>
+    <div style="font-size: 14px;">No evidence at all is <code style="font-family: ui-monospace, monospace; font-size: 13px; color: #8fb4c9;">can't assess</code>, which is a held state, not a quiet one.</div>
+    <div style="font-size: 13.5px; color: #8e959c;">Panel status light · console</div>
+  </div>
+
+  <div data-avoid-break="1" style="display: grid; grid-template-columns: 58px 220px 1fr 1fr 160px; gap: 0 20px; padding: 16px 0; border-bottom: 1px solid #23262a;">
+    <div style="font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 19px; color: #8fb4c9;">TP11</div>
+    <div><div style="font-weight: 600;">Klaxon trigger</div><div style="font-size: 13.5px; color: #8e959c;">Entry into <code style="font-family: ui-monospace, monospace; font-size: 13px;">klaxon</code> fires the whole channel stack at once, not in sequence.</div></div>
+    <div style="font-size: 14px;">Every channel dispatched in the same event, each reporting its own result independently.</div>
+    <div style="font-size: 14px;">A channel that reports nothing is presumed dead and is why the stack has more than one member.</div>
+    <div style="font-size: 13.5px; color: #8e959c;">Admin console — dispatch log</div>
+  </div>
+
+  <div data-avoid-break="1" style="display: grid; grid-template-columns: 58px 220px 1fr 1fr 160px; gap: 0 20px; padding: 16px 0; border-bottom: 1px solid #23262a;">
+    <div style="font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 19px; color: #8fb4c9;">TP12</div>
+    <div><div style="font-weight: 600;">Siren current</div><div style="font-size: 13.5px; color: #8e959c;">The GPIO piezo siren senses its own current draw, so the machine learns whether it actually made a sound.</div></div>
+    <div style="font-size: 14px;">Current drawn during a fire or a scheduled self-test. This is the end of the night path: the audible world.</div>
+    <div style="font-size: 14px;">Commanded but no current means the loudest channel is dead — the highest-priority technical alarm in the system.</div>
+    <div style="font-size: 13.5px; color: #8e959c;">Admin console — self-test</div>
+  </div>
+
+  <div data-avoid-break="1" style="display: grid; grid-template-columns: 58px 220px 1fr 1fr 160px; gap: 0 20px; padding: 16px 0; border-bottom: 1px solid #23262a;">
+    <div style="font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 19px; color: #8fb4c9;">TP13</div>
+    <div><div style="font-weight: 600;">Query daemon</div><div style="font-size: 13.5px; color: #8e959c;">Three verbs, and every reader on the sheet draws through them: <code style="font-family: ui-monospace, monospace; font-size: 13px;">Query</code> (history), <code style="font-family: ui-monospace, monospace; font-size: 13px;">Health</code> (liveness and freshness of every source and subsystem), <code style="font-family: ui-monospace, monospace; font-size: 13px;">Subscribe</code> (live stream).</div></div>
+    <div style="font-size: 14px;">All three verbs answering, and every answer carrying the age of the observation behind it.</div>
+    <div style="font-size: 14px;">A dead daemon blinds every viewer and changes nothing about the alarm.</div>
+    <div style="font-size: 13.5px; color: #8e959c;">Dashboard · panel · phone</div>
+  </div>
+
+  <div data-avoid-break="1" style="display: grid; grid-template-columns: 58px 220px 1fr 1fr 160px; gap: 0 20px; padding: 16px 0; border-bottom: 1px solid #23262a;">
+    <div style="font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 19px; color: #8fb4c9;">TP14</div>
+    <div><div style="font-weight: 600;">Bedside glass</div><div style="font-size: 13.5px; color: #8e959c;">800&#215;480 panel; status light readable at 3 a.m. from three feet.</div></div>
+    <div style="font-size: 14px;">Panel showing the current tier and the age of each source.</div>
+    <div style="font-size: 14px;">Panel dark is a viewer fault. <strong style="font-weight: 600;">The alarm sounds identically with the panel unplugged.</strong></div>
+    <div style="font-size: 13.5px; color: #8e959c;">The nightstand</div>
+  </div>
+
+  <div style="display: flex; align-items: baseline; gap: 16px; margin: 44px 0 18px;">
+    <div style="font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: #8fb4c9;">II · TP10 in detail — the tier machine</div>
+    <div style="flex: 1; height: 1px; background: #23262a;"></div>
+  </div>
+
+  <div data-avoid-break="1" style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 0; border-top: 1px solid #23262a; border-bottom: 1px solid #23262a;">
+    <div style="padding: 14px 16px 16px 0; border-right: 1px solid #23262a;">
+      <div style="height: 18px; border: 1px solid #656c73; margin-bottom: 10px;"></div>
+      <div style="font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 14px; color: #e6e8ea;">clear</div>
+      <div style="font-size: 13.5px; color: #8e959c; margin-top: 6px;">Observed, and within baseline. The quietest state on every screen.</div>
+    </div>
+    <div style="padding: 14px 16px 16px; border-right: 1px solid #23262a;">
+      <div data-hatch="1" style="height: 18px; background-image: repeating-linear-gradient(45deg, #8fb4c9 0 3px, transparent 3px 7px); outline: 1px solid #8fb4c9; margin-bottom: 10px;"></div>
+      <div style="font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 14px; color: #8fb4c9;">can&#8217;t assess</div>
+      <div style="font-size: 13.5px; color: #8e959c; margin-top: 6px;">No admissible primary evidence. Held, never cleared, and drawn louder than <span style="font-family: ui-monospace, monospace; font-size: 13px;">clear</span>.</div>
+    </div>
+    <div style="padding: 14px 16px 16px; border-right: 1px solid #23262a;">
+      <div data-half="1" style="height: 18px; background-image: repeating-linear-gradient(90deg, #e6e8ea 0 1px, transparent 1px 4px); outline: 1px solid #8e959c; margin-bottom: 10px;"></div>
+      <div style="font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 14px; color: #e6e8ea;">watch</div>
+      <div style="font-size: 13.5px; color: #8e959c; margin-top: 6px;">A departure is scored. Nothing sounds. Only observed SpO&#8322; or respiration moves the machine past this line.</div>
+    </div>
+    <div style="padding: 14px 16px 16px; border-right: 1px solid #23262a;">
+      <div data-solid="1" style="height: 18px; background: #8e959c; margin-bottom: 10px;"></div>
+      <div style="font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 14px; color: #e6e8ea;">confirm</div>
+      <div style="font-size: 13.5px; color: #8e959c; margin-top: 6px;">Fused agreement on CNS depression, sustained through hysteresis. Prompting channels only.</div>
+    </div>
+    <div style="padding: 14px 0 16px 16px;">
+      <div data-solid="1" style="height: 18px; background: #e6e8ea; margin-bottom: 10px;"></div>
+      <div style="font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 14px; color: #e6e8ea;">klaxon</div>
+      <div style="font-size: 13.5px; color: #8e959c; margin-top: 6px;">Fires the entire channel stack. Designed to wake this person from the depression it just detected.</div>
+    </div>
+  </div>
+
+  <p style="margin: 16px 0 0; max-width: 860px;">Hysteresis runs in both directions, which is the whole reason the machine is trustworthy: a tier that was earned by evidence can only be given up by evidence. Missing data holds the current tier. Artifact holds the current tier. Silence is never agreement.</p>
+
+  <div style="display: grid; grid-template-columns: 1.1fr 1fr; gap: 44px; margin-top: 44px;">
+    <div>
+      <div style="display: flex; align-items: baseline; gap: 16px; margin-bottom: 18px;">
+        <div style="font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: #8fb4c9;">III · The channel stack</div>
+        <div style="flex: 1; height: 1px; background: #23262a;"></div>
+      </div>
+      <p style="margin: 0 0 16px; font-size: 14px; color: #8e959c;">Ordered by what each channel <em>refuses to depend on</em>, not by loudness. The stack is not a fallback chain — the klaxon fires all of it — because any one channel can be dead without notice.</p>
+      <div data-avoid-break="1" style="display: grid; gap: 0;">
+        <div style="display: grid; grid-template-columns: 26px 1fr; gap: 14px; padding: 11px 0; border-top: 1px solid #23262a;">
+          <div data-solid="1" style="background: #e6e8ea; width: 14px; height: 14px; margin-top: 3px;"></div>
+          <div><strong style="font-weight: 600;">GPIO piezo siren</strong> — a pin, a MOSFET, 12 V. No USB, no audio stack, no kernel sound path. Senses its own current draw (TP12).</div>
+        </div>
+        <div style="display: grid; grid-template-columns: 26px 1fr; gap: 14px; padding: 11px 0; border-top: 1px solid #23262a;">
+          <div data-solid="1" style="background: #c9ced3; width: 14px; height: 14px; margin-top: 3px;"></div>
+          <div><strong style="font-weight: 600;">Bed shaker</strong> on a relay. Depends on a coil and 12 V. Reaches a person who cannot hear.</div>
+        </div>
+        <div style="display: grid; grid-template-columns: 26px 1fr; gap: 14px; padding: 11px 0; border-top: 1px solid #23262a;">
+          <div data-half="1" style="background-image: repeating-linear-gradient(90deg, #8e959c 0 1px, transparent 1px 4px); outline: 1px solid #8e959c; width: 14px; height: 14px; margin-top: 3px;"></div>
+          <div><strong style="font-weight: 600;">USB DAC &#8594; amplifier &#8594; speaker</strong>. Depends on USB and the audio stack.</div>
+        </div>
+        <div style="display: grid; grid-template-columns: 26px 1fr; gap: 14px; padding: 11px 0; border-top: 1px solid #23262a;">
+          <div data-hatch="1" style="background-image: repeating-linear-gradient(45deg, #8fb4c9 0 2px, transparent 2px 5px); outline: 1px solid #8fb4c9; width: 14px; height: 14px; margin-top: 3px;"></div>
+          <div><strong style="font-weight: 600;">Zigbee devices</strong>. Depends on a mesh and its coordinator.</div>
+        </div>
+        <div style="display: grid; grid-template-columns: 26px 1fr; gap: 14px; padding: 11px 0; border-top: 1px solid #23262a;">
+          <div data-hatch="1" style="background-image: repeating-linear-gradient(45deg, #656c73 0 2px, transparent 2px 5px); outline: 1px solid #656c73; width: 14px; height: 14px; margin-top: 3px;"></div>
+          <div><strong style="font-weight: 600;">Push to phone</strong>. Depends on the network, a vendor service, and a charged handset.</div>
+        </div>
+        <div style="display: grid; grid-template-columns: 26px 1fr; gap: 14px; padding: 11px 0; border-top: 1px solid #23262a; border-bottom: 1px solid #23262a;">
+          <div style="border: 1px solid #656c73; width: 14px; height: 14px; margin-top: 3px;"></div>
+          <div><strong style="font-weight: 600;">Watch haptic</strong>. Depends on everything above it plus a worn, paired, charged watch.</div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div style="display: flex; align-items: baseline; gap: 16px; margin-bottom: 18px;">
+        <div style="font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: #8fb4c9;">IV · The latency budget</div>
+        <div style="flex: 1; height: 1px; background: #23262a;"></div>
+      </div>
+      <p style="margin: 0 0 16px; font-size: 14px; color: #8e959c;">Radio packet to tier evaluation, end to end. Latency is part of how the machine works, so it carries a number: <strong style="color: #e6e8ea; font-weight: 600;">p99 under 2 seconds</strong>. Above 5 seconds is not slowness, it is a fault the system must surface as a technical alarm.</p>
+      <div data-avoid-break="1" style="font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 12.5px;">
+        <div style="display: grid; grid-template-columns: 1fr 96px; gap: 8px; color: #656c73; font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; padding-bottom: 8px; border-bottom: 1px solid #23262a;"><div>Hop</div><div style="text-align: right;">p99 budget</div></div>
+        <div style="display: grid; grid-template-columns: 1fr 96px; gap: 8px; padding: 9px 0; border-bottom: 1px solid #23262a;"><div>TP2 &#8594; TP3 &nbsp;radio to decode</div><div style="text-align: right; color: #8fb4c9;">&#8804; 250 ms</div></div>
+        <div style="display: grid; grid-template-columns: 1fr 96px; gap: 8px; padding: 9px 0; border-bottom: 1px solid #23262a;"><div>TP3 &#8594; TP4 &nbsp;encode + fsync</div><div style="text-align: right; color: #8fb4c9;">&#8804; 300 ms</div></div>
+        <div style="display: grid; grid-template-columns: 1fr 96px; gap: 8px; padding: 9px 0; border-bottom: 1px solid #23262a;"><div>TP4 &#8594; TP7 &nbsp;live stream to gate</div><div style="text-align: right; color: #8fb4c9;">&#8804; 400 ms</div></div>
+        <div style="display: grid; grid-template-columns: 1fr 96px; gap: 8px; padding: 9px 0; border-bottom: 1px solid #23262a;"><div>TP7 &#8594; TP10 score, fuse, decide</div><div style="text-align: right; color: #8fb4c9;">&#8804; 1000 ms</div></div>
+        <div style="display: grid; grid-template-columns: 1fr 96px; gap: 8px; padding: 11px 0; border-bottom: 2px solid #8fb4c9;"><div style="color: #e6e8ea;">TOTAL, radio &#8594; tier</div><div style="text-align: right; color: #e6e8ea;">&lt; 2000 ms</div></div>
+        <div style="display: grid; grid-template-columns: 1fr 96px; gap: 8px; padding: 9px 0;"><div style="color: #e6e8ea;">FAULT THRESHOLD</div><div style="text-align: right; color: #e6e8ea;">&gt; 5000 ms</div></div>
+      </div>
+      <p style="margin: 14px 0 0; font-size: 13px; color: #8e959c;">The four per-hop splits are <strong style="color: #e6e8ea; font-weight: 600;">invented</strong> for this sheet; only the 2 s total and the 5 s fault threshold are specified. They apportion the specified total and are not measurements.</p>
+    </div>
+  </div>
+
+  <div style="display: flex; align-items: baseline; gap: 16px; margin: 44px 0 18px;">
+    <div style="font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: #8fb4c9;">V · Morning path — who reads TP13, and for what</div>
+    <div style="flex: 1; height: 1px; background: #23262a;"></div>
+  </div>
+
+  <div data-avoid-break="1" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; border-top: 1px solid #23262a;">
+    <div style="padding: 14px 20px 18px 0; border-right: 1px solid #23262a;">
+      <div style="font-weight: 600; margin-bottom: 6px;">Bedside panel &nbsp;<span style="font-family: ui-monospace, monospace; font-size: 12px; color: #656c73;">TP14</span></div>
+      <div style="font-size: 14px; color: #8e959c;">Tier and source ages, legible from three feet in the dark. <strong style="color: #e6e8ea; font-weight: 600;">A viewer, never a dependency</strong> — the single most misunderstood line in the architecture.</div>
+    </div>
+    <div style="padding: 14px 20px 18px; border-right: 1px solid #23262a;">
+      <div style="font-weight: 600; margin-bottom: 6px;">Web dashboard</div>
+      <div style="font-size: 14px; color: #8e959c;">Last night as four synchronised lanes; trends against this person&#8217;s own rolling median, never population norms; system health.</div>
+    </div>
+    <div style="padding: 14px 0 18px 20px;">
+      <div style="font-weight: 600; margin-bottom: 6px;">Admin console</div>
+      <div style="font-size: 14px; color: #8e959c;">The operator&#8217;s room, <strong style="color: #e6e8ea; font-weight: 600;">technical alarms only</strong>. A dead oximeter is not a sick patient; the two kinds of alarm never share a voice, a channel, or a screen.</div>
+    </div>
+    <div style="padding: 14px 20px 18px 0; border-right: 1px solid #23262a; border-top: 1px solid #23262a;">
+      <div style="font-weight: 600; margin-bottom: 6px;">Phone</div>
+      <div style="font-size: 14px; color: #8e959c;">Three jobs, deliberately: HealthKit bridge in, journal in, viewer out. Nothing on the night path waits on it.</div>
+    </div>
+    <div style="padding: 14px 20px 18px; border-right: 1px solid #23262a; border-top: 1px solid #23262a;">
+      <div style="font-weight: 600; margin-bottom: 6px;">Clinical PDF</div>
+      <div style="font-size: 14px; color: #8e959c;">Built for an appointment: what was measured, what was not, and the age of each observation.</div>
+    </div>
+    <div style="padding: 14px 0 18px 20px; border-top: 1px solid #23262a;">
+      <div style="font-weight: 600; margin-bottom: 6px;">AI analysis jobs</div>
+      <div style="font-size: 14px; color: #8e959c;">Run under a monthly cost cap; produce reviewable text. Never silent edits, and never anything the tier machine consults.</div>
+    </div>
+  </div>
+
+  <div style="display: flex; align-items: baseline; gap: 16px; margin: 44px 0 18px;">
+    <div style="font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: #8fb4c9;">VI · Trust loop — the machine watching itself</div>
+    <div style="flex: 1; height: 1px; background: #23262a;"></div>
+  </div>
+
+  <div data-avoid-break="1" style="display: grid; grid-template-columns: 1fr 1fr; gap: 0 44px; border-top: 1px solid #23262a;">
+    <div style="padding: 13px 0; border-bottom: 1px solid #23262a;"><strong style="font-weight: 600;">Hardware watchdog, 15 s.</strong> <span style="color: #8e959c;">A hung host reboots itself rather than pretending to watch.</span></div>
+    <div style="padding: 13px 0; border-bottom: 1px solid #23262a;"><strong style="font-weight: 600;">CPU governor pinned;</strong> <span style="color: #8e959c;">undervoltage and thermal readouts surfaced as first-class technical alarms.</span></div>
+    <div style="padding: 13px 0; border-bottom: 1px solid #23262a;"><strong style="font-weight: 600;">Nightly full backup plus WAL shipping,</strong> <span style="color: #8e959c;">three retention tiers.</span></div>
+    <div style="padding: 13px 0; border-bottom: 1px solid #23262a;"><strong style="font-weight: 600;">Scheduled restore into a scratch cluster</strong> <span style="color: #8e959c;">— a backup that has never been restored is a hypothesis, not a backup.</span></div>
+    <div style="padding: 13px 0; border-bottom: 1px solid #23262a;"><strong style="font-weight: 600;">&#8220;If this box died right now, what would I lose?&#8221;</strong> <span style="color: #8e959c;">A standing answer, measured in minutes.</span></div>
+    <div style="padding: 13px 0; border-bottom: 1px solid #23262a;"><strong style="font-weight: 600;">Alarm self-test on a schedule,</strong> <span style="color: #8e959c;">verified at TP12 by current draw rather than by a return code.</span></div>
+    <div style="padding: 13px 0; border-bottom: 1px solid #23262a;"><strong style="font-weight: 600;">Per-source cadence registry,</strong> <span style="color: #8e959c;">so a silent sensor is distinguishable from a failing one.</span></div>
+    <div style="padding: 13px 0; border-bottom: 1px solid #23262a;"><strong style="font-weight: 600;">Every status, everywhere, carries the age</strong> <span style="color: #8e959c;">of the observation behind it. A number with no age is not a status.</span></div>
+  </div>
+
+  <div style="margin-top: 48px; border-top: 2px solid #8fb4c9; padding-top: 18px; display: grid; grid-template-columns: 1fr 320px; gap: 44px; align-items: start;">
+    <div style="font-size: 17px;">Read the sheet in one line: the spool decides what survives, the tier machine decides what is true, the channel stack decides who finds out, and the trust loop decides whether any of the three can still be believed. <strong style="font-weight: 600;">Unknown never looks like healthy</strong> — if a change to this system would violate that, the change is wrong.</div>
+    <div style="font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 11.5px; line-height: 1.7; color: #656c73;">
+      <div>SHEET · theory of operation</div>
+      <div>SIGNAL PATH · TP1 &#8211; TP14</div>
+      <div>MARKED INVENTED · per-hop latency splits (&#167;IV)</div>
+      <div>PRINTS · monochrome, pattern before hue</div>
+    </div>
+  </div>
+
+
+  <div style="margin-top: 26px; font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 11.5px; color: #656c73;">DESCRIBES · the system as designed, complete — build status lives in the progress map, not on this sheet</div>
+</div>
+</body>
+</html>
