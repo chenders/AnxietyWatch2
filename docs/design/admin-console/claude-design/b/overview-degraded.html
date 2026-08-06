@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Overview · degraded — AW2 Preflight</title>
+<link rel="stylesheet" href="console.css">
+</head>
+<body data-feed="stale" data-feed-offset-s="1080">
+<a class="skip-link" href="#main">Skip to content</a>
+
+<div class="stickytop">
+<div class="docstale" role="status">
+  <span class="assert assert--unsigned">Sheet uncountersigned</span>
+  <b>This page has not heard from the appliance for <span data-feed-age>—</span>.</b>
+  <span class="muted-text">Every reading below is the last one observed. The signatures on it are still valid for the time they were made; this document is not valid for now.</span>
+  <button class="btn btn--sm" type="button" data-action="refresh">Reconnect</button>
+</div>
+
+<nav class="contents" aria-label="Sections">
+    <a class="contents__item" href="overview.html"><span class="contents__ord">01</span> Overview</a>
+    <a class="contents__item" href="display.html"><span class="contents__ord">02</span> Display</a>
+    <a class="contents__item" href="ingest.html"><span class="contents__ord">03</span> Ingest</a>
+    <a class="contents__item" href="services.html"><span class="contents__ord">04</span> Services</a>
+    <a class="contents__item" href="config.html"><span class="contents__ord">05</span> Access</a>
+    <a class="contents__item" href="data.html"><span class="contents__ord">06</span> Data</a>
+    <a class="contents__item" href="analysis.html"><span class="contents__ord">07</span> Analysis</a>
+    <a class="contents__item" href="records.html"><span class="contents__ord">08</span> Records</a>
+    <a class="contents__item" href="recovery.html"><span class="contents__ord">09</span> Recovery</a>
+    <a class="contents__item" href="system.html">System</a>
+    <a class="contents__item" href="patterns.html">Patterns</a>
+    <a class="contents__item" href="attempts.html">Run sheet</a>
+    <a class="contents__item" href="overview-degraded.html" aria-current="page">Degraded</a>
+    <a class="contents__item" href="firstrun.html">First run</a>
+  </nav>
+</div>
+
+<main class="sheet" id="main">
+  <header class="masthead masthead--open">
+    <div class="masthead__kicker">
+      <b>Pre-use inspection · bedside-pi5</b>
+      <span class="muted-text mono">sheet opened 09:56:04Z · 41 items · <b>last countersigned 18m ago</b></span>
+    </div>
+    <p class="masthead__verdict">Not signed off. Three open findings, and no backup you can trust.</p>
+    <p class="masthead__because">HRV has been missing since 02:14 and the collector will not restart on
+    its own. The backup timer stopped firing nine days ago, and the one verification that has ever run
+    failed today against the 27 July archive. There is currently no copy of this record that anything
+    has confirmed is readable.</p>
+    <div class="masthead__meta">
+      <div><span class="caps">Signed</span><span class="mono">33 of 41</span></div>
+      <div><span class="caps">Open findings</span><span class="mono">3</span></div>
+      <div><span class="caps">Unsigned</span><span class="mono">3</span></div>
+      <div><span class="caps">Struck (N/A)</span><span class="mono">2</span></div>
+      <div><span class="caps">Deferred</span><span class="mono">1 · expires 09 Aug</span></div>
+      <div><span class="caps">Sheet countersigned</span><span class="mono" data-feed-age>2s</span> ago</div>
+    </div>
+  </header>
+  <div class="pagetitle">
+    <h1>Overview · degraded</h1>
+    <p>Same sheet, bad night. The chest-strap collector has crashed, no backup has run for nine days, and the first restore verification failed.</p>
+  </div>
+
+  <div class="stack">
+
+    <section class="block">
+      <div class="block__hd">
+        <h2>Open and unsigned, worst first</h2>
+        <span class="block__count">6 items</span>
+        <div class="block__meta">
+          <span class="caps">Sorted by consequence, then by state</span>
+          <button class="btn btn--sm" type="button" data-action="refresh">Restore feed</button>
+        </div>
+      </div>
+
+      <div class="item item--open">
+        <span class="stamp stamp--open" aria-hidden="true">✕</span>
+        <span class="item__what">
+          <b>Chest-strap collector has crashed and will not restart</b>
+          <span><span class="mono">aw2-collector-chest.service</span> entered
+          <span class="mono">failed (Result: exit-code)</span> at 02:14 after its fifth restart in ten
+          minutes. systemd's start limit is now blocking further attempts, so nothing will retry until
+          someone resets it. HRV is the only source of beat-to-beat data and 7h 42m of tonight is
+          already gone.</span>
+          <span class="lastknown lastknown--open">Last known: <b>failing at 02:14</b> — exit code 1,
+          "device disconnected during notify".</span>
+        </span>
+        <span class="item__read">7h 42m<span class="unit">lost</span>
+          <small><span class="fresh fresh--over" data-age-s="27720" data-expect-s="120"><span class="fresh__age">7h 42m ago</span><span class="fresh__expect">2m</span></span></small></span>
+        <span class="sig sig--open"><b>Open</b><span>raised 02:14</span>
+          <span><a href="services.html">Unit →</a></span></span>
+      </div>
+
+      <div class="item item--open">
+        <span class="stamp stamp--open" aria-hidden="true">✕</span>
+        <span class="item__what">
+          <b>Restore verification failed — the backup on disk is not usable</b>
+          <span>The restore into the scratch cluster aborted after 4m 12s with
+          <span class="mono">pg_restore: error: could not read from input file: end of file</span>. The
+          row-count comparison never ran. This was the first verification ever attempted on this
+          deployment, and it failed.</span>
+          <span class="lastknown lastknown--open">The archive it tested is the <b>only</b> full backup
+          on disk, because none has been taken since 27 July.</span>
+        </span>
+        <span class="item__read">truncated
+          <small><span class="fresh" data-age-s="12600" data-expect-s="604800"><span class="fresh__age">3h 30m ago</span><span class="fresh__expect">7d</span></span></small></span>
+        <span class="sig sig--open"><b>Open</b><span>failed 06:26</span>
+          <span><a href="recovery.html">Recovery →</a></span></span>
+      </div>
+
+      <div class="item item--open">
+        <span class="stamp stamp--open" aria-hidden="true">✕</span>
+        <span class="item__what">
+          <b>No backup has completed for nine days</b>
+          <span><span class="mono">aw2-backup.timer</span> last fired 27 July at 06:00. There have been
+          no attempts since — the timer is not scheduled, which is precisely why nothing has failed and
+          nothing has complained. WAL archiving stopped at the same moment.</span>
+          <span class="lastknown lastknown--open">Nine days of the record exist in exactly one place:
+          this NVMe.</span>
+        </span>
+        <span class="item__read">9<span class="unit">days</span>
+          <small><span class="fresh fresh--over" data-age-s="777600" data-expect-s="86400"><span class="fresh__age">9d ago</span><span class="fresh__expect">24h</span></span></small></span>
+        <span class="sig sig--open"><b>Open</b><span>0 attempts since 27 Jul</span>
+          <span><a href="recovery.html">Recovery →</a></span></span>
+      </div>
+
+      <div class="item item--open">
+        <span class="stamp stamp--open" aria-hidden="true">✕</span>
+        <span class="item__what">
+          <b>Spool drains faster than samples arrive</b>
+          <span>Depth 14,208 rows and rising for 3h 20m. Drain 210 rows/min against 340 arriving.
+          Nothing is lost yet. If the spool partition fills, the radios drop samples at the point of
+          capture and there is no buffer behind that.</span>
+          <span class="lastknown lastknown--open">Projected full: <b>4d 8h</b> at the current rate.</span>
+        </span>
+        <span class="item__read">14,208<span class="unit">rows</span>
+          <small>oldest unspooled 26m · expect ≤ 5m</small></span>
+        <span class="sig sig--open"><b>Open</b>
+          <span>raised 06:36</span>
+          <span><a href="data.html">Storage →</a></span></span>
+      </div>
+
+      <div class="item item--unsigned" data-degrades>
+        <span class="stamp stamp--unsigned" aria-hidden="true"></span>
+        <span class="item__what">
+          <b>Oximeter is producing samples</b>
+          <span>The collector is <span class="mono">active (running)</span> and reports no error. The
+          BLE link reports <span class="mono">connected</span>. No samples have arrived for nine
+          hours. Every mechanism that would raise a fault is reporting nothing, which is why this is
+          an unsigned item rather than an open one.</span>
+          <span class="lastknown">Last known: <b>signed at 00:52</b> — 118 samples, newest timestamp advanced 1m 58s.</span>
+        </span>
+        <span class="item__read">9h 04m<span class="unit">silent</span>
+          <small><span class="fresh fresh--over" data-age-s="32640" data-expect-s="120"><span class="fresh__age">9h 4m ago</span><span class="fresh__expect">2m</span></span></small></span>
+        <span class="sig sig--none"><b>Unsigned</b>
+          <span>signature expired 00:56</span>
+          <span><a href="ingest.html">Ingest →</a></span></span>
+      </div>
+
+      <div class="item item--unsigned">
+        <span class="stamp stamp--unsigned" aria-hidden="true"></span>
+        <span class="item__what">
+          <b>Dose efficacy follow-up is being recorded</b>
+          <span>The prompt has gone unanswered for six days. The dose-timing correlation is computed
+          from this table, so the correlation is unsigned too. Nothing is broken.</span>
+        </span>
+        <span class="item__read">6d 12h<span class="unit">since last</span>
+          <small><span class="fresh fresh--over" data-age-s="561600" data-expect-s="86400"><span class="fresh__age">6d 12h ago</span><span class="fresh__expect">24h</span></span></small></span>
+        <span class="sig sig--none"><b>Unsigned</b>
+          <span>user input required</span>
+          <span><a href="records.html">Records →</a></span></span>
+      </div>
+
+      <div class="block__note">
+        <p class="prose"><b>Why unsigned outranks most faults.</b> An open finding is a problem you
+        know the shape of. An unsigned item is a problem you cannot see the shape of, and the report
+        you hand your psychiatrist will present the gap as if it were a quiet week. The sheet is
+        ordered by what the item costs the record, not by how loud it is.</p>
+      </div>
+    </section>
+
+    <section class="block">
+      <div class="block__hd"><h2>Advisory</h2><span class="block__count">1 item</span></div>
+      <div class="item">
+        <span class="stamp stamp--adv" aria-hidden="true">!</span>
+        <span class="item__what">
+          <b>NVMe wear indicator has advanced</b>
+          <span>4 % of rated write endurance used. Projected end of rated life January 2034 at the
+          current 96 MB/day. No action needed; it is on the sheet so the trend has a home.</span>
+        </span>
+        <span class="item__read">4<span class="unit">% used</span>
+          <small><span class="fresh" data-age-s="1980" data-expect-s="86400"><span class="fresh__age">33m ago</span><span class="fresh__expect">24h</span></span></small></span>
+        <span class="sig"><span class="sig__by">smartctl</span><span class="sig__at">09:23:11</span></span>
+      </div>
+    </section>
+
+    <section class="block">
+      <div class="block__hd">
+        <h2>Deferred and struck</h2>
+        <span class="block__count">3 items</span>
+        <div class="block__meta"><span class="caps">Excluded from the count above · every exclusion has a reason and most have an expiry</span></div>
+      </div>
+
+      <div class="item">
+        <span class="stamp stamp--pending" aria-hidden="true">⊘</span>
+        <span class="item__what">
+          <b>Ring is producing nightly data</b>
+          <span>Deferred, not struck. The ring is configured and the collector is attempting every
+          window; the ring simply has not been worn. This is a benign unsigned item with an expiry,
+          and on 09 August it returns to the block above on its own.</span>
+        </span>
+        <span class="item__read">2d 1h<span class="unit">since last</span>
+          <small>attempts continuing · 0 rows returned</small></span>
+        <span class="sig"><span class="defer">Deferred to 09 Aug</span><span class="sig__at">by operator, 03 Aug</span></span>
+      </div>
+
+      <div class="item item--na">
+        <span class="stamp stamp--na" aria-hidden="true">—</span>
+        <span class="item__what">
+          <b>Blood-pressure cuff is producing samples</b>
+          <span class="na-note">Struck 02 June 2026 — device not owned. Struck items are removed from
+          the count, from every rollup, and from the report. They are not unsigned: nobody is waiting
+          on a signature, because the item does not apply to this installation.</span>
+        </span>
+        <span class="item__read na-note">n/a</span>
+        <span class="sig"><span class="sig__by na">struck</span><span class="sig__at">operator, 02 Jun</span></span>
+      </div>
+
+      <div class="item item--na">
+        <span class="stamp stamp--na" aria-hidden="true">—</span>
+        <span class="item__what">
+          <b>Nocturnal early-warning self-test has run</b>
+          <span class="na-note">Struck — the feature flag is off and the unit has never been enabled.
+          Scheduled after the correlation work. If the flag is turned on, this item un-strikes itself
+          as unsigned, because an alarm that has never self-tested is not a working alarm.</span>
+        </span>
+        <span class="item__read na-note">n/a</span>
+        <span class="sig"><span class="sig__by na">struck</span><span class="sig__at">feature flag off</span></span>
+      </div>
+    </section>
+
+    <section class="block">
+      <div class="block__hd">
+        <h2>Signed</h2>
+        <span class="block__count">33 items · 6 groups</span>
+        <div class="block__meta"><span class="caps">Collapsed to group signatures. Every one carries its age and its standard.</span></div>
+      </div>
+
+      <div class="item">
+        <span class="stamp stamp--signed" aria-hidden="true">✓</span>
+        <span class="item__what"><b>Capture — 4 of 6 items</b>
+          <span>CPAP importer, health-store bridge, journal, medication log. The chest strap and the
+          oximeter are both listed above.</span></span>
+        <span class="item__read">21,140<span class="unit">rows 24h</span>
+          <small><span class="fresh" data-age-s="900" data-expect-s="3600"><span class="fresh__age">15m ago</span><span class="fresh__expect">1h</span></span></small></span>
+        <span class="sig"><span class="sig__by">aw2-samplestore</span><span class="sig__at">09:55:23</span></span>
+      </div>
+
+      <div class="item">
+        <span class="stamp stamp--signed" aria-hidden="true">✓</span>
+        <span class="item__what"><b>Host — 8 of 8 items</b>
+          <span>NVMe free space, thermal, undervoltage, watchdog armed, network link, mains supply,
+          clock synchronised, filesystem read-write.</span></span>
+        <span class="item__read">62.1<span class="unit">GB free</span>
+          <small>52.4 °C · watchdog armed · no undervoltage</small></span>
+        <span class="sig"><span class="sig__by">host-probe</span><span class="sig__at">09:55:44</span></span>
+      </div>
+
+      <div class="item">
+        <span class="stamp stamp--signed" aria-hidden="true">✓</span>
+        <span class="item__what"><b>Display path — 6 of 6 items</b>
+          <span>Compositor, socket, connector, backlight, browser, and the page actually painting.
+          The last of those is the only one that proves the screen is lit.</span></span>
+        <span class="item__read">30.1<span class="unit">fps</span>
+          <small>271 frames since the last check</small></span>
+        <span class="sig"><span class="sig__by">frame callback</span><span class="sig__at">09:55:55</span></span>
+      </div>
+
+      <div class="item">
+        <span class="stamp stamp--signed" aria-hidden="true">✓</span>
+        <span class="item__what"><b>Storage — 5 of 6 items</b>
+          <span>Postgres reachable, growth within budget, autovacuum current, retention applied,
+          compaction complete. Spool depth is the open finding above.</span></span>
+        <span class="item__read">18.4<span class="unit">GB</span>
+          <small>+96 MB/day · 412 M rows in samples_raw</small></span>
+        <span class="sig"><span class="sig__by">pg-probe</span><span class="sig__at">09:55:30</span></span>
+      </div>
+
+      <div class="item">
+        <span class="stamp stamp--signed" aria-hidden="true">✓</span>
+        <span class="item__what"><b>Radios — 4 of 4 items</b>
+          <span>Adapter present, both paired devices bonded, signal within range, no reconnect storm.
+          Note that a bonded, connected link that delivers nothing is what put the oximeter above —
+          radio health does not imply data.</span></span>
+        <span class="item__read">−61 / −74<span class="unit">dBm</span>
+          <small>2 reconnects in 24h</small></span>
+        <span class="sig"><span class="sig__by">bluez-probe</span><span class="sig__at">09:55:41</span></span>
+      </div>
+
+      <div class="item">
+        <span class="stamp stamp--signed" aria-hidden="true">✓</span>
+        <span class="item__what"><b>Jobs and access — 8 of 9 items</b>
+          <span>Queue draining, no run failed twice in a row, spend under cap, no key expired, no key
+          unused past 90 days, audit log writable.</span></span>
+        <span class="item__read">$4.18<span class="unit">of $25</span>
+          <small>1 running · 1 queued · 14 succeeded this week</small></span>
+        <span class="sig"><span class="sig__by">scheduler</span><span class="sig__at">09:55:48</span></span>
+      </div>
+    </section>
+
+    <section class="block">
+      <div class="block__hd"><h2>Nightly completeness</h2>
+        <span class="block__count">last 7 nights</span>
+        <div class="block__meta"><a href="data.html">Full range →</a></div></div>
+      <div class="t-scroll">
+        <table class="t">
+          <caption>A night is signed when every configured, undeferred source produced data whose
+          newest timestamp advanced. An empty box is a source that should have written and did not.</caption>
+          <thead><tr><th scope="col">Night</th><th scope="col">HRV</th><th scope="col">SpO₂</th>
+            <th scope="col">CPAP</th><th scope="col">Ring</th><th scope="col">Journal</th>
+            <th scope="col">Meds</th><th class="num" scope="col">Signed</th></tr></thead>
+          <tbody>
+            <tr><th scope="row">04–05 Aug</th>
+              <td><span class="stamp stamp--open"><span aria-hidden="true">✕</span><span class="sr-only">open finding</span></span></td>
+              <td><span class="stamp stamp--unsigned"><span class="sr-only">unsigned</span></span></td>
+              <td><span class="stamp stamp--signed"><span aria-hidden="true">✓</span><span class="sr-only">signed</span></span></td>
+              <td><span class="stamp stamp--pending"><span aria-hidden="true">⊘</span><span class="sr-only">deferred</span></span></td>
+              <td><span class="stamp stamp--signed"><span aria-hidden="true">✓</span><span class="sr-only">signed</span></span></td>
+              <td><span class="stamp stamp--signed"><span aria-hidden="true">✓</span><span class="sr-only">signed</span></span></td>
+              <td class="num">3 / 5</td></tr>
+            <tr><th scope="row">03–04 Aug</th>
+              <td><span class="stamp stamp--signed"><span aria-hidden="true">✓</span><span class="sr-only">signed</span></span></td>
+              <td><span class="stamp stamp--signed"><span aria-hidden="true">✓</span><span class="sr-only">signed</span></span></td>
+              <td><span class="stamp stamp--signed"><span aria-hidden="true">✓</span><span class="sr-only">signed</span></span></td>
+              <td><span class="stamp stamp--pending"><span aria-hidden="true">⊘</span><span class="sr-only">deferred</span></span></td>
+              <td><span class="stamp stamp--signed"><span aria-hidden="true">✓</span><span class="sr-only">signed</span></span></td>
+              <td><span class="stamp stamp--signed"><span aria-hidden="true">✓</span><span class="sr-only">signed</span></span></td>
+              <td class="num">5 / 5</td></tr>
+            <tr><th scope="row">02–03 Aug</th>
+              <td><span class="stamp stamp--signed"><span aria-hidden="true">✓</span><span class="sr-only">signed</span></span></td>
+              <td><span class="stamp stamp--signed"><span aria-hidden="true">✓</span><span class="sr-only">signed</span></span></td>
+              <td><span class="stamp stamp--signed"><span aria-hidden="true">✓</span><span class="sr-only">signed</span></span></td>
+              <td><span class="stamp stamp--signed"><span aria-hidden="true">✓</span><span class="sr-only">signed</span></span></td>
+              <td><span class="stamp stamp--signed"><span aria-hidden="true">✓</span><span class="sr-only">signed</span></span></td>
+              <td><span class="stamp stamp--signed"><span aria-hidden="true">✓</span><span class="sr-only">signed</span></span></td>
+              <td class="num">6 / 6</td></tr>
+            <tr><th scope="row">01–02 Aug</th>
+              <td><span class="stamp stamp--signed"><span aria-hidden="true">✓</span><span class="sr-only">signed</span></span></td>
+              <td><span class="stamp stamp--signed"><span aria-hidden="true">✓</span><span class="sr-only">signed</span></span></td>
+              <td><span class="stamp stamp--signed"><span aria-hidden="true">✓</span><span class="sr-only">signed</span></span></td>
+              <td><span class="stamp stamp--signed"><span aria-hidden="true">✓</span><span class="sr-only">signed</span></span></td>
+              <td><span class="stamp stamp--unsigned"><span class="sr-only">unsigned</span></span></td>
+              <td><span class="stamp stamp--signed"><span aria-hidden="true">✓</span><span class="sr-only">signed</span></span></td>
+              <td class="num">5 / 6</td></tr>
+            <tr><th scope="row">31 Jul–01 Aug</th>
+              <td><span class="stamp stamp--signed"><span aria-hidden="true">✓</span><span class="sr-only">signed</span></span></td>
+              <td><span class="stamp stamp--signed"><span aria-hidden="true">✓</span><span class="sr-only">signed</span></span></td>
+              <td><span class="stamp stamp--signed"><span aria-hidden="true">✓</span><span class="sr-only">signed</span></span></td>
+              <td><span class="stamp stamp--signed"><span aria-hidden="true">✓</span><span class="sr-only">signed</span></span></td>
+              <td><span class="stamp stamp--signed"><span aria-hidden="true">✓</span><span class="sr-only">signed</span></span></td>
+              <td><span class="stamp stamp--signed"><span aria-hidden="true">✓</span><span class="sr-only">signed</span></span></td>
+              <td class="num">6 / 6</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <div class="cols-main">
+      <section class="block">
+        <div class="block__hd"><h2>If this box died right now</h2>
+          <div class="block__meta"><a href="recovery.html">Recovery →</a></div></div>
+        <div class="card card--open">
+          <div class="card__body">
+            <div class="cols-2">
+              <div class="figure figure--open"><span class="figure__k">You would lose</span>
+                <span class="figure__v">9<span class="unit">days</span></span>
+                <span class="muted-text">≈ 2.1 M samples, 14 journal entries, 3 med logs</span></div>
+              <div class="fields">
+                <span class="field__k">Last full</span><span class="field__v mono">27 Jul 06:00 · 3.6 GB</span>
+                <span class="field__k">WAL lag</span><span class="field__v mono">9d <span class="unit">expect ≤ 15m</span></span>
+                <span class="field__k">Proven restore</span><span class="field__v"><span class="assert assert--open"><span aria-hidden="true">✕</span> Failed 06:26</span></span>
+              </div>
+            </div>
+          </div>
+          <div class="card__ft"><p class="prose">And the 27 July archive you would be falling back to
+          has failed verification. In practice the honest answer to this question is that you do not
+          currently have a recoverable copy of this record.</p></div>
+        </div>
+      </section>
+
+      <section class="block">
+        <div class="block__hd"><h2>Jobs</h2>
+          <div class="block__meta"><a href="analysis.html">Analysis →</a></div></div>
+        <div class="card">
+          <div class="card__body stack--tight">
+            <div class="row"><span class="life life--running"><span class="life__pulse" aria-hidden="true"></span> Running · 04:12</span>
+              <span class="grow">Correlation recompute · 90-day window</span></div>
+            <div class="row"><span class="life life--queued">Queued · 1</span>
+              <span class="grow">Claude analysis · weekly narrative</span></div>
+            <hr class="divider">
+            <div class="fields"><span class="field__k">Last 7 days</span>
+              <span class="field__v mono">14 succeeded · 1 failed · 1 cancelled</span>
+              <span class="field__k">Spend, month</span><span class="field__v mono">$4.18 of $25.00</span></div>
+          </div>
+          <div class="card__ft"><p class="prose">A job that failed is a lifecycle outcome, not an
+          unsigned item. It only becomes an unsigned item if the thing it was supposed to produce is
+          now stale.</p></div>
+        </div>
+      </section>
+    </div>
+
+  </div>
+
+  <hr class="divider">
+  <p class="caps">AnxietyWatch2 · bedside-pi5 · build 2.4.11+g8c1f · console clock <span data-clock class="mono">09:56:04Z</span> · feed age <span data-feed-age class="mono">2s</span> · <a href="index.html">Direction B contents</a></p>
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>

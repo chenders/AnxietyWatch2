@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+@keyframes pen { 0%,49%{opacity:1} 50%,100%{opacity:.3} }
+</style>
+</helmet>
+<div style="{{ v.root }}">
+  <div style="display:flex;align-items:flex-start;gap:22px">
+    <div style="{{ v.mark }}"></div>
+    <div style="display:flex;flex-direction:column;gap:6px">
+      <span style="{{ v.tierStyle }}">{{ v.tier }}</span>
+      <span style="{{ v.subStyle }}">{{ v.sub }}</span>
+    </div>
+    <div style="{{ v.clockWrap }}">
+      <span style="{{ v.clockStyle }}">{{ v.clock }}</span>
+      <span style="{{ v.chanStyle }}">{{ v.chan }}</span>
+    </div>
+  </div>
+
+  <sc-if value="{{ v.detail }}" hint-placeholder-val="{{ true }}">
+    <div style="display:flex;align-items:flex-end;gap:40px;margin-top:auto">
+      <sc-for list="{{ v.params }}" as="p" hint-placeholder-count="2">
+        <div style="display:flex;flex-direction:column;gap:2px">
+          <span style="{{ p.labelStyle }}">{{ p.name }}</span>
+          <div style="display:flex;align-items:flex-end;gap:8px">
+            <span style="{{ p.valStyle }}">{{ p.val }}</span>
+            <span style="{{ p.unitStyle }}">{{ p.unit }}</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;height:28px">
+            <span style="display:block">{{ p.spark }}</span>
+            <span style="{{ p.noteStyle }}">{{ p.note }}</span>
+          </div>
+        </div>
+      </sc-for>
+      <div style="{{ v.bpWrap }}">
+        <span style="{{ v.bpLabel }}">{{ v.bpName }}</span>
+        <span style="{{ v.bpVal }}">{{ v.bpText }}</span>
+        <span style="{{ v.bpNote }}">{{ v.bpAge }}</span>
+      </div>
+    </div>
+  </sc-if>
+
+  <div style="{{ v.barWrap }}">
+    <div style="{{ v.barRow }}">
+      <sc-for list="{{ v.bar }}" as="b" hint-placeholder-count="4">
+        <div style="{{ b.style }}"><span style="{{ b.qStyle }}">{{ b.q }}</span></div>
+      </sc-for>
+    </div>
+    <span style="{{ v.barCapStyle }}">{{ v.barCap }}</span>
+  </div>
+
+  <sc-if value="{{ v.detail }}" hint-placeholder-val="{{ true }}">
+    <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:24px">
+      <div style="display:flex;gap:26px">
+        <sc-for list="{{ v.sensors }}" as="d" hint-placeholder-count="4">
+          <div style="display:flex;flex-direction:column;gap:7px;min-height:44px;justify-content:flex-end">
+            <div style="{{ d.tick }}"></div>
+            <span style="{{ d.nameStyle }}">{{ d.name }}</span>
+            <span style="{{ d.ageStyle }}">{{ d.age }}</span>
+          </div>
+        </sc-for>
+      </div>
+      <span style="{{ v.sysStyle }}">{{ v.sys }}</span>
+    </div>
+  </sc-if>
+
+  <div style="{{ v.silOuter }}" onPointerDown="{{ v.onDown }}" onPointerUp="{{ v.onUp }}" onPointerLeave="{{ v.onUp }}" onPointerCancel="{{ v.onUp }}">
+    <div style="{{ v.silFill }}"></div>
+    <div style="position:relative;height:100%;display:flex;align-items:center;gap:16px">
+      <span style="{{ v.silTextStyle }}">{{ v.silText }}</span>
+      <span style="{{ v.silSubStyle }}">{{ v.silSub }}</span>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:800,&quot;height&quot;:480},&quot;s&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;PanelState&quot;}}">
+const MONO = "ui-monospace,SFMono-Regular,Menlo,Consolas,monospace";
+const SANS = "Helvetica Neue, Helvetica, Arial, sans-serif";
+const SL = '#8B97A3', BONE = '#D6D2CB', REST = '#585F52';
+
+class Component extends DCLogic {
+  spark(vals, color, w) {
+    w = w || 150; const h = 22;
+    const nums = vals.filter(v => v != null);
+    if (!nums.length) return null;
+    const min = Math.min.apply(null, nums) - 1.5, max = Math.max.apply(null, nums) + 1.5;
+    const step = w / (vals.length - 1);
+    const y = v => h - ((v - min) / (max - min || 1)) * h;
+    const pts = []; let cut = -1;
+    vals.forEach((v, i) => { if (cut < 0 && v != null) pts.push([i * step, y(v)]); else if (cut < 0) cut = i; });
+    const last = pts[pts.length - 1] || [0, h / 2];
+    const kids = [React.createElement('polyline', { key: 'p', points: pts.map(q => q[0].toFixed(1) + ',' + q[1].toFixed(1)).join(' '), fill: 'none', stroke: color, strokeWidth: 2 })];
+    if (cut >= 0) {
+      kids.push(React.createElement('line', { key: 'g', x1: last[0], y1: last[1], x2: w, y2: last[1], stroke: SL, strokeWidth: 2, strokeDasharray: '2 7' }));
+      kids.push(React.createElement('circle', { key: 'c', cx: last[0], cy: last[1], r: 3.5, fill: '#000', stroke: SL, strokeWidth: 2 }));
+      kids.push(React.createElement('text', { key: 'q', x: w, y: last[1] - 8, textAnchor: 'end', fill: '#B9C0C7', fontSize: 15, fontWeight: 700, fontFamily: 'Helvetica' }, '?'));
+    }
+    return React.createElement('svg', { width: w, height: h + 10, viewBox: '0 0 ' + w + ' ' + (h + 10) }, kids);
+  }
+
+  renderVals() {
+    const s = this.props.s || {};
+    const detail = s.detail !== false;
+    const acc = s.accent || REST;
+
+    const bar = (s.bar || []).map(b => ({
+      q: b.gap ? '?' : '',
+      style: Object.assign({
+        flexGrow: b.w, flexBasis: 0, height: (b.gap ? 0 : (s.barH || 3)) + 'px',
+        background: b.gap ? 'rgba(0,0,0,0)' : acc,
+        borderTop: b.gap ? '3px dashed ' + SL : 'none',
+        position: 'relative', alignSelf: 'flex-end'
+      }, b.gap ? { height: '3px' } : {}),
+      qStyle: {
+        display: b.gap ? 'block' : 'none', position: 'absolute', left: '50%', top: '-30px',
+        transform: 'translateX(-50%)', fontSize: '22px', fontWeight: 700, color: '#B9C0C7', fontFamily: SANS
+      }
+    }));
+
+    const param = (p) => ({
+      name: p.name, unit: p.unit, val: p.stale ? '?' : p.val, note: p.note,
+      labelStyle: { fontSize: '15px', letterSpacing: '2.6px', color: p.stale ? SL : '#8E9A86', fontFamily: SANS },
+      valStyle: {
+        fontFamily: MONO, fontVariantNumeric: 'tabular-nums', fontWeight: 400, fontSize: '84px', lineHeight: 0.82,
+        letterSpacing: '-3px', color: p.stale ? SL : (p.color || BONE),
+        borderBottom: p.stale ? '2px dashed ' + SL : '2px solid rgba(0,0,0,0)'
+      },
+      unitStyle: { fontSize: '16px', color: p.stale ? SL : '#7F7A72', paddingBottom: '12px', fontFamily: SANS },
+      noteStyle: { fontSize: '14px', fontFamily: MONO, fontVariantNumeric: 'tabular-nums', color: p.stale ? '#B9C0C7' : '#7F7A72', whiteSpace: 'nowrap' },
+      spark: p.trend ? this.spark(p.trend, p.stale ? SL : (p.color || '#8E9A86')) : null
+    });
+
+    const sil = s.silence || {};
+    const p = Math.max(0, Math.min(1, sil.p || 0));
+    const silColor = sil.color || REST;
+
+    return {
+      v: {
+        detail,
+        root: {
+          width: '800px', height: '480px', boxSizing: 'border-box', background: '#000',
+          padding: '28px 40px 22px', display: 'flex', flexDirection: 'column', gap: '0',
+          fontFamily: SANS, overflow: 'hidden', position: 'relative'
+        },
+        mark: {
+          width: s.markW || '20px', height: s.markH || '20px', flex: '0 0 auto', marginTop: '14px',
+          background: s.markSolid ? acc : 'rgba(0,0,0,0)',
+          border: '3px ' + (s.markDashed ? 'dashed' : 'solid') + ' ' + acc,
+          borderRadius: 0, animation: s.flash ? 'pen 1s steps(1,end) infinite' : 'none'
+        },
+        tier: s.tier,
+        tierStyle: {
+          fontSize: detail ? '62px' : '46px', fontWeight: 400, letterSpacing: detail ? '-1px' : '2px',
+          lineHeight: 1, color: acc, fontFamily: SANS,
+          animation: s.flash ? 'pen 1s steps(1,end) infinite' : 'none'
+        },
+        sub: s.sub, subStyle: { fontSize: '15px', letterSpacing: '1.6px', color: s.subColor || '#7F7A72', display: s.sub ? 'block' : 'none' },
+        clockWrap: { marginLeft: 'auto', display: detail ? 'flex' : 'none', flexDirection: 'column', alignItems: 'flex-end', gap: '5px', paddingTop: '6px' },
+        clock: s.clock, clockStyle: { fontSize: '17px', fontFamily: MONO, fontVariantNumeric: 'tabular-nums', color: '#7F7A72' },
+        chan: s.chan, chanStyle: { fontSize: '14px', letterSpacing: '1.4px', color: s.chanColor || '#7F7A72' },
+        params: (s.params || []).map(param),
+        bpWrap: { display: 'flex', flexDirection: 'column', gap: '4px', marginLeft: 'auto', alignItems: 'flex-end', paddingBottom: '6px', flex: '0 0 auto' },
+        bpName: (s.bp || {}).name, bpLabel: { fontSize: '15px', letterSpacing: '2.6px', color: (s.bp || {}).stale ? SL : '#7F7A72' },
+        bpText: (s.bp || {}).val, bpVal: { fontSize: '28px', fontFamily: MONO, fontVariantNumeric: 'tabular-nums', color: (s.bp || {}).stale ? SL : BONE, borderBottom: (s.bp || {}).stale ? '2px dashed ' + SL : 'none', lineHeight: 1.1 },
+        bpAge: (s.bp || {}).age, bpNote: { fontSize: '14px', fontFamily: MONO, color: (s.bp || {}).stale ? '#B9C0C7' : '#7F7A72', whiteSpace: 'nowrap' },
+        bar,
+        barWrap: { margin: (detail ? '18px 0 14px' : 'auto 0 auto'), display: 'flex', flexDirection: 'column', gap: '10px' },
+        barRow: { height: (s.barH && s.barH > 20 ? s.barH : 34) + 'px', display: 'flex', alignItems: 'flex-end', gap: '10px', animation: s.flash ? 'pen 1s steps(1,end) infinite' : 'none' },
+        barCap: s.barCap, barCapStyle: { fontSize: '14px', letterSpacing: '1.8px', color: s.barCapColor || '#7F7A72', display: s.barCap ? 'block' : 'none' },
+        sensors: (s.sensors || []).map(d => ({
+          name: d.name, age: d.age,
+          tick: { width: '3px', height: d.ok ? '22px' : '22px', background: d.ok ? '#8E9A86' : 'rgba(0,0,0,0)', borderLeft: d.ok ? 'none' : '3px dashed ' + SL },
+          nameStyle: { fontSize: '14px', letterSpacing: '1.2px', color: d.ok ? '#7F7A72' : '#B9C0C7', whiteSpace: 'nowrap' },
+          ageStyle: { fontSize: '14px', fontFamily: MONO, fontVariantNumeric: 'tabular-nums', color: d.ok ? '#7F7A72' : '#B9C0C7', whiteSpace: 'nowrap' }
+        })),
+        sys: s.sys, sysStyle: { fontSize: '14px', fontFamily: MONO, fontVariantNumeric: 'tabular-nums', color: '#7F7A72', textAlign: 'right', whiteSpace: 'pre', lineHeight: 1.5, flex: '0 0 auto' },
+        silOuter: {
+          position: 'relative', height: sil.text ? '56px' : '0px', marginTop: detail ? '12px' : '0',
+          overflow: 'hidden', touchAction: 'none', userSelect: 'none',
+          borderTop: sil.text ? '2px ' + (sil.active ? 'solid' : 'dashed') + ' ' + silColor : 'none',
+          display: sil.text ? 'block' : 'none'
+        },
+        silFill: { position: 'absolute', left: 0, top: 0, bottom: 0, width: (p * 100).toFixed(1) + '%', background: sil.fill || 'rgba(0,0,0,0)', borderRight: p > 0 ? '2px solid ' + silColor : 'none' },
+        silText: sil.text, silTextStyle: { fontSize: '24px', letterSpacing: '1.4px', color: sil.textColor || silColor, whiteSpace: 'nowrap' },
+        silSub: sil.sub, silSubStyle: { marginLeft: 'auto', fontSize: '14px', fontFamily: MONO, fontVariantNumeric: 'tabular-nums', color: sil.subColor || '#7F7A72', whiteSpace: 'nowrap', textAlign: 'right' },
+        onDown: sil.onDown, onUp: sil.onUp
+      }
+    };
+  }
+}
+</script>
+</body>
+</html>

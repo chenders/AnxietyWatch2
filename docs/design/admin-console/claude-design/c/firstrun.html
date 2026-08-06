@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>First run — AW2 Flowpath</title>
+<link rel="stylesheet" href="console.css">
+</head>
+<body data-feed="live">
+<a class="skip-link" href="#main">Skip to content</a>
+
+<div class="app">
+  <div class="stickytop">
+  <div class="docstale" role="status">
+    <span class="st st--severed">Console feed severed</span>
+    <b>This page has not heard from the appliance for <span data-feed-age>—</span>.</b>
+    <span class="muted-text">The graph below is the last shape the machine had. Edge states are unchanged; it is the link between you and the box that is cut.</span>
+    <button class="btn btn--sm" type="button" data-action="refresh">Reconnect <span class="btn__key">r</span></button>
+  </div>
+
+  <header class="cmdbar">
+    <span class="cmdbar__id"><b>AW2 FLOWPATH</b> · bedside-pi5 · 2.4.11+g8c1f</span>
+    <label class="sr-only" for="q">Filter nodes and sources</label>
+    <input class="input cmdbar__search" id="q" data-filter placeholder="Filter nodes, sources, units…   /">
+    <span class="cmdbar__id" data-clock>09:56:04Z</span>
+    <span class="cmdbar__id">feed <span data-feed-age>2s</span></span>
+    <span class="cmdbar__hint"><span class="kbd">j</span><span class="kbd">k</span> walk the path <span class="kbd">/</span> filter <span class="kbd">1</span>–<span class="kbd">9</span> screens <span class="kbd">?</span> keys</span>
+  </header>
+
+<nav class="tabs" aria-label="Screens">
+  <a class="tabs__item" href="overview.html" data-tabkey="1"><span class="tabs__key">1</span> Overview</a>
+  <a class="tabs__item" href="display.html" data-tabkey="2"><span class="tabs__key">2</span> Flow · display</a>
+  <a class="tabs__item" href="ingest.html" data-tabkey="3"><span class="tabs__key">3</span> Flow · ingest</a>
+  <a class="tabs__item" href="services.html" data-tabkey="4"><span class="tabs__key">4</span> Services</a>
+  <a class="tabs__item" href="config.html" data-tabkey="5"><span class="tabs__key">5</span> Access</a>
+  <a class="tabs__item" href="data.html" data-tabkey="6"><span class="tabs__key">6</span> Data</a>
+  <a class="tabs__item" href="analysis.html" data-tabkey="7"><span class="tabs__key">7</span> Analysis</a>
+  <a class="tabs__item" href="records.html" data-tabkey="8"><span class="tabs__key">8</span> Records</a>
+  <a class="tabs__item" href="recovery.html" data-tabkey="9"><span class="tabs__key">9</span> Recovery</a>
+  <a class="tabs__item" href="system.html">System</a>
+  <a class="tabs__item" href="patterns.html">Patterns</a>
+  <a class="tabs__item" href="attempts.html">Timeline</a>
+  <a class="tabs__item" href="overview-degraded.html">Degraded</a>
+  <a class="tabs__item" href="firstrun.html" aria-current="page">First run</a>
+</nav>
+  </div>
+
+  <main class="main" id="main">
+    <div class="pagehd">
+      <div>
+        <h1>First run</h1>
+        <p>Nothing configured, no data, no attempts. Stubs, not cuts.</p>
+      </div>
+      <div class="pagehd__act">
+        <button class="btn btn--sm" type="button" data-action="refresh">Refresh <span class="btn__key">r</span></button>
+      </div>
+    </div>
+
+    <div class="cols-4">
+      <div class="fig"><span class="fig__k">Sources configured</span>
+        <span class="fig__v">0<span class="unit">of 0</span></span>
+        <span class="muted-text">The registry is empty, not broken</span></div>
+      <div class="fig fig--sm"><span class="fig__k">Edges losing data</span>
+        <span class="fig__v">0</span><span class="muted-text">Nothing is running yet</span></div>
+      <div class="fig fig--sm"><span class="fig__k">Edges severed</span>
+        <span class="fig__v">0</span><span class="muted-text">Nothing has been asserted yet</span></div>
+      <div class="fig fig--sm"><span class="fig__k">Database</span>
+        <span class="fig__v">Ready<span class="unit">14 MB</span></span>
+        <span class="muted-text">Schema 2.4.11, migrated cleanly</span></div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="stack">
+      <section class="pane">
+        <div class="pane__hd"><h2>Flow path</h2><span class="caps">Fresh install · 00:04:12 since first boot</span></div>
+        <div class="pane__body--flush">
+<svg class="graph" viewBox="0 0 1180 250" role="img" aria-labelledby="ft fd">
+  <title id="ft">The flow path on a fresh install</title>
+  <desc id="fd">Every stage is drawn as a dotted stub because nothing is configured. The database is ready
+  and empty. No edge is cut, because no edge has ever been expected to carry anything.</desc>
+  <g class="edges">
+  <path class="e e--absent" d="M 216 132 H 276"></path>
+  <path class="e e--absent" d="M 476 132 H 536"></path>
+  <path class="e e--absent" d="M 696 132 H 756"></path>
+  <path class="e e--absent" d="M 936 132 H 996"></path>
+  </g>
+  <g class="n n--absent" data-node="fr-src" role="button" aria-label="No sources registered" data-selected="true" tabindex="0">
+    <rect x="16" y="110" width="200" height="44" rx="2"></rect>
+    <text class="n-name" x="26" y="129">(no sources)</text>
+    <text class="n-val" x="26" y="145">nothing declared</text>
+  </g>
+  <g class="n n--absent" data-node="fr-col" role="button" aria-label="No collectors, because no sources exist" tabindex="-1">
+    <rect x="276" y="110" width="200" height="44" rx="2"></rect>
+    <text class="n-name" x="286" y="129">(no collectors)</text>
+    <text class="n-val" x="286" y="145">derived from sources</text>
+  </g>
+  <g class="n n--absent" data-node="fr-spool" role="button" aria-label="Spool, empty and ready" tabindex="-1">
+    <rect x="536" y="110" width="160" height="44" rx="2"></rect>
+    <text class="n-name" x="546" y="129">spool</text>
+    <text class="n-val" x="546" y="145">0 queued · ready</text>
+  </g>
+  <g class="n" data-node="fr-store" role="button" aria-label="Postgres samples_raw, ready, zero rows" tabindex="-1">
+    <rect x="756" y="110" width="180" height="44" rx="2"></rect>
+    <text class="n-name" x="766" y="129">samples_raw</text>
+    <text class="n-val" x="766" y="145">0 rows · schema ok</text>
+  </g>
+  <g class="n n--absent n--sink" data-node="fr-out" role="button" aria-label="Report, nothing to build yet" tabindex="-1">
+    <rect x="996" y="110" width="170" height="44" rx="2"></rect>
+    <text class="n-name" x="1006" y="129">report</text>
+    <text class="n-val" x="1006" y="145">nothing to build yet</text>
+  </g>
+</svg>
+      <div class="graph__legend">
+        <span><span class="lg lg--absent"></span> not configured — a stub, not a cut. Nothing is expected through here yet.</span>
+      </div>
+        </div>
+        <div class="pane__ft"><p class="prose"><b>A fresh install must not look broken.</b> Nothing here is
+        drawn as a cut, because a cut means something was expected and did not arrive. Nothing has been
+        declared, so nothing is expected, so nothing is missing. Every stage is a dotted stub until a source
+        gives it something to carry. Zeroes are stated as zeroes with a reason rather than as unknowns.</p></div>
+      </section>
+
+      <div class="cols-2">
+        <section class="pane">
+          <div class="pane__hd"><h2>Bring-up</h2><span class="caps">3 of 7 done · in order</span></div>
+          <div class="pane__body--flush t-scroll">
+            <table class="t t--rowstate">
+              <thead><tr><th scope="col">Step</th><th scope="col">What it establishes</th>
+                <th scope="col">State</th><th scope="col">When</th></tr></thead>
+              <tbody>
+                <tr><th scope="row">1 · Database</th>
+                  <td>Postgres 16.3 on NVMe, schema migrated to 2.4.11, 0 rows.</td>
+                  <td><span class="st st--flowing"><span aria-hidden="true">✓</span> Done</span></td>
+                  <td><span class="fresh" data-age-s="238"><span class="fresh__age">3m 58s ago</span></span></td></tr>
+                <tr><th scope="row">2 · Bluetooth</th>
+                  <td>hci0, Raspberry Pi 5 on-board controller. No devices paired.</td>
+                  <td><span class="st st--flowing"><span aria-hidden="true">✓</span> Done</span></td>
+                  <td><span class="fresh" data-age-s="210"><span class="fresh__age">3m 30s ago</span></span></td></tr>
+                <tr><th scope="row">3 · Console on the LAN</th>
+                  <td>Listening on 192.168.1.42:8443, self-signed cert valid to 2027-08-05.</td>
+                  <td><span class="st st--flowing"><span aria-hidden="true">✓</span> Done</span></td>
+                  <td><span class="fresh" data-age-s="180"><span class="fresh__age">3m ago</span></span></td></tr>
+                <tr data-state="impaired"><th scope="row">4 · First source</th>
+                  <td><b>Next.</b> Until a source exists with a declared cadence, this console has no
+                  standard to judge freshness against and no edge to draw. Start with whatever you wear
+                  tonight.</td>
+                  <td><button class="btn btn--sm btn--primary" type="button">Add a source</button></td>
+                  <td class="muted-text">—</td></tr>
+                <tr data-state="absent"><th scope="row">5 · Pair a device</th>
+                  <td class="absent-note">Blocked on step 4.</td>
+                  <td><span class="st st--absent"><span aria-hidden="true">—</span> Not started</span></td>
+                  <td class="absent-note">—</td></tr>
+                <tr data-state="absent"><th scope="row">6 · Key for the phone</th>
+                  <td class="absent-note">The phone app writes journal entries and health-store data through the API.</td>
+                  <td><span class="st st--absent"><span aria-hidden="true">—</span> Not started</span></td>
+                  <td class="absent-note">—</td></tr>
+                <tr data-state="absent"><th scope="row">7 · Backup and verify</th>
+                  <td class="absent-note">The verification is the point. An unverified first backup is the
+                  state this console is least able to reassure you about.</td>
+                  <td><span class="st st--absent"><span aria-hidden="true">—</span> Not started</span></td>
+                  <td class="absent-note">—</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <div class="stack">
+          <section class="pane">
+            <div class="pane__hd"><h2>First source</h2>
+              <span class="caps">The cadence set here becomes the standard every edge is judged by</span></div>
+            <div class="pane__body">
+              <form class="form" data-dirty-track onsubmit="return false">
+                <div class="form__row"><label for="s1" class="req">Source ID</label>
+                  <div><input class="input" id="s1" name="s1" placeholder="polar-h10-chest">
+                    <span class="hint">Lower case, hyphens. Becomes the join key in every export.</span></div></div>
+                <div class="form__row"><label for="s2" class="req">Kind</label>
+                  <div><select class="select" id="s2" name="s2"><option>BLE device</option>
+                    <option>Scheduled importer</option><option>Cloud API</option><option>Manual entry</option></select></div></div>
+                <div class="form__row"><label for="s3" class="req">Expected cadence</label>
+                  <div><input class="input" id="s3" name="s3" placeholder="2m">
+                    <span class="hint">How often a healthy source should produce data. Be honest — a cadence
+                    looser than reality is how a dead source hides.</span></div></div>
+                <div class="form__row"><label for="s4">Uniquely owns</label>
+                  <div><input class="input" id="s4" name="s4" placeholder="Beat-to-beat RR intervals">
+                    <span class="hint">What is lost if this source stops. Appears in the cut's description.</span></div></div>
+                <div class="savebar" data-dirty="false">
+                  <span class="savebar__state">No changes since last save.</span>
+                  <button class="btn btn--ghost" type="reset" data-needs-dirty disabled>Discard</button>
+                  <button class="btn btn--primary" type="submit" data-needs-dirty disabled>Register source</button>
+                </div>
+              </form>
+            </div>
+          </section>
+          <section class="pane">
+            <div class="pane__hd"><h2>Attempt timeline</h2></div>
+            <div class="pane__body"><div class="empty"><h3>No windows yet</h3>
+              <p>Distinct from silence. A source that stopped attempting leaves a run of hairline gaps; a
+              system with no sources has no windows to draw at all.</p></div></div>
+          </section>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="scrim" id="keymap" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="km-h">
+    <div class="modal__hd"><h2 id="km-h">Keyboard</h2></div>
+    <div class="modal__body">
+      <div class="fields fields--wide">
+        <span class="field__k"><span class="kbd">j</span> <span class="kbd">k</span></span><span class="field__v">Walk the flow path, upstream and downstream</span>
+        <span class="field__k"><span class="kbd">↑</span> <span class="kbd">↓</span></span><span class="field__v">Same as j and k</span>
+        <span class="field__k"><span class="kbd">/</span></span><span class="field__v">Focus the node filter</span>
+        <span class="field__k"><span class="kbd">1</span>–<span class="kbd">9</span></span><span class="field__v">Jump to a screen</span>
+        <span class="field__k"><span class="kbd">r</span></span><span class="field__v">Refresh the feed</span>
+        <span class="field__k"><span class="kbd">?</span></span><span class="field__v">Show or hide this map</span>
+        <span class="field__k"><span class="kbd">esc</span></span><span class="field__v">Leave a field, or close a dialog</span>
+      </div>
+      <p class="prose muted-text">Every one of these is also reachable by tab and click. The keys are an accelerator, never the only route.</p>
+    </div>
+    <div class="modal__ft"><span class="grow"></span><button class="btn" type="button" data-action="close">Close</button></div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

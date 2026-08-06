@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flow · display — AW2 Flowpath</title>
+<link rel="stylesheet" href="console.css">
+</head>
+<body data-feed="live">
+<a class="skip-link" href="#main">Skip to content</a>
+
+<div class="app">
+  <div class="stickytop">
+  <div class="docstale" role="status">
+    <span class="st st--severed">Console feed severed</span>
+    <b>This page has not heard from the appliance for <span data-feed-age>—</span>.</b>
+    <span class="muted-text">The graph below is the last shape the machine had. Edge states are unchanged; it is the link between you and the box that is cut.</span>
+    <button class="btn btn--sm" type="button" data-action="refresh">Reconnect <span class="btn__key">r</span></button>
+  </div>
+
+  <header class="cmdbar">
+    <span class="cmdbar__id"><b>AW2 FLOWPATH</b> · bedside-pi5 · 2.4.11+g8c1f</span>
+    <label class="sr-only" for="q">Filter nodes and sources</label>
+    <input class="input cmdbar__search" id="q" data-filter placeholder="Filter nodes, sources, units…   /">
+    <span class="cmdbar__id" data-clock>09:56:04Z</span>
+    <span class="cmdbar__id">feed <span data-feed-age>2s</span></span>
+    <span class="cmdbar__hint"><span class="kbd">j</span><span class="kbd">k</span> walk the path <span class="kbd">/</span> filter <span class="kbd">1</span>–<span class="kbd">9</span> screens <span class="kbd">?</span> keys</span>
+  </header>
+
+<nav class="tabs" aria-label="Screens">
+  <a class="tabs__item" href="overview.html" data-tabkey="1"><span class="tabs__key">1</span> Overview</a>
+  <a class="tabs__item" href="display.html" data-tabkey="2" aria-current="page"><span class="tabs__key">2</span> Flow · display</a>
+  <a class="tabs__item" href="ingest.html" data-tabkey="3"><span class="tabs__key">3</span> Flow · ingest</a>
+  <a class="tabs__item" href="services.html" data-tabkey="4"><span class="tabs__key">4</span> Services</a>
+  <a class="tabs__item" href="config.html" data-tabkey="5"><span class="tabs__key">5</span> Access</a>
+  <a class="tabs__item" href="data.html" data-tabkey="6"><span class="tabs__key">6</span> Data</a>
+  <a class="tabs__item" href="analysis.html" data-tabkey="7"><span class="tabs__key">7</span> Analysis</a>
+  <a class="tabs__item" href="records.html" data-tabkey="8"><span class="tabs__key">8</span> Records</a>
+  <a class="tabs__item" href="recovery.html" data-tabkey="9"><span class="tabs__key">9</span> Recovery</a>
+  <a class="tabs__item" href="system.html">System</a>
+  <a class="tabs__item" href="patterns.html">Patterns</a>
+  <a class="tabs__item" href="attempts.html">Timeline</a>
+  <a class="tabs__item" href="overview-degraded.html">Degraded</a>
+  <a class="tabs__item" href="firstrun.html">First run</a>
+</nav>
+  </div>
+
+  <main class="main" id="main">
+    <div class="pagehd">
+      <div>
+        <h1>Display path</h1>
+        <p>Six links in series. Only the last one proves the screen is lit.</p>
+      </div>
+      <div class="pagehd__act">
+        <button class="btn btn--sm" type="button" data-action="refresh">Refresh <span class="btn__key">r</span></button>
+      </div>
+    </div>
+
+    <div class="cols-4">
+      <div class="fig fig--flow"><span class="fig__k">Frames since check</span>
+        <span class="fig__v">271</span><span class="muted-text">30.1 fps over 9.0 s</span></div>
+      <div class="fig fig--sm"><span class="fig__k">Backlight</span>
+        <span class="fig__v">ON<span class="unit">78 %</span></span><span class="muted-text">Dimmed by the 22:00 schedule</span></div>
+      <div class="fig fig--sm"><span class="fig__k">Connector</span>
+        <span class="fig__v">HDMI-A-1</span><span class="muted-text">1280×800 @ 60 Hz, attached</span></div>
+      <div class="fig fig--sm"><span class="fig__k">Page uptime</span>
+        <span class="fig__v">17d<span class="unit">03:58</span></span><span class="muted-text">No reload since boot</span></div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="stack">
+      <section class="pane" aria-labelledby="ch">
+        <div class="pane__hd"><h2 id="ch">Display chain</h2>
+          <span class="caps">Six links in series · all flowing</span></div>
+        <div class="pane__body--flush">
+<svg class="graph" viewBox="0 0 1180 130" role="img" aria-labelledby="ct cd">
+  <title id="ct">The display chain, six links in series</title>
+  <desc id="cd">Compositor, Wayland socket, DRM connector, backlight, browser, and the frame callback, all
+  flowing. Only the last link asserts that the screen is actually lit; the first five can all be flowing
+  while the panel is black.</desc>
+  <g class="edges">
+  <path class="e e--flowing" d="M 186 62 H 208"></path>
+  <path class="e e--flowing" d="M 378 62 H 400"></path>
+  <path class="e e--flowing" d="M 570 62 H 592"></path>
+  <path class="e e--flowing" d="M 762 62 H 784"></path>
+  <path class="e e--flowing" d="M 954 62 H 976"></path>
+  </g>
+  <g class="n" data-node="ch0" role="button" aria-label="compositor, active (running)" tabindex="-1">
+    <rect x="16" y="40" width="178" height="44" rx="2"></rect>
+    <text class="n-name" x="26" y="59">compositor</text>
+    <text class="n-val" x="26" y="75">labwc 0.8.4 · 812</text>
+  </g>
+  <g class="n" data-node="ch1" role="button" aria-label="wayland socket, accepts connections" tabindex="-1">
+    <rect x="208" y="40" width="178" height="44" rx="2"></rect>
+    <text class="n-name" x="218" y="59">wayland socket</text>
+    <text class="n-val" x="218" y="75">connected in 4 ms</text>
+  </g>
+  <g class="n" data-node="ch2" role="button" aria-label="DRM connector, attached, mode set" tabindex="-1">
+    <rect x="400" y="40" width="178" height="44" rx="2"></rect>
+    <text class="n-name" x="410" y="59">DRM connector</text>
+    <text class="n-val" x="410" y="75">HDMI-A-1 1280×800</text>
+  </g>
+  <g class="n" data-node="ch3" role="button" aria-label="backlight, on, dimmed to 78 %" tabindex="-1">
+    <rect x="592" y="40" width="178" height="44" rx="2"></rect>
+    <text class="n-name" x="602" y="59">backlight</text>
+    <text class="n-val" x="602" y="75">199/255 · power on</text>
+  </g>
+  <g class="n" data-node="ch4" role="button" aria-label="browser, active, 0 restarts 17d" tabindex="-1">
+    <rect x="784" y="40" width="178" height="44" rx="2"></rect>
+    <text class="n-name" x="794" y="59">browser</text>
+    <text class="n-val" x="794" y="75">chromium 126 · 1044</text>
+  </g>
+  <g class="n" data-node="ch5" role="button" aria-label="frame callback, advancing" data-selected="true" tabindex="0">
+    <rect x="976" y="40" width="178" height="44" rx="2"></rect>
+    <text class="n-name" x="986" y="59">frame callback</text>
+    <text class="n-val" x="986" y="75">+271 in 9.0 s</text>
+  </g>
+</svg>
+        </div>
+        <div class="pane__ft"><p class="prose"><b>Service-up and screen-lit are different claims.</b> Every
+        link but the last can be flowing while the panel is black — a detached connector, a compositor with
+        no output, a browser painting into a surface nobody is showing. The verdict rests on link six
+        alone: a frame callback fired inside the running page and reported a number larger than the one
+        before it. A frozen tab holds its counter and cuts only that edge, while the five upstream links
+        stay clean.</p></div>
+      </section>
+
+      <section class="pane" aria-labelledby="eh">
+        <div class="pane__hd"><h2 id="eh">Evidence behind each link</h2></div>
+        <div class="pane__body--flush t-scroll">
+          <table class="t">
+            <thead><tr><th scope="col">Link</th><th scope="col">Assertion</th><th scope="col">Evidence</th>
+              <th scope="col">State</th><th scope="col">Checked</th></tr></thead>
+            <tbody>
+              <tr><th scope="row">1 · compositor</th><td>The process is running.</td>
+                <td class="mono">aw2-kiosk-compositor.service · labwc 0.8.4 · 812</td>
+                <td><span class="proc proc--active"><span class="proc__led" aria-hidden="true"></span> active (running)</span></td>
+                <td><span class="fresh" data-age-s="9" data-expect-s="30"><span class="fresh__age">9s ago</span><span class="fresh__expect">30s</span></span></td></tr>
+              <tr><th scope="row">2 · socket</th><td>Something can connect to it.</td>
+                <td class="mono">probe client connected to /run/user/1000/wayland-0, closed in 4 ms</td>
+                <td><span class="st st--flowing"><span class="pip pip--flowing" aria-hidden="true"></span> Flowing</span></td>
+                <td><span class="fresh" data-age-s="9" data-expect-s="30"><span class="fresh__age">9s ago</span><span class="fresh__expect">30s</span></span></td></tr>
+              <tr><th scope="row">3 · connector</th><td>A physical panel is attached with a mode set.</td>
+                <td class="mono">/sys/class/drm/card1-HDMI-A-1/status = connected · 1280×800@60 · last hotplug 17d</td>
+                <td><span class="st st--flowing"><span class="pip pip--flowing" aria-hidden="true"></span> Flowing</span></td>
+                <td><span class="fresh" data-age-s="9" data-expect-s="30"><span class="fresh__age">9s ago</span><span class="fresh__expect">30s</span></span></td></tr>
+              <tr><th scope="row">4 · backlight</th><td>The panel is emitting light.</td>
+                <td class="mono">/sys/class/backlight/10-0045/bl_power = 0 · brightness 199/255</td>
+                <td><span class="st st--flowing"><span class="pip pip--flowing" aria-hidden="true"></span> Flowing</span></td>
+                <td><span class="fresh" data-age-s="9" data-expect-s="30"><span class="fresh__age">9s ago</span><span class="fresh__expect">30s</span></span></td></tr>
+              <tr><th scope="row">5 · browser</th><td>The process is running.</td>
+                <td class="mono">aw2-kiosk-browser.service · chromium 126 · 1044 · RSS 412 MB · 0 restarts</td>
+                <td><span class="proc proc--active"><span class="proc__led" aria-hidden="true"></span> active (running)</span></td>
+                <td><span class="fresh" data-age-s="9" data-expect-s="30"><span class="fresh__age">9s ago</span><span class="fresh__expect">30s</span></span></td></tr>
+              <tr><th scope="row">6 · frame callback</th><td><b>Pixels are changing on the panel.</b></td>
+                <td class="mono">requestAnimationFrame counter 8,912,441 → 8,912,712 over 9.0 s</td>
+                <td><span class="st st--flowing"><span class="pip pip--flowing" aria-hidden="true"></span> Advancing</span></td>
+                <td><span class="fresh" data-age-s="9" data-expect-s="30"><span class="fresh__age">9s ago</span><span class="fresh__expect">30s</span></span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <div class="cols-2">
+        <section class="pane">
+          <div class="pane__hd"><h2>Frame rate · last 6 hours</h2><span class="caps">fps, sampled every 10 s</span></div>
+          <div class="pane__body">
+            <svg class="spark" viewBox="0 0 600 48" preserveAspectRatio="none" role="img" aria-label="Frame rate held between 29 and 30 fps for six hours, with a two-minute gap at 03:12 during a compositor reload.">
+              <line class="spark__axis" x1="0" y1="47" x2="600" y2="47"></line>
+              <rect class="spark__gap" x="286" y="0" width="14" height="48"></rect>
+              <polyline class="spark__line" points="0,9 40,10 80,9 120,11 160,9 200,10 240,9 286,10 300,14 340,10 380,9 420,10 460,9 500,10 540,9 600,10"></polyline>
+            </svg>
+            <hr class="divider">
+            <div class="fields fields--wide">
+              <span class="field__k">Gap at 03:12</span>
+              <span class="field__v">2m 10s — compositor reload after a scheduled config apply. The
+              backlight stayed on and the panel showed the last painted frame throughout, so this is a gap
+              in the flow rather than a dark screen.</span>
+              <span class="field__k">Mean</span><span class="field__v mono">29.98 <span class="unit">fps</span></span>
+              <span class="field__k">Below 5 fps</span><span class="field__v mono">0 <span class="unit">samples</span></span>
+            </div>
+          </div>
+        </section>
+
+        <div class="stack">
+          <section class="pane">
+            <div class="pane__hd"><h2>What is on the screen</h2></div>
+            <div class="pane__body"><div class="fields">
+              <span class="field__k">URL</span><span class="field__v mono">http://localhost:8080/bedside</span>
+              <span class="field__k">View</span><span class="field__v">Tonight · HRV and SpO₂</span>
+              <span class="field__k">Last nav</span><span class="field__v mono">17d ago at boot</span>
+              <span class="field__k">Console errors</span><span class="field__v mono">0 <span class="unit">in 24h</span></span>
+            </div></div>
+            <div class="pane__ft"><div class="actions-split">
+              <button class="btn btn--sm" type="button">Reload page</button>
+              <span class="actions-split__gap" aria-hidden="true"></span>
+              <button class="btn btn--sm btn--danger" type="button" data-action="open" data-target="m-comp">Restart compositor…</button>
+            </div></div>
+          </section>
+          <section class="pane">
+            <div class="pane__hd"><h2>Hotplug and reload history</h2></div>
+            <div class="pane__body--flush">
+              <div class="attempt-row"><span class="attempt-row__t">03:12:04</span>
+                <span class="attempt-row__dur">2m 10s</span><span class="attempt-row__rows">—</span>
+                <span class="attempt-row__why">Compositor reload, scheduled config apply.</span></div>
+              <div class="attempt-row"><span class="attempt-row__t">19 Jul 08:41</span>
+                <span class="attempt-row__dur">6s</span><span class="attempt-row__rows">—</span>
+                <span class="attempt-row__why">HDMI hotplug, connector re-attached at 1280×800.</span></div>
+              <div class="attempt-row attempt-row--failed"><span class="attempt-row__t">19 Jul 08:39</span>
+                <span class="attempt-row__dur">2m 04s</span><span class="attempt-row__rows">—</span>
+                <span class="attempt-row__why">Connector reported disconnected. Screen dark for 2m 04s. Cable reseated.</span></div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+
+<div class="scrim" id="m-comp" hidden>
+  <div class="modal modal--danger" role="alertdialog" aria-modal="true" aria-labelledby="mc-h">
+    <div class="modal__hd"><span aria-hidden="true">✕</span><h2 id="mc-h">Restart the compositor?</h2></div>
+    <div class="modal__body">
+      <p class="prose">The bedside screen goes black for roughly two minutes and the browser restarts with it.</p>
+      <ul class="consequences">
+        <li>No sample collection is affected — the radios and the database are separate units.</li>
+        <li>If the connector fails to re-attach, the screen stays dark until someone is physically at the box.</li>
+      </ul></div>
+    <div class="modal__ft"><button class="btn btn--ghost" type="button" data-action="close">Cancel</button>
+      <span class="grow"></span><button class="btn btn--danger" type="button" data-action="close">Restart compositor</button></div>
+  </div>
+</div>
+  </main>
+</div>
+
+<div class="scrim" id="keymap" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="km-h">
+    <div class="modal__hd"><h2 id="km-h">Keyboard</h2></div>
+    <div class="modal__body">
+      <div class="fields fields--wide">
+        <span class="field__k"><span class="kbd">j</span> <span class="kbd">k</span></span><span class="field__v">Walk the flow path, upstream and downstream</span>
+        <span class="field__k"><span class="kbd">↑</span> <span class="kbd">↓</span></span><span class="field__v">Same as j and k</span>
+        <span class="field__k"><span class="kbd">/</span></span><span class="field__v">Focus the node filter</span>
+        <span class="field__k"><span class="kbd">1</span>–<span class="kbd">9</span></span><span class="field__v">Jump to a screen</span>
+        <span class="field__k"><span class="kbd">r</span></span><span class="field__v">Refresh the feed</span>
+        <span class="field__k"><span class="kbd">?</span></span><span class="field__v">Show or hide this map</span>
+        <span class="field__k"><span class="kbd">esc</span></span><span class="field__v">Leave a field, or close a dialog</span>
+      </div>
+      <p class="prose muted-text">Every one of these is also reachable by tab and click. The keys are an accelerator, never the only route.</p>
+    </div>
+    <div class="modal__ft"><span class="grow"></span><button class="btn" type="button" data-action="close">Close</button></div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

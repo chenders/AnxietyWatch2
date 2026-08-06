@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How it works — nightstand monitoring platform</title>
+<style>
+  html, body { margin: 0; padding: 0; background: #0a0b0c; }
+  ::selection { background: #8fb4c9; color: #0a0b0c; }
+  a { color: #8fb4c9; text-decoration: underline; text-underline-offset: 2px; }
+  a:hover { color: #e6e8ea; }
+  @media print {
+    * { background-color: transparent !important; color: #000 !important; border-color: #000 !important; box-shadow: none !important; }
+    html, body { background: #fff !important; }
+    [data-hatch] { background-image: repeating-linear-gradient(45deg, #000 0 1.5px, #fff 1.5px 5px) !important; }
+    [data-solid] { background: #000 !important; }
+    [data-half] { background-image: repeating-linear-gradient(90deg, #000 0 1px, #fff 1px 4px) !important; }
+    [data-sheet] { font-size: 8.4pt !important; padding: 0 !important; max-width: none !important; }
+    [data-avoid-break] { break-inside: avoid; }
+  }
+</style>
+</helmet>
+
+<!--
+  CONTRAST AUDIT — WCAG 2.1, computed against the actual surfaces used here.
+    surface       #0a0b0c  (page)
+    raised        #121417  (timeline bed, callout)   body text on raised = 14.2:1
+    body text     #e6e8ea on #0a0b0c = 15.7:1  (AAA)
+    accent        #8fb4c9 on #0a0b0c =  8.9:1  (AAA) — cool blue-grey: rules, hatch, labels
+    secondary     #8e959c on #0a0b0c =  6.5:1  (AA; AAA at the 17px+ sizes used)
+    faint         #656c73 on #0a0b0c =  3.7:1  — 10-12px mono uppercase heads / ticks only
+    hairline      #23262a on #0a0b0c =  1.27:1 — non-text borders only, never type
+    inverse chip  #0a0b0c on #8fb4c9 =  8.9:1  (AAA)
+  Print: all colour forced to #000 on #fff (21:1). Meaning is carried by hatch / solid / half-tone
+  fill and by shape before hue, so the sheet survives a monochrome laser printer.
+-->
+
+<div data-sheet="1" style="max-width: 1180px; margin: 0 auto; padding: 60px 40px 96px; background: #0a0b0c; color: #e6e8ea; font-family: 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, serif; font-size: 15px; line-height: 1.5; text-wrap: pretty; -webkit-font-smoothing: antialiased;">
+
+  <div style="display: grid; grid-template-columns: 1fr 292px; gap: 48px; align-items: end; border-bottom: 2px solid #8fb4c9; padding-bottom: 20px;">
+    <div>
+      <div style="font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase; color: #8fb4c9;">One night, one machine</div>
+      <h1 style="margin: 10px 0 10px; font-size: 44px; line-height: 1.03; font-weight: 600; letter-spacing: -0.015em;">A computer on a nightstand that does not look away</h1>
+      <div style="font-size: 19px; color: #8e959c; max-width: 30em;">A Raspberry Pi 5 next to a bed listens to a chest strap, a pulse oximeter, a CPAP machine and a blood-pressure cuff. It judges what it hears in under two seconds, and if breathing and oxygen fall together it sounds a siren loud enough to wake the person it is watching. In the morning the same data becomes an explanation.</div>
+    </div>
+    <div style="font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 12px; line-height: 1.75; color: #8e959c;">
+      <div style="display: grid; grid-template-columns: 96px 1fr; gap: 3px 10px;">
+        <span style="color: #656c73;">WATCHES</span><span>1 person</span>
+        <span style="color: #656c73;">SENSORS</span><span>7 sources, 1 radio</span>
+        <span style="color: #656c73;">DECIDES IN</span><span>&lt; 2 s (p99)</span>
+        <span style="color: #656c73;">KEEPS</span><span>2 years of raw signal</span>
+        <span style="color: #656c73;">ALARM PATHS</span><span>6, independent</span>
+        <span style="color: #656c73;">NETWORK</span><span>not required to alarm</span>
+      </div>
+    </div>
+  </div>
+
+  <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0; margin-top: 34px; border-top: 1px solid #23262a; border-bottom: 1px solid #23262a;">
+    <div style="padding: 20px 28px 22px 0; border-right: 1px solid #23262a;">
+      <div style="font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: #8fb4c9; margin-bottom: 8px;">Loop one · the night</div>
+      <div style="font-size: 21px; line-height: 1.25; margin-bottom: 8px;">Serves the alarm.</div>
+      <div style="font-size: 14.5px; color: #8e959c;">Capture, judge, and — if the pattern demands it — wake someone. Everything on this path is built to work with the screen off, the network down and the phone in another room.</div>
+    </div>
+    <div style="padding: 20px 28px 22px; border-right: 1px solid #23262a;">
+      <div style="font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: #8fb4c9; margin-bottom: 8px;">Loop two · the morning</div>
+      <div style="font-size: 21px; line-height: 1.25; margin-bottom: 8px;">Serves understanding.</div>
+      <div style="font-size: 14.5px; color: #8e959c;">Last night as four synchronised lanes, trends measured against this person&#8217;s own rolling median rather than a population average, and a PDF that can be handed to a doctor.</div>
+    </div>
+    <div style="padding: 20px 0 22px 28px;">
+      <div style="font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: #8fb4c9; margin-bottom: 8px;">Loop three · the trust loop</div>
+      <div style="font-size: 21px; line-height: 1.25; margin-bottom: 8px;">Serves the other two.</div>
+      <div style="font-size: 14.5px; color: #8e959c;">A watchdog, a siren that senses its own current draw, and a backup that gets restored on a schedule — because a backup nobody has restored is a hypothesis.</div>
+    </div>
+  </div>
+
+  <div style="display: flex; align-items: baseline; gap: 16px; margin: 52px 0 6px;">
+    <div style="font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: #8fb4c9;">I · What a night looks like</div>
+    <div style="flex: 1; height: 1px; background: #23262a;"></div>
+    <div style="font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 11px; color: #656c73;">22:10 &#8594; 07:40</div>
+  </div>
+  <p style="margin: 12px 0 22px; max-width: 62em; color: #8e959c; font-size: 16px;">Five channels, drawn as staves. A solid bar means the machine is measuring. A hatched bar means it is <em>not</em> measuring and knows it. The two are never allowed to look alike, which is the single rule the whole design is built around.</p>
+
+  <div data-avoid-break="1" style="background: #121417; border: 1px solid #23262a; padding: 22px 26px 18px;">
+    <div style="position: relative; display: grid; grid-template-columns: 118px 1fr; gap: 0 18px; font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 11.5px;">
+
+      <div style="color: #656c73; padding-bottom: 8px;">CHANNEL</div>
+      <div style="position: relative; height: 15px; color: #656c73;">
+        <span style="position: absolute; left: 0;">22:10</span>
+        <span style="position: absolute; left: 20.2%;">00:00</span>
+        <span style="position: absolute; left: 41.2%;">02:00</span>
+        <span style="position: absolute; left: 62.3%;">04:00</span>
+        <span style="position: absolute; left: 83.3%;">06:00</span>
+        <span style="position: absolute; right: 0;">07:40</span>
+      </div>
+
+      <div style="color: #8e959c; padding: 7px 0; border-top: 1px solid #23262a;">Polar H10 strap</div>
+      <div style="position: relative; padding: 7px 0; border-top: 1px solid #23262a;">
+        <div data-solid="1" style="position: absolute; left: 0.7%; width: 38.1%; top: 10px; height: 11px; background: #e6e8ea;"></div>
+        <div data-hatch="1" style="position: absolute; left: 38.8%; width: 4.9%; top: 10px; height: 11px; background-image: repeating-linear-gradient(45deg, #8fb4c9 0 2px, transparent 2px 5px); outline: 1px solid #8fb4c9;"></div>
+        <div data-solid="1" style="position: absolute; left: 43.7%; width: 55.6%; top: 10px; height: 11px; background: #e6e8ea;"></div>
+      </div>
+
+      <div style="color: #8e959c; padding: 7px 0; border-top: 1px solid #23262a;">EMAY SleepO2</div>
+      <div style="position: relative; padding: 7px 0; border-top: 1px solid #23262a;">
+        <div data-solid="1" style="position: absolute; left: 1.1%; width: 98.2%; top: 10px; height: 11px; background: #e6e8ea;"></div>
+        <div style="position: absolute; left: 53.3%; top: 6px; height: 19px; width: 2px; background: #0a0b0c;"></div>
+      </div>
+
+      <div style="color: #8e959c; padding: 7px 0; border-top: 1px solid #23262a;">AirSense 11 CPAP</div>
+      <div style="position: relative; padding: 7px 0; border-top: 1px solid #23262a;">
+        <div data-hatch="1" style="position: absolute; left: 0; width: 62.5%; top: 10px; height: 11px; background-image: repeating-linear-gradient(45deg, #656c73 0 2px, transparent 2px 5px); outline: 1px solid #656c73;"></div>
+        <div data-solid="1" style="position: absolute; left: 62.5%; width: 1.4%; top: 7px; height: 17px; background: #8fb4c9;"></div>
+        <div data-solid="1" style="position: absolute; left: 63.9%; width: 35.4%; top: 10px; height: 11px; background: #8e959c;"></div>
+      </div>
+
+      <div style="color: #8e959c; padding: 7px 0; border-top: 1px solid #23262a;">Tier machine</div>
+      <div style="position: relative; padding: 7px 0; border-top: 1px solid #23262a;">
+        <div style="position: absolute; left: 0.7%; width: 38.1%; top: 10px; height: 11px; border: 1px solid #656c73;"></div>
+        <div data-hatch="1" style="position: absolute; left: 38.8%; width: 4.9%; top: 10px; height: 11px; background-image: repeating-linear-gradient(45deg, #8fb4c9 0 2px, transparent 2px 5px); outline: 1px solid #8fb4c9;"></div>
+        <div style="position: absolute; left: 43.7%; width: 9.6%; top: 10px; height: 11px; border: 1px solid #656c73;"></div>
+        <div data-half="1" style="position: absolute; left: 53.3%; width: 1.4%; top: 8px; height: 15px; background-image: repeating-linear-gradient(90deg, #e6e8ea 0 1px, transparent 1px 4px); outline: 1px solid #8e959c;"></div>
+        <div data-solid="1" style="position: absolute; left: 54.7%; width: 2.3%; top: 6px; height: 19px; background: #e6e8ea;"></div>
+        <div style="position: absolute; left: 57%; width: 42.3%; top: 10px; height: 11px; border: 1px solid #656c73;"></div>
+      </div>
+
+      <div style="color: #8e959c; padding: 7px 0; border-top: 1px solid #23262a; border-bottom: 1px solid #23262a;">Alarm channels</div>
+      <div style="position: relative; padding: 7px 0; border-top: 1px solid #23262a; border-bottom: 1px solid #23262a;">
+        <div data-solid="1" style="position: absolute; left: 54.7%; width: 2.3%; top: 4px; height: 23px; background: #e6e8ea;"></div>
+        <div style="position: absolute; left: 58.5%; top: 8px; font-size: 11px; color: #e6e8ea;">all six channels fire together</div>
+      </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 0 22px; margin-top: 18px; font-size: 13.5px;">
+      <div style="border-top: 2px solid #8fb4c9; padding-top: 9px;"><span style="font-family: ui-monospace, monospace; color: #8fb4c9; font-size: 12.5px;">01:52</span> <span style="color: #8e959c;">The strap loosens. Its readings are rejected as artifact, so the machine reports <em>can&#8217;t assess</em> rather than a reassuring number.</span></div>
+      <div style="border-top: 2px solid #8fb4c9; padding-top: 9px;"><span style="font-family: ui-monospace, monospace; color: #8fb4c9; font-size: 12.5px;">03:14</span> <span style="color: #8e959c;">Oxygen and respiration fall together. Two independent sensors agree, the tier climbs, and the siren fires. Detail below.</span></div>
+      <div style="border-top: 2px solid #8fb4c9; padding-top: 9px;"><span style="font-family: ui-monospace, monospace; color: #8fb4c9; font-size: 12.5px;">04:06</span> <span style="color: #8e959c;">The CPAP is read once for the whole night: apnoea index, mask leak, pressure. It arrives late and is filed at the time it happened.</span></div>
+      <div style="border-top: 2px solid #8fb4c9; padding-top: 9px;"><span style="font-family: ui-monospace, monospace; color: #8fb4c9; font-size: 12.5px;">06:00</span> <span style="color: #8e959c;">Full backup, plus the write-ahead log shipped continuously. Once a week a copy is restored into a scratch database to prove it can be.</span></div>
+    </div>
+  </div>
+
+  <div data-avoid-break="1" style="display: grid; grid-template-columns: 1fr 1fr; gap: 44px; margin-top: 44px;">
+    <div>
+      <div style="display: flex; align-items: baseline; gap: 16px; margin-bottom: 14px;">
+        <div style="font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: #8fb4c9;">II · The 56 seconds at 03:14</div>
+        <div style="flex: 1; height: 1px; background: #23262a;"></div>
+      </div>
+      <p style="margin: 0 0 16px; font-size: 15px; color: #8e959c;">Zoomed out of the stave above. The escalation is a ladder with five rungs, and the machine will not skip one. It also will not come back down on silence: only fresh, observed oxygen or respiration can lower a tier.</p>
+      <div style="display: grid; grid-template-columns: 74px 1fr; gap: 0 16px; font-size: 14.5px;">
+        <div style="font-family: ui-monospace, monospace; font-size: 12.5px; color: #8fb4c9; padding: 10px 0; border-top: 1px solid #23262a;">03:14:02</div>
+        <div style="padding: 10px 0; border-top: 1px solid #23262a;"><strong style="font-weight: 600;">watch</strong> <span style="color: #8e959c;">— oxygen drifts below this person&#8217;s own baseline. Nothing sounds.</span></div>
+        <div style="font-family: ui-monospace, monospace; font-size: 12.5px; color: #8fb4c9; padding: 10px 0; border-top: 1px solid #23262a;">03:14:29</div>
+        <div style="padding: 10px 0; border-top: 1px solid #23262a;"><strong style="font-weight: 600;">confirm</strong> <span style="color: #8e959c;">— respiration agrees, and holds long enough to rule out a moment&#8217;s noise. Quiet prompts only.</span></div>
+        <div style="font-family: ui-monospace, monospace; font-size: 12.5px; color: #e6e8ea; padding: 10px 0; border-top: 1px solid #23262a; border-bottom: 1px solid #23262a;">03:14:58</div>
+        <div style="padding: 10px 0; border-top: 1px solid #23262a; border-bottom: 1px solid #23262a;"><strong style="font-weight: 600;">klaxon</strong> <span style="color: #8e959c;">— the siren, the bed shaker, the speaker, the smart plugs, the phone and the watch, all in the same instant.</span></div>
+      </div>
+      <p style="margin: 16px 0 0; font-size: 14px; color: #8e959c;">From radio packet to decision the budget is <strong style="color: #e6e8ea; font-weight: 600;">under 2 seconds at the 99th percentile</strong>. Past 5 seconds, slowness is itself treated as a fault and reported.</p>
+    </div>
+
+    <div>
+      <div style="display: flex; align-items: baseline; gap: 16px; margin-bottom: 14px;">
+        <div style="font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: #8fb4c9;">III · Six ways to be woken</div>
+        <div style="flex: 1; height: 1px; background: #23262a;"></div>
+      </div>
+      <p style="margin: 0 0 16px; font-size: 15px; color: #8e959c;">Ordered not by loudness but by <em>what each one refuses to depend on</em>. They all fire at once, because any single one of them can be dead without anyone noticing.</p>
+      <div style="display: grid; grid-template-columns: 26px 1fr 150px; gap: 0 14px; font-size: 14.5px;">
+        <div data-solid="1" style="background: #e6e8ea; width: 14px; height: 14px; margin-top: 13px;"></div>
+        <div style="padding: 10px 0; border-top: 1px solid #23262a;"><strong style="font-weight: 600;">12 V piezo siren</strong></div>
+        <div style="padding: 10px 0; border-top: 1px solid #23262a; color: #8e959c; font-size: 13px;">a pin, a transistor, a wire</div>
+        <div data-solid="1" style="background: #c9ced3; width: 14px; height: 14px; margin-top: 13px;"></div>
+        <div style="padding: 10px 0; border-top: 1px solid #23262a;"><strong style="font-weight: 600;">Bed shaker</strong></div>
+        <div style="padding: 10px 0; border-top: 1px solid #23262a; color: #8e959c; font-size: 13px;">a relay and a coil</div>
+        <div data-half="1" style="background-image: repeating-linear-gradient(90deg, #8e959c 0 1px, transparent 1px 4px); outline: 1px solid #8e959c; width: 14px; height: 14px; margin-top: 13px;"></div>
+        <div style="padding: 10px 0; border-top: 1px solid #23262a;"><strong style="font-weight: 600;">Speaker</strong></div>
+        <div style="padding: 10px 0; border-top: 1px solid #23262a; color: #8e959c; font-size: 13px;">USB and the audio stack</div>
+        <div data-hatch="1" style="background-image: repeating-linear-gradient(45deg, #8fb4c9 0 2px, transparent 2px 5px); outline: 1px solid #8fb4c9; width: 14px; height: 14px; margin-top: 13px;"></div>
+        <div style="padding: 10px 0; border-top: 1px solid #23262a;"><strong style="font-weight: 600;">Zigbee devices</strong></div>
+        <div style="padding: 10px 0; border-top: 1px solid #23262a; color: #8e959c; font-size: 13px;">a mesh and its coordinator</div>
+        <div data-hatch="1" style="background-image: repeating-linear-gradient(45deg, #656c73 0 2px, transparent 2px 5px); outline: 1px solid #656c73; width: 14px; height: 14px; margin-top: 13px;"></div>
+        <div style="padding: 10px 0; border-top: 1px solid #23262a;"><strong style="font-weight: 600;">Phone push</strong></div>
+        <div style="padding: 10px 0; border-top: 1px solid #23262a; color: #8e959c; font-size: 13px;">network, vendor, battery</div>
+        <div style="border: 1px solid #656c73; width: 14px; height: 14px; margin-top: 13px;"></div>
+        <div style="padding: 10px 0; border-top: 1px solid #23262a; border-bottom: 1px solid #23262a;"><strong style="font-weight: 600;">Watch haptic</strong></div>
+        <div style="padding: 10px 0; border-top: 1px solid #23262a; border-bottom: 1px solid #23262a; color: #8e959c; font-size: 13px;">all of the above, plus a worn watch</div>
+      </div>
+      <p style="margin: 16px 0 0; font-size: 14px; color: #8e959c;">The siren senses its own current draw, so the machine knows whether it actually made a sound rather than trusting that it sent the command.</p>
+    </div>
+  </div>
+
+  <div style="display: flex; align-items: baseline; gap: 16px; margin: 56px 0 6px;">
+    <div style="font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: #8fb4c9;">IV · The machine in cross-section</div>
+    <div style="flex: 1; height: 1px; background: #23262a;"></div>
+    <div style="font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 11px; color: #656c73;">skin &#8594; siren, seven strata</div>
+  </div>
+  <p style="margin: 12px 0 24px; max-width: 62em; color: #8e959c; font-size: 16px;">Cut the system open and it is a column, not a web. Each stratum below only ever hands work to the one beneath it, and the width of each bar shows how much of the system&#8217;s data volume it carries: millions of samples at the top, one decision at the bottom.</p>
+
+  <div data-avoid-break="1" style="display: grid; grid-template-columns: 128px 1fr 300px; gap: 0 20px; align-items: stretch;">
+
+    <div style="font-family: ui-monospace, monospace; font-size: 11.5px; color: #8fb4c9; padding: 13px 0; border-top: 1px solid #23262a;">1 &nbsp;BODY</div>
+    <div style="padding: 13px 0; border-top: 1px solid #23262a;">
+      <div data-solid="1" style="height: 26px; width: 100%; background: #e6e8ea;"></div>
+      <div style="margin-top: 7px; font-size: 14.5px;">Seven sources on and around one person, each with its own rhythm: heartbeats continuously, oxygen once a second, the cuff on request, the CPAP once a night, the phone hourly, the ring daily, and the journal whenever a hand types into it.</div>
+    </div>
+    <div style="padding: 13px 0; border-top: 1px solid #23262a; font-size: 13.5px; color: #8e959c;">The typed journal is the anchor. Medication doses and how a night felt are the thing being explained; the physiology is context for it, not the reverse.</div>
+
+    <div style="font-family: ui-monospace, monospace; font-size: 11.5px; color: #8fb4c9; padding: 13px 0; border-top: 1px solid #23262a;">2 &nbsp;RADIO</div>
+    <div style="padding: 13px 0; border-top: 1px solid #23262a;">
+      <div data-solid="1" style="height: 22px; width: 94%; background: #c9ced3;"></div>
+      <div style="margin-top: 7px; font-size: 14.5px;">One long-range Bluetooth dongle, and only one. Every wireless sensor in the house arrives through that single antenna.</div>
+    </div>
+    <div style="padding: 13px 0; border-top: 1px solid #23262a; font-size: 13.5px; color: #8e959c;">Which makes one failure easy to name: if every sensor goes quiet in the same second, that is the radio, not the person.</div>
+
+    <div style="font-family: ui-monospace, monospace; font-size: 11.5px; color: #8fb4c9; padding: 13px 0; border-top: 1px solid #23262a;">3 &nbsp;DECODE</div>
+    <div style="padding: 13px 0; border-top: 1px solid #23262a;">
+      <div data-solid="1" style="height: 22px; width: 88%; background: #c9ced3;"></div>
+      <div style="margin-top: 7px; font-size: 14.5px;">A small program per device translates that manufacturer&#8217;s protocol into rows — and writes them in the exact binary format the database ingests, right there at the edge.</div>
+    </div>
+    <div style="padding: 13px 0; border-top: 1px solid #23262a; font-size: 13.5px; color: #8e959c;">Doing the translation once, immediately, means there is no second conversion stage later that can be slow, lossy or wrong.</div>
+
+    <div style="font-family: ui-monospace, monospace; font-size: 11.5px; color: #8fb4c9; padding: 13px 0; border-top: 1px solid #23262a;">4 &nbsp;SPOOL</div>
+    <div style="padding: 13px 0; border-top: 1px solid #23262a;">
+      <div data-solid="1" style="height: 22px; width: 80%; background: #8e959c;"></div>
+      <div style="margin-top: 7px; font-size: 14.5px;">Those rows are appended to a file on the SSD and flushed to the disk itself before anything else happens. <strong style="font-weight: 600;">This is the line past which data cannot be lost.</strong></div>
+    </div>
+    <div style="padding: 13px 0; border-top: 1px solid #23262a; font-size: 13.5px; color: #8e959c;">Pull the plug one millisecond after a heartbeat is spooled and that heartbeat is still there when the machine comes back.</div>
+
+    <div style="font-family: ui-monospace, monospace; font-size: 11.5px; color: #8fb4c9; padding: 13px 0; border-top: 1px solid #23262a;">5 &nbsp;STORE</div>
+    <div style="padding: 13px 0; border-top: 1px solid #23262a;">
+      <div data-solid="1" style="height: 22px; width: 68%; background: #8e959c;"></div>
+      <div style="margin-top: 7px; font-size: 14.5px;">A drain process streams the spooled bytes into a time-series database on the SSD. Raw signal is compressed after a week and discarded after two years.</div>
+    </div>
+    <div style="padding: 13px 0; border-top: 1px solid #23262a; font-size: 13.5px; color: #8e959c;">Missing minutes are stored as nothing — literally empty — and never filled in with a guess or a line drawn between two known points.</div>
+
+    <div style="font-family: ui-monospace, monospace; font-size: 11.5px; color: #8fb4c9; padding: 13px 0; border-top: 1px solid #23262a;">6 &nbsp;JUDGMENT</div>
+    <div style="padding: 13px 0; border-top: 1px solid #23262a;">
+      <div data-half="1" style="height: 22px; width: 40%; background-image: repeating-linear-gradient(90deg, #e6e8ea 0 1px, transparent 1px 4px); outline: 1px solid #8e959c;"></div>
+      <div style="margin-top: 7px; font-size: 14.5px;">Reading the live stream, not the stored table: throw out bad samples, score the rest against this person&#8217;s own recent normal, look for two sensors that agree, then move a five-rung ladder up or down.</div>
+    </div>
+    <div style="padding: 13px 0; border-top: 1px solid #23262a; font-size: 13.5px; color: #8e959c;">Agreement between independent sensors is what earns the machine the right to make noise. One sensor alone can raise suspicion, never an alarm.</div>
+
+    <div style="font-family: ui-monospace, monospace; font-size: 11.5px; color: #e6e8ea; padding: 13px 0; border-top: 1px solid #23262a; border-bottom: 2px solid #8fb4c9;">7 &nbsp;CONSEQUENCE</div>
+    <div style="padding: 13px 0; border-top: 1px solid #23262a; border-bottom: 2px solid #8fb4c9;">
+      <div data-solid="1" style="height: 22px; width: 9%; background: #e6e8ea;"></div>
+      <div style="margin-top: 7px; font-size: 14.5px;">Millions of samples a night narrow to a single fact: sound the siren, or stay quiet. That decision is the only output that has to be right in real time.</div>
+    </div>
+    <div style="padding: 13px 0; border-top: 1px solid #23262a; border-bottom: 2px solid #8fb4c9; font-size: 13.5px; color: #8e959c;">Every screen in the system reads the strata above through one query service. None of them can reach into the alarm path, and none of them is required for it.</div>
+  </div>
+
+  <div data-avoid-break="1" style="display: grid; grid-template-columns: 1.15fr 1fr; gap: 46px; margin-top: 52px;">
+    <div>
+      <div style="display: flex; align-items: baseline; gap: 16px; margin-bottom: 14px;">
+        <div style="font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: #8fb4c9;">V · The one idea underneath all of it</div>
+        <div style="flex: 1; height: 1px; background: #23262a;"></div>
+      </div>
+      <div style="font-size: 24px; line-height: 1.25; margin-bottom: 14px;">Most monitors show two states. This one shows three, and the third is drawn loudest.</div>
+      <div style="display: grid; grid-template-columns: 44px 1fr; gap: 12px 14px; align-items: center; margin-bottom: 16px;">
+        <div style="height: 22px; border: 1px solid #656c73;"></div>
+        <div style="font-size: 14.5px;"><strong style="font-weight: 600;">Measured, and fine.</strong> <span style="color: #8e959c;">The quietest mark on any screen.</span></div>
+        <div data-solid="1" style="height: 22px; background: #e6e8ea;"></div>
+        <div style="font-size: 14.5px;"><strong style="font-weight: 600;">Measured, and bad.</strong> <span style="color: #8e959c;">Solid, unmistakable, and the reason the siren exists.</span></div>
+        <div data-hatch="1" style="height: 22px; background-image: repeating-linear-gradient(45deg, #8fb4c9 0 3px, transparent 3px 7px); outline: 1px solid #8fb4c9;"></div>
+        <div style="font-size: 14.5px;"><strong style="font-weight: 600; color: #8fb4c9;">Not measured at all.</strong> <span style="color: #8e959c;">Hatched everywhere it appears, and always louder than &#8220;fine&#8221;.</span></div>
+      </div>
+      <p style="margin: 0; font-size: 15.5px;">A strap that has slipped off produces perfect-looking silence. Almost every monitoring system in the world renders that silence as calm. Here it holds the machine at <em>can&#8217;t assess</em>: it cannot raise an alarm, and — the part that matters — it cannot cancel one either. Missing data never argues that someone is well. Every number the system displays, anywhere, carries the age of the observation behind it.</p>
+    </div>
+    <div>
+      <div style="display: flex; align-items: baseline; gap: 16px; margin-bottom: 14px;">
+        <div style="font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: #8fb4c9;">VI · How it keeps itself honest</div>
+        <div style="flex: 1; height: 1px; background: #23262a;"></div>
+      </div>
+      <div style="font-size: 14.5px;">
+        <div style="padding: 11px 0; border-top: 1px solid #23262a;"><strong style="font-weight: 600;">A hardware watchdog with a 15-second fuse.</strong> <span style="color: #8e959c;">If the software stops answering, the board reboots itself rather than sitting there looking alive.</span></div>
+        <div style="padding: 11px 0; border-top: 1px solid #23262a;"><strong style="font-weight: 600;">The siren tests itself on a schedule</strong> <span style="color: #8e959c;">and is believed only when current actually flows through it.</span></div>
+        <div style="padding: 11px 0; border-top: 1px solid #23262a;"><strong style="font-weight: 600;">Backups get restored, not just written.</strong> <span style="color: #8e959c;">A scratch database is rebuilt from them on a schedule, because an untested backup is a hypothesis.</span></div>
+        <div style="padding: 11px 0; border-top: 1px solid #23262a;"><strong style="font-weight: 600;">Every sensor has a declared rhythm,</strong> <span style="color: #8e959c;">so a device that is merely idle can be told apart from one that is failing.</span></div>
+        <div style="padding: 11px 0; border-top: 1px solid #23262a; border-bottom: 1px solid #23262a;"><strong style="font-weight: 600;">&#8220;If this box died right now, what would I lose?&#8221;</strong> <span style="color: #8e959c;">The system keeps a standing answer, in minutes.</span></div>
+      </div>
+      <p style="margin: 16px 0 0; font-size: 14.5px;">Faults about the machine and faults about the person never share a screen, a channel or a voice. A dead oximeter is not a sick patient, and confusing the two is how monitoring systems teach people to ignore them.</p>
+    </div>
+  </div>
+
+  <div style="display: flex; align-items: baseline; gap: 16px; margin: 56px 0 6px;">
+    <div style="font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: #8fb4c9;">VII · Same machine, different reasons to open it</div>
+    <div style="flex: 1; height: 1px; background: #23262a;"></div>
+  </div>
+  <p style="margin: 12px 0 22px; max-width: 62em; color: #8e959c; font-size: 16px;">The three loops are built once. What changes between people is which loop they lean on, and which of the four screens they ever look at.</p>
+
+  <div data-avoid-break="1" style="display: grid; grid-template-columns: 170px 1fr 1fr 128px; gap: 0 20px; font-size: 14.5px;">
+    <div style="font-family: ui-monospace, monospace; font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; color: #656c73; padding-bottom: 8px; border-bottom: 1px solid #23262a;">Reader</div>
+    <div style="font-family: ui-monospace, monospace; font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; color: #656c73; padding-bottom: 8px; border-bottom: 1px solid #23262a;">What they came for</div>
+    <div style="font-family: ui-monospace, monospace; font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; color: #656c73; padding-bottom: 8px; border-bottom: 1px solid #23262a;">What the system gives them</div>
+    <div style="font-family: ui-monospace, monospace; font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; color: #656c73; padding-bottom: 8px; border-bottom: 1px solid #23262a;">Leans on</div>
+
+    <div style="padding: 13px 0; border-bottom: 1px solid #23262a;"><strong style="font-weight: 600;">The person in the bed</strong></div>
+    <div style="padding: 13px 0; border-bottom: 1px solid #23262a; color: #8e959c;">To be woken if their breathing fails, and to sleep without watching a screen.</div>
+    <div style="padding: 13px 0; border-bottom: 1px solid #23262a; color: #8e959c;">A siren wired to a pin, and a status light legible from three feet in the dark. The alarm sounds with the panel unplugged.</div>
+    <div style="padding: 13px 0; border-bottom: 1px solid #23262a; font-family: ui-monospace, monospace; font-size: 12px; color: #8fb4c9;">night</div>
+
+    <div style="padding: 13px 0; border-bottom: 1px solid #23262a;"><strong style="font-weight: 600;">A clinician</strong></div>
+    <div style="padding: 13px 0; border-bottom: 1px solid #23262a; color: #8e959c;">Weeks of continuous data instead of one reading taken in an office at 11 a.m.</div>
+    <div style="padding: 13px 0; border-bottom: 1px solid #23262a; color: #8e959c;">A PDF for the appointment that states what was measured, what was not, and against which of this person&#8217;s own baselines.</div>
+    <div style="padding: 13px 0; border-bottom: 1px solid #23262a; font-family: ui-monospace, monospace; font-size: 12px; color: #8fb4c9;">morning</div>
+
+    <div style="padding: 13px 0; border-bottom: 1px solid #23262a;"><strong style="font-weight: 600;">Someone else in the house</strong></div>
+    <div style="padding: 13px 0; border-bottom: 1px solid #23262a; color: #8e959c;">To know something is wrong without having to sit up all night.</div>
+    <div style="padding: 13px 0; border-bottom: 1px solid #23262a; color: #8e959c;">Smart-home devices and a phone push fire in the same instant as the siren, so the room is not the only place the alarm exists.</div>
+    <div style="padding: 13px 0; border-bottom: 1px solid #23262a; font-family: ui-monospace, monospace; font-size: 12px; color: #8fb4c9;">night</div>
+
+    <div style="padding: 13px 0; border-bottom: 1px solid #23262a;"><strong style="font-weight: 600;">The person keeping a journal</strong></div>
+    <div style="padding: 13px 0; border-bottom: 1px solid #23262a; color: #8e959c;">To find out whether a change — a dose, a bedtime, a new mask — actually did anything.</div>
+    <div style="padding: 13px 0; border-bottom: 1px solid #23262a; color: #8e959c;">Last night as four synchronised lanes, and trends against their own rolling median, so a personal shift is visible even when every value is &#8220;normal&#8221;.</div>
+    <div style="padding: 13px 0; border-bottom: 1px solid #23262a; font-family: ui-monospace, monospace; font-size: 12px; color: #8fb4c9;">morning</div>
+
+    <div style="padding: 13px 0; border-bottom: 1px solid #23262a;"><strong style="font-weight: 600;">Whoever keeps it running</strong></div>
+    <div style="padding: 13px 0; border-bottom: 1px solid #23262a; color: #8e959c;">To be told the machine is broken by the machine, before a night depends on it.</div>
+    <div style="padding: 13px 0; border-bottom: 1px solid #23262a; color: #8e959c;">A separate console carrying technical faults only: dead sensors, a stalled drain, a siren that drew no current, a slow decision path.</div>
+    <div style="padding: 13px 0; border-bottom: 1px solid #23262a; font-family: ui-monospace, monospace; font-size: 12px; color: #8fb4c9;">trust</div>
+  </div>
+
+  <div style="margin-top: 52px; border-top: 2px solid #8fb4c9; padding-top: 20px; display: grid; grid-template-columns: 1fr 300px; gap: 46px; align-items: start;">
+    <div style="font-size: 19px;">Four sentences hold the whole design. The spool decides what survives a power cut. The ladder decides what counts as true. The channel stack decides who finds out. The trust loop decides whether the other three can still be believed — and nowhere in any of them is <em>unknown</em> allowed to look like <em>healthy</em>.</div>
+    <div style="font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 11.5px; line-height: 1.75; color: #656c73;">
+      <div>ONE HOST · Raspberry Pi 5, NVMe</div>
+      <div>ONE PATIENT · seven sources</div>
+      <div>ONE RADIO · long-range BLE</div>
+      <div>ONE DECISION · &lt; 2 s, p99</div>
+      <div>PRINTS · monochrome, pattern before hue</div>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>

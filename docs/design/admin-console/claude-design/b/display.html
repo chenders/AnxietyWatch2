@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>02 Display — AW2 Preflight</title>
+<link rel="stylesheet" href="console.css">
+</head>
+<body data-feed="live">
+<a class="skip-link" href="#main">Skip to content</a>
+
+<div class="stickytop">
+<div class="docstale" role="status">
+  <span class="assert assert--unsigned">Sheet uncountersigned</span>
+  <b>This page has not heard from the appliance for <span data-feed-age>—</span>.</b>
+  <span class="muted-text">Every reading below is the last one observed. The signatures on it are still valid for the time they were made; this document is not valid for now.</span>
+  <button class="btn btn--sm" type="button" data-action="refresh">Reconnect</button>
+</div>
+
+<nav class="contents" aria-label="Sections">
+    <a class="contents__item" href="overview.html"><span class="contents__ord">01</span> Overview</a>
+    <a class="contents__item" href="display.html" aria-current="page"><span class="contents__ord">02</span> Display</a>
+    <a class="contents__item" href="ingest.html"><span class="contents__ord">03</span> Ingest</a>
+    <a class="contents__item" href="services.html"><span class="contents__ord">04</span> Services</a>
+    <a class="contents__item" href="config.html"><span class="contents__ord">05</span> Access</a>
+    <a class="contents__item" href="data.html"><span class="contents__ord">06</span> Data</a>
+    <a class="contents__item" href="analysis.html"><span class="contents__ord">07</span> Analysis</a>
+    <a class="contents__item" href="records.html"><span class="contents__ord">08</span> Records</a>
+    <a class="contents__item" href="recovery.html"><span class="contents__ord">09</span> Recovery</a>
+    <a class="contents__item" href="system.html">System</a>
+    <a class="contents__item" href="patterns.html">Patterns</a>
+    <a class="contents__item" href="attempts.html">Run sheet</a>
+    <a class="contents__item" href="overview-degraded.html">Degraded</a>
+    <a class="contents__item" href="firstrun.html">First run</a>
+  </nav>
+</div>
+
+<main class="sheet" id="main">
+
+  <div class="pagetitle">
+    <h1>Display path</h1>
+    <p>Six items. Five of them can be signed while the screen is black.</p>
+  </div>
+
+  <div class="stack">
+    <section class="block">
+      <div class="block__hd"><h2>Sheet verdict</h2>
+        <div class="block__meta"><span class="assert assert--signed"><span aria-hidden="true">✓</span> 6 of 6 signed</span>
+          <span class="fresh" data-age-s="9" data-expect-s="30"><span class="fresh__age">9s ago</span><span class="fresh__expect">30s</span></span></div></div>
+      <div class="cols-4">
+        <div class="figure"><span class="figure__k">Frames since check</span>
+          <span class="figure__v">271</span><span class="muted-text">30.1 fps</span></div>
+        <div class="figure figure--sm"><span class="figure__k">Backlight</span>
+          <span class="figure__v">ON<span class="unit">78 %</span></span><span class="muted-text">Dimmed by the 22:00 schedule</span></div>
+        <div class="figure figure--sm"><span class="figure__k">Connector</span>
+          <span class="figure__v">HDMI-A-1</span><span class="muted-text">1280×800 @ 60 Hz</span></div>
+        <div class="figure figure--sm"><span class="figure__k">Page uptime</span>
+          <span class="figure__v">17d<span class="unit">03:58</span></span><span class="muted-text">No reload since boot</span></div>
+      </div>
+      <div class="block__note"><p class="prose"><b>Service-up and screen-lit are different claims, so
+      they are different items.</b> Five of these six can be signed while the panel is black. Only the
+      last one — a frame counter that is larger than it was ten seconds ago — asserts that the screen
+      is actually lit, and it is the item the verdict rests on.</p></div>
+    </section>
+
+    <section class="block">
+      <div class="block__hd"><h2>Evidence chain</h2><span class="block__count">6 items, in dependency order</span></div>
+      <div class="item">
+        <span class="stamp stamp--signed" aria-hidden="true">✓</span>
+        <span class="item__what"><b>1 · Compositor process is running</b>
+          <span>Evidence: <span class="mono">aw2-kiosk-compositor.service</span>, labwc 0.8.4, pid 812.</span></span>
+        <span class="item__read"><span class="proc proc--active"><span class="proc__led" aria-hidden="true"></span> active (running)</span></span>
+        <span class="sig"><span class="sig__by">systemd</span><span class="sig__at">09:55:55</span></span>
+      </div>
+      <div class="item">
+        <span class="stamp stamp--signed" aria-hidden="true">✓</span>
+        <span class="item__what"><b>2 · Wayland socket accepts a connection</b>
+          <span>Evidence: a probe client connected to <span class="mono">/run/user/1000/wayland-0</span> and disconnected cleanly in 4 ms.</span></span>
+        <span class="item__read">4<span class="unit">ms</span></span>
+        <span class="sig"><span class="sig__by">socket-probe</span><span class="sig__at">09:55:55</span></span>
+      </div>
+      <div class="item">
+        <span class="stamp stamp--signed" aria-hidden="true">✓</span>
+        <span class="item__what"><b>3 · DRM connector attached with a mode set</b>
+          <span>Evidence: <span class="mono">/sys/class/drm/card1-HDMI-A-1/status</span> reads
+          <span class="mono">connected</span>, mode 1280×800@60. Last hotplug 17 d ago at boot.</span></span>
+        <span class="item__read">1280×800<span class="unit">@60</span></span>
+        <span class="sig"><span class="sig__by">drm-probe</span><span class="sig__at">09:55:55</span></span>
+      </div>
+      <div class="item">
+        <span class="stamp stamp--signed" aria-hidden="true">✓</span>
+        <span class="item__what"><b>4 · Backlight is on</b>
+          <span>Evidence: <span class="mono">bl_power</span> = 0, brightness 199 of 255. Schedule dims
+          to 78 % at 22:00 and 12 % at 23:30.</span></span>
+        <span class="item__read">199<span class="unit">/255</span></span>
+        <span class="sig"><span class="sig__by">sysfs</span><span class="sig__at">09:55:55</span></span>
+      </div>
+      <div class="item">
+        <span class="stamp stamp--signed" aria-hidden="true">✓</span>
+        <span class="item__what"><b>5 · Browser process is alive</b>
+          <span>Evidence: <span class="mono">aw2-kiosk-browser.service</span>, chromium 126, pid 1044,
+          RSS 412 MB, 0 restarts in 17 days.</span></span>
+        <span class="item__read"><span class="proc proc--active"><span class="proc__led" aria-hidden="true"></span> active (running)</span></span>
+        <span class="sig"><span class="sig__by">systemd</span><span class="sig__at">09:55:55</span></span>
+      </div>
+      <div class="item">
+        <span class="stamp stamp--signed" aria-hidden="true">✓</span>
+        <span class="item__what"><b>6 · The page is painting</b>
+          <span>Evidence: the kiosk page posts its <span class="mono">requestAnimationFrame</span>
+          counter every 10 s. Last two readings 8,912,441 → 8,912,712 — a difference of 271 over 9.0 s.
+          A frozen tab holds its counter and fails only this item, while all five above stay signed.</span></span>
+        <span class="item__read">+271<span class="unit">frames</span>
+          <small><span class="fresh" data-age-s="9" data-expect-s="30"><span class="fresh__age">9s ago</span><span class="fresh__expect">30s</span></span></small></span>
+        <span class="sig"><span class="sig__by">frame callback</span><span class="sig__at">09:55:55</span></span>
+      </div>
+    </section>
+
+    <div class="cols-main">
+      <section class="block">
+        <div class="block__hd"><h2>Frame rate · last 6 hours</h2><span class="block__count">fps, sampled every 10 s</span></div>
+        <svg class="spark" viewBox="0 0 600 48" preserveAspectRatio="none" role="img" aria-label="Frame rate held between 29 and 30 fps for six hours, with a two-minute gap at 03:12 during a compositor reload.">
+          <line class="spark__axis" x1="0" y1="47" x2="600" y2="47"></line>
+          <rect class="spark__gap" x="286" y="0" width="14" height="48"></rect>
+          <polyline class="spark__line" points="0,9 40,10 80,9 120,11 160,9 200,10 240,9 286,10 300,14 340,10 380,9 420,10 460,9 500,10 540,9 600,10"></polyline>
+        </svg>
+        <div class="block__note">
+          <div class="fields fields--wide">
+            <span class="field__k">Gap at 03:12</span>
+            <span class="field__v">2m 10s — compositor reload after a scheduled config apply. The
+            backlight stayed on and the panel showed the last painted frame throughout, which is why
+            this reads as a gap rather than a dark screen.</span>
+            <span class="field__k">Mean</span><span class="field__v mono">29.98 <span class="unit">fps</span></span>
+            <span class="field__k">Below 5 fps</span><span class="field__v mono">0 <span class="unit">samples</span></span>
+          </div>
+        </div>
+      </section>
+
+      <div class="stack">
+        <section class="block">
+          <div class="block__hd"><h2>What is on the screen</h2></div>
+          <div class="card">
+            <div class="card__body"><div class="fields">
+              <span class="field__k">URL</span><span class="field__v mono">http://localhost:8080/bedside</span>
+              <span class="field__k">View</span><span class="field__v">Tonight · HRV and SpO₂</span>
+              <span class="field__k">Last nav</span><span class="field__v mono">17d ago at boot</span>
+              <span class="field__k">Console errors</span><span class="field__v mono">0 <span class="unit">in 24h</span></span>
+            </div></div>
+            <div class="card__ft"><div class="actions-split">
+              <button class="btn btn--sm" type="button">Reload page</button>
+              <span class="actions-split__gap" aria-hidden="true"></span>
+              <button class="btn btn--sm btn--danger" type="button" data-action="open" data-target="m-comp">Restart compositor…</button>
+            </div></div>
+          </div>
+        </section>
+        <section class="block">
+          <div class="block__hd"><h2>Hotplug and reload history</h2></div>
+          <div class="card">
+            <div class="attempt-row"><span class="attempt-row__t">03:12:04</span>
+              <span class="attempt-row__dur">2m 10s</span><span class="attempt-row__rows">—</span>
+              <span class="attempt-row__why">Compositor reload, scheduled config apply.</span></div>
+            <div class="attempt-row"><span class="attempt-row__t">19 Jul 08:41</span>
+              <span class="attempt-row__dur">6s</span><span class="attempt-row__rows">—</span>
+              <span class="attempt-row__why">HDMI hotplug, connector re-attached at 1280×800.</span></div>
+            <div class="attempt-row attempt-row--failed"><span class="attempt-row__t">19 Jul 08:39</span>
+              <span class="attempt-row__dur">2m 04s</span><span class="attempt-row__rows">—</span>
+              <span class="attempt-row__why">Connector reported disconnected. Screen dark for 2m 04s. Cable reseated.</span></div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+
+<div class="scrim" id="m-comp" hidden>
+  <div class="modal modal--danger" role="alertdialog" aria-modal="true" aria-labelledby="mc-h">
+    <div class="modal__hd"><span aria-hidden="true">✕</span><h2 id="mc-h">Restart the compositor?</h2></div>
+    <div class="modal__body">
+      <p class="prose">The bedside screen goes black for roughly two minutes and the browser restarts with it.</p>
+      <ul class="consequences">
+        <li>No sample collection is affected — the radios and the database are separate units.</li>
+        <li>If the connector fails to re-attach, the screen stays dark until someone is physically at the box.</li>
+      </ul>
+    </div>
+    <div class="modal__ft"><button class="btn" type="button" data-action="close">Cancel</button>
+      <span class="grow"></span>
+      <button class="btn btn--danger" type="button" data-action="close">Restart compositor</button></div>
+  </div>
+</div>
+
+  <hr class="divider">
+  <p class="caps">AnxietyWatch2 · bedside-pi5 · build 2.4.11+g8c1f · console clock <span data-clock class="mono">09:56:04Z</span> · feed age <span data-feed-age class="mono">2s</span> · <a href="index.html">Direction B contents</a></p>
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>

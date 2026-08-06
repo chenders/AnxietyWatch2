@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Operational patterns — AW2 Preflight</title>
+<link rel="stylesheet" href="console.css">
+</head>
+<body data-feed="live">
+<a class="skip-link" href="#main">Skip to content</a>
+
+<div class="stickytop">
+<div class="docstale" role="status">
+  <span class="assert assert--unsigned">Sheet uncountersigned</span>
+  <b>This page has not heard from the appliance for <span data-feed-age>—</span>.</b>
+  <span class="muted-text">Every reading below is the last one observed. The signatures on it are still valid for the time they were made; this document is not valid for now.</span>
+  <button class="btn btn--sm" type="button" data-action="refresh">Reconnect</button>
+</div>
+
+<nav class="contents" aria-label="Sections">
+    <a class="contents__item" href="overview.html"><span class="contents__ord">01</span> Overview</a>
+    <a class="contents__item" href="display.html"><span class="contents__ord">02</span> Display</a>
+    <a class="contents__item" href="ingest.html"><span class="contents__ord">03</span> Ingest</a>
+    <a class="contents__item" href="services.html"><span class="contents__ord">04</span> Services</a>
+    <a class="contents__item" href="config.html"><span class="contents__ord">05</span> Access</a>
+    <a class="contents__item" href="data.html"><span class="contents__ord">06</span> Data</a>
+    <a class="contents__item" href="analysis.html"><span class="contents__ord">07</span> Analysis</a>
+    <a class="contents__item" href="records.html"><span class="contents__ord">08</span> Records</a>
+    <a class="contents__item" href="recovery.html"><span class="contents__ord">09</span> Recovery</a>
+    <a class="contents__item" href="system.html">System</a>
+    <a class="contents__item" href="patterns.html" aria-current="page">Patterns</a>
+    <a class="contents__item" href="attempts.html">Run sheet</a>
+    <a class="contents__item" href="overview-degraded.html">Degraded</a>
+    <a class="contents__item" href="firstrun.html">First run</a>
+  </nav>
+</div>
+
+<main class="sheet" id="main">
+
+  <div class="pagetitle">
+    <h1>Operational patterns</h1>
+    <p>The half of this console that is work rather than readout.</p>
+  </div>
+
+  <div class="stack">
+
+    <section class="block">
+      <div class="block__hd"><h2>A · Credential lifecycle</h2>
+        <span class="block__count">issue → reveal once → list → revoke</span></div>
+      <div class="stack">
+        <ol class="steps"><li data-done="true">1 Describe</li><li aria-current="step">2 Reveal, once</li>
+          <li>3 Listed by fingerprint</li><li>4 Revoke</li></ol>
+        <div class="cols-2">
+          <div class="card">
+            <div class="card__hd"><h3>Issue</h3></div>
+            <div class="card__body">
+              <form class="form" onsubmit="return false">
+                <div class="form__row"><label for="k1" class="req">Name</label>
+                  <div><input class="input" id="k1" value="home-assistant">
+                    <span class="hint">Appears in the audit log. Cannot be changed later.</span></div></div>
+                <div class="form__row"><label for="k2">Scope</label>
+                  <div><select class="select" id="k2"><option>write:samples</option>
+                    <option>read:samples</option><option>read + write:samples</option></select></div></div>
+                <div class="form__row"><label for="k3">Expires</label>
+                  <div><select class="select" id="k3"><option>90 days</option><option selected>1 year</option>
+                    <option>Never</option></select>
+                    <span class="hint">A key with no expiry never appears in a review prompt. Prefer a date.</span></div></div>
+                <div class="row"><span class="grow"></span><button class="btn btn--primary" type="submit">Issue key</button></div>
+              </form>
+            </div>
+          </div>
+          <div class="card card--adv">
+            <div class="card__hd"><h3>Shown exactly once</h3><span class="caps">Not recoverable</span></div>
+            <div class="card__body">
+              <div class="secret" data-secret>
+                <span class="secret__warn">✕ This is the only time this value will exist on any screen.</span>
+                <p class="prose">The server keeps a hash. Nothing here or anywhere else can print it
+                again. If it is lost, issue a new key and revoke this one.</p>
+                <code class="secret__value" data-hidden="true">aw2_sk_7QpM4vR2nL9xTb8Kc3JdWyF6HsA1ZgEu</code>
+                <div class="row">
+                  <button class="btn btn--sm" type="button" data-secret-reveal>Reveal</button>
+                  <button class="btn btn--sm" type="button">Copy to clipboard</button>
+                  <span class="secret__timer" data-secret-timer>Hidden until you ask. Auto-hides 30 s after reveal.</span>
+                </div>
+              </div>
+              <hr class="divider">
+              <p class="prose muted-text">It starts blurred so an open console is not a screenshot of a
+              live credential, and it clears itself so a revealed key does not sit on the bedside
+              screen all night.</p>
+            </div>
+            <div class="card__ft"><span class="grow"></span>
+              <button class="btn btn--primary" type="button">I have stored it — continue</button></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card__hd"><h3>The list afterwards</h3><span class="caps">Fingerprint and last 4 only</span></div>
+          <div class="t-scroll">
+            <table class="t t--rowstate">
+              <thead><tr><th scope="col">Name</th><th scope="col">Fingerprint</th><th scope="col">Scope</th>
+                <th scope="col">Created</th><th scope="col">Last used</th><th scope="col">Expires</th>
+                <th scope="col"><span class="sr-only">Action</span></th></tr></thead>
+              <tbody>
+                <tr><th scope="row">home-assistant</th><td class="redact">SHA256:0f3a…c19d · <b>…9EgU</b></td>
+                  <td class="mono">write:samples</td><td class="mono">just now</td>
+                  <td class="muted-text">never used</td><td class="mono">2027-08-05</td>
+                  <td><button class="btn btn--sm btn--danger" type="button" data-action="open" data-target="m-rev">Revoke…</button></td></tr>
+                <tr><th scope="row">phone-bridge</th><td class="redact">SHA256:8b41…7e02 · <b>…4KpQ</b></td>
+                  <td class="mono">read + write</td><td class="mono">2026-02-11</td>
+                  <td class="mono">15m ago</td><td class="mono">2027-02-11</td>
+                  <td><button class="btn btn--sm btn--danger" type="button" data-action="open" data-target="m-rev">Revoke…</button></td></tr>
+                <tr data-state="adv"><th scope="row">laptop-export</th><td class="redact">SHA256:cc90…11af · <b>…2Vm7</b></td>
+                  <td class="mono">read:samples</td><td class="mono">2025-11-30</td><td class="mono">214d ago</td>
+                  <td><span class="assert assert--adv"><span aria-hidden="true">!</span> 8d</span></td>
+                  <td><button class="btn btn--sm btn--danger" type="button" data-action="open" data-target="m-rev">Revoke…</button></td></tr>
+                <tr data-state="na"><th scope="row">old-importer</th><td class="redact">SHA256:41d7…9c33 · <b>…8Bn1</b></td>
+                  <td class="mono">write:samples</td><td class="mono">2025-06-04</td><td class="mono">402d ago</td>
+                  <td><span class="assert assert--na"><span aria-hidden="true">—</span> Revoked 12 Jul</span></td>
+                  <td class="na-note">—</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="card__ft"><p class="prose">A key that has never been used says so rather than
+          leaving the cell blank. An unused key three months after issue usually means an integration
+          that silently never connected.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="block">
+      <div class="block__hd"><h2>B · Long-running jobs</h2>
+        <span class="block__count">queued → running → succeeded · and → failed</span></div>
+      <div class="stack">
+        <div class="cols-4">
+          <div class="card"><div class="card__hd"><h3>Queued</h3></div>
+            <div class="card__body stack--tight">
+              <span class="life life--queued">Queued · position 2</span>
+              <div class="fields"><span class="field__k">Waiting</span><span class="field__v mono">1m 12s</span>
+                <span class="field__k">Starts after</span><span class="field__v">correlation-recompute</span>
+                <span class="field__k">Est. cost</span><span class="field__v mono">$0.34</span></div>
+            </div>
+            <div class="card__ft"><span class="grow"></span><button class="btn btn--sm" type="button">Remove from queue</button></div>
+          </div>
+          <div class="card"><div class="card__hd"><h3>Running</h3>
+            <span class="caps"><span class="life life--running"><span class="life__pulse" aria-hidden="true"></span> 04:12</span></span></div>
+            <div class="card__body stack--tight">
+              <div class="figure figure--sm"><span class="figure__k">Elapsed</span>
+                <span class="figure__v">04:12</span><span class="muted-text">Median for this job 06:30</span></div>
+              <div class="bar"><span class="bar__track"><span class="bar__fill" style="width:64%"></span></span>
+                <span class="bar__val">7 of 11</span></div>
+              <span class="muted-text mono">stage: spo2_desat × journal_severity</span>
+            </div>
+            <div class="card__ft"><span class="grow"></span><button class="btn btn--sm btn--danger" type="button">Cancel run</button></div>
+          </div>
+          <div class="card"><div class="card__hd"><h3>Succeeded</h3></div>
+            <div class="card__body stack--tight">
+              <span class="life life--succeeded">Succeeded · 06:41</span>
+              <div class="fields"><span class="field__k">Finished</span>
+                <span class="field__v"><span class="fresh" data-age-s="2760"><span class="fresh__age">46m ago</span></span></span>
+                <span class="field__k">Output</span><span class="field__v">4 correlations above threshold</span>
+                <span class="field__k">Cost</span><span class="field__v mono">$0.31</span></div>
+            </div>
+            <div class="card__ft"><span class="grow"></span><a class="btn btn--sm" href="analysis.html">Open result</a></div>
+          </div>
+          <div class="card card--open"><div class="card__hd"><h3>Failed</h3></div>
+            <div class="card__body stack--tight">
+              <span class="life life--failed">Failed 02:38 · after 01:04</span>
+              <p class="prose"><b>Anthropic API returned 429 after 3 retries.</b> The monthly spend cap
+              was reached at 02:37, mid-run. 6 of 11 stages had completed; partial output was discarded
+              rather than written.</p>
+              <div class="fields"><span class="field__k">Spend used</span><span class="field__v mono">$25.00 of $25.00</span>
+                <span class="field__k">Charged</span><span class="field__v mono">$0.18 <span class="unit">partial</span></span></div>
+            </div>
+            <div class="card__ft"><a class="btn btn--sm" href="config.html">Raise the cap</a>
+              <span class="grow"></span><button class="btn btn--sm btn--primary" type="button">Retry this run</button></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card__hd"><h3>Run history</h3><span class="caps">Parameters and outcome, every run</span></div>
+          <div class="t-scroll">
+            <table class="t t--rowstate">
+              <thead><tr><th scope="col">Started</th><th scope="col">Job</th><th scope="col">Parameters</th>
+                <th scope="col">Outcome</th><th class="num" scope="col">Duration</th><th class="num" scope="col">Cost</th></tr></thead>
+              <tbody>
+                <tr><td class="mono">09:51:48</td><td>correlation-recompute</td>
+                  <td class="mono">window=90d, min_n=30, method=spearman</td>
+                  <td><span class="life life--running"><span class="life__pulse" aria-hidden="true"></span> Running</span></td>
+                  <td class="num">04:12</td><td class="num">—</td></tr>
+                <tr><td class="mono">09:05:02</td><td>claude-analysis</td>
+                  <td class="mono">scope=weekly, model=sonnet, ctx=14</td>
+                  <td><span class="life life--succeeded">Succeeded</span></td><td class="num">06:41</td><td class="num">$0.31</td></tr>
+                <tr data-state="open"><td class="mono">02:37:14</td><td>claude-analysis</td>
+                  <td class="mono">scope=monthly, model=opus, ctx=31</td>
+                  <td><span class="life life--failed">Failed · 429 spend cap</span></td><td class="num">01:04</td><td class="num">$0.18</td></tr>
+                <tr><td class="mono">01:12:00</td><td>correlation-recompute</td>
+                  <td class="mono">window=30d, min_n=14</td>
+                  <td><span class="life life--cancelled">Cancelled by operator</span></td><td class="num">00:22</td><td class="num">—</td></tr>
+                <tr><td class="mono">04 Aug 09:00</td><td>claude-analysis</td>
+                  <td class="mono">scope=weekly, model=sonnet, ctx=14</td>
+                  <td><span class="life life--succeeded">Succeeded</span></td><td class="num">05:58</td><td class="num">$0.29</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="block">
+      <div class="block__hd"><h2>C · Reviewing generated text</h2>
+        <span class="block__count">generate → review → accept, edit or regenerate</span></div>
+      <div class="stack">
+        <ol class="steps"><li data-done="true">1 Generate</li><li aria-current="step">2 Review side by side</li>
+          <li>3 Accept, edit or regenerate</li></ol>
+        <p class="prose">Nothing is overwritten until accept is pressed. The version in the record stays
+        on screen, unaltered, for the whole review.</p>
+        <div class="diff">
+          <div class="diff__side">
+            <div class="diff__hd"><span class="caps">In the record</span>
+              <span class="assert assert--signed"><span aria-hidden="true">✓</span> Accepted 29 Jul</span></div>
+            <div class="diff__body">
+              <p>Anxiety severity has run between 3 and 6 over the last month, with the higher readings
+              clustered on weekday mornings. Sleep is broken but not short.</p>
+              <p>No clear relationship has emerged between dose timing and reported severity.</p>
+            </div>
+          </div>
+          <div class="diff__side diff__side--new">
+            <div class="diff__hd"><span class="caps">Proposed</span>
+              <span class="life life--succeeded">Generated 2m ago · sonnet · $0.04</span></div>
+            <div class="diff__body">
+              <p>Anxiety severity has run between 3 and 6 over the last month, with the higher readings
+              clustered on weekday mornings. <ins>Sleep is broken but not short: mean time in bed
+              7h 41m against 4.2 awakenings per night.</ins></p>
+              <p><del>No clear relationship has emerged between dose timing and reported severity.</del>
+              <ins>Morning severity is higher after nights where the oximeter recorded more than 12
+              desaturation events (ρ = 0.51, n = 34). Dose timing still shows no relationship.</ins></p>
+            </div>
+          </div>
+        </div>
+        <div class="note note--unsigned">The proposed text asserts a correlation computed from 34 of 41
+        nights. The 7 excluded nights are exactly the ones where the oximeter was unsigned — which is
+        the kind of gap that turns a confident number into a wrong one. It is stated beside the accept
+        button, not in a footnote.</div>
+        <div class="actions-split">
+          <span class="muted-text">34 of 41 nights. 7 excluded: oximeter unsigned.</span>
+          <span class="grow"></span>
+          <button class="btn btn--sm" type="button">Regenerate · $0.04</button>
+          <button class="btn btn--sm" type="button">Edit before accepting</button>
+          <span class="actions-split__gap" aria-hidden="true"></span>
+          <button class="btn btn--sm btn--primary" type="button">Accept and replace</button>
+        </div>
+
+        <div class="card">
+          <div class="card__hd"><h3>Editing before accepting</h3></div>
+          <div class="card__body">
+            <form class="form" data-dirty-track onsubmit="return false">
+              <div class="form__row"><label for="c1">Proposed text</label>
+                <div><textarea class="textarea" id="c1" name="c1">Anxiety severity has run between 3 and 6 over the last month, with the higher readings clustered on weekday mornings. Sleep is broken but not short: mean time in bed 7h 41m against 4.2 awakenings per night.</textarea>
+                  <span class="hint">Edits are kept against this draft. The accepted version is untouched until you accept.</span></div></div>
+              <div class="savebar" data-dirty="false">
+                <span class="savebar__state">No changes since last save.</span>
+                <button class="btn" type="reset" data-needs-dirty disabled>Discard edits</button>
+                <button class="btn btn--primary" type="submit" data-needs-dirty disabled>Accept edited version</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="block">
+      <div class="block__hd"><h2>D · File upload with validation</h2>
+        <span class="block__count">idle → uploading → parsed with rejections</span></div>
+      <div class="stack">
+        <div class="cols-3">
+          <div class="card"><div class="card__hd"><h3>Idle</h3></div>
+            <div class="card__body"><div class="drop" data-state="idle">
+              <p class="prose">Drop a CPAP export here, or <label for="up1"><b>choose a file</b></label>.</p>
+              <input type="file" id="up1" class="sr-only">
+              <p class="muted-text">ResMed <span class="mono">.edf</span> or a DATALOG folder. Up to 500 MB.</p>
+            </div></div>
+          </div>
+          <div class="card"><div class="card__hd"><h3>Uploading and parsing</h3></div>
+            <div class="card__body stack--tight">
+              <div class="drop" data-state="busy">
+                <p class="prose mono">20260804_DATALOG.edf · 42.1 MB</p>
+                <div class="progress"><span class="progress__fill" style="width:74%"></span></div>
+                <p class="muted-text">Parsing · 31.2 MB of 42.1 MB · 4,881 rows read</p>
+              </div>
+            </div>
+            <div class="card__ft"><span class="grow"></span><button class="btn btn--sm btn--danger" type="button">Abort</button></div>
+          </div>
+          <div class="card card--adv"><div class="card__hd"><h3>Parsed, with rejections</h3>
+            <span class="caps"><span class="assert assert--adv"><span aria-hidden="true">!</span> Partial</span></span></div>
+            <div class="card__body stack--tight">
+              <div class="figure figure--sm"><span class="figure__k">Rows accepted</span>
+                <span class="figure__v">6,204<span class="unit">of 6,318</span></span></div>
+              <div class="fields"><span class="field__k">Rejected</span><span class="field__v mono">114</span>
+                <span class="field__k">Nights added</span><span class="field__v mono">1 · 04–05 Aug</span>
+                <span class="field__k">Newest ts</span><span class="field__v mono">advanced 22h 14m</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card__hd"><h3>Rejected rows and why</h3><span class="caps">114 rows · 3 reasons</span></div>
+          <div class="t-scroll">
+            <table class="t">
+              <thead><tr><th scope="col">Line</th><th scope="col">Timestamp in file</th><th scope="col">Field</th>
+                <th scope="col">Value</th><th scope="col">Reason</th><th class="num" scope="col">Rows like this</th></tr></thead>
+              <tbody>
+                <tr><td class="mono">1,204</td><td class="mono">2026-08-04T23:04:12</td><td class="mono">leak_lpm</td>
+                  <td class="mono">−1.0</td><td>Negative leak rate. The device writes −1 for an unseated mask.</td><td class="num">96</td></tr>
+                <tr><td class="mono">3,918</td><td class="mono">2026-08-05T01:41:00</td><td class="mono">pressure_cmh2o</td>
+                  <td class="mono">41.2</td><td>Above the 25 cmH₂O ceiling for this device model.</td><td class="num">11</td></tr>
+                <tr><td class="mono">5,502</td><td class="mono">2026-08-05T03:12:04</td><td class="mono">epoch</td>
+                  <td class="mono">03:12:04</td><td>Duplicate of a row already in the store from the 04 Aug import.</td><td class="num">7</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="card__ft"><a href="data.html">Open the 114 rows in quarantine →</a>
+            <span class="grow"></span><button class="btn btn--sm" type="button">Download rejects as CSV</button></div>
+        </div>
+
+        <div class="cols-2">
+          <div class="card card--open"><div class="card__hd"><h3>Zero rows parsed</h3>
+            <span class="caps"><span class="assert assert--open"><span aria-hidden="true">✕</span> Failed</span></span></div>
+            <div class="card__body stack--tight">
+              <div class="figure figure--open figure--sm"><span class="figure__k">Rows accepted</span>
+                <span class="figure__v">0<span class="unit">of 0</span></span></div>
+              <p class="prose">The file was read successfully and contained no signal records. This is
+              reported as a failure, not a success. The usual cause is exporting the
+              <span class="mono">SETTINGS</span> folder rather than <span class="mono">DATALOG</span>.</p>
+            </div>
+            <div class="card__ft"><span class="grow"></span><button class="btn btn--sm" type="button">Choose a different file</button></div>
+          </div>
+          <div class="card"><div class="card__hd"><h3>Same file uploaded twice</h3>
+            <span class="caps"><span class="assert assert--signed"><span aria-hidden="true">✓</span> No change</span></span></div>
+            <div class="card__body stack--tight">
+              <div class="fields"><span class="field__k">Digest</span><span class="field__v mono">sha256:7c1e…88fa</span>
+                <span class="field__k">First seen</span><span class="field__v mono">04 Aug 04:06</span>
+                <span class="field__k">Rows added</span><span class="field__v mono">0</span>
+                <span class="field__k">Rows updated</span><span class="field__v mono">0</span></div>
+              <p class="prose">Identical to an import already applied. Nothing was written and nothing
+              double-counted. The upload is still recorded in the audit log, so a re-upload does not
+              look like an upload that never happened.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="block">
+      <div class="block__hd"><h2>Confirmations, three weights</h2></div>
+      <div class="cols-3">
+        <div class="card"><div class="card__hd"><h3>1 · Inline</h3></div>
+          <div class="card__body stack--tight">
+            <p class="prose">Reversible, no data loss. Confirms in place, undo available.</p>
+            <div class="row"><button class="btn btn--sm" type="button">Defer this item for 7 days</button></div></div></div>
+        <div class="card"><div class="card__hd"><h3>2 · Dialog</h3></div>
+          <div class="card__body stack--tight">
+            <p class="prose">Recoverable cost, or a real-world consequence such as a sample gap.
+            States what happens, then a plain confirm.</p>
+            <div class="row"><button class="btn btn--sm" type="button" data-action="open" data-target="m-sess">Delete therapy session…</button></div></div></div>
+        <div class="card"><div class="card__hd"><h3>3 · Typed</h3></div>
+          <div class="card__body stack--tight">
+            <p class="prose">Unrecoverable. Lists consequences and requires the object's name to be
+            typed. Never adjacent to a routine control.</p>
+            <div class="row"><button class="btn btn--sm btn--danger" type="button" data-action="open" data-target="m-rev">Revoke API key…</button></div></div></div>
+      </div>
+    </section>
+  </div>
+
+<div class="scrim" id="m-sess" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="ms-h">
+    <div class="modal__hd"><h2 id="ms-h">Delete therapy session?</h2></div>
+    <div class="modal__body">
+      <p class="prose">Thursday 14:00 with R. Alvarez, weekly. Removed from the schedule. Past journal
+      entries that reference it are unaffected.</p>
+      <p class="prose muted-text">Recoverable from the audit log for 30 days.</p></div>
+    <div class="modal__ft"><button class="btn" type="button" data-action="close">Cancel</button>
+      <span class="grow"></span><button class="btn" type="button" data-action="close">Delete session</button></div>
+  </div>
+</div>
+
+<div class="scrim" id="m-rev" hidden data-no-escape>
+  <div class="modal modal--danger" role="alertdialog" aria-modal="true" aria-labelledby="mr-h">
+    <div class="modal__hd"><span aria-hidden="true">✕</span><h2 id="mr-h">Revoke API key “home-assistant”?</h2></div>
+    <form class="modal__body" data-confirm-phrase="home-assistant" onsubmit="return false">
+      <p class="prose">Immediate and permanent. A replacement can be issued; this key cannot be restored.</p>
+      <ul class="consequences">
+        <li>Any client presenting this key receives 401 at once.</li>
+        <li>The Home Assistant bridge stops writing heart-rate samples until re-keyed.</li>
+        <li>Samples arriving during the gap are not buffered. They are lost.</li>
+      </ul>
+      <div><label class="caps" for="mr-i">Type <span class="mono">home-assistant</span> to confirm</label>
+        <input class="input" id="mr-i" data-confirm-input autocomplete="off" placeholder="key name"></div>
+      <div class="modal__ft"><button class="btn" type="button" data-action="close">Cancel</button>
+        <span class="grow"></span>
+        <button class="btn btn--danger" type="submit" data-confirm-go disabled>Revoke permanently</button></div>
+    </form>
+  </div>
+</div>
+
+  <hr class="divider">
+  <p class="caps">AnxietyWatch2 · bedside-pi5 · build 2.4.11+g8c1f · console clock <span data-clock class="mono">09:56:04Z</span> · feed age <span data-feed-age class="mono">2s</span> · <a href="index.html">Direction B contents</a></p>
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>

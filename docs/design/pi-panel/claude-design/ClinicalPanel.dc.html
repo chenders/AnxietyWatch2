@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+@keyframes klx { 0%,49%{opacity:1} 50%,100%{opacity:.28} }
+@keyframes tick { 0%,49%{opacity:1} 50%,100%{opacity:.15} }
+</style>
+</helmet>
+<div style="{{ v.root }}">
+  <div style="height:22px;flex:0 0 auto;display:flex;align-items:center;justify-content:space-between">
+    <span style="font-size:14px;letter-spacing:1.6px;color:#7A828C">BEDSIDE MONITOR · HOME</span>
+    <span style="{{ v.chanStyle }}">{{ v.chanLabel }}</span>
+    <span style="font-family:ui-monospace,Menlo,Consolas,monospace;font-variant-numeric:tabular-nums;font-size:15px;letter-spacing:.5px;color:#8B97A3">{{ v.clock }}</span>
+  </div>
+
+  <div style="{{ v.band }}">
+    <div style="{{ v.glyphBox }}">{{ v.glyph }}</div>
+    <div style="{{ v.word }}">{{ v.tier }}</div>
+    <div style="margin-left:auto;text-align:right;display:flex;flex-direction:column;gap:4px">
+      <span style="{{ v.prioStyle }}">{{ v.prio }}</span>
+      <span style="font-size:14px;color:#8B97A3;font-family:ui-monospace,Menlo,Consolas,monospace;font-variant-numeric:tabular-nums">{{ v.since }}</span>
+    </div>
+  </div>
+
+  <sc-if value="{{ v.detail }}" hint-placeholder-val="{{ true }}">
+    <div style="height:152px;flex:0 0 auto;display:grid;grid-template-columns:1.12fr 1fr 1.12fr;gap:8px">
+      <sc-for list="{{ v.params }}" as="p" hint-placeholder-count="3">
+        <div style="{{ p.box }}">
+          <div style="display:flex;align-items:baseline;justify-content:space-between">
+            <span style="{{ p.labelStyle }}">{{ p.name }}</span>
+            <span style="font-size:14px;color:#8B97A3;font-family:ui-monospace,Menlo,Consolas,monospace;font-variant-numeric:tabular-nums;text-align:right;line-height:1.25">{{ p.limits }}</span>
+          </div>
+          <div style="display:flex;align-items:flex-end;gap:7px;margin-top:2px">
+            <span style="{{ p.valStyle }}">{{ p.val }}</span>
+            <span style="{{ p.unitStyle }}">{{ p.unit }}</span>
+          </div>
+          <div style="display:flex;align-items:flex-end;justify-content:space-between;margin-top:auto">
+            <span style="display:block">{{ p.spark }}</span>
+            <span style="{{ p.noteStyle }}">{{ p.note }}</span>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+
+    <div style="height:54px;flex:0 0 auto;display:grid;grid-template-columns:repeat(4,1fr);gap:8px">
+      <sc-for list="{{ v.sensors }}" as="d" hint-placeholder-count="4">
+        <div style="{{ d.box }}">
+          <div style="{{ d.dot }}">{{ d.glyph }}</div>
+          <div style="display:flex;flex-direction:column;gap:1px;min-width:0">
+            <span style="font-size:14px;letter-spacing:.6px;color:#8B97A3;white-space:nowrap">{{ d.name }}</span>
+            <span style="{{ d.ageStyle }}">{{ d.age }}</span>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+
+    <div style="height:34px;flex:0 0 auto;display:grid;grid-template-columns:repeat(4,1fr);gap:8px">
+      <sc-for list="{{ v.sys }}" as="y" hint-placeholder-count="4">
+        <div style="{{ y.box }}">
+          <span style="font-size:14px;letter-spacing:.6px;color:#7A828C;white-space:nowrap">{{ y.name }}</span>
+          <span style="{{ y.valStyle }}">{{ y.val }}</span>
+        </div>
+      </sc-for>
+    </div>
+  </sc-if>
+
+  <div style="{{ v.silOuter }}" onPointerDown="{{ v.onDown }}" onPointerUp="{{ v.onUp }}" onPointerLeave="{{ v.onUp }}" onPointerCancel="{{ v.onUp }}">
+    <div style="{{ v.silFill }}"></div>
+    <div style="position:relative;height:100%;display:flex;align-items:center;gap:14px;padding:0 16px;box-sizing:border-box">
+      <span style="{{ v.silGlyphStyle }}">{{ v.silGlyph }}</span>
+      <span style="{{ v.silTextStyle }}">{{ v.silText }}</span>
+      <span style="{{ v.silSubStyle }}">{{ v.silSub }}</span>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:800,&quot;height&quot;:480},&quot;s&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;PanelState&quot;}}">
+const MONO = "ui-monospace,SFMono-Regular,Menlo,Consolas,monospace";
+const HATCH = "repeating-linear-gradient(135deg,#8B97A3 0 2px,rgba(0,0,0,0) 2px 7px)";
+
+class Component extends DCLogic {
+  spark(vals, color, w) {
+    w = w || 188; const h = 26;
+    const nums = vals.filter(v => v != null);
+    if (!nums.length) return null;
+    const min = Math.min.apply(null, nums) - 1.5, max = Math.max.apply(null, nums) + 1.5;
+    const step = w / (vals.length - 1);
+    const y = v => h - ((v - min) / (max - min || 1)) * h;
+    const pts = []; let cut = -1;
+    vals.forEach((v, i) => {
+      if (cut < 0 && v != null) pts.push([i * step, y(v)]);
+      else if (cut < 0) cut = i;
+    });
+    const last = pts[pts.length - 1] || [0, h / 2];
+    const kids = [React.createElement('polyline', { key: 'p', points: pts.map(p => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' '), fill: 'none', stroke: color, strokeWidth: 2, strokeLinejoin: 'round' })];
+    if (cut >= 0) {
+      kids.push(React.createElement('line', { key: 'g', x1: last[0], y1: last[1], x2: w, y2: last[1], stroke: '#8B97A3', strokeWidth: 2, strokeDasharray: '2 7' }));
+      kids.push(React.createElement('circle', { key: 'c', cx: last[0], cy: last[1], r: 3.5, fill: '#000', stroke: '#8B97A3', strokeWidth: 2 }));
+      kids.push(React.createElement('text', { key: 'q', x: w - 2, y: last[1] - 7, textAnchor: 'end', fill: '#8B97A3', fontSize: 15, fontFamily: 'Helvetica, Arial, sans-serif', fontWeight: 700 }, '?'));
+    }
+    return React.createElement('svg', { width: w, height: h + 10, viewBox: '0 0 ' + w + ' ' + (h + 10) }, kids);
+  }
+
+  renderVals() {
+    const s = this.props.s || {};
+    const detail = s.detail !== false;
+    const stale = k => s.stale && s.stale.indexOf(k) >= 0;
+
+    const band = {
+      height: '86px', flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: '16px',
+      padding: '0 14px', boxSizing: 'border-box',
+      border: '2px solid ' + s.accent, background: s.bandBg || 'rgba(0,0,0,0)'
+    };
+    if (s.flash) band.animation = 'klx 1s steps(1,end) infinite';
+    if (s.indeterminate) { band.borderStyle = 'dashed'; }
+
+    const glyphBox = {
+      width: '56px', height: '56px', flex: '0 0 auto', display: 'flex', alignItems: 'center',
+      justifyContent: 'center', fontSize: '30px', fontWeight: 700, lineHeight: 1,
+      color: s.solid ? '#000' : s.accent,
+      background: s.indeterminate ? HATCH : (s.solid ? s.accent : 'rgba(0,0,0,0)'),
+      border: '2px ' + (s.indeterminate ? 'dashed' : 'solid') + ' ' + s.accent,
+      fontFamily: 'Helvetica, Arial, sans-serif'
+    };
+    if (s.indeterminate) { glyphBox.color = '#000'; }
+
+    const param = (p) => ({
+      name: p.name, unit: p.unit, limits: p.limits, note: p.note, val: p.val,
+      box: {
+        border: '1px solid ' + (p.stale ? '#8B97A3' : '#5E6670'), borderStyle: p.stale ? 'dashed' : 'solid',
+        background: '#0A0B0C', padding: '8px 10px 6px', boxSizing: 'border-box',
+        display: 'flex', flexDirection: 'column', minWidth: 0
+      },
+      labelStyle: { fontSize: '16px', fontWeight: 700, letterSpacing: '1.4px', color: p.stale ? '#8B97A3' : p.color },
+      valStyle: {
+        fontFamily: MONO, fontVariantNumeric: 'tabular-nums', fontWeight: 700, lineHeight: 0.86,
+        fontSize: p.small ? '48px' : '72px', letterSpacing: p.small ? '-1px' : '0',
+        color: p.stale ? '#8B97A3' : p.color,
+        borderBottom: p.stale ? '3px dashed #8B97A3' : '3px solid rgba(0,0,0,0)', paddingBottom: '2px'
+      },
+      unitStyle: { fontSize: '16px', letterSpacing: '.8px', color: p.stale ? '#8B97A3' : '#8B97A3', paddingBottom: '8px', whiteSpace: 'nowrap' },
+      noteStyle: { fontSize: '14px', fontFamily: MONO, fontVariantNumeric: 'tabular-nums', color: p.stale ? '#B9C0C7' : '#8B97A3', textAlign: 'right', whiteSpace: 'pre-line', lineHeight: 1.3, paddingBottom: '2px' },
+      spark: p.trend ? this.spark(p.trend, p.stale ? '#8B97A3' : p.color, p.small ? 150 : 172) : null
+    });
+
+    const sensor = (d) => ({
+      name: d.name, age: d.age, glyph: d.ok ? '✓' : '?',
+      box: {
+        border: '1px ' + (d.ok ? 'solid #5E6670' : 'dashed #8B97A3'), background: '#0A0B0C',
+        minHeight: '54px', display: 'flex', alignItems: 'center', gap: '9px', padding: '0 10px', boxSizing: 'border-box'
+      },
+      dot: {
+        width: '26px', height: '26px', flex: '0 0 auto', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: '16px', fontWeight: 700, color: d.ok ? '#000' : '#000',
+        background: d.ok ? '#35C46A' : HATCH, border: '1px ' + (d.ok ? 'solid #35C46A' : 'dashed #8B97A3')
+      },
+      ageStyle: { fontSize: '15px', fontFamily: MONO, fontVariantNumeric: 'tabular-nums', color: d.ok ? '#DCE1E6' : '#B9C0C7', whiteSpace: 'nowrap' }
+    });
+
+    const sys = (y) => ({
+      name: y.name, val: y.val,
+      box: { border: '1px ' + (y.ok ? 'solid #3A4048' : 'dashed #8B97A3'), background: '#0A0B0C', height: '34px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', padding: '0 9px', boxSizing: 'border-box' },
+      valStyle: { fontSize: '15px', fontFamily: MONO, fontVariantNumeric: 'tabular-nums', color: y.ok ? '#B9C0C7' : '#E0A227', whiteSpace: 'nowrap' }
+    });
+
+    const sil = s.silence || {};
+    const p = Math.max(0, Math.min(1, sil.p || 0));
+    const active = !!sil.active;
+    const silColor = sil.color || (active ? '#E0A227' : '#5E6670');
+    return {
+      v: {
+        clock: s.clock, chanLabel: s.chanLabel,
+        chanStyle: { fontSize: '14px', letterSpacing: '1.4px', fontWeight: 700, color: s.chanFg || '#7A828C' },
+        band, glyphBox, glyph: s.glyph, tier: s.tier,
+        word: { fontSize: '50px', fontWeight: 700, letterSpacing: '4px', lineHeight: 1, color: s.accent, whiteSpace: 'nowrap', fontFamily: 'Helvetica Neue, Helvetica, Arial, sans-serif' },
+        prioStyle: { fontSize: '15px', fontWeight: 700, letterSpacing: '1.2px', color: s.prioFg || '#8B97A3' },
+        prio: s.prio, since: s.since, detail,
+        params: (s.params || []).map(param),
+        sensors: (s.sensors || []).map(sensor),
+        sys: (s.sys || []).map(sys),
+        silOuter: {
+          position: 'relative', marginTop: 'auto', height: '56px', flex: '0 0 auto', overflow: 'hidden',
+          border: '2px ' + (active ? 'solid' : 'dashed') + ' ' + silColor,
+          background: active ? '#0A0B0C' : 'rgba(0,0,0,0)', touchAction: 'none', userSelect: 'none',
+          cursor: active ? 'pointer' : 'default'
+        },
+        silFill: { position: 'absolute', left: 0, top: 0, bottom: 0, width: (p * 100).toFixed(1) + '%', background: sil.fill || '#3A2E12', borderRight: p > 0 ? '2px solid ' + silColor : 'none' },
+        silGlyph: sil.glyph || '',
+        silGlyphStyle: { fontSize: '22px', fontWeight: 700, color: silColor, lineHeight: 1, display: sil.glyph ? 'block' : 'none' },
+        silText: sil.text,
+        silTextStyle: { fontSize: sil.big ? '24px' : '20px', fontWeight: 700, letterSpacing: '1.6px', color: sil.textColor || silColor, whiteSpace: 'nowrap' },
+        silSub: sil.sub,
+        silSubStyle: { marginLeft: 'auto', fontSize: '15px', fontFamily: MONO, fontVariantNumeric: 'tabular-nums', color: sil.subColor || '#8B97A3', textAlign: 'right', whiteSpace: 'nowrap' },
+        onDown: sil.onDown, onUp: sil.onUp,
+        root: {
+          width: '800px', height: '480px', boxSizing: 'border-box', background: '#000',
+          padding: '13px 16px', display: 'flex', flexDirection: 'column', gap: '8px',
+          fontFamily: 'Helvetica Neue, Helvetica, Arial, sans-serif', overflow: 'hidden', position: 'relative'
+        }
+      }
+    };
+  }
+}
+</script>
+</body>
+</html>

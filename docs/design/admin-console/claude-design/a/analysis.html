@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>07 Analysis — AW2 Service Mode</title>
+<link rel="stylesheet" href="console.css">
+</head>
+<body data-feed="live">
+<a class="skip-link" href="#main">Skip to content</a>
+
+<div class="shell">
+  <div class="stickytop">
+  <header class="idstrip">
+    <div class="idstrip__brand"><b>AW2 SERVICE MODE</b><span>bedside-pi5 · 07 Analysis</span></div>
+    <div class="idstrip__fields">
+      <div class="idfield"><span class="idfield__k">Host</span><span class="idfield__v">bedside-pi5</span></div>
+      <div class="idfield"><span class="idfield__k">Build</span><span class="idfield__v">aw2 2.4.11+g8c1f</span></div>
+      <div class="idfield"><span class="idfield__k">Uptime</span><span class="idfield__v">17d 04:12</span></div>
+      <div class="idfield"><span class="idfield__k">Console clock</span><span class="idfield__v" data-clock>09:56:04Z</span></div>
+      <div class="idfield"><span class="idfield__k">Feed age</span><span class="idfield__v"><span data-feed-age>2s</span> · poll 15s</span></div>
+      <div class="idstrip__spacer"></div>
+    </div>
+  </header>
+
+  <div class="docstale" role="status">
+    <span class="status status--unknown"><span class="status__glyph" aria-hidden="true">?</span> Document stale</span>
+    <span class="docstale__b">This page has not heard from the appliance for <span data-feed-age>—</span>.</span>
+    <span class="muted-text">Everything below is the last state observed, not the current state.</span>
+    <button class="btn btn--sm" type="button" data-action="refresh">Reconnect</button>
+  </div>
+  </div>
+
+  <div class="body">
+    <nav class="rail" aria-label="Console sections">
+      <div class="rail__group">
+        <span class="caps">First release</span>
+        <a class="rail__item" href="overview.html"><span class="rail__ord">01</span> Overview <span class="dot dot--med"><span class="dot__g" aria-hidden="true">■</span><span class="sr-only">Fault, medium</span></span></a>
+        <a class="rail__item" href="display.html"><span class="rail__ord">02</span> Display path <span class="dot dot--ok"><span class="dot__g" aria-hidden="true">✓</span><span class="sr-only">OK</span></span></a>
+        <a class="rail__item" href="ingest.html"><span class="rail__ord">03</span> Ingest <span class="dot dot--unknown"><span class="dot__g" aria-hidden="true">?</span><span class="sr-only">Unknown</span></span></a>
+      </div>
+      <div class="rail__group">
+        <span class="caps">Later</span>
+        <a class="rail__item" href="services.html"><span class="rail__ord">04</span> Services &amp; host <span class="dot dot--ok"><span class="dot__g" aria-hidden="true">✓</span><span class="sr-only">OK</span></span></a>
+        <a class="rail__item" href="config.html"><span class="rail__ord">05</span> Config &amp; access <span class="dot dot--ok"><span class="dot__g" aria-hidden="true">✓</span><span class="sr-only">OK</span></span></a>
+        <a class="rail__item" href="data.html"><span class="rail__ord">06</span> Data <span class="dot dot--med"><span class="dot__g" aria-hidden="true">■</span><span class="sr-only">Fault, medium</span></span></a>
+        <a class="rail__item" href="analysis.html" aria-current="page"><span class="rail__ord">07</span> Analysis <span class="dot dot--ok"><span class="dot__g" aria-hidden="true">✓</span><span class="sr-only">OK</span></span></a>
+        <a class="rail__item" href="records.html"><span class="rail__ord">08</span> Records <span class="dot dot--ok"><span class="dot__g" aria-hidden="true">✓</span><span class="sr-only">OK</span></span></a>
+        <a class="rail__item" href="recovery.html"><span class="rail__ord">09</span> Recovery <span class="dot dot--unknown"><span class="dot__g" aria-hidden="true">?</span><span class="sr-only">Unknown</span></span></a>
+      </div>
+      <div class="rail__group">
+        <span class="caps">Reference</span>
+        <a class="rail__item" href="system.html">Design system</a>
+        <a class="rail__item" href="patterns.html">Operational patterns</a>
+        <a class="rail__item" href="attempts.html">Attempt history</a>
+        <a class="rail__item" href="overview-degraded.html">Overview · degraded</a>
+        <a class="rail__item" href="firstrun.html">First run</a>
+      </div>
+    </nav>
+
+    <main class="main" id="main">
+      <div class="page-hd">
+        <div>
+          <h1>Analysis</h1>
+          <p class="page-hd__sub">Trigger runs, watch them, and review what they wrote before it enters the record.</p>
+        </div>
+        <div class="page-hd__actions">
+          <button class="btn btn--sm" type="button" data-action="refresh">Refresh</button>
+        </div>
+      </div>
+
+      <div class="stack">
+
+        <section class="panel">
+          <div class="panel__hd"><h2 class="panel__title">Start a run</h2>
+            <div class="panel__meta"><span class="caps">Cost is shown before it is spent</span></div></div>
+          <div class="panel__body stack">
+            <form class="form" onsubmit="return false">
+              <div class="form__row"><label for="an1">Job</label>
+                <div><select class="select" id="an1"><option>Claude analysis · weekly narrative</option>
+                  <option>Claude analysis · monthly narrative</option>
+                  <option>Correlation recompute</option></select></div></div>
+              <div class="form__row"><label for="an2">Window</label>
+                <div><select class="select" id="an2"><option>Last 14 nights</option>
+                  <option>Last 30 nights</option><option>Last 90 nights</option></select></div></div>
+              <div class="form__row"><label for="an3">Model</label>
+                <div><select class="select" id="an3"><option>sonnet</option><option>opus</option></select></div></div>
+            </form>
+            <div class="cost">
+              <div class="readout readout--sm"><span class="readout__k">Estimated cost</span>
+                <span class="readout__v">$0.34</span></div>
+              <div class="readout readout--sm"><span class="readout__k">Estimated tokens</span>
+                <span class="readout__v">118<span class="unit">k in</span></span></div>
+              <div class="readout readout--sm"><span class="readout__k">Spent this month</span>
+                <span class="readout__v">$4.18<span class="unit">of $25</span></span></div>
+              <div class="readout readout--sm"><span class="readout__k">Nights excluded</span>
+                <span class="readout__v">7<span class="unit">of 41</span></span>
+                <span class="muted-text">Oximeter unknown</span></div>
+            </div>
+            <div class="note note--unknown">Seven nights in the requested window have an unknown
+            oximeter reading. They are excluded rather than imputed, and the resulting narrative will
+            say so. A run over a window with holes still returns confident prose, which is the
+            failure mode this line exists to prevent.</div>
+            <div class="row row--end"><button class="btn btn--primary" type="button">Run · $0.34</button></div>
+          </div>
+        </section>
+
+        <div class="cols-main">
+          <section class="panel">
+            <div class="panel__hd"><h2 class="panel__title">Current run</h2>
+              <div class="panel__meta"><span class="life life--running"><span class="life__pulse" aria-hidden="true"></span> Running · 04:12</span></div></div>
+            <div class="panel__body stack--tight">
+              <div class="readout"><span class="readout__k">Elapsed</span>
+                <span class="readout__v">04:12</span><span class="muted-text">Median for this job 06:30</span></div>
+              <div class="bar"><span class="bar__track"><span class="bar__fill" style="width:64%"></span></span>
+                <span class="bar__val">7 of 11</span></div>
+              <span class="muted-text mono">stage: correlating spo2_desat × journal_severity</span>
+              <hr class="divider">
+              <div class="actions-split">
+                <button class="btn btn--sm" type="button">Follow output</button>
+                <span class="actions-split__gap" aria-hidden="true"></span>
+                <button class="btn btn--sm btn--danger" type="button">Cancel run</button>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel panel--high">
+            <div class="panel__hd"><h2 class="panel__title">Last failure</h2>
+              <div class="panel__meta"><span class="life life--failed">Failed 02:38</span></div></div>
+            <div class="panel__body stack--tight">
+              <p class="prose"><b>429 from the Anthropic API after 3 retries.</b> The $25.00 monthly
+              cap was reached mid-run. 6 of 11 stages had completed; partial output was discarded
+              rather than written into the record.</p>
+              <div class="fields"><span class="field__k">Charged</span><span class="field__v mono">$0.18</span>
+                <span class="field__k">Parameters</span><span class="field__v mono">scope=monthly, model=opus, ctx=31</span></div>
+              <hr class="divider">
+              <div class="row"><a class="btn btn--sm" href="config.html">Raise the cap</a>
+                <button class="btn btn--sm btn--primary" type="button">Retry with sonnet · $0.11</button></div>
+            </div>
+          </section>
+        </div>
+
+        <section class="panel">
+          <div class="panel__hd"><h2 class="panel__title">Review generated narrative</h2>
+            <div class="panel__meta"><span class="caps">Nothing is overwritten until accepted</span></div></div>
+          <div class="panel__body stack">
+            <div class="diff">
+              <div class="diff__side">
+                <div class="diff__hd"><span class="caps">In the record</span>
+                  <span class="status status--ok"><span class="status__glyph" aria-hidden="true">✓</span> Accepted 29 Jul</span></div>
+                <div class="diff__body">
+                  <p>Anxiety severity has run between 3 and 6 over the last month, with the higher
+                  readings clustered on weekday mornings.</p>
+                  <p>No clear relationship has emerged between dose timing and reported severity.</p>
+                </div>
+              </div>
+              <div class="diff__side diff__side--new">
+                <div class="diff__hd"><span class="caps">Proposed</span>
+                  <span class="life life--succeeded">Generated 09:11 · sonnet · $0.04</span></div>
+                <div class="diff__body">
+                  <p>Anxiety severity has run between 3 and 6 over the last month, with the higher
+                  readings clustered on weekday mornings. <ins>Mean time in bed 7h 41m against 4.2
+                  awakenings per night.</ins></p>
+                  <p><del>No clear relationship has emerged between dose timing and reported
+                  severity.</del> <ins>Morning severity is higher after nights with more than 12
+                  desaturation events (ρ = 0.51, n = 34 of 41 nights). Dose timing still shows no
+                  relationship.</ins></p>
+                </div>
+              </div>
+            </div>
+            <div class="actions-split">
+              <span class="muted-text">Computed from 34 of 41 nights. 7 excluded: oximeter unknown.</span>
+              <span class="grow"></span>
+              <button class="btn btn--sm" type="button">Regenerate · $0.04</button>
+              <button class="btn btn--sm" type="button">Edit before accepting</button>
+              <span class="actions-split__gap" aria-hidden="true"></span>
+              <button class="btn btn--sm btn--primary" type="button">Accept and replace</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel__hd"><h2 class="panel__title">Run history and cost ledger</h2></div>
+          <div class="panel__body panel__body--flush t-scroll">
+            <table class="t t--rowstate">
+              <thead><tr><th scope="col">Started</th><th scope="col">Job</th><th scope="col">Parameters</th>
+                <th scope="col">Outcome</th><th class="num" scope="col">Duration</th><th class="num" scope="col">Cost</th></tr></thead>
+              <tbody>
+                <tr><td class="mono">09:51:48</td><td>correlation-recompute</td><td class="mono">window=90d, min_n=30</td>
+                  <td><span class="life life--running"><span class="life__pulse" aria-hidden="true"></span> Running</span></td>
+                  <td class="num">04:12</td><td class="num">—</td></tr>
+                <tr><td class="mono">09:05:02</td><td>claude-analysis</td><td class="mono">weekly, sonnet, 14 nights</td>
+                  <td><span class="life life--succeeded">Succeeded</span></td><td class="num">06:41</td><td class="num">$0.31</td></tr>
+                <tr data-state="high"><td class="mono">02:37:14</td><td>claude-analysis</td><td class="mono">monthly, opus, 31 nights</td>
+                  <td><span class="life life--failed">Failed · 429 spend cap</span></td><td class="num">01:04</td><td class="num">$0.18</td></tr>
+                <tr><td class="mono">01:12:00</td><td>correlation-recompute</td><td class="mono">window=30d, min_n=14</td>
+                  <td><span class="life life--cancelled">Cancelled by operator</span></td><td class="num">00:22</td><td class="num">—</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="panel__ft"><span class="caps">Month to date</span>
+            <span class="mono">$4.18 of $25.00</span>
+            <span class="bar grow"><span class="bar__track"><span class="bar__fill" style="width:17%"></span></span></span></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel__hd"><h2 class="panel__title">Correlations currently held</h2>
+            <div class="panel__meta"><span class="caps">One colour per metric, held across every screen</span></div></div>
+          <div class="panel__body panel__body--flush t-scroll">
+            <table class="t">
+              <thead><tr><th scope="col">Metric</th><th scope="col">Against</th><th class="num" scope="col">ρ</th>
+                <th class="num" scope="col">n</th><th scope="col">Computed from</th><th scope="col">Confidence</th></tr></thead>
+              <tbody>
+                <tr><th scope="row">spo2_desat_index</th><td>journal_severity, next morning</td>
+                  <td class="num">0.51</td><td class="num">34</td><td class="mono">09:05 today</td>
+                  <td><span class="status status--unknown"><span class="status__glyph" aria-hidden="true">?</span> 7 nights missing</span></td></tr>
+                <tr><th scope="row">hrv_rmssd_night</th><td>journal_severity, next morning</td>
+                  <td class="num">−0.44</td><td class="num">41</td><td class="mono">09:05 today</td>
+                  <td><span class="status status--ok"><span class="status__glyph" aria-hidden="true">✓</span> Complete</span></td></tr>
+                <tr><th scope="row">cpap_ahi</th><td>hrv_rmssd_night</td>
+                  <td class="num">−0.19</td><td class="num">41</td><td class="mono">09:05 today</td>
+                  <td><span class="status status--ok"><span class="status__glyph" aria-hidden="true">✓</span> Complete</span></td></tr>
+                <tr class="is-absent"><th scope="row">bp_systolic</th><td>journal_severity</td>
+                  <td class="num">—</td><td class="num">0</td><td class="muted-text">—</td>
+                  <td><span class="status status--absent"><span class="status__glyph" aria-hidden="true">—</span> Source not configured</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

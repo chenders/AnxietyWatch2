@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>07 Analysis — AW2 Preflight</title>
+<link rel="stylesheet" href="console.css">
+</head>
+<body data-feed="live">
+<a class="skip-link" href="#main">Skip to content</a>
+
+<div class="stickytop">
+<div class="docstale" role="status">
+  <span class="assert assert--unsigned">Sheet uncountersigned</span>
+  <b>This page has not heard from the appliance for <span data-feed-age>—</span>.</b>
+  <span class="muted-text">Every reading below is the last one observed. The signatures on it are still valid for the time they were made; this document is not valid for now.</span>
+  <button class="btn btn--sm" type="button" data-action="refresh">Reconnect</button>
+</div>
+
+<nav class="contents" aria-label="Sections">
+    <a class="contents__item" href="overview.html"><span class="contents__ord">01</span> Overview</a>
+    <a class="contents__item" href="display.html"><span class="contents__ord">02</span> Display</a>
+    <a class="contents__item" href="ingest.html"><span class="contents__ord">03</span> Ingest</a>
+    <a class="contents__item" href="services.html"><span class="contents__ord">04</span> Services</a>
+    <a class="contents__item" href="config.html"><span class="contents__ord">05</span> Access</a>
+    <a class="contents__item" href="data.html"><span class="contents__ord">06</span> Data</a>
+    <a class="contents__item" href="analysis.html" aria-current="page"><span class="contents__ord">07</span> Analysis</a>
+    <a class="contents__item" href="records.html"><span class="contents__ord">08</span> Records</a>
+    <a class="contents__item" href="recovery.html"><span class="contents__ord">09</span> Recovery</a>
+    <a class="contents__item" href="system.html">System</a>
+    <a class="contents__item" href="patterns.html">Patterns</a>
+    <a class="contents__item" href="attempts.html">Run sheet</a>
+    <a class="contents__item" href="overview-degraded.html">Degraded</a>
+    <a class="contents__item" href="firstrun.html">First run</a>
+  </nav>
+</div>
+
+<main class="sheet" id="main">
+
+  <div class="pagetitle">
+    <h1>Analysis</h1>
+    <p>Trigger runs, watch them, and review what they wrote before it enters the record.</p>
+  </div>
+
+  <div class="stack">
+    <section class="block">
+      <div class="block__hd"><h2>Start a run</h2><span class="block__count">cost is shown before it is spent</span></div>
+      <div class="stack">
+        <form class="form" onsubmit="return false">
+          <div class="form__row"><label for="an1">Job</label>
+            <div><select class="select" id="an1"><option>Claude analysis · weekly narrative</option>
+              <option>Claude analysis · monthly narrative</option><option>Correlation recompute</option></select></div></div>
+          <div class="form__row"><label for="an2">Window</label>
+            <div><select class="select" id="an2"><option>Last 14 nights</option>
+              <option>Last 30 nights</option><option>Last 90 nights</option></select></div></div>
+          <div class="form__row"><label for="an3">Model</label>
+            <div><select class="select" id="an3"><option>sonnet</option><option>opus</option></select></div></div>
+        </form>
+        <div class="cost">
+          <div class="figure figure--sm"><span class="figure__k">Estimated cost</span><span class="figure__v">$0.34</span></div>
+          <div class="figure figure--sm"><span class="figure__k">Estimated tokens</span><span class="figure__v">118<span class="unit">k in</span></span></div>
+          <div class="figure figure--sm"><span class="figure__k">Spent this month</span><span class="figure__v">$4.18<span class="unit">of $25</span></span></div>
+          <div class="figure figure--sm"><span class="figure__k">Nights excluded</span>
+            <span class="figure__v">7<span class="unit">of 41</span></span><span class="muted-text">Oximeter unsigned</span></div>
+        </div>
+        <div class="note note--unsigned">Seven nights in the requested window have an unsigned oximeter
+        item. They are excluded rather than imputed, and the narrative will say so. A run over a window
+        with holes still returns confident prose, which is the failure this line exists to prevent.</div>
+        <div class="row"><span class="grow"></span><button class="btn btn--primary" type="button">Run · $0.34</button></div>
+      </div>
+    </section>
+
+    <div class="cols-main">
+      <section class="block">
+        <div class="block__hd"><h2>Current run</h2>
+          <div class="block__meta"><span class="life life--running"><span class="life__pulse" aria-hidden="true"></span> Running · 04:12</span></div></div>
+        <div class="card"><div class="card__body stack--tight">
+          <div class="figure"><span class="figure__k">Elapsed</span><span class="figure__v">04:12</span>
+            <span class="muted-text">Median for this job 06:30</span></div>
+          <div class="bar"><span class="bar__track"><span class="bar__fill" style="width:64%"></span></span>
+            <span class="bar__val">7 of 11</span></div>
+          <span class="muted-text mono">stage: correlating spo2_desat × journal_severity</span>
+        </div>
+          <div class="card__ft"><div class="actions-split">
+            <button class="btn btn--sm" type="button">Follow output</button>
+            <span class="actions-split__gap" aria-hidden="true"></span>
+            <button class="btn btn--sm btn--danger" type="button">Cancel run</button>
+          </div></div>
+        </div>
+      </section>
+      <section class="block">
+        <div class="block__hd"><h2>Last failure</h2>
+          <div class="block__meta"><span class="life life--failed">Failed 02:38</span></div></div>
+        <div class="card card--open"><div class="card__body stack--tight">
+          <p class="prose"><b>429 from the Anthropic API after 3 retries.</b> The $25.00 monthly cap was
+          reached mid-run. 6 of 11 stages had completed; partial output was discarded rather than
+          written into the record.</p>
+          <div class="fields"><span class="field__k">Charged</span><span class="field__v mono">$0.18</span>
+            <span class="field__k">Parameters</span><span class="field__v mono">scope=monthly, model=opus, ctx=31</span></div>
+        </div>
+          <div class="card__ft"><a class="btn btn--sm" href="config.html">Raise the cap</a>
+            <span class="grow"></span><button class="btn btn--sm btn--primary" type="button">Retry with sonnet · $0.11</button></div>
+        </div>
+      </section>
+    </div>
+
+    <section class="block">
+      <div class="block__hd"><h2>Review generated narrative</h2><span class="block__count">nothing is overwritten until accepted</span></div>
+      <div class="stack">
+        <div class="diff">
+          <div class="diff__side">
+            <div class="diff__hd"><span class="caps">In the record</span>
+              <span class="assert assert--signed"><span aria-hidden="true">✓</span> Accepted 29 Jul</span></div>
+            <div class="diff__body">
+              <p>Anxiety severity has run between 3 and 6 over the last month, with the higher readings
+              clustered on weekday mornings.</p>
+              <p>No clear relationship has emerged between dose timing and reported severity.</p></div>
+          </div>
+          <div class="diff__side diff__side--new">
+            <div class="diff__hd"><span class="caps">Proposed</span>
+              <span class="life life--succeeded">Generated 09:11 · sonnet · $0.04</span></div>
+            <div class="diff__body">
+              <p>Anxiety severity has run between 3 and 6 over the last month, with the higher readings
+              clustered on weekday mornings. <ins>Mean time in bed 7h 41m against 4.2 awakenings per
+              night.</ins></p>
+              <p><del>No clear relationship has emerged between dose timing and reported severity.</del>
+              <ins>Morning severity is higher after nights with more than 12 desaturation events
+              (ρ = 0.51, n = 34 of 41 nights). Dose timing still shows no relationship.</ins></p></div>
+          </div>
+        </div>
+        <div class="actions-split">
+          <span class="muted-text">Computed from 34 of 41 nights. 7 excluded: oximeter unsigned.</span>
+          <span class="grow"></span>
+          <button class="btn btn--sm" type="button">Regenerate · $0.04</button>
+          <button class="btn btn--sm" type="button">Edit before accepting</button>
+          <span class="actions-split__gap" aria-hidden="true"></span>
+          <button class="btn btn--sm btn--primary" type="button">Accept and replace</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="block">
+      <div class="block__hd"><h2>Run history and cost ledger</h2></div>
+      <div class="t-scroll">
+        <table class="t t--rowstate">
+          <thead><tr><th scope="col">Started</th><th scope="col">Job</th><th scope="col">Parameters</th>
+            <th scope="col">Outcome</th><th class="num" scope="col">Duration</th><th class="num" scope="col">Cost</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">09:51:48</td><td>correlation-recompute</td><td class="mono">window=90d, min_n=30</td>
+              <td><span class="life life--running"><span class="life__pulse" aria-hidden="true"></span> Running</span></td>
+              <td class="num">04:12</td><td class="num">—</td></tr>
+            <tr><td class="mono">09:05:02</td><td>claude-analysis</td><td class="mono">weekly, sonnet, 14 nights</td>
+              <td><span class="life life--succeeded">Succeeded</span></td><td class="num">06:41</td><td class="num">$0.31</td></tr>
+            <tr data-state="open"><td class="mono">02:37:14</td><td>claude-analysis</td><td class="mono">monthly, opus, 31 nights</td>
+              <td><span class="life life--failed">Failed · 429 spend cap</span></td><td class="num">01:04</td><td class="num">$0.18</td></tr>
+            <tr><td class="mono">01:12:00</td><td>correlation-recompute</td><td class="mono">window=30d, min_n=14</td>
+              <td><span class="life life--cancelled">Cancelled by operator</span></td><td class="num">00:22</td><td class="num">—</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="block__note"><div class="row"><span class="caps">Month to date</span>
+        <span class="mono">$4.18 of $25.00</span>
+        <span class="bar grow"><span class="bar__track"><span class="bar__fill" style="width:17%"></span></span></span></div></div>
+    </section>
+
+    <section class="block">
+      <div class="block__hd"><h2>Correlations currently held</h2>
+        <div class="block__meta"><span class="caps">Each carries the completeness of the data behind it</span></div></div>
+      <div class="t-scroll">
+        <table class="t">
+          <thead><tr><th scope="col">Metric</th><th scope="col">Against</th><th class="num" scope="col">ρ</th>
+            <th class="num" scope="col">n</th><th scope="col">Computed</th><th scope="col">Item</th></tr></thead>
+          <tbody>
+            <tr><th scope="row" class="mono">spo2_desat_index</th><td>journal_severity, next morning</td>
+              <td class="num">0.51</td><td class="num">34</td><td class="mono">09:05 today</td>
+              <td><span class="assert assert--unsigned">7 nights missing</span></td></tr>
+            <tr><th scope="row" class="mono">hrv_rmssd_night</th><td>journal_severity, next morning</td>
+              <td class="num">−0.44</td><td class="num">41</td><td class="mono">09:05 today</td>
+              <td><span class="assert assert--signed"><span aria-hidden="true">✓</span> Complete</span></td></tr>
+            <tr><th scope="row" class="mono">cpap_ahi</th><td>hrv_rmssd_night</td>
+              <td class="num">−0.19</td><td class="num">41</td><td class="mono">09:05 today</td>
+              <td><span class="assert assert--signed"><span aria-hidden="true">✓</span> Complete</span></td></tr>
+            <tr data-state="na"><th scope="row" class="mono">bp_systolic</th><td>journal_severity</td>
+              <td class="num">—</td><td class="num">0</td><td class="na-note">—</td>
+              <td><span class="assert assert--na"><span aria-hidden="true">—</span> Source struck</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <hr class="divider">
+  <p class="caps">AnxietyWatch2 · bedside-pi5 · build 2.4.11+g8c1f · console clock <span data-clock class="mono">09:56:04Z</span> · feed age <span data-feed-age class="mono">2s</span> · <a href="index.html">Direction B contents</a></p>
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>

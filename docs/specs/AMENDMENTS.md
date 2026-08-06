@@ -18,6 +18,7 @@ wins**. If you find a contradiction, report it rather than implementing either v
 | **05** | [Corrections and runtime safety](2026-08-03-amendment-05-corrections-and-runtime-safety.md) | **amendment 04 §1 and §3.2 — both were wrong** | T-B1, T-D3…D6, T-K2, T-K6 |
 | **06** | [BP identity and durability](2026-08-03-amendment-06-bp-identity-and-durability.md) | **amendment 05 §5 (T-D6 row) — the hardware disproved it**, and **§1.1's identity rule, which it narrows**; extends §4.3; restates A01 §5's durability rule | T-B1, T-D3, T-D4, T-D6 |
 | **07** | [The HTTP API and admin console are Rust, not Python](2026-08-05-amendment-07-api-in-rust.md) | **`language-choices.md` §1 row "HTTP API, admin, analysis → Python 3.12 + FastAPI", and §3 in full** | admin console M0–M2, web dashboard backend, client write API |
+| **08** | [Layout selection by live evaluation, not upfront choice](2026-08-06-amendment-08-layout-evaluation.md) | the implicit "pick a design direction before M1" in `SPEC-admin-console.md` §3.1 | admin console M1 (all three directions behind a runtime switcher), web dashboard (gains a plan home: port B/C onto the `model()` seam + switcher, gated on the vitalsd query path) |
 | — | [C vs Rust evaluation](2026-08-03-c-vs-rust-evaluation.md) | the C11 decision | all code tasks |
 | — | [Review synthesis and fix tracker](../reviews/SYNTHESIS.md) | — | status of every finding |
 
@@ -119,6 +120,16 @@ a recent tier evaluation, and drain progress — because a healthy `klaxond` pul
 collector is dead is the worst false negative available. A shutdown inhibit keeps deliberate reboots
 silent, and it fails safe (armed by default). Its test injects upstream faults; stopping the
 heartbeat only tests the 555. See amendment 05 §2.
+
+### UI direction
+
+**No layout is chosen from mockups** (amendment 08). The admin console's M1 renders every screen
+through all three design directions (Service Mode / Preflight / Flowpath) behind a `?dir=` +
+cookie switcher; the web dashboard ports Night Report and Terminal onto the existing `model()`
+seam with the same switcher, gated on the vitalsd query path. One view-model per screen, three
+renderings, no direction-specific data logic. The direction determination is recorded after real
+use, then the losing template sets are deleted. The bedside panel's shipped eight-view swipe
+switcher is the precedent and needs no change.
 
 ### Tools adopted
 
