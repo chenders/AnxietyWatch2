@@ -52,7 +52,7 @@ pane renders (`grep -n '^- \[' tasks.md`).
 - [x] T-A5 — Watchdog, governor, update policy · mechanical · pi
 - [ ] T-B1 — Eight-hour Polar H10 capture · implement-complex · pi · **review**
 - [x] T-C1 — PostgreSQL 16 bare metal on NVMe · implement-standard · pi · **blocked by G2**
-- [ ] T-C2 — pgBackRest, three tiers · implement-standard · pi · **review**
+- [x] T-C2 — pgBackRest, three tiers · implement-standard · pi · **review**
 - [ ] T-C3 — Scheduled restore verification · implement-complex · pi · **review · gate G3 owner**
 - [x] T-D1 — Registry TOML and codegen · implement-standard · mac
 - [x] T-D2 — IEEE-11073 SFLOAT decoder with fuzz target · implement-complex · either · **review**
@@ -542,15 +542,18 @@ Expect: `pg_cron pg_stat_statements plpgsql timescaledb timescaledb_toolkit`
    ```sh
    sudo -u postgres pgbackrest --stanza=vitals --type=full backup
    ```
-5. Create `pgbackrest-full.timer` (weekly, Sun 03:00) and `pgbackrest-incr.timer` (daily, 03:00),
-   each with a matching `.service` running
-   `pgbackrest --stanza=vitals --type=full backup` / `--type=incr backup` as user `postgres`.
-   Enable both.
-6. Write the monthly cold export — tier 3 of the design's three tiers. A timer running
-   `/usr/local/bin/vitals-cold-export.sh`, which writes
-   `/var/lib/vitals/cold/YYYY-MM.ndjson.zst` containing every `samples` row as newline-delimited
-   JSON plus a copy of `registry.toml`, and a one-page `README.md` describing the format. This tier
-   exists to be readable with no Postgres, no pgBackRest, and no code from this repo.
+5. Create `pgbackrest-full.timer` (weekly, Sun 03:00) and `pgbackrest-incr.timer` (Mon–Sat, 03:00),
+   avoiding a Sunday collision while retaining one scheduled backup every day. Each has a matching
+   `.service` running `pgbackrest --stanza=vitals --type=full backup` /
+   `--type=incr backup` as user `postgres`. Enable both.
+6. Write the monthly cold export — tier 3 of the design's three tiers. A timer runs
+   `/usr/local/bin/vitals-cold-export.sh` for the previous completed UTC month. It atomically
+   publishes an immutable, self-contained `/var/lib/vitals/cold/YYYY-MM/` bundle containing
+   `data.ndjson.zst` (every matching `samples` row as newline-delimited JSON), the exact
+   `registry.toml` snapshot, a standalone `README.md` with the complete schema and format, and
+   `SHA256SUMS`. Publication stages and syncs on the same filesystem and never replaces an existing
+   month. This tier exists to be readable with no Postgres, no pgBackRest, and no code from this
+   repo.
 
 **Scope note — tier 2 (off-box replication) is deferred**, not dropped: the 1 TB drive has not
 arrived and no second location is chosen. Tiers 1 and 3 are both independently sufficient for
@@ -1141,6 +1144,61 @@ reading in the store.
 
 <!-- Conductor: record scope deltas, measured results, and decisions here as they happen.
      T-B1's gap histogram goes here verbatim — it is the project's foundational measurement. -->
+
+### T-C2 — pgBackRest, three tiers · PASSED 2026-08-05
+
+Installed pgBackRest 2.59.0 and created the `vitals` stanza. Tier 1 uses the prescribed NVMe
+repository at `/var/lib/pgbackrest`, retention of four full and seven differential backups,
+Zstandard level 6, two bounded processes, and AES-256-CBC. `/etc/pgbackrest/pgbackrest.conf` is
+`root:postgres` mode `0640`; its generated cipher pass was never printed or committed. Chris
+approved 1Password and ran the local secure-capture helper from an authenticated shell. It streamed
+the value from the Pi to 1Password without placing it in argv, environment variables, regular files,
+or terminal output. Metadata-only verification confirmed the clearly named AnxietyWatch2 pgBackRest item in the
+Personal vault and a retrievable concealed secret length of 64. The temporary capture helper was then removed. No tier-2 destination was
+selected by the agent.
+
+The initial full backup completed as `20260805-210711F`: 32.3 MB database size and 3.7 MB encrypted,
+compressed repository size. Incremental backups also completed successfully. Weekly full runs Sunday
+at 03:00; incrementals run Monday through Saturday at 03:00, providing one scheduled backup daily
+without the prior Sunday full/incremental collision. Services run as `postgres`, are enabled through
+active timers with future elapse times, and were manually invoked through their timer target units.
+They are deprioritized with positive OOM scores, nice/IO priorities and low CPU/IO weights, and
+hardened with a strict filesystem view, private `/tmp`, no new privileges, and only the required
+repository/log/cold paths writable. Both backup and cold-export services passed under these controls.
+Repository `check` and `verify` report success, AES-256-CBC, complete manifests, and usable full and
+incremental sets.
+
+The nine inherited `.ready` WAL entries from T-C1 drained to zero immediately after stanza creation.
+Multiple checks forced fresh WAL archival; a write/switch probe advanced the archive maximum from
+segment `00000001000000000000000F` through `...11`. The authorized temporary probe table was dropped
+and confirmed absent. Final verification archived through `...1A`, and `.ready` remained zero.
+
+Tier 3 is `/usr/local/bin/vitals-cold-export.sh` plus an enabled monthly timer (`*-*-01 04:00`). By
+default it exports the previous completed UTC month, never the current partial month; an explicit
+`YYYY-MM` argument exists for controlled testing. Each month is an immutable self-contained
+directory containing `data.ndjson.zst`, the exact `registry.toml` snapshot, a standalone README with
+complete field/type/null/bytea/time/range/order/forward-compatibility definitions, and `SHA256SUMS`.
+It stages on the same filesystem, fsyncs every file and the staged directory, publishes with a
+no-replace atomic rename, then fsyncs the parent. Existing valid bundles are checksum-verified and
+left untouched; corruption or non-directory collision fails closed.
+
+The export query exactly matches `db/deploy/samples.sql` and orders equal timestamps deterministically
+by `timestamp, source, type, session_id, seq`. Missing `samples` produced a valid empty completed-month
+bundle. The populated branch was tested without persistent database objects via a session-local TEMP
+fixture: inclusive start/exclusive end boundaries, equal-timestamp ordering, SQL NULL, bytea,
+`batch_id`, and an unknown future field all survived. Independent `jq` parsing, line count/order,
+checksums, Zstandard decompression, registry byte comparison, README reconstruction guidance,
+immutable republish behavior, and monthly service activation all passed. Zstandard is bounded to one
+thread.
+
+**Tier 2 remains explicitly deferred:** no 1 TB/off-box location has been chosen, so no `repo2-*`
+configuration was invented. It must be added with `stanza-upgrade` before Stage 5 enables the
+klaxon, per Amendment 05 §4.4.
+
+The exact T-C2 `Verify:` command exits 0, `pgbackrest verify` passes, fresh WAL archival succeeds,
+and backlog is zero. `vcgencmd get_throttled` stayed `0x50000`; its active low nibble remained zero
+after backup, WAL, export, populated-fixture, hardening, and service tests. The off-host cipher-pass
+checkpoint is complete, so T-C2 is ticked.
 
 ### T-C1 — PostgreSQL 16 bare metal on NVMe · PASSED 2026-08-05
 
