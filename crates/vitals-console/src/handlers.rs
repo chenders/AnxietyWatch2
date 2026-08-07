@@ -23,11 +23,16 @@ use crate::test_page::TEST_PAGE_HTML;
 pub struct AppState {
     /// Path to the `vitalsd` Unix socket.
     pub socket_path: PathBuf,
-    /// `PostgreSQL` pool; `None` when the database is unavailable, in which
-    /// case the envelope routes answer 503.
+    /// Write-API pool (envelope, attempts). `None` serves reads only.
     pub db: Option<sqlx::PgPool>,
-    /// Whether the plaintext test route answers (`VITALS_CONSOLE_TEST_ROUTES=1`).
+    /// Whether the guarded plaintext test routes are mounted.
     pub test_routes_enabled: bool,
+    /// `PostgreSQL` connection URL in libpq format, used by `/api/recovery`.
+    pub db_url: String,
+    /// Injected system operations for the host-status collectors.
+    pub sys_ops: crate::api::ops::SysOps,
+    /// `PostgreSQL` access for the read API, injected for testability.
+    pub db_ops: std::sync::Arc<dyn crate::api::postgres::DbOps>,
 }
 
 /// Require a database pool; return a named 503 when absent.
@@ -40,19 +45,11 @@ fn require_db(state: &AppState) -> Result<&sqlx::PgPool, (StatusCode, Json<Error
     })
 }
 
-// ---- Existing handlers (kept) ----
-
 /// GET /api/health
 ///
-/// Fetches the daemon's health over its Unix socket, derives a per-source
-/// state with the local liveness evaluator, and renders the console view.
-///
-/// # Errors
-/// 500 if the system clock is before the Unix epoch, when every age would be a
-/// lie.
-pub async fn health_handler(
-    State(state): State<AppState>,
-) -> Result<Json<HealthView>, (StatusCode, String)> {
+/// Fetches the daemon's health over its Unix socket and derives a per-source
+/// state with the local liveness evaluator.
+pub async fn health_handler(State(state): State<AppState>) -> Json<HealthView> {
     let daemon_health = get_health(&state.socket_path).await;
 
     let (vitalsd, uptime, degraded, heartbeat_pulsing, daemon_sources) = match daemon_health {
@@ -72,15 +69,20 @@ pub async fn health_handler(
         ),
     };
 
-    // A clock before the Unix epoch would make every age a lie; better to
-    // refuse the request by name than serve nonsense freshness.
-    let now_s = match SystemTime::now().duration_since(UNIX_EPOCH) {
+    // A pre-epoch clock must not fall back to zero: every age would render
+    // as fresh, which is the reassuring lie the three-state rule forbids.
+    let now_s: i64 = match SystemTime::now().duration_since(UNIX_EPOCH) {
         Ok(d) => i64::try_from(d.as_secs()).unwrap_or(i64::MAX),
         Err(e) => {
-            return Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("system clock is before the Unix epoch: {e}"),
-            ));
+            return Json(HealthView {
+                vitalsd: DaemonReachable::Unreachable(format!(
+                    "system clock is before the Unix epoch: {e}"
+                )),
+                uptime: None,
+                degraded: vec![format!("host clock unusable: {e}")],
+                heartbeat_pulsing: None,
+                sources: vec![],
+            });
         }
     };
 
@@ -112,7 +114,7 @@ pub async fn health_handler(
             raw_liveness = Some(info.liveness);
             if let Some(age) = info.last_sample_age_secs {
                 observation_age_s = Some(age);
-                let timestamp = now_s.saturating_sub(i64::try_from(age).unwrap_or(i64::MAX));
+                let timestamp = now_s.saturating_sub(age.try_into().unwrap_or(0));
                 evidence.last_attempt_epoch_s = Some(timestamp);
                 evidence.last_success_epoch_s = Some(timestamp);
             }
@@ -137,23 +139,23 @@ pub async fn health_handler(
         });
     }
 
-    Ok(Json(HealthView {
+    Json(HealthView {
         vitalsd,
         uptime,
         degraded,
         heartbeat_pulsing,
         sources: source_views,
-    }))
+    })
 }
 
 /// GET /api/version
 ///
 /// Renders the crate version, `GIT_DESCRIBE` when built from a tag, and a
 /// milestone note.
-///
-/// `async` is required: axum 0.7's `Handler` trait is only implemented for
-/// functions returning a `Future`, so a synchronous handler cannot be routed.
-#[allow(clippy::unused_async)]
+#[expect(
+    clippy::unused_async,
+    reason = "axum handlers must be async to satisfy the Handler trait"
+)]
 pub async fn version_handler() -> Json<VersionView> {
     Json(VersionView {
         version: env!("CARGO_PKG_VERSION"),
@@ -172,9 +174,9 @@ pub async fn version_handler() -> Json<VersionView> {
 /// point of use.
 ///
 /// # Errors
-/// 503 when the database is unavailable; 400 for invalid base64 or a secret
-/// that is not 32 bytes after decoding; 409 when re-registering an existing
-/// `client_id` with a different secret (takeover attempt refused, spec §2.3b).
+/// 400 on invalid base64 or a secret that is not 32 bytes; 503 when the
+/// database is unavailable; 409 on a takeover attempt; 500 on database
+/// failure.
 pub async fn register_handler(
     State(state): State<AppState>,
     Json(req): Json<RegisterRequest>,
@@ -210,10 +212,9 @@ pub async fn register_handler(
 /// (spec §2.3b), and records the attempt with an effect breakdown.
 ///
 /// # Errors
-/// 503 when the database is unavailable; 401 for an unknown client; 400 for
-/// malformed base64, an undecryptable payload, invalid JSON, or an unknown
-/// envelope class; 409 when the record id already exists with different
-/// content; 500 on database or serialization failure.
+/// 503 when the database is unavailable; 400 on malformed base64, bad
+/// nonce/ciphertext, or an unsupported envelope class; 401 for an unknown
+/// client; 409 on an idempotency conflict; 500 on database failure.
 pub async fn envelope_handler(
     State(state): State<AppState>,
     Json(req): Json<EnvelopeRequest>,
@@ -365,7 +366,7 @@ async fn process_envelope(
 /// List the most recent attempt rows with their effect breakdowns visible.
 ///
 /// # Errors
-/// 503 when the database is unavailable; 500 on query failure.
+/// 503 when the database is unavailable; 500 on database failure.
 pub async fn attempts_handler(
     State(state): State<AppState>,
     Query(query): Query<AttemptsQuery>,
@@ -380,10 +381,10 @@ pub async fn attempts_handler(
 ///
 /// Crude test page: one form that sends a plaintext domain record via the
 /// server-side test route. Deliberately not part of the console (spec §9).
-///
-/// `async` is required: axum 0.7's `Handler` trait is only implemented for
-/// functions returning a `Future`, so a synchronous handler cannot be routed.
-#[allow(clippy::unused_async)]
+#[expect(
+    clippy::unused_async,
+    reason = "axum handlers must be async to satisfy the Handler trait"
+)]
 pub async fn test_page_handler() -> Html<&'static str> {
     Html(TEST_PAGE_HTML)
 }
@@ -398,7 +399,9 @@ pub async fn test_page_handler() -> Html<&'static str> {
 ///
 /// # Errors
 /// 404 when test routes are disabled; 503 when the database is unavailable;
-/// 500 on RNG, serialization, or encryption failure.
+/// 400/401/409 from envelope processing (bad ciphertext, unknown client,
+/// idempotency conflict); 500 on RNG, serialization, encryption, or database
+/// failure.
 pub async fn plaintext_test_handler(
     State(state): State<AppState>,
     Json(req): Json<PlaintextTestRequest>,
@@ -519,12 +522,16 @@ pub async fn plaintext_test_handler(
 // ---- Tests ----
 
 #[cfg(test)]
-#[expect(
-    clippy::unwrap_used,
-    clippy::indexing_slicing,
-    reason = "test assertions and fixed fixtures should panic loudly"
-)]
 mod tests {
+    #![expect(
+        clippy::unwrap_used,
+        reason = "unit tests use fixed fixtures and a local socket; unwrap is the assertion that setup and the canned daemon reply succeed"
+    )]
+    #![expect(
+        clippy::indexing_slicing,
+        reason = "tests index serde_json::Value views of canned handler responses"
+    )]
+
     use super::*;
     use axum::{Router, body::Body, http::Request as AxumRequest, routing::get};
     use http_body_util::BodyExt; // for `collect`
@@ -536,6 +543,21 @@ mod tests {
     use tower::util::ServiceExt; // for `oneshot`
     use vitals_proto::{Health, Liveness, Response, SourceHealth, check_frame_len, encode_frame};
     use vitals_registry::VitalsSource;
+
+    struct DummyDbOps;
+    #[async_trait::async_trait]
+    impl crate::api::postgres::DbOps for DummyDbOps {
+        async fn get_latest(&self, _s: i32, _t: i32) -> Result<Option<(i64, f64)>, String> {
+            Ok(None)
+        }
+        async fn get_nightly(
+            &self,
+            _n: u32,
+            _source: Option<i32>,
+        ) -> Result<Vec<crate::api::postgres::NightlyRow>, String> {
+            Ok(vec![])
+        }
+    }
 
     fn spawn_stub_daemon(socket_path: PathBuf, canned_health: Health) {
         tokio::spawn(async move {
@@ -583,6 +605,9 @@ mod tests {
             socket_path,
             db: None,
             test_routes_enabled: false,
+            db_url: String::new(),
+            sys_ops: crate::api::ops::SysOps::real(),
+            db_ops: std::sync::Arc::new(DummyDbOps),
         }
     }
 
@@ -692,11 +717,7 @@ mod tests {
     async fn test_test_routes_disabled_by_default() {
         let dir = tempdir().unwrap();
         let socket_path = dir.path().join("vitalsd.sock");
-        let state = AppState {
-            socket_path,
-            db: None,
-            test_routes_enabled: false,
-        };
+        let state = test_state(socket_path);
 
         let app = Router::new()
             .route(
