@@ -1,17 +1,19 @@
 # Web dashboard — Direction A, "Clinical"
 
-Reference implementation of the clinical web dashboard, imported from the Claude
-Design project `6bfab67a` (`AnxietyWatch - Clinical Dashboard.html`) and built
-against `../PROMPT-web-dashboard.md`.
+Real-data web dashboard, imported from the Claude Design project `6bfab67a`
+(`AnxietyWatch - Clinical Dashboard.html`) and built against
+`../PROMPT-web-dashboard.md`. `vitals-console` serves it at `/dashboard` so all
+read-API calls are same-origin.
 
 ```
-open index.html            # no build step, no server, no network
-node palette-check.mjs     # the colour gate — exit 0 or 1
+cargo run -p vitals-console
+open http://127.0.0.1:8480/dashboard
+node palette-check.mjs index.html     # the colour gate — exit 0 or 1
 ```
 
 | File | What it is |
 |---|---|
-| `index.html` | The whole thing. Self-contained: styles, logic and mock data in one file. |
+| `index.html` | The whole thing. Self-contained styles, renderers, and real-API view model. |
 | `palette-check.mjs` | Colour gate with an exit code. Run it before changing any token. |
 
 Four screens plus the design system, reachable from the header:
@@ -23,12 +25,8 @@ Four screens plus the design system, reachable from the header:
 - **System health** — will it work tonight? Daemon, alarm path, durability, coverage.
 - **Design system** — tokens, within-plot separation, all component states.
 
-Two header toggles drive every state worth reviewing. **SIM: SENSOR LOSS** drops
-the pulse-ox at 03:04 and never brings it back, which is the case the whole
-design exists to handle. **THEME** switches to the light ramp.
-
-Everything on screen is generated from a seeded PRNG. Nothing here talks to
-`vitalsd` yet — see "Wiring it up" below.
+**THEME** switches to the light ramp. There is no simulation toggle or demo
+fallback: dead and absent feeds render as named not-measured states.
 
 ## The thing this design is for
 
@@ -118,18 +116,17 @@ button is allowed to carry.
 
 ## Wiring it up
 
-Everything is mock. `model()` in `index.html` is the single seam — it returns the
-whole view model and nothing else reads data. Replacing its internals with
-`vitalsd` responses is the entire integration:
+`model()` in `index.html` is the single seam. It returns the whole view model;
+the three direction renderers remain presentation-only consumers.
 
-| Screen | Needs |
+| Screen | Real source |
 |---|---|
-| Now | `Health` + a live `Subscribe` |
-| Last night | `Query` over one session |
-| Trends | `Query` aggregated per night — server-side, not 30 × 30,000 points |
-| System health | `Health`, plus backup/restore state |
+| Now | `/api/health`, `/api/latest`, and `/api/query` for the current 20-minute traces |
+| Last night | `/api/query` over the previous completed noon-to-noon UTC window |
+| Trends | `/api/nightly`, already aggregated to one point per UTC day server-side |
+| System health | `/api/health`, `/api/recovery`, and `/api/clock` |
 
-Two things to preserve when the mock data goes away:
+Two invariants preserved by the real-data wiring:
 
 - **A gap must arrive as a gap.** The renderer keys off `null`, not off a
   sentinel and not off an absent key. Anything that coerces missing to a number
