@@ -7,6 +7,7 @@
 use axum::{Router, routing::get, routing::post};
 use std::env;
 use std::path::PathBuf;
+use tower_http::services::{ServeDir, ServeFile};
 use vitals_console::api::clock::clock_handler;
 use vitals_console::api::display::display_handler;
 use vitals_console::api::host::host_handler;
@@ -27,6 +28,10 @@ async fn main() {
     let socket_path =
         env::var("VITALSD_SOCKET").unwrap_or_else(|_| "/run/vitals/vitalsd.sock".to_string());
     let test_routes_enabled = env::var("VITALS_CONSOLE_TEST_ROUTES").is_ok_and(|v| v == "1");
+    let assets_path = env::var("VITALS_CONSOLE_ASSETS").map_or_else(
+        |_| PathBuf::from("crates/vitals-console/assets"),
+        PathBuf::from,
+    );
 
     // Write-API pool: the service must still serve every read without it.
     let db = if let Ok(url) = env::var("VITALS_CONSOLE_DATABASE_URL") {
@@ -80,6 +85,12 @@ async fn main() {
         .route("/api/attempts", get(attempts_handler))
         .route("/test", get(test_page_handler))
         .route("/api/envelope/plaintext-test", post(plaintext_test_handler))
+        .nest_service(
+            "/console",
+            ServeDir::new(&assets_path)
+                .append_index_html_on_directories(true)
+                .fallback(ServeFile::new(assets_path.join("index.html"))),
+        )
         .with_state(state);
 
     let listener = match tokio::net::TcpListener::bind(&bind_addr).await {
