@@ -13,7 +13,10 @@ User=anxietywatch
 # Written INTO the checkout, next to the page that reads it. That path is
 # gitignored, so runtime data never dirties the working tree and `git pull`
 # never conflicts with it.
-Environment=EMAY_STATUS_JSON=/opt/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical/status.json
+# emay_status.json, not status.json: each producer owns one file and renames
+# atomically, so two writers can never interleave fields. The kiosk URL names
+# this file explicitly (live=emay_status.json).
+Environment=EMAY_STATUS_JSON=/opt/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical/emay_status.json
 ExecStart=/usr/local/bin/emay-spike
 # The ring powers down when it is not worn, so "not found" is the normal
 # overnight state, not a fault. Restart rather than give up: the run should

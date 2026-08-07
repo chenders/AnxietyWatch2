@@ -22,6 +22,7 @@ use vitals_decode::bp::bp_decode_2a35;
 /// ATT payloads cannot exceed 512 bytes; anything larger is a torn record.
 const MAX_FRAME: u32 = 512;
 
+#[cfg_attr(test, derive(Debug))]
 struct Record {
     offset: u64,
     arrival_micros: i64,
@@ -193,5 +194,70 @@ fn main() {
             eprintln!("bp-journal-replay: --apply needs a Unix socket host");
             std::process::exit(64);
         }
+    }
+}
+
+#[cfg(test)]
+#[expect(
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    reason = "test assertions should panic loudly on fixed fixtures"
+)]
+mod tests {
+    use super::*;
+    use std::io::Write as _;
+
+    fn journal_with(records: &[(i64, &[u8])], trailing: &[u8]) -> tempfile::NamedTempFile {
+        let mut f = tempfile::NamedTempFile::new().expect("tempfile");
+        for (arrival, raw) in records {
+            f.write_all(&arrival.to_le_bytes()).expect("write arrival");
+            f.write_all(&u32::try_from(raw.len()).expect("len").to_le_bytes())
+                .expect("write len");
+            f.write_all(raw).expect("write payload");
+        }
+        f.write_all(trailing).expect("write trailing");
+        f.flush().expect("flush");
+        f
+    }
+
+    #[test]
+    fn intact_records_parse_with_offsets_and_arrivals() {
+        let f = journal_with(&[(1_000, b"\x14\x87\x00"), (2_000, b"\xaa")], &[]);
+        let r = read_journal(f.path()).expect("parses");
+        assert_eq!(r.len(), 2);
+        assert_eq!(r[0].arrival_micros, 1_000);
+        assert_eq!(r[0].raw, b"\x14\x87\x00");
+        assert_eq!(r[0].offset, 0);
+        assert_eq!(r[1].offset, 12 + 3);
+    }
+
+    #[test]
+    fn torn_header_names_the_offset_and_keeps_the_prefix_intact() {
+        let f = journal_with(&[(1_000, b"\x01\x02")], &[0xEE; 5]);
+        let e = read_journal(f.path()).expect_err("torn header must fail");
+        assert!(e.contains("torn record header at byte 14"), "{e}");
+        assert!(e.contains("records before this point are intact"), "{e}");
+    }
+
+    #[test]
+    fn implausible_length_is_a_named_tear_not_a_giant_allocation() {
+        let mut f = tempfile::NamedTempFile::new().expect("tempfile");
+        f.write_all(&1_000_i64.to_le_bytes()).expect("arrival");
+        f.write_all(&(MAX_FRAME + 1).to_le_bytes()).expect("len");
+        f.flush().expect("flush");
+        let e = read_journal(f.path()).expect_err("must fail");
+        assert!(e.contains("implausible frame length 513 at byte 0"), "{e}");
+    }
+
+    #[test]
+    fn torn_payload_names_the_claim_and_the_shortfall() {
+        let mut f = tempfile::NamedTempFile::new().expect("tempfile");
+        f.write_all(&1_000_i64.to_le_bytes()).expect("arrival");
+        f.write_all(&8_u32.to_le_bytes()).expect("len");
+        f.write_all(b"\x01\x02\x03").expect("short payload");
+        f.flush().expect("flush");
+        let e = read_journal(f.path()).expect_err("must fail");
+        assert!(e.contains("torn payload at byte 0"), "{e}");
+        assert!(e.contains("claims 8 byte(s)"), "{e}");
     }
 }
