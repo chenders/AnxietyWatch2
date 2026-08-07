@@ -29,7 +29,14 @@ through a narrow transaction that records an attempt before work and atomically 
    attempt outcome and explicit schedule/window policy determine the displayed state.
 9. **Plain HTTP stays private.** The card has no TLS. Traffic is routed only over the dedicated card
    interface/subnet; the service must not expose the card to the LAN or accept arbitrary target URLs.
-10. **OSCAR boundary.** OSCAR documentation/file formats may inform tests; no GPL implementation code is
+10. **Wi-Fi credentials are secrets, not environment-file content.** The authenticated admin setup flow
+    accepts SSID and password over the existing protected console channel, writes them through a narrow
+    privileged helper into a root-only NetworkManager connection profile/key store on the Pi, and never
+    returns the password. The database, attempt details, logs, process environment, command line, repo,
+    browser storage, and rendered HTML must contain neither current nor prior passwords. Responses expose
+    only configured/not-configured, SSID, last connection-test outcome, and actionable blockers. Password
+    rotation is an explicit replace operation with audit metadata but no secret value.
+11. **OSCAR boundary.** OSCAR documentation/file formats may inform tests; no GPL implementation code is
     copied. Record attribution for every runtime library and follow hms-cpap's clean-room NOTICE pattern.
 
 ## Task boundaries
@@ -38,4 +45,5 @@ through a narrow transaction that records an attempt before work and atomically 
 - T-CP2 freezes EDF semantics, registry additions, identity, and clock metadata with golden fixtures.
 - T-CP3 implements transactional append-only ingestion and attempts.
 - T-CP4 installs routing and systemd supervision after the physical gate.
-- T-CP5 exposes operator evidence and runs a real-card end-to-end acceptance test.
+- T-CP5 adds authenticated credential setup/rotation and exposes operator evidence.
+- T-CP6 runs the real-card end-to-end acceptance test after the operator rotates the default password.

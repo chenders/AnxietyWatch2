@@ -6,7 +6,8 @@ The conductor ticks a box only after running that task's Verify command and seei
 - [ ] T-CP2 — Clean-room EDF semantics, registry contract, identity and clock metadata · implement-complex
 - [ ] T-CP3 — Transactional append-only CPAP importer + attempt ledger · implement-complex
 - [ ] T-CP4 — Dedicated Wi-Fi route and hardened systemd supervision · implement-standard · **physical gate**
-- [ ] T-CP5 — Console evidence and real-card end-to-end acceptance · implement-complex · **physical gate**
+- [ ] T-CP5 — Authenticated ez Share Wi-Fi setup/rotation + console evidence · implement-complex
+- [ ] T-CP6 — Real-card end-to-end acceptance · implement-complex · **physical gate**
 
 ---
 
@@ -57,7 +58,7 @@ Required behavior:
    EDF nor writes physiological data. Add a clean-room `NOTICE` naming protocol/documentation sources;
    do not copy hms-cpap or OSCAR implementation code.
 
-**Verify:** `cd /Users/chris/Source/aw2-cpap-t-cp1 && python3 -m unittest discover -s batch/cpap_ezshare/tests -v && python3 -m compileall -q batch/cpap_ezshare && git diff --check origin/main...HEAD`
+**Verify:** `test "$(basename "$PWD")" = aw2-cpap-t-cp1 && python3 -m unittest discover -s batch/cpap_ezshare/tests -v && python3 -m compileall -q batch/cpap_ezshare && git diff --check origin/main...HEAD`
 
 **Expect:** exit 0; hostile-server tests pass; no network or hardware is required.
 
@@ -96,11 +97,40 @@ and card-offline behavior; freeze only after the physical gate is recorded.
 
 ---
 
-## T-CP5 — Evidence and end-to-end acceptance
+## T-CP5 — Authenticated Wi-Fi setup, credential rotation, and evidence
 
-Expose ez Share and parser attempts, last success, row effects, unique ownership, raw clock transform and
-version in the existing shared console model. Run one real card import twice: first run appends expected
-validated rows; second run appends zero; raw mirror hashes stay unchanged; card-offline state names its
-blocker and does not fabricate physiological data.
+Add an ez Share setup/configuration screen to all three admin-console renderings through one shared view
+model. It accepts SSID and password, supports explicit password replacement, and provides a bounded
+connection test. It must use the console's protected write/authentication and CSRF contract; if that
+contract has not shipped, this task is blocked rather than exposing an unauthenticated secret endpoint.
 
-**Verify:** must be replaced with an exact command after T-CP4; task is not dispatchable before then.
+The console backend passes the secret only to a narrow root-owned helper over a private local channel.
+The helper validates SSID/password bounds, writes a root-only NetworkManager profile/key store atomically,
+and invokes NetworkManager without placing the password in argv or process environment. Neither current
+nor prior passwords may enter PostgreSQL, attempts/detail, logs, browser storage, HTML, API responses,
+source control, or a general service `EnvironmentFile`. Read APIs expose only configured/not-configured,
+SSID, last test time/outcome, and a blocker naming interface/profile/status values. Audit rotation and
+connection-test attempts without secret material. Add redaction tests using distinctive canary secrets
+across logs, API payloads, rendered assets, process invocation, and attempt rows.
+
+Also expose ez Share/parser last attempt, last success, row effects, unique ownership, and versioned raw
+clock-transform evidence in the shared console model. Unknown/card-offline must not become success merely
+because old CPAP samples exist.
+
+**Verify:** must be replaced with an exact command after the console authentication/write contract and
+T-CP4 helper interface are frozen; task is not dispatchable before then.
+
+---
+
+## T-CP6 — Real-card end-to-end acceptance
+
+**Gate:** the operator confirms the default card password has been rotated and supplies the resulting
+credential only through the admin setup flow—never through chat, a task prompt, source control, or shell
+history. Stop and ask before changing Pi networking.
+
+Run one real card import twice: first run appends expected validated rows; second run appends zero; raw
+mirror hashes stay unchanged; card-offline state names its blocker and does not fabricate physiological
+data. Prove the credential canary is absent from repo, service environment, journal, database attempt
+details, API responses, and browser storage.
+
+**Verify:** must be replaced with an exact command after T-CP5; task is not dispatchable before then.

@@ -23,6 +23,7 @@ before database writes; deployment only after an operator verifies the card and 
 - Registry-backed CPAP source/type definitions and stable append-only ingest identity.
 - Versioned CPAP clock correction applied at read time, never by rewriting stored timestamps.
 - Attempt-ledger integration, systemd supervision, least-privilege networking, and console evidence.
+- An authenticated admin setup screen for the card SSID and Wi-Fi password, including a safe connection test and password rotation.
 - A manual EDF upload path may reuse the parser, but is not required by this change.
 
 ## Out of scope

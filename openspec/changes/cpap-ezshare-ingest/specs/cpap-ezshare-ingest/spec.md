@@ -81,3 +81,35 @@ forward the card interface to the home LAN, and SHALL run the poller with bounde
 
 - **WHEN** configuration or card content supplies a URL outside the configured card origin
 - **THEN** the poller rejects it before connection and records the blocked origin
+
+### Requirement: Authenticated Wi-Fi credential setup and rotation
+
+The system SHALL provide an authenticated admin setup flow for the ez Share SSID and Wi-Fi password.
+It SHALL store the credential only in a root-readable Pi network-manager secret store through a narrow
+privileged helper, SHALL support explicit replacement, and SHALL never return the password after submit.
+It SHALL NOT put current or prior passwords in source control, PostgreSQL, attempt details, logs, process
+environment, command arguments, browser storage, rendered HTML, or general service environment files.
+
+#### Scenario: Operator configures or rotates the card password
+
+- **WHEN** an authenticated, CSRF-protected operator submits a valid SSID and new password
+- **THEN** the root-only network profile is atomically created or replaced, an audit event records only
+  that replacement occurred, and subsequent API/UI state reveals the SSID and configured status but no
+  password or reusable secret
+
+#### Scenario: Unauthenticated or invalid setup is rejected without leakage
+
+- **WHEN** authentication/CSRF validation fails or SSID/password bounds are invalid
+- **THEN** no network profile changes, the response names the non-secret blocker, and neither request
+  logs nor attempt evidence contains the supplied password
+
+### Requirement: Bounded connection testing
+
+The setup screen SHALL provide a finite-time connection test that reports measured interface, profile,
+association, route, and card-HTTP status as distinct evidence without echoing credentials.
+
+#### Scenario: Card is powered off during setup test
+
+- **WHEN** the configured card AP is not visible or association times out
+- **THEN** the test terminates within its declared bound, reports the failed stage and value, preserves
+  the prior profile, and does not classify old imported data as a successful test
