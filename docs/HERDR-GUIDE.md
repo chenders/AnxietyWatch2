@@ -238,10 +238,13 @@ of it. It costs one night and it is the single highest-information thing you can
 
 **Respect gate G1.** `dtoverlay=disable-bt` before the Sena is verified as `hci1` leaves the box
 with no Bluetooth at all, and you will be fixing it over a keyboard attached to the panel.
+*(G1 has since been cleared and T-A4 applied: the onboard radio is gone, and the Sena — now the
+sole controller — enumerates as `hci0`. Any check that greps `hci1` is testing a state that no
+longer exists.)*
 
-**Order the two missing parts.** M.2 HAT + NVMe (Postgres, and gate G2 blocks on it), and a USB DAC
-+ amp + speaker. The Pi 5 has no analog audio, so today the alarm has no way to make a sound — the
-one component the entire project exists to trigger.
+**The two once-missing parts are installed.** The M.2 HAT + NVMe carry the root filesystem and
+Postgres (gate G2 satisfied), and a USB DAC enumerates as an ALSA card, so the alarm has a sound
+path.
 
 **Write the decoder tests before the decoders.** They are pure `(bytes, len) → result` functions,
 which is the easiest possible thing to test-drive, and the task briefs already contain the test
@@ -313,7 +316,7 @@ cargo +nightly fuzz run fuzz_sfloat -- -max_total_time=60
 cmake --build build-fuzz && build-fuzz/vitals/fuzz_sfloat -max_total_time=60
 
 # gates
-ssh "$PI_HOST" 'hciconfig hci1 | grep -q "UP RUNNING"'          && echo G1 OPEN
+ssh "$PI_HOST" 'hciconfig hci0 | grep -q "Bus: USB" && hciconfig hci0 | grep -q "UP RUNNING"' && echo G1 HELD
 ssh "$PI_HOST" 'findmnt -no SOURCE / | grep -q nvme'            && echo G2 OPEN
 ssh "$PI_HOST" 'jq -e ".ok==true" /var/lib/vitals/restore-verify.json' && echo G3 OPEN
 

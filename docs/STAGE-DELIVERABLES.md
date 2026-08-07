@@ -36,7 +36,7 @@ page is auditable rather than asserted:
 |---|---|
 | Root filesystem | `/dev/nvme0n1p1` · NVMe · *N* GB free |
 | microSD | `/boot/firmware` only |
-| Bluetooth | 1 adapter · `hci1` · Bus USB · UP RUNNING |
+| Bluetooth | 1 adapter · `hci0` · Bus USB · UP RUNNING |
 | Audio | USB DAC card *N* · non-HDMI sink present |
 | Watchdog | `/dev/watchdog` present · `RuntimeWatchdogSec=15` |
 | Governor | `performance` · 2.4 GHz |
