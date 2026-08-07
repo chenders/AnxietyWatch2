@@ -66,6 +66,53 @@ svg.lane{width:100%;display:block;background:var(--bg);border:1px solid var(--li
 @keyframes hiPulse{0%,100%{background:color-mix(in oklab,var(--hi) 22%,transparent)}50%{background:color-mix(in oklab,var(--hi) 40%,transparent)}}
 .alarm-hi{animation:hiPulse 1.1s steps(2,end) infinite}
 @media (prefers-reduced-motion: reduce){.alarm-hi{animation:none;background:color-mix(in oklab,var(--hi) 32%,transparent)}}
+/* Directions B and C retain their mockups' visual systems, scoped by the
+   runtime direction so none of their typography, spacing, or controls can
+   leak into Clinical. Local fonts only: this instrument never needs a CDN. */
+body[data-dir="b"]{
+  --bg:#0b0e13;--surface:#111621;--surface-2:#080a0e;--line:#232b38;--line-strong:#5f6b7c;
+  --text:#eef1f6;--text-dim:#a2acbb;--text-faint:#78828f;--spo2:#67c7e8;--hr:#7fd18f;
+  --resp:#e8c45c;--bp:#ef8f8f;--cpap:#d69ef0;--unknown:#aeb6e6;--hi:#ff6b6b;
+  --med:#f0b555;--low:#67c7e8;--ok:#7fd18f;--hatch:rgba(174,182,230,.20);
+  font-family:"Libre Franklin",system-ui,sans-serif
+}
+body[data-dir="b"] header{border-bottom-color:var(--line)!important}
+body[data-dir="b"] .dir-brand,body[data-dir="b"] h1,body[data-dir="b"] h2,body[data-dir="b"] h3{font-family:"Source Serif 4",Georgia,serif}
+body[data-dir="b"] .nav-btn{padding-left:2px;padding-right:2px;margin-right:20px;text-transform:none;letter-spacing:.02em;border-bottom-width:2px}
+body[data-dir="b"] .nav-btn[aria-current="page"]{border-bottom-color:var(--text)}
+body[data-dir="b"] #main{max-width:1240px;padding:28px 20px 72px}
+body[data-dir="b"] .b-lede{border-left:4px solid var(--ok);padding:2px 0 2px 18px;max-width:74ch}
+body[data-dir="b"] .b-lede h1{font-size:clamp(28px,4.4vw,46px);font-weight:400;line-height:1.14;margin:8px 0}
+body[data-dir="b"] .b-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:30px;margin-top:30px}
+body[data-dir="b"] .b-rule{border-top:1px solid var(--line);padding-top:12px}
+body[data-dir="b"] .box{border:0;border-top:1px solid var(--line-strong);padding:12px 0;background:transparent}
+body[data-dir="b"] svg.lane{border:0;background:var(--surface-2)}
+html[data-theme="light"] body[data-dir="b"]{
+  --bg:#f5f7fa;--surface:#ffffff;--surface-2:#eceff4;--line:#d7dce3;--line-strong:#67707c;
+  --text:#131820;--text-dim:#48525f;--text-faint:#5b6572;--spo2:#0f6f92;--hr:#17703a;
+  --resp:#8a5a06;--bp:#b02222;--cpap:#8c1f9c;--unknown:#3a35b8;--hi:#b02222;
+  --med:#8a5a06;--low:#0f6f92;--ok:#17703a;--hatch:rgba(58,53,184,.15)
+}
+body[data-dir="c"]{
+  --bg:#06080b;--surface:#0c1116;--surface-2:#030507;--line:#1d242c;--line-strong:#5a6672;
+  --text:#dbe4ea;--text-dim:#93a1ac;--text-faint:#6f7c88;--spo2:#4fd6d6;--hr:#a3e35c;
+  --resp:#f2b13c;--bp:#ff7b7b;--cpap:#c98bff;--unknown:#9aa6ff;--hi:#ff5f56;
+  --med:#f2b13c;--low:#4fd6d6;--ok:#a3e35c;--hatch:rgba(154,166,255,.22);
+  font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-variant-numeric:tabular-nums
+}
+body[data-dir="c"] #main{max-width:1500px}
+body[data-dir="c"] .nav-btn{border:1px solid var(--line);padding:6px 10px;text-transform:none;letter-spacing:0}
+body[data-dir="c"] .nav-btn[aria-current="page"]{border-color:var(--spo2);background:var(--surface)}
+body[data-dir="c"] .box{background:var(--surface);border-color:var(--line)}
+body[data-dir="c"] svg.lane{background:var(--surface-2)}
+html[data-theme="light"] body[data-dir="c"]{
+  --bg:#eff2f5;--surface:#ffffff;--surface-2:#e3e8ee;--line:#ccd3db;--line-strong:#5f6a76;
+  --text:#0d1114;--text-dim:#454f59;--text-faint:#57616c;--spo2:#0c6f76;--hr:#3d6b12;
+  --resp:#8a5406;--bp:#ad1f1f;--cpap:#6f2bbf;--unknown:#2f3bb8;--hi:#ad1f1f;
+  --med:#8a5406;--low:#0c6f76;--ok:#3d6b12;--hatch:rgba(47,59,184,.16)
+}
+.dir-switch{position:fixed;right:12px;bottom:12px;z-index:100;background:var(--surface);border:1px solid var(--line-strong);color:var(--text-dim);padding:7px 10px;font:14px var(--mono);cursor:pointer;box-shadow:0 2px 12px var(--bg)}
+.dir-switch:hover{color:var(--text)}
 </style>
 </head>
 <body>
@@ -95,6 +142,7 @@ svg.lane{width:100%;display:block;background:var(--bg);border:1px solid var(--li
 </header>
 
 <main id="main" style="padding:16px;max-width:1600px;margin:0 auto"></main>
+<button class="dir-switch" data-action="dir" id="dir-switch" aria-label="Change layout"></button>
 
 <script>
 "use strict";
@@ -138,7 +186,12 @@ const worstCVD = (a,b) => Math.min(...["protan","deutan","tritan"].map(k => delt
 const tok = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
 /* ══ state ════════════════════════════════════════════════════════════════ */
-const S = { screen:"now", theme:"dark", degraded:false, win:30 };
+const PANELS = [
+  { id:"a", name:"Clinical", render:renderA },
+  { id:"b", name:"Night Report", render:renderB },
+  { id:"c", name:"Terminal", render:renderC },
+];
+const S = { screen:"now", theme:"dark", degraded:false, win:30, dir:"a" };
 const SCREENS = [["now","Now"],["night","Last night"],["trends","Trends"],["sys","System health"],["tok","Design system"]];
 
 /* ══ helpers ══════════════════════════════════════════════════════════════ */
@@ -390,7 +443,17 @@ function model(){
 
   const okc = "var(--ok)", medc = "var(--med)";
   return {
+    screen:S.screen, theme:S.theme, degraded:deg, win:S.win,
     clock: (deg ? "03:45:53" : "06:45:02") + " · TZ EST · UTC−05",
+    editorial: deg ? {
+      kicker:"Cannot assess", glyph:"?", color:UNK, hatch:hatchOn,
+      headline:"The pulse-ox went quiet at 03:04. Nothing since.",
+      standfirst:"This is not a calm night — it is an unobserved one. The risk machine is held at CONFIRM because the evidence needed either to escalate or clear stopped arriving."
+    } : {
+      kicker:"Monitoring active", glyph:"✓", color:"var(--ok)", hatch:"none",
+      headline:"All five sensors reported within the last second.",
+      standfirst:"SpO₂ is 96 %, heart rate is 52 bpm, and respiration is 13. The risk machine has been CLEAR since 02:24; the blood-pressure reading is history, not current status."
+    },
     alarms, numerics, sensors, tiers, events, lanes, xTicks,
     trendCards: ["spo2","hr","hrv","ahi"].map(trend),
     liveLanes: [
@@ -601,13 +664,13 @@ function screenNight(m){ return `
 </section>`; }
 
 function screenTrends(m){
-  const btn = (d) => `<button data-action="win" data-win="${d}" aria-pressed="${S.win===d}" style="background:${S.win===d?"var(--surface-2)":"transparent"};border:0;${d!==90?"border-right:1px solid var(--line-strong);":""}color:var(--text);padding:8px 14px;font-family:var(--mono);font-size:14px;cursor:pointer">${d} D</button>`;
+  const btn = (d) => `<button data-action="win" data-win="${d}" aria-pressed="${m.win===d}" style="background:${m.win===d?"var(--surface-2)":"transparent"};border:0;${d!==90?"border-right:1px solid var(--line-strong);":""}color:var(--text);padding:8px 14px;font-family:var(--mono);font-size:14px;cursor:pointer">${d} D</button>`;
   return `
 <section aria-label="Trends">
   <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;border-bottom:1px solid var(--line-strong);padding-bottom:10px;margin-bottom:14px">
     <h2 style="margin:0;font-size:20px;letter-spacing:.08em">TRENDS</h2>
     <div role="group" aria-label="Window" style="display:flex;border:1px solid var(--line-strong)">${btn(7)}${btn(30)}${btn(90)}</div>
-    <span class="mono" style="font-size:14px;color:var(--text-dim)">baseline = own rolling median, ${S.win} nights · no population norms</span>
+    <span class="mono" style="font-size:14px;color:var(--text-dim)">baseline = own rolling median, ${m.win} nights · no population norms</span>
   </div>
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px">
     ${m.trendCards.map(c => `
@@ -842,23 +905,57 @@ function screenTokens(){
   </div>
 </section>`; }
 
+/* ══ direction renderers ══════════════════════════════════════════════════
+   These functions are deliberately presentation-only. They receive the one
+   object produced by model(); none fetches, reads status.json, or derives a
+   physiological value. This keeps eventual direction pruning mechanical. */
+function renderA(m){
+  const screen = { now:screenNow, night:screenNight, trends:screenTrends, sys:screenSys, tok:screenTokens }[m.screen];
+  return screen(m);
+}
+
+const compactLane = (L, labelW=96) => laneRow(L,labelW,true);
+function renderB(m){
+  if (m.screen === "now") return `<section aria-label="Now">
+    <div class="b-lede" style="border-left-color:${m.editorial.color};background-image:${m.editorial.hatch};background-size:9px 9px">
+      <div style="color:${m.editorial.color};font-size:14px;letter-spacing:.14em;text-transform:uppercase;font-weight:700">${m.editorial.glyph} ${esc(m.editorial.kicker)}</div>
+      <h1>${esc(m.editorial.headline)}</h1><p style="font-size:17px;line-height:1.65;color:var(--text-dim);margin:0">${esc(m.editorial.standfirst)}</p>
+    </div>
+    <div class="b-grid"><div><h2>Who is still talking to us</h2>${m.sensors.map(s=>`<div class="row"><b style="color:${s.color}">${s.glyph}</b><span style="flex:1">${esc(s.name)}</span><span style="color:${s.color}">${s.age}</span></div>`).join("")}</div>
+    <div><h2>The last twenty minutes</h2><p style="color:var(--text-dim)">The line stops where the evidence stops. Nothing is carried forward.</p>${m.liveLanes.map(L=>compactLane(L,76)).join("")}</div></div></section>`;
+  if (m.screen === "night") return `<section aria-label="Last night"><div class="b-lede"><div style="color:var(--text-faint);text-transform:uppercase">Session ${m.session.id} · ${m.session.span}</div><h1>${m.degraded?"Half a night on the record, and the missing half is the half that mattered.":"One cluster at two in the morning, resolved without intervention."}</h1><p style="color:var(--text-dim);line-height:1.65">${m.session.dur} · ${m.session.n} samples · ${m.session.coverage} coverage. Every gap below is shown, never smoothed.</p></div><div style="margin-top:30px">${m.lanes.map(L=>compactLane(L,76)).join("")}<div class="legend">${m.xTicks.map(t=>`<span>${t}</span>`).join("")}</div></div><h2 style="margin-top:38px">How the night went</h2><div class="b-grid">${m.events.map((e,i)=>`<article class="b-rule" style="border-top-color:${e.color}"><div style="color:${e.color};font-weight:700">${i+1} · ${e.t} · ${e.rank}</div><h3>${esc(e.label)}</h3><p style="color:var(--text-dim);line-height:1.6">${esc(e.detail)}</p></article>`).join("")}</div></section>`;
+  if (m.screen === "trends") return `<section aria-label="Trends"><div class="b-lede"><h1>Compared with you, not with anyone else</h1><p style="color:var(--text-dim);line-height:1.6">One server-side aggregate per night. Missing nights remain gaps and are counted below each chart.</p></div>${screenTrends(m)}</section>`;
+  if (m.screen === "sys") return `<section aria-label="System health"><div class="b-lede" style="border-left-color:${m.readiness.color}"><div style="color:${m.readiness.color};font-weight:700">${m.readiness.glyph} TONIGHT · ${m.readiness.verdict}</div><h1>${esc(m.readiness.detail)}</h1></div><div class="b-grid">${m.sysGroups.map(g=>`<div><h2>${g.title}</h2>${g.rows.map(r=>`<div class="row"><b style="color:${r.color}">${r.glyph}</b><span style="flex:1">${esc(r.k)}</span><span style="color:${r.color}">${esc(r.v)}</span></div>`).join("")}</div>`).join("")}</div></section>`;
+  return `<section aria-label="Design system" class="b-lede"><div style="color:var(--text-faint);text-transform:uppercase">Direction B</div><h1>The Night Report</h1><p style="font-size:17px;line-height:1.65;color:var(--text-dim)">The night is edited like a report: a lede states whether monitoring worked, charts are evidence exhibits, and the event sequence names every gap in words. Serif prose, hairline rules, and no smooth line where evidence is absent.</p></section>`;
+}
+
+function renderC(m){
+  const panel=(title,content)=>`<div class="box" style="margin-bottom:14px"><div class="box-head"><span style="color:var(--text-dim)">$ ${title}</span></div>${content}</div>`;
+  if(m.screen==="now") return `<section aria-label="Now">${panel("vitalsctl status --watch",`<div style="border:1px solid ${m.editorial.color};padding:12px;color:${m.editorial.color};font-weight:700">${m.editorial.glyph} ${esc(m.editorial.kicker)}<div style="color:var(--text);font-weight:400;margin-top:6px">${esc(m.editorial.headline)}</div></div>`)}<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(228px,1fr));gap:10px">${m.numerics.map(n=>`<div class="box" style="border-top:3px solid ${n.color};background-image:${n.hatch}"><div style="color:${n.color}">${n.glyph} ${n.label} <span style="float:right;color:var(--text-faint)">${n.unit}</span></div><div style="font-size:44px;margin:12px 0;color:${n.valueColor}">${n.value}</div><div style="color:var(--text-faint)">lim ${n.limits} · ${n.stamp}</div></div>`).join("")}</div>${panel("vitalsctl sensors --watch",m.sensors.map(s=>`<div class="row"><b style="color:${s.color}">${s.glyph}</b><span style="flex:1">${esc(s.name)} ${s.link}</span><b style="color:${s.color}">${s.state}</b><span>${s.age}</span></div>`).join(""))}${panel("vitalsctl plot --last 20m",m.liveLanes.map(L=>compactLane(L,110)).join(""))}</section>`;
+  if(m.screen==="night") return `<section aria-label="Last night">${panel(`vitalsctl session show ${m.session.id}`,`<div>${m.session.span} · duration=${m.session.dur} · samples=${m.session.n} · coverage=${m.session.coverage}</div>`)}${panel("lanes --shared-x --no-interpolation",m.lanes.map(L=>compactLane(L,118)).join("")+`<div class="legend">${m.xTicks.map(t=>`<span>${t}</span>`).join("")}</div>`)}${panel("journalctl -u vitalsd --grep EVENT",m.events.map(e=>`<div class="row"><span>${e.t}</span><b style="color:${e.color}">${e.glyph} ${e.rank}</b><span>${esc(e.label)} <i style="color:var(--text-faint)">${esc(e.detail)}</i></span></div>`).join(""))}</section>`;
+  if(m.screen==="trends") return `<section aria-label="Trends">${panel(`vitalsctl trend --window ${m.win}d --baseline self`,`server_aggregate=one_point_per_night · null_policy=gap`)}${screenTrends(m)}</section>`;
+  if(m.screen==="sys") return `<section aria-label="System health">${panel("vitalsctl preflight --tonight",`<div style="color:${m.readiness.color};font-size:19px;font-weight:700">${m.readiness.glyph} ${m.readiness.verdict}</div><p>${esc(m.readiness.detail)}</p>`)}<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px">${m.sysGroups.map(g=>panel(g.title,g.rows.map(r=>`<div class="row"><b style="color:${r.color}">${r.glyph}</b><span style="flex:1">${esc(r.k)}</span><span style="color:${r.color}">${esc(r.v)}</span></div>`).join(""))).join("")}</div></section>`;
+  return `<section aria-label="Design system">${panel("man 7 anxietywatch-ui",`<h1>DIRECTION C — TERMINAL</h1><p style="color:var(--text-dim);line-height:1.65">One monospace grid. Every panel is headed by the command that produced it, null is literal and hatched, and every value keeps units and timestamp. Nothing is decorative; gaps are never bridged or zero-filled.</p>`)}</section>`;
+}
+
 /* ══ render ═══════════════════════════════════════════════════════════════ */
 function render(){
   document.documentElement.setAttribute("data-theme", S.theme);
+  document.body.dataset.dir = S.dir;
   const m = model();
-
+  const brand = document.querySelector("header span.mono");
+  brand.classList.add("dir-brand");
+  brand.textContent = S.dir === "b" ? "AnxietyWatch" : S.dir === "c" ? "root@aw-pi4:~/vitalsd" : "ANXIETYWATCH";
   document.getElementById("clock").textContent = m.clock;
-  document.getElementById("btn-degraded").textContent = "SIM: SENSOR LOSS " + (S.degraded ? "ON" : "OFF");
-  document.getElementById("btn-degraded").setAttribute("aria-pressed", String(S.degraded));
-  document.getElementById("btn-theme").textContent = "THEME: " + S.theme.toUpperCase();
-
-  document.getElementById("nav").innerHTML = SCREENS.map(([k,label]) =>
-    `<button class="nav-btn" data-action="screen" data-screen="${k}"${S.screen===k?' aria-current="page"':""}>${label}</button>`).join("");
-
-  const body = { now:screenNow, night:screenNight, trends:screenTrends, sys:screenSys, tok:screenTokens }[S.screen];
-  /* screenTokens reads resolved custom properties, so data-theme must already be
-     on <html> before it runs -- which it is, first line of this function. */
-  document.getElementById("main").innerHTML = body(m);
+  document.getElementById("btn-degraded").textContent = "SIM: SENSOR LOSS " + (m.degraded ? "ON" : "OFF");
+  document.getElementById("btn-degraded").setAttribute("aria-pressed", String(m.degraded));
+  document.getElementById("btn-theme").textContent = "THEME: " + m.theme.toUpperCase();
+  document.getElementById("nav").innerHTML = SCREENS.map(([k,label],i) =>
+    `<button class="nav-btn" data-action="screen" data-screen="${k}"${m.screen===k?' aria-current="page"':""}>${S.dir==="c"?(i+1)+" ":""}${label}</button>`).join("");
+  document.getElementById("dir-switch").textContent = "CHANGE LAYOUT · " + S.dir.toUpperCase() + " " + PANELS.find(p=>p.id===S.dir).name;
+  /* Direction A's token screen reads resolved properties, so theme and body
+     direction are set before any renderer runs. */
+  document.getElementById("main").innerHTML = PANELS.find(p=>p.id===S.dir).render(m);
 }
 
 document.addEventListener("click", e => {
@@ -869,8 +966,27 @@ document.addEventListener("click", e => {
   else if (a === "theme") S.theme = S.theme === "dark" ? "light" : "dark";
   else if (a === "degraded") S.degraded = !S.degraded;
   else if (a === "win") S.win = Number(el.dataset.win);
+  else if (a === "dir") {
+    const i = PANELS.findIndex(p => p.id === S.dir);
+    S.dir = PANELS[(i + 1) % PANELS.length].id;
+    try { localStorage.setItem("dashboardDir", S.dir); } catch (e) { /* private mode */ }
+  }
   render();
 });
+
+/* ?dir=a|b|c wins for this load. Otherwise restore the last layout; malformed
+   query/storage values fail closed to Clinical. This mirrors the panel's
+   PANELS + ?view= + localStorage precedent. */
+const qs = new URLSearchParams(location.search);
+const queryDir = qs.get("dir");
+let storedDir = null;
+try { storedDir = localStorage.getItem("dashboardDir"); } catch (e) { /* private mode */ }
+const initialDir = PANELS.some(p => p.id === queryDir) ? queryDir
+  : PANELS.some(p => p.id === storedDir) ? storedDir : "a";
+S.dir = initialDir;
+if (PANELS.some(p => p.id === queryDir)) {
+  try { localStorage.setItem("dashboardDir", queryDir); } catch (e) { /* private mode */ }
+}
 
 render();
 </script>
