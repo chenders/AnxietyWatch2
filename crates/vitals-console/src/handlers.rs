@@ -7,11 +7,23 @@ use vitals_registry::ALL_SOURCES;
 use crate::client::get_health;
 use crate::models::{DaemonReachable, HealthView, SourceHealthView, VersionView};
 
+/// Shared application state for all console routes.
 #[derive(Clone)]
 pub struct AppState {
+    /// Path to the `vitalsd` Unix socket.
     pub socket_path: PathBuf,
+    /// `PostgreSQL` connection URL in libpq format, used by `/api/recovery`.
+    pub db_url: String,
+    /// Injected system operations for the host-status collectors.
+    pub sys_ops: crate::api::ops::SysOps,
+    /// `PostgreSQL` access for the read API, injected for testability.
+    pub db_ops: std::sync::Arc<dyn crate::api::postgres::DbOps>,
 }
 
+/// GET /api/health
+///
+/// Fetches the daemon's health over its Unix socket and derives a per-source
+/// state with the local liveness evaluator.
 pub async fn health_handler(State(state): State<AppState>) -> Json<HealthView> {
     let daemon_health = get_health(&state.socket_path).await;
 
@@ -32,10 +44,12 @@ pub async fn health_handler(State(state): State<AppState>) -> Json<HealthView> {
         ),
     };
 
-    let now_s = SystemTime::now()
+    let now_s: i64 = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs() as i64;
+        .unwrap_or_default()
+        .as_secs()
+        .try_into()
+        .unwrap_or(0);
 
     let mut source_views = Vec::new();
     for source in ALL_SOURCES {
@@ -65,7 +79,7 @@ pub async fn health_handler(State(state): State<AppState>) -> Json<HealthView> {
             raw_liveness = Some(info.liveness);
             if let Some(age) = info.last_sample_age_secs {
                 observation_age_s = Some(age);
-                let timestamp = now_s.saturating_sub(age as i64);
+                let timestamp = now_s.saturating_sub(age.try_into().unwrap_or(0));
                 evidence.last_attempt_epoch_s = Some(timestamp);
                 evidence.last_success_epoch_s = Some(timestamp);
             }
@@ -81,7 +95,7 @@ pub async fn health_handler(State(state): State<AppState>) -> Json<HealthView> {
 
         source_views.push(SourceHealthView {
             id: source.id(),
-            name: format!("{:?}", source),
+            name: format!("{source:?}"),
             state: state_str.to_string(),
             reason: assertion.reason,
             degrade_deadline_epoch_s: assertion.degrade_deadline_epoch_s,
@@ -99,6 +113,14 @@ pub async fn health_handler(State(state): State<AppState>) -> Json<HealthView> {
     })
 }
 
+/// GET /api/version
+///
+/// Renders the crate version, `GIT_DESCRIBE` when built from a tag, and a
+/// milestone note.
+#[expect(
+    clippy::unused_async,
+    reason = "axum handlers must be async to satisfy the Handler trait"
+)]
 pub async fn version_handler() -> Json<VersionView> {
     Json(VersionView {
         version: env!("CARGO_PKG_VERSION"),
@@ -109,6 +131,15 @@ pub async fn version_handler() -> Json<VersionView> {
 
 #[cfg(test)]
 mod tests {
+    #![expect(
+        clippy::unwrap_used,
+        reason = "unit tests use fixed fixtures and a local socket; unwrap is the assertion that setup and the canned daemon reply succeed"
+    )]
+    #![expect(
+        clippy::indexing_slicing,
+        reason = "tests index serde_json::Value views of canned handler responses"
+    )]
+
     use super::*;
     use axum::{Router, body::Body, http::Request as AxumRequest, routing::get};
     use http_body_util::BodyExt; // for `collect`
@@ -121,9 +152,24 @@ mod tests {
     use vitals_proto::{Health, Liveness, Response, SourceHealth, check_frame_len, encode_frame};
     use vitals_registry::VitalsSource;
 
-    async fn spawn_stub_daemon(socket_path: PathBuf, canned_health: Health) {
-        let listener = UnixListener::bind(&socket_path).unwrap();
+    struct DummyDbOps;
+    #[async_trait::async_trait]
+    impl crate::api::postgres::DbOps for DummyDbOps {
+        async fn get_latest(&self, _s: i32, _t: i32) -> Result<Option<(i64, f64)>, String> {
+            Ok(None)
+        }
+        async fn get_nightly(
+            &self,
+            _n: u32,
+            _source: Option<i32>,
+        ) -> Result<Vec<crate::api::postgres::NightlyRow>, String> {
+            Ok(vec![])
+        }
+    }
+
+    fn spawn_stub_daemon(socket_path: PathBuf, canned_health: Health) {
         tokio::spawn(async move {
+            let listener = UnixListener::bind(&socket_path).unwrap();
             if let Ok((mut stream, _)) = listener.accept().await {
                 let mut len_buf = [0u8; 4];
                 if stream.read_exact(&mut len_buf).await.is_ok() {
@@ -169,7 +215,12 @@ mod tests {
 
         let app = Router::new()
             .route("/api/health", get(health_handler))
-            .with_state(AppState { socket_path });
+            .with_state(AppState {
+                socket_path: socket_path.clone(),
+                db_url: String::new(),
+                sys_ops: crate::api::ops::SysOps::real(),
+                db_ops: std::sync::Arc::new(DummyDbOps),
+            });
 
         let req = AxumRequest::builder()
             .uri("/api/health")
@@ -218,13 +269,18 @@ mod tests {
             },
         ];
 
-        spawn_stub_daemon(socket_path.clone(), health).await;
+        spawn_stub_daemon(socket_path.clone(), health);
         // give the listener a moment to bind
         tokio::time::sleep(Duration::from_millis(50)).await;
 
         let app = Router::new()
             .route("/api/health", get(health_handler))
-            .with_state(AppState { socket_path });
+            .with_state(AppState {
+                socket_path: socket_path.clone(),
+                db_url: String::new(),
+                sys_ops: crate::api::ops::SysOps::real(),
+                db_ops: std::sync::Arc::new(DummyDbOps),
+            });
 
         let req = AxumRequest::builder()
             .uri("/api/health")
