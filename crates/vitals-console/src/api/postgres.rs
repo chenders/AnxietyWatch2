@@ -62,6 +62,12 @@ pub struct NightlyRow {
 /// without a database.
 #[async_trait]
 pub trait DbOps: Send + Sync {
+    /// Return the deployed Sqitch change id and pending migration count.
+    ///
+    /// # Errors
+    /// Returns a database/Sqitch metadata error naming why identity is unavailable.
+    async fn get_schema_identity(&self) -> Result<(String, u64), String>;
+
     /// Return the most recent `(timestamp, value)` for a source/type, or
     /// `None` if that source/type has never been measured.
     ///
@@ -116,6 +122,37 @@ impl PgDbOps {
 
 #[async_trait]
 impl DbOps for PgDbOps {
+    async fn get_schema_identity(&self) -> Result<(String, u64), String> {
+        let client = self.connect().await?;
+        let deployed: Option<String> = client
+            .query_one(
+                "SELECT change_id FROM sqitch.changes ORDER BY committed_at DESC LIMIT 1",
+                &[],
+            )
+            .await
+            .map_err(|e| format!("schema identity query failed: {e}"))?
+            .get(0);
+        let revision = deployed.ok_or_else(|| {
+            "schema identity query returned no deployed Sqitch changes".to_string()
+        })?;
+        let deployed_count: i64 = client
+            .query_one("SELECT COUNT(*)::bigint FROM sqitch.changes", &[])
+            .await
+            .map_err(|e| format!("schema change-count query failed: {e}"))?
+            .get(0);
+        let planned_count = env!("VITALS_PLANNED_SCHEMA_CHANGES")
+            .parse::<u64>()
+            .map_err(|e| format!("embedded planned schema change count is invalid: {e}"))?;
+        let deployed_count = u64::try_from(deployed_count)
+            .map_err(|_| format!("deployed schema change count is negative: {deployed_count}"))?;
+        let pending = planned_count.checked_sub(deployed_count).ok_or_else(|| {
+            format!(
+                "deployed schema change count {deployed_count} exceeds embedded plan count {planned_count}"
+            )
+        })?;
+        Ok((revision, pending))
+    }
+
     async fn get_latest(&self, source: i32, r#type: i32) -> Result<Option<(i64, f64)>, String> {
         let client = self.connect().await?;
         let row_opt = client
@@ -351,6 +388,9 @@ mod tests {
 
     #[async_trait]
     impl DbOps for StubDbOps {
+        async fn get_schema_identity(&self) -> Result<(String, u64), String> {
+            Ok(("fixture-change".to_string(), 0))
+        }
         async fn get_latest(&self, _source: i32, _type: i32) -> Result<Option<(i64, f64)>, String> {
             if self.has_latest {
                 Ok(Some((1_600_000_000_000_000, 42.0)))

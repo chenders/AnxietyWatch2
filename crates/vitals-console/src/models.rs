@@ -50,10 +50,16 @@ pub struct HealthView {
 pub struct VersionView {
     /// Crate version from `Cargo.toml`.
     pub version: &'static str,
-    /// Value of `GIT_DESCRIBE` at build time, when set.
-    pub git: Option<&'static str>,
-    /// Milestone note on what this build ships.
-    pub note: &'static str,
+    /// Exact Git commit embedded by `build.rs`, or `UNKNOWN` if Git was unavailable.
+    pub git_commit: &'static str,
+    /// Build time as UTC epoch seconds, or `UNKNOWN` if the build clock failed.
+    pub build_epoch_s: &'static str,
+    /// Sqitch's currently deployed change id, when measured from `PostgreSQL`.
+    pub schema_revision: Option<String>,
+    /// Number of planned Sqitch changes absent from the deployed schema.
+    pub pending_migrations: Option<u64>,
+    /// Why schema identity is absent, when it could not be measured.
+    pub schema_unmeasured_reason: Option<String>,
 }
 
 // ---- Error response ----

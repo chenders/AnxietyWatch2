@@ -12,6 +12,10 @@ pub struct ClockInfo {
     pub time_usec: Option<u64>,
     /// Hardware RTC time, microseconds since the Unix epoch.
     pub rtc_time_usec: Option<u64>,
+    /// Whether RTC time was reported. This is not battery-presence evidence.
+    pub rtc_time_measured: bool,
+    /// Why required RTC battery-presence evidence is unavailable.
+    pub rtc_battery_unmeasured_reason: String,
     /// RTC minus system clock, microseconds; positive means the RTC runs ahead.
     pub drift_usec: Option<i64>,
 }
@@ -56,6 +60,9 @@ pub async fn collect_clock_info(ops: &SysOps) -> Result<ClockInfo, String> {
         ntp_synchronized,
         time_usec,
         rtc_time_usec,
+        rtc_time_measured: rtc_time_usec.is_some(),
+        rtc_battery_unmeasured_reason:
+            "RTC battery presence is not exposed by the available timedatectl interface".to_string(),
         drift_usec,
     })
 }
@@ -92,6 +99,11 @@ mod tests {
         let info = collect_clock_info(&ops).await.unwrap();
         assert_eq!(info.time_usec, Some(1000));
         assert_eq!(info.rtc_time_usec, Some(1050));
+        assert!(info.rtc_time_measured);
+        assert_eq!(
+            info.rtc_battery_unmeasured_reason,
+            "RTC battery presence is not exposed by the available timedatectl interface"
+        );
         assert_eq!(info.drift_usec, Some(50));
 
         let mut ops2 = SysOps::real();
@@ -103,5 +115,23 @@ mod tests {
         assert_eq!(info2.time_usec, Some(2000));
         assert_eq!(info2.rtc_time_usec, Some(1500));
         assert_eq!(info2.drift_usec, Some(-500));
+    }
+
+    #[tokio::test]
+    async fn test_rtc_time_never_claims_battery_presence() {
+        let mut ops = SysOps::real();
+        ops.cmd = |_cmd, _args| {
+            Box::pin(async move { Ok("NTPSynchronized=yes\nTimeUSec=1000\n".to_string()) })
+        };
+
+        let info = collect_clock_info(&ops).await.unwrap();
+        assert!(info.ntp_synchronized);
+        assert!(!info.rtc_time_measured);
+        assert_eq!(info.rtc_time_usec, None);
+        assert_eq!(info.drift_usec, None);
+        assert_eq!(
+            info.rtc_battery_unmeasured_reason,
+            "RTC battery presence is not exposed by the available timedatectl interface"
+        );
     }
 }

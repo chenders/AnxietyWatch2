@@ -177,17 +177,21 @@ pub async fn dashboard_handler() -> Html<&'static str> {
 
 /// GET /api/version
 ///
-/// Renders the crate version, `GIT_DESCRIBE` when built from a tag, and a
-/// milestone note.
-#[expect(
-    clippy::unused_async,
-    reason = "axum handlers must be async to satisfy the Handler trait"
-)]
-pub async fn version_handler() -> Json<VersionView> {
+/// Renders build identity embedded by `build.rs` and schema identity measured
+/// from the deployed Sqitch metadata.
+pub async fn version_handler(State(state): State<AppState>) -> Json<VersionView> {
+    let (schema_revision, pending_migrations, schema_unmeasured_reason) =
+        match state.db_ops.get_schema_identity().await {
+            Ok((revision, pending)) => (Some(revision), Some(pending), None),
+            Err(reason) => (None, None, Some(reason)),
+        };
     Json(VersionView {
         version: env!("CARGO_PKG_VERSION"),
-        git: option_env!("GIT_DESCRIBE"),
-        note: "attempts schema: deployed in this milestone",
+        git_commit: env!("VITALS_BUILD_COMMIT"),
+        build_epoch_s: env!("VITALS_BUILD_EPOCH_S"),
+        schema_revision,
+        pending_migrations,
+        schema_unmeasured_reason,
     })
 }
 
@@ -576,6 +580,9 @@ mod tests {
     struct DummyDbOps;
     #[async_trait::async_trait]
     impl crate::api::postgres::DbOps for DummyDbOps {
+        async fn get_schema_identity(&self) -> Result<(String, u64), String> {
+            Ok(("fixture-change".to_string(), 0))
+        }
         async fn get_latest(&self, _s: i32, _t: i32) -> Result<Option<(i64, f64)>, String> {
             Ok(None)
         }
@@ -638,6 +645,22 @@ mod tests {
         }
     }
 
+    fn assert_registry_census(sources: &[Value]) {
+        assert_eq!(
+            sources.len(),
+            ALL_SOURCES.len(),
+            "health view must left-join every registry source"
+        );
+        for source in ALL_SOURCES {
+            assert!(
+                sources
+                    .iter()
+                    .any(|view| view["id"] == source.id() && view["name"] == format!("{source:?}")),
+                "registry source {source:?} disappeared from health view"
+            );
+        }
+    }
+
     fn test_state(socket_path: PathBuf) -> AppState {
         AppState {
             socket_path,
@@ -674,6 +697,17 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_version_reports_embedded_build_and_measured_schema_identity() {
+        let Json(version) = version_handler(State(test_state(PathBuf::new()))).await;
+        assert_eq!(version.version, env!("CARGO_PKG_VERSION"));
+        assert_eq!(version.git_commit, env!("VITALS_BUILD_COMMIT"));
+        assert_eq!(version.build_epoch_s, env!("VITALS_BUILD_EPOCH_S"));
+        assert_eq!(version.schema_revision.as_deref(), Some("fixture-change"));
+        assert_eq!(version.pending_migrations, Some(0));
+        assert_eq!(version.schema_unmeasured_reason, None);
+    }
+
+    #[tokio::test]
     async fn test_unreachable_socket() {
         let dir = tempdir().unwrap();
         let socket_path = dir.path().join("vitalsd.sock");
@@ -696,10 +730,7 @@ mod tests {
         assert!(json["vitalsd"].get("unreachable").is_some());
 
         let sources = json["sources"].as_array().unwrap();
-        assert!(
-            !sources.is_empty(),
-            "must not return an empty list of sources"
-        );
+        assert_registry_census(sources);
     }
 
     #[tokio::test]
@@ -750,6 +781,7 @@ mod tests {
         assert_eq!(json["vitalsd"], "reachable");
 
         let sources = json["sources"].as_array().unwrap();
+        assert_registry_census(sources);
 
         // Find Emay (a)
         let emay = sources.iter().find(|s| s["name"] == "Emay").unwrap();
