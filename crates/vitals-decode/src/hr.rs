@@ -26,7 +26,9 @@
 //!
 //! The units are **1/1024 s, not milliseconds.** Treating them as milliseconds
 //! yields intervals about 2.4% short — an HRV figure wrong in a way no range
-//! check would ever flag.
+//! check would ever flag. The registry's canonical unit for `rr_interval` is
+//! **seconds**, and per the one-conversion rule that conversion happens here
+//! and nowhere else.
 
 /// Most RR intervals a single notification can carry.
 ///
@@ -40,12 +42,12 @@ pub const MAX_RR: usize = 32;
 pub struct HeartRate {
     /// Beats per minute.
     pub bpm: u16,
-    /// How many RR intervals were decoded into [`Self::rr_ms`].
+    /// How many RR intervals were decoded into [`Self::rr_s`].
     pub rr_len: usize,
-    /// RR intervals in **milliseconds**, converted once here so nothing
-    /// downstream sees 1/1024 s units. Only the first [`Self::rr_len`] entries
-    /// are meaningful.
-    pub rr_ms: [f64; MAX_RR],
+    /// RR intervals in **seconds** — the registry's canonical unit for
+    /// `rr_interval` — converted once here so nothing downstream sees
+    /// 1/1024 s units. Only the first [`Self::rr_len`] entries are meaningful.
+    pub rr_s: [f64; MAX_RR],
     /// Intervals present in the notification but beyond [`MAX_RR`].
     ///
     /// Reported rather than silently discarded: a nonzero value means data was
@@ -62,10 +64,10 @@ pub struct HeartRate {
 }
 
 impl HeartRate {
-    /// The decoded RR intervals.
+    /// The decoded RR intervals, in seconds.
     #[must_use]
     pub fn rr(&self) -> &[f64] {
-        self.rr_ms.get(..self.rr_len).unwrap_or(&[])
+        self.rr_s.get(..self.rr_len).unwrap_or(&[])
     }
 }
 
@@ -107,16 +109,17 @@ pub fn decode_2a37(buf: &[u8]) -> Option<HeartRate> {
         Some(v)
     };
 
-    let mut rr_ms = [0.0f64; MAX_RR];
+    let mut rr_s = [0.0f64; MAX_RR];
     let mut rr_len = 0usize;
     let mut rr_truncated = 0usize;
     if flags & 0x10 != 0 {
         while let Some(b) = buf.get(off..off + 2) {
             let raw = u16::from_le_bytes([*b.first()?, *b.get(1)?]);
-            if let Some(slot) = rr_ms.get_mut(rr_len) {
-                // 1/1024 s, NOT milliseconds. The 1000/1024 factor is the whole
-                // difference between a correct HRV figure and one 2.4% short.
-                *slot = f64::from(raw) * 1000.0 / 1024.0;
+            if let Some(slot) = rr_s.get_mut(rr_len) {
+                // 1/1024 s, NOT milliseconds and NOT thousandths. The /1024 is
+                // the whole difference between a correct HRV figure and one
+                // 2.4% short.
+                *slot = f64::from(raw) / 1024.0;
                 rr_len += 1;
             } else {
                 rr_truncated += 1;
@@ -128,7 +131,7 @@ pub fn decode_2a37(buf: &[u8]) -> Option<HeartRate> {
     Some(HeartRate {
         bpm,
         rr_len,
-        rr_ms,
+        rr_s,
         rr_truncated,
         contact,
         energy_kj,
@@ -166,17 +169,17 @@ mod tests {
     /// The unit conversion this decoder exists to get right.
     #[test]
     fn rr_intervals_are_1024ths_of_a_second_not_milliseconds() {
-        // 1024 units = exactly 1000 ms.
+        // 1024 units = exactly one second.
         let h = decode_2a37(&[0x10, 60, 0x00, 0x04]).expect("decodes");
         assert_eq!(h.rr().len(), 1);
-        assert!(close(h.rr()[0], 1000.0), "got {}", h.rr()[0]);
+        assert!(close(h.rr()[0], 1.0), "got {}", h.rr()[0]);
 
-        // A typical resting interval: 900 units = 878.906 ms, not 900 ms.
+        // A typical resting interval: 900 units = 0.87890625 s, not 0.9 s.
         let h = decode_2a37(&[0x10, 60, 0x84, 0x03]).expect("decodes");
-        assert!(close(h.rr()[0], 900.0 * 1000.0 / 1024.0));
+        assert!(close(h.rr()[0], 900.0 / 1024.0));
         assert!(
-            !close(h.rr()[0], 900.0),
-            "treating units as ms is 2.4% wrong"
+            !close(h.rr()[0], 0.9),
+            "reading raw units as thousandths is 2.4% wrong"
         );
     }
 
@@ -194,7 +197,7 @@ mod tests {
         let h = decode_2a37(&[0x18, 60, 0x02, 0x01, 0x00, 0x04]).expect("decodes");
         assert_eq!(h.energy_kj, Some(0x0102));
         assert_eq!(h.rr().len(), 1);
-        assert!(close(h.rr()[0], 1000.0));
+        assert!(close(h.rr()[0], 1.0));
     }
 
     /// "Cannot report contact" and "reports no contact" are different claims. A
@@ -250,7 +253,7 @@ mod tests {
         if let Some(b) = buf.get_mut(1) {
             *b = 60;
         }
-        // Every interval is 1024 units = 1000 ms.
+        // Every interval is 1024 units = one second.
         for i in 0..(MAX_RR + EXTRA) {
             if let Some(hi) = buf.get_mut(2 + i * 2 + 1) {
                 *hi = 0x04;

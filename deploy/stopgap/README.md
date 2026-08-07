@@ -168,23 +168,18 @@ Still open:
 
 ## Query string
 
-The kiosk unit loads `?kiosk=1&live&demo`.
+The kiosk unit loads `?kiosk=1&live`.
 
 | | |
 |---|---|
 | `kiosk=1` | hides the review scaffolding — the 800×480 panel and nothing else |
-| `live` | poll `status.json` once a second |
-| `live=<url>` | poll somewhere else |
-| `demo` | fill BP, the other three sensors and the system row with moving pseudo-data |
+| `live` | poll real sensor status once a second |
+| `live=<url>` | poll the EMAY status from another local URL |
 
-**Drop `&demo` to see only what is real.** With it, the top strip reads
-`DEMO · SpO₂/HR REAL · REST SIMULATED` on every frame, because a fabricated
-`SELF-TEST 02:00 PASS` sitting beside a true SpO₂ would borrow its credibility.
-Without it those regions read `none` and `not in test`, which is the honest
-picture of what this stopgap actually knows.
-
-SpO₂ and HR are never simulated under either flag. If the ring stops reporting
-they go to `- -` and the tier drops to `CAN'T ASSESS`.
+There is no demo-data mode. EMAY, Polar H10, and cuff regions may display only
+measurements from their physical devices. Missing or stale data renders as such;
+it is never replaced by plausible pseudo-data. Cuff pressure is published from
+rows already committed to PostgreSQL, not directly from the BLE indication.
 
 ## Removing it
 
