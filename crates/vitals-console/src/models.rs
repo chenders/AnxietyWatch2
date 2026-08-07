@@ -1,8 +1,6 @@
 use serde::{Deserialize, Serialize};
 use vitals_proto::Liveness;
 
-// ---- Existing types (kept) ----
-
 /// One source's health as rendered by `/api/health`.
 #[derive(Serialize)]
 pub struct SourceHealthView {
@@ -60,10 +58,10 @@ pub struct VersionView {
 
 // ---- Error response ----
 
-/// A JSON error body returned with a non-2xx status.
+/// JSON error body returned on non-2xx responses.
 #[derive(Serialize)]
 pub struct ErrorResponse {
-    /// Human-readable error message naming the blocker.
+    /// Human-readable reason, naming the value that blocked the action.
     pub error: String,
 }
 
@@ -80,27 +78,27 @@ pub fn error_reply(
 /// Body of `POST /api/envelope/register`.
 #[derive(Deserialize)]
 pub struct RegisterRequest {
-    /// The client's chosen id.
+    /// Client identifier to register or re-register.
     pub client_id: uuid::Uuid,
     /// base64-encoded 32-byte libsodium secretbox key
     pub secret: String,
 }
 
-/// Response body of a successful registration.
+/// Successful `POST /api/envelope/register` response body.
 #[derive(Serialize)]
 pub struct RegisterResponse {
-    /// The registered client id.
+    /// The registered client identifier.
     pub client_id: uuid::Uuid,
-    /// `registered` or `already_registered`.
+    /// `registered` (new) or `already_registered` (idempotent).
     pub status: String,
 }
 
 // ---- Envelope ----
 
-/// Body of `POST /api/envelope`: an encrypted domain record.
+/// Body of `POST /api/envelope`.
 #[derive(Deserialize)]
 pub struct EnvelopeRequest {
-    /// The registered client's id.
+    /// Client identifier whose registered secret decrypts `payload`.
     pub client_id: uuid::Uuid,
     /// base64-encoded 24-byte nonce
     pub nonce: String,
@@ -111,37 +109,37 @@ pub struct EnvelopeRequest {
 /// The decrypted envelope payload.
 #[derive(Deserialize, Serialize)]
 pub struct EnvelopePayload {
-    /// Envelope class; only `domain_record` is accepted in M0.
+    /// Envelope class; only `domain_record` is supported in M0.
     pub class: String,
-    /// The domain record being written.
+    /// The domain record carried by this envelope.
     pub record: DomainRecordPayload,
 }
 
-/// A domain record as carried inside an envelope.
+/// A domain record inside an envelope, before idempotency processing.
 #[derive(Deserialize, Serialize)]
 pub struct DomainRecordPayload {
-    /// Stable record id; the idempotency key.
+    /// Client-assigned record id.
     pub id: uuid::Uuid,
     /// Record kind, e.g. `test_entry`.
     pub kind: String,
-    /// Free-form record content.
+    /// Record payload as arbitrary JSON.
     pub content: serde_json::Value,
 }
 
 /// The response for a processed domain record.
 #[derive(Serialize, Deserialize)]
 pub struct DomainRecordResponse {
-    /// The record id.
+    /// Record id as stored.
     pub id: uuid::Uuid,
-    /// The record kind.
+    /// Record kind as stored.
     pub kind: String,
-    /// The record content as stored.
+    /// Record payload as stored.
     pub content: serde_json::Value,
     /// hex-encoded SHA-256 of canonical content JSON
     pub content_sha256: String,
-    /// Created timestamp, RFC 3339 with millisecond precision.
+    /// `YYYY-MM-DDTHH:MM:SS.fffZ` creation timestamp.
     pub created_at: String,
-    /// Last-updated timestamp, RFC 3339 with millisecond precision.
+    /// `YYYY-MM-DDTHH:MM:SS.fffZ` last-write timestamp.
     pub updated_at: String,
     /// true if this request was a no-op replay
     pub replayed: bool,
@@ -156,45 +154,46 @@ pub struct DomainRecordResponse {
 /// when every record was a no-op replay (spec §2.3b).
 #[derive(Serialize, Deserialize, Clone, Default)]
 pub struct Effect {
-    /// Records created by this attempt.
+    /// Records newly created by this attempt.
     pub created: i32,
     /// Records updated by this attempt.
     pub updated: i32,
-    /// Records that were no-op replays.
+    /// Records that were no-op replays of existing content.
     pub replayed: i32,
-    /// Records rejected by this attempt.
+    /// Records rejected (e.g. idempotency conflicts) by this attempt.
     pub rejected: i32,
 }
 
 // ---- Attempts ----
 
-/// One attempt row in `/api/attempts`.
+/// One attempt row as rendered by `GET /api/attempts`.
 #[derive(Serialize)]
 pub struct AttemptView {
-    /// Attempt id, the `attempts.id` row.
+    /// Attempt id from the `attempts` table.
     pub id: i64,
-    /// Kind of work attempted, e.g. `envelope`.
+    /// Attempt kind, e.g. `envelope`.
     pub kind: String,
-    /// What the attempt acted on, e.g. the client id.
+    /// Subject of the attempt, e.g. the client id.
     pub subject: String,
-    /// When work started, RFC 3339.
+    /// `YYYY-MM-DDTHH:MM:SS.fffZ` start time.
     pub started_at: String,
-    /// Seconds after which an unfinished attempt degrades to UNKNOWN.
+    /// Expected duration in seconds; a `NULL` outcome past this time
+    /// degrades to UNKNOWN, never to success.
     pub expected_duration_s: i32,
-    /// When work finished; `None` if still in flight.
+    /// `YYYY-MM-DDTHH:MM:SS.fffZ` finish time, when finished.
     pub finished_at: Option<String>,
-    /// `succeeded` or `failed`.
+    /// `succeeded` or `failed`, when finished.
     pub outcome: Option<String>,
-    /// What the attempt actually did (created/updated/replayed/rejected).
+    /// Effect breakdown, when finished.
     pub effect: Option<Effect>,
-    /// Error detail when the attempt failed.
+    /// Free-form failure detail, when failed.
     pub detail: Option<String>,
 }
 
 /// Query parameters for `GET /api/attempts`.
 #[derive(Deserialize)]
 pub struct AttemptsQuery {
-    /// Maximum number of rows to return; defaults to 50, capped at 500.
+    /// Maximum number of rows to return; clamped to `1..=500`.
     pub limit: Option<i64>,
 }
 
@@ -205,21 +204,21 @@ pub struct AttemptsQuery {
 pub struct PlaintextTestRequest {
     /// Record kind for the generated domain record.
     pub kind: String,
-    /// Record content for the generated domain record.
+    /// Record payload as arbitrary JSON.
     pub content: serde_json::Value,
 }
 
-/// Response body of the plaintext test route.
+/// Response of `POST /api/envelope/plaintext-test`.
 #[derive(Serialize)]
 pub struct PlaintextTestResponse {
-    /// `ok`, `register_failed`, or `failed (status)`.
+    /// `ok`, `failed`, or `register_failed`.
     pub status: String,
     /// The auto-generated client id.
     pub client_id: uuid::Uuid,
-    /// The auto-generated secret, base64-encoded.
+    /// The auto-generated base64-encoded secret, so the page can reuse it.
     pub secret: String,
-    /// The processed record, when processing succeeded.
+    /// The processed record, when the envelope path succeeded.
     pub record: Option<DomainRecordResponse>,
-    /// Error detail, when processing failed.
+    /// Failure detail, when the request did not fully succeed.
     pub error: Option<String>,
 }
