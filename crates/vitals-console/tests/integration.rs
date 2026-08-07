@@ -9,6 +9,13 @@
 //! `envelope_clients` tables to exist. Apply the deploy scripts from `db/`
 //! before running.
 
+#![expect(
+    clippy::unwrap_used,
+    clippy::indexing_slicing,
+    clippy::panic,
+    reason = "integration test harness: assertions on fixed fixtures should panic loudly"
+)]
+
 use base64::Engine;
 use serde::Serialize;
 use sqlx::PgPool;
@@ -24,17 +31,16 @@ use uuid::Uuid;
 /// - **Set but unreachable**: panics with the connection error. A broken URL
 ///   must never produce a green suite.
 async fn require_test_db() -> Option<PgPool> {
-    match env::var("VITALS_CONSOLE_TEST_DATABASE_URL") {
-        Ok(url) => match PgPool::connect(&url).await {
+    if let Ok(url) = env::var("VITALS_CONSOLE_TEST_DATABASE_URL") {
+        match PgPool::connect(&url).await {
             Ok(pool) => Some(pool),
             Err(e) => {
                 panic!("FAIL: VITALS_CONSOLE_TEST_DATABASE_URL is set but connection failed: {e}");
             }
-        },
-        Err(_) => {
-            eprintln!("SKIP: VITALS_CONSOLE_TEST_DATABASE_URL not set");
-            None
         }
+    } else {
+        eprintln!("SKIP: VITALS_CONSOLE_TEST_DATABASE_URL not set");
+        None
     }
 }
 
@@ -77,9 +83,8 @@ struct DomainRecordPayload {
 #[tokio::test]
 #[serial_test::serial]
 async fn test_register_new_client() {
-    let pool = match require_test_db().await {
-        Some(p) => p,
-        None => return,
+    let Some(pool) = require_test_db().await else {
+        return;
     };
     truncate_all(&pool).await;
 
@@ -116,9 +121,8 @@ async fn test_register_new_client() {
 #[tokio::test]
 #[serial_test::serial]
 async fn test_register_same_secret_idempotent() {
-    let pool = match require_test_db().await {
-        Some(p) => p,
-        None => return,
+    let Some(pool) = require_test_db().await else {
+        return;
     };
     truncate_all(&pool).await;
 
@@ -159,9 +163,8 @@ async fn test_register_same_secret_idempotent() {
 #[tokio::test]
 #[serial_test::serial]
 async fn test_register_different_secret_conflict() {
-    let pool = match require_test_db().await {
-        Some(p) => p,
-        None => return,
+    let Some(pool) = require_test_db().await else {
+        return;
     };
     truncate_all(&pool).await;
 
@@ -203,9 +206,8 @@ async fn test_register_different_secret_conflict() {
 #[tokio::test]
 #[serial_test::serial]
 async fn test_idempotent_replay_same_hash() {
-    let pool = match require_test_db().await {
-        Some(p) => p,
-        None => return,
+    let Some(pool) = require_test_db().await else {
+        return;
     };
     truncate_all(&pool).await;
 
@@ -246,9 +248,8 @@ async fn test_idempotent_replay_same_hash() {
 #[tokio::test]
 #[serial_test::serial]
 async fn test_idempotent_conflict_different_hash() {
-    let pool = match require_test_db().await {
-        Some(p) => p,
-        None => return,
+    let Some(pool) = require_test_db().await else {
+        return;
     };
     truncate_all(&pool).await;
 
@@ -316,9 +317,8 @@ async fn test_idempotent_conflict_different_hash() {
 #[tokio::test]
 #[serial_test::serial]
 async fn test_new_id_insert() {
-    let pool = match require_test_db().await {
-        Some(p) => p,
-        None => return,
+    let Some(pool) = require_test_db().await else {
+        return;
     };
     truncate_all(&pool).await;
 
@@ -354,9 +354,8 @@ async fn test_new_id_insert() {
 #[tokio::test]
 #[serial_test::serial]
 async fn test_attempt_created_before_work() {
-    let pool = match require_test_db().await {
-        Some(p) => p,
-        None => return,
+    let Some(pool) = require_test_db().await else {
+        return;
     };
     truncate_all(&pool).await;
 
@@ -398,9 +397,8 @@ async fn test_attempt_created_before_work() {
 #[tokio::test]
 #[serial_test::serial]
 async fn test_attempt_null_outcome_on_kill() {
-    let pool = match require_test_db().await {
-        Some(p) => p,
-        None => return,
+    let Some(pool) = require_test_db().await else {
+        return;
     };
     truncate_all(&pool).await;
 
@@ -441,9 +439,8 @@ async fn test_attempt_null_outcome_on_kill() {
 #[tokio::test]
 #[serial_test::serial]
 async fn test_attempt_full_lifecycle() {
-    let pool = match require_test_db().await {
-        Some(p) => p,
-        None => return,
+    let Some(pool) = require_test_db().await else {
+        return;
     };
     truncate_all(&pool).await;
 
@@ -515,9 +512,8 @@ async fn test_content_sha256_different_for_different_content() {
 #[tokio::test]
 #[serial_test::serial]
 async fn test_list_attempts() {
-    let pool = match require_test_db().await {
-        Some(p) => p,
-        None => return,
+    let Some(pool) = require_test_db().await else {
+        return;
     };
     // Do NOT truncate — this test scopes its queries to a unique kind so
     // parallel tests cannot pollute its assertions. truncate_all would

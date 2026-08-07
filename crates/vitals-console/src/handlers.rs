@@ -172,6 +172,11 @@ pub async fn version_handler() -> Json<VersionView> {
 /// 127.0.0.1 and the auth posture is an open decision (spec §9c) — see the
 /// design document for the bind and auth posture decision deferred to the
 /// point of use.
+///
+/// # Errors
+/// 400 on invalid base64 or a secret that is not 32 bytes; 503 when the
+/// database is unavailable; 409 on a takeover attempt; 500 on database
+/// failure.
 pub async fn register_handler(
     State(state): State<AppState>,
     Json(req): Json<RegisterRequest>,
@@ -205,6 +210,11 @@ pub async fn register_handler(
 /// Accept an encrypted envelope carrying a domain record. Decrypts with
 /// XSalsa20-Poly1305 using the registered secret, applies idempotency rules
 /// (spec §2.3b), and records the attempt with an effect breakdown.
+///
+/// # Errors
+/// 503 when the database is unavailable; 400 on malformed base64, bad
+/// nonce/ciphertext, or an unsupported envelope class; 401 for an unknown
+/// client; 409 on an idempotency conflict; 500 on database failure.
 pub async fn envelope_handler(
     State(state): State<AppState>,
     Json(req): Json<EnvelopeRequest>,
@@ -354,6 +364,9 @@ async fn process_envelope(
 /// GET /api/attempts?limit=N
 ///
 /// List the most recent attempt rows with their effect breakdowns visible.
+///
+/// # Errors
+/// 503 when the database is unavailable; 500 on database failure.
 pub async fn attempts_handler(
     State(state): State<AppState>,
     Query(query): Query<AttemptsQuery>,
@@ -368,6 +381,10 @@ pub async fn attempts_handler(
 ///
 /// Crude test page: one form that sends a plaintext domain record via the
 /// server-side test route. Deliberately not part of the console (spec §9).
+#[expect(
+    clippy::unused_async,
+    reason = "axum handlers must be async to satisfy the Handler trait"
+)]
 pub async fn test_page_handler() -> Html<&'static str> {
     Html(TEST_PAGE_HTML)
 }
@@ -375,10 +392,16 @@ pub async fn test_page_handler() -> Html<&'static str> {
 /// POST /api/envelope/plaintext-test
 ///
 /// Server-side test endpoint guarded by `VITALS_CONSOLE_TEST_ROUTES=1`.
-/// Auto-generates a client_id + secret, registers the client, encrypts the
+/// Auto-generates a `client_id` + secret, registers the client, encrypts the
 /// domain record with XSalsa20-Poly1305, and submits it through the envelope
 /// processing path. Chosen over the client-side JS approach because it avoids
-/// bundling a NaCl secretbox implementation in the page.
+/// bundling a `NaCl` secretbox implementation in the page.
+///
+/// # Errors
+/// 404 when test routes are disabled; 503 when the database is unavailable;
+/// 400/401/409 from envelope processing (bad ciphertext, unknown client,
+/// idempotency conflict); 500 on RNG, serialization, encryption, or database
+/// failure.
 pub async fn plaintext_test_handler(
     State(state): State<AppState>,
     Json(req): Json<PlaintextTestRequest>,

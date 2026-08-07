@@ -11,12 +11,16 @@ use uuid::Uuid;
 
 use crate::models::{AttemptView, DomainRecordResponse, Effect, ErrorResponse, error_reply};
 
-/// Register a client (upsert on client_id).
+/// Register a client (upsert on `client_id`).
 ///
-/// - New client_id → insert, return 201.
-/// - Existing client_id with matching secret → idempotent 200.
-/// - Existing client_id with different secret → 409 conflict (takeover
+/// - New `client_id` → insert, return 201.
+/// - Existing `client_id` with matching secret → idempotent 200.
+/// - Existing `client_id` with different secret → 409 conflict (takeover
 ///   attempt refused by name, spec §2.3b).
+///
+/// # Errors
+/// 409 when re-registering an existing `client_id` with a different secret
+/// (takeover attempt refused); 500 on database failure.
 pub async fn register_client(
     pool: &PgPool,
     client_id: Uuid,
@@ -74,11 +78,20 @@ pub async fn register_client(
 /// Outcome of a domain-record write attempt.
 pub enum DomainRecordOutcome {
     /// New record created.
-    Created { response: DomainRecordResponse },
+    Created {
+        /// The record as stored, with `replayed: false`.
+        response: DomainRecordResponse,
+    },
     /// No-op replay — same id, same hash.
-    Replayed { response: DomainRecordResponse },
+    Replayed {
+        /// The record as stored, with `replayed: true`.
+        response: DomainRecordResponse,
+    },
     /// Conflict — same id, different hash.
-    Conflict { id: Uuid },
+    Conflict {
+        /// The id whose existing content differs from the request.
+        id: Uuid,
+    },
 }
 
 /// Process a domain record, applying the idempotency rules (spec §2.3b).
@@ -88,6 +101,11 @@ pub enum DomainRecordOutcome {
 /// sufficient for a single writer today (one phone, deterministic serializer).
 /// If multiple concurrent writers are added, a robust canonicalization scheme
 /// (e.g. JCS) would be needed.
+///
+/// # Errors
+/// 500 on database failure. Idempotency conflicts are returned as
+/// `DomainRecordOutcome::Conflict`, not as errors — a refused takeover is a
+/// correct outcome, not a failure.
 pub async fn process_domain_record(
     pool: &PgPool,
     id: Uuid,
@@ -169,6 +187,9 @@ pub async fn process_domain_record(
 /// Returns the attempt id so the caller can finish it later. A handler crash
 /// after this call leaves `outcome` NULL, which the liveness evaluator
 /// degrades to UNKNOWN past `expected_duration_s` (spec §2.3, criterion 3).
+///
+/// # Errors
+/// 500 on database failure.
 pub async fn create_attempt(
     pool: &PgPool,
     kind: &str,
@@ -194,6 +215,9 @@ pub async fn create_attempt(
 }
 
 /// Finish a previously-created attempt with its outcome and effect breakdown.
+///
+/// # Errors
+/// 500 on database failure.
 pub async fn finish_attempt(
     pool: &PgPool,
     attempt_id: i64,
@@ -224,9 +248,10 @@ pub async fn finish_attempt(
 ///
 /// Canonicalization is byte-equality of `serde_json::to_vec` output. This is
 /// sufficient for a single writer today because there is exactly one client
-/// sending each kind of record, and serde_json serialization is deterministic
+/// sending each kind of record, and `serde_json` serialization is deterministic
 /// for a given input value. If multiple concurrent writers are added, a more
 /// robust canonicalization (like JCS) would be needed.
+#[must_use]
 pub fn content_sha256(content: &serde_json::Value) -> [u8; 32] {
     let bytes = serde_json::to_vec(content).unwrap_or_default();
     let mut hasher = Sha256::new();
@@ -247,6 +272,9 @@ type AttemptRow = (
 );
 
 /// List the most recent attempt rows.
+///
+/// # Errors
+/// 500 on database failure.
 pub async fn list_attempts(
     pool: &PgPool,
     limit: i64,

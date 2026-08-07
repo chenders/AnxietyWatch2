@@ -26,13 +26,11 @@ async fn main() {
         env::var("VITALS_CONSOLE_BIND").unwrap_or_else(|_| "127.0.0.1:8480".to_string());
     let socket_path =
         env::var("VITALSD_SOCKET").unwrap_or_else(|_| "/run/vitals/vitalsd.sock".to_string());
-    let test_routes_enabled = env::var("VITALS_CONSOLE_TEST_ROUTES")
-        .map(|v| v == "1")
-        .unwrap_or(false);
+    let test_routes_enabled = env::var("VITALS_CONSOLE_TEST_ROUTES").is_ok_and(|v| v == "1");
 
     // Write-API pool: the service must still serve every read without it.
-    let db = match env::var("VITALS_CONSOLE_DATABASE_URL") {
-        Ok(url) => match sqlx::PgPool::connect(&url).await {
+    let db = if let Ok(url) = env::var("VITALS_CONSOLE_DATABASE_URL") {
+        match sqlx::PgPool::connect(&url).await {
             Ok(pool) => {
                 eprintln!("vitals-console: write-API database connected");
                 Some(pool)
@@ -41,13 +39,12 @@ async fn main() {
                 eprintln!("vitals-console: write-API database connection failed: {e}");
                 None
             }
-        },
-        Err(_) => {
-            eprintln!(
-                "vitals-console: VITALS_CONSOLE_DATABASE_URL unset; envelope/attempts serve a named 503"
-            );
-            None
         }
+    } else {
+        eprintln!(
+            "vitals-console: VITALS_CONSOLE_DATABASE_URL unset; envelope/attempts serve a named 503"
+        );
+        None
     };
 
     let db_url = env::var("DATABASE_URL")
