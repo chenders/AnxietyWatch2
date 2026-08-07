@@ -5,9 +5,16 @@ The conductor ticks a box only after running that task's Verify itself and seein
 - [x] T-M0a — Per-source cadence in the registry · mechanical · deepseek/deepseek-v4-flash
 - [x] T-M0b — Attempt/observation/domain-record schema · implement-standard · openai/gpt-5.6-sol
 - [x] T-M0c — Liveness evaluator, one pure function · implement-complex · gemini/gemini-3.1-pro-preview
-- [x] T-M0d — vitals-console axum skeleton · implement-complex · gemini/gemini-3.1-pro-preview
-- [x] T-M0e — Envelope write API + attempts · implement-complex · deepseek/deepseek-v4-pro (openai credits outage mid-first-attempt; round 2 fixed a silent-skip integration suite and a cross-test isolation failure)
+- [x] T-M0d — vitals-console axum skeleton · implement-complex · gemini/gemini-3.1-pro-preview · merged in PR #35
+- [x] T-M0e — Envelope write API + attempts · implement-complex · deepseek/deepseek-v4-pro (openai credits outage mid-first-attempt; round 2 fixed a silent-skip integration suite and a cross-test isolation failure) · merged in PR #35
 - [x] T-WD1 — Web dashboard: three directions behind a switcher (amendment 08 §3) · implement-standard · openai/gpt-5.6-sol · PR #33
+- [x] T-M1a — Console assets: four screens × three live-evaluation directions · merged in PR #36
+- [x] T-M1b — Console screens wired to real host, daemon, recovery, display, and attempt evidence · merged in PR #36
+- [x] T-WD2 — Dashboard wired to real same-origin physiological and readiness APIs · merged in PR #36
+
+PR #36's substitute adversarial review (`openai/gpt-5.6-sol`, while Copilot was unavailable) raised
+2 blockers and 6 should-fixes. All eight were fixed; the verification round found one incomplete
+nested-throttle UI fix, which was corrected before the reviewer returned `VERDICT: CLEAN`.
 
 Two findings surfaced by T-M0b's scratch-replay Verify, recorded here for the operator:
 

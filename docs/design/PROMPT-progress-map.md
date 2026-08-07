@@ -53,9 +53,10 @@ Stage 8  Bedside panel     → a fullscreen 800×480 status light, a viewer that
 the alarm actually sounds. Stages 6–8 are where it becomes the whole platform rather than one
 alarm. Neither half is "the project"; the page should not imply the work ends at Stage 5.
 
-Only Stages 0–3 are specified to task level today (the 15 tasks below). Stages 4–8 exist in the
-design document but have no task breakdown yet — show them as planned, distinctly from the
-tasks-and-gates detail.
+Stages 0–3 are now code-complete except for the operator-only overnight and audible checks. The
+admin console M0+M1 and real-data web dashboard are also built and deployed. Stages 4–8 remain
+planned beyond the live Overview surfaces — show them distinctly from completed code and from the
+operator-deferred physical verification.
 
 ### Tasks and current status
 
@@ -64,21 +65,23 @@ Use exactly these states: **done**, **in progress**, **ready** (unblocked, not s
 
 | Task | Stage | Status | Note |
 |---|---|---|---|
-| T-A1 Migrate root to NVMe | 0 | blocked-on-hardware | M.2 HAT arrives Aug 5; NVMe on hand. **Unblocks Aug 5** |
-| T-A2 Audio output path | 0 | blocked-on-hardware | USB DAC + speaker arrive Aug 5–6. **Unblocks Aug 6** |
+| T-A1 Migrate root to NVMe | 0 | **done** | root verified on NVMe; G2 open |
+| T-A2 Audio output path | 0 | blocked-on-hardware | DAC enumerates and streams; human audible confirmation remains |
 | T-A3 Bring up Sena UD100-G03 | 0 | **done** | gate G1 owner |
 | T-A4 Disable onboard Bluetooth | 0 | **done** | Sena is now the only adapter |
 | T-A5 Watchdog, governor, OOM | 0 | **done** | found Docker OOM defaults backwards |
 | T-B1 Eight-hour Polar H10 capture | 1 | **ready** | the foundational measurement |
-| T-C1 PostgreSQL on NVMe | 2 | blocked-by-gate | G2 |
-| T-C2 pgBackRest, three tiers | 2 | blocked-by-gate | G2 |
-| T-C3 Scheduled restore verification | 2 | blocked-by-gate | G2 · gate G3 owner |
+| T-C1 PostgreSQL on NVMe | 2 | **done** | production database on NVMe |
+| T-C2 pgBackRest, three tiers | 2 | **done** | off-box destination remains an operator decision |
+| T-C3 Scheduled restore verification | 2 | **done** | G3 open |
 | T-D1 Registry TOML + codegen | 3 | **done** | merged |
 | T-D2 IEEE-11073 SFLOAT decoder | 3 | **done** | merged, fuzzed |
 | T-D3 COPY-binary encoder + spool | 3 | **done** | round-trip verified against real Postgres |
-| T-D4 vitalsd daemon + socket | 3 | **ready** | unblocked now |
-| T-D5 Spool drainer | 3 | blocked-by-gate | G3 |
-| T-D6 bp-collector end to end | 3 | blocked-by-gate | G3 |
+| T-D4 vitalsd daemon + socket | 3 | **done** | deployed |
+| T-D5 Spool drainer | 3 | **done** | crash/durability path verified |
+| T-D6 bp-collector end to end | 3 | **done** | real cuff rows landed; PR review complete |
+| Console M0+M1 | 4 | **done** | four screens × three directions, live data, deployed |
+| T-WD1/T-WD2 web dashboard | 4 | **done** | three directions wired to real APIs; PRs #33/#36 |
 
 ### The three gates
 
@@ -89,10 +92,9 @@ checkpoints. Each should read as a locked door with its reason stated.
   Status: **OPEN** (passed). Disabling the onboard Bluetooth removes the only other adapter; doing
   it before the dongle was proven would have left the box with no Bluetooth at all.
 - **G2 — "Postgres must never initialize on the microSD."**
-  Status: **CLOSED**, opens Aug 5 when the M.2 HAT lands. Write endurance. Blocks all of Stage 2.
+  Status: **OPEN** (passed). Root and production Postgres run on NVMe.
 - **G3 — "No sample worth keeping is written before a restore has been demonstrated."**
-  Status: **CLOSED**, downstream of G2. A backup that has never been restored is a hypothesis, not a
-  backup. Blocks T-D5 and T-D6.
+  Status: **OPEN** (passed). Scheduled restore verification is deployed and Stage 3 is code-complete.
 
 ### Hardware
 
@@ -104,10 +106,10 @@ A&D UA-651BLE blood pressure cuff · Hosyond 7" DSI touchscreen · ResMed AirSen
 
 **Still to source:** 4× 18650 cells (local) · RTC battery · TPM 2.0 module · 60 GHz respiration radar
 
-Make it obvious that **the critical path is now a date, not a missing part**. The M.2 HAT lands Aug 5
-and closes G2, which closes G3, which unblocks the last two tasks of Stage 3 — so Stage 2 and the
-rest of Stage 3 all hinge on one delivery. That single dependency chain, and the fact that it
-resolves this week, is the most decision-useful thing on the page.
+Make it obvious that **the former hardware gate chain is complete**: NVMe opened G2, restore
+verification opened G3, and Stage 3 is code-complete. The remaining near-term blockers are explicit
+operator actions (overnight strap wear, audible confirmation, and choosing an off-box backup
+destination), not hidden code dependencies.
 
 ### Milestones already reached
 
