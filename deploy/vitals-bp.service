@@ -1,0 +1,38 @@
+[Unit]
+Description=A&D UA-651BLE blood pressure collector
+After=bluetooth.service vitalsd.service
+Requires=bluetooth.service vitalsd.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/bp-collector
+Restart=always
+RestartSec=3
+EnvironmentFile=/etc/vitals/bp-collector.env
+Environment=VITALSD_SOCKET=/run/vitals/vitalsd.sock
+Environment=BP_STATE_DIR=/var/lib/vitals/bp
+Environment=BP_JOURNAL=/var/lib/vitals/bp/raw-frames.journal
+# StateDirectory, not ReadWritePaths: a ReadWritePaths target that does not
+# exist yet fails namespace setup, so first boot becomes a Restart=always
+# 226/NAMESPACE loop that never runs the code that would create it.
+StateDirectory=vitals/bp
+User=vitals
+Group=vitals
+
+# The safety path survives memory pressure; Postgres is cheaper to restart.
+OOMScoreAdjust=-1000
+MemoryMin=64M
+MemoryHigh=192M
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+RestrictAddressFamilies=AF_UNIX AF_NETLINK AF_BLUETOOTH
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

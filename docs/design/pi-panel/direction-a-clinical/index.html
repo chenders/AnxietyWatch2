@@ -368,7 +368,7 @@ const LIVE = {
   TREND_LEN: 60,
 };
 
-const live = { url: null, demo: false, snap: null, err: null, fetchedAt: 0, spo2: [], hr: [], hist: [] };
+const live = { url: null, vitalsUrl: "vitals_status.json", snap: null, bp: null, h10: null, err: null, vitalsErr: null, fetchedAt: 0, spo2: [], hr: [], hist: [] };
 /* How much of the night the accreting views remember. 2000 samples is a bit
    over half an hour at 1 Hz — enough to see shape, small enough to redraw at
    1 Hz on a Pi without the panel becoming the thing that heats the room. */
@@ -389,6 +389,18 @@ async function poll() {
     // The snapshot is retained only so the age check below can age it out.
     live.err = e.message || String(e);
   }
+  try {
+    const r = await fetch(live.vitalsUrl, { cache: "no-store" });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const j = await r.json();
+    if (j.schema !== 1) throw new Error("unknown schema " + j.schema);
+    live.bp = j.bp;
+    live.h10 = j.h10;
+    live.vitalsErr = j.error || null;
+  } catch (e) {
+    // Keep durable readings visible as stale; never replace them with demo data.
+    live.vitalsErr = e.message || String(e);
+  }
   live.fetchedAt = Date.now() / 1000;
   live.state = liveState();
   render();
@@ -406,49 +418,6 @@ function pushTrend(spo2, pulse) {
   while (live.hist.length > HIST_MAX) live.hist.shift();
 }
 
-
-/* ── demo fill ──────────────────────────────────────────────────────────────
-   ?live&demo populates the regions this stopgap has no real source for —
-   blood pressure, the other three sensors, and the system-health row — with
-   plausible values that move, so the whole panel can be judged as a design
-   rather than as three-quarters of one.
-
-   Everything here is invented. The top strip says so on every frame, because
-   the one thing that must never happen is a fabricated "SELF-TEST PASS"
-   sitting beside a real SpO2 and borrowing its credibility. SpO2 and HR are
-   never simulated: if the ring is not reporting, they go to "- -" and the tier
-   goes to CAN'T ASSESS exactly as it does without this flag. */
-function demoFill(now) {
-  const t = Math.floor(now);
-  // Cheap deterministic wobble — no Math.random, so two panels side by side
-  // agree and a screenshot is reproducible.
-  const wob = (period, amp, phase = 0) => Math.sin((t / period) + phase) * amp;
-  const bpAge = t % 2700;                       // a cuff reading every 45 min
-  const sys = Math.round(118 + wob(900, 6));
-  const dia = Math.round(76 + wob(1100, 4, 1));
-  const hhmmss = (secs) => {
-    const h = Math.floor(secs / 3600), m = Math.floor((secs % 3600) / 60);
-    return h ? `${h} h ${String(m).padStart(2, "0")} m` : `${m} m`;
-  };
-  return {
-    nibp: {
-      name: "NIBP", unit: "mmHg", color: "var(--nibp)", small: true, limits: "↑150/95",
-      val: `${sys}/${dia}`, stale: bpAge > 2400,
-      note: `MAP ${Math.round(dia + (sys - dia) / 3)}\n${hhmmss(bpAge)} ago`,
-    },
-    sensors: [
-      { name: "POLAR H10", link: "BLE", ok: true, age: `${(t % 3) + 1}.${t % 10} s` },
-      { name: "A&D BP CUFF", link: "BT", ok: true, age: hhmmss(bpAge) },
-      { name: "HEALTHKIT", link: "sync", ok: true, age: `${(t % 5) + 1} m` },
-    ],
-    sys: [
-      { name: "SELF-TEST", val: "02:00 PASS", ok: true },
-      { name: "BACKUP", val: `${(t / 60) % 55 | 0} m`, ok: true },
-      { name: "RESTORE OK", val: "3 d", ok: true },
-      { name: "DISK", val: `${62 + (wob(3600, 2) | 0)} %`, ok: true },
-    ],
-  };
-}
 
 function liveState() {
   const now = Date.now() / 1000;
@@ -473,24 +442,55 @@ function liveState() {
   // Short by necessity, not by taste: see the note-width comment below.
   const stamp = s && s.sample_at != null ? `${Math.round(sampleAge)} s` : "no sample";
 
-  const d = live.demo ? demoFill(now) : null;
+  const bp = live.bp && live.bp.sample_at != null ? live.bp : null;
+  const bpAge = bp ? Math.max(0, now - bp.sample_at) : Infinity;
+  const ageText = (secs) => {
+    const minutes = Math.floor(secs / 60), hours = Math.floor(minutes / 60);
+    return hours ? `${hours} h ${String(minutes % 60).padStart(2, "0")} m` : `${minutes} m`;
+  };
+  const cuff = bp ? {
+    name: "A&D BP CUFF", link: "BLE", ok: !live.vitalsErr,
+    age: ageText(bpAge),
+  } : { name: "A&D BP CUFF", link: "—", ok: null, age: live.vitalsErr ? "read error" : "no reading" };
+  // An absent field renders as "--", never as 0: Math.round(null) is 0, and
+  // "135/0" reads as a catastrophic diastolic rather than as a decode gap.
+  const bpNum = (v) => (v == null ? "--" : String(Math.round(v)));
+  const bpWarn = bp ? [
+    bp.body_movement ? "movement" : null,
+    bp.cuff_too_loose ? "loose cuff" : null,
+    bp.irregular_pulse ? "irreg pulse" : null,
+  ].filter(Boolean).join(" · ") : "";
+  const realNibp = bp ? {
+    name: "NIBP", unit: "mmHg", color: "var(--nibp)", small: true, limits: "↑150/95",
+    val: `${bpNum(bp.systolic)}/${bpNum(bp.diastolic)}`,
+    // A cuff is episodic, not a streaming liveness source. Keep the last
+    // measurement visible but use stale treatment after four hours.
+    stale: bpAge > 4 * 3600,
+    note: `MAP ${bpNum(bp.map)}${bpWarn ? ` · ⚠ ${bpWarn}` : ""}\n${ageText(bpAge)} ago${live.vitalsErr ? " · DATA ERROR" : ""}`,
+  } : null;
   const emay = { name: "EMAY SpO₂", link: "BLE", ok: measured,
     age: measured ? `${sampleAge.toFixed(1)} s` : (s ? `${Math.round(Math.min(sampleAge, 99999))} s` : "—") };
+  const h10Age = live.h10 ? Math.max(0, now - live.h10.sample_at) : Infinity;
+  const h10 = live.h10 ? {
+    // Provenance fails closed: a row that cannot prove it came from the
+    // physical strap must not borrow the physical strap's label.
+    name: live.h10.test_origin === "polar_h10_emulator" ? "POLAR H10 · TEST"
+      : live.h10.test_origin === "physical_device" ? "POLAR H10"
+      : "POLAR H10 · UNVERIFIED",
+    link: "BLE", ok: h10Age <= LIVE.STALE_AFTER_S && !live.vitalsErr,
+    age: h10Age < 60 ? `${Math.round(h10Age)} s` : ageText(h10Age),
+  } : { name: "POLAR H10", link: "—", ok: null, age: "no reading" };
 
   const common = {
     clock, detail: true,
-    sensors: d ? [emay, ...d.sensors] : [
+    sensors: [
       emay,
-      // Not "unknown" — genuinely not part of this test. The design's
-      // EMPTY·NEVER PAIRED state, which reads as "not monitored", not "broken".
-      { name: "POLAR H10", link: "—", ok: null, age: "not in test" },
-      { name: "A&D BP CUFF", link: "—", ok: null, age: "not in test" },
-      { name: "HEALTHKIT", link: "—", ok: null, age: "not in test" },
+      h10,
+      cuff,
+      { name: "HEALTHKIT", link: "—", ok: null, age: "no reading" },
     ],
-    // Without ?demo: no self-test ran, no backup ran, no restore was verified,
-    // and printing "PASS 02:00" because the mock did would be a fabricated
-    // record of a safety check that never happened.
-    sys: d ? d.sys : [
+    // No self-test, backup, restore or disk value is fabricated either.
+    sys: [
       { name: "SELF-TEST", val: "none", ok: null },
       { name: "BACKUP", val: "none", ok: null },
       { name: "RESTORE OK", val: "none", ok: null },
@@ -510,16 +510,17 @@ function liveState() {
     { name: "HR", unit: "bpm", color: "var(--hr)", limits: "↑110\n↓45",
       val: pulse == null ? "- -" : String(pulse), stale, trend: live.hr,
       note: stale ? "NO DATA\n" + stamp : "live\n" + stamp },
-    // There is no cuff in this test, so there is no reading — not a stale one.
-    d ? d.nibp : { name: "NIBP", unit: "mmHg", color: "var(--nibp)", small: true, limits: "↑150/95",
-      val: "- -", stale: true, note: "NO CUFF\nnot in test" },
+    // Real durable cuff data always wins over demo fill. The BP publisher
+    // assembles fields only from one transport identity, never by timestamp.
+    realNibp || { name: "NIBP", unit: "mmHg", color: "var(--nibp)", small: true, limits: "↑150/95",
+      val: "- -", stale: true, note: "NO CUFF\nno reading" },
   ];
 
   if (!measured) {
     return { ...common,
       tier: "CAN’T ASSESS", glyph: "?", accent: "var(--unknown)", indeterminate: true,
       prio: "NOT MEASURED", prioFg: "var(--unknown-hi)", since: stamp,
-      chanLabel: live.demo ? "DEMO · SpO₂/HR REAL · REST SIMULATED" : "DISPLAY ONLY · NO ALARM", chanFg: "var(--unknown-hi)",
+      chanLabel: "DISPLAY ONLY · NO ALARM", chanFg: "var(--unknown-hi)",
       params: params(null, null, true),
       caption: "live · can’t assess", note: fault,
     };
@@ -528,9 +529,9 @@ function liveState() {
     // Solid border, slate hue: the data is present, the judgement is not.
     tier: "NOT ARMED", glyph: "○", accent: "var(--unknown)",
     prio: "NO ALARM ARMED", prioFg: "var(--unknown-hi)", since: "display only",
-    chanLabel: live.demo ? "DEMO · SpO₂/HR REAL · REST SIMULATED" : "DISPLAY ONLY · NO ALARM", chanFg: "var(--unknown-hi)",
+    chanLabel: "DISPLAY ONLY · NO ALARM", chanFg: "var(--unknown-hi)",
     params: params(s.spo2, s.pulse_bpm, false),
-    caption: "live", note: `SpO₂ ${s.spo2} · ${s.pulse_bpm} bpm · ${s.frames} frames — nothing is evaluating these numbers`,
+    caption: "live", note: `SpO₂ ${s.spo2} · ${s.pulse_bpm} bpm${bp ? ` · BP ${bpNum(bp.systolic)}/${bpNum(bp.diastolic)} MAP ${bpNum(bp.map)}` : ""} — nothing is evaluating these numbers`,
   };
 }
 
@@ -2583,7 +2584,6 @@ if (qs.has("live")) {
   S.live = true;
   const v = qs.get("live");
   live.url = v && v !== "1" && v !== "" ? v : "status.json";
-  live.demo = qs.has("demo");
   live.debug = qs.has("debug");
   // ?view=<id> picks a direction directly; otherwise fall back to whatever was
   // last chosen on this device.

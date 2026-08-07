@@ -26,7 +26,7 @@ use vitals_proto::{
 struct Daemon {
     child: Child,
     socket: std::path::PathBuf,
-    _dir: tempfile::TempDir,
+    dir: tempfile::TempDir,
 }
 
 impl Drop for Daemon {
@@ -57,11 +57,7 @@ fn start() -> Daemon {
     while Instant::now() < deadline {
         if socket.exists() {
             std::thread::sleep(Duration::from_millis(50));
-            return Daemon {
-                child,
-                socket,
-                _dir: dir,
-            };
+            return Daemon { child, socket, dir };
         }
         std::thread::sleep(Duration::from_millis(25));
     }
@@ -145,6 +141,36 @@ async fn sync_true_is_reported_as_durable() {
         Response::Appended { durable, .. } => assert!(durable),
         other => panic!("expected Appended, got {other:?}"),
     }
+}
+
+/// A sync append must leave a *sealed* segment behind. The drainer cannot
+/// consume the active segment, so a durable-but-unsealed reading would sit
+/// invisible until the age/size rotation fired.
+#[tokio::test]
+async fn sync_append_seals_the_segment_for_the_drainer() {
+    let d = start();
+    let mut c = UnixStream::connect(&d.socket).await.expect("connect");
+    send(
+        &mut c,
+        &Request::Append {
+            samples: vec![sample(0, 0)],
+            sync: true,
+        },
+    )
+    .await;
+    match recv(&mut c).await {
+        Response::Appended { durable, .. } => assert!(durable),
+        other => panic!("expected Appended, got {other:?}"),
+    }
+    let segments = std::fs::read_dir(d.dir.path().join("spool"))
+        .expect("spool dir")
+        .filter_map(Result::ok)
+        .filter(|e| e.path().extension().is_some_and(|x| x == "spool"))
+        .count();
+    assert!(
+        segments >= 2,
+        "expected a sealed segment plus a fresh active one, found {segments}"
+    );
 }
 
 /// An empty result set and "there is no store yet" are different claims.

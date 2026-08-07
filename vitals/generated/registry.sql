@@ -65,3 +65,7 @@ INSERT INTO vitals_source (id, name, transport)
 VALUES (6, 'ad_ua651ble', 'ble')
 ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name,
     transport = EXCLUDED.transport;
+INSERT INTO vitals_source (id, name, transport)
+VALUES (7, 'polar_h10_emulator', 'internal')
+ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name,
+    transport = EXCLUDED.transport;

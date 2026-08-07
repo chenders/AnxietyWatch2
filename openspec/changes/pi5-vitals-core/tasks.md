@@ -59,7 +59,7 @@ pane renders (`grep -n '^- \[' tasks.md`).
 - [x] T-D3 — COPY-binary encoder and spool · implement-complex · either · **review**
 - [x] T-D4 — vitalsd daemon and socket protocol · implement-complex · pi · **review**
 - [x] T-D5 — spool drainer · implement-complex · pi · **review · blocked by G3**
-- [ ] T-D6 — bp-collector end to end · implement-complex · pi · **review · blocked by G3**
+- [x] T-D6 — bp-collector end to end · implement-complex · pi · **review · blocked by G3**
 
 Parallelism: T-D1 and T-D2 have no hardware dependency and may run on separate workers concurrently
 with all of Group A. T-B1 occupies a whole night — dispatch it the moment T-A4 is green and let the
@@ -1095,11 +1095,15 @@ proof of the path — but the device is harder to talk to than "standard profile
      replayable; a lost frame never is. Four frames a day makes this free.
    - **`seq` is the drain index within one connection**, `session_id` minted per connection
      (amendment 06 §1.1). The cuff sends no timestamp, user id or counter, so identity comes from the
-     transport: `0x2A35` is an indication and the cuff deletes only on confirmation, which makes
-     redelivery impossible. This is ordering bookkeeping, not dedup.
-   - **Say both true things about the guarantee.** Exactly-once holds for delivery to the host stack;
-     it says nothing about durability in this process (amendment 06 §1.3). That gap is why
-     `sync: true` and the raw journal exist.
+     transport: `0x2A35` is an indication and the cuff clears a record once confirmed. This is
+     **at-least-once, not exactly-once** — a lost confirmation PDU can leave the cuff holding a
+     record it redelivers under a fresh session, so a lost ACK produces a visible duplicate row,
+     never a silent drop (amendment 06 §1.1 corrected an earlier draft here).
+   - **Say both true things about the guarantee.** The ACK boundary has two holes, in opposite
+     directions: the kernel confirms before this process stores anything (a crash there loses the
+     reading), and the confirmation itself can be lost (the cuff redelivers). Neither is about
+     durability in this process alone (amendment 06 §1.3). That gap is why `sync: true` and the raw
+     journal exist.
    - **Set `extra` to mark `timestamp` as an arrival estimate** (amendment 06 §1.4). The cuff may
      have held the reading for hours; a later consumer must not read it as a device timestamp.
    - **Handle "bonded but cannot resume encryption" as a named degraded state** (amendment 06 §3):
@@ -1123,7 +1127,12 @@ proof of the path — but the device is harder to talk to than "standard profile
 
 7. **Take a real blood pressure reading.** Confirm it lands.
 
-**Verify:** `ssh "$PI_HOST" 'cd ~/AnxietyWatch2 && cargo test -p vitals-decode bp && cargo fuzz run fuzz_bp_decode -- -max_total_time=60 && psql -U vitals -tAc "SELECT count(*) FROM samples WHERE source=6 AND type=6" | awk "\$1 > 0"'`
+**Verify:** `ssh "$PI_HOST" 'cd ~/AnxietyWatch2 && cargo test -p vitals-decode bp && ~/.cargo/bin/cargo +nightly fuzz run fuzz_bp_decode -- -max_total_time=60 && psql -U vitals -tAc "SELECT count(*) FROM samples WHERE source=6 AND type=6" | awk "\$1 > 0"'`
+<!-- Verify line changed deliberately 2026-08-07 (its own commit, pushed with the gate named):
+     the original said `cargo fuzz run`, which cannot exit 0 on any correct checkout —
+     rust-toolchain.toml pins stable and cargo-fuzz needs nightly (`-Z` flags). The T-D2 fuzz
+     command already used `cargo +nightly fuzz run`; this line now matches, via the rustup proxy
+     path because the pinned toolchain otherwise shadows `+nightly`. -->
 **Expect:** exit 0; tests pass; fuzzer clean at 60 s; at least one systolic row present with
 `source = 6`.
 
@@ -1683,3 +1692,47 @@ Findings worth keeping:
   reappears routinely, upgrade the supply feeding the X1202 before trusting overnight capture.
 
 Gate **G2 is open** — Group C (Postgres on NVMe, pgBackRest, restore verification) is unblocked.
+
+### T-D6 — completion record, 2026-08-07
+
+Real cuff readings landed end-to-end before the box was ticked: six measurements (source 6, types
+6/7/8/1) committed through spool → drain → Postgres. Decoder fuzzed
+clean for 24.2 M runs at 60 s under nightly/ASan on the Pi.
+
+Pre-PR review (c-pre-pr-reviewer + physio-accuracy-reviewer) drove one round of corrections before
+the PR was opened:
+
+- **Emulator provenance is now structural.** `[source.polar_h10_emulator] id = 7` in the registry;
+  the h10 collector selects the source id by mode, so synthetic beats can never aggregate with
+  physical ones by key. The panel publisher fails closed: rows proving neither origin render as
+  `unknown` / `POLAR H10 · UNVERIFIED`. **Open operator decision:** ~94k emulator rows written
+  before this change sit under source 1, marked only by `extra=test_origin=polar_h10_emulator`
+  (`samples` is append-only, so relabeling means tombstones — a deliberate data-surgery call).
+- **h10 no longer requests `sync: true`** (amendment 06 §2.1 prohibits it for streaming sources —
+  one night would have been ~28k fsync+seal cycles), and it now honours `contact == Some(false)`,
+  `rr_truncated`, and the registry ranges: out-of-range values are rejected by name, never
+  clamped, with `seq` still advancing so rejects stay measurable as `max(seq) - count(*)`.
+- **RR intervals convert to canonical seconds in the decoder** (`HeartRate::rr_s`), not in the
+  collector; hr-spike's ms file format converts at output, as presentation.
+- **BP event time is arrival unconditionally** (amendment 06 §1.4) until step 5 resolves the cuff
+  clock; a device timestamp, if ever present, is recorded as `extra=device_time_unvalidated=…`.
+  Measurement-status flags now travel to the panel and render as warnings; absent SFLOAT fields
+  render as `--`, never 0 (`Math.round(null) === 0` was coercing sentinels at the last hop).
+- **vitalsd treats a sync-seal failure as a named health degradation**, not an append error — the
+  rows are already fsynced, and an error reply would invite a duplicating retry.
+- **`bp-journal-replay` ships alongside the collector** (shared gate module in the crate lib), so
+  the raw-frame journal is a real recovery path. Kernel auto-connect is owned by
+  `vitals-bp-autoconnect.service` (root oneshot, `btmgmt add-device -a 2`, Before= the collector).
+  The first draft claimed bluetoothd repopulates the accept list for trusted devices — the
+  pre-PR reviewer flagged exactly this, the dismissal was based on stale pre-reboot evidence,
+  and a real reading proved the reviewer right on 2026-08-07 (post-reboot: action 0,
+  absent from white_list, reading never connected; recovered from cuff memory after the fix).
+  The trust flag stays asserted as belt and braces.
+- **Step 5 (cuff clock) is deferred with the physical tasks** — status recorded in the capture
+  research doc. The brief's pre-A06 "redelivery impossible" text was corrected to at-least-once.
+
+Named follow-ups, deliberately not in this change: a central out-of-range quarantine gate in
+`vitalsd` (collector-side gates cover today's two writers); session-minter hardening against
+state-dir loss (near-total seq collision for BP if `/var/lib/vitals/bp` is recreated); journal
+per-record checksums; the over-broad SFLOAT sentinel mask (matches mantissa sentinels at any
+exponent — drop-not-invent direction, but `0xF7FF` = 204.7 mmHg would vanish).

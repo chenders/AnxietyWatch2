@@ -563,13 +563,35 @@ impl Spool {
     /// # Errors
     /// I/O failure, or the new segment's lock being unavailable.
     pub fn rotate_if_due(&mut self) -> io::Result<bool> {
-        self.rotate_if_due_with_segment_name(&Self::segment_name()?)
+        if !self.rotation_due() {
+            return Ok(false);
+        }
+        self.seal_current()?;
+        Ok(true)
     }
 
+    /// Seals the current segment immediately and opens a fresh one.
+    ///
+    /// Durability-required, low-rate sources use this after their append so the
+    /// drainer can lock and commit the finished segment without waiting for the
+    /// normal age/size rotation threshold.
+    ///
+    /// # Errors
+    /// I/O failure, or the replacement segment's lock being unavailable.
+    pub fn seal_current(&mut self) -> io::Result<()> {
+        self.rotate_with_segment_name(&Self::segment_name()?)
+    }
+
+    #[cfg(test)]
     fn rotate_if_due_with_segment_name(&mut self, segment_name: &str) -> io::Result<bool> {
         if !self.rotation_due() {
             return Ok(false);
         }
+        self.rotate_with_segment_name(segment_name)?;
+        Ok(true)
+    }
+
+    fn rotate_with_segment_name(&mut self, segment_name: &str) -> io::Result<()> {
         self.sync()?;
         let (file, path, bytes) = Self::create_segment(&self.dir, segment_name, self.fingerprint)?;
         // Keep the old segment locked until its replacement is fully created
@@ -586,7 +608,7 @@ impl Spool {
         self.opened = now;
         self.last_sync = now;
         self.dirty = false;
-        Ok(true)
+        Ok(())
     }
 }
 
@@ -730,6 +752,24 @@ mod tests {
         let mut s = Spool::open(d.path()).expect("open");
         s.append(&[sample(0)], &node(), true).expect("append");
         assert!(!s.dirty, "sync: true must fsync before returning");
+    }
+
+    /// Durable low-rate sources seal after each append: the drainer cannot
+    /// consume the active segment, so an unsealed reading would sit invisible
+    /// until the age/size rotation.
+    #[test]
+    fn seal_current_retires_the_segment_and_opens_a_fresh_one() {
+        let d = tempdir().expect("tempdir");
+        let mut s = Spool::open(d.path()).expect("open");
+        s.append(&[sample(0)], &node(), true).expect("append");
+        let sealed = s.segment_path().to_path_buf();
+        s.seal_current().expect("seal");
+        assert_ne!(s.segment_path(), sealed.as_path());
+        assert!(
+            sealed.exists(),
+            "sealed segment must remain for the drainer"
+        );
+        assert!(!s.dirty, "seal must leave nothing unsynced");
     }
 
     #[test]
