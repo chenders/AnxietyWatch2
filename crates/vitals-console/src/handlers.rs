@@ -585,8 +585,8 @@ mod tests {
         }
         async fn get_range(
             &self,
-            _s: Option<i32>,
-            _t: Option<i32>,
+            _s: i32,
+            _t: i32,
             _since: i64,
             _until: i64,
         ) -> Result<Vec<(i64, f64)>, String> {
