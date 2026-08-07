@@ -120,10 +120,18 @@ pub async fn health_handler(State(state): State<AppState>) -> Json<HealthView> {
         if let Some(info) = daemon_info {
             raw_liveness = Some(info.liveness);
             if let Some(age) = info.last_sample_age_secs {
-                observation_age_s = Some(age);
-                let timestamp = now_s.saturating_sub(age.try_into().unwrap_or(0));
-                evidence.last_attempt_epoch_s = Some(timestamp);
-                evidence.last_success_epoch_s = Some(timestamp);
+                // An age that cannot convert is a malformed report, and a
+                // malformed report must not evaluate as a fresh sample.
+                if let Ok(age_i) = i64::try_from(age) {
+                    observation_age_s = Some(age);
+                    let timestamp = now_s.saturating_sub(age_i);
+                    evidence.last_attempt_epoch_s = Some(timestamp);
+                    evidence.last_success_epoch_s = Some(timestamp);
+                } else {
+                    evidence.last_attempt_failure = Some(format!(
+                        "daemon reported an impossible sample age ({age}s): treated as unmeasurable"
+                    ));
+                }
             }
         }
 
@@ -573,6 +581,15 @@ mod tests {
             _n: u32,
             _source: Option<i32>,
         ) -> Result<Vec<crate::api::postgres::NightlyRow>, String> {
+            Ok(vec![])
+        }
+        async fn get_range(
+            &self,
+            _s: Option<i32>,
+            _t: Option<i32>,
+            _since: i64,
+            _until: i64,
+        ) -> Result<Vec<(i64, f64)>, String> {
             Ok(vec![])
         }
     }

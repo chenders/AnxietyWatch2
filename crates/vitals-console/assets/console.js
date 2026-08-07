@@ -162,8 +162,14 @@
     const elapsed = lastSuccessMs == null ? null : (Date.now() - lastSuccessMs) / 1000;
     document.querySelector("#feed-age").textContent = ageText(elapsed);
     document.querySelectorAll("[data-age-base]").forEach(el => {
-      const base = Number(el.dataset.ageBase);
-      const rendered = Number.isFinite(base) ? base + (Date.now() - Number(el.dataset.ageAt)) / 1000 : null;
+      // Number("") is 0 — an absent age must stay "not observed", never
+      // become a fresh-looking "0s ago".
+      const raw = el.dataset.ageBase;
+      const base = raw === "" || raw == null ? NaN : Number(raw);
+      const at = el.dataset.ageAt === "" || el.dataset.ageAt == null ? NaN : Number(el.dataset.ageAt);
+      const rendered = Number.isFinite(base) && Number.isFinite(at)
+        ? base + (Date.now() - at) / 1000
+        : null;
       el.textContent = ageText(rendered);
     });
     const stale = elapsed == null || elapsed > FEED_EXPECT_S;

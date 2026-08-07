@@ -27,6 +27,10 @@ pub struct LatestResponse {
     /// Timestamp of the latest sample, Unix microseconds.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub t_micros: Option<i64>,
+    /// Why the sample is not usable, when `measured` is `false` despite a row
+    /// existing (e.g. a future-dated timestamp).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
     /// Latest value in the registry's canonical unit for `type`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub value: Option<f64>,
@@ -64,6 +68,19 @@ pub trait DbOps: Send + Sync {
     /// # Errors
     /// Returns a database error string when the query fails.
     async fn get_latest(&self, source: i32, r#type: i32) -> Result<Option<(i64, f64)>, String>;
+
+    /// Return `(timestamp_micros, value)` rows in `[since, until)` for an
+    /// optional source/type filter, oldest first. The caller bounds the window.
+    ///
+    /// # Errors
+    /// Returns a database error string when the query fails.
+    async fn get_range(
+        &self,
+        source: Option<i32>,
+        r#type: Option<i32>,
+        since_micros: i64,
+        until_micros: i64,
+    ) -> Result<Vec<(i64, f64)>, String>;
     /// Return per-day aggregates over the last `nights` days, optionally
     /// restricted to one source.
     ///
@@ -115,6 +132,30 @@ impl DbOps for PgDbOps {
         Ok(row_opt.map(|row| (row.get(0), row.get(1))))
     }
 
+    async fn get_range(
+        &self,
+        source: Option<i32>,
+        r#type: Option<i32>,
+        since_micros: i64,
+        until_micros: i64,
+    ) -> Result<Vec<(i64, f64)>, String> {
+        let client = self.connect().await?;
+        let rows = client
+            .query(
+                "SELECT (EXTRACT(epoch FROM timestamp) * 1000000)::bigint, value
+                 FROM samples
+                 WHERE ($1::int IS NULL OR source = $1)
+                   AND ($2::int IS NULL OR type = $2)
+                   AND timestamp >= to_timestamp($3::bigint / 1000000.0)
+                   AND timestamp <  to_timestamp($4::bigint / 1000000.0)
+                 ORDER BY timestamp",
+                &[&source, &r#type, &since_micros, &until_micros],
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(rows.iter().map(|r| (r.get(0), r.get(1))).collect())
+    }
+
     async fn get_nightly(
         &self,
         nights: u32,
@@ -163,7 +204,7 @@ impl DbOps for PgDbOps {
                     COUNT(*) as sample_count 
                 FROM samples 
                 WHERE timestamp > now() - ($1::int * interval '1 day')
-                  AND source NOT IN (1, 7)
+                  AND source <> 7
                 GROUP BY source, type, date_trunc('day', timestamp) 
                 ORDER BY day_micros DESC
             ";
@@ -224,17 +265,33 @@ pub async fn latest_handler(
                 .as_secs();
             let now_s = i64::try_from(now_s).unwrap_or(i64::MAX);
             let sample_s = t_micros / 1_000_000;
-            let age = now_s.saturating_sub(sample_s);
+            if sample_s > now_s {
+                // A future timestamp is clock skew or a corrupt row; saturating
+                // it to "0s old" would render an invalid sample as fresh.
+                return Ok(Json(LatestResponse {
+                    measured: false,
+                    t_micros: Some(t_micros),
+                    value: None,
+                    observation_age_s: None,
+                    reason: Some(format!(
+                        "rejected: sample timestamp is {}s in the future — clock skew or corrupt row",
+                        sample_s - now_s
+                    )),
+                }));
+            }
+            let age = now_s - sample_s;
 
             Ok(Json(LatestResponse {
                 measured: true,
                 t_micros: Some(t_micros),
                 value: Some(value),
                 observation_age_s: Some(age),
+                reason: None,
             }))
         }
         None => Ok(Json(LatestResponse {
             measured: false,
+            reason: None,
             t_micros: None,
             value: None,
             observation_age_s: None,
@@ -304,6 +361,15 @@ mod tests {
             _nights: u32,
             _source: Option<i32>,
         ) -> Result<Vec<NightlyRow>, String> {
+            Ok(vec![])
+        }
+        async fn get_range(
+            &self,
+            _s: Option<i32>,
+            _t: Option<i32>,
+            _since: i64,
+            _until: i64,
+        ) -> Result<Vec<(i64, f64)>, String> {
             Ok(vec![])
         }
     }

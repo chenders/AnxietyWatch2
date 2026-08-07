@@ -44,9 +44,12 @@ pub struct HostInfo {
     pub disk_total_bytes: u64,
     /// `SoC` temperature in degrees Celsius.
     pub thermal_c: f64,
-    /// Throttling flags decoded from the firmware bitmask.
-    #[serde(flatten)]
-    pub throttle: ThrottleStatus,
+    /// Throttling flags decoded from the firmware bitmask, or `None` when
+    /// `vcgencmd get_throttled` failed or answered garbage — an unmeasured
+    /// power rail must never render as a healthy one.
+    pub throttle: Option<ThrottleStatus>,
+    /// Why `throttle` is absent, when it is.
+    pub throttle_unmeasured_reason: Option<String>,
     /// Name of the default-route network interface, when one exists.
     pub network_interface: Option<String>,
     /// Signal strength of the wireless interface in dBm, when present.
@@ -91,15 +94,19 @@ pub async fn collect_host_info(ops: &SysOps) -> Result<HostInfo, String> {
         }
     };
 
-    let throttled = {
-        let out = (ops.cmd)("vcgencmd", &["get_throttled"])
-            .await
-            .unwrap_or_default();
-        if let Some(val) = out.strip_prefix("throttled=") {
-            let hex = val.trim().trim_start_matches("0x");
-            u32::from_str_radix(hex, 16).unwrap_or(0)
-        } else {
-            0
+    let (throttled, throttle_unmeasured_reason) = {
+        match (ops.cmd)("vcgencmd", &["get_throttled"]).await {
+            Ok(out) => match out
+                .strip_prefix("throttled=")
+                .and_then(|v| u32::from_str_radix(v.trim().trim_start_matches("0x"), 16).ok())
+            {
+                Some(bits) => (Some(bits), None),
+                None => (
+                    None,
+                    Some(format!("vcgencmd answered unparseable output: {out:?}")),
+                ),
+            },
+            Err(e) => (None, Some(format!("vcgencmd get_throttled failed: {e}"))),
         }
     };
 
@@ -140,16 +147,17 @@ pub async fn collect_host_info(ops: &SysOps) -> Result<HostInfo, String> {
         disk_free_bytes,
         disk_total_bytes,
         thermal_c,
-        throttle: ThrottleStatus {
-            undervoltage_now: (throttled & 1) != 0,
-            freq_capped_now: (throttled & 2) != 0,
-            throttled_now: (throttled & 4) != 0,
-            soft_temp_limit_now: (throttled & 8) != 0,
-            undervoltage_latched: (throttled & 0x10000) != 0,
-            freq_capped_latched: (throttled & 0x20000) != 0,
-            throttled_latched: (throttled & 0x40000) != 0,
-            soft_temp_limit_latched: (throttled & 0x80000) != 0,
-        },
+        throttle: throttled.map(|bits| ThrottleStatus {
+            undervoltage_now: (bits & 1) != 0,
+            freq_capped_now: (bits & 2) != 0,
+            throttled_now: (bits & 4) != 0,
+            soft_temp_limit_now: (bits & 8) != 0,
+            undervoltage_latched: (bits & 0x10000) != 0,
+            freq_capped_latched: (bits & 0x20000) != 0,
+            throttled_latched: (bits & 0x40000) != 0,
+            soft_temp_limit_latched: (bits & 0x80000) != 0,
+        }),
+        throttle_unmeasured_reason,
         network_interface,
         wireless_signal,
         watchdog_present,
@@ -190,7 +198,7 @@ mod tests {
             disk_free_bytes: 0,
             disk_total_bytes: 0,
             thermal_c: 0.0,
-            throttle: ThrottleStatus {
+            throttle: Some(ThrottleStatus {
                 undervoltage_now: (throttled & 1) != 0,
                 freq_capped_now: (throttled & 2) != 0,
                 throttled_now: (throttled & 4) != 0,
@@ -199,21 +207,24 @@ mod tests {
                 freq_capped_latched: (throttled & 0x20000) != 0,
                 throttled_latched: (throttled & 0x40000) != 0,
                 soft_temp_limit_latched: (throttled & 0x80000) != 0,
-            },
+            }),
+            throttle_unmeasured_reason: None,
             network_interface: None,
             wireless_signal: None,
             watchdog_present: false,
             load_avg: String::new(),
         };
 
-        assert!(info.throttle.undervoltage_now);
-        assert!(!info.throttle.freq_capped_now);
-        assert!(info.throttle.throttled_now);
-        assert!(!info.throttle.soft_temp_limit_now);
+        #[expect(clippy::expect_used, reason = "test fixture always decodes")]
+        let t = info.throttle.expect("decoded");
+        assert!(t.undervoltage_now);
+        assert!(!t.freq_capped_now);
+        assert!(t.throttled_now);
+        assert!(!t.soft_temp_limit_now);
 
-        assert!(info.throttle.undervoltage_latched);
-        assert!(!info.throttle.freq_capped_latched);
-        assert!(info.throttle.throttled_latched);
-        assert!(!info.throttle.soft_temp_limit_latched);
+        assert!(t.undervoltage_latched);
+        assert!(!t.freq_capped_latched);
+        assert!(t.throttled_latched);
+        assert!(!t.soft_temp_limit_latched);
     }
 }
