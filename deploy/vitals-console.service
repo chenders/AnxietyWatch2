@@ -16,7 +16,8 @@ Group=vitals
 Environment=VITALS_CONSOLE_BIND=0.0.0.0:8480
 Environment=VITALSD_SOCKET=/run/vitals/vitalsd.sock
 Environment=DATABASE_URL=host=/var/run/postgresql user=vitals dbname=vitals
-Environment=VITALS_CONSOLE_DATABASE_URL=postgres://vitals@%2Fvar%2Frun%2Fpostgresql/vitals
+# systemd consumes one percent sign; the process receives `%2F` URL escapes.
+Environment=VITALS_CONSOLE_DATABASE_URL=postgres://vitals@%%2Fvar%%2Frun%%2Fpostgresql/vitals
 Environment=VITALS_CONSOLE_ASSETS=/usr/local/share/vitals-console/assets
 
 # This is an observability surface, not the safety path. Prefer collectors,
