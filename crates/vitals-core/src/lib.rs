@@ -19,6 +19,7 @@
 #![forbid(unsafe_code)]
 
 pub mod copybin;
+pub mod liveness;
 pub mod session;
 pub mod spool;
 
