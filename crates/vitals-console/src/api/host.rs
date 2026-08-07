@@ -42,8 +42,8 @@ pub struct HostInfo {
     pub disk_free_bytes: u64,
     /// Total bytes on the root filesystem.
     pub disk_total_bytes: u64,
-    /// `SoC` temperature in degrees Celsius.
-    pub thermal_c: f64,
+    /// `SoC` temperature in degrees Celsius, or `None` if unmeasurable.
+    pub thermal_c: Option<f64>,
     /// Throttling flags decoded from the firmware bitmask, or `None` when
     /// `vcgencmd get_throttled` failed or answered garbage — an unmeasured
     /// power rail must never render as a healthy one.
@@ -75,22 +75,20 @@ pub async fn collect_host_info(ops: &SysOps) -> Result<HostInfo, String> {
 
     let thermal_c = {
         if (ops.path_exists)("/sys/class/thermal/thermal_zone0/temp") {
-            let s = (ops.read_string)("/sys/class/thermal/thermal_zone0/temp")
-                .await
-                .unwrap_or_default();
-            s.trim().parse::<f64>().unwrap_or(0.0) / 1000.0
-        } else {
-            let out = (ops.cmd)("vcgencmd", &["measure_temp"])
-                .await
-                .unwrap_or_default();
-            let mut t = 0.0;
-            if let Some(val) = out.strip_prefix("temp=") {
-                let stripped = val.strip_suffix("'C\n");
-                if let Some(val2) = stripped {
-                    t = val2.parse().unwrap_or(0.0);
-                }
+            if let Ok(s) = (ops.read_string)("/sys/class/thermal/thermal_zone0/temp").await {
+                s.trim().parse::<f64>().ok().map(|v| v / 1000.0)
+            } else {
+                None
             }
-            t
+        } else if let Ok(out) = (ops.cmd)("vcgencmd", &["measure_temp"]).await {
+            if let Some(val) = out.strip_prefix("temp=") {
+                let stripped = val.strip_suffix("'C\n").unwrap_or(val);
+                stripped.trim().parse::<f64>().ok()
+            } else {
+                None
+            }
+        } else {
+            None
         }
     };
 
@@ -189,6 +187,7 @@ pub async fn host_handler(
 
 #[cfg(test)]
 mod tests {
+    #![expect(clippy::unwrap_used, reason = "unit tests on fixed fixtures")]
     use super::*;
 
     #[test]
@@ -197,7 +196,7 @@ mod tests {
         let info = HostInfo {
             disk_free_bytes: 0,
             disk_total_bytes: 0,
-            thermal_c: 0.0,
+            thermal_c: None,
             throttle: Some(ThrottleStatus {
                 undervoltage_now: (throttled & 1) != 0,
                 freq_capped_now: (throttled & 2) != 0,
@@ -226,5 +225,27 @@ mod tests {
         assert!(!t.freq_capped_latched);
         assert!(t.throttled_latched);
         assert!(!t.soft_temp_limit_latched);
+    }
+
+    #[tokio::test]
+    async fn test_thermal_failure_is_none() {
+        let mut ops = SysOps::real();
+        ops.stat_vfs = |_path| Ok((100, 200));
+        ops.path_exists = |_path| true;
+        ops.read_string = |_path| Box::pin(async move { Ok("garbage\n".to_string()) });
+
+        let info = collect_host_info(&ops).await.unwrap();
+        assert_eq!(info.thermal_c, None);
+    }
+
+    #[tokio::test]
+    async fn test_thermal_success() {
+        let mut ops = SysOps::real();
+        ops.stat_vfs = |_path| Ok((100, 200));
+        ops.path_exists = |_path| true;
+        ops.read_string = |_path| Box::pin(async move { Ok("42123\n".to_string()) });
+
+        let info = collect_host_info(&ops).await.unwrap();
+        assert_eq!(info.thermal_c, Some(42.123));
     }
 }

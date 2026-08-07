@@ -76,8 +76,8 @@ pub trait DbOps: Send + Sync {
     /// Returns a database error string when the query fails.
     async fn get_range(
         &self,
-        source: Option<i32>,
-        r#type: Option<i32>,
+        source: i32,
+        r#type: i32,
         since_micros: i64,
         until_micros: i64,
     ) -> Result<Vec<(i64, f64)>, String>;
@@ -134,8 +134,8 @@ impl DbOps for PgDbOps {
 
     async fn get_range(
         &self,
-        source: Option<i32>,
-        r#type: Option<i32>,
+        source: i32,
+        r#type: i32,
         since_micros: i64,
         until_micros: i64,
     ) -> Result<Vec<(i64, f64)>, String> {
@@ -144,8 +144,8 @@ impl DbOps for PgDbOps {
             .query(
                 "SELECT (EXTRACT(epoch FROM timestamp) * 1000000)::bigint, value
                  FROM samples
-                 WHERE ($1::int IS NULL OR source = $1)
-                   AND ($2::int IS NULL OR type = $2)
+                 WHERE source = $1
+                   AND type = $2
                    AND timestamp >= to_timestamp($3::bigint / 1000000.0)
                    AND timestamp <  to_timestamp($4::bigint / 1000000.0)
                  ORDER BY timestamp",
@@ -167,22 +167,23 @@ impl DbOps for PgDbOps {
         let nights_int =
             i32::try_from(nights).map_err(|_| format!("nights too large: {nights}"))?;
 
-        // OPERATOR DIRECTIVE (2024-06-25): Exclude synthetic sources (1: polar_h10 emulator history, 7: polar_h10_emulator)
+        // OPERATOR DIRECTIVE (2024-06-25): Exclude synthetic sources (7: polar_h10_emulator)
         // unless explicitly requested by the caller.
         let (_query, rows) = if let Some(src) = source {
             let query = "
                 SELECT
                     source,
                     type,
-                    (EXTRACT(epoch FROM date_trunc('day', timestamp)) * 1000000)::bigint as day_micros,
+                    (EXTRACT(epoch FROM date_trunc('day', timestamp - interval '12 hours')) * 1000000)::bigint as day_micros,
                     MIN(value) as min_val,
                     MAX(value) as max_val,
                     AVG(value) as avg_val,
                     COUNT(*) as sample_count
                 FROM samples
-                WHERE timestamp > now() - ($1::int * interval '1 day')
+                WHERE timestamp >= date_trunc('day', now() - interval '12 hours') + interval '12 hours' - ($1::int * interval '1 day')
+                  AND timestamp < date_trunc('day', now() - interval '12 hours') + interval '12 hours'
                   AND source = $2
-                GROUP BY source, type, date_trunc('day', timestamp)
+                GROUP BY source, type, date_trunc('day', timestamp - interval '12 hours')
                 ORDER BY day_micros DESC
             ";
             (
@@ -197,15 +198,16 @@ impl DbOps for PgDbOps {
                 SELECT
                     source,
                     type,
-                    (EXTRACT(epoch FROM date_trunc('day', timestamp)) * 1000000)::bigint as day_micros,
+                    (EXTRACT(epoch FROM date_trunc('day', timestamp - interval '12 hours')) * 1000000)::bigint as day_micros,
                     MIN(value) as min_val,
                     MAX(value) as max_val,
                     AVG(value) as avg_val,
                     COUNT(*) as sample_count
                 FROM samples
-                WHERE timestamp > now() - ($1::int * interval '1 day')
+                WHERE timestamp >= date_trunc('day', now() - interval '12 hours') + interval '12 hours' - ($1::int * interval '1 day')
+                  AND timestamp < date_trunc('day', now() - interval '12 hours') + interval '12 hours'
                   AND source <> 7
-                GROUP BY source, type, date_trunc('day', timestamp)
+                GROUP BY source, type, date_trunc('day', timestamp - interval '12 hours')
                 ORDER BY day_micros DESC
             ";
             (
@@ -365,8 +367,8 @@ mod tests {
         }
         async fn get_range(
             &self,
-            _s: Option<i32>,
-            _t: Option<i32>,
+            _s: i32,
+            _t: i32,
             _since: i64,
             _until: i64,
         ) -> Result<Vec<(i64, f64)>, String> {

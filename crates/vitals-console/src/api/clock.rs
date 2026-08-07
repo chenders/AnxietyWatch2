@@ -45,8 +45,11 @@ pub async fn collect_clock_info(ops: &SysOps) -> Result<ClockInfo, String> {
 
     let mut drift_usec = None;
     if let (Some(sys), Some(rtc)) = (time_usec, rtc_time_usec) {
-        drift_usec =
-            Some(i64::try_from(sys).unwrap_or(i64::MAX) - i64::try_from(rtc).unwrap_or(i64::MAX));
+        drift_usec = Some(
+            i64::try_from(rtc)
+                .unwrap_or(i64::MAX)
+                .saturating_sub(i64::try_from(sys).unwrap_or(i64::MAX)),
+        );
     }
 
     Ok(ClockInfo {
@@ -71,4 +74,34 @@ pub async fn clock_handler(
         .await
         .map(Json)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+}
+
+#[cfg(test)]
+mod tests {
+    #![expect(clippy::unwrap_used, reason = "unit tests on fixed fixtures")]
+    use super::*;
+    use crate::api::ops::SysOps;
+
+    #[tokio::test]
+    async fn test_drift_is_rtc_minus_sys() {
+        let mut ops = SysOps::real();
+        ops.cmd = |_cmd, _args| {
+            Box::pin(async move { Ok("TimeUSec=1000\nRTCTimeUSec=1050\n".to_string()) })
+        };
+
+        let info = collect_clock_info(&ops).await.unwrap();
+        assert_eq!(info.time_usec, Some(1000));
+        assert_eq!(info.rtc_time_usec, Some(1050));
+        assert_eq!(info.drift_usec, Some(50));
+
+        let mut ops2 = SysOps::real();
+        ops2.cmd = |_cmd, _args| {
+            Box::pin(async move { Ok("TimeUSec=2000\nRTCTimeUSec=1500\n".to_string()) })
+        };
+
+        let info2 = collect_clock_info(&ops2).await.unwrap();
+        assert_eq!(info2.time_usec, Some(2000));
+        assert_eq!(info2.rtc_time_usec, Some(1500));
+        assert_eq!(info2.drift_usec, Some(-500));
+    }
 }
