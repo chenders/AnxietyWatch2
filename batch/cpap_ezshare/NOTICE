@@ -1,0 +1,13 @@
+Clean-room protocol and documentation sources
+==============================================
+
+This package was implemented from project documentation describing the ez Share HTTP interface:
+
+* docs/integration/hms-cpap-ezshare-integration.md
+* docs/integration/resmed_bluetooth_research.md
+* openspec/changes/cpap-ezshare-ingest/{proposal,design,tasks}.md
+
+The interface used is GET /dir?dir=... for HTML listings and GET /download?file=... for file bytes.
+No hms-cpap or OSCAR implementation code was copied or consulted for this package. Python standard-library
+modules are the only runtime dependencies. ResMed and ez Share names identify their respective products;
+no affiliation or endorsement is implied.
