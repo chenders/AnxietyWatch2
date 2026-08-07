@@ -27,12 +27,11 @@ async fn main() {
         env::var("VITALS_CONSOLE_BIND").unwrap_or_else(|_| "127.0.0.1:8480".to_string());
     let socket_path =
         env::var("VITALSD_SOCKET").unwrap_or_else(|_| "/run/vitals/vitalsd.sock".to_string());
-    let test_routes_enabled = env::var("VITALS_CONSOLE_TEST_ROUTES")
-        .map(|v| v == "1")
-        .unwrap_or(false);
-    let assets_path = env::var("VITALS_CONSOLE_ASSETS")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("crates/vitals-console/assets"));
+    let test_routes_enabled = env::var("VITALS_CONSOLE_TEST_ROUTES").is_ok_and(|v| v == "1");
+    let assets_path = env::var("VITALS_CONSOLE_ASSETS").map_or_else(
+        |_| PathBuf::from("crates/vitals-console/assets"),
+        PathBuf::from,
+    );
 
     // Write-API pool: the service must still serve every read without it.
     let db = match env::var("VITALS_CONSOLE_DATABASE_URL") {
