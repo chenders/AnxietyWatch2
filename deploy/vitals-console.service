@@ -1,30 +1,37 @@
 [Unit]
-Description=vitals admin console backend
-Documentation=openspec/changes/pi5-vitals-core/tasks.md T-M0d
-After=network.target vitalsd.service
+Description=Vitals read and administration console
+After=network.target vitalsd.service postgresql.service
+Requires=vitalsd.service postgresql.service
 
 [Service]
 Type=simple
 ExecStart=/usr/local/bin/vitals-console
 Restart=always
-RestartSec=1
-
+RestartSec=3
 User=vitals
 Group=vitals
 
-# Not the safety path: console dies before collectors. Positive 200.
+# Interim SPEC-admin-console §9c posture: LAN reads are permitted until the
+# authenticated operations milestone introduces mutation endpoints.
+Environment=VITALS_CONSOLE_BIND=0.0.0.0:8480
+Environment=VITALSD_SOCKET=/run/vitals/vitalsd.sock
+Environment=DATABASE_URL=host=/var/run/postgresql user=vitals dbname=vitals
+# systemd consumes one percent sign; the process receives `%2F` URL escapes.
+Environment=VITALS_CONSOLE_DATABASE_URL=postgres://vitals@%%2Fvar%%2Frun%%2Fpostgresql/vitals
+Environment=VITALS_CONSOLE_ASSETS=/usr/local/share/vitals-console/assets
+
+# This is an observability surface, not the safety path. Prefer collectors,
+# vitalsd, and klaxond under memory pressure.
 OOMScoreAdjust=200
 
+NoNewPrivileges=true
+PrivateTmp=true
 ProtectSystem=strict
-PrivateTmp=yes
-NoNewPrivileges=yes
-ProtectHome=yes
-ProtectKernelTunables=yes
-ProtectKernelModules=yes
-ProtectControlGroups=yes
-RestrictNamespaces=yes
-LockPersonality=yes
-MemoryDenyWriteExecute=yes
+ProtectHome=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
 SystemCallArchitectures=native
 
 [Install]
