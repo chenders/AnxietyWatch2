@@ -18,6 +18,13 @@ use crate::models::{
 };
 use crate::test_page::TEST_PAGE_HTML;
 
+/// Dashboard HTML embedded from the design artifact so deployment remains a
+/// single binary and every API request is same-origin.
+const DASHBOARD_HTML: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../docs/design/web-dashboard/index.html"
+));
+
 /// Shared application state for all console routes.
 #[derive(Clone)]
 pub struct AppState {
@@ -146,6 +153,17 @@ pub async fn health_handler(State(state): State<AppState>) -> Json<HealthView> {
         heartbeat_pulsing,
         sources: source_views,
     })
+}
+
+/// GET `/dashboard` and `/dashboard/`
+///
+/// Serves the real-data dashboard from the same origin as its `/api/*` feeds.
+#[expect(
+    clippy::unused_async,
+    reason = "axum handlers must be async to satisfy the Handler trait"
+)]
+pub async fn dashboard_handler() -> Html<&'static str> {
+    Html(DASHBOARD_HTML)
 }
 
 /// GET /api/version
@@ -586,6 +604,30 @@ mod tests {
             sys_ops: crate::api::ops::SysOps::real(),
             db_ops: std::sync::Arc::new(DummyDbOps),
         }
+    }
+
+    #[tokio::test]
+    async fn test_dashboard_is_served_same_origin() {
+        let app = Router::new().route("/dashboard", get(dashboard_handler));
+        let response = app
+            .oneshot(
+                AxumRequest::builder()
+                    .uri("/dashboard")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers().get("content-type").unwrap(),
+            "text/html; charset=utf-8"
+        );
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        let html = std::str::from_utf8(&body).unwrap();
+        assert!(html.contains("/api/health"));
+        assert!(html.contains("/api/nightly"));
     }
 
     #[tokio::test]
