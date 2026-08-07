@@ -69,11 +69,13 @@ mod linux {
     /// One line of capture. Written to stdout and flushed per notification: an
     /// eight-hour run that buffers loses everything if the process is killed,
     /// and the whole point is surviving the night.
-    fn emit(bpm: u16, rr_ms: &[f64]) {
+    fn emit(bpm: u16, rr_s: &[f64]) {
         use std::io::Write as _;
-        let rr = rr_ms
+        // The decoder yields canonical seconds; this capture file format is
+        // documented as milliseconds, so the presentation converts.
+        let rr = rr_s
             .iter()
-            .map(|v| format!("{v:.3}"))
+            .map(|v| format!("{:.3}", v * 1000.0))
             .collect::<Vec<_>>()
             .join(",");
         let mut out = std::io::stdout().lock();

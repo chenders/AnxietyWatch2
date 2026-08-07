@@ -76,3 +76,11 @@ transport = "ble"
 service = "0x1810"
 indication = true
 provides = ["bp_systolic", "bp_diastolic", "bp_map", "hr"]
+
+# Synthetic pipeline-exercise data. A distinct id so emulator beats can never
+# be mistaken for, or aggregated with, a physical measurement — provenance by
+# key, not by a free-text marker an env var might forget to set.
+[source.polar_h10_emulator]
+id = 7
+transport = "internal"
+provides = ["hr", "rr_interval"]

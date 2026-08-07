@@ -1,4 +1,7 @@
 //! Polar H10 Heart Rate Service collector for vitalsd.
+//!
+//! The sample-building policy is host-independent and lives in the crate lib, so
+//! its tests run on any platform; only the `BlueZ` transport is Linux.
 
 #[cfg(not(target_os = "linux"))]
 fn main() {
@@ -14,17 +17,20 @@ mod linux {
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
     use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
     use tokio::net::UnixStream;
+    use vitals_collectors::h10_build as build;
     use vitals_core::SessionMinter;
-    use vitals_decode::hr::{HeartRate, decode_2a37};
+    use vitals_decode::hr::decode_2a37;
     use vitals_proto::{
         Request, Response, WireSample, check_frame_len, decode_payload, encode_frame,
     };
-    use vitals_registry::{VitalsSource, VitalsType};
 
     const HR_SERVICE: bluer::Uuid =
         bluer::Uuid::from_u128(0x0000_180d_0000_1000_8000_0080_5f9b_34fb);
     const HR_MEASUREMENT: bluer::Uuid =
         bluer::Uuid::from_u128(0x0000_2a37_0000_1000_8000_0080_5f9b_34fb);
+    /// A wedged daemon must be loud, not a silent stall (amendment 06 §2.2's
+    /// visibility rule applies to the streaming path too).
+    const APPEND_TIMEOUT: Duration = Duration::from_secs(30);
 
     pub(super) struct Config {
         target: Address,
@@ -60,78 +66,45 @@ mod linux {
     }
 
     async fn append(socket: &Path, samples: Vec<WireSample>) -> Result<(), String> {
-        let mut stream = UnixStream::connect(socket)
-            .await
+        let io = async {
+            let mut stream = UnixStream::connect(socket)
+                .await
+                .map_err(|e| e.to_string())?;
+            let frame = encode_frame(&Request::Append {
+                samples,
+                // Never true here: RR is a streaming source, reconstructible
+                // from the sensor's own buffer, and per-append fsync would
+                // destroy the ingest path to protect it (amendment 06 §2.1).
+                // Durability cost is paid by bp-collector and nowhere else.
+                sync: false,
+            })
             .map_err(|e| e.to_string())?;
-        let frame = encode_frame(&Request::Append {
-            samples,
-            // This test intentionally exercises the complete durable path. The
-            // daemon seals sync-required segments so PostgreSQL and the panel
-            // see each notification promptly rather than after hourly rotation.
-            sync: true,
-        })
-        .map_err(|e| e.to_string())?;
-        stream.write_all(&frame).await.map_err(|e| e.to_string())?;
-        let mut len = [0; 4];
-        stream
-            .read_exact(&mut len)
+            stream.write_all(&frame).await.map_err(|e| e.to_string())?;
+            let mut len = [0; 4];
+            stream
+                .read_exact(&mut len)
+                .await
+                .map_err(|e| e.to_string())?;
+            let n = check_frame_len(u32::from_le_bytes(len)).map_err(|e| e.to_string())?;
+            let mut body = vec![0; n];
+            stream
+                .read_exact(&mut body)
+                .await
+                .map_err(|e| e.to_string())?;
+            match decode_payload::<Response>(&body).map_err(|e| e.to_string())? {
+                Response::Appended { count, .. } if count > 0 => Ok(()),
+                Response::Error { detail, .. } => Err(detail),
+                other => Err(format!("unexpected vitalsd response: {other:?}")),
+            }
+        };
+        tokio::time::timeout(APPEND_TIMEOUT, io)
             .await
-            .map_err(|e| e.to_string())?;
-        let n = check_frame_len(u32::from_le_bytes(len)).map_err(|e| e.to_string())?;
-        let mut body = vec![0; n];
-        stream
-            .read_exact(&mut body)
-            .await
-            .map_err(|e| e.to_string())?;
-        match decode_payload::<Response>(&body).map_err(|e| e.to_string())? {
-            Response::Appended { count, .. } if count > 0 => Ok(()),
-            Response::Error { detail, .. } => Err(detail),
-            other => Err(format!("unexpected vitalsd response: {other:?}")),
-        }
-    }
-
-    fn samples(
-        h: &HeartRate,
-        session_id: i64,
-        hr_seq: &mut i64,
-        rr_seq: &mut i64,
-        arrival: i64,
-        emulator: bool,
-    ) -> Vec<WireSample> {
-        let extra = Some(if emulator {
-            b"test_origin=polar_h10_emulator".to_vec()
-        } else {
-            b"test_origin=physical_device".to_vec()
-        });
-        let mut out = Vec::with_capacity(1 + h.rr().len());
-        out.push(WireSample {
-            source: VitalsSource::PolarH10.id(),
-            r#type: VitalsType::Hr.id(),
-            session_id,
-            seq: *hr_seq,
-            timestamp_unix_micros: arrival,
-            value: f64::from(h.bpm),
-            extra: extra.clone(),
-            batch_id: None,
-        });
-        *hr_seq = hr_seq.saturating_add(1);
-        let total_us: i64 = h.rr().iter().map(|v| (*v * 1_000.0).round() as i64).sum();
-        let mut beat_time = arrival.saturating_sub(total_us);
-        for rr_ms in h.rr() {
-            beat_time = beat_time.saturating_add((*rr_ms * 1_000.0).round() as i64);
-            out.push(WireSample {
-                source: VitalsSource::PolarH10.id(),
-                r#type: VitalsType::RrInterval.id(),
-                session_id,
-                seq: *rr_seq,
-                timestamp_unix_micros: beat_time,
-                value: *rr_ms / 1_000.0,
-                extra: extra.clone(),
-                batch_id: None,
-            });
-            *rr_seq = rr_seq.saturating_add(1);
-        }
-        out
+            .map_err(|_| {
+                format!(
+                    "vitalsd append timed out after {}s: samples not confirmed",
+                    APPEND_TIMEOUT.as_secs()
+                )
+            })?
     }
 
     pub async fn run(config: Config) -> Result<(), String> {
@@ -175,18 +148,20 @@ mod linux {
             );
             while let Some(raw) = notifications.next().await {
                 if let Some(h) = decode_2a37(&raw) {
-                    append(
-                        &config.socket,
-                        samples(
-                            &h,
-                            id,
-                            &mut hr_seq,
-                            &mut rr_seq,
-                            now_micros()?,
-                            config.emulator,
-                        ),
-                    )
-                    .await?;
+                    let built = build::samples(
+                        &h,
+                        id,
+                        &mut hr_seq,
+                        &mut rr_seq,
+                        now_micros()?,
+                        config.emulator,
+                    );
+                    for reason in &built.rejected {
+                        eprintln!("h10-collector: {reason}");
+                    }
+                    if !built.samples.is_empty() {
+                        append(&config.socket, built.samples).await?;
+                    }
                 } else {
                     eprintln!("h10-collector: malformed frame {raw:02x?}");
                 }
@@ -199,16 +174,22 @@ mod linux {
 
 #[cfg(target_os = "linux")]
 fn main() {
-    let config = linux::Config::from_env().unwrap_or_else(|e| {
-        eprintln!("h10-collector: {e}");
-        std::process::exit(64)
-    });
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let config = match linux::Config::from_env() {
+        Ok(config) => config,
+        Err(e) => {
+            eprintln!("h10-collector: {e}");
+            std::process::exit(64);
+        }
+    };
+    let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
-        .expect("runtime");
+    else {
+        eprintln!("h10-collector: could not start tokio runtime");
+        std::process::exit(70);
+    };
     if let Err(e) = runtime.block_on(linux::run(config)) {
         eprintln!("h10-collector: {e}");
-        std::process::exit(1);
+        std::process::exit(70);
     }
 }
