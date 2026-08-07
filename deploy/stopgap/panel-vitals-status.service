@@ -5,7 +5,7 @@ Requires=postgresql@16-main.service
 
 [Service]
 Type=simple
-User=chris
+User=anxietywatch
 ExecStart=/usr/local/bin/panel-vitals-status
 Restart=always
 RestartSec=3
@@ -13,7 +13,7 @@ NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=/home/chris/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical
+ReadWritePaths=/opt/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical
 RestrictAddressFamilies=AF_UNIX
 
 [Install]

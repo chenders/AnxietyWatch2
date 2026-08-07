@@ -452,19 +452,31 @@ function liveState() {
     name: "A&D BP CUFF", link: "BLE", ok: !live.vitalsErr,
     age: ageText(bpAge),
   } : { name: "A&D BP CUFF", link: "—", ok: null, age: live.vitalsErr ? "read error" : "no reading" };
+  // An absent field renders as "--", never as 0: Math.round(null) is 0, and
+  // "135/0" reads as a catastrophic diastolic rather than as a decode gap.
+  const bpNum = (v) => (v == null ? "--" : String(Math.round(v)));
+  const bpWarn = bp ? [
+    bp.body_movement ? "movement" : null,
+    bp.cuff_too_loose ? "loose cuff" : null,
+    bp.irregular_pulse ? "irreg pulse" : null,
+  ].filter(Boolean).join(" · ") : "";
   const realNibp = bp ? {
     name: "NIBP", unit: "mmHg", color: "var(--nibp)", small: true, limits: "↑150/95",
-    val: `${Math.round(bp.systolic)}/${Math.round(bp.diastolic)}`,
+    val: `${bpNum(bp.systolic)}/${bpNum(bp.diastolic)}`,
     // A cuff is episodic, not a streaming liveness source. Keep the last
     // measurement visible but use stale treatment after four hours.
     stale: bpAge > 4 * 3600,
-    note: `MAP ${Math.round(bp.map)}\n${ageText(bpAge)} ago${live.vitalsErr ? " · DATA ERROR" : ""}`,
+    note: `MAP ${bpNum(bp.map)}${bpWarn ? ` · ⚠ ${bpWarn}` : ""}\n${ageText(bpAge)} ago${live.vitalsErr ? " · DATA ERROR" : ""}`,
   } : null;
   const emay = { name: "EMAY SpO₂", link: "BLE", ok: measured,
     age: measured ? `${sampleAge.toFixed(1)} s` : (s ? `${Math.round(Math.min(sampleAge, 99999))} s` : "—") };
   const h10Age = live.h10 ? Math.max(0, now - live.h10.sample_at) : Infinity;
   const h10 = live.h10 ? {
-    name: live.h10.test_origin === "polar_h10_emulator" ? "POLAR H10 · TEST" : "POLAR H10",
+    // Provenance fails closed: a row that cannot prove it came from the
+    // physical strap must not borrow the physical strap's label.
+    name: live.h10.test_origin === "polar_h10_emulator" ? "POLAR H10 · TEST"
+      : live.h10.test_origin === "physical_device" ? "POLAR H10"
+      : "POLAR H10 · UNVERIFIED",
     link: "BLE", ok: h10Age <= LIVE.STALE_AFTER_S && !live.vitalsErr,
     age: h10Age < 60 ? `${Math.round(h10Age)} s` : ageText(h10Age),
   } : { name: "POLAR H10", link: "—", ok: null, age: "no reading" };
@@ -519,7 +531,7 @@ function liveState() {
     prio: "NO ALARM ARMED", prioFg: "var(--unknown-hi)", since: "display only",
     chanLabel: "DISPLAY ONLY · NO ALARM", chanFg: "var(--unknown-hi)",
     params: params(s.spo2, s.pulse_bpm, false),
-    caption: "live", note: `SpO₂ ${s.spo2} · ${s.pulse_bpm} bpm${bp ? ` · BP ${Math.round(bp.systolic)}/${Math.round(bp.diastolic)} MAP ${Math.round(bp.map)}` : ""} — nothing is evaluating these numbers`,
+    caption: "live", note: `SpO₂ ${s.spo2} · ${s.pulse_bpm} bpm${bp ? ` · BP ${bpNum(bp.systolic)}/${bpNum(bp.diastolic)} MAP ${bpNum(bp.map)}` : ""} — nothing is evaluating these numbers`,
   };
 }
 
