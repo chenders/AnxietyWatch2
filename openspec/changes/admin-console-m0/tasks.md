@@ -30,7 +30,7 @@ T-M0a addendum pending: polar_h10_emulator cadence lands after PR #32 merges (wo
 ## Brief: m0b (dispatched verbatim)
 
 ```
-You are executing one task in the AnxietyWatch2 repo. Your working tree is /Users/chris/Source/aw2-m0b on branch task/m0b-console-schema — work ONLY there. Read AGENTS.md and docs/specs/AMENDMENTS.md first; they are binding. Acceptance is the Verify command's exit code, never your own assessment. Commit when green with trailer "Co-Authored-By: pi worker (openai/gpt-5.6-sol) <noreply@example.com>". Do NOT push.
+You are executing one task in the AnxietyWatch2 repo. Your working tree is $WORKTREES/aw2-m0b on branch task/m0b-console-schema — work ONLY there. Read AGENTS.md and docs/specs/AMENDMENTS.md first; they are binding. Acceptance is the Verify command's exit code, never your own assessment. Commit when green with trailer "Co-Authored-By: pi worker (openai/gpt-5.6-sol) <noreply@example.com>". Do NOT push.
 
 ### T-M0b — Attempt / observation / domain-record schema (admin console M0)
 
@@ -52,7 +52,7 @@ None of these touches the samples table — state that in each deploy header com
 
 **Verify (runs the whole plan into a scratch DB on the Pi and reverts it):**
 
-cd /Users/chris/Source/aw2-m0b && PI_HOST=chris@minidude PI_PATH=/home/chris/aw2-m0b scripts/sync-to-pi.sh && ssh chris@minidude 'set -e; sudo -u postgres createdb m0b_scratch; cd /home/chris/aw2-m0b/db; rc=0; sudo -u postgres sqitch deploy db:pg:m0b_scratch && sudo -u postgres sqitch verify db:pg:m0b_scratch && sudo -u postgres sqitch revert -y db:pg:m0b_scratch || rc=1; sudo -u postgres dropdb m0b_scratch; exit $rc'
+cd $WORKTREES/aw2-m0b && PI_HOST="$PI_HOST" PI_PATH=$PI_PATH-parent/aw2-m0b scripts/sync-to-pi.sh && ssh "$PI_HOST" 'set -e; sudo -u postgres createdb m0b_scratch; cd $PI_PATH-parent/aw2-m0b/db; rc=0; sudo -u postgres sqitch deploy db:pg:m0b_scratch && sudo -u postgres sqitch verify db:pg:m0b_scratch && sudo -u postgres sqitch revert -y db:pg:m0b_scratch || rc=1; sudo -u postgres dropdb m0b_scratch; exit $rc'
 
 **Expect:** exit 0. The scratch DB is created and dropped inside the command — never touch the vitals database.
 
@@ -62,7 +62,7 @@ Report when done: what changed, Verify output tail, contradictions if any (repor
 ## Brief: m0c (dispatched verbatim)
 
 ```
-You are executing one task in the AnxietyWatch2 repo. Your working tree is /Users/chris/Source/aw2-m0c on branch task/m0c-liveness-evaluator — work ONLY there. Read AGENTS.md and docs/specs/AMENDMENTS.md first; they are binding. Acceptance is the Verify command's exit code, never your own assessment. Commit when green with trailer "Co-Authored-By: pi worker (gemini/gemini-3.1-pro-preview) <noreply@example.com>". Do NOT push.
+You are executing one task in the AnxietyWatch2 repo. Your working tree is $WORKTREES/aw2-m0c on branch task/m0c-liveness-evaluator — work ONLY there. Read AGENTS.md and docs/specs/AMENDMENTS.md first; they are binding. Acceptance is the Verify command's exit code, never your own assessment. Commit when green with trailer "Co-Authored-By: pi worker (gemini/gemini-3.1-pro-preview) <noreply@example.com>". Do NOT push.
 
 ### T-M0c — The liveness evaluator: one pure function (admin console M0, spec §9 criterion 1)
 
@@ -101,7 +101,7 @@ Tests, in-module #[cfg(test)], covering every rule above plus explicitly:
 
 Workspace lints are deny (no unwrap/expect/panic outside tests, no indexing). Match the crate's existing doc-comment density.
 
-**Verify:** cd /Users/chris/Source/aw2-m0c && cargo test -p vitals-core liveness && cargo clippy -p vitals-core --all-targets && cargo fmt --check
+**Verify:** cd $WORKTREES/aw2-m0c && cargo test -p vitals-core liveness && cargo clippy -p vitals-core --all-targets && cargo fmt --check
 **Expect:** exit 0.
 
 Report when done: what changed, Verify output tail, contradictions if any (report contradictions, do not silently resolve them).
@@ -110,7 +110,7 @@ Report when done: what changed, Verify output tail, contradictions if any (repor
 ## Brief: m0d (dispatched verbatim)
 
 ```
-You are executing one task in the AnxietyWatch2 repo. Your working tree is /Users/chris/Source/aw2-m0d on branch task/m0d-console-skeleton — work ONLY there. Read AGENTS.md and docs/specs/AMENDMENTS.md first (amendment 07 governs this task); they are binding. Acceptance is the Verify command's exit code, never your own assessment. Commit when green with trailer "Co-Authored-By: pi worker (gemini/gemini-3.1-pro-preview) <noreply@example.com>". Do NOT push.
+You are executing one task in the AnxietyWatch2 repo. Your working tree is $WORKTREES/aw2-m0d on branch task/m0d-console-skeleton — work ONLY there. Read AGENTS.md and docs/specs/AMENDMENTS.md first (amendment 07 governs this task); they are binding. Acceptance is the Verify command's exit code, never your own assessment. Commit when green with trailer "Co-Authored-By: pi worker (gemini/gemini-3.1-pro-preview) <noreply@example.com>". Do NOT push.
 
 ### T-M0d — vitals-console: the axum service skeleton (admin console M0)
 
@@ -133,7 +133,7 @@ You are executing one task in the AnxietyWatch2 repo. Your working tree is /User
 
 Workspace lints are deny: no unwrap/expect/panic outside tests, no indexing. Keep handlers producing plain serde structs — one view-model per screen is the M1 rule and starts here.
 
-**Verify:** cd /Users/chris/Source/aw2-m0d && cargo test -p vitals-console && cargo clippy -p vitals-console --all-targets && cargo fmt --check
+**Verify:** cd $WORKTREES/aw2-m0d && cargo test -p vitals-console && cargo clippy -p vitals-console --all-targets && cargo fmt --check
 **Expect:** exit 0.
 
 Report when done: what changed, Verify output tail, contradictions if any (report contradictions, do not silently resolve them).
@@ -142,7 +142,7 @@ Report when done: what changed, Verify output tail, contradictions if any (repor
 ## Brief: m0e (dispatched verbatim)
 
 ```
-You are executing one task in the AnxietyWatch2 repo. Your working tree is /Users/chris/Source/aw2-m0e on branch task/m0e-envelope-api — work ONLY there. Read AGENTS.md and docs/specs/AMENDMENTS.md first; they are binding. Acceptance is the Verify command's exit code, never your own assessment. Commit when green with trailer "Co-Authored-By: pi worker (openai/gpt-5.6-sol) <noreply@example.com>". Do NOT push.
+You are executing one task in the AnxietyWatch2 repo. Your working tree is $WORKTREES/aw2-m0e on branch task/m0e-envelope-api — work ONLY there. Read AGENTS.md and docs/specs/AMENDMENTS.md first; they are binding. Acceptance is the Verify command's exit code, never your own assessment. Commit when green with trailer "Co-Authored-By: pi worker (openai/gpt-5.6-sol) <noreply@example.com>". Do NOT push.
 
 ### T-M0e — The client write API skeleton: envelope + idempotent domain records + attempts (admin console M0)
 
@@ -165,7 +165,7 @@ You are executing one task in the AnxietyWatch2 repo. Your working tree is /User
 8. Integration tests: gated on VITALS_CONSOLE_TEST_DATABASE_URL being set (skip cleanly when absent, printing that they were skipped). They must cover all four idempotency rows and the attempt-before-work property (kill path can be simulated by writing the attempt then erroring before finish; assert the NULL-outcome row).
 
 **Verify (unit tests always; integration against a scratch DB in the aw2-refpg docker container on this Mac):**
-cd /Users/chris/Source/aw2-m0e && cargo test -p vitals-console && cargo clippy -p vitals-console --all-targets && cargo fmt --check
+cd $WORKTREES/aw2-m0e && cargo test -p vitals-console && cargo clippy -p vitals-console --all-targets && cargo fmt --check
 Then report the integration-test command you validated with VITALS_CONSOLE_TEST_DATABASE_URL pointing at a scratch database you created and dropped in the aw2-refpg container (docker exec aw2-refpg createdb/dropdb; discover its port with docker port aw2-refpg; deploy the sqitch schema from db/ before the run — sqitch runs on the Pi if absent locally, or apply the three deploy scripts directly with psql, in plan order, and say which you did).
 **Expect:** exit 0 on the Verify line; integration suite green with the DB URL set.
 
@@ -175,7 +175,7 @@ Report when done: what changed, Verify output tail, the integration evidence, co
 ## Brief: wd1 (dispatched verbatim)
 
 ```
-You are executing one task in the AnxietyWatch2 repo. Your working tree is /Users/chris/Source/aw2-wd1 on branch task/wd1-dashboard-directions — work ONLY there. Read AGENTS.md and docs/specs/AMENDMENTS.md first (amendment 08 governs this task); they are binding. Acceptance is the Verify command's exit code plus the invariants below. Commit when green with trailer "Co-Authored-By: pi worker (openai/gpt-5.6-sol) <noreply@example.com>". Do NOT push.
+You are executing one task in the AnxietyWatch2 repo. Your working tree is $WORKTREES/aw2-wd1 on branch task/wd1-dashboard-directions — work ONLY there. Read AGENTS.md and docs/specs/AMENDMENTS.md first (amendment 08 governs this task); they are binding. Acceptance is the Verify command's exit code plus the invariants below. Commit when green with trailer "Co-Authored-By: pi worker (openai/gpt-5.6-sol) <noreply@example.com>". Do NOT push.
 
 ### T-WD1 — Web dashboard: all three directions behind a runtime switcher (amendment 08 §3)
 
@@ -191,7 +191,7 @@ You are executing one task in the AnxietyWatch2 repo. Your working tree is /User
 5. Both README invariants bind all three renderers: a gap arrives as null and renders as a gap (never coerce null to 0 or interpolate — grep yourself for "?? 0" and "|| 0" style coercions before finishing); trends stay one-point-per-night server-side aggregates (do not invent client-side resampling).
 6. Keep the mockup files in claude-design/ untouched — they are the record the pruning task deletes later.
 
-**Verify:** cd /Users/chris/Source/aw2-wd1 && node docs/design/web-dashboard/palette-check.mjs docs/design/web-dashboard/index.html && node -e "const s=require('fs').readFileSync('docs/design/web-dashboard/index.html','utf8'); for (const t of ['function renderA','function renderB','function renderC','localStorage','?dir=']) if(!s.includes(t)) { console.error('missing: '+t); process.exit(1);} console.log('structure ok')"
+**Verify:** cd $WORKTREES/aw2-wd1 && node docs/design/web-dashboard/palette-check.mjs docs/design/web-dashboard/index.html && node -e "const s=require('fs').readFileSync('docs/design/web-dashboard/index.html','utf8'); for (const t of ['function renderA','function renderB','function renderC','localStorage','?dir=']) if(!s.includes(t)) { console.error('missing: '+t); process.exit(1);} console.log('structure ok')"
 **Expect:** exit 0 on both. If palette-check legitimately conflicts with direction B or C styling, STOP and report the conflict — do not weaken the checker and do not restyle the directions to dodge it silently.
 
 Report when done: what changed, Verify output tail, any model() extensions you made, contradictions if any.
