@@ -1,3 +1,9 @@
+//! The vitals-console HTTP server binary.
+//!
+//! Reads `VITALS_CONSOLE_BIND`, `VITALSD_SOCKET`, `VITALS_CONSOLE_DATABASE_URL`,
+//! and `VITALS_CONSOLE_TEST_ROUTES` from the environment, builds the
+//! application state, and serves the routes defined in `vitals_console`.
+
 use axum::{Router, routing::get, routing::post};
 use std::env;
 use std::path::PathBuf;
@@ -12,14 +18,12 @@ async fn main() {
         env::var("VITALS_CONSOLE_BIND").unwrap_or_else(|_| "127.0.0.1:8480".to_string());
     let socket_path =
         env::var("VITALSD_SOCKET").unwrap_or_else(|_| "/run/vitals/vitalsd.sock".to_string());
-    let test_routes_enabled = env::var("VITALS_CONSOLE_TEST_ROUTES")
-        .map(|v| v == "1")
-        .unwrap_or(false);
+    let test_routes_enabled = env::var("VITALS_CONSOLE_TEST_ROUTES").is_ok_and(|v| v == "1");
 
     // Try to connect to the database; the service must still serve /api/health
     // without a database (spec M0).
-    let db = match env::var("VITALS_CONSOLE_DATABASE_URL") {
-        Ok(url) => match sqlx::PgPool::connect(&url).await {
+    let db = if let Ok(url) = env::var("VITALS_CONSOLE_DATABASE_URL") {
+        match sqlx::PgPool::connect(&url).await {
             Ok(pool) => {
                 eprintln!("Connected to database");
                 Some(pool)
@@ -28,13 +32,10 @@ async fn main() {
                 eprintln!("Warning: database connection failed: {e}");
                 None
             }
-        },
-        Err(_) => {
-            eprintln!(
-                "Note: VITALS_CONSOLE_DATABASE_URL not set; envelope endpoints will return 503"
-            );
-            None
         }
+    } else {
+        eprintln!("Note: VITALS_CONSOLE_DATABASE_URL not set; envelope endpoints will return 503");
+        None
     };
 
     let state = AppState {

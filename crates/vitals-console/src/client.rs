@@ -5,12 +5,18 @@ use tokio::net::UnixStream;
 use tokio::time::timeout;
 use vitals_proto::{Request, Response, check_frame_len, decode_payload, encode_frame};
 
+/// Why talking to the `vitalsd` Unix socket failed.
 #[derive(Debug)]
 pub enum ClientError {
+    /// The Unix socket could not be connected.
     ConnectFailed(String),
+    /// No reply arrived within the timeout window.
     Timeout,
+    /// The socket read or write failed.
     Io(String),
+    /// A frame was malformed or its payload did not parse.
     Protocol(String),
+    /// The daemon replied with a message type other than the one asked for.
     UnexpectedResponse,
 }
 
@@ -26,6 +32,14 @@ impl std::fmt::Display for ClientError {
     }
 }
 
+/// Fetch the daemon's health report over its Unix socket.
+///
+/// # Errors
+/// [`ClientError::ConnectFailed`] if the socket cannot be reached;
+/// [`ClientError::Timeout`] if no reply arrives within 10 seconds;
+/// [`ClientError::Io`] on socket read or write failure; and
+/// [`ClientError::Protocol`] or [`ClientError::UnexpectedResponse`] if the
+/// reply is not a well-formed health frame.
 pub async fn get_health(socket_path: &Path) -> Result<Box<vitals_proto::Health>, ClientError> {
     let req = Request::Health;
     let req_bytes = encode_frame(&req).map_err(|e| ClientError::Protocol(e.to_string()))?;

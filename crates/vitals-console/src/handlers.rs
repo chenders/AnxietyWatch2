@@ -18,10 +18,15 @@ use crate::models::{
 };
 use crate::test_page::TEST_PAGE_HTML;
 
+/// Shared application state for all console routes.
 #[derive(Clone)]
 pub struct AppState {
+    /// Path to the `vitalsd` Unix socket.
     pub socket_path: PathBuf,
+    /// `PostgreSQL` pool; `None` when the database is unavailable, in which
+    /// case the envelope routes answer 503.
     pub db: Option<sqlx::PgPool>,
+    /// Whether the plaintext test route answers (`VITALS_CONSOLE_TEST_ROUTES=1`).
     pub test_routes_enabled: bool,
 }
 
@@ -37,6 +42,14 @@ fn require_db(state: &AppState) -> Result<&sqlx::PgPool, (StatusCode, Json<Error
 
 // ---- Existing handlers (kept) ----
 
+/// GET /api/health
+///
+/// Fetches the daemon's health over its Unix socket, derives a per-source
+/// state with the local liveness evaluator, and renders the console view.
+///
+/// # Errors
+/// 500 if the system clock is before the Unix epoch, when every age would be a
+/// lie.
 pub async fn health_handler(
     State(state): State<AppState>,
 ) -> Result<Json<HealthView>, (StatusCode, String)> {
@@ -99,7 +112,7 @@ pub async fn health_handler(
             raw_liveness = Some(info.liveness);
             if let Some(age) = info.last_sample_age_secs {
                 observation_age_s = Some(age);
-                let timestamp = now_s.saturating_sub(age as i64);
+                let timestamp = now_s.saturating_sub(i64::try_from(age).unwrap_or(i64::MAX));
                 evidence.last_attempt_epoch_s = Some(timestamp);
                 evidence.last_success_epoch_s = Some(timestamp);
             }
@@ -133,6 +146,14 @@ pub async fn health_handler(
     }))
 }
 
+/// GET /api/version
+///
+/// Renders the crate version, `GIT_DESCRIBE` when built from a tag, and a
+/// milestone note.
+///
+/// `async` is required: axum 0.7's `Handler` trait is only implemented for
+/// functions returning a `Future`, so a synchronous handler cannot be routed.
+#[allow(clippy::unused_async)]
 pub async fn version_handler() -> Json<VersionView> {
     Json(VersionView {
         version: env!("CARGO_PKG_VERSION"),
@@ -149,6 +170,11 @@ pub async fn version_handler() -> Json<VersionView> {
 /// 127.0.0.1 and the auth posture is an open decision (spec §9c) — see the
 /// design document for the bind and auth posture decision deferred to the
 /// point of use.
+///
+/// # Errors
+/// 503 when the database is unavailable; 400 for invalid base64 or a secret
+/// that is not 32 bytes after decoding; 409 when re-registering an existing
+/// `client_id` with a different secret (takeover attempt refused, spec §2.3b).
 pub async fn register_handler(
     State(state): State<AppState>,
     Json(req): Json<RegisterRequest>,
@@ -182,6 +208,12 @@ pub async fn register_handler(
 /// Accept an encrypted envelope carrying a domain record. Decrypts with
 /// XSalsa20-Poly1305 using the registered secret, applies idempotency rules
 /// (spec §2.3b), and records the attempt with an effect breakdown.
+///
+/// # Errors
+/// 503 when the database is unavailable; 401 for an unknown client; 400 for
+/// malformed base64, an undecryptable payload, invalid JSON, or an unknown
+/// envelope class; 409 when the record id already exists with different
+/// content; 500 on database or serialization failure.
 pub async fn envelope_handler(
     State(state): State<AppState>,
     Json(req): Json<EnvelopeRequest>,
@@ -331,6 +363,9 @@ async fn process_envelope(
 /// GET /api/attempts?limit=N
 ///
 /// List the most recent attempt rows with their effect breakdowns visible.
+///
+/// # Errors
+/// 503 when the database is unavailable; 500 on query failure.
 pub async fn attempts_handler(
     State(state): State<AppState>,
     Query(query): Query<AttemptsQuery>,
@@ -345,6 +380,10 @@ pub async fn attempts_handler(
 ///
 /// Crude test page: one form that sends a plaintext domain record via the
 /// server-side test route. Deliberately not part of the console (spec §9).
+///
+/// `async` is required: axum 0.7's `Handler` trait is only implemented for
+/// functions returning a `Future`, so a synchronous handler cannot be routed.
+#[allow(clippy::unused_async)]
 pub async fn test_page_handler() -> Html<&'static str> {
     Html(TEST_PAGE_HTML)
 }
@@ -352,10 +391,14 @@ pub async fn test_page_handler() -> Html<&'static str> {
 /// POST /api/envelope/plaintext-test
 ///
 /// Server-side test endpoint guarded by `VITALS_CONSOLE_TEST_ROUTES=1`.
-/// Auto-generates a client_id + secret, registers the client, encrypts the
+/// Auto-generates a `client_id` + secret, registers the client, encrypts the
 /// domain record with XSalsa20-Poly1305, and submits it through the envelope
 /// processing path. Chosen over the client-side JS approach because it avoids
-/// bundling a NaCl secretbox implementation in the page.
+/// bundling a `NaCl` secretbox implementation in the page.
+///
+/// # Errors
+/// 404 when test routes are disabled; 503 when the database is unavailable;
+/// 500 on RNG, serialization, or encryption failure.
 pub async fn plaintext_test_handler(
     State(state): State<AppState>,
     Json(req): Json<PlaintextTestRequest>,
@@ -478,9 +521,7 @@ pub async fn plaintext_test_handler(
 #[cfg(test)]
 #[expect(
     clippy::unwrap_used,
-    clippy::expect_used,
     clippy::indexing_slicing,
-    clippy::panic,
     reason = "test assertions and fixed fixtures should panic loudly"
 )]
 mod tests {
@@ -496,9 +537,9 @@ mod tests {
     use vitals_proto::{Health, Liveness, Response, SourceHealth, check_frame_len, encode_frame};
     use vitals_registry::VitalsSource;
 
-    async fn spawn_stub_daemon(socket_path: PathBuf, canned_health: Health) {
-        let listener = UnixListener::bind(&socket_path).unwrap();
+    fn spawn_stub_daemon(socket_path: PathBuf, canned_health: Health) {
         tokio::spawn(async move {
+            let listener = UnixListener::bind(&socket_path).unwrap();
             if let Ok((mut stream, _)) = listener.accept().await {
                 let mut len_buf = [0u8; 4];
                 if stream.read_exact(&mut len_buf).await.is_ok() {
@@ -601,7 +642,7 @@ mod tests {
             },
         ];
 
-        spawn_stub_daemon(socket_path.clone(), health).await;
+        spawn_stub_daemon(socket_path.clone(), health);
         // give the listener a moment to bind
         tokio::time::sleep(Duration::from_millis(50)).await;
 

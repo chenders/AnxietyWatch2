@@ -6,7 +6,7 @@
 /// credentials, registers the client, encrypts the payload, and submits it.
 ///
 /// The server-side route was chosen over the client-side JS alternative
-/// because it avoids bundling a NaCl secretbox implementation in the page.
+/// because it avoids bundling a `NaCl` secretbox implementation in the page.
 pub const TEST_PAGE_HTML: &str = r#"<!DOCTYPE html>
 <html lang="en">
 <head>
