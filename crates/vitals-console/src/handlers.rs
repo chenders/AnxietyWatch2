@@ -1,16 +1,41 @@
-use axum::{Json, extract::State};
+use axum::extract::{Query, State};
+use axum::http::StatusCode;
+use axum::{Json, response::Html};
+use base64::Engine;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
+use uuid::Uuid;
 use vitals_core::liveness::{Evidence, evaluate};
 use vitals_registry::ALL_SOURCES;
 
 use crate::client::get_health;
-use crate::models::{DaemonReachable, HealthView, SourceHealthView, VersionView};
+use crate::crypto;
+use crate::db;
+use crate::models::{
+    AttemptsQuery, DaemonReachable, DomainRecordResponse, Effect, EnvelopePayload, EnvelopeRequest,
+    ErrorResponse, HealthView, PlaintextTestRequest, PlaintextTestResponse, RegisterRequest,
+    SourceHealthView, VersionView, error_reply,
+};
+use crate::test_page::TEST_PAGE_HTML;
 
 #[derive(Clone)]
 pub struct AppState {
     pub socket_path: PathBuf,
+    pub db: Option<sqlx::PgPool>,
+    pub test_routes_enabled: bool,
 }
+
+/// Require a database pool; return a named 503 when absent.
+fn require_db(state: &AppState) -> Result<&sqlx::PgPool, (StatusCode, Json<ErrorResponse>)> {
+    state.db.as_ref().ok_or_else(|| {
+        error_reply(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "database unavailable — VITALS_CONSOLE_DATABASE_URL not set or connection failed",
+        )
+    })
+}
+
+// ---- Existing handlers (kept) ----
 
 pub async fn health_handler(State(state): State<AppState>) -> Json<HealthView> {
     let daemon_health = get_health(&state.socket_path).await;
@@ -81,7 +106,7 @@ pub async fn health_handler(State(state): State<AppState>) -> Json<HealthView> {
 
         source_views.push(SourceHealthView {
             id: source.id(),
-            name: format!("{:?}", source),
+            name: format!("{source:?}"),
             state: state_str.to_string(),
             reason: assertion.reason,
             degrade_deadline_epoch_s: assertion.degrade_deadline_epoch_s,
@@ -103,9 +128,343 @@ pub async fn version_handler() -> Json<VersionView> {
     Json(VersionView {
         version: env!("CARGO_PKG_VERSION"),
         git: option_env!("GIT_DESCRIBE"),
-        note: "attempts schema: not yet migrated here",
+        note: "attempts schema: deployed in this milestone",
     })
 }
+
+// ---- New handlers ----
+
+/// POST /api/envelope/register
+///
+/// Register a client for the envelope write API. The bind default is
+/// 127.0.0.1 and the auth posture is an open decision (spec §9c) — see the
+/// design document for the bind and auth posture decision deferred to the
+/// point of use.
+pub async fn register_handler(
+    State(state): State<AppState>,
+    Json(req): Json<RegisterRequest>,
+) -> Result<(StatusCode, Json<serde_json::Value>), (StatusCode, Json<ErrorResponse>)> {
+    let db = require_db(&state)?;
+
+    // Decode base64 secret -> 32 bytes.
+    let secret_bytes: [u8; 32] = {
+        let v = base64::engine::general_purpose::STANDARD
+            .decode(&req.secret)
+            .map_err(|e| {
+                error_reply(
+                    StatusCode::BAD_REQUEST,
+                    format!("invalid base64 secret: {e}"),
+                )
+            })?;
+        let len = v.len();
+        v.try_into().map_err(|_| {
+            error_reply(
+                StatusCode::BAD_REQUEST,
+                format!("secret must be 32 bytes after base64 decode, got {len}"),
+            )
+        })?
+    };
+
+    db::register_client(db, req.client_id, &secret_bytes).await
+}
+
+/// POST /api/envelope
+///
+/// Accept an encrypted envelope carrying a domain record. Decrypts with
+/// XSalsa20-Poly1305 using the registered secret, applies idempotency rules
+/// (spec §2.3b), and records the attempt with an effect breakdown.
+pub async fn envelope_handler(
+    State(state): State<AppState>,
+    Json(req): Json<EnvelopeRequest>,
+) -> Result<(StatusCode, Json<serde_json::Value>), (StatusCode, Json<ErrorResponse>)> {
+    let db = require_db(&state)?;
+
+    // ---- Create attempt record BEFORE work (spec §2.3, criterion 3) ----
+    let attempt_id = db::create_attempt(
+        db,
+        "envelope",
+        &req.client_id.to_string(),
+        30, // expected_duration_s
+    )
+    .await?;
+
+    // ---- Do the work ----
+    let result = process_envelope(db, &req).await;
+
+    // ---- Build effect breakdown and finish attempt ----
+    let (outcome, effect, detail) = match &result {
+        Ok((_, _, e)) => ("succeeded", e.clone(), None::<String>),
+        Err((_, err_resp)) => ("failed", Effect::default(), Some(err_resp.error.clone())),
+    };
+
+    let _ = db::finish_attempt(db, attempt_id, outcome, &effect, detail.as_deref()).await;
+
+    result.map(|(s, b, _)| (s, Json(b)))
+}
+
+/// Core envelope processing logic, separated so we can control when the
+/// attempt is finished.
+async fn process_envelope(
+    db: &sqlx::PgPool,
+    req: &EnvelopeRequest,
+) -> Result<(StatusCode, serde_json::Value, Effect), (StatusCode, Json<ErrorResponse>)> {
+    // Look up registered secret for this client.
+    let secret_row: Option<(Vec<u8>,)> =
+        sqlx::query_as("SELECT secret FROM envelope_clients WHERE client_id = $1")
+            .bind(req.client_id)
+            .fetch_optional(db)
+            .await
+            .map_err(|e| {
+                error_reply(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("db error looking up client: {e}"),
+                )
+            })?;
+
+    let stored_secret = secret_row.ok_or_else(|| {
+        error_reply(
+            StatusCode::UNAUTHORIZED,
+            format!("unknown client_id: {}", req.client_id),
+        )
+    })?;
+
+    let secret_bytes: [u8; 32] = stored_secret.0.try_into().map_err(|_| {
+        error_reply(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "stored secret is wrong length".to_string(),
+        )
+    })?;
+
+    // Decode nonce (base64 -> 24 bytes) and payload (base64 -> ciphertext).
+    let nonce_bytes: [u8; 24] = {
+        let v = base64::engine::general_purpose::STANDARD
+            .decode(&req.nonce)
+            .map_err(|e| {
+                error_reply(
+                    StatusCode::BAD_REQUEST,
+                    format!("invalid nonce base64: {e}"),
+                )
+            })?;
+        let len = v.len();
+        v.try_into().map_err(|_| {
+            error_reply(
+                StatusCode::BAD_REQUEST,
+                format!("nonce must be 24 bytes after base64 decode, got {len}"),
+            )
+        })?
+    };
+
+    let ciphertext = base64::engine::general_purpose::STANDARD
+        .decode(&req.payload)
+        .map_err(|e| {
+            error_reply(
+                StatusCode::BAD_REQUEST,
+                format!("invalid payload base64: {e}"),
+            )
+        })?;
+
+    // Decrypt.
+    let plaintext = crypto::decrypt(&ciphertext, &secret_bytes, &nonce_bytes).map_err(|e| {
+        error_reply(
+            StatusCode::BAD_REQUEST,
+            format!("decryption failed (bad key/nonce/ciphertext?): {e}"),
+        )
+    })?;
+
+    // Parse the envelope payload.
+    let envelope: EnvelopePayload = serde_json::from_slice(&plaintext).map_err(|e| {
+        error_reply(
+            StatusCode::BAD_REQUEST,
+            format!("invalid envelope JSON: {e}"),
+        )
+    })?;
+
+    // Check class - only "domain_record" is supported in M0.
+    if envelope.class != "domain_record" {
+        return Err(error_reply(
+            StatusCode::BAD_REQUEST,
+            format!("unknown envelope class: {}", envelope.class),
+        ));
+    }
+
+    let record = envelope.record;
+    let content_hash = db::content_sha256(&record.content);
+
+    // Apply idempotency rules (spec §2.3b).
+    let outcome =
+        db::process_domain_record(db, record.id, &record.kind, &record.content, &content_hash)
+            .await?;
+
+    match outcome {
+        db::DomainRecordOutcome::Created { response } => {
+            let body = serde_json::to_value(&response).unwrap_or_default();
+            let effect = Effect {
+                created: 1,
+                ..Default::default()
+            };
+            Ok((StatusCode::CREATED, body, effect))
+        }
+        db::DomainRecordOutcome::Replayed { response } => {
+            let body = serde_json::to_value(&response).unwrap_or_default();
+            let effect = Effect {
+                replayed: 1,
+                ..Default::default()
+            };
+            Ok((StatusCode::OK, body, effect))
+        }
+        db::DomainRecordOutcome::Conflict { id } => Err(error_reply(
+            StatusCode::CONFLICT,
+            format!("conflict: record {id} already exists with different content"),
+        )),
+    }
+}
+
+/// GET /api/attempts?limit=N
+///
+/// List the most recent attempt rows with their effect breakdowns visible.
+pub async fn attempts_handler(
+    State(state): State<AppState>,
+    Query(query): Query<AttemptsQuery>,
+) -> Result<Json<Vec<crate::models::AttemptView>>, (StatusCode, Json<ErrorResponse>)> {
+    let db = require_db(&state)?;
+    let limit = query.limit.unwrap_or(50).clamp(1, 500);
+    let attempts = db::list_attempts(db, limit).await?;
+    Ok(Json(attempts))
+}
+
+/// GET /test
+///
+/// Crude test page: one form that sends a plaintext domain record via the
+/// server-side test route. Deliberately not part of the console (spec §9).
+pub async fn test_page_handler() -> Html<&'static str> {
+    Html(TEST_PAGE_HTML)
+}
+
+/// POST /api/envelope/plaintext-test
+///
+/// Server-side test endpoint guarded by `VITALS_CONSOLE_TEST_ROUTES=1`.
+/// Auto-generates a client_id + secret, registers the client, encrypts the
+/// domain record with XSalsa20-Poly1305, and submits it through the envelope
+/// processing path. Chosen over the client-side JS approach because it avoids
+/// bundling a NaCl secretbox implementation in the page.
+pub async fn plaintext_test_handler(
+    State(state): State<AppState>,
+    Json(req): Json<PlaintextTestRequest>,
+) -> Result<Json<PlaintextTestResponse>, (StatusCode, Json<ErrorResponse>)> {
+    if !state.test_routes_enabled {
+        return Err(error_reply(
+            StatusCode::NOT_FOUND,
+            "test routes disabled - set VITALS_CONSOLE_TEST_ROUTES=1",
+        ));
+    }
+
+    let db = require_db(&state)?;
+
+    // Generate random credentials.
+    let client_id = Uuid::now_v7();
+    let mut secret = [0u8; 32];
+    getrandom::getrandom(&mut secret)
+        .map_err(|e| error_reply(StatusCode::INTERNAL_SERVER_ERROR, format!("RNG error: {e}")))?;
+    let secret_b64 = base64::engine::general_purpose::STANDARD.encode(secret);
+
+    // Register the client.
+    match db::register_client(db, client_id, &secret).await {
+        Ok(_) => {}
+        Err(e) => {
+            return Ok(Json(PlaintextTestResponse {
+                status: "register_failed".to_string(),
+                client_id,
+                secret: secret_b64,
+                record: None,
+                error: Some(e.1.error.clone()),
+            }));
+        }
+    }
+
+    // Build a domain record.
+    let record_id = Uuid::now_v7();
+
+    // Create the envelope payload.
+    let envelope = EnvelopePayload {
+        class: "domain_record".to_string(),
+        record: crate::models::DomainRecordPayload {
+            id: record_id,
+            kind: req.kind.clone(),
+            content: req.content.clone(),
+        },
+    };
+    let payload_bytes = serde_json::to_vec(&envelope).map_err(|e| {
+        error_reply(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("serialization error: {e}"),
+        )
+    })?;
+
+    // Generate a random nonce.
+    let mut nonce_bytes = [0u8; 24];
+    getrandom::getrandom(&mut nonce_bytes)
+        .map_err(|e| error_reply(StatusCode::INTERNAL_SERVER_ERROR, format!("RNG error: {e}")))?;
+
+    // Encrypt.
+    let ciphertext = crypto::encrypt(&payload_bytes, &secret, &nonce_bytes)
+        .map_err(|e| error_reply(StatusCode::INTERNAL_SERVER_ERROR, e))?;
+
+    // Build the envelope request and process it.
+    let envelope_req = EnvelopeRequest {
+        client_id,
+        nonce: base64::engine::general_purpose::STANDARD.encode(nonce_bytes),
+        payload: base64::engine::general_purpose::STANDARD.encode(&ciphertext),
+    };
+
+    // Create attempt before work.
+    let attempt_id = db::create_attempt(db, "envelope", &client_id.to_string(), 30).await?;
+
+    let result = process_envelope(db, &envelope_req).await;
+
+    let (status_str, record, error) = match &result {
+        Ok((_status, body, _effect)) => {
+            let record: Option<DomainRecordResponse> = serde_json::from_value(body.clone()).ok();
+            ("ok".to_string(), record, None)
+        }
+        Err((_code, err_resp)) => ("failed".to_string(), None, Some(err_resp.error.clone())),
+    };
+
+    // Compute effect for finish
+    let finish_effect = match &result {
+        Ok((_, _, e)) => e.clone(),
+        Err(_) => Effect {
+            rejected: 1,
+            ..Default::default()
+        },
+    };
+    let (outcome, detail) = match &result {
+        Ok(_) => ("succeeded", None),
+        Err((_, err_resp)) => ("failed", Some(err_resp.error.as_str())),
+    };
+    let _ = db::finish_attempt(db, attempt_id, outcome, &finish_effect, detail).await;
+
+    match result {
+        Ok(_) => Ok(Json(PlaintextTestResponse {
+            status: status_str,
+            client_id,
+            secret: secret_b64,
+            record,
+            error,
+        })),
+        Err((code, err_resp)) => {
+            // Return 200 even on processing error so the test page can display the result
+            Ok(Json(PlaintextTestResponse {
+                status: format!("failed ({code})"),
+                client_id,
+                secret: secret_b64,
+                record,
+                error: Some(err_resp.error.clone()),
+            }))
+        }
+    }
+}
+
+// ---- Tests ----
 
 #[cfg(test)]
 mod tests {
@@ -162,6 +521,14 @@ mod tests {
         }
     }
 
+    fn test_state(socket_path: PathBuf) -> AppState {
+        AppState {
+            socket_path,
+            db: None,
+            test_routes_enabled: false,
+        }
+    }
+
     #[tokio::test]
     async fn test_unreachable_socket() {
         let dir = tempdir().unwrap();
@@ -169,7 +536,7 @@ mod tests {
 
         let app = Router::new()
             .route("/api/health", get(health_handler))
-            .with_state(AppState { socket_path });
+            .with_state(test_state(socket_path));
 
         let req = AxumRequest::builder()
             .uri("/api/health")
@@ -224,7 +591,7 @@ mod tests {
 
         let app = Router::new()
             .route("/api/health", get(health_handler))
-            .with_state(AppState { socket_path });
+            .with_state(test_state(socket_path));
 
         let req = AxumRequest::builder()
             .uri("/api/health")
@@ -262,5 +629,32 @@ mod tests {
         let ad = sources.iter().find(|s| s["name"] == "AdUa651ble").unwrap();
         assert_eq!(ad["state"], "Unknown");
         assert_eq!(ad["reason"], "never observed");
+    }
+
+    #[tokio::test]
+    async fn test_test_routes_disabled_by_default() {
+        let dir = tempdir().unwrap();
+        let socket_path = dir.path().join("vitalsd.sock");
+        let state = AppState {
+            socket_path,
+            db: None,
+            test_routes_enabled: false,
+        };
+
+        let app = Router::new()
+            .route(
+                "/api/envelope/plaintext-test",
+                get(plaintext_test_handler).post(plaintext_test_handler),
+            )
+            .with_state(state);
+
+        let req = AxumRequest::builder()
+            .method("POST")
+            .uri("/api/envelope/plaintext-test")
+            .header("content-type", "application/json")
+            .body(Body::from(r#"{"kind":"test","content":{"x":1}}"#))
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), 404);
     }
 }
