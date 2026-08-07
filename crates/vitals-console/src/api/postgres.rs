@@ -120,9 +120,9 @@ impl DbOps for PgDbOps {
         let client = self.connect().await?;
         let row_opt = client
             .query_opt(
-                "SELECT (EXTRACT(epoch FROM timestamp) * 1000000)::bigint, value 
-             FROM samples 
-             WHERE source = $1 AND type = $2 
+                "SELECT (EXTRACT(epoch FROM timestamp) * 1000000)::bigint, value
+             FROM samples
+             WHERE source = $1 AND type = $2
              ORDER BY timestamp DESC LIMIT 1",
                 &[&source, &r#type],
             )
@@ -171,18 +171,18 @@ impl DbOps for PgDbOps {
         // unless explicitly requested by the caller.
         let (_query, rows) = if let Some(src) = source {
             let query = "
-                SELECT 
-                    source, 
-                    type, 
+                SELECT
+                    source,
+                    type,
                     (EXTRACT(epoch FROM date_trunc('day', timestamp)) * 1000000)::bigint as day_micros,
-                    MIN(value) as min_val, 
-                    MAX(value) as max_val, 
-                    AVG(value) as avg_val, 
-                    COUNT(*) as sample_count 
-                FROM samples 
+                    MIN(value) as min_val,
+                    MAX(value) as max_val,
+                    AVG(value) as avg_val,
+                    COUNT(*) as sample_count
+                FROM samples
                 WHERE timestamp > now() - ($1::int * interval '1 day')
                   AND source = $2
-                GROUP BY source, type, date_trunc('day', timestamp) 
+                GROUP BY source, type, date_trunc('day', timestamp)
                 ORDER BY day_micros DESC
             ";
             (
@@ -194,18 +194,18 @@ impl DbOps for PgDbOps {
             )
         } else {
             let query = "
-                SELECT 
-                    source, 
-                    type, 
+                SELECT
+                    source,
+                    type,
                     (EXTRACT(epoch FROM date_trunc('day', timestamp)) * 1000000)::bigint as day_micros,
-                    MIN(value) as min_val, 
-                    MAX(value) as max_val, 
-                    AVG(value) as avg_val, 
-                    COUNT(*) as sample_count 
-                FROM samples 
+                    MIN(value) as min_val,
+                    MAX(value) as max_val,
+                    AVG(value) as avg_val,
+                    COUNT(*) as sample_count
+                FROM samples
                 WHERE timestamp > now() - ($1::int * interval '1 day')
                   AND source <> 7
-                GROUP BY source, type, date_trunc('day', timestamp) 
+                GROUP BY source, type, date_trunc('day', timestamp)
                 ORDER BY day_micros DESC
             ";
             (
