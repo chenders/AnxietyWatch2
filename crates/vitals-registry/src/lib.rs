@@ -11,7 +11,7 @@
 
 mod generated;
 
-pub use generated::{ALL_SOURCES, ALL_TYPES, VitalsSource, VitalsType};
+pub use generated::{ALL_SOURCES, ALL_TYPES, Cadence, VitalsSource, VitalsType};
 
 #[cfg(test)]
 mod tests {
@@ -63,5 +63,56 @@ mod tests {
         assert_eq!(VitalsType::BpMap.id(), 8);
         // T-D6 maps the cuff's pulse to Hr; there is no VitalsType::Pulse.
         assert_eq!(VitalsType::Hr.unit(), "bpm");
+    }
+
+    /// The declared cadences come straight from `registry.toml`; the liveness
+    /// law (SPEC-admin-console §2.5) evaluates age against exactly these
+    /// numbers, so a drift here silently changes when a source turns UNKNOWN.
+    #[test]
+    fn cadences_match_the_registry() {
+        assert_eq!(
+            VitalsSource::Emay.expected_cadence(),
+            Cadence::EverySeconds(60)
+        );
+        assert_eq!(
+            VitalsSource::PolarH10.expected_cadence(),
+            Cadence::EverySeconds(60)
+        );
+        assert_eq!(
+            VitalsSource::Healthkit.expected_cadence(),
+            Cadence::EverySeconds(21_600),
+        );
+        assert_eq!(VitalsSource::Derived.expected_cadence(), Cadence::OnDemand);
+        assert_eq!(
+            VitalsSource::AdUa651ble.expected_cadence(),
+            Cadence::OnDemand
+        );
+        // The emulator mirrors the physical strap it simulates.
+        assert_eq!(
+            VitalsSource::PolarH10Emulator.expected_cadence(),
+            Cadence::EverySeconds(60)
+        );
+    }
+
+    /// Every source declares a cadence — the generated match has no wildcard
+    /// arm, so this is exhaustive by construction and a new source or a new
+    /// `Cadence` variant fails to compile rather than silently defaulting.
+    /// Iterating `ALL_SOURCES` also pins the array to the same set as the
+    /// cadence match: a mismatch between them cannot compile.
+    #[test]
+    fn every_source_declares_a_cadence() {
+        let mut periodic = 0u32;
+        let mut on_demand = 0u32;
+        for s in ALL_SOURCES {
+            match s.expected_cadence() {
+                Cadence::EverySeconds(n) => {
+                    assert!(n > 0, "{s:?} declared non-positive cadence {n}");
+                    periodic += 1;
+                }
+                Cadence::OnDemand => on_demand += 1,
+            }
+        }
+        assert_eq!(periodic, 4);
+        assert_eq!(on_demand, 2);
     }
 }

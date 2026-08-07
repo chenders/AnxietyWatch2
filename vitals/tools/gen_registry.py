@@ -84,10 +84,23 @@ class Source:
     provides: tuple[str, ...]
     service: str | None = None
     indication: bool = False
+    expected_cadence_s: int | None = None
+    on_demand: bool = False
 
     @property
     def rust_variant(self) -> str:
         return _pascal(self.name)
+
+    @property
+    def cadence(self) -> str:
+        """The Rust expression for this source's declared cadence.
+
+        Exactly one of `expected_cadence_s` or `on_demand` is present —
+        `_check_cadence` enforces it — so this needs no fallback.
+        """
+        if self.expected_cadence_s is not None:
+            return f"Cadence::EverySeconds({self.expected_cadence_s})"
+        return "Cadence::OnDemand"
 
 
 @dataclass(frozen=True, slots=True)
@@ -128,6 +141,8 @@ class Registry:
                         provides=tuple(d.get("provides", ())),
                         service=d.get("service"),
                         indication=bool(d.get("indication", False)),
+                        expected_cadence_s=d.get("expected_cadence_s"),
+                        on_demand=bool(d.get("on_demand", False)),
                     )
                     for name, d in raw.get("source", {}).items()
                 ),
@@ -137,6 +152,7 @@ class Registry:
         if not types or not sources:
             raise ValueError(f"{path} declares no [type.*] or [source.*] entries")
         _check_unique(types, sources)
+        _check_cadence(sources)
         return cls(types=types, sources=sources)
 
 
@@ -158,6 +174,34 @@ def _check_unique(types: tuple[SampleType, ...], sources: tuple[Source, ...]) ->
         unknown = set(s.provides) - known
         if unknown:
             raise ValueError(f"source {s.name} provides unknown types: {sorted(unknown)}")
+
+
+def _check_cadence(sources: tuple[Source, ...]) -> None:
+    """Every source declares exactly one cadence.
+
+    The liveness law (SPEC-admin-console §2.5) needs a declared expectation
+    for every source; a source without one must be a build-time error, not a
+    silently-`LIVE` card (§9 M0 criterion 2). A source declaring both is a
+    contradiction — which one is the truth? And a non-positive interval makes
+    the age-vs-cadence comparison degenerate, so it is rejected by name.
+    """
+    for s in sources:
+        has_cadence = s.expected_cadence_s is not None
+        if has_cadence and s.on_demand:
+            raise ValueError(
+                f"source {s.name} declares both expected_cadence_s "
+                "and on_demand — pick exactly one"
+            )
+        if not has_cadence and not s.on_demand:
+            raise ValueError(
+                f"source {s.name} declares no cadence: expected_cadence_s "
+                "or on_demand is required"
+            )
+        if has_cadence and s.expected_cadence_s <= 0:
+            raise ValueError(
+                f"source {s.name} has non-positive expected_cadence_s "
+                f"{s.expected_cadence_s}"
+            )
 
 
 # ── emitters ─────────────────────────────────────────────────────────────────
@@ -205,6 +249,8 @@ def emit_rust(reg: Registry) -> str:
         f"            {t.id} => Some(Self::{t.rust_variant})," for t in reg.types)
     source_from = "\n".join(
         f"            {s.id} => Some(Self::{s.rust_variant})," for s in reg.sources)
+    cadences = "\n".join(
+        f"            Self::{s.rust_variant} => {s.cadence}," for s in reg.sources)
     return f"""{BANNER_RS}
 //! Types and sources generated from `vitals/registry.toml`.
 //!
@@ -224,6 +270,21 @@ pub enum VitalsType {{
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum VitalsSource {{
 {sources}
+}}
+
+/// How often a source is expected to deliver, declared in `registry.toml`.
+/// The liveness law (SPEC-admin-console §2.5) compares a source's age against
+/// this; a source without a declaration is a build-time error, never a
+/// silently-`LIVE` card (§9 M0 criterion 2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Cadence {{
+    /// The source is expected to attempt at least once per this many seconds;
+    /// silence longer than that degrades it to `UNKNOWN`/`FAILING`, never
+    /// `LIVE`. The upper bound when the true cadence is variable.
+    EverySeconds(u32),
+    /// Event-driven — a manual upload, an SD card. State is the outcome and
+    /// age of the last event, never time-degraded.
+    OnDemand,
 }}
 
 impl VitalsType {{
@@ -285,6 +346,20 @@ impl VitalsSource {{
     #[must_use]
     pub const fn id(self) -> i32 {{
         self as i32
+    }}
+
+    /// The declared cadence from `registry.toml`, used by the liveness
+    /// evaluator. Every source has one — the generator rejects a source
+    /// without it, and arms are one-per-variant on purpose so a new source
+    /// without a cadence cannot compile.
+    #[must_use]
+    // Arms are one-per-variant on purpose: several sources share a cadence,
+    // and collapsing them would make it non-obvious which source maps where.
+    #[allow(clippy::match_same_arms)]
+    pub const fn expected_cadence(self) -> Cadence {{
+        match self {{
+{cadences}
+        }}
     }}
 }}
 
@@ -361,6 +436,11 @@ def emit_json(reg: Registry) -> str:
                 "provides": list(s.provides),
                 **({"service": s.service} if s.service else {}),
                 **({"indication": True} if s.indication else {}),
+                "cadence": (
+                    {"expected_cadence_s": s.expected_cadence_s}
+                    if s.expected_cadence_s is not None
+                    else {"on_demand": True}
+                ),
             }
             for s in reg.sources
         },
@@ -397,6 +477,19 @@ def validate(reg: Registry, out_dir: Path) -> None:
             problems.append(f"registry.sql: no INSERT for source {s.name}")
         if f"{s.rust_variant} = {s.id}," not in rust:
             problems.append(f"generated.rs: no enum variant {s.rust_variant}")
+        # The cadence arm is what the liveness law depends on; a generated.rs
+        # missing one would compile the source without an expectation and the
+        # card would render LIVE forever. The Rust match itself is exhaustive
+        # (no wildcard), so this is the layer that catches a dropped arm.
+        expected_arm = f"Self::{s.rust_variant} => {s.cadence},"
+        if expected_arm not in rust:
+            problems.append(
+                f"generated.rs: no cadence arm for source {s.name}")
+
+    if "pub enum Cadence" not in rust:
+        problems.append("generated.rs: Cadence enum missing")
+    if "pub const fn expected_cadence(self) -> Cadence" not in rust:
+        problems.append("generated.rs: expected_cadence method missing")
 
     # The inverse of the old check. Structure here would collide with sqitch,
     # and the two disagreed on the primary key.
