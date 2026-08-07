@@ -45,6 +45,21 @@ pub enum VitalsSource {
     PolarH10Emulator = 7,
 }
 
+/// How often a source is expected to deliver, declared in `registry.toml`.
+/// The liveness law (SPEC-admin-console §2.5) compares a source's age against
+/// this; a source without a declaration is a build-time error, never a
+/// silently-`LIVE` card (§9 M0 criterion 2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Cadence {
+    /// The source is expected to attempt at least once per this many seconds;
+    /// silence longer than that degrades it to `UNKNOWN`/`FAILING`, never
+    /// `LIVE`. The upper bound when the true cadence is variable.
+    EverySeconds(u32),
+    /// Event-driven — a manual upload, an SD card. State is the outcome and
+    /// age of the last event, never time-degraded.
+    OnDemand,
+}
+
 impl VitalsType {
     /// Valid range from `registry.toml`. Values outside it are **quarantined
     /// with a reason, never clamped** — a clamped reading is indistinguishable
@@ -130,6 +145,25 @@ impl VitalsSource {
     #[must_use]
     pub const fn id(self) -> i32 {
         self as i32
+    }
+
+    /// The declared cadence from `registry.toml`, used by the liveness
+    /// evaluator. Every source has one — the generator rejects a source
+    /// without it, and arms are one-per-variant on purpose so a new source
+    /// without a cadence cannot compile.
+    #[must_use]
+    // Arms are one-per-variant on purpose: several sources share a cadence,
+    // and collapsing them would make it non-obvious which source maps where.
+    #[allow(clippy::match_same_arms)]
+    pub const fn expected_cadence(self) -> Cadence {
+        match self {
+            Self::Emay => Cadence::EverySeconds(60),
+            Self::PolarH10 => Cadence::EverySeconds(60),
+            Self::Healthkit => Cadence::EverySeconds(21600),
+            Self::Derived => Cadence::OnDemand,
+            Self::AdUa651ble => Cadence::OnDemand,
+            Self::PolarH10Emulator => Cadence::EverySeconds(60),
+        }
     }
 }
 
