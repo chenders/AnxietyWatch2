@@ -3,11 +3,25 @@
 The conductor ticks a box only after running that task's Verify itself and seeing exit 0.
 
 - [x] T-M0a — Per-source cadence in the registry · mechanical · deepseek/deepseek-v4-flash
-- [ ] T-M0b — Attempt/observation/domain-record schema · implement-standard · openai/gpt-5.6-sol
-- [ ] T-M0c — Liveness evaluator, one pure function · implement-complex · gemini/gemini-3.1-pro-preview
+- [x] T-M0b — Attempt/observation/domain-record schema · implement-standard · openai/gpt-5.6-sol
+- [x] T-M0c — Liveness evaluator, one pure function · implement-complex · gemini/gemini-3.1-pro-preview
 - [ ] T-M0d — vitals-console axum skeleton · implement-complex · gemini/gemini-3.1-pro-preview
 - [ ] T-M0e — Envelope write API + attempts · implement-complex · openai/gpt-5.6-sol
-- [ ] T-WD1 — Web dashboard: three directions behind a switcher (amendment 08 §3) · implement-standard · openai/gpt-5.6-sol
+- [x] T-WD1 — Web dashboard: three directions behind a switcher (amendment 08 §3) · implement-standard · openai/gpt-5.6-sol · PR #33
+
+Two findings surfaced by T-M0b's scratch-replay Verify, recorded here for the operator:
+
+1. **The sqitch plan tail is undeployable and undeployed.** Production sqitch status lists
+   samples_hypertable, samples_compression, samples_1min and retention as Undeployed, and they
+   cannot deploy: create_hypertable requires the partition column in every unique constraint,
+   while amendments 04/05 forbid timestamp in the identity (source, type, session_id, seq).
+   Amendment 01's "samples is a hypertable, compressed, with a continuous aggregate" does not
+   describe the running system. This contradiction needs its own amendment-level decision;
+   nobody resolved it silently tonight.
+2. **The plan cannot replay onto a sibling scratch database** even up to the deployed point:
+   pg_cron binds to cron.database_name = vitals. Physical restores (pgBackRest) are unaffected;
+   dev-environment and from-scratch tooling are. T-M0b's four changes were therefore verified by
+   direct script application (deploy, verify, revert, absence-check) on an isolated scratch DB.
 
 T-M0a addendum pending: polar_h10_emulator cadence lands after PR #32 merges (worker correctly reported the cross-branch contradiction rather than inventing the source).
 
