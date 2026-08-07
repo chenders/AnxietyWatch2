@@ -53,22 +53,27 @@ precision = 1.0
 id = 0
 transport = "ble"
 provides = ["spo2", "hr"]
+expected_cadence_s = 60
 
 [source.polar_h10]
 id = 1
 transport = "ble"
 service = "0x180D"
 provides = ["hr", "rr_interval"]
+expected_cadence_s = 60
 
 [source.healthkit]
 id = 2
 transport = "push"
 provides = ["hr", "hrv_rmssd"]
+# §9b guess, awaiting measurement: real sync cadence on this install.
+expected_cadence_s = 21600
 
 [source.derived]
 id = 3
 transport = "internal"
 provides = ["hrv_rmssd"]
+on_demand = true
 
 [source.ad_ua651ble]
 id = 6
@@ -76,3 +81,4 @@ transport = "ble"
 service = "0x1810"
 indication = true
 provides = ["bp_systolic", "bp_diastolic", "bp_map", "hr"]
+on_demand = true
