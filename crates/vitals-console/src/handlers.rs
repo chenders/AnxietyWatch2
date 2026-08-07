@@ -37,7 +37,9 @@ fn require_db(state: &AppState) -> Result<&sqlx::PgPool, (StatusCode, Json<Error
 
 // ---- Existing handlers (kept) ----
 
-pub async fn health_handler(State(state): State<AppState>) -> Json<HealthView> {
+pub async fn health_handler(
+    State(state): State<AppState>,
+) -> Result<Json<HealthView>, (StatusCode, String)> {
     let daemon_health = get_health(&state.socket_path).await;
 
     let (vitalsd, uptime, degraded, heartbeat_pulsing, daemon_sources) = match daemon_health {
@@ -57,10 +59,17 @@ pub async fn health_handler(State(state): State<AppState>) -> Json<HealthView> {
         ),
     };
 
-    let now_s = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs() as i64;
+    // A clock before the Unix epoch would make every age a lie; better to
+    // refuse the request by name than serve nonsense freshness.
+    let now_s = match SystemTime::now().duration_since(UNIX_EPOCH) {
+        Ok(d) => i64::try_from(d.as_secs()).unwrap_or(i64::MAX),
+        Err(e) => {
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("system clock is before the Unix epoch: {e}"),
+            ));
+        }
+    };
 
     let mut source_views = Vec::new();
     for source in ALL_SOURCES {
@@ -115,13 +124,13 @@ pub async fn health_handler(State(state): State<AppState>) -> Json<HealthView> {
         });
     }
 
-    Json(HealthView {
+    Ok(Json(HealthView {
         vitalsd,
         uptime,
         degraded,
         heartbeat_pulsing,
         sources: source_views,
-    })
+    }))
 }
 
 pub async fn version_handler() -> Json<VersionView> {
@@ -467,6 +476,13 @@ pub async fn plaintext_test_handler(
 // ---- Tests ----
 
 #[cfg(test)]
+#[expect(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::panic,
+    reason = "test assertions and fixed fixtures should panic loudly"
+)]
 mod tests {
     use super::*;
     use axum::{Router, body::Body, http::Request as AxumRequest, routing::get};

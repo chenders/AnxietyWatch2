@@ -9,6 +9,14 @@
 //! `envelope_clients` tables to exist. Apply the deploy scripts from `db/`
 //! before running.
 
+#![expect(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::panic,
+    reason = "integration test harness: assertions on fixed fixtures should panic loudly"
+)]
+
 use base64::Engine;
 use serde::Serialize;
 use sqlx::PgPool;
