@@ -94,8 +94,12 @@
       const disk = h.disk_total_bytes > 0 ? `${(100 * h.disk_free_bytes / h.disk_total_bytes).toFixed(1)}% free (${h.disk_free_bytes} of ${h.disk_total_bytes} bytes)` : "disk total is not reported";
       cards.push(statusCard("Disk", "UNKNOWN", `${disk}; API supplies no health threshold`, 0, `expect ≤ ${FEED_EXPECT_S}s`));
       cards.push(statusCard("Thermal", "UNKNOWN", `${h.thermal_c} °C; API supplies no health threshold`, 0, `expect ≤ ${FEED_EXPECT_S}s`));
-      const under = h.undervoltage_now || h.undervoltage_latched;
-      cards.push(statusCard("Undervoltage", under ? "FAILING" : "LIVE", under ? `undervoltage flags: now=${h.undervoltage_now}, latched=${h.undervoltage_latched}` : "no current or latched undervoltage", 0, `expect ≤ ${FEED_EXPECT_S}s`));
+      if (h.throttle == null) {
+        cards.push(statusCard("Undervoltage", "UNKNOWN", h.throttle_unmeasured_reason || "firmware throttle state was not measured", 0, `expect ≤ ${FEED_EXPECT_S}s`));
+      } else {
+        const under = h.throttle.undervoltage_now || h.throttle.undervoltage_latched;
+        cards.push(statusCard("Undervoltage", under ? "FAILING" : "LIVE", under ? `undervoltage flags: now=${h.throttle.undervoltage_now}, latched=${h.throttle.undervoltage_latched}` : "no current or latched undervoltage", 0, `expect ≤ ${FEED_EXPECT_S}s`));
+      }
       cards.push(statusCard("Network", h.network_interface ? "LIVE" : "UNKNOWN", h.network_interface ? `default route via ${h.network_interface}; wireless signal ${h.wireless_signal ?? "not reported"}` : "no default-route interface reported", 0, `expect ≤ ${FEED_EXPECT_S}s`));
       cards.push(statusCard("Watchdog", h.watchdog_present ? "LIVE" : "FAILING", h.watchdog_present ? "/dev/watchdog is present" : "/dev/watchdog is absent", 0, `expect ≤ ${FEED_EXPECT_S}s`));
     } else cards.push(unavailable("Host readouts", results.host));
