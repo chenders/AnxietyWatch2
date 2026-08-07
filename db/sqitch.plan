@@ -9,3 +9,7 @@ samples_hypertable [samples] 2026-08-03T11:03:00Z Chris Henderson <chenders@user
 samples_compression [samples_hypertable] 2026-08-03T11:04:00Z Chris Henderson <chenders@users.noreply.github.com> # columnar compression after 7 days
 samples_1min [samples_hypertable] 2026-08-03T11:05:00Z Chris Henderson <chenders@users.noreply.github.com> # 1-minute continuous aggregate with min/max
 retention [samples_1min] 2026-08-03T11:06:00Z Chris Henderson <chenders@users.noreply.github.com> # drop raw samples after 2 years; rollups kept
+attempts [retention] 2026-08-06T12:00:00Z Chris Henderson <chenders@users.noreply.github.com> # attempt lifecycle, effect, and progress evidence
+status_observations [attempts] 2026-08-06T12:01:00Z Chris Henderson <chenders@users.noreply.github.com> # stored assertion freshness distinct from value change
+domain_records [status_observations] 2026-08-06T12:02:00Z Chris Henderson <chenders@users.noreply.github.com> # idempotent client-minted domain records
+envelope_clients [domain_records] 2026-08-06T12:03:00Z Chris Henderson <chenders@users.noreply.github.com> # register-once envelope credentials
