@@ -1,0 +1,31 @@
+[Unit]
+Description=vitals admin console backend
+Documentation=openspec/changes/pi5-vitals-core/tasks.md T-M0d
+After=network.target vitalsd.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/vitals-console
+Restart=always
+RestartSec=1
+
+User=vitals
+Group=vitals
+
+# Not the safety path: console dies before collectors. Positive 200.
+OOMScoreAdjust=200
+
+ProtectSystem=strict
+PrivateTmp=yes
+NoNewPrivileges=yes
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target
