@@ -5,7 +5,7 @@ The conductor ticks a box only after running that task's Verify itself and seein
 - [x] T-M0a — Per-source cadence in the registry · mechanical · deepseek/deepseek-v4-flash
 - [x] T-M0b — Attempt/observation/domain-record schema · implement-standard · openai/gpt-5.6-sol
 - [x] T-M0c — Liveness evaluator, one pure function · implement-complex · gemini/gemini-3.1-pro-preview
-- [ ] T-M0d — vitals-console axum skeleton · implement-complex · gemini/gemini-3.1-pro-preview
+- [x] T-M0d — vitals-console axum skeleton · implement-complex · gemini/gemini-3.1-pro-preview
 - [ ] T-M0e — Envelope write API + attempts · implement-complex · openai/gpt-5.6-sol
 - [x] T-WD1 — Web dashboard: three directions behind a switcher (amendment 08 §3) · implement-standard · openai/gpt-5.6-sol · PR #33
 
