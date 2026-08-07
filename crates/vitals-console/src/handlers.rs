@@ -158,9 +158,9 @@ pub async fn health_handler(State(state): State<AppState>) -> Json<HealthView> {
 /// GET `/dashboard` and `/dashboard/`
 ///
 /// Serves the real-data dashboard from the same origin as its `/api/*` feeds.
-#[expect(
+#[allow(
     clippy::unused_async,
-    reason = "axum handlers must be async to satisfy the Handler trait"
+    reason = "axum handlers must be async to satisfy the Handler trait;               whether the lint fires varies by target"
 )]
 pub async fn dashboard_handler() -> Html<&'static str> {
     Html(DASHBOARD_HTML)
