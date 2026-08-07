@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>AnxietyWatch2 console</title>
+  <link rel="stylesheet" href="/console/base.css">
+  <link id="direction-style" rel="stylesheet" href="/console/dir-a.css">
+</head>
+<body data-dir="a" data-feed="loading">
+  <a class="skip-link" href="#console-main">Skip to console content</a>
+  <header class="top" aria-label="Console identity">
+    <a class="brand" href="/console/">AnxietyWatch2 <span>console</span></a>
+    <nav aria-label="Console screens">
+      <a data-screen-link="overview" href="?screen=overview">Overview</a>
+      <a data-screen-link="display" href="?screen=display">Display path</a>
+      <a data-screen-link="ingest" href="?screen=ingest">Ingest</a>
+      <a data-screen-link="attempts" href="?screen=attempts">Attempt history</a>
+    </nav>
+    <form class="layout-picker" aria-label="Change console layout">
+      <label for="layout-direction">Layout</label>
+      <select id="layout-direction" name="dir">
+        <option value="a">Service Mode</option>
+        <option value="b">Preflight</option>
+        <option value="c">Flowpath</option>
+      </select>
+      <input id="screen-field" name="screen" type="hidden" value="overview">
+      <button type="submit">Apply</button>
+    </form>
+  </header>
+  <aside id="feed-overlay" class="feed-overlay" aria-live="assertive" aria-labelledby="feed-title" hidden>
+    <strong id="feed-title">? DOCUMENT UNKNOWN — status feed stale</strong>
+    <span id="feed-detail">No successful status observation is available.</span>
+    <span>Cards retain their last known outcome and reason; this document cannot vouch for current state.</span>
+    <button id="reconnect" type="button">Reconnect now</button>
+  </aside>
+  <main id="console-main" tabindex="-1" aria-live="polite">
+    <section class="loading" aria-labelledby="loading-title">
+      <h1 id="loading-title">Loading actual appliance observations</h1>
+      <p>No placeholder readings are shown.</p>
+    </section>
+  </main>
+  <footer aria-label="Console feed status">
+    <span id="direction-name">Service Mode</span>
+    <span>Feed: <b id="feed-age">not observed</b> · expect ≤ 45s</span>
+    <span id="build-id">Build: UNKNOWN — /api/version not observed</span>
+  </footer>
+  <script src="/console/console.js"></script>
+</body>
+</html>
