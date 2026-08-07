@@ -93,7 +93,7 @@
       const h = results.host.data;
       const disk = h.disk_total_bytes > 0 ? `${(100 * h.disk_free_bytes / h.disk_total_bytes).toFixed(1)}% free (${h.disk_free_bytes} of ${h.disk_total_bytes} bytes)` : "disk total is not reported";
       cards.push(statusCard("Disk", "UNKNOWN", `${disk}; API supplies no health threshold`, 0, `expect ≤ ${FEED_EXPECT_S}s`));
-      cards.push(statusCard("Thermal", "UNKNOWN", `${h.thermal_c} °C; API supplies no health threshold`, 0, `expect ≤ ${FEED_EXPECT_S}s`));
+      cards.push(statusCard("Thermal", "UNKNOWN", h.thermal_c == null ? "unmeasured / not available on this host" : `${h.thermal_c} °C; API supplies no health threshold`, 0, `expect ≤ ${FEED_EXPECT_S}s`));
       if (h.throttle == null) {
         cards.push(statusCard("Undervoltage", "UNKNOWN", h.throttle_unmeasured_reason || "firmware throttle state was not measured", 0, `expect ≤ ${FEED_EXPECT_S}s`));
       } else {

@@ -123,7 +123,7 @@ the three direction renderers remain presentation-only consumers.
 |---|---|
 | Now | `/api/health`, `/api/latest`, and `/api/query` for the current 20-minute traces |
 | Last night | `/api/query` over the previous completed noon-to-noon UTC window |
-| Trends | `/api/nightly`, already aggregated to one point per UTC day server-side |
+| Trends | `/api/nightly`, already aggregated to one point per UTC physiological noon-to-noon night server-side |
 | System health | `/api/health`, `/api/recovery`, and `/api/clock` |
 
 Two invariants preserved by the real-data wiring:

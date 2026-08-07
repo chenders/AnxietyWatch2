@@ -10,10 +10,10 @@ use crate::handlers::AppState;
 /// Query parameters for `/api/query`.
 #[derive(Deserialize)]
 pub struct QueryParams {
-    /// Registry source id, or `None` for all sources.
-    pub source: Option<i32>,
-    /// Registry type id, or `None` for all types.
-    pub r#type: Option<i32>,
+    /// Registry source id.
+    pub source: i32,
+    /// Registry type id.
+    pub r#type: i32,
     /// Inclusive lower bound, Unix microseconds.
     pub since_micros: i64,
     /// Exclusive upper bound, Unix microseconds.
@@ -73,4 +73,38 @@ pub async fn query_handler(
             .map(|(t_micros, value)| QueryRow { t_micros, value })
             .collect(),
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_query_params_require_source_and_type() {
+        // Missing source
+        let bad1 = json!({
+            "type": 1,
+            "since_micros": 0,
+            "until_micros": 1000
+        });
+        assert!(serde_json::from_value::<QueryParams>(bad1).is_err());
+
+        // Missing type
+        let bad2 = json!({
+            "source": 1,
+            "since_micros": 0,
+            "until_micros": 1000
+        });
+        assert!(serde_json::from_value::<QueryParams>(bad2).is_err());
+
+        // Both present
+        let good = json!({
+            "source": 1,
+            "type": 2,
+            "since_micros": 0,
+            "until_micros": 1000
+        });
+        assert!(serde_json::from_value::<QueryParams>(good).is_ok());
+    }
 }
