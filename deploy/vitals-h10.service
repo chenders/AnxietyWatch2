@@ -1,0 +1,28 @@
+[Unit]
+Description=Polar H10 heart-rate and RR collector
+After=bluetooth.service vitalsd.service
+Requires=bluetooth.service vitalsd.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/h10-collector
+Restart=always
+RestartSec=3
+EnvironmentFile=/etc/vitals/h10-collector.env
+Environment=VITALSD_SOCKET=/run/vitals/vitalsd.sock
+Environment=H10_STATE_DIR=/var/lib/vitals/h10
+User=vitals
+Group=vitals
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/vitals/h10 /var/lib/vitals
+RestrictAddressFamilies=AF_UNIX AF_NETLINK AF_BLUETOOTH
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target
