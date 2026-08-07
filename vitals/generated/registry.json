@@ -81,7 +81,10 @@
       "provides": [
         "spo2",
         "hr"
-      ]
+      ],
+      "cadence": {
+        "expected_cadence_s": 60
+      }
     },
     "polar_h10": {
       "id": 1,
@@ -90,7 +93,10 @@
         "hr",
         "rr_interval"
       ],
-      "service": "0x180D"
+      "service": "0x180D",
+      "cadence": {
+        "expected_cadence_s": 60
+      }
     },
     "healthkit": {
       "id": 2,
@@ -98,14 +104,20 @@
       "provides": [
         "hr",
         "hrv_rmssd"
-      ]
+      ],
+      "cadence": {
+        "expected_cadence_s": 21600
+      }
     },
     "derived": {
       "id": 3,
       "transport": "internal",
       "provides": [
         "hrv_rmssd"
-      ]
+      ],
+      "cadence": {
+        "on_demand": true
+      }
     },
     "ad_ua651ble": {
       "id": 6,
@@ -117,7 +129,10 @@
         "hr"
       ],
       "service": "0x1810",
-      "indication": true
+      "indication": true,
+      "cadence": {
+        "on_demand": true
+      }
     }
   }
 }
