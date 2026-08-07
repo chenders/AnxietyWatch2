@@ -2,11 +2,13 @@
 //!
 //! The cuff is store-and-forward and advertises only briefly after a reading.
 //! This process deliberately never calls `Device1.Connect`: the kernel
-//! auto-connect list catches that short window. `bluetoothd` repopulates that
-//! list on every boot for devices that are **paired and trusted** (verified
-//! against `/sys/kernel/debug/bluetooth/hci0/device_list` on the Pi), so this
-//! collector asserts the trust flag at startup rather than shelling out to a
-//! privileged `btmgmt`. The collector reacts once `BlueZ` reports the bonded
+//! auto-connect list catches that short window. That list does NOT survive a
+//! reboot, and `bluetoothd` does not repopulate it for this bonded+trusted
+//! cuff (proven 2026-08-07: post-reboot the cuff sat at auto-connect action 0
+//! and a real reading never connected). The privileged registration is owned
+//! by `vitals-bp-autoconnect.service`, which runs `btmgmt add-device -a 2`
+//! before this unit on every boot; this process still asserts the trust flag
+//! as belt and braces. The collector reacts once `BlueZ` reports the bonded
 //! device connected and GATT resolved, then subscribes through `BlueZ` so
 //! indication CCCD `0x0002` is used.
 //!
@@ -258,10 +260,9 @@ mod linux {
                 config.target
             ));
         }
-        // bluetoothd repopulates the kernel auto-connect list on boot only
-        // for trusted devices. Without this flag the cuff's 5–10 s window
-        // after a reading passes with no LE Create Connection — which looks
-        // exactly like a quiet night.
+        // Belt and braces beside vitals-bp-autoconnect.service, which owns
+        // the privileged accept-list registration on every boot. Trust alone
+        // proved insufficient after a power cycle (2026-08-07).
         if !device.is_trusted().await.unwrap_or(false) {
             device
                 .set_trusted(true)

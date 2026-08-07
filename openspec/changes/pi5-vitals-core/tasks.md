@@ -1721,9 +1721,13 @@ the PR was opened:
 - **vitalsd treats a sync-seal failure as a named health degradation**, not an append error — the
   rows are already fsynced, and an error reply would invite a duplicating retry.
 - **`bp-journal-replay` ships alongside the collector** (shared gate module in the crate lib), so
-  the raw-frame journal is a real recovery path. Kernel auto-connect is guaranteed by asserting
-  the BlueZ trust flag at startup — bluetoothd repopulates the accept list for paired+trusted
-  devices on every boot (verified against debugfs `device_list`).
+  the raw-frame journal is a real recovery path. Kernel auto-connect is owned by
+  `vitals-bp-autoconnect.service` (root oneshot, `btmgmt add-device -a 2`, Before= the collector).
+  The first draft claimed bluetoothd repopulates the accept list for trusted devices — the
+  pre-PR reviewer flagged exactly this, the dismissal was based on stale pre-reboot evidence,
+  and a real 141/96 reading proved the reviewer right on 2026-08-07 (post-reboot: action 0,
+  absent from white_list, reading never connected; recovered from cuff memory after the fix).
+  The trust flag stays asserted as belt and braces.
 - **Step 5 (cuff clock) is deferred with the physical tasks** — status recorded in the capture
   research doc. The brief's pre-A06 "redelivery impossible" text was corrected to at-least-once.
 
