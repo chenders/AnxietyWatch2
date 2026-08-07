@@ -180,7 +180,8 @@ impl DbOps for PgDbOps {
                     AVG(value) as avg_val,
                     COUNT(*) as sample_count
                 FROM samples
-                WHERE timestamp > now() - ($1::int * interval '1 day')
+                WHERE timestamp >= date_trunc('day', now() - interval '12 hours') + interval '12 hours' - ($1::int * interval '1 day')
+                  AND timestamp < date_trunc('day', now() - interval '12 hours') + interval '12 hours'
                   AND source = $2
                 GROUP BY source, type, date_trunc('day', timestamp - interval '12 hours')
                 ORDER BY day_micros DESC
@@ -203,7 +204,8 @@ impl DbOps for PgDbOps {
                     AVG(value) as avg_val,
                     COUNT(*) as sample_count
                 FROM samples
-                WHERE timestamp > now() - ($1::int * interval '1 day')
+                WHERE timestamp >= date_trunc('day', now() - interval '12 hours') + interval '12 hours' - ($1::int * interval '1 day')
+                  AND timestamp < date_trunc('day', now() - interval '12 hours') + interval '12 hours'
                   AND source <> 7
                 GROUP BY source, type, date_trunc('day', timestamp - interval '12 hours')
                 ORDER BY day_micros DESC

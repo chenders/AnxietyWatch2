@@ -288,7 +288,7 @@ function lane(vals,cfg){
     limitLine:cfg.limit!=null?hLine(cfg.limit,cfg.min,cfg.max,W,H):"",eventMarks:"" };
 }
 function emptyLane(cfg,error,count=240){ return lane(Array(count).fill(null),{...cfg,aria:`${cfg.label} not measured: ${error}`}); }
-function nightlyCard(key,rows,error){
+function nightlyCard(key,rows,error,nightStart){
   const spec={
     spo2:{type:REGISTRY.type.spo2,source:REGISTRY.source.emay,field:"min",unit:"%",label:"NIGHTLY SpO₂ NADIR",color:"var(--spo2)",dec:1},
     hr:{type:REGISTRY.type.hr,source:REGISTRY.source.polar_h10,field:"avg",unit:"bpm",label:"MEAN SLEEPING HR",color:"var(--hr)",dec:0},
@@ -297,8 +297,11 @@ function nightlyCard(key,rows,error){
   const days=S.win, byDay=new Map();
   if (!error && Array.isArray(rows)) for(const row of rows) if(row.source===spec.source&&row.type===spec.type&&row.day_micros!=null) byDay.set(new Date(row.day_micros/1000).toISOString().slice(0,10),row[spec.field]);
   const vals=[];
-  const today=new Date(); today.setUTCHours(0,0,0,0);
-  for(let offset=days-1;offset>=0;offset--){ const d=new Date(today.getTime()-offset*86400000).toISOString().slice(0,10); const v=byDay.get(d); vals.push(v==null?null:v); }
+  const keys = nightlyDayKeys(days, nightStart);
+  for (const k of keys) {
+    const v = byDay.get(k);
+    vals.push(v == null ? null : v);
+  }
   const good=vals.filter(v=>v!=null).sort((a,b)=>a-b), W=1000,H=140;
   if (!good.length) {
     const g=gapPaths(vals,W,H), why=error||`${spec.label}: no nightly aggregate`;
@@ -309,6 +312,46 @@ function nightlyCard(key,rows,error){
   const last=[...vals].reverse().find(v=>v!=null),dev=last-med,missing=vals.filter(v=>v==null).length;
   return {label:spec.label,unit:spec.unit,color:spec.color,latest:last.toFixed(spec.dec),baseline:med.toFixed(spec.dec),iqr:`${q1.toFixed(spec.dec)}–${q3.toFixed(spec.dec)}`,dev:`${dev>=0?"+":""}${dev.toFixed(spec.dec)} vs own`,devGlyph:dev>=0?"▲":"▼",devColor:"var(--text-dim)",missing:missing?`${missing} night${missing===1?"":"s"} not measured`:"full coverage",d:linePath(vals,min,max,W,H),grid:gridPath(W,H,4),gapFill:g.fill,gapEdge:g.edge,dots:"",baseLine:hLine(med,min,max,W,H),band:`M0 ${scale(q3,min,max,H).toFixed(1)} H${W} V${scale(q1,min,max,H).toFixed(1)} H0 Z`,from:`−${days} d`,to:"last night",aria:`${spec.label}, server aggregates over ${days} nights, ${missing} not measured`};
 }
+function validateRestore(rv, rvAge) {
+  if(!rv) return {ok: false, err: "no verified restore is measured"};
+  if(rv.ok !== true) return {ok: false, err: "restore evidence is not ok"};
+  if(typeof rv.tables_checked !== 'number' || !Number.isInteger(rv.tables_checked) || rv.tables_checked <= 0) return {ok: false, err: "restore tables_checked is invalid"};
+  if(!Array.isArray(rv.checks) || !rv.checks.includes("recovery_lsn") || !rv.checks.includes("pg_amcheck")) return {ok: false, err: "restore missing required checks"};
+  if(typeof rvAge !== 'number' || !Number.isFinite(rvAge) || rvAge < 0 || rvAge > 45 * 86400) return {ok: false, err: "restore freshness is invalid or older than 45 days"};
+  return {ok: true, err: null};
+}
+
+function restoreRowModel(rv, rvAge) {
+  const valid = validateRestore(rv, rvAge);
+  return {
+    value: valid.ok && typeof rvAge === 'number' ? rvAge : null,
+    error: valid.ok ? null : valid.err,
+    ok: valid.ok
+  };
+}
+
+function completedNightBounds(nowMs) {
+  const nightEnd = new Date(nowMs);
+  nightEnd.setUTCHours(12, 0, 0, 0);
+  if (nightEnd.getTime() > nowMs) {
+    nightEnd.setUTCDate(nightEnd.getUTCDate() - 1);
+  }
+  const nightStart = new Date(nightEnd);
+  nightStart.setUTCDate(nightStart.getUTCDate() - 1);
+  return { nightStart, nightEnd };
+}
+
+function nightlyDayKeys(days, nightStart) {
+  const keys = [];
+  const endDay = new Date(nightStart);
+  endDay.setUTCHours(0, 0, 0, 0);
+  for (let offset = days - 1; offset >= 0; offset--) {
+    const d = new Date(endDay.getTime() - offset * 86400000);
+    keys.push(d.toISOString().slice(0, 10));
+  }
+  return keys;
+}
+
 function systemModel(health,recovery,clock){
   const okc="var(--ok)",bad=UNK;
   const healthError=health.error;
@@ -328,13 +371,10 @@ function systemModel(health,recovery,clock){
   if(!newestBackup) notReady.push("no backup is measured");
   const rv = recovery.data && recovery.data.restore_verify;
   const rvAge = recovery.data && recovery.data.restore_verify_age_s;
-  if(!rv) notReady.push("no verified restore is measured");
-  else {
-    if(rv.ok !== true) notReady.push("restore evidence is not ok");
-    if(typeof rv.tables_checked !== 'number' || rv.tables_checked <= 0) notReady.push("restore tables_checked is invalid");
-    if(!rv.checks || !rv.checks.includes("recovery_lsn") || !rv.checks.includes("pg_amcheck")) notReady.push("restore missing required checks");
-    if(typeof rvAge !== 'number' || rvAge < 0 || rvAge > 45 * 86400) notReady.push("restore freshness is invalid or older than 45 days");
-  }
+  const restoreValid = validateRestore(rv, rvAge);
+  if(!restoreValid.ok) notReady.push(restoreValid.err);
+  const restoreModel = restoreRowModel(rv, rvAge);
+
   return {
     readiness:errors.length?{verdict:"CANNOT CONFIRM",color:bad,bg:"color-mix(in oklab,var(--unknown) 14%,transparent)",glyph:"?",detail:`Readiness not measured: ${errors.join("; ")}`}
       :notReady.length?{verdict:"NOT READY",color:"var(--med)",bg:"color-mix(in oklab,var(--med) 14%,transparent)",glyph:"!",detail:`Blocked by: ${notReady.join("; ")}`}
@@ -342,13 +382,16 @@ function systemModel(health,recovery,clock){
     groups:[
       {title:"DAEMON · vitalsd",rows:[row("Process state",reachable?"reachable":"not measured",unreachableDetail),row("Uptime",reachable?fmtAge(health.data.uptime):"not measured",unreachableDetail),row("Heartbeat",health.data&&health.data.heartbeat_pulsing===true?"pulsing":health.data&&health.data.heartbeat_pulsing===false?"not pulsing":"not measured",unreachableDetail||(!health.data||health.data.heartbeat_pulsing==null?"heartbeat not measured":null),health.data&&health.data.heartbeat_pulsing===true)]},
       {title:"SOURCE HEALTH",rows:healthError?[row("Sources","not measured",healthError)]:((health.data&&health.data.sources)||[]).map(s=>row(s.name,`${s.state} · ${fmtAge(s.observation_age_s)} old · ${s.reason}`,null,s.state==="Live"))},
-      {title:"DATA DURABILITY",rows:[row("Last backup",newestBackup?`${fmtAge(Math.max(0,Math.floor(Date.now()/1000)-newestBackup.timestamp_stop))} ago · ${newestBackup.size} bytes`:"not measured",recoveryError||(!newestBackup?"recovery: no backup measured":null)),row("Last verified restore",recovery.data&&recovery.data.restore_verify_age_s!=null?`${fmtAge(recovery.data.restore_verify_age_s)} ago`:"not measured",recoveryError||(!recovery.data||recovery.data.restore_verify_age_s==null?"recovery: restore verify not measured":null)),row("Data at risk",recovery.data&&recovery.data.data_at_risk_s!=null?fmtAge(recovery.data.data_at_risk_s):"not measured",recoveryError||(!recovery.data||recovery.data.data_at_risk_s==null?"recovery: at-risk interval not measured":null))]},
+      {title:"DATA DURABILITY",rows:[row("Last backup",newestBackup?`${fmtAge(Math.max(0,Math.floor(Date.now()/1000)-newestBackup.timestamp_stop))} ago · ${newestBackup.size} bytes`:"not measured",recoveryError||(!newestBackup?"recovery: no backup measured":null)),row("Last verified restore",restoreModel.value!=null?`${fmtAge(restoreModel.value)} ago`:"not measured",recoveryError||restoreModel.error,restoreModel.ok),row("Data at risk",recovery.data&&recovery.data.data_at_risk_s!=null?fmtAge(recovery.data.data_at_risk_s):"not measured",recoveryError||(!recovery.data||recovery.data.data_at_risk_s==null?"recovery: at-risk interval not measured":null))]},
       {title:"CLOCK",rows:[row("NTP synchronized",clock.data&&clock.data.ntp_synchronized===true?"yes":clock.data&&clock.data.ntp_synchronized===false?"no":"not measured",clockError,clock.data&&clock.data.ntp_synchronized===true),row("Clock drift",clock.data&&clock.data.drift_usec!=null?`${clock.data.drift_usec} µs`:"not measured",clockError||(!clock.data||clock.data.drift_usec==null?"clock drift not measured":null))]},
     ]};
 }
 async function model(){
+  const fmtUTC = d => `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')} ${String(d.getUTCHours()).padStart(2,'0')}:${String(d.getUTCMinutes()).padStart(2,'0')} UTC`;
+  const fmtUTCDate = d => `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`;
+
   const nowMicros=Date.now()*1000, liveSince=nowMicros-20*60*1000000;
-  const nightEnd=new Date(); nightEnd.setUTCHours(12,0,0,0); if(nightEnd.getTime()>Date.now()) nightEnd.setUTCDate(nightEnd.getUTCDate()-1); const nightStart=new Date(nightEnd); nightStart.setUTCDate(nightStart.getUTCDate()-1);
+  const { nightStart, nightEnd } = completedNightBounds(Date.now());
   const latestPaths={spo2:`/api/latest?source=${REGISTRY.source.emay}&type=${REGISTRY.type.spo2}`,hr:`/api/latest?source=${REGISTRY.source.polar_h10}&type=${REGISTRY.type.hr}`,hrv:`/api/latest?source=${REGISTRY.source.derived}&type=${REGISTRY.type.hrv_rmssd}`,bps:`/api/latest?source=${REGISTRY.source.ad_ua651ble}&type=${REGISTRY.type.bp_systolic}`,bpd:`/api/latest?source=${REGISTRY.source.ad_ua651ble}&type=${REGISTRY.type.bp_diastolic}`,bpm:`/api/latest?source=${REGISTRY.source.ad_ua651ble}&type=${REGISTRY.type.bp_map}`};
   const queryPath=(source,type,since,until)=>`/api/query?source=${source}&type=${type}&since_micros=${since}&until_micros=${until}`;
   const paths={health:"/api/health",nightly:`/api/nightly?nights=${S.win}`,recovery:"/api/recovery",clock:"/api/clock",liveSpo2:queryPath(REGISTRY.source.emay,REGISTRY.type.spo2,liveSince,nowMicros),liveHr:queryPath(REGISTRY.source.polar_h10,REGISTRY.type.hr,liveSince,nowMicros),nightSpo2:queryPath(REGISTRY.source.emay,REGISTRY.type.spo2,nightStart.getTime()*1000,nightEnd.getTime()*1000),nightHr:queryPath(REGISTRY.source.polar_h10,REGISTRY.type.hr,nightStart.getTime()*1000,nightEnd.getTime()*1000),nightHrv:queryPath(REGISTRY.source.derived,REGISTRY.type.hrv_rmssd,nightStart.getTime()*1000,nightEnd.getTime()*1000),...latestPaths};
@@ -365,7 +408,7 @@ async function model(){
   const queryErrors=[R.nightSpo2.error,R.nightHr.error,R.nightHrv.error].filter(Boolean);
   const unknownStat=(label,unit,why)=>({label,color:UNK,glyph:"?",value:"— —",unit,note:why,hatch:hatchOn});
   LAST_FETCH_MS=Date.now();
-  return {screen:S.screen,theme:S.theme,degraded:false,win:S.win,clock:`FEED AGE 0 s · fetched ${new Date(LAST_FETCH_MS).toLocaleTimeString()}`,editorial:healthIssue?{kicker:"Cannot assess",glyph:"?",color:UNK,hatch:hatchOn,headline:"The health feed cannot confirm daemon health.",standfirst:healthIssue}:{kicker:"Live system",glyph:"✓",color:"var(--ok)",hatch:"none",headline:"Every value below comes from the local read API.",standfirst:"Missing measurements remain explicit gaps; the page never carries a number forward."},alarms:healthIssue?[{rank:"HIGH",channel:"TECHNICAL",cls:"",color:UNK,glyph:"?",msg:healthIssue,at:"now",age:"feed unavailable"}]:[],numerics:[measuredNumeric("SpO₂","%","88 / 100",R.spo2,1),measuredNumeric("HR","bpm","40 / 120",R.hr,0),R.bps.error||R.bpd.error?unknownNumeric("NBP","mmHg","90–140 / 55–90",R.bps.error||R.bpd.error):R.bps.data&&R.bpd.data&&R.bps.data.measured&&R.bpd.data.measured?{...measuredNumeric("NBP","mmHg","90–140 / 55–90",R.bps,0,14400),value:`${Number(R.bps.data.value).toFixed(0)}/${Number(R.bpd.data.value).toFixed(0)}`,sub:R.bpm.data&&R.bpm.data.measured?`(${Number(R.bpm.data.value).toFixed(0)})`:""}:unknownNumeric("NBP","mmHg","90–140 / 55–90","NBP: no measurement"),unknownNumeric("RESP","rpm","8 / 24",notSupported),measuredNumeric("HRV RMSSD","ms","own baseline",R.hrv,1),unknownNumeric("CPAP AHI","/h","≤ 5.0",notSupported)],sensors:[sensor("Pulse-ox · EMAY",REGISTRY.source.emay),sensor("ECG chest strap",REGISTRY.source.polar_h10),sensor("BP cuff",REGISTRY.source.ad_ua651ble),sensor("Derived metrics",REGISTRY.source.derived)],tiers:["CLEAR","WATCH","CONFIRM","KLAXON"].map(name=>({key:name.toLowerCase(),name,glyph:"?",note:"state endpoint not available",current:"false",fg:UNK,border:"var(--line)",bg:"transparent"})),events:queryErrors.map((e,i)=>({t:"—",glyph:"?",color:UNK,rank:"NOT MEASURED",label:`Query ${i+1} unavailable`,detail:e})),lanes,xTicks:Array.from({length:8},(_,i)=>new Date(nightStart.getTime()+(nightEnd-nightStart)*i/7).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})),trendCards:[nightlyCard("spo2",R.nightly.data,R.nightly.error),nightlyCard("hr",R.nightly.data,R.nightly.error),nightlyCard("hrv",R.nightly.data,R.nightly.error),nightlyCard("hrv",null,R.nightly.error||"CPAP AHI: no registry type")].map((c,i)=>i===3?{...c,label:"CPAP AHI",unit:"events/h",color:UNK}:c),liveLanes:[lane(liveSpo2,{label:"SpO₂ %",color:"var(--spo2)",hi:"100",lo:"88",min:88,max:100,H:90,rows:3,aria:R.liveSpo2.error||"SpO2 last 20 minutes"}),lane(liveHr,{label:"HR bpm",color:"var(--hr)",hi:"80",lo:"40",min:40,max:80,H:90,rows:3,aria:R.liveHr.error||"heart rate last 20 minutes"})],tierSince:"NOT MEASURED",tierExplain:"No risk-state endpoint is exposed by vitals-console; no state is inferred from samples.",escalate:"not measured",eventCount:`${queryErrors.length} named query errors`,klaxonStatus:"UNKNOWN (no API evidence)",session:{id:`${nightStart.toLocaleDateString()} UTC-WINDOW`,span:`${nightStart.toLocaleString()} → ${nightEnd.toLocaleString()}`,dur:"24 h query window",n:String(measuredCount),coverage:"null bins are not measured"},nightStats:[spo2.some(v=>v!=null)?{label:"SpO₂ NADIR",color:"var(--spo2)",glyph:"✓",value:Math.min(...spo2.filter(v=>v!=null)).toFixed(1),unit:"%",note:"minimum over measured samples",hatch:"none"}:unknownStat("SpO₂ NADIR","%",R.nightSpo2.error||"no measurement"),unknownStat("TIME < 90 %","min","not exposed as a server aggregate"),hr.some(v=>v!=null)?{label:"MEAN HR",color:"var(--hr)",glyph:"✓",value:(hr.filter(v=>v!=null).reduce((a,b)=>a+b,0)/hr.filter(v=>v!=null).length).toFixed(0),unit:"bpm",note:"over measured bins",hatch:"none"}:unknownStat("MEAN HR","bpm",R.nightHr.error||"no measurement"),hrv.some(v=>v!=null)?{label:"RMSSD",color:"var(--resp)",glyph:"✓",value:(hrv.filter(v=>v!=null).reduce((a,b)=>a+b,0)/hrv.filter(v=>v!=null).length).toFixed(1),unit:"ms",note:"over measured bins",hatch:"none"}:unknownStat("RMSSD","ms",R.nightHrv.error||"no measurement"),unknownStat("AHI","/h",notSupported)],readiness:sys.readiness,sysGroups:sys.groups};
+  return {screen:S.screen,theme:S.theme,degraded:false,win:S.win,clock:`FEED AGE 0 s · fetched ${new Date(LAST_FETCH_MS).toLocaleTimeString()}`,editorial:healthIssue?{kicker:"Cannot assess",glyph:"?",color:UNK,hatch:hatchOn,headline:"The health feed cannot confirm daemon health.",standfirst:healthIssue}:{kicker:"Live system",glyph:"✓",color:"var(--ok)",hatch:"none",headline:"Every value below comes from the local read API.",standfirst:"Missing measurements remain explicit gaps; the page never carries a number forward."},alarms:healthIssue?[{rank:"HIGH",channel:"TECHNICAL",cls:"",color:UNK,glyph:"?",msg:healthIssue,at:"now",age:"feed unavailable"}]:[],numerics:[measuredNumeric("SpO₂","%","88 / 100",R.spo2,1),measuredNumeric("HR","bpm","40 / 120",R.hr,0),R.bps.error||R.bpd.error?unknownNumeric("NBP","mmHg","90–140 / 55–90",R.bps.error||R.bpd.error):R.bps.data&&R.bpd.data&&R.bps.data.measured&&R.bpd.data.measured?{...measuredNumeric("NBP","mmHg","90–140 / 55–90",R.bps,0,14400),value:`${Number(R.bps.data.value).toFixed(0)}/${Number(R.bpd.data.value).toFixed(0)}`,sub:R.bpm.data&&R.bpm.data.measured?`(${Number(R.bpm.data.value).toFixed(0)})`:""}:unknownNumeric("NBP","mmHg","90–140 / 55–90","NBP: no measurement"),unknownNumeric("RESP","rpm","8 / 24",notSupported),measuredNumeric("HRV RMSSD","ms","own baseline",R.hrv,1),unknownNumeric("CPAP AHI","/h","≤ 5.0",notSupported)],sensors:[sensor("Pulse-ox · EMAY",REGISTRY.source.emay),sensor("ECG chest strap",REGISTRY.source.polar_h10),sensor("BP cuff",REGISTRY.source.ad_ua651ble),sensor("Derived metrics",REGISTRY.source.derived)],tiers:["CLEAR","WATCH","CONFIRM","KLAXON"].map(name=>({key:name.toLowerCase(),name,glyph:"?",note:"state endpoint not available",current:"false",fg:UNK,border:"var(--line)",bg:"transparent"})),events:queryErrors.map((e,i)=>({t:"—",glyph:"?",color:UNK,rank:"NOT MEASURED",label:`Query ${i+1} unavailable`,detail:e})),lanes,xTicks:Array.from({length:8},(_,i)=>new Date(nightStart.getTime()+(nightEnd-nightStart)*i/7).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})),trendCards:[nightlyCard("spo2",R.nightly.data,R.nightly.error,nightStart),nightlyCard("hr",R.nightly.data,R.nightly.error,nightStart),nightlyCard("hrv",R.nightly.data,R.nightly.error,nightStart),nightlyCard("hrv",null,R.nightly.error||"CPAP AHI: no registry type",nightStart)].map((c,i)=>i===3?{...c,label:"CPAP AHI",unit:"events/h",color:UNK}:c),liveLanes:[lane(liveSpo2,{label:"SpO₂ %",color:"var(--spo2)",hi:"100",lo:"88",min:88,max:100,H:90,rows:3,aria:R.liveSpo2.error||"SpO2 last 20 minutes"}),lane(liveHr,{label:"HR bpm",color:"var(--hr)",hi:"80",lo:"40",min:40,max:80,H:90,rows:3,aria:R.liveHr.error||"heart rate last 20 minutes"})],tierSince:"NOT MEASURED",tierExplain:"No risk-state endpoint is exposed by vitals-console; no state is inferred from samples.",escalate:"not measured",eventCount:`${queryErrors.length} named query errors`,klaxonStatus:"UNKNOWN (no API evidence)",session:{id:`${fmtUTCDate(nightStart)} UTC-WINDOW`,span:`${fmtUTC(nightStart)} → ${fmtUTC(nightEnd)}`,dur:"24 h query window",n:String(measuredCount),coverage:"null bins are not measured"},nightStats:[spo2.some(v=>v!=null)?{label:"SpO₂ NADIR",color:"var(--spo2)",glyph:"✓",value:Math.min(...spo2.filter(v=>v!=null)).toFixed(1),unit:"%",note:"minimum over measured samples",hatch:"none"}:unknownStat("SpO₂ NADIR","%",R.nightSpo2.error||"no measurement"),unknownStat("TIME < 90 %","min","not exposed as a server aggregate"),hr.some(v=>v!=null)?{label:"MEAN HR",color:"var(--hr)",glyph:"✓",value:(hr.filter(v=>v!=null).reduce((a,b)=>a+b,0)/hr.filter(v=>v!=null).length).toFixed(0),unit:"bpm",note:"over measured bins",hatch:"none"}:unknownStat("MEAN HR","bpm",R.nightHr.error||"no measurement"),hrv.some(v=>v!=null)?{label:"RMSSD",color:"var(--resp)",glyph:"✓",value:(hrv.filter(v=>v!=null).reduce((a,b)=>a+b,0)/hrv.filter(v=>v!=null).length).toFixed(1),unit:"ms",note:"over measured bins",hatch:"none"}:unknownStat("RMSSD","ms",R.nightHrv.error||"no measurement"),unknownStat("AHI","/h",notSupported)],readiness:sys.readiness,sysGroups:sys.groups};
 }
 
 /* ══ screens ══════════════════════════════════════════════════════════════ */
