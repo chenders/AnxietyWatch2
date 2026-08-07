@@ -247,6 +247,27 @@ fn handle(
                     if !spool.is_memory_only() {
                         *rotation_blocker = None;
                     }
+                    // A sync-required append is not operationally complete
+                    // while its segment remains locked by this writer: the
+                    // PostgreSQL drainer cannot consume an active segment.
+                    // Seal immediately so on-demand readings become visible
+                    // without restarting vitalsd or waiting an hour.
+                    //
+                    // A seal failure does NOT fail the append: the rows are
+                    // already fsynced in the spool and will drain after the
+                    // normal rotation. Reporting Error here would tell the
+                    // collector a durable frame was lost — the exact
+                    // divergence between reply and store that invites a
+                    // duplicating retry. Instead the degradation is named on
+                    // the health path.
+                    if sync && let Err(e) = spool.seal_current() {
+                        let blocker = format!(
+                            "sync-segment seal failed: {e}; reading is durable \
+                             but not drainable until rotation"
+                        );
+                        eprintln!("vitalsd: {blocker}");
+                        *rotation_blocker = Some(blocker);
+                    }
                     st.record_appended(&samples, spool.segment_bytes(), now);
                     fan_out(&samples, st, subscribers);
                     Response::Appended {

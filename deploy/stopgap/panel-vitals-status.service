@@ -1,0 +1,20 @@
+[Unit]
+Description=Publish durable cuff and Polar values to the bedside panel
+After=postgresql@16-main.service vitals-spool-drain.service
+Requires=postgresql@16-main.service
+
+[Service]
+Type=simple
+User=anxietywatch
+ExecStart=/usr/local/bin/panel-vitals-status
+Restart=always
+RestartSec=3
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/opt/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical
+RestrictAddressFamilies=AF_UNIX
+
+[Install]
+WantedBy=multi-user.target
