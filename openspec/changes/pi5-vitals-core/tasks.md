@@ -1736,3 +1736,31 @@ Named follow-ups, deliberately not in this change: a central out-of-range quaran
 state-dir loss (near-total seq collision for BP if `/var/lib/vitals/bp` is recreated); journal
 per-record checksums; the over-broad SFLOAT sentinel mask (matches mantissa sentinels at any
 exponent — drop-not-invent direction, but `0xF7FF` = 204.7 mmHg would vanish).
+
+### Operator-deferred items — open as of 2026-08-07, owner: operator
+
+None of these may be attempted by an agent; each needs the operator's hands, ears, or judgment.
+They are listed here so no worker treats their absence as done and no plan forgets them.
+
+- [ ] **T-B1 — the real eight-hour Polar H10 capture.** The strap must be worn overnight. The
+      emulator is retired (source 7, disabled 2026-08-07); the collector serves the real strap the
+      moment its MAC is configured and it is worn.
+- [ ] **T-A2 — audio path heard by a human.** The USB DAC enumerates and accepts a full stream;
+      nobody has confirmed sound. Daytime test — the box sits at a bedside.
+- [ ] **Off-box backup destination.** All three pgBackRest tiers plus the cold export live on the
+      same NVMe as the database. A dead drive takes data and backups together. Operator picks the
+      destination (NAS, cloud bucket, another box); wiring it is then agent work.
+- [ ] **Unplug the USB Polar-H10 emulator** once physically located. It is already deaf to the
+      system (service disabled, device untrusted, removed from the kernel accept list).
+- [ ] **Timescale-vs-identity amendment decision.** The sqitch plan tail (samples_hypertable,
+      compression, samples_1min, retention) is undeployed and undeployable: TimescaleDB requires
+      the partition column in every unique constraint; amendments 04/05 forbid timestamp in the
+      identity. Amendment 01's hypertable claim does not describe the running system. Needs an
+      amendment, not a workaround.
+- [ ] **RTC trickle charge** — only if the fitted cell is the rechargeable ML2020; it is a
+      /boot/firmware edit and those are operator-gated.
+- [ ] **Conductor follow-up (recurring, agent-owned):** at the start of every conductor session,
+      re-read this operator-deferred list, ask the operator about progress where appropriate, and
+      the moment an item is unblocked (a backup destination named, the strap worn, a MAC
+      confirmed) convert it into a dispatched, verified task and tick it here. The list must
+      never go stale silently.
