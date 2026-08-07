@@ -17,8 +17,8 @@ use vitals_console::api::query::query_handler;
 use vitals_console::api::recovery::recovery_handler;
 use vitals_console::api::services::services_handler;
 use vitals_console::handlers::{
-    AppState, attempts_handler, envelope_handler, health_handler, plaintext_test_handler,
-    register_handler, test_page_handler, version_handler,
+    AppState, attempts_handler, dashboard_handler, envelope_handler, health_handler,
+    plaintext_test_handler, register_handler, test_page_handler, version_handler,
 };
 
 #[tokio::main]
@@ -70,6 +70,8 @@ async fn main() {
     }
 
     let app = Router::new()
+        .route("/dashboard", get(dashboard_handler))
+        .route("/dashboard/", get(dashboard_handler))
         .route("/api/health", get(health_handler))
         .route("/api/version", get(version_handler))
         .route("/api/query", get(query_handler))

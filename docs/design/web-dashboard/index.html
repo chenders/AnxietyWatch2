@@ -9,15 +9,11 @@
   project as a single self-contained file. No build step, no network, no
   dependencies: open it with `open index.html` or serve the directory.
 
-  Everything on screen is generated mock data from a seeded PRNG. The point of
-  the file is the design system and the four screens; the numbers are stand-ins
-  until this is wired to vitalsd's query and health endpoints.
+  Every operational screen is populated from vitals-console's same-origin read
+  API. Missing measurements and failed endpoints remain explicit unknowns; no
+  sample generator or stale-number fallback exists in the live path.
 
-  Two toggles in the header drive the states worth reviewing:
-    SIM: SENSOR LOSS  — the pulse-ox drops at 03:04 and never returns, so the
-                        whole "not measured is not OK" language is exercised.
-    THEME             — the light theme is a separately derived ramp, not an
-                        inversion; both are validated by palette-check.mjs.
+  THEME switches to the independently validated light ramp.
 
   Deviations from the imported design, and why, are listed in README.md.
 -->
@@ -134,7 +130,6 @@ html[data-theme="light"] body[data-dir="c"]{
     <div style="flex:1"></div>
     <div class="mono" id="clock" style="font-size:14px;color:var(--text-dim)"></div>
     <div style="display:flex;gap:8px">
-      <button class="ctl" data-action="degraded" id="btn-degraded"></button>
       <button class="ctl" data-action="theme" id="btn-theme"></button>
     </div>
   </div>
@@ -193,12 +188,10 @@ const PANELS = [
   { id:"b", name:"Night Report", render:renderB },
   { id:"c", name:"Terminal", render:renderC },
 ];
-const S = { screen:"now", theme:"dark", degraded:false, win:30, dir:"a" };
+const S = { screen:"now", theme:"dark", win:30, dir:"a" };
 const SCREENS = [["now","Now"],["night","Last night"],["trends","Trends"],["sys","System health"],["tok","Design system"]];
 
 /* ══ helpers ══════════════════════════════════════════════════════════════ */
-function rng(seed){ let s = seed>>>0; return () => { s = (s*1664525 + 1013904223)>>>0; return s/4294967296; }; }
-function hhmm(min){ const m = ((min%1440)+1440)%1440; return String(Math.floor(m/60)).padStart(2,"0")+":"+String(m%60).padStart(2,"0"); }
 const scale = (v,lo,hi,H) => H - Math.max(0,Math.min(1,(v-lo)/(hi-lo)))*H;
 
 /* A null is a hole, and the path must break at it. `open` tracks whether the
@@ -244,275 +237,112 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":
 const hatchOn = "repeating-linear-gradient(45deg,var(--hatch) 0 2px,transparent 2px 7px)";
 const UNK = "var(--unknown)";
 
-/* ══ mock data ════════════════════════════════════════════════════════════ */
-function session(){
-  const deg = S.degraded, r = rng(7717), N = 460, startMin = 23*60 + 12;
-  const spo2 = [], hr = [], resp = [], leak = [], stage = [];
-  for (let i=0; i<N; i++){
-    let s = 96 + Math.sin(i/23)*0.7 + (r()-0.5)*1.2;
-    let h = 54 + Math.sin(i/31)*3 + (r()-0.5)*3;
-    let rr = 13.5 + Math.sin(i/17)*0.9 + (r()-0.5)*1.1;
-    let lk = 17 + Math.sin(i/41)*4 + (r()-0.5)*3;
-    if (!deg && i>=168 && i<=187){ const k = 1 - Math.abs(i-177)/11; s -= 10.5*k; h += 17*k; rr -= 5.5*k; }
-    if (deg && i>=225 && i<=231){ s -= (i-224)*1.0; h += (i-224)*1.6; }
-    if (!deg && i>=300 && i<=309){ const k = 1 - Math.abs(i-304)/6; s -= 5.5*k; h += 8*k; }
-    if (i>=360 && i<=372) lk += 22;
-    spo2.push(+s.toFixed(1)); hr.push(Math.round(h)); resp.push(+rr.toFixed(1)); leak.push(+lk.toFixed(1));
-    stage.push(i<30 ? 1 : i%97<22 ? 4 : i%61<14 ? 3 : 2);
-  }
-  const g0 = deg ? 232 : 254, g1 = deg ? 259 : 260;
-  for (let i=g0; i<=g1; i++){ spo2[i] = null; hr[i] = null; if (deg) resp[i] = null; }
-  if (deg) for (let i=232; i<N; i++){ spo2[i] = null; hr[i] = null; }
-  return { spo2, hr, resp, leak, stage, N, startMin, gapStart: startMin+g0, gapEnd: startMin+g1 };
+/* ══ real data view model ════════════════════════════════════════════════
+   Registry ids below are named from vitals/generated/registry.json. Keeping
+   the names beside the ids makes it impossible to mistake a source id for a
+   type id while constructing the read-API URLs. */
+const REGISTRY = {
+  source:{ emay:0, polar_h10:1, derived:3, ad_ua651ble:6 },
+  type:{ hr:1, spo2:2, hrv_rmssd:4, bp_systolic:6, bp_diastolic:7, bp_map:8 },
+};
+let LAST_FETCH_MS = null;
+const apiError = (path, detail) => `${path} failed: ${detail}`;
+async function api(path){
+  const response = await fetch(path, { cache:"no-store" });
+  if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+  return response.json();
 }
-
+async function settled(path){
+  try { return { data:await api(path), error:null }; }
+  catch (e) { return { data:null, error:apiError(path, e instanceof Error ? e.message : String(e)) }; }
+}
+const fmtAge = age => age == null ? "age not measured" : age < 60 ? `${age} s` : age < 3600 ? `${Math.floor(age/60)} m` : `${Math.floor(age/3600)} h`;
+const fmtTime = micros => micros == null ? "not measured" : new Date(micros/1000).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit",second:"2-digit"});
+const unknownNumeric = (label,unit,limits,error) => ({ label, unit, aria:`${label} not measured: ${error}`, color:UNK, glyph:"?", value:"— —", valueColor:UNK, limits, stamp:error, state:"NOT MEASURED", hatch:hatchOn, sub:"" });
+function measuredNumeric(label,unit,limits,result,dec=0){
+  if (result.error) return unknownNumeric(label,unit,limits,result.error);
+  const x=result.data;
+  if (!x || x.measured !== true || x.value == null) return unknownNumeric(label,unit,limits,`${label}: no measurement`);
+  return { label,unit,limits,aria:`${label} ${x.value} ${unit}`,color:`var(--${label==="SpO₂"?"spo2":label==="HR"?"hr":label==="NBP"?"bp":"resp"})`,glyph:"✓",value:Number(x.value).toFixed(dec),valueColor:"var(--text)",stamp:fmtTime(x.t_micros),state:`MEASURED · ${fmtAge(x.observation_age_s)} OLD`,hatch:"none",sub:"" };
+}
+function samplesToBins(rows,sinceMicros,untilMicros,count){
+  const vals=Array(count).fill(null);
+  if (!Array.isArray(rows) || untilMicros <= sinceMicros) return vals;
+  for (const row of rows) {
+    if (row == null || row.t_micros == null || row.value == null) continue;
+    const fraction=(row.t_micros-sinceMicros)/(untilMicros-sinceMicros);
+    const i=Math.min(count-1,Math.max(0,Math.floor(fraction*count)));
+    vals[i]=row.value;
+  }
+  return vals;
+}
 function lane(vals,cfg){
-  const W = 1000, H = cfg.H || 110, g = gapPaths(vals,W,H);
-  return {
-    label: cfg.label, color: cfg.color, aria: cfg.aria, hi: cfg.hi, lo: cfg.lo, H,
-    d: linePath(vals,cfg.min,cfg.max,W,H),
-    grid: gridPath(W,H,cfg.rows || 4),
-    gapFill: g.fill, gapEdge: g.edge,
-    limitLine: cfg.limit != null ? hLine(cfg.limit,cfg.min,cfg.max,W,H) : "",
-    eventMarks: cfg.marks || "",
-  };
+  const W=1000,H=cfg.H||110,g=gapPaths(vals,W,H);
+  return { label:cfg.label,color:cfg.color,aria:cfg.aria,hi:cfg.hi,lo:cfg.lo,H,
+    d:linePath(vals,cfg.min,cfg.max,W,H),grid:gridPath(W,H,cfg.rows||4),gapFill:g.fill,gapEdge:g.edge,
+    limitLine:cfg.limit!=null?hLine(cfg.limit,cfg.min,cfg.max,W,H):"",eventMarks:"" };
 }
-
-function trend(key){
-  const days = S.win;
-  /* Seeded from the WHOLE key, not its first character. `key.charCodeAt(0)`
-     gave "hr" and "hrv" the same seed — both start with h — so the two cards
-     drew the identical random walk, differing only in scale. Two independent
-     physiological signals that move in lockstep is exactly the kind of thing a
-     reader would try to interpret. FNV-1a over the key removes the collision
-     class rather than just this instance of it. */
-  let seed = 2166136261 >>> 0;
-  for (let i = 0; i < key.length; i++) {
-    seed = (seed ^ key.charCodeAt(i)) >>> 0;
-    seed = Math.imul(seed, 16777619) >>> 0;
-  }
-  const r = rng((seed + days * 2654435761) >>> 0);
-  /* The unit is the unit and nothing else. The imported design repeated the
-     measure inside it ("% min SpO2 (nadir)" next to a label already reading
-     "NIGHTLY SpO2 NADIR"), which both said the same thing twice and wrapped the
-     card header onto three lines at desktop width. */
-  const spec = {
-    spo2:{ base:92.4, amp:1.4, unit:"%", label:"NIGHTLY SpO₂ NADIR", color:"var(--spo2)", dec:1, dir:-1 },
-    hr:  { base:53.6, amp:2.6, unit:"bpm", label:"MEAN SLEEPING HR", color:"var(--hr)", dec:0, dir:1 },
-    hrv: { base:41.8, amp:6.5, unit:"ms", label:"HRV · RMSSD", color:"var(--resp)", dec:1, dir:-1 },
-    ahi: { base:3.4, amp:1.5, unit:"events/h", label:"CPAP AHI", color:"var(--cpap)", dec:1, dir:1 },
+function emptyLane(cfg,error,count=240){ return lane(Array(count).fill(null),{...cfg,aria:`${cfg.label} not measured: ${error}`}); }
+function nightlyCard(key,rows,error){
+  const spec={
+    spo2:{type:REGISTRY.type.spo2,source:REGISTRY.source.emay,field:"min",unit:"%",label:"NIGHTLY SpO₂ NADIR",color:"var(--spo2)",dec:1},
+    hr:{type:REGISTRY.type.hr,source:REGISTRY.source.polar_h10,field:"avg",unit:"bpm",label:"MEAN SLEEPING HR",color:"var(--hr)",dec:0},
+    hrv:{type:REGISTRY.type.hrv_rmssd,source:REGISTRY.source.derived,field:"avg",unit:"ms",label:"HRV · RMSSD",color:"var(--resp)",dec:1},
   }[key];
-  const vals = [];
-  for (let i=0; i<days; i++){
-    let v = spec.base + Math.sin(i/4.5)*spec.amp*0.5 + (r()-0.5)*spec.amp;
-    if (key === "spo2" && i === days-2) v -= 3.2;
-    if (key === "ahi"  && i === days-3) v += 3.1;
-    vals.push(+v.toFixed(spec.dec));
+  const days=S.win, byDay=new Map();
+  if (!error && Array.isArray(rows)) for(const row of rows) if(row.source===spec.source&&row.type===spec.type&&row.day_micros!=null) byDay.set(new Date(row.day_micros/1000).toISOString().slice(0,10),row[spec.field]);
+  const vals=[];
+  const today=new Date(); today.setUTCHours(0,0,0,0);
+  for(let offset=days-1;offset>=0;offset--){ const d=new Date(today.getTime()-offset*86400000).toISOString().slice(0,10); const v=byDay.get(d); vals.push(v==null?null:v); }
+  const good=vals.filter(v=>v!=null).sort((a,b)=>a-b), W=1000,H=140;
+  if (!good.length) {
+    const g=gapPaths(vals,W,H), why=error||`${spec.label}: no nightly aggregate`;
+    return {label:spec.label,unit:spec.unit,color:UNK,latest:"— —",baseline:"— —",iqr:"— —",dev:`NOT MEASURED · ${why}`,devGlyph:"?",devColor:UNK,missing:`${days} nights not measured`,d:"",grid:gridPath(W,H,4),gapFill:g.fill,gapEdge:g.edge,dots:"",baseLine:"",band:"",from:`−${days} d`,to:"last night",aria:`${spec.label} not measured: ${why}`};
   }
-  (S.degraded ? [days-1, days-6, days-7] : [days-6]).forEach(i => { if (i >= 0) vals[i] = null; });
-
-  const good = vals.filter(v => v != null).sort((a,b) => a-b);
-  const med = good[Math.floor(good.length/2)], q1 = good[Math.floor(good.length*0.25)], q3 = good[Math.floor(good.length*0.75)];
-  const pad = (q3-q1)*2.6 + spec.amp;
-  const min = Math.min(...good) - pad*0.3, max = Math.max(...good) + pad*0.3;
-  const W = 1000, H = 140, g = gapPaths(vals,W,H);
-  const yq3 = scale(q3,min,max,H), yq1 = scale(q1,min,max,H);
-
-  /* Direct marks only where they earn it: an outlier past 1.5 IQR, and the
-     most recent night. A dot on every point is noise, not information.
-     Each marker is a ZERO-LENGTH subpath, stroked with a round linecap, which
-     SVG renders as a disc of exactly stroke-width across. It has to be done
-     this way: these plots use preserveAspectRatio="none" so a 1000-unit viewBox
-     stretches to fill whatever width the card gets, and x is compressed roughly
-     2:1 against y. A filled `a4,4` circle comes out an invisible 2px-wide
-     splinter under that -- which is exactly how the first render looked. Only
-     stroke geometry honours vector-effect="non-scaling-stroke", so only stroke
-     geometry survives an anisotropic viewBox. */
-  let dots = "";
-  vals.forEach((v,i) => {
-    if (v == null) return;
-    const x = (i/(vals.length-1))*W, y = scale(v,min,max,H);
-    if (v > q3 + (q3-q1)*1.5 || v < q1 - (q3-q1)*1.5 || i === vals.length-1)
-      dots += "M"+x.toFixed(1)+" "+y.toFixed(1)+"L"+x.toFixed(1)+" "+y.toFixed(1)+" ";
-  });
-  const last = [...vals].reverse().find(v => v != null);
-  const dev = last - med, devPct = (dev/med)*100;
-  const bad = spec.dir > 0 ? dev > (q3-q1) : dev < -(q3-q1);
-  const missCount = vals.filter(v => v == null).length;
-  return {
-    label: spec.label, unit: spec.unit, color: spec.color,
-    latest: last.toFixed(spec.dec), baseline: med.toFixed(spec.dec), iqr: q1.toFixed(spec.dec)+"–"+q3.toFixed(spec.dec),
-    dev: (dev>=0?"+":"") + dev.toFixed(spec.dec) + " (" + (devPct>=0?"+":"") + devPct.toFixed(1) + "% vs own)",
-    devGlyph: bad ? "!" : dev >= 0 ? "▲" : "▼", devColor: bad ? "var(--med)" : "var(--text-dim)",
-    missing: missCount ? missCount + " night" + (missCount>1?"s":"") + " not measured" : "full coverage",
-    d: linePath(vals,min,max,W,H), grid: gridPath(W,H,4), gapFill: g.fill, gapEdge: g.edge, dots,
-    baseLine: hLine(med,min,max,W,H),
-    band: "M0 "+yq3.toFixed(1)+" H"+W+" V"+yq1.toFixed(1)+" H0 Z",
-    from: "−"+S.win+" d", to: "last night",
-    aria: spec.label+", "+S.win+" day trend against own rolling baseline "+med.toFixed(spec.dec)+", "+missCount+" nights not measured",
-  };
+  const median=a=>a[Math.floor(a.length/2)], med=median(good),q1=good[Math.floor(good.length*.25)],q3=good[Math.floor(good.length*.75)];
+  const spread=Math.max(q3-q1,Math.abs(med)*.02,1),min=Math.min(...good)-spread,max=Math.max(...good)+spread,g=gapPaths(vals,W,H);
+  const last=[...vals].reverse().find(v=>v!=null),dev=last-med,missing=vals.filter(v=>v==null).length;
+  return {label:spec.label,unit:spec.unit,color:spec.color,latest:last.toFixed(spec.dec),baseline:med.toFixed(spec.dec),iqr:`${q1.toFixed(spec.dec)}–${q3.toFixed(spec.dec)}`,dev:`${dev>=0?"+":""}${dev.toFixed(spec.dec)} vs own`,devGlyph:dev>=0?"▲":"▼",devColor:"var(--text-dim)",missing:missing?`${missing} night${missing===1?"":"s"} not measured`:"full coverage",d:linePath(vals,min,max,W,H),grid:gridPath(W,H,4),gapFill:g.fill,gapEdge:g.edge,dots:"",baseLine:hLine(med,min,max,W,H),band:`M0 ${scale(q3,min,max,H).toFixed(1)} H${W} V${scale(q1,min,max,H).toFixed(1)} H0 Z`,from:`−${days} d`,to:"last night",aria:`${spec.label}, server aggregates over ${days} nights, ${missing} not measured`};
 }
-
-/* ══ view model ═══════════════════════════════════════════════════════════ */
-function model(){
-  const deg = S.degraded, sess = session(), W = 1000;
-
-  const r = rng(991), lspo2 = [], lhr = [];
-  for (let i=0; i<240; i++){
-    lspo2.push(+(96.5 + Math.sin(i/19)*0.6 + (r()-0.5)*1.0).toFixed(1));
-    lhr.push(Math.round(52 + Math.sin(i/27)*2.4 + (r()-0.5)*2.5));
-  }
-  if (deg) for (let i=158; i<240; i++){ lspo2[i] = null; lhr[i] = null; }
-
-  const alarms = deg ? [
-    { rank:"HIGH", channel:"TECHNICAL", cls:"alarm-hi", color:"var(--hi)", glyph:"×", msg:"Pulse-ox link lost — SpO₂ and HR cannot be assessed. Monitoring is NOT active.", at:"03:04:41", age:"41 min ago" },
-    { rank:"MEDIUM", channel:"TECHNICAL", cls:"", color:"var(--med)", glyph:"!", msg:"Risk tier held at CONFIRM — state machine cannot advance or clear without SpO₂.", at:"03:04:41", age:"41 min ago" },
-    { rank:"INFO", channel:"PHYSIOLOGICAL", cls:"", color:UNK, glyph:"?", msg:"Desaturation 02:57 was unresolved when the sensor dropped — outcome unknown.", at:"02:57:12", age:"48 min ago" },
-  ] : [
-    { rank:"MEDIUM", channel:"PHYSIOLOGICAL", cls:"", color:"var(--med)", glyph:"!", msg:"Desaturation cluster 02:04–02:19 — nadir 85.4 %, 4 events, all self-resolved.", at:"02:19:38", age:"4 h 26 m ago" },
-    { rank:"LOW", channel:"TECHNICAL", cls:"", color:"var(--low)", glyph:"i", msg:"BP cuff has not reported for 19 h — last reading 11:41 yesterday.", at:"06:40:00", age:"5 min ago" },
-  ];
-
-  const num = o => Object.assign({ hatch:"none", valueColor:"var(--text)", glyph:"✓", state:"IN RANGE", sub:"" }, o);
-  const numerics = [
-    deg ? num({ label:"SpO₂", unit:"%", aria:"SpO2 not measured", color:UNK, glyph:"?", value:"— —", valueColor:UNK, limits:"88 / 100", stamp:"03:04:41", state:"NOT MEASURED · 41 m", hatch:hatchOn })
-        : num({ label:"SpO₂", unit:"%", aria:"SpO2 96 percent", color:"var(--spo2)", value:"96", sub:"±1", limits:"88 / 100", stamp:"06:45:02" }),
-    deg ? num({ label:"HR", unit:"bpm", aria:"Heart rate not measured", color:UNK, glyph:"?", value:"— —", valueColor:UNK, limits:"40 / 120", stamp:"03:04:41", state:"NOT MEASURED · 41 m", hatch:hatchOn })
-        : num({ label:"HR", unit:"bpm", aria:"Heart rate 52", color:"var(--hr)", value:"52", sub:"sinus", limits:"40 / 120", stamp:"06:45:02" }),
-    num({ label:"NBP", unit:"mmHg", aria:"Blood pressure 118 over 74, stale", color:"var(--med)", glyph:"!", value:"118/74", sub:"(89)", limits:"90–140 / 55–90", stamp:"11:41 yest.", state:"STALE · 19 h OLD" }),
-    num({ label:"RESP", unit:"rpm", aria:"Respiration 13", color:"var(--resp)", value:"13", sub:"reg", limits:"8 / 24", stamp:"06:45:02" }),
-    deg ? num({ label:"HRV RMSSD", unit:"ms", aria:"HRV not computable", color:UNK, glyph:"?", value:"— —", valueColor:UNK, limits:"own IQR 36–48", stamp:"03:04:41", state:"NO RR INTERVALS", hatch:hatchOn })
-        : num({ label:"HRV RMSSD", unit:"ms", aria:"HRV 42 milliseconds", color:"var(--resp)", value:"42", sub:"n=118 RR", limits:"own IQR 36–48", stamp:"06:44:30" }),
-    num({ label:"CPAP AHI", unit:"/h", aria:"AHI 3.1", color:"var(--cpap)", value:"3.1", sub:"leak 19", limits:"≤ 5.0", stamp:"06:44:58" }),
-  ];
-
-  const sensors = [
-    { name:"Pulse-ox · ring", link:"BLE 0x4A2F", glyph:deg?"×":"✓", state:deg?"LINK LOST":"LIVE", color:deg?"var(--hi)":"var(--ok)", age:deg?"41 m 12 s":"0.8 s" },
-    { name:"ECG chest strap", link:"BLE 0x11C0", glyph:deg?"?":"✓", state:deg?"NO DATA":"LIVE", color:deg?UNK:"var(--ok)", age:deg?"41 m 12 s":"0.9 s" },
-    { name:"BP cuff", link:"BT classic", glyph:"!", state:"IDLE", color:"var(--med)", age:"19 h 04 m" },
-    { name:"CPAP · SD ingest", link:"USB", glyph:"✓", state:"SYNCED", color:"var(--ok)", age:"1 m 04 s" },
-    { name:"Barometer · BME280", link:"I²C 0x76", glyph:"✓", state:"LIVE", color:"var(--ok)", age:"2.0 s" },
-    { name:"Klaxon relay", link:"GPIO 18", glyph:"✓", state:"ARMED", color:"var(--ok)", age:"self-test 1 h" },
-  ];
-
-  const cur = deg ? "confirm" : "clear";
-  const tierColor = { clear:"var(--ok)", watch:"var(--med)", confirm:"var(--hi)", klaxon:"var(--hi)" };
-  const tiers = [
-    { key:"clear", name:"CLEAR", glyph:"✓", note:"all params in range" },
-    { key:"watch", name:"WATCH", glyph:"•", note:"1 param drifting" },
-    { key:"confirm", name:"CONFIRM", glyph:"!", note:"criteria met, 30 s hold" },
-    { key:"klaxon", name:"KLAXON", glyph:"▲", note:"alarm sounding" },
-  ].map(t => {
-    const on = t.key === cur;
-    return { ...t, current: on ? "step" : "false",
-      fg: on ? (deg ? UNK : tierColor[t.key]) : "var(--text-faint)",
-      border: on ? (deg ? UNK : tierColor[t.key]) : "var(--line)",
-      bg: on ? (deg ? "color-mix(in oklab,var(--unknown) 16%,transparent)"
-                    : "color-mix(in oklab,"+tierColor[t.key]+" 14%,transparent)") : "transparent" };
-  });
-
-  /* Event rules are placed by wall-clock time, then dropped if the sample they
-     point at is missing. A marker floating over a gap would assert the system
-     saw something at a moment it was blind. */
-  const marksAt = (deg ? ["02:57:12"] : ["02:04:18","02:09:44","02:19:38"])
-    .map(ts => { const p = ts.split(":"); const i = (+p[0])*60 + (+p[1]) - sess.startMin; return i < 0 ? i+1440 : i; })
-    .filter(i => i >= 0 && i < sess.N && sess.spo2[i] != null)
-    .map(i => "M"+((i/(sess.N-1))*W).toFixed(1)+" 0 V110 ").join("");
-
-  const lanes = [
-    lane(sess.spo2, { label:"SpO₂ %", color:"var(--spo2)", hi:"100", lo:"80", min:80, max:100, limit:88, marks:marksAt,
-      aria:"SpO2 overnight trace, scale 80 to 100 percent, alarm limit 88, gap "+hhmm(sess.gapStart)+" to "+(deg?"now":hhmm(sess.gapEnd)) }),
-    lane(sess.hr,   { label:"HR bpm", color:"var(--hr)", hi:"110", lo:"40", min:40, max:110, limit:100, marks:marksAt, aria:"Heart rate overnight trace, 40 to 110 bpm" }),
-    lane(sess.resp, { label:"RESP rpm", color:"var(--resp)", hi:"24", lo:"4", min:4, max:24, limit:8, marks:marksAt, aria:"Respiration rate overnight, 4 to 24 per minute" }),
-    lane(sess.leak, { label:"LEAK L/min", color:"var(--cpap)", hi:"60", lo:"0", min:0, max:60, limit:40, marks:marksAt, aria:"CPAP mask leak overnight, 0 to 60 litres per minute" }),
-  ];
-  const xTicks = Array.from({length:8}, (_,i) => hhmm(sess.startMin + Math.round((sess.N-1)*(i/7))));
-
-  const events = deg ? [
-    { t:"02:57:12", glyph:"!", color:"var(--med)", rank:"MEDIUM", label:"Desaturation onset", detail:"nadir 89.1 % · unresolved at data loss" },
-    { t:"03:04:41", glyph:"×", color:"var(--hi)", rank:"HIGH TECH", label:"Pulse-ox link lost", detail:"3 missed keepalives · BLE 0x4A2F" },
-    { t:"03:04:41", glyph:"?", color:UNK, rank:"INDET.", label:"Session coverage broken", detail:"3 h 40 m of 7 h 30 m not measured" },
-    { t:"03:05:11", glyph:"!", color:"var(--med)", rank:"MEDIUM", label:"Tier held at CONFIRM", detail:"cannot clear without SpO₂" },
-    { t:"05:58:20", glyph:"✓", color:"var(--cpap)", rank:"INFO", label:"CPAP session ended", detail:"usage 6 h 46 m · AHI over measured span 3.1" },
-  ] : [
-    { t:"23:41:06", glyph:"✓", color:"var(--cpap)", rank:"INFO", label:"CPAP therapy start", detail:"auto 8–14 cmH₂O" },
-    { t:"02:04:18", glyph:"!", color:"var(--med)", rank:"MEDIUM", label:"Desaturation cluster start", detail:"4 events / 15 min" },
-    { t:"02:09:44", glyph:"!", color:"var(--med)", rank:"MEDIUM", label:"SpO₂ nadir 85.4 %", detail:"duration 68 s · HR +19 bpm" },
-    { t:"02:19:38", glyph:"✓", color:"var(--ok)", rank:"RESOLVED", label:"Cluster resolved", detail:"SpO₂ ≥ 94 % for 5 min" },
-    { t:"03:26:00", glyph:"?", color:UNK, rank:"INDET.", label:"Sensor gap 6 min", detail:"03:26–03:32 · not interpolated" },
-    { t:"04:12:52", glyph:"!", color:"var(--cpap)", rank:"LOW", label:"Mask leak 41 L/min", detail:"13 min above limit" },
-  ];
-
-  const okc = "var(--ok)", medc = "var(--med)";
+function systemModel(health,recovery,clock){
+  const okc="var(--ok)",bad=UNK;
+  const healthError=health.error;
+  const reachable=!healthError && health.data && health.data.vitalsd==="reachable";
+  const unreachableDetail=healthError || (!reachable ? `vitalsd unreachable: ${JSON.stringify(health.data&&health.data.vitalsd)}` : null);
+  const recoveryError=recovery.error;
+  const clockError=clock.error;
+  const newestBackup=!recoveryError&&recovery.data&&Array.isArray(recovery.data.pgbackrest)?recovery.data.pgbackrest.flatMap(s=>s.backups||[]).sort((a,b)=>b.timestamp_stop-a.timestamp_stop)[0]:null;
+  const row=(k,value,error,good=true)=>({k,glyph:error?"?":good?"✓":"!",color:error?bad:good?okc:"var(--med)",v:error||value});
+  const errors=[unreachableDetail,recoveryError,clockError].filter(Boolean);
   return {
-    screen:S.screen, theme:S.theme, degraded:deg, win:S.win,
-    clock: (deg ? "03:45:53" : "06:45:02") + " · TZ EST · UTC−05",
-    editorial: deg ? {
-      kicker:"Cannot assess", glyph:"?", color:UNK, hatch:hatchOn,
-      headline:"The pulse-ox went quiet at 03:04. Nothing since.",
-      standfirst:"This is not a calm night — it is an unobserved one. The risk machine is held at CONFIRM because the evidence needed either to escalate or clear stopped arriving."
-    } : {
-      kicker:"Monitoring active", glyph:"✓", color:"var(--ok)", hatch:"none",
-      headline:"All five sensors reported within the last second.",
-      standfirst:"SpO₂ is 96 %, heart rate is 52 bpm, and respiration is 13. The risk machine has been CLEAR since 02:24; the blood-pressure reading is history, not current status."
-    },
-    alarms, numerics, sensors, tiers, events, lanes, xTicks,
-    trendCards: ["spo2","hr","hrv","ahi"].map(trend),
-    liveLanes: [
-      lane(lspo2, { label:"SpO₂ %", color:"var(--spo2)", hi:"100", lo:"88", min:88, max:100, H:90, rows:3, aria:"SpO2 last 20 minutes" }),
-      lane(lhr,   { label:"HR bpm", color:"var(--hr)", hi:"80", lo:"40", min:40, max:80, H:90, rows:3, aria:"Heart rate last 20 minutes" }),
-    ],
-    tierSince: deg ? "IN CONFIRM SINCE 02:57:12" : "IN CLEAR SINCE 02:24:38",
-    tierExplain: deg
-      ? "The machine is stuck, and that is the honest reading. CONFIRM was entered on a real desaturation at 02:57; 7 s later the pulse-ox stopped reporting, so the criteria to escalate to KLAXON and the criteria to fall back to CLEAR are both unevaluable. It will not silently relax to CLEAR — an absent sensor is not evidence of recovery."
-      : "CLEAR requires every enrolled parameter to be both measured and within limits for 5 continuous minutes. Any parameter going dark drops the machine out of CLEAR into a held state — never forward into CLEAR by default.",
-    escalate: deg ? "HELD — no valid SpO₂ to evaluate" : "n/a — tier CLEAR",
-    eventCount: (deg ? 5 : 6) + " events · 1 indeterminate span",
-    session: {
-      id: deg ? "2026-08-02 · PARTIAL" : "2026-08-02 · COMPLETE",
-      span: "23:12:04 → 06:42:11", dur: "7 h 30 m",
-      n: deg ? "13,204" : "26,984",
-      coverage: deg ? "51.1 % — 3 h 40 m NOT MEASURED" : "99.2 %",
-    },
-    nightStats: [
-      deg ? { label:"SpO₂ NADIR", color:UNK, glyph:"?", value:"≥89.1", unit:"%", note:"lower bound only — sensor dark after 03:04", hatch:hatchOn }
-          : { label:"SpO₂ NADIR", color:"var(--spo2)", glyph:"!", value:"85.4", unit:"%", note:"02:09:44 · 68 s below 88", hatch:"none" },
-      deg ? { label:"TIME < 90 %", color:UNK, glyph:"?", value:"— —", unit:"min", note:"not computable over 49 % of session", hatch:hatchOn }
-          : { label:"TIME < 90 %", color:"var(--spo2)", glyph:"!", value:"7.4", unit:"min", note:"1.6 % of session", hatch:"none" },
-      { label:"MEAN HR", color:"var(--hr)", glyph:deg?"?":"✓", value:deg?"53":"54", unit:"bpm", note:deg?"over measured span only (3 h 52 m)":"min 46 · max 79", hatch:deg?hatchOn:"none" },
-      { label:"RMSSD", color:"var(--resp)", glyph:"✓", value:deg?"40.2":"41.6", unit:"ms", note:deg?"partial span · own IQR 36–48":"own IQR 36–48", hatch:"none" },
-      { label:"AHI", color:"var(--cpap)", glyph:"✓", value:"3.1", unit:"/h", note:"CPAP-reported · independent of pulse-ox", hatch:"none" },
-    ],
-    readiness: deg
-      ? { verdict:"CANNOT CONFIRM", color:UNK, bg:"color-mix(in oklab,var(--unknown) 14%,transparent)", glyph:"?", detail:"Alarm path is armed and the daemon is up, but the pulse-ox has been dark for 41 minutes. Until a sensor reports, readiness is unknown — not good." }
-      : { verdict:"READY", color:"var(--ok)", bg:"color-mix(in oklab,var(--ok) 12%,transparent)", glyph:"✓", detail:"Daemon up, all sensors reported within 3 s, klaxon self-test passed 06:44:02, restore verified 3 days ago." },
-    sysGroups: [
-      { title:"DAEMON · vitalsd", rows:[
-        { k:"Process state", glyph:"✓", color:okc, v:"active (running)" },
-        { k:"Uptime", glyph:"✓", color:okc, v:"6 d 04 h 12 m" },
-        { k:"Ingest lag p95", glyph:"✓", color:okc, v:"180 ms" },
-        { k:"Restarts (7 d)", glyph:"!", color:medc, v:"1 · 30 Jul 04:02" },
-        { k:"Write queue", glyph:"✓", color:okc, v:"0 / 4096" }]},
-      { title:"ALARM PATH", rows:[
-        { k:"Klaxon self-test", glyph:"✓", color:okc, v:"PASS 06:44:02" },
-        { k:"Test cadence", glyph:"✓", color:okc, v:"daily 06:44" },
-        { k:"Relay continuity", glyph:"✓", color:okc, v:"GPIO 18 · 4.98 V" },
-        { k:"Watchdog", glyph:"✓", color:okc, v:"hw · 15 s timeout" },
-        { k:"Escalation rule", glyph:"✓", color:okc, v:"confirm → klaxon @ 30 s" }]},
-      { title:"DATA DURABILITY", rows:[
-        { k:"Last backup", glyph:"✓", color:okc, v:"41 m ago · 2.1 GB" },
-        { k:"Last verified restore", glyph:"!", color:medc, v:"3 d ago · 31 Jul" },
-        { k:"Checksum sweep", glyph:"✓", color:okc, v:"clean · 02:00" },
-        { k:"Storage", glyph:"✓", color:okc, v:"38.4 / 256 GB · 15 %" },
-        { k:"Retention", glyph:"✓", color:okc, v:"raw 90 d · agg ∞" }]},
-      { title:"COVERAGE (7 NIGHTS)", rows:[
-        { k:"Sessions recorded", glyph:"✓", color:okc, v:deg?"6 / 7":"7 / 7" },
-        { k:"Measured time", glyph:deg?"?":"✓", color:deg?UNK:okc, v:deg?"84.1 % · 8 h 12 m dark":"99.2 %" },
-        { k:"Longest gap", glyph:deg?"?":"✓", color:deg?UNK:okc, v:deg?"3 h 40 m · last night":"6 m 00 s" },
-        { k:"Nights not assessed", glyph:deg?"?":"✓", color:deg?UNK:okc, v:deg?"1 · 02 Aug":"0" },
-        { k:"Clock drift vs NTP", glyph:"✓", color:okc, v:"+4 ms" }]},
-    ],
-  };
+    readiness:errors.length?{verdict:"CANNOT CONFIRM",color:bad,bg:"color-mix(in oklab,var(--unknown) 14%,transparent)",glyph:"?",detail:`Readiness not measured: ${errors.join("; ")}`}:{verdict:"READY",color:okc,bg:"color-mix(in oklab,var(--ok) 12%,transparent)",glyph:"✓",detail:"vitalsd answered; recovery and clock feeds answered. See component values below."},
+    groups:[
+      {title:"DAEMON · vitalsd",rows:[row("Process state",reachable?"reachable":"not measured",unreachableDetail),row("Uptime",reachable?fmtAge(health.data.uptime):"not measured",unreachableDetail),row("Heartbeat",health.data&&health.data.heartbeat_pulsing===true?"pulsing":health.data&&health.data.heartbeat_pulsing===false?"not pulsing":"not measured",unreachableDetail||(!health.data||health.data.heartbeat_pulsing==null?"heartbeat not measured":null),health.data&&health.data.heartbeat_pulsing===true)]},
+      {title:"SOURCE HEALTH",rows:healthError?[row("Sources","not measured",healthError)]:((health.data&&health.data.sources)||[]).map(s=>row(s.name,`${s.state} · ${fmtAge(s.observation_age_s)} old · ${s.reason}`,null,s.state==="Live"))},
+      {title:"DATA DURABILITY",rows:[row("Last backup",newestBackup?`${fmtAge(Math.max(0,Math.floor(Date.now()/1000)-newestBackup.timestamp_stop))} ago · ${newestBackup.size} bytes`:"not measured",recoveryError||(!newestBackup?"recovery: no backup measured":null)),row("Last verified restore",recovery.data&&recovery.data.restore_verify_age_s!=null?`${fmtAge(recovery.data.restore_verify_age_s)} ago`:"not measured",recoveryError||(!recovery.data||recovery.data.restore_verify_age_s==null?"recovery: restore verify not measured":null)),row("Data at risk",recovery.data&&recovery.data.data_at_risk_s!=null?fmtAge(recovery.data.data_at_risk_s):"not measured",recoveryError||(!recovery.data||recovery.data.data_at_risk_s==null?"recovery: at-risk interval not measured":null))]},
+      {title:"CLOCK",rows:[row("NTP synchronized",clock.data&&clock.data.ntp_synchronized===true?"yes":clock.data&&clock.data.ntp_synchronized===false?"no":"not measured",clockError,clock.data&&clock.data.ntp_synchronized===true),row("Clock drift",clock.data&&clock.data.drift_usec!=null?`${clock.data.drift_usec} µs`:"not measured",clockError||(!clock.data||clock.data.drift_usec==null?"clock drift not measured":null))]},
+    ]};
+}
+async function model(){
+  const nowMicros=Date.now()*1000, liveSince=nowMicros-20*60*1000000;
+  const nightEnd=new Date(); nightEnd.setUTCHours(12,0,0,0); if(nightEnd.getTime()>Date.now()) nightEnd.setUTCDate(nightEnd.getUTCDate()-1); const nightStart=new Date(nightEnd); nightStart.setUTCDate(nightStart.getUTCDate()-1);
+  const latestPaths={spo2:`/api/latest?source=${REGISTRY.source.emay}&type=${REGISTRY.type.spo2}`,hr:`/api/latest?source=${REGISTRY.source.polar_h10}&type=${REGISTRY.type.hr}`,hrv:`/api/latest?source=${REGISTRY.source.derived}&type=${REGISTRY.type.hrv_rmssd}`,bps:`/api/latest?source=${REGISTRY.source.ad_ua651ble}&type=${REGISTRY.type.bp_systolic}`,bpd:`/api/latest?source=${REGISTRY.source.ad_ua651ble}&type=${REGISTRY.type.bp_diastolic}`,bpm:`/api/latest?source=${REGISTRY.source.ad_ua651ble}&type=${REGISTRY.type.bp_map}`};
+  const queryPath=(source,type,since,until)=>`/api/query?source=${source}&type=${type}&since_micros=${since}&until_micros=${until}`;
+  const paths={health:"/api/health",nightly:`/api/nightly?nights=${S.win}`,recovery:"/api/recovery",clock:"/api/clock",liveSpo2:queryPath(REGISTRY.source.emay,REGISTRY.type.spo2,liveSince,nowMicros),liveHr:queryPath(REGISTRY.source.polar_h10,REGISTRY.type.hr,liveSince,nowMicros),nightSpo2:queryPath(REGISTRY.source.emay,REGISTRY.type.spo2,nightStart.getTime()*1000,nightEnd.getTime()*1000),nightHr:queryPath(REGISTRY.source.polar_h10,REGISTRY.type.hr,nightStart.getTime()*1000,nightEnd.getTime()*1000),nightHrv:queryPath(REGISTRY.source.derived,REGISTRY.type.hrv_rmssd,nightStart.getTime()*1000,nightEnd.getTime()*1000),...latestPaths};
+  const entries=await Promise.all(Object.entries(paths).map(async([k,p])=>[k,await settled(p)])); const R=Object.fromEntries(entries);
+  const healthIssue=R.health.error||(!R.health.data||R.health.data.vitalsd!=="reachable"?`/api/health reports vitalsd unavailable: ${JSON.stringify(R.health.data&&R.health.data.vitalsd)}`:null);
+  const healthSources=R.health.data&&Array.isArray(R.health.data.sources)?R.health.data.sources:[];
+  const sensor=(name,sourceId)=>{const s=healthSources.find(x=>x.id===sourceId),error=healthIssue||(!s?`${name}: health not measured`:null);return {name,link:`registry source ${sourceId}`,glyph:error?"?":s.state==="Live"?"✓":"!",state:error?"NOT MEASURED":s.state.toUpperCase(),color:error?UNK:s.state==="Live"?"var(--ok)":"var(--med)",age:error?error:fmtAge(s.observation_age_s)};};
+  const liveSpo2=R.liveSpo2.error?Array(240).fill(null):samplesToBins(R.liveSpo2.data,liveSince,nowMicros,240),liveHr=R.liveHr.error?Array(240).fill(null):samplesToBins(R.liveHr.data,liveSince,nowMicros,240);
+  const ns=nightStart.getTime()*1000,ne=nightEnd.getTime()*1000,N=288;
+  const nightVals=r=>r.error?Array(N).fill(null):samplesToBins(r.data,ns,ne,N);
+  const spo2=nightVals(R.nightSpo2),hr=nightVals(R.nightHr),hrv=nightVals(R.nightHrv),notSupported="no registry type or endpoint for this measure";
+  const lanes=[lane(spo2,{label:"SpO₂ %",color:"var(--spo2)",hi:"100",lo:"80",min:80,max:100,limit:88,aria:R.nightSpo2.error||"SpO2 last-night samples; null bins are not measured"}),lane(hr,{label:"HR bpm",color:"var(--hr)",hi:"110",lo:"40",min:40,max:110,limit:100,aria:R.nightHr.error||"heart rate last-night samples; null bins are not measured"}),emptyLane({label:"RESP rpm",color:"var(--resp)",hi:"24",lo:"4",min:4,max:24,limit:8},notSupported,N),emptyLane({label:"LEAK L/min",color:"var(--cpap)",hi:"60",lo:"0",min:0,max:60,limit:40},notSupported,N)];
+  const sys=systemModel(R.health,R.recovery,R.clock), measuredCount=spo2.filter(v=>v!=null).length+hr.filter(v=>v!=null).length+hrv.filter(v=>v!=null).length;
+  const queryErrors=[R.nightSpo2.error,R.nightHr.error,R.nightHrv.error].filter(Boolean);
+  const unknownStat=(label,unit,why)=>({label,color:UNK,glyph:"?",value:"— —",unit,note:why,hatch:hatchOn});
+  LAST_FETCH_MS=Date.now();
+  return {screen:S.screen,theme:S.theme,degraded:false,win:S.win,clock:`FEED AGE 0 s · fetched ${new Date(LAST_FETCH_MS).toLocaleTimeString()}`,editorial:healthIssue?{kicker:"Cannot assess",glyph:"?",color:UNK,hatch:hatchOn,headline:"The health feed cannot confirm daemon health.",standfirst:healthIssue}:{kicker:"Live system",glyph:"✓",color:"var(--ok)",hatch:"none",headline:"Every value below comes from the local read API.",standfirst:"Missing measurements remain explicit gaps; the page never carries a number forward."},alarms:healthIssue?[{rank:"HIGH",channel:"TECHNICAL",cls:"",color:UNK,glyph:"?",msg:healthIssue,at:"now",age:"feed unavailable"}]:[],numerics:[measuredNumeric("SpO₂","%","88 / 100",R.spo2,1),measuredNumeric("HR","bpm","40 / 120",R.hr,0),R.bps.error||R.bpd.error?unknownNumeric("NBP","mmHg","90–140 / 55–90",R.bps.error||R.bpd.error):R.bps.data&&R.bpd.data&&R.bps.data.measured&&R.bpd.data.measured?{...measuredNumeric("NBP","mmHg","90–140 / 55–90",R.bps,0),value:`${Number(R.bps.data.value).toFixed(0)}/${Number(R.bpd.data.value).toFixed(0)}`,sub:R.bpm.data&&R.bpm.data.measured?`(${Number(R.bpm.data.value).toFixed(0)})`:""}:unknownNumeric("NBP","mmHg","90–140 / 55–90","NBP: no measurement"),unknownNumeric("RESP","rpm","8 / 24",notSupported),measuredNumeric("HRV RMSSD","ms","own baseline",R.hrv,1),unknownNumeric("CPAP AHI","/h","≤ 5.0",notSupported)],sensors:[sensor("Pulse-ox · EMAY",REGISTRY.source.emay),sensor("ECG chest strap",REGISTRY.source.polar_h10),sensor("BP cuff",REGISTRY.source.ad_ua651ble),sensor("Derived metrics",REGISTRY.source.derived)],tiers:["CLEAR","WATCH","CONFIRM","KLAXON"].map(name=>({key:name.toLowerCase(),name,glyph:"?",note:"state endpoint not available",current:"false",fg:UNK,border:"var(--line)",bg:"transparent"})),events:queryErrors.map((e,i)=>({t:"—",glyph:"?",color:UNK,rank:"NOT MEASURED",label:`Query ${i+1} unavailable`,detail:e})),lanes,xTicks:Array.from({length:8},(_,i)=>new Date(nightStart.getTime()+(nightEnd-nightStart)*i/7).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})),trendCards:[nightlyCard("spo2",R.nightly.data,R.nightly.error),nightlyCard("hr",R.nightly.data,R.nightly.error),nightlyCard("hrv",R.nightly.data,R.nightly.error),nightlyCard("hrv",null,R.nightly.error||"CPAP AHI: no registry type")].map((c,i)=>i===3?{...c,label:"CPAP AHI",unit:"events/h",color:UNK}:c),liveLanes:[lane(liveSpo2,{label:"SpO₂ %",color:"var(--spo2)",hi:"100",lo:"88",min:88,max:100,H:90,rows:3,aria:R.liveSpo2.error||"SpO2 last 20 minutes"}),lane(liveHr,{label:"HR bpm",color:"var(--hr)",hi:"80",lo:"40",min:40,max:80,H:90,rows:3,aria:R.liveHr.error||"heart rate last 20 minutes"})],tierSince:"NOT MEASURED",tierExplain:"No risk-state endpoint is exposed by vitals-console; no state is inferred from samples.",escalate:"not measured",eventCount:`${queryErrors.length} named query errors`,session:{id:`${nightStart.toLocaleDateString()} UTC-WINDOW`,span:`${nightStart.toLocaleString()} → ${nightEnd.toLocaleString()}`,dur:"24 h query window",n:String(measuredCount),coverage:"null bins are not measured"},nightStats:[spo2.some(v=>v!=null)?{label:"SpO₂ NADIR",color:"var(--spo2)",glyph:"✓",value:Math.min(...spo2.filter(v=>v!=null)).toFixed(1),unit:"%",note:"minimum over measured samples",hatch:"none"}:unknownStat("SpO₂ NADIR","%",R.nightSpo2.error||"no measurement"),unknownStat("TIME < 90 %","min","not exposed as a server aggregate"),hr.some(v=>v!=null)?{label:"MEAN HR",color:"var(--hr)",glyph:"✓",value:(hr.filter(v=>v!=null).reduce((a,b)=>a+b,0)/hr.filter(v=>v!=null).length).toFixed(0),unit:"bpm",note:"over measured bins",hatch:"none"}:unknownStat("MEAN HR","bpm",R.nightHr.error||"no measurement"),hrv.some(v=>v!=null)?{label:"RMSSD",color:"var(--resp)",glyph:"✓",value:(hrv.filter(v=>v!=null).reduce((a,b)=>a+b,0)/hrv.filter(v=>v!=null).length).toFixed(1),unit:"ms",note:"over measured bins",hatch:"none"}:unknownStat("RMSSD","ms",R.nightHrv.error||"no measurement"),unknownStat("AHI","/h",notSupported)],readiness:sys.readiness,sysGroups:sys.groups};
 }
 
 /* ══ screens ══════════════════════════════════════════════════════════════ */
@@ -925,7 +755,7 @@ function renderB(m){
     </div>
     <div class="b-grid"><div><h2>Who is still talking to us</h2>${m.sensors.map(s=>`<div class="row"><b style="color:${s.color}">${s.glyph}</b><span style="flex:1">${esc(s.name)}</span><span style="color:${s.color}">${s.age}</span></div>`).join("")}</div>
     <div><h2>The last twenty minutes</h2><p style="color:var(--text-dim)">The line stops where the evidence stops. Nothing is carried forward.</p>${m.liveLanes.map(L=>compactLane(L,76)).join("")}</div></div></section>`;
-  if (m.screen === "night") return `<section aria-label="Last night"><div class="b-lede"><div style="color:var(--text-faint);text-transform:uppercase">Session ${m.session.id} · ${m.session.span}</div><h1>${m.degraded?"Half a night on the record, and the missing half is the half that mattered.":"One cluster at two in the morning, resolved without intervention."}</h1><p style="color:var(--text-dim);line-height:1.65">${m.session.dur} · ${m.session.n} samples · ${m.session.coverage} coverage. Every gap below is shown, never smoothed.</p></div><div style="margin-top:30px">${m.lanes.map(L=>compactLane(L,76)).join("")}<div class="legend">${m.xTicks.map(t=>`<span>${t}</span>`).join("")}</div></div><h2 style="margin-top:38px">How the night went</h2><div class="b-grid">${m.events.map((e,i)=>`<article class="b-rule" style="border-top-color:${e.color}"><div style="color:${e.color};font-weight:700">${i+1} · ${e.t} · ${e.rank}</div><h3>${esc(e.label)}</h3><p style="color:var(--text-dim);line-height:1.6">${esc(e.detail)}</p></article>`).join("")}</div></section>`;
+  if (m.screen === "night") return `<section aria-label="Last night"><div class="b-lede"><div style="color:var(--text-faint);text-transform:uppercase">Session ${m.session.id} · ${m.session.span}</div><h1>Recorded measurements and explicit gaps from the last-night query.</h1><p style="color:var(--text-dim);line-height:1.65">${m.session.dur} · ${m.session.n} samples · ${m.session.coverage} coverage. Every gap below is shown, never smoothed.</p></div><div style="margin-top:30px">${m.lanes.map(L=>compactLane(L,76)).join("")}<div class="legend">${m.xTicks.map(t=>`<span>${t}</span>`).join("")}</div></div><h2 style="margin-top:38px">How the night went</h2><div class="b-grid">${m.events.map((e,i)=>`<article class="b-rule" style="border-top-color:${e.color}"><div style="color:${e.color};font-weight:700">${i+1} · ${e.t} · ${e.rank}</div><h3>${esc(e.label)}</h3><p style="color:var(--text-dim);line-height:1.6">${esc(e.detail)}</p></article>`).join("")}</div></section>`;
   if (m.screen === "trends") return `<div><div class="b-lede"><h1>Compared with you, not with anyone else</h1><p style="color:var(--text-dim);line-height:1.6">One server-side aggregate per night. Missing nights remain gaps and are counted below each chart.</p></div>${screenTrends(m)}</div>`;
   if (m.screen === "sys") return `<section aria-label="System health"><div class="b-lede" style="border-left-color:${m.readiness.color}"><div style="color:${m.readiness.color};font-weight:700">${m.readiness.glyph} TONIGHT · ${m.readiness.verdict}</div><h1>${esc(m.readiness.detail)}</h1></div><div class="b-grid">${m.sysGroups.map(g=>`<div><h2>${g.title}</h2>${g.rows.map(r=>`<div class="row"><b style="color:${r.color}">${r.glyph}</b><span style="flex:1">${esc(r.k)}</span><span style="color:${r.color}">${esc(r.v)}</span></div>`).join("")}</div>`).join("")}</div></section>`;
   return `<section aria-label="Design system" class="b-lede"><div style="color:var(--text-faint);text-transform:uppercase">Direction B</div><h1>The Night Report</h1><p style="font-size:17px;line-height:1.65;color:var(--text-dim)">The night is edited like a report: a lede states whether monitoring worked, charts are evidence exhibits, and the event sequence names every gap in words. Serif prose, hairline rules, and no smooth line where evidence is absent.</p></section>`;
@@ -941,16 +771,23 @@ function renderC(m){
 }
 
 /* ══ render ═══════════════════════════════════════════════════════════════ */
-function render(){
+let renderGeneration = 0;
+function updateFeedClock(){
+  const clock=document.getElementById("clock");
+  if (clock && LAST_FETCH_MS != null) clock.textContent=`FEED AGE ${Math.floor((Date.now()-LAST_FETCH_MS)/1000)} s · fetched ${new Date(LAST_FETCH_MS).toLocaleTimeString()}`;
+}
+setInterval(updateFeedClock,1000);
+async function render(){
+  const generation = ++renderGeneration;
   document.documentElement.setAttribute("data-theme", S.theme);
   document.body.dataset.dir = S.dir;
-  const m = model();
+  document.getElementById("main").innerHTML = `<div class="box" style="color:var(--text-dim)">Loading real system data…</div>`;
+  const m = await model();
+  if (generation !== renderGeneration) return;
   const brand = document.querySelector("header span.mono");
   brand.classList.add("dir-brand");
   brand.textContent = S.dir === "b" ? "AnxietyWatch" : S.dir === "c" ? "root@aw-pi4:~/vitalsd" : "ANXIETYWATCH";
   document.getElementById("clock").textContent = m.clock;
-  document.getElementById("btn-degraded").textContent = "SIM: SENSOR LOSS " + (m.degraded ? "ON" : "OFF");
-  document.getElementById("btn-degraded").setAttribute("aria-pressed", String(m.degraded));
   document.getElementById("btn-theme").textContent = "THEME: " + m.theme.toUpperCase();
   document.getElementById("nav").innerHTML = SCREENS.map(([k,label],i) =>
     `<button class="nav-btn" data-action="screen" data-screen="${k}"${m.screen===k?' aria-current="page"':""}>${S.dir==="c"?(i+1)+" ":""}${label}</button>`).join("");
@@ -966,7 +803,6 @@ document.addEventListener("click", e => {
   const a = el.dataset.action;
   if (a === "screen") S.screen = el.dataset.screen;
   else if (a === "theme") S.theme = S.theme === "dark" ? "light" : "dark";
-  else if (a === "degraded") S.degraded = !S.degraded;
   else if (a === "win") S.win = Number(el.dataset.win);
   else if (a === "dir") {
     const i = PANELS.findIndex(p => p.id === S.dir);
