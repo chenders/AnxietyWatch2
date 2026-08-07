@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from gen_registry import (
     Registry,
+    emit_json,
     emit_rust,
     emit_sql,
     main,
@@ -47,12 +48,14 @@ id = 1
 transport = "ble"
 service = "0x180D"
 provides = ["hr"]
+expected_cadence_s = 60
 
 [source.ad_ua651ble]
 id = 6
 transport = "ble"
 indication = true
 provides = ["bp_systolic", "hr"]
+on_demand = true
 """
 
 
@@ -188,6 +191,109 @@ def test_source_providing_unknown_type_is_rejected(tmp_path: Path) -> None:
     )
     with pytest.raises(ValueError, match="unknown types"):
         Registry.load(p)
+
+
+# ── cadence (SPEC §2.5, §9 M0 criterion 2) ───────────────────────────────────
+
+
+def test_source_without_cadence_is_rejected(tmp_path: Path) -> None:
+    """The liveness law needs a declared expectation for every source; a
+    source without one must be a build-time error, not a silently-`LIVE` card
+    (§9 M0 criterion 2)."""
+    p = tmp_path / "registry.toml"
+    p.write_text(
+        MINIMAL + '\n[source.ghost]\nid = 9\ntransport = "ble"\nprovides = ["hr"]\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="source ghost declares no cadence"):
+        Registry.load(p)
+
+
+def test_source_with_both_cadences_is_rejected(tmp_path: Path) -> None:
+    """Both fields is a contradiction — which one is the truth? Either answer
+    silently changes the liveness evaluation."""
+    p = tmp_path / "registry.toml"
+    p.write_text(
+        MINIMAL + '\n[source.ghost]\nid = 9\ntransport = "ble"\n'
+        'provides = ["hr"]\nexpected_cadence_s = 60\non_demand = true\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="source ghost declares both"):
+        Registry.load(p)
+
+
+def test_source_with_zero_cadence_is_rejected(tmp_path: Path) -> None:
+    """A zero interval makes the age-vs-cadence comparison degenerate: every
+    source is always stale."""
+    p = tmp_path / "registry.toml"
+    p.write_text(
+        MINIMAL + '\n[source.ghost]\nid = 9\ntransport = "ble"\n'
+        'provides = ["hr"]\nexpected_cadence_s = 0\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="source ghost has non-positive expected_cadence_s 0"):
+        Registry.load(p)
+
+
+def test_source_with_negative_cadence_is_rejected(tmp_path: Path) -> None:
+    p = tmp_path / "registry.toml"
+    p.write_text(
+        MINIMAL + '\n[source.ghost]\nid = 9\ntransport = "ble"\n'
+        'provides = ["hr"]\nexpected_cadence_s = -5\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="source ghost has non-positive expected_cadence_s -5"):
+        Registry.load(p)
+
+
+def test_periodic_and_on_demand_sources_load(tmp_path: Path) -> None:
+    """The passing case: exactly one of the two declarations, on both sides of
+    the split, loads with the model fields set."""
+    p = tmp_path / "registry.toml"
+    p.write_text(MINIMAL, encoding="utf-8")
+    reg = Registry.load(p)
+    by_name = {s.name: s for s in reg.sources}
+    assert by_name["polar_h10"].expected_cadence_s == 60
+    assert by_name["polar_h10"].on_demand is False
+    assert by_name["ad_ua651ble"].expected_cadence_s is None
+    assert by_name["ad_ua651ble"].on_demand is True
+
+
+def test_cadence_is_emitted_into_rust_and_json(registry: Registry) -> None:
+    """The liveness evaluator reads the declared cadence out of generated.rs;
+    the API layer reads registry.json. Both must carry it."""
+    rust = emit_rust(registry)
+    assert "pub enum Cadence" in rust
+    assert "EverySeconds(u32)," in rust
+    assert "OnDemand," in rust
+    assert "Self::PolarH10 => Cadence::EverySeconds(60)," in rust
+    assert "Self::AdUa651ble => Cadence::OnDemand," in rust
+    assert "_ =>" not in rust.split("expected_cadence")[1].split("}")[0]
+
+    doc = json.loads(emit_json(registry))
+    assert doc["source"]["polar_h10"]["cadence"] == {"expected_cadence_s": 60}
+    assert doc["source"]["ad_ua651ble"]["cadence"] == {"on_demand": True}
+
+
+def test_validate_rejects_output_missing_cadence_arm(
+    registry: Registry, tmp_path: Path
+) -> None:
+    """validate() must catch a generated.rs whose cadence match dropped a
+    source — the Rust side is exhaustive by construction, so this is the layer
+    that guards the liveness law."""
+    out = tmp_path / "gen"
+    write_all(registry, out)
+
+    rust_path = out / "generated.rs"
+    gutted = "\n".join(
+        line
+        for line in rust_path.read_text(encoding="utf-8").splitlines()
+        if "Cadence::EverySeconds(60)," not in line
+    )
+    rust_path.write_text(gutted, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="no cadence arm for source polar_h10"):
+        validate(registry, out)
 
 
 def test_empty_registry_is_rejected(tmp_path: Path) -> None:
