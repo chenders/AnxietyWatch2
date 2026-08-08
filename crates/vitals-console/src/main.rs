@@ -21,7 +21,8 @@ use vitals_console::api::recovery::recovery_handler;
 use vitals_console::api::services::services_handler;
 use vitals_console::handlers::{
     AppState, attempts_handler, dashboard_handler, envelope_handler, health_handler,
-    plaintext_test_handler, register_handler, test_page_handler, version_handler,
+    health_mute_handler, operator_override_handler, plaintext_test_handler, register_handler,
+    source_declaration_handler, test_page_handler, version_handler,
 };
 use vitals_console::security::{
     MAX_REQUEST_BODY_BYTES, login_handler, logout_handler, security_handler, security_middleware,
@@ -96,6 +97,9 @@ async fn main() {
         .route("/dashboard", get(dashboard_handler))
         .route("/dashboard/", get(dashboard_handler))
         .route("/api/health", get(health_handler))
+        .route("/api/health/mutes", post(health_mute_handler))
+        .route("/api/config/declarations", post(source_declaration_handler))
+        .route("/api/config/overrides", post(operator_override_handler))
         .route("/api/version", get(version_handler))
         .route("/api/query", get(query_handler))
         .route("/api/latest", get(latest_handler))

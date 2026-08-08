@@ -699,3 +699,41 @@ fn test_envelope_payload_roundtrip() {
     assert_eq!(back["record"]["kind"], "test");
     assert_eq!(back["record"]["content"]["x"], 1);
 }
+
+#[tokio::test]
+async fn test_override_and_mute_api_fails_closed() {
+    let resp = vitals_console::handlers::operator_override_handler().await;
+    assert_eq!(resp.0, axum::http::StatusCode::FORBIDDEN);
+    assert_eq!(
+        resp.1.error,
+        "mutation blocked: auth interface not yet available"
+    );
+}
+
+#[tokio::test]
+async fn test_override_source_declaration_mute_read() {
+    let Some(pool) = require_test_db().await else {
+        return;
+    };
+
+    // Make sure we have a source
+    let _ = sqlx::query("INSERT INTO vitals_source (id, name, transport) VALUES (999, 'test_source', 'ble') ON CONFLICT DO NOTHING")
+        .execute(&pool)
+        .await;
+
+    let _ = sqlx::query("INSERT INTO source_declarations (source_id, is_configured) VALUES (999, false) ON CONFLICT (source_id) DO UPDATE SET is_configured = false")
+        .execute(&pool)
+        .await;
+
+    let _ = sqlx::query("INSERT INTO health_mutes (source_id, muted_by, muted_until) VALUES (999, 'test_actor', NOW() + INTERVAL '1 day')")
+        .execute(&pool)
+        .await;
+
+    let cm = vitals_console::db::get_config_and_mutes(&pool)
+        .await
+        .unwrap();
+    let config = cm.get(&999).unwrap();
+    assert!(!config.is_configured);
+    assert!(config.muted_until.is_some());
+    assert_eq!(config.muted_by.as_deref(), Some("test_actor"));
+}

@@ -605,3 +605,53 @@ pub async fn list_attempts(
 
     Ok(views)
 }
+
+/// Health config and mute info for a source.
+pub struct SourceConfigAndMute {
+    /// Whether the source is configured.
+    pub is_configured: bool,
+    /// The timestamp until which the source is muted.
+    pub muted_until: Option<chrono::DateTime<chrono::Utc>>,
+    /// The actor who muted the source.
+    pub muted_by: Option<String>,
+}
+
+/// Fetch config and active mutes for all sources.
+///
+/// # Errors
+/// Returns `sqlx::Error` on query failure.
+pub async fn get_config_and_mutes(
+    pool: &PgPool,
+) -> Result<std::collections::HashMap<i32, SourceConfigAndMute>, sqlx::Error> {
+    use sqlx::Row;
+    let rows = sqlx::query(
+        "SELECT s.id as source_id,
+                sd.is_configured,
+                hm.muted_until,
+                hm.muted_by
+         FROM vitals_source s
+         LEFT JOIN source_declarations sd ON s.id = sd.source_id
+         LEFT JOIN (
+             SELECT source_id, muted_until, muted_by
+             FROM health_mutes
+             WHERE muted_until > NOW()
+             ORDER BY muted_until DESC
+         ) hm ON s.id = hm.source_id",
+    )
+    .fetch_all(pool)
+    .await?;
+
+    let mut map = std::collections::HashMap::new();
+    for row in rows {
+        let is_configured: Option<bool> = row.try_get("is_configured").unwrap_or(None);
+        map.insert(
+            row.try_get("source_id")?,
+            SourceConfigAndMute {
+                is_configured: is_configured.unwrap_or(true),
+                muted_until: row.try_get("muted_until").unwrap_or(None),
+                muted_by: row.try_get("muted_by").unwrap_or(None),
+            },
+        );
+    }
+    Ok(map)
+}

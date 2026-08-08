@@ -19,3 +19,6 @@ envelope_clients [domain_conflicts] 2026-08-06T12:03:00Z Chris Henderson <chende
 service_operation_audit [envelope_clients] 2026-09-18T12:00:00Z Chris Henderson <chenders@users.noreply.github.com> # immutable audited service-operation evidence
 silence_detector [status_observations] 2026-09-19T12:00:00Z Chris Henderson <chenders@users.noreply.github.com> # durable silence status and coalescible notification events
 email_channel [silence_detector] 2026-09-19T12:01:00Z Chris Henderson <chenders@users.noreply.github.com> # encrypted Gmail STARTTLS configuration and test result
+operator_overrides [email_channel] 2026-09-19T12:02:00Z Chris Henderson <chenders@users.noreply.github.com> # operator display metadata overrides
+source_declarations [operator_overrides] 2026-09-19T12:03:00Z Chris Henderson <chenders@users.noreply.github.com> # optional-source declarations
+health_mutes [source_declarations] 2026-09-19T12:04:00Z Chris Henderson <chenders@users.noreply.github.com> # actor and time-bounded health mutes

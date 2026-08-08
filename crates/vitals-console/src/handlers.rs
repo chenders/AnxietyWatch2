@@ -63,7 +63,19 @@ fn require_db(state: &AppState) -> Result<&sqlx::PgPool, (StatusCode, Json<Error
 ///
 /// Fetches the daemon's health over its Unix socket and derives a per-source
 /// state with the local liveness evaluator.
+#[allow(clippy::too_many_lines)]
+#[expect(
+    clippy::collapsible_if,
+    reason = "easier to read without nesting lets on stable rust"
+)]
 pub async fn health_handler(State(state): State<AppState>) -> Json<HealthView> {
+    let mut config_and_mutes = std::collections::HashMap::new();
+    if let Some(ref db) = state.db {
+        if let Ok(map) = crate::db::get_config_and_mutes(db).await {
+            config_and_mutes = map;
+        }
+    }
+
     let daemon_health = get_health(&state.socket_path).await;
 
     let (vitalsd, uptime, degraded, heartbeat_pulsing, daemon_sources) = match daemon_health {
@@ -144,10 +156,21 @@ pub async fn health_handler(State(state): State<AppState>) -> Json<HealthView> {
 
         let assertion = evaluate(now_s, core_cadence, &evidence);
 
-        let state_str = match assertion.state {
-            vitals_core::liveness::HealthState::Live => "Live",
-            vitals_core::liveness::HealthState::Failing => "Failing",
-            vitals_core::liveness::HealthState::Unknown => "Unknown",
+        let cm = config_and_mutes.get(&source.id());
+        let is_configured = cm.is_none_or(|c| c.is_configured);
+        let muted_until = cm
+            .and_then(|c| c.muted_until.as_ref())
+            .map(chrono::DateTime::to_rfc3339);
+        let muted_by = cm.and_then(|c| c.muted_by.clone());
+
+        let state_str = if is_configured {
+            match assertion.state {
+                vitals_core::liveness::HealthState::Live => "Live",
+                vitals_core::liveness::HealthState::Failing => "Failing",
+                vitals_core::liveness::HealthState::Unknown => "Unknown",
+            }
+        } else {
+            "NOT_CONFIGURED"
         };
 
         source_views.push(SourceHealthView {
@@ -158,6 +181,9 @@ pub async fn health_handler(State(state): State<AppState>) -> Json<HealthView> {
             degrade_deadline_epoch_s: assertion.degrade_deadline_epoch_s,
             observation_age_s,
             raw_liveness,
+            is_configured,
+            muted_until,
+            muted_by,
         });
     }
 
@@ -555,6 +581,51 @@ pub async fn plaintext_test_handler(
             }))
         }
     }
+}
+
+#[expect(
+    clippy::unused_async,
+    reason = "axum handlers must be async to satisfy the Handler trait"
+)]
+/// POST /api/health/mutes
+///
+/// Sets a time-bounded mute on a health condition. Mutes expire to underlying health.
+/// Currently fails closed as auth is not available.
+pub async fn health_mute_handler() -> (StatusCode, Json<ErrorResponse>) {
+    error_reply(
+        StatusCode::FORBIDDEN,
+        "mutation blocked: auth interface not yet available",
+    )
+}
+
+#[expect(
+    clippy::unused_async,
+    reason = "axum handlers must be async to satisfy the Handler trait"
+)]
+/// POST /api/config/declarations
+///
+/// Declares whether an optional source is configured.
+/// Currently fails closed as auth is not available.
+pub async fn source_declaration_handler() -> (StatusCode, Json<ErrorResponse>) {
+    error_reply(
+        StatusCode::FORBIDDEN,
+        "mutation blocked: auth interface not yet available",
+    )
+}
+
+#[expect(
+    clippy::unused_async,
+    reason = "axum handlers must be async to satisfy the Handler trait"
+)]
+/// POST /api/config/overrides
+///
+/// Sets operator display overrides for registry values. Upgrades do not overwrite values.
+/// Currently fails closed as auth is not available.
+pub async fn operator_override_handler() -> (StatusCode, Json<ErrorResponse>) {
+    error_reply(
+        StatusCode::FORBIDDEN,
+        "mutation blocked: auth interface not yet available",
+    )
 }
 
 // ---- Tests ----

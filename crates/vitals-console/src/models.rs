@@ -8,7 +8,7 @@ pub struct SourceHealthView {
     pub id: i32,
     /// Source name, as the registry enum's debug name.
     pub name: String,
-    /// Derived health state: `Live`, `Failing`, or `Unknown`.
+    /// Derived health state: `Live`, `Failing`, `Unknown`, or `NOT_CONFIGURED`.
     pub state: String,
     /// Why the state is what it is, naming the value and its threshold.
     pub reason: String,
@@ -18,6 +18,14 @@ pub struct SourceHealthView {
     pub observation_age_s: Option<u64>,
     /// The daemon's own liveness verdict, before local re-evaluation.
     pub raw_liveness: Option<Liveness>,
+    /// Whether this source is expected to exist.
+    pub is_configured: bool,
+    /// If muted, the ISO 8601 expiry timestamp.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub muted_until: Option<String>,
+    /// If muted, who muted it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub muted_by: Option<String>,
 }
 
 /// Whether the `vitalsd` daemon answered the health request.
