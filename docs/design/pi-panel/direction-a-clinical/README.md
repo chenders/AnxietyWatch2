@@ -8,12 +8,14 @@ built against `../../PROMPT-pi-panel.md`.
 open index.html                     # review mode: state buttons + notes
 open 'index.html?kiosk=1'           # the panel alone — how it runs on the device
 open 'index.html?kiosk=1&state=klaxon'
+open 'clinical-monitor.html?kiosk=1&live&demo'  # Clinical-only, no aircraft view
 node panel-check.mjs                # the gate — exit 0 or 1
 ```
 
 | File | What it is |
 |---|---|
 | `index.html` | The panel. Self-contained; the 800×480 frame plus review scaffolding that `?kiosk=1` hides. |
+| `clinical-monitor.html` | A separate, Clinical-only kiosk copy. It omits aircraft tracking and experimental swipe views, uses a conventional bedside-monitor layout, and retains the prominent live `NOT ARMED` safety state. |
 | `panel-check.mjs` | Contrast, tier separation, layout arithmetic and touch target, behind an exit code. |
 
 `../index.html` is the earlier hand-built panel. `PROMPT-pi-panel.md` names it as

@@ -1,0 +1,2638 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=800, height=480, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no">
+<title>AnxietyWatch — Clinical Bedside Monitor</title>
+<!--
+  800x480 bedside panel for the Hosyond 7" DSI on the Pi 5, implemented from
+  the Claude Design project b8c918e3 (Direction A, "Clinical"). Self-contained:
+  no build step, no network, no dependencies.
+
+  The panel is EXACTLY the 800x480 frame. Everything below it is review
+  scaffolding for looking at states on a desktop, and is hidden by ?kiosk=1 --
+  which is how it is meant to run on the device. Nothing in the scaffolding can
+  affect the panel's layout, because the panel is a fixed-size box.
+
+  The position this design takes, and the reason it is worth building:
+
+      dim by lit AREA, never by contrast.
+
+  Every glyph sits at 5:1 or better against pure black, because a half-asleep
+  eye at 3 a.m. cannot afford a low-contrast reading. What shrinks at night is
+  how much of the 800x480 is emitting at all. Escalation is paid for in area,
+  fill and motion -- never in saturation. Nothing is large and bright at the
+  same time until something is actually wrong.
+
+  See README.md for what was changed from the imported design and why.
+-->
+<style>
+:root{
+  /* Every ratio here is against pure black and was verified with panel-check.mjs.
+     The design's own table stated all twelve correctly -- unusually, they
+     survived checking unchanged. */
+  --bg:#000000;          /* panel ground. true zero emission around every glyph */
+  --field:#0A0B0C;       /* 1.07:1 — interior of boxes: region without emission */
+  --rule:#5E6670;        /* 3.61:1 — boxed-region borders (WCAG 1.4.11 graphical) */
+  --rule-quiet:#3A4048;  /* 2.01:1 — system hairlines. decorative, carries nothing */
+  --spo2:#3FC8D8;        /* 10.46:1 — oxygen saturation. cyan, per monitor convention */
+  --hr:#35C46A;          /*  9.26:1 — pulse. green. never used for anything else */
+  --nibp:#DCE1E6;        /* 15.96:1 — non-invasive pressure. neutral white */
+  --watch:#E0A227;       /*  9.37:1 — medium physiological + technical warnings */
+  --klaxon:#E2453C;      /*  5.15:1 — high priority ONLY. appears nowhere else */
+  --unknown:#8B97A3;     /*  7.05:1 — indeterminate. neutral slate, hue-free by design */
+  --unknown-hi:#B9C0C7;  /* 11.43:1 — indeterminate text that must out-read a live value */
+  --label:#7A828C;       /*  5.40:1 — region labels at 14px, clears the 4.5:1 bar */
+  --rest:#585F52;        /*  3.17:1 — resting tier word at 44px. large-text AA at min emission */
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:"Helvetica Neue",Helvetica,Arial,sans-serif;
+  --hatch:repeating-linear-gradient(135deg,#8B97A3 0 2px,rgba(0,0,0,0) 2px 7px);
+}
+*{box-sizing:border-box}
+/* The page must not own ANY gesture.
+   Chromium treats a horizontal drag as history navigation and a two-finger
+   gesture as pinch-zoom, both at the browser level and both above anything
+   JS can see — so a real finger swipe was being consumed before the handler
+   ran, and a two-finger touch zoomed a fixed-size 800x480 appliance. These
+   properties surrender pan/zoom/overscroll on the whole document; the kiosk
+   unit additionally passes --disable-pinch and disables overscroll history
+   navigation, because CSS alone does not stop the browser-level ones. */
+html,body{margin:0;background:#17191B;font-family:var(--sans);
+  touch-action:none;overscroll-behavior:none;overscroll-behavior-x:none;
+  user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+body.kiosk{background:#000;overflow:hidden}
+/* Belt-and-braces only: this hides the cursor while it is over the page, which
+   covers an actually-attached mouse. It does NOT fix the arrow cage parks on
+   the panel — that one is drawn by the compositor because the Pi's HDMI CEC
+   endpoints advertise pointer capability, and it takes the udev rule in
+   deploy/stopgap/ to remove. Scoped to kiosk so the desktop review view keeps a
+   usable pointer for the state buttons. */
+body.kiosk, body.kiosk *{cursor:none}
+body.kiosk .review{display:none}
+
+/* Clinical-monitor copy: a single conventional bedside view. It deliberately
+   omits aircraft/noise data and the experimental swipe directions. */
+body.clinical-only #frame{outline:0}
+.clinical-only .r-top{border-bottom:1px solid var(--rule-quiet);padding-bottom:5px}
+.clinical-only .r-band{border-width:2px}
+.clinical-only .r-params{height:160px}
+.clinical-only .r-sensors{height:54px}
+.clinical-only .r-sys{height:34px}
+.clinical-only .monitor-name{font-size:14px;font-weight:700;letter-spacing:1.6px;color:var(--label)}
+
+/* ── the panel ─────────────────────────────────────────────────────────────
+   Fixed 800x480. Row heights are hard-coded and the silence bar is pinned with
+   margin-top:auto, so no region can ever reflow into another's address. That
+   the eye learns one place per value is the entire point of the layout. */
+#panel{
+  width:800px;height:480px;background:var(--bg);padding:13px 16px;touch-action:none;
+  display:flex;flex-direction:column;gap:8px;overflow:hidden;position:relative;
+  font-family:var(--sans);color:var(--nibp);
+}
+.r-top{height:22px;flex:0 0 auto;display:flex;align-items:center;justify-content:space-between}
+.r-band{height:86px;flex:0 0 auto;display:flex;align-items:center;gap:16px;padding:0 14px}
+.r-params{height:152px;flex:0 0 auto;display:grid;grid-template-columns:1.12fr 1fr 1.12fr;gap:8px}
+.r-sensors{height:54px;flex:0 0 auto;display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.r-sys{height:34px;flex:0 0 auto;display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+/* ── Direction B, "Penumbra" ────────────────────────────────────────────────
+   A second complete panel over the same live data, not a variant of the first.
+   Sparse, bone-on-black, no boxes: a coverage bar replaces the numeric grid and
+   a stale value collapses to "?" rather than "- -". It lights far less of the
+   screen than Clinical, which is the whole reason it is worth carrying at 3 a.m.
+   Swipe left/right (or arrow keys) to change direction. */
+.pen{width:800px;height:480px;box-sizing:border-box;background:#000;padding:28px 40px 22px;display:flex;flex-direction:column;font-family:var(--sans);overflow:hidden}
+.pen-tier{font-size:62px;font-weight:400;letter-spacing:-1px;line-height:1}
+.pen-val{font-family:var(--mono);font-variant-numeric:tabular-nums;font-weight:400;font-size:84px;line-height:.82;letter-spacing:-3px}
+.pen-bar{height:34px;display:flex;align-items:flex-end;gap:10px}
+.pen-seg{flex-basis:0;position:relative}
+/* View indicator: shown for a moment after a swipe, then gone. Neither design
+   should carry permanent chrome for a control that is used once a week. */
+.vind{position:absolute;left:0;right:0;bottom:0;display:flex;gap:10px;align-items:center;justify-content:center;padding:6px 0;background:rgba(0,0,0,.75);
+      font-family:var(--mono);font-size:14px;letter-spacing:2px;color:#B9C0C7;transition:opacity .4s;pointer-events:none}
+.dot{width:7px;height:7px;border:1px solid #7A828C;border-radius:50%}
+.dot.on{background:#B9C0C7;border-color:#B9C0C7}
+.r-sil{margin-top:auto;height:56px;flex:0 0 auto;position:relative;overflow:hidden;touch-action:none;user-select:none;-webkit-user-select:none}
+
+.pbox{border:1px solid var(--rule);background:var(--field);padding:8px 10px 6px;display:flex;flex-direction:column;min-width:0}
+.pbox.stale{border:1px dashed var(--unknown)}
+.val{font-family:var(--mono);font-variant-numeric:tabular-nums;font-weight:700;line-height:.86;font-size:72px;padding-bottom:2px;border-bottom:3px solid transparent}
+.val.sm{font-size:48px;letter-spacing:-1px}
+.val.stale{color:var(--unknown);border-bottom:3px dashed var(--unknown)}
+.lim,.note,.age,.sysval{font-family:var(--mono);font-variant-numeric:tabular-nums}
+
+.sbox{border:1px solid var(--rule);background:var(--field);display:flex;align-items:center;gap:9px;padding:0 10px}
+.sbox.bad{border:1px dashed var(--unknown)}
+.sdot{width:26px;height:26px;flex:0 0 auto;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;color:#000;background:var(--hr);border:1px solid var(--hr)}
+.sdot.bad{background:var(--hatch);border:1px dashed var(--unknown)}
+.ybox{border:1px solid var(--rule-quiet);background:var(--field);height:34px;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:0 9px}
+.ybox.bad{border:1px dashed var(--unknown)}
+/* "not in this test" — the design's EMPTY·NEVER PAIRED treatment. Reads as
+   not-monitored rather than broken, and never borrows the dashed-slate
+   language that means "unknown". */
+.sbox.off,.ybox.off{border:1px solid var(--rule-quiet)}
+.sdot.off{background:transparent;border:1px solid var(--rule-quiet);color:var(--label)}
+
+/* 1 Hz. Deliberately an order of magnitude under the 3 Hz photosensitive-
+   seizure threshold, and deliberately NOT disabled under prefers-reduced-
+   motion: this flash is the alarm, not decoration, and WCAG 2.3.3 scopes that
+   preference to non-essential motion. Everything else on the panel is static. */
+@keyframes klx{0%,49%{opacity:1}50%,100%{opacity:.28}}
+.flash{animation:klx 1s steps(1,end) infinite}
+
+.review{width:800px;margin:24px auto 64px;color:#B4AFA6;font-size:15px;line-height:1.6}
+.review h1{font-size:22px;color:#E8E4DC;margin:0 0 4px;letter-spacing:-.2px}
+.review button{font:inherit;font-size:14px;letter-spacing:1px;font-weight:700;background:transparent;color:#9BA3AB;border:1px solid #2F343A;padding:9px 12px;cursor:pointer}
+.review button[aria-pressed="true"]{background:#3FC8D8;border-color:#3FC8D8;color:#000}
+.review button:hover{color:#E8E4DC}
+.review .strip{display:flex;flex-wrap:wrap;gap:6px;margin:14px 0}
+.review code{font-family:var(--mono);color:#B9C0C7}
+#frame{width:800px;margin:0 auto;outline:1px solid #2F343A}
+</style>
+</head>
+<body class="clinical-only">
+
+<div id="frame"><div id="panel"></div></div>
+
+<div class="review">
+  <h1>Clinical bedside monitor</h1>
+  <p>The black rectangle above is the panel at its true size: 800 × 480, exactly what the
+  Hosyond 7″ DSI shows. Everything here is review scaffolding — load with
+  <code>?kiosk=1</code> and it disappears.</p>
+  <div class="strip" id="states"></div>
+  <p id="note" style="min-height:3em;color:#8E8A83"></p>
+  <p><strong style="color:#D6D2CB">Hold to silence:</strong> press and hold the bar for a full
+  3 seconds. Releasing early resets to zero — no partial credit, and a tap does nothing at all.
+  Silencing stops the <em>audio</em>, for two minutes. The visual alarm never silences.</p>
+  <p><strong style="color:#D6D2CB">Resting:</strong> at <code>clear</code>, untouched for 45 s,
+  every region but the tier line goes dark — about 1.5 % of the field lit. Touching anywhere wakes
+  it for 20 s. Escalation wakes it immediately and nothing dims while an alarm is active. Use the
+  <em>resting</em> button to see it without waiting.</p>
+</div>
+
+<script>
+"use strict";
+
+const HOLD_MS = 3000;
+const REST_AFTER_MS = 45000;   // untouched at clear before the panel goes to rest
+const WAKE_MS = 20000;         // how long a touch keeps it awake
+
+const CY = "var(--spo2)", GR = "var(--hr)", WH = "var(--nibp)",
+      AM = "var(--watch)", RD = "var(--klaxon)", SL = "var(--unknown)";
+
+/* ── sparkline ──────────────────────────────────────────────────────────────
+   A gap is drawn, never bridged. The line stops at the last real sample, is
+   capped with a HOLLOW dot (fill #000, so it reads as an open end rather than
+   a data point), and the rest of the span is a dotted neutral rule ending in a
+   "?". A continuous line across missing data would be a claim the system
+   cannot make, so there is no code path that draws one. */
+function spark(vals, color, w) {
+  const h = 26, nums = vals.filter(v => v != null);
+  if (!nums.length) return "";
+  const min = Math.min(...nums) - 1.5, max = Math.max(...nums) + 1.5;
+  const step = w / (vals.length - 1);
+  const y = v => (h - ((v - min) / (max - min || 1)) * h).toFixed(1);
+
+  /* Drawn as SEGMENTS, one per unbroken run of samples.
+     The imported version scanned for the first null and treated everything
+     after it as one trailing gap. That is right for a mock which stops once,
+     and wrong the moment the data is real: this buffer rolls, so a single
+     dropout sixty seconds ago made the entire trace render as a gap until it
+     shifted out. A break in the line is the gap; nothing bridges one. */
+  let out = "", run = [];
+  const flush = () => {
+    if (run.length > 1) out += `<polyline points="${run.join(" ")}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round"/>`;
+    else if (run.length === 1) { const [x, yy] = run[0].split(","); out += `<circle cx="${x}" cy="${yy}" r="1.6" fill="${color}"/>`; }
+    run = [];
+  };
+  let lastReal = null;
+  vals.forEach((v, i) => {
+    if (v == null) { flush(); return; }
+    const pt = `${(i * step).toFixed(1)},${y(v)}`;
+    run.push(pt);
+    lastReal = [i * step, Number(y(v))];
+  });
+  flush();
+
+  /* A gap at the RIGHT-HAND END is the one that means "right now", so it keeps
+     the full treatment: the line stops, a hollow dot caps the last real sample,
+     and a dotted neutral rule runs out to a "?". */
+  const tailMissing = vals.length && vals[vals.length - 1] == null;
+  if (tailMissing && lastReal) {
+    out += `<line x1="${lastReal[0].toFixed(1)}" y1="${lastReal[1]}" x2="${w}" y2="${lastReal[1]}" stroke="var(--unknown)" stroke-width="2" stroke-dasharray="2 7"/>`
+         + `<circle cx="${lastReal[0].toFixed(1)}" cy="${lastReal[1]}" r="3.5" fill="#000" stroke="var(--unknown)" stroke-width="2"/>`
+         + `<text x="${w - 2}" y="${lastReal[1] - 7}" text-anchor="end" fill="var(--unknown)" font-size="15" font-weight="700" font-family="Helvetica,Arial,sans-serif">?</text>`;
+  }
+  return `<svg width="${w}" height="${h + 10}" viewBox="0 0 ${w} ${h + 10}" role="img" aria-hidden="true">${out}</svg>`;
+}
+
+/* ── states ─────────────────────────────────────────────────────────────── */
+const SENSORS_OK = [
+  { name: "POLAR H10", age: "2 s", ok: true },
+  { name: "EMAY SpO₂", age: "4 s", ok: true },
+  { name: "A&D BP CUFF", age: "37 m", ok: true },
+  { name: "HEALTHKIT", age: "1 m", ok: true },
+];
+const SYS_OK = [
+  { name: "SELF-TEST", val: "02:00 PASS", ok: true },
+  { name: "BACKUP", val: "21 m", ok: true },
+  { name: "RESTORE OK", val: "3 d", ok: true },
+  { name: "DISK", val: "62 %", ok: true },
+];
+const base = {
+  clock: "03:14:22", chanLabel: "ALARMS ARMED", chanFg: "var(--label)",
+  sensors: SENSORS_OK, sys: SYS_OK, detail: true,
+  silence: { active: false, text: "NO ACTIVE ALARM", sub: "ALARM AUDIO ARMED · SELF-TEST 02:00 PASS", color: "var(--rule)" },
+};
+const spo2 = p => ({ name: "SpO₂", unit: "%", color: CY, limits: "↑100\n↓94", ...p });
+const hr   = p => ({ name: "HR", unit: "bpm", color: GR, limits: "↑110\n↓45", ...p });
+const nibp = p => ({ name: "NIBP", unit: "mmHg", color: WH, small: true, limits: "↑150/95", ...p });
+
+const STATES = {};
+
+STATES.clear = { ...base,
+  caption: "clear", note: "Measured, in range. Two colours lit, nothing moving. ~4 % of the field emitting.",
+  tier: "CLEAR", glyph: "●", accent: GR, prio: "NO ALARM", prioFg: SL, since: "stable 4 h 06 m",
+  params: [
+    spo2({ val: "97", note: "steady\n30 m", trend: [97,96,97,98,97,98,97,96,97,97] }),
+    hr({ val: "58", note: "steady\n30 m", trend: [60,59,58,59,57,58,58,59,58,58] }),
+    nibp({ val: "118/76", note: "MAP 90\n37 m ago" }),
+  ],
+};
+
+STATES.cant = { ...base,
+  caption: "can’t assess", note: "Not measured. The tier degrades — it does not hold at clear, and it does not alarm. Absence is a question, not an emergency.",
+  tier: "CAN’T ASSESS", glyph: "?", accent: SL, indeterminate: true,
+  prio: "TECHNICAL ALARM", prioFg: "var(--unknown-hi)", since: "since 03:08:41",
+  chanLabel: "TECHNICAL · SENSOR LOST", chanFg: "var(--unknown-hi)",
+  params: [
+    spo2({ val: "- -", stale: true, note: "NO DATA\n6 m", trend: [96,95,96,95,96,null,null,null,null,null] }),
+    hr({ val: "61", note: "steady\n30 m", trend: [59,60,61,60,62,61,60,61,61,61] }),
+    nibp({ val: "118/76", stale: true, note: "MAP 90\n4 h 12 m" }),
+  ],
+  sensors: [
+    { name: "POLAR H10", age: "2 s", ok: true },
+    { name: "EMAY SpO₂", age: "no data 6 m", ok: false },
+    { name: "A&D BP CUFF", age: "4 h 12 m", ok: false },
+    { name: "HEALTHKIT", age: "stale 22 m", ok: false },
+  ],
+  sys: [
+    { name: "SELF-TEST", val: "02:00 PASS", ok: true },
+    { name: "BACKUP", val: "21 m", ok: true },
+    { name: "RESTORE OK", val: "17 d ?", ok: false },
+    { name: "DISK", val: "62 %", ok: true },
+  ],
+  silence: { active: false, text: "NOT SILENCEABLE", sub: "NO ALARM TO SILENCE · FIX THE SENSOR", color: SL, glyph: "?" },
+};
+
+STATES.watch = { ...base,
+  caption: "watch", note: "Measured, drifting below limit. Medium priority: amber outline, no motion, no sound.",
+  tier: "WATCH", glyph: "▲", accent: AM, bandBg: "rgba(224,162,39,0.06)",
+  prio: "MEDIUM PRIORITY", prioFg: AM, since: "since 03:11:50", chanLabel: "PHYSIOLOGICAL", chanFg: AM,
+  params: [
+    spo2({ val: "91", note: "↓6\n8 m", trend: [95,94,94,93,93,92,92,91,91,91] }),
+    hr({ val: "64", note: "↑5\n8 m", trend: [59,60,60,61,62,62,63,64,64,64] }),
+    nibp({ val: "118/76", note: "MAP 90\n41 m ago" }),
+  ],
+};
+
+STATES.confirm = { ...base,
+  caption: "confirm", note: "High priority. Filled glyph, larger lit area, silence bar armed. The glyph breathes at 0.5 Hz; nothing else moves.",
+  tier: "CONFIRM", glyph: "▲▲", accent: AM, solid: true, bandBg: "rgba(224,162,39,0.14)",
+  prio: "HIGH PRIORITY — CONFIRM", prioFg: AM, since: "since 03:13:04", chanLabel: "PHYSIOLOGICAL", chanFg: AM,
+  params: [
+    spo2({ val: "88", note: "↓9\n11 m", trend: [93,92,91,90,89,89,88,88,88,88] }),
+    hr({ val: "102", note: "↑44\n11 m", trend: [66,72,78,84,89,93,97,100,102,102] }),
+    nibp({ val: "118/76", note: "MAP 90\n43 m · RE-TAKE" }),
+  ],
+  silence: { active: true, text: "HOLD 3 s TO SILENCE", sub: "AUDIO 2 MIN · ALARM CONTINUES", glyph: "⏻", color: AM, fill: "#3A2E12" },
+};
+
+STATES.klaxon = { ...base,
+  caption: "klaxon", note: "High priority, band and tier word flashing at 1 Hz. The only red on the entire system.",
+  tier: "KLAXON", glyph: "■", accent: RD, solid: true, flash: true, bandBg: "rgba(226,69,60,0.18)",
+  prio: "HIGH PRIORITY ALARM", prioFg: RD, since: "since 03:14:02", chanLabel: "PHYSIOLOGICAL · AUDIO ON", chanFg: RD,
+  params: [
+    spo2({ val: "82", note: "↓15\n13 m", trend: [90,88,87,86,85,84,83,82,82,82] }),
+    hr({ val: "121", note: "↑63\n13 m", trend: [70,80,90,98,105,111,116,119,121,121] }),
+    nibp({ val: "118/76", note: "MAP 90\n44 m · RE-TAKE" }),
+  ],
+  silence: { active: true, text: "HOLD 3 s TO SILENCE", sub: "AUDIO 2 MIN · ALARM CONTINUES", glyph: "⏻", color: RD, fill: "#3A1512", textColor: RD },
+};
+
+/* Resting is not "the panel dimmed". It is a different, smaller panel: the tier
+   line only, at the one token low enough to sleep beside and still large enough
+   that 3.17:1 clears large-text AA at 44px. Contrast is never what gets traded. */
+STATES.resting = {
+  caption: "resting", note: "Untouched for 45 s at clear. ~1.5 % of the field lit, 3.17:1 at 44 px — AA for large text, and invisible from across the room.",
+  detail: false, clock: "", chanLabel: "", tier: "CLEAR", glyph: "●", accent: "var(--rest)",
+  prio: "", since: "", sensors: [], sys: [], params: [],
+  restWord: true,
+  silence: { active: false, text: "", sub: "TOUCH ANYWHERE TO WAKE", color: "#2A2E33", subColor: "var(--label)" },
+};
+
+const ORDER = [
+  ["clear", "clear"], ["cant", "can’t assess"], ["watch", "watch"],
+  ["confirm", "confirm"], ["klaxon", "klaxon"], ["resting", "resting"],
+];
+
+/* ══ live mode ═════════════════════════════════════════════════════════════
+   ?live        — poll ./status.json
+   ?live=<url>  — poll somewhere else
+
+   Reads the file emay-spike writes with EMAY_STATUS_JSON. This is a STOPGAP:
+   it shows a real SpO2 and pulse before vitalsd's storage and query path lands
+   (T-C1..T-C3), and it is wired directly to the sensor process, bypassing the
+   architecture entirely.
+
+   ── THE TIER, WHICH IS THE WHOLE PROBLEM ────────────────────────────────────
+
+   Nothing evaluates these numbers. There is no detection engine in this path,
+   no tier machine, and no alarm. Rendering a real SpO2 of 97 under a green
+   CLEAR badge would therefore be the panel asserting something the system has
+   not established -- the exact failure this design exists to prevent, and worse
+   here than anywhere else, because the number beside it is genuinely true and
+   lends the badge its credibility.
+
+   So live mode can only ever produce two tiers:
+
+     NOT ARMED  data is arriving, nothing is judging it. Slate, because
+                     slate is the hue-free "neither safe nor alarming" token --
+                     but with a SOLID border, because the data is present. The
+                     dashed language means "not measured" and must not be
+                     borrowed for "not assessed"; they are different claims.
+
+     CAN'T ASSESS    data is stale or absent. This is the design's own state,
+                     used unchanged, because that is exactly what it is for.
+
+   CLEAR, WATCH, CONFIRM and KLAXON are unreachable here by construction, and
+   the assertion at the bottom of this file fails the page if that ever stops
+   being true. */
+const LIVE = {
+  /* The device sends about one frame a second. Ten seconds of nothing is not a
+     slow sample, it is an absent one. */
+  STALE_AFTER_S: 10,
+  /* The writer refreshes on every keepalive (~1.2 s) even when the device is
+     silent, so a file that has not changed in 15 s means the PROCESS is gone —
+     which is a different fault, with a different fix, and says so. */
+  DEAD_AFTER_S: 15,
+  TREND_LEN: 60,
+};
+
+const live = { url: null, demo: false, snap: null, err: null, fetchedAt: 0, spo2: [], hr: [], hist: [] };
+/* How much of the night the accreting views remember. 2000 samples is a bit
+   over half an hour at 1 Hz — enough to see shape, small enough to redraw at
+   1 Hz on a Pi without the panel becoming the thing that heats the room. */
+const HIST_MAX = 2000;
+
+async function poll() {
+  try {
+    // cache:"no-store" matters: without it a poll every second happily reads a
+    // cached body forever and the panel shows a frozen number that looks live.
+    const r = await fetch(live.url, { cache: "no-store" });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const j = await r.json();
+    if (j.schema !== 1) throw new Error("unknown schema " + j.schema);
+    live.snap = j;
+    live.err = null;
+  } catch (e) {
+    // A failed fetch is not a reason to keep showing the last good reading.
+    // The snapshot is retained only so the age check below can age it out.
+    live.err = e.message || String(e);
+  }
+  live.fetchedAt = Date.now() / 1000;
+  live.state = liveState();
+  render();
+}
+
+/* Push one sample per poll, so the sparkline's x-axis is wall-clock and a gap
+   in the trace is a real gap in time. A null when nothing was measured — the
+   renderer draws that as the hollow-capped dotted gap, on real data. */
+function pushTrend(spo2, pulse) {
+  live.spo2.push(spo2 ?? null);
+  live.hr.push(pulse ?? null);
+  while (live.spo2.length > LIVE.TREND_LEN) live.spo2.shift();
+  while (live.hr.length > LIVE.TREND_LEN) live.hr.shift();
+  live.hist.push({ s: spo2 ?? null, h: pulse ?? null });
+  while (live.hist.length > HIST_MAX) live.hist.shift();
+}
+
+
+/* ── demo fill ──────────────────────────────────────────────────────────────
+   ?live&demo populates the regions this stopgap has no real source for —
+   blood pressure, the other three sensors, and the system-health row — with
+   plausible values that move, so the whole panel can be judged as a design
+   rather than as three-quarters of one.
+
+   Everything here is invented. The top strip says so on every frame, because
+   the one thing that must never happen is a fabricated "SELF-TEST PASS"
+   sitting beside a real SpO2 and borrowing its credibility. SpO2 and HR are
+   never simulated: if the ring is not reporting, they go to "- -" and the tier
+   goes to CAN'T ASSESS exactly as it does without this flag. */
+function demoFill(now) {
+  const t = Math.floor(now);
+  // Cheap deterministic wobble — no Math.random, so two panels side by side
+  // agree and a screenshot is reproducible.
+  const wob = (period, amp, phase = 0) => Math.sin((t / period) + phase) * amp;
+  const bpAge = t % 2700;                       // a cuff reading every 45 min
+  const sys = Math.round(118 + wob(900, 6));
+  const dia = Math.round(76 + wob(1100, 4, 1));
+  const hhmmss = (secs) => {
+    const h = Math.floor(secs / 3600), m = Math.floor((secs % 3600) / 60);
+    return h ? `${h} h ${String(m).padStart(2, "0")} m` : `${m} m`;
+  };
+  return {
+    nibp: {
+      name: "NIBP", unit: "mmHg", color: "var(--nibp)", small: true, limits: "↑150/95",
+      val: `${sys}/${dia}`, stale: bpAge > 2400,
+      note: `MAP ${Math.round(dia + (sys - dia) / 3)}\n${hhmmss(bpAge)} ago`,
+    },
+    sensors: [
+      { name: "POLAR H10", link: "BLE", ok: true, age: `${(t % 3) + 1}.${t % 10} s` },
+      { name: "A&D BP CUFF", link: "BT", ok: true, age: hhmmss(bpAge) },
+      { name: "HEALTHKIT", link: "sync", ok: true, age: `${(t % 5) + 1} m` },
+    ],
+    sys: [
+      { name: "SELF-TEST", val: "02:00 PASS", ok: true },
+      { name: "BACKUP", val: `${(t / 60) % 55 | 0} m`, ok: true },
+      { name: "RESTORE OK", val: "3 d", ok: true },
+      { name: "DISK", val: `${62 + (wob(3600, 2) | 0)} %`, ok: true },
+    ],
+  };
+}
+
+function liveState() {
+  const now = Date.now() / 1000;
+  const s = live.snap;
+  const fileAge = s ? now - s.written_at : Infinity;
+  const sampleAge = s && s.sample_at != null ? now - s.sample_at : Infinity;
+
+  // Three distinct faults, three distinct sentences. "It is not working" is
+  // not an adequate thing to read at 3 a.m. when the fix differs each time.
+  let fault = null;
+  if (live.err) fault = `cannot read ${live.url} — ${live.err}`;
+  else if (!s) fault = `no reading yet from ${live.url}`;
+  else if (fileAge > LIVE.DEAD_AFTER_S) fault = `emay-spike stopped writing ${Math.round(fileAge)} s ago — the capture process is gone`;
+  else if (s.link === "lost") fault = "emay-spike is running but the ring stopped reporting";
+  else if (sampleAge > LIVE.STALE_AFTER_S) fault = `no sample for ${Math.round(sampleAge)} s`;
+  else if (!s.finger) fault = "ring reports no finger";
+
+  const measured = !fault;
+  pushTrend(measured ? s.spo2 : null, measured ? s.pulse_bpm : null);
+
+  const clock = new Date().toTimeString().slice(0, 8);
+  // Short by necessity, not by taste: see the note-width comment below.
+  const stamp = s && s.sample_at != null ? `${Math.round(sampleAge)} s` : "no sample";
+
+  const d = live.demo ? demoFill(now) : null;
+  const emay = { name: "EMAY SpO₂", link: "BLE", ok: measured,
+    age: measured ? `${sampleAge.toFixed(1)} s` : (s ? `${Math.round(Math.min(sampleAge, 99999))} s` : "—") };
+
+  const common = {
+    clock, detail: true,
+    sensors: d ? [emay, ...d.sensors] : [
+      emay,
+      // Not "unknown" — genuinely not part of this test. The design's
+      // EMPTY·NEVER PAIRED state, which reads as "not monitored", not "broken".
+      { name: "POLAR H10", link: "—", ok: null, age: "not in test" },
+      { name: "A&D BP CUFF", link: "—", ok: null, age: "not in test" },
+      { name: "HEALTHKIT", link: "—", ok: null, age: "not in test" },
+    ],
+    // Without ?demo: no self-test ran, no backup ran, no restore was verified,
+    // and printing "PASS 02:00" because the mock did would be a fabricated
+    // record of a safety check that never happened.
+    sys: d ? d.sys : [
+      { name: "SELF-TEST", val: "none", ok: null },
+      { name: "BACKUP", val: "none", ok: null },
+      { name: "RESTORE OK", val: "none", ok: null },
+      { name: "DISK", val: "—", ok: null },
+    ],
+    silence: {
+      active: false, glyph: "—", color: "var(--unknown)",
+      text: "NO ALARM ARMED",
+      sub: "DISPLAY ONLY · THIS PANEL CANNOT WAKE YOU",
+    },
+  };
+
+  const params = (spo2, pulse, stale) => [
+    { name: "SpO₂", unit: "%", color: "var(--spo2)", limits: "↑100\n↓94",
+      val: spo2 == null ? "- -" : String(spo2), stale, trend: live.spo2,
+      note: stale ? "NO DATA\n" + stamp : "live\n" + stamp },
+    { name: "HR", unit: "bpm", color: "var(--hr)", limits: "↑110\n↓45",
+      val: pulse == null ? "- -" : String(pulse), stale, trend: live.hr,
+      note: stale ? "NO DATA\n" + stamp : "live\n" + stamp },
+    // There is no cuff in this test, so there is no reading — not a stale one.
+    d ? d.nibp : { name: "NIBP", unit: "mmHg", color: "var(--nibp)", small: true, limits: "↑150/95",
+      val: "- -", stale: true, note: "NO CUFF\nnot in test" },
+  ];
+
+  if (!measured) {
+    return { ...common,
+      tier: "CAN’T ASSESS", glyph: "?", accent: "var(--unknown)", indeterminate: true,
+      prio: "NOT MEASURED", prioFg: "var(--unknown-hi)", since: stamp,
+      chanLabel: live.demo ? "DEMO · SpO₂/HR REAL · REST SIMULATED" : "DISPLAY ONLY · NO ALARM", chanFg: "var(--unknown-hi)",
+      params: params(null, null, true),
+      caption: "live · can’t assess", note: fault,
+    };
+  }
+  return { ...common,
+    // Solid border, slate hue: the data is present, the judgement is not.
+    tier: "NOT ARMED", glyph: "○", accent: "var(--unknown)",
+    prio: "NO ALARM ARMED", prioFg: "var(--unknown-hi)", since: "display only",
+    chanLabel: live.demo ? "DEMO · SpO₂/HR REAL · REST SIMULATED" : "DISPLAY ONLY · NO ALARM", chanFg: "var(--unknown-hi)",
+    params: params(s.spo2, s.pulse_bpm, false),
+    caption: "live", note: `SpO₂ ${s.spo2} · ${s.pulse_bpm} bpm · ${s.frames} frames — nothing is evaluating these numbers`,
+  };
+}
+
+/* ── hold-to-silence ───────────────────────────────────────────────────────
+   The requirement is stated the instant contact begins, the countdown IS the
+   label, and releasing early goes to zero rather than keeping partial credit.
+   A progress bar that kept 40% would invite a half-press at 3 a.m.; this one
+   cannot be satisfied by accident, which is the only property that matters for
+   silencing a medical alarm. */
+const hold = { p: 0, phase: "idle", raf: 0, tid: 0, t0: 0 };
+
+function silenceFor(st) {
+  if (!st.silence || !st.silence.active) return st.silence;
+  if (hold.phase === "done")
+    return { active: true, p: 1, text: "AUDIO SILENCED 2:00", sub: "ALARM STILL ACTIVE · RE-SOUNDS 03:16:11",
+             glyph: "✓", color: AM, fill: "#3A2E12", textColor: AM, big: true };
+  if (hold.phase === "released")
+    return { active: true, p: 0, text: "RELEASED — RESET TO 0", sub: "NO PARTIAL CREDIT · HOLD THE FULL 3 s",
+             glyph: "↺", color: SL, textColor: "var(--unknown-hi)" };
+  if (hold.phase === "holding")
+    return { active: true, p: hold.p, text: "KEEP HOLDING — " + (3 - hold.p * 3).toFixed(1) + " s",
+             sub: "RELEASE NOW AND THIS RESETS TO ZERO", glyph: "⏻", color: RD, fill: "#3A1512", textColor: WH };
+  return st.silence;
+}
+
+function down() {
+  const st = STATES[S.state];
+  if (!st.silence || !st.silence.active || hold.phase === "done") return;
+  hold.t0 = performance.now();
+  hold.phase = "holding"; hold.p = 0;
+  clearTimeout(hold.tid);
+  const step = () => {
+    hold.p = Math.min(1, (performance.now() - hold.t0) / HOLD_MS);
+    if (hold.p >= 1) { hold.phase = "done"; render(); return; }
+    render();
+    hold.raf = requestAnimationFrame(step);
+  };
+  hold.raf = requestAnimationFrame(step);
+  render();
+}
+function up() {
+  cancelAnimationFrame(hold.raf);
+  if (hold.phase !== "holding") return;
+  hold.p = 0; hold.phase = "released";
+  render();
+  hold.tid = setTimeout(() => { hold.phase = "idle"; render(); }, 1600);
+}
+
+/* ── resting / wake ────────────────────────────────────────────────────────
+   Only `clear` ever rests. Anything else is either an alarm or an unanswered
+   question, and both must stay lit. */
+const S = { state: "clear", restTimer: 0, live: false, panel: 0, indicatorUntil: 0, indicatorTimer: 0, mounted: null };
+function armRest() {
+  clearTimeout(S.restTimer);
+  if (S.state !== "clear") return;
+  S.restTimer = setTimeout(() => { S.state = "resting"; render(); }, REST_AFTER_MS);
+}
+function wake() {
+  if (S.state !== "resting") return;
+  S.state = "clear";
+  render();
+  clearTimeout(S.restTimer);
+  S.restTimer = setTimeout(() => { S.state = "resting"; render(); }, WAKE_MS);
+}
+
+/* ── render ────────────────────────────────────────────────────────────── */
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c]));
+
+function paramBox(p) {
+  const c = p.stale ? SL : p.color;
+  return `<div class="pbox${p.stale ? " stale" : ""}">
+    <div style="display:flex;align-items:baseline;justify-content:space-between">
+      <span style="font-size:16px;font-weight:700;letter-spacing:1.4px;color:${c}">${esc(p.name)}</span>
+      <span class="lim" style="font-size:14px;color:var(--unknown);text-align:right;line-height:1.25;white-space:pre-line">${esc(p.limits)}</span>
+    </div>
+    <div style="display:flex;align-items:flex-end;gap:7px;margin-top:2px">
+      <span class="val${p.small ? " sm" : ""}${p.stale ? " stale" : ""}" style="color:${c}">${esc(p.val)}</span>
+      <span style="font-size:16px;letter-spacing:.8px;color:var(--unknown);padding-bottom:8px;white-space:nowrap">${esc(p.unit)}</span>
+    </div>
+    <div style="display:flex;align-items:flex-end;justify-content:space-between;margin-top:auto">
+      <!-- 132px, not the design's 172. The columns are 1.12fr / 1fr / 1.12fr,
+           so the HR box has ~207px of content width and a 172px spark plus the
+           "steady / 30 m" note ran to ~237px — the trend line was drawn under
+           the text. One width for every column, sized to the narrowest, so the
+           three boxes stay visually identical. -->
+      <span style="display:block">${p.trend ? spark(p.trend, c, 132) : ""}</span>
+      <span class="note" style="font-size:14px;color:${p.stale ? "var(--unknown-hi)" : "var(--unknown)"};text-align:right;white-space:pre-line;line-height:1.3;padding-bottom:2px">${esc(p.note)}</span>
+    </div>
+  </div>`;
+}
+
+
+/* ══ Direction B — "Penumbra" ══════════════════════════════════════════════
+   A second complete panel over the SAME live data, not a restyling of the
+   first. Where Clinical boxes every value and labels every region, Penumbra
+   states two numbers, draws one coverage bar, and leaves the rest of the field
+   unlit. A stale value collapses to "?" rather than "- -": there is no box for
+   it to sit in, so absence is shown by the character itself.
+
+   It lights far less of the 800x480 than Clinical does, which is the reason to
+   carry both — the panel's stated position is dim by lit area, and this is the
+   dimmer end of that. */
+const PEN = { bone:"#D6D2CB", sage:"#8E9A86", slate:"#8B97A3", hi:"#B9C0C7", mute:"#7F7A72", rest:"#585F52" };
+
+/* Segments for the coverage bar, built from the rolling buffer: unbroken runs
+   of samples are solid, and every null run becomes a dashed break with a "?"
+   over it. Same claim the sparkline makes, at a glance and without axes. */
+function penBar(vals, accent) {
+  if (!vals.length) return `<div class="pen-seg" style="flex-grow:1;height:3px;border-top:3px dashed ${PEN.slate}"></div>`;
+  const runs = [];
+  for (const v of vals) {
+    const gap = v == null;
+    if (runs.length && runs[runs.length - 1].gap === gap) runs[runs.length - 1].w++;
+    else runs.push({ gap, w: 1 });
+  }
+  return runs.map(r => r.gap
+    ? `<div class="pen-seg" style="flex-grow:${r.w};height:3px;border-top:3px dashed ${PEN.slate}">
+         <span style="position:absolute;left:50%;top:-30px;transform:translateX(-50%);font-size:22px;font-weight:700;color:${PEN.hi}">?</span></div>`
+    : `<div class="pen-seg" style="flex-grow:${r.w};height:3px;background:${accent}"></div>`).join("");
+}
+
+function renderPenumbra(st) {
+  const acc = st.accent === "var(--unknown)" ? PEN.slate : (st.accent || PEN.rest);
+  const p = st.params || [];
+  const bigs = [p[0], p[1]].filter(Boolean);
+  const bp = p[2] || {};
+  const sil = st.silence || {};
+  const vals = S.live && live.spo2.length ? live.spo2 : (p[0] && p[0].trend) || [];
+
+  const big = (x) => {
+    const c = x.stale ? PEN.slate : PEN.bone;
+    return `<div style="display:flex;flex-direction:column;gap:2px">
+      <span style="font-size:15px;letter-spacing:2.6px;color:${x.stale ? PEN.slate : PEN.sage}">${esc(x.name)}</span>
+      <div style="display:flex;align-items:flex-end;gap:8px">
+        <span class="pen-val" style="color:${c};border-bottom:2px ${x.stale ? "dashed " + PEN.slate : "solid transparent"}">${x.stale ? "?" : esc(x.val)}</span>
+        <span style="font-size:16px;color:${x.stale ? PEN.slate : PEN.mute};padding-bottom:12px">${esc(x.unit)}</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;height:28px">
+        ${spark(x.trend || [], x.stale ? PEN.slate : PEN.sage, 150)}
+        <span class="note" style="font-size:14px;color:${x.stale ? PEN.hi : PEN.mute};white-space:pre-line">${esc(String(x.note).split("\n").join(" · "))}</span>
+      </div>
+    </div>`;
+  };
+
+  return `<div class="pen">
+    <div style="display:flex;align-items:flex-start;gap:22px">
+      <div style="width:20px;height:20px;flex:0 0 auto;margin-top:14px;border:3px ${st.indeterminate ? "dashed" : "solid"} ${acc};background:${st.solid ? acc : "transparent"}"></div>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <span class="pen-tier${st.flash ? " flash" : ""}" style="color:${acc};font-size:${String(st.tier).length > 10 ? 44 : 62}px">${esc(st.tier)}</span>
+        <span style="font-size:15px;letter-spacing:1.6px;color:${PEN.mute}">${esc(st.prio || "")}</span>
+      </div>
+      <div style="margin-left:auto;display:flex;flex-direction:column;align-items:flex-end;gap:5px;padding-top:6px">
+        <span class="lim" style="font-size:17px;color:${PEN.mute}">${esc(st.clock)}</span>
+        <span style="font-size:14px;letter-spacing:1.4px;color:${PEN.mute}">${esc(st.chanLabel || "")}</span>
+      </div>
+    </div>
+
+    <div style="display:flex;align-items:flex-end;gap:40px;margin-top:auto">
+      ${bigs.map(big).join("")}
+      <div style="display:flex;flex-direction:column;gap:4px;margin-left:auto;align-items:flex-end;padding-bottom:6px">
+        <span style="font-size:15px;letter-spacing:2.6px;color:${bp.stale ? PEN.slate : PEN.mute}">${esc(bp.name || "")}</span>
+        <span class="lim" style="font-size:28px;color:${bp.stale ? PEN.slate : PEN.bone};line-height:1.1;${bp.stale ? `border-bottom:2px dashed ${PEN.slate}` : ""}">${esc(bp.stale ? "?" : (bp.val || ""))}</span>
+        <span class="lim" style="font-size:14px;color:${bp.stale ? PEN.hi : PEN.mute}">${esc(String(bp.note || "").split("\n").pop())}</span>
+      </div>
+    </div>
+
+    <div style="margin:18px 0 14px;display:flex;flex-direction:column;gap:10px">
+      <div class="pen-bar">${penBar(vals, acc)}</div>
+      <span style="font-size:14px;letter-spacing:1.8px;color:${PEN.mute}">COVERAGE · LAST ${vals.length} SAMPLES</span>
+    </div>
+
+    <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:24px">
+      <div style="display:flex;gap:26px">
+        ${(st.sensors || []).map(d => `
+          <div style="display:flex;flex-direction:column;gap:7px;min-height:44px;justify-content:flex-end">
+            <div style="width:3px;height:22px;${d.ok ? `background:${PEN.sage}` : `border-left:3px dashed ${PEN.slate}`}"></div>
+            <span style="font-size:14px;letter-spacing:1.2px;color:${d.ok ? PEN.mute : PEN.hi};white-space:nowrap">${esc(d.name)}</span>
+            <span class="lim" style="font-size:14px;color:${d.ok ? PEN.mute : PEN.hi};white-space:nowrap">${esc(d.age)}</span>
+          </div>`).join("")}
+      </div>
+      <span class="lim" style="font-size:14px;color:${PEN.mute};text-align:right;line-height:1.5;white-space:pre">${(st.sys || []).map(y => `${y.name} ${y.val}`).join("\n")}</span>
+    </div>
+
+    <div style="position:relative;height:56px;margin-top:12px;border-top:2px ${sil.active ? "solid" : "dashed"} ${sil.color || PEN.rest};display:flex;align-items:center;gap:16px">
+      <span style="font-size:24px;letter-spacing:1.4px;color:${sil.textColor || sil.color || PEN.rest};white-space:nowrap">${esc(sil.text || "")}</span>
+      <span class="lim" style="margin-left:auto;font-size:14px;color:${PEN.mute};white-space:nowrap">${esc(sil.sub || "")}</span>
+    </div>
+  </div>`;
+}
+
+
+/* ══ Direction C — "Semaphore" ═════════════════════════════════════════════
+   A grayscale instrument with no colour code at all. The tier is carried by an
+   abstract FORM on the left — one mass, two bars, three bars, a full field, or
+   a hollow outline — and the right side is nothing but type: one family, two
+   weights, no boxes, no rules, no chrome.
+
+   Its position on the brightness problem is the sharpest of the three: make
+   display brightness a hardware dial rather than a design variable. Nothing
+   depends on hue, and the state ladder is also a luminance ladder (3.17 : 1 at
+   the calm end, 13.94 at confirm), so the panel keeps its full meaning at 25%
+   backlight where a colour-coded design collapses.
+
+   Shape is read faster than a word and survives what a word does not: blur,
+   defocus, a wrong pair of glasses, grayscale, a photograph, every dichromacy.
+
+   ── ONE ADDITION TO THE LADDER ──────────────────────────────────────────────
+   The designed ladder covers physiological tiers. "NOT ARMED" is not one:
+   the data is real, it is the judgement that is absent, and neither the solid
+   mass (which reads as fine) nor the dashed hollow (which means not measured)
+   is honest for it. So it gets the third distinguishable form — hollow with a
+   SOLID outline. Filled = assessed and calm; solid-hollow = present but not
+   judged; dashed-hollow = not measured at all. Three states, three silhouettes,
+   still no hue. */
+const SEM = { calm:"#585F52", watch:"#9A948C", confirm:"#D6D2CB", quiet:"#7F7A72",
+              slate:"#8B97A3", hi:"#B9C0C7", klaxon:"#E2453C", hair:"#262A25" };
+
+function semGlyph(st) {
+  const box = "width:176px;display:flex;flex-direction:column;gap:18px;align-items:flex-start";
+  if (st.indeterminate) {
+    return `<div style="${box}"><div style="width:150px;height:150px;border:5px dashed ${SEM.slate};display:flex;align-items:center;justify-content:center;font-size:86px;font-weight:700;color:${SEM.slate};line-height:1">?</div></div>`;
+  }
+  if (st.tier === "NOT ARMED") {
+    // Present but not judged: hollow, but solidly outlined. See the note above.
+    return `<div style="${box}"><div style="width:150px;height:150px;border:5px solid ${SEM.calm}"></div></div>`;
+  }
+  const solid = (w, h, c, flash) =>
+    `<div class="${flash ? "flash" : ""}" style="width:${w}px;height:${h}px;background:${c};flex:0 0 auto"></div>`;
+  switch (st.tier) {
+    case "WATCH":   return `<div style="${box}">${solid(176,62,SEM.watch)}${solid(176,62,SEM.watch)}</div>`;
+    case "CONFIRM": return `<div style="${box}">${solid(176,40,SEM.confirm)}${solid(176,40,SEM.confirm)}${solid(176,40,SEM.confirm)}</div>`;
+    case "KLAXON":  return `<div style="${box}">${solid(176,176,SEM.klaxon,true)}</div>`;
+    default:        return `<div style="${box}">${solid(150,150,SEM.calm)}</div>`;
+  }
+}
+
+function renderSemaphore(st) {
+  const p = st.params || [];
+  const bp = p[2] || {};
+  const sil = st.silence || {};
+  const tierColor = st.indeterminate ? SEM.slate
+    : st.tier === "KLAXON" ? SEM.klaxon
+    : st.tier === "CONFIRM" ? SEM.confirm
+    : st.tier === "WATCH" ? SEM.watch : SEM.calm;
+
+  const fig = (x) => {
+    if (!x) return "";
+    const stale = x.stale;
+    return `<div style="display:flex;flex-direction:column;gap:2px">
+      <span style="font-size:15px;letter-spacing:3px;color:${stale ? SEM.hi : SEM.quiet}">${esc(x.name)}</span>
+      <div style="display:flex;align-items:flex-end;gap:8px">
+        <span class="lim" style="font-size:90px;font-weight:700;letter-spacing:-3px;line-height:.88;color:${stale ? SEM.slate : SEM.confirm};${stale ? `border-bottom:3px dashed ${SEM.slate}` : ""}">${stale ? "?" : esc(x.val)}</span>
+        <span style="font-size:15px;color:${stale ? SEM.hi : SEM.quiet};padding-bottom:9px">${esc(stale ? String(x.note).split("\n")[0] : x.unit)}</span>
+      </div>
+    </div>`;
+  };
+
+  return `<div style="width:800px;height:480px;box-sizing:border-box;background:#000;padding:30px 38px 22px;display:flex;flex-direction:column;font-family:var(--sans);overflow:hidden">
+    <div style="display:flex;gap:44px;flex:1 1 auto;min-height:0">
+      ${semGlyph(st)}
+      <div style="flex:1 1 auto;display:flex;flex-direction:column;min-width:0">
+        <div style="display:flex;align-items:baseline;gap:16px">
+          <span style="font-size:${String(st.tier).length > 12 ? 40 : 58}px;font-weight:700;letter-spacing:-1px;line-height:1;color:${tierColor}">${esc(st.tier)}</span>
+          <span class="lim" style="margin-left:auto;font-size:15px;color:${SEM.quiet}">${esc(st.clock)}</span>
+        </div>
+        <span style="font-size:15px;letter-spacing:1.6px;color:${st.indeterminate ? SEM.hi : SEM.quiet};margin-top:8px">${esc(st.chanLabel || st.prio || "")}</span>
+        <div style="display:flex;gap:44px;margin-top:auto">${fig(p[0])}${fig(p[1])}</div>
+        <div style="border-top:1px solid ${SEM.hair};margin-top:14px;padding-top:8px;display:flex;align-items:baseline;gap:12px">
+          <span style="font-size:15px;letter-spacing:3px;color:${SEM.quiet}">${esc(bp.name || "")}</span>
+          <span class="lim" style="font-size:30px;color:${bp.stale ? SEM.slate : SEM.confirm};${bp.stale ? `border-bottom:2px dashed ${SEM.slate}` : ""}">${esc(bp.stale ? "?" : (bp.val || ""))}</span>
+          <span class="lim" style="font-size:14px;color:${bp.stale ? SEM.hi : SEM.quiet}">${esc(String(bp.note || "").split("\n").join(" · "))}</span>
+        </div>
+      </div>
+    </div>
+
+    <span class="lim" style="font-size:14px;color:${SEM.quiet};margin-top:10px;line-height:1.5">${
+      (st.sensors || []).map(d => `${d.name} ${d.age}`).join("  ·  ")}</span>
+    <span class="lim" style="font-size:14px;color:${SEM.quiet};line-height:1.5">${
+      (st.sys || []).map(y => `${y.name} ${y.val}`).join("  ·  ")}</span>
+
+    <div style="height:56px;margin-top:10px;border-top:3px ${sil.active ? "solid" : "dashed"} ${sil.color || SEM.calm};display:flex;align-items:center;gap:16px">
+      <span style="font-size:25px;font-weight:700;color:${sil.textColor || sil.color || SEM.calm};white-space:nowrap">${esc(sil.text || "")}</span>
+      <span class="lim" style="margin-left:auto;font-size:14px;color:${SEM.quiet};white-space:nowrap">${esc(sil.sub || "")}</span>
+    </div>
+  </div>`;
+}
+
+
+/* ══ Creative directions ═══════════════════════════════════════════════════
+   Three views that are not instrument panels. They exist because a thing you
+   sleep beside every night for years is furniture as much as equipment, and a
+   panel you actively want in the room is one you will actually keep plugged in.
+
+   They obey the same rule as the clinical ones, which is the only rule that
+   matters here: THEY CANNOT LIE ABOUT MISSING DATA. When the ring stops
+   reporting, the horizon breaks, the pulse ring stops and goes dashed, and the
+   trail leaves a hole. None of them interpolate, and none of them show a last
+   known value as though it were current. A pretty panel that quietly holds the
+   last number would be worse than no panel. */
+
+function creativeFooter(st) {
+  const sil = st.silence || {};
+  return `<div style="position:absolute;left:34px;right:34px;bottom:16px;display:flex;align-items:baseline;gap:14px;font-family:var(--mono);font-size:13px;letter-spacing:1.4px;color:#5A5F63">
+    <span>${esc(sil.text || "")}</span>
+    <span style="margin-left:auto">${esc(sil.sub || "")}</span>
+  </div>`;
+}
+
+/* ── HORIZON ────────────────────────────────────────────────────────────────
+   SpO2 drawn as a body of water seen from below the surface, time flowing
+   right to left. You do not read this one; you notice it. A desaturation is
+   the surface sinking, which the eye catches across a dark room, at an angle,
+   half asleep, without focusing — more than can be said for a number.
+
+   ONE BUBBLE PER HEARTBEAT. The bubbles are not decoration and they are not a
+   rate dial: each one is a single measured beat, released at the interval the
+   ring actually reported, so the field rises faster because the heart is
+   beating faster, not because a parameter was turned up. Bigger bubbles rise
+   faster (as real ones do, buoyancy scaling with volume), and every bubble
+   pops when it reaches the surface *above its own x*, with a ring sized to it.
+
+   THE HONESTY RULES SURVIVE THE PRETTINESS, which is the whole point:
+     · No pulse reading -> no bubbles. Not slower bubbles, not the last known
+       rate: none. A bubble field running on a remembered rate would be the
+       panel inventing a heartbeat, which is the worst thing anything here
+       could do.
+     · No SpO2 at some x -> there is no water there. The surface is absent, not
+       flat, and a bubble arriving in that column finds no surface, does not
+       pop, and leaves the top. A flat surface would be a claim; an empty one
+       is the truth.
+     · The big number goes to "?" when stale. The water does not.
+
+   Motion is smooth and slow — no flashing. The pop is a single expanding ring
+   over ~450ms, an order of magnitude away from anything photosensitive. */
+
+const HZ = {
+  BASE: 330,            // y of 80% saturation; the surface never falls below it
+  TOP: 30,              // y of 100%
+  LO: 80, HI: 100,
+  FLOOR: 470,           // bubbles are born just off the bottom edge
+  MAX_BUBBLES: 90,      // a ceiling so a runaway rate cannot swamp the Pi
+  FPS: 30,              // half of 60: smooth enough to read as fluid, half the GPU
+  /* Bubbles darken and thin out as the rate climbs toward the HR upper alarm
+     limit. 110 is not chosen for looks — it is the same ↑110 the clinical view
+     prints beside HR, so the two views cannot disagree about what "high" means.
+     Below CALM the field is bright and clear; by LIMIT it has gone murky. The
+     effect is that the prettiest view degrades legibly as things get worse,
+     instead of staying decorative while the number climbs. */
+  CALM: 62, LIMIT: 110,
+  TAP_SLOP: 26,         // fat-finger radius on a 7" touchscreen, in the dark
+};
+
+/* Tint for a bubble carrying `bpm`: bright and translucent when calm, dark and
+   faint as it approaches the limit. */
+function hzTint(bpm) {
+  const raw = Math.max(0, Math.min(1, (bpm - HZ.CALM) / (HZ.LIMIT - HZ.CALM)));
+  /* Eased rather than linear, so the water is already visibly deeper by 80 and
+     still reaches full depth exactly at the 110 alarm limit. Moving the
+     endpoint down instead would have made 110 stop meaning the limit the
+     clinical view prints; bending the curve keeps both thresholds honest and
+     just spends the darkening earlier. At 80 this reads ~0.55 of the way down
+     where a straight ramp gave 0.38. */
+  const t = Math.pow(raw, 0.6);
+  const mix = (a, b) => Math.round(a + (b - a) * t);
+  return {
+    t,
+    // Bright and translucent when calm; DARK and solid as the rate climbs, so
+    // a fast field reads as dark objects against lighter water rather than as
+    // everything fading together.
+    stroke: `rgba(${mix(160, 12)},${mix(230, 30)},${mix(240, 52)},${(0.55 + t * 0.30).toFixed(3)})`,
+    hi: `rgba(${mix(205, 34)},${mix(248, 62)},${mix(252, 88)},${(0.45 - t * 0.22).toFixed(3)})`,
+    fill: `rgba(${mix(10, 4)},${mix(34, 12)},${mix(44, 26)},${(t * 0.55).toFixed(3)})`,
+  };
+}
+
+const hzState = { raf: 0, last: 0, bubbles: [], pops: [], nextBeat: 0, st: null, ctx: null,
+                  sh: null, nextSh: 8, grab: null, notes: [], nextNote: 1.2 };
+
+function renderHorizon(st) {
+  // The scene is a canvas so it can animate across polls; the text is DOM so
+  // it stays crisp and reuses esc().
+  return `<div style="width:800px;height:480px;position:relative;background:#000308;overflow:hidden;font-family:var(--sans)">
+    <canvas id="hzCanvas" width="800" height="480" style="position:absolute;inset:0"></canvas>
+    <div id="hzHead" style="position:absolute;left:34px;top:22px"></div>
+    <div id="hzMeta" style="position:absolute;right:34px;top:26px;text-align:right"></div>
+    <div id="hzLegend" style="position:absolute;left:34px;bottom:44px;font-size:13px;color:#5E7A83"></div>
+    ${creativeFooter(st)}
+  </div>`;
+}
+
+function hzSurface() {
+  // One surface y per horizontal pixel, or null where nothing was measured.
+  //
+  // Interpolated between ADJACENT measured samples, never across a gap. That
+  // distinction is the whole rule: joining two neighbouring seconds is the
+  // same claim every other view makes by drawing a line between them, whereas
+  // joining across a hole would invent the readings in between. Per-pixel
+  // nearest-neighbour was also simply wrong to look at — at 54 samples over
+  // 800px it drew the surface as 15px stair steps.
+  const h = live.hist;
+  const out = new Array(800).fill(null);
+  if (h.length < 2) return out;
+  const yOf = (v) => {
+    const t = (Math.max(HZ.LO, Math.min(HZ.HI, v)) - HZ.LO) / (HZ.HI - HZ.LO);
+    return HZ.BASE - t * (HZ.BASE - HZ.TOP);
+  };
+  const ok = (v) => typeof v === "number" && isFinite(v);
+  const step = 799 / (h.length - 1);
+  for (let i = 0; i < h.length - 1; i++) {
+    const a = h[i] ? h[i].s : null, b = h[i + 1] ? h[i + 1].s : null;
+    if (!ok(a) || !ok(b)) continue;          // a gap stays a gap
+    const x0 = Math.round(i * step), x1 = Math.round((i + 1) * step);
+    const y0 = yOf(a), y1 = yOf(b);
+    for (let x = x0; x <= x1 && x < 800; x++) {
+      out[x] = y0 + (y1 - y0) * (x1 === x0 ? 0 : (x - x0) / (x1 - x0));
+    }
+  }
+  return out;
+}
+
+function hzDraw(dt) {
+  const c = hzState.ctx;
+  if (!c) return;
+  const st = hzState.st || {};
+  const hr = (st.params && st.params[1]) || {};
+  const bpm = hr.stale ? 0 : Number(hr.val) || 0;
+  const surf = hzSurface();
+
+  c.clearRect(0, 0, 800, 480);
+  c.fillStyle = "#000308";
+  c.fillRect(0, 0, 800, 480);
+
+  // ── water ────────────────────────────────────────────────────────────────
+  // Drawn as runs of contiguous measured columns. A gap is genuinely empty:
+  // no fill, no surface line, just a dashed wall marking where it stopped.
+  let x = 0;
+  while (x < 800) {
+    if (surf[x] == null) { x++; continue; }
+    const start = x;
+    while (x < 800 && surf[x] != null) x++;
+    const end = x - 1;
+    if (end > start) {
+      const g = c.createLinearGradient(0, HZ.TOP, 0, 480);
+      /* The body starts dim and falls away fast — the surface stroke carries
+         the reading, and lighting most of an 800x480 panel in a dark bedroom
+         is exactly what this design's "dim by lit area" position forbids.
+
+         It also DARKENS AS THE RATE CLIMBS. Tinting the bubble outlines alone
+         was too subtle to notice at a real resting rate; shifting the water
+         from a shallow teal toward an abyssal blue is visible instantly and
+         means the right thing — the field sinks into deeper, colder water as
+         the heart works harder, and it is legible from across the room without
+         reading a number. */
+      /* The water LIGHTENS as the rate climbs while the bubbles darken, so
+         the two move apart and the field gains contrast exactly when there is
+         more to see. The previous version darkened both together, which made
+         a fast heart merely muddier. Kept deliberately restrained at the top
+         end: this is still a panel in a dark bedroom, so "lighter" is a shift
+         from near-black to a dim teal, not to a lit screen. */
+      const wt = hzTint(bpm).t;
+      const wmix = (a, b) => Math.round(a + (b - a) * wt);
+      g.addColorStop(0, `rgba(${wmix(20, 58)},${wmix(84, 150)},${wmix(100, 172)},${(0.26 + wt * 0.20).toFixed(3)})`);
+      g.addColorStop(0.35, `rgba(${wmix(9, 26)},${wmix(40, 78)},${wmix(52, 96)},${(0.11 + wt * 0.13).toFixed(3)})`);
+      g.addColorStop(1, `rgba(${wmix(4, 10)},${wmix(18, 32)},${wmix(26, 44)},${(0.02 + wt * 0.05).toFixed(3)})`);
+      c.beginPath();
+      c.moveTo(start, surf[start]);
+      for (let i = start + 1; i <= end; i++) c.lineTo(i, surf[i]);
+      c.lineTo(end, 480); c.lineTo(start, 480); c.closePath();
+      c.fillStyle = g; c.fill();
+      c.beginPath();
+      c.moveTo(start, surf[start]);
+      for (let i = start + 1; i <= end; i++) c.lineTo(i, surf[i]);
+      const stint = hzTint(bpm).t;
+      const smix = (a, b) => Math.round(a + (b - a) * stint);
+      c.strokeStyle = `rgb(${smix(127, 178)},${smix(212, 236)},${smix(222, 244)})`;
+      c.lineWidth = 2; c.globalAlpha = 0.9;
+      c.stroke(); c.globalAlpha = 1;
+    }
+  }
+  // Mark every break, so a hole reads as a hole and not as open sky.
+  for (let i = 1; i < 800; i++) {
+    if (surf[i] == null && surf[i - 1] != null) hzWall(c, i);
+    else if (surf[i] != null && surf[i - 1] == null) hzWall(c, i);
+  }
+
+  // Bursts flagged `behind` are painted before him, so he swims in front of
+  // his own burp rather than being covered by it.
+  hzPopsAge(dt);
+  hzPops(c, true);
+
+  // ── the seahorse ─────────────────────────────────────────────────────────
+  hzState.nextSh -= dt;
+  if (!hzState.sh && hzState.nextSh <= 0) hzState.sh = hzSeahorseSpawn(performance.now());
+  if (hzState.sh) {
+    if (!hzSeahorseStep(hzState.sh, dt, surf)) {
+      hzState.sh = null;
+      hzState.nextSh = SEA.MIN_GAP + Math.random() * (SEA.MAX_GAP - SEA.MIN_GAP);
+    } else {
+      hzDrawSeahorse(c, hzState.sh);
+    }
+  }
+  hzNoteStep(dt);
+  hzNotesDraw(c);
+
+  // ?debug=1 — a temporary read-out of the seahorse state machine, so "he
+  // never appears" can be diagnosed from a screenshot rather than guessed at.
+  if (live.debug) {
+    const sh2 = hzState.sh;
+    c.save();
+    c.font = "13px ui-monospace,Menlo,monospace";
+    c.fillStyle = "#7FD4DE";
+    c.fillText(sh2
+      ? `sh x=${sh2.x.toFixed(0)} y=${sh2.y.toFixed(0)} dir=${sh2.dir} st=${sh2.state} a=${sh2.alpha.toFixed(2)} linger=${sh2.linger}`
+      : `sh NONE · next in ${hzState.nextSh.toFixed(1)}s`, 34, 452);
+    c.fillText(`surf[0]=${hzSurface()[0] == null ? "null" : "ok"} hist=${live.hist.length} notes=${hzState.notes.length}`, 34, 468);
+    c.restore();
+  }
+
+  // ── bubbles ──────────────────────────────────────────────────────────────
+  // Spawned on the beat. With no measured pulse there is no beat, so nothing
+  // is released at all.
+  if (bpm > 0) {
+    const period = 60 / bpm;
+    hzState.nextBeat -= dt;
+    if (hzState.nextBeat <= 0) {
+      hzState.nextBeat += period;
+      if (hzState.nextBeat < 0) hzState.nextBeat = period;  // recover from a long stall
+      if (hzState.bubbles.length < HZ.MAX_BUBBLES) {
+        /* Size varies only modestly, and speed is driven mostly by rate.
+           The first version drew radius from 2.5-8.5 and fed it into velocity
+           at 3.6 px/s per px of radius, so the RANDOM size alone swung speed
+           about 2x while 60->100 bpm moved it barely 28%. The noise drowned
+           the signal: what looked like large speed differences between similar
+           rates was the dice, not the heart. */
+        const r = 3.5 + Math.random() * 2.8;
+
+        /* Velocity grows with the SQUARE ROOT of rate, not linearly.
+           Bubbles are released once per beat, so time-in-flight is
+           height / velocity and the number visible at once is
+           (bpm/60) x (height/v). With v proportional to bpm those cancel and
+           the field looks identical at 50 and 110 — faster, but no busier,
+           which is not what a rising heart rate should look like. A sqrt ramp
+           makes it both quicker AND denser: about 9 bubbles in flight at 50
+           bpm against about 14 at 110.
+
+           Radius still adds a little, because a bigger bubble really does rise
+           faster, but it is capped at ~25% so it cannot swamp the rate again. */
+        const vRate = 20 + 3.2 * Math.sqrt(Math.max(0, bpm - 35));
+        hzState.bubbles.push({
+          x: 40 + Math.random() * 720,
+          y: HZ.FLOOR,
+          r,
+          v: vRate * (0.90 + ((r - 3.5) / 2.8) * 0.25),
+          phase: Math.random() * Math.PI * 2,
+          wob: 0.4 + Math.random() * 0.9,
+          // The rate at the instant this beat was released. Kept per-bubble so
+          // tapping one later reports what it actually represented, not
+          // whatever the rate happens to be by the time you touch it.
+          bpm: Math.round(bpm),
+        });
+      }
+    }
+  } else {
+    // Let the ones already in flight finish honestly rather than vanishing.
+    hzState.nextBeat = 0;
+  }
+
+  c.lineWidth = 1.4;
+  const sh = hzState.sh;
+  for (let i = hzState.bubbles.length - 1; i >= 0; i--) {
+    const b = hzState.bubbles[i];
+    b.y -= b.v * dt;
+    b.phase += dt * b.wob;
+
+    /* ── the seahorse's wake ───────────────────────────────────────────────
+       Bubbles are pushed out of its way as it passes, which is what sells it
+       as swimming THROUGH the water rather than being drawn on top of it.
+
+       Two forces, both proportional to how close the bubble is:
+         · outward from the body, so nothing overlaps it
+         · along its direction of travel, which is the water it displaces
+       Both scale with its ACTUAL speed, so a hovering seahorse only stirs the
+       water faintly and one crossing at speed shoves bubbles clear.
+
+       A smaller bubble is moved more than a large one, because less momentum
+       carries less through the disturbance — the same reason the big ones rise
+       faster. The push is stored as a velocity that damps out over about half
+       a second, so a bubble drifts aside and then resumes its climb instead of
+       snapping back, which would look like a rubber band. */
+    if (sh && sh.alpha > 0.2) {
+      const dx = b.x - sh.x, dy = b.y - sh.y;
+      const d = Math.hypot(dx, dy);
+      const R = 62;
+      if (d < R && d > 0.01) {
+        const near = 1 - d / R;
+        const speed = Math.min(1, Math.abs(sh.vx || 0) / SEA.SPEED);
+        const stir = (0.28 + speed * 0.72) * near * near;   // squared: a soft field, a firm core
+        const mass = 5.0 / (2.5 + b.r);                     // small bubbles shove more easily
+        b.vx = (b.vx || 0) + ((dx / d) * 150 + (sh.dir * 70 * speed)) * stir * mass * dt;
+        b.vy = (b.vy || 0) + (dy / d) * 90 * stir * mass * dt;
+      }
+    }
+    const damp = Math.max(0, 1 - dt * 2.4);
+    b.vx = (b.vx || 0) * damp;
+    b.vy = (b.vy || 0) * damp;
+    b.x += b.vx * dt;
+    b.y += b.vy * dt;
+    // Keep a shoved bubble on screen rather than letting the wake fling it off.
+    if (b.x < 14) { b.x = 14; b.vx = Math.abs(b.vx) * 0.4; }
+    if (b.x > 786) { b.x = 786; b.vx = -Math.abs(b.vx) * 0.4; }
+
+    const bx = b.x + Math.sin(b.phase) * (2 + b.r * 0.35);
+    const s = surf[Math.max(0, Math.min(799, Math.round(bx)))];
+
+    if (s != null && b.y - b.r <= s) {
+      // Reached the surface above its own column: pop, sized to the bubble.
+      // A burped bubble carries its number all the way up and shows it there.
+      hzState.pops.push({ x: bx, y: s, r: b.r, age: 0, label: b.burp || null });
+      hzState.bubbles.splice(i, 1);
+      continue;
+    }
+    if (b.y + b.r < 0) {
+      // No surface in this column — it left the top without popping, because
+      // there was nothing there to break.
+      hzState.bubbles.splice(i, 1);
+      continue;
+    }
+    const tint = hzTint(b.bpm);
+    b.sx = bx;                       // remembered so a tap can hit where it is drawn
+    c.beginPath();
+    c.arc(bx, b.y, b.r, 0, Math.PI * 2);
+    if (tint.fill) { c.fillStyle = tint.fill; c.fill(); }
+    c.strokeStyle = tint.stroke;
+    c.stroke();
+    // A single highlight is what makes it read as a bubble rather than a ring.
+    c.beginPath();
+    c.arc(bx - b.r * 0.32, b.y - b.r * 0.32, Math.max(0.6, b.r * 0.22), 0, Math.PI * 2);
+    c.fillStyle = tint.hi;
+    c.fill();
+  }
+
+  // ── pops ─────────────────────────────────────────────────────────────────
+  hzPops(c, false);
+}
+
+/* Ageing is done ONCE per frame, here, and drawing never touches the clock.
+   Entangling the two is what broke it: hzPops runs twice a frame (once per
+   layer) and carried a `stepped` flag to avoid double-ageing, but the flag was
+   set and never cleared — so a burst behind the seahorse aged on its first
+   frame and then froze, fading to its held opacity and hanging there forever.
+   A draw pass that can advance time is a draw pass that will eventually
+   advance it the wrong number of times. */
+function hzPopsAge(dt) {
+  for (let i = hzState.pops.length - 1; i >= 0; i--) {
+    const p = hzState.pops[i];
+    p.age += dt;
+    if (p.age >= (p.label ? 1.5 : 0.45)) hzState.pops.splice(i, 1);
+  }
+}
+
+/* Bursts. `behind` selects which layer this call paints, so a seahorse can swim
+   in front of its own burp. */
+function hzPops(c, behind) {
+  for (const p of hzState.pops) {
+    if (!!p.behind !== !!behind) continue;
+    // A tapped bubble lingers, because it has something to say; one that simply
+    // reached the surface is over in a blink.
+    const t = p.age / (p.label ? 1.5 : 0.45);
+    if (t >= 1) continue;
+    if (p.label) { hzPopLabel(c, p, t); continue; }
+    const rr = p.r * (1 + t * 2.6);
+    c.beginPath();
+    c.arc(p.x, p.y, rr, 0, Math.PI * 2);
+    c.strokeStyle = `rgba(170,235,245,${(1 - t) * 0.5})`;
+    c.lineWidth = 1.6 * (1 - t) + 0.4;
+    c.stroke();
+    c.beginPath();
+    c.ellipse(p.x, p.y, rr * 0.9, rr * 0.28, 0, 0, Math.PI * 2);
+    c.strokeStyle = `rgba(127,212,222,${(1 - t) * 0.28})`;
+    c.lineWidth = 1;
+    c.stroke();
+  }
+}
+
+function hzPopLabel(c, p, t) {
+  const grow = 1 - Math.pow(1 - t, 3);          // fast burst, slow settle
+  const rr = p.r + grow * 34;
+  const fade = t < 0.18 ? t / 0.18 : (t > 0.72 ? (1 - t) / 0.28 : 1);
+
+  c.beginPath();
+  c.arc(p.x, p.y, rr, 0, Math.PI * 2);
+  c.fillStyle = `rgba(6,26,34,${(0.82 * fade).toFixed(3)})`;
+  c.fill();
+  c.strokeStyle = `rgba(170,235,245,${(0.55 * fade).toFixed(3)})`;
+  c.lineWidth = 1.4;
+  c.stroke();
+
+  c.save();
+  c.textAlign = "center";
+  c.textBaseline = "middle";
+  c.fillStyle = `rgba(207,233,238,${fade.toFixed(3)})`;
+  c.font = "600 22px ui-monospace,SFMono-Regular,Menlo,monospace";
+  c.fillText(String(p.label), p.x, p.y - 5);
+  c.fillStyle = `rgba(94,122,131,${fade.toFixed(3)})`;
+  c.font = "400 11px ui-monospace,SFMono-Regular,Menlo,monospace";
+  c.fillText("bpm", p.x, p.y + 13);
+  c.restore();
+}
+
+/* Tap-to-pop. Hit-tests the bubble nearest the touch and bursts it in place,
+   underwater, rather than waiting for it to reach the surface.
+   The slop is generous because this is a 7" panel operated by a finger in the
+   dark; the swipe handler needs 60px of travel, so a tap can never be mistaken
+   for one. */
+function hzTap(ev) {
+  const cv = document.getElementById("hzCanvas");
+  if (!cv) return;
+  // Ignore the tail of a swipe: a gesture that travelled is a view change,
+  // not an attempt to burst a bubble.
+  if (ev.__fromSwipe) return;
+  const r = cv.getBoundingClientRect();
+  const x = (ev.clientX - r.left) * (800 / r.width);
+  const y = (ev.clientY - r.top) * (480 / r.height);
+  // The seahorse is checked first: it is bigger and slower than a bubble, so a
+  // finger aimed at it should not catch a bubble drifting past.
+  const sh = hzState.sh;
+  if (sh && Math.hypot(sh.x - x, sh.y - y) < 34 + SEA.TAP_SLOP) {
+    // Grab him. Whether this turns out to be a tap or a drag is decided on
+    // release; either way the view swipe must not also fire.
+    hzState.grab = { x, y, ox: sh.x, oy: sh.y, vx: 0, vy: 0, t: performance.now(), moved: 0 };
+    S.claimed = true;
+    // Deliberately does NOT look up here. The glance belongs to a tap and only
+    // a tap — it lands when you lift your finger having not moved him, which
+    // makes it read as a "tee-hee" rather than as a reaction to being seized.
+    return;
+  }
+
+  let best = -1, bestD = Infinity;
+  for (let i = 0; i < hzState.bubbles.length; i++) {
+    const b = hzState.bubbles[i];
+    const d = Math.hypot((b.sx ?? b.x) - x, b.y - y);
+    if (d < b.r + HZ.TAP_SLOP && d < bestD) { bestD = d; best = i; }
+  }
+  if (best < 0) return;
+  const b = hzState.bubbles[best];
+  hzState.pops.push({ x: b.sx ?? b.x, y: b.y, r: b.r, age: 0, label: b.bpm });
+  hzState.bubbles.splice(best, 1);
+}
+
+/* ── the seahorse ───────────────────────────────────────────────────────────
+   Pure ornament, and labelled as such: it encodes nothing, so it must never be
+   mistaken for something that does. That is why it is drawn in a muted sand
+   tone that appears nowhere else in this view — the water is teal, the bubbles
+   are cyan-to-dark, the gaps are slate — and why it is the only thing here
+   that moves for reasons unrelated to the data.
+
+   It appears on its own schedule and picks one of two lives:
+     TRANSIT — crosses and leaves, never stopping.
+     LINGER  — swims in, hovers a while bobbing on the spot, then moves on.
+   Which one is chosen at random, so the panel is not the same every night.
+
+   It stays under the surface: it hunts for the waterline above its own x and
+   keeps a respectful distance below it. Where there is no water — a gap in
+   SpO2 — there is nothing to swim in, so it fades out rather than gliding
+   through the hole as if the night were continuous. Even the decoration is not
+   allowed to paper over missing data. */
+
+const SEA = {
+  MIN_GAP: 9, MAX_GAP: 30,    // seconds between visits: often enough to be company
+  SCALE: 1.25,   // ~90px tall; smaller than this and it stops reading as a seahorse
+  SPEED: 26,                  // px/s cruising
+  TAP_SLOP: 30,
+};
+
+/* Seahorses do not glide, they shove themselves along in little pushes and
+   then coast. Modulating forward speed by the same phase that drives the bob
+   ties the two together, so he appears to move BECAUSE he is beating rather
+   than to be sliding with an animation played over the top. */
+/* He whistles as he goes: notes drift up from the snout and fade out, spaced
+   irregularly so it reads as a tune rather than a metronome. Deliberately NOT
+   tied to the pulse — the bubbles are one-per-beat and carry meaning, and a
+   second thing keeping time would be read as data. This keeps no time at all,
+   which is exactly what makes it ornament. */
+const HZ_NOTES = ["\u266A", "\u266B", "\u266C", "\u2669"];
+
+function hzNoteStep(dt) {
+  const sh = hzState.sh;
+  if (sh && sh.alpha > 0.4) {
+    hzState.nextNote -= dt;
+    if (hzState.nextNote <= 0) {
+      // Irregular spacing, and a rest often enough that it phrases.
+      hzState.nextNote = 0.5 + Math.random() * 1.9;
+      if (Math.random() < 0.72 && hzState.notes.length < 14) {
+        hzState.notes.push({
+          x: sh.x + sh.dir * 20,
+          y: sh.y - 34,
+          glyph: HZ_NOTES[(Math.random() * HZ_NOTES.length) | 0],
+          size: 24 + Math.random() * 16,   // twice the original: at 12-20px they read as specks
+          v: 16 + Math.random() * 12,
+          drift: (Math.random() - 0.5) * 14,
+          phase: Math.random() * Math.PI * 2,
+          age: 0,
+          life: 3.2 + Math.random() * 1.8,
+        });
+      }
+    }
+  }
+  for (let i = hzState.notes.length - 1; i >= 0; i--) {
+    const n = hzState.notes[i];
+    n.age += dt;
+    if (n.age >= n.life) { hzState.notes.splice(i, 1); continue; }
+    n.y -= n.v * dt;
+    n.phase += dt * 1.4;
+    n.x += (n.drift + Math.sin(n.phase) * 9) * dt;
+  }
+}
+
+function hzNotesDraw(c) {
+  for (const n of hzState.notes) {
+    const t = n.age / n.life;
+    // Fades in quickly, lingers, then goes: a note that vanished abruptly would
+    // read as a glitch on a panel where everything else changes slowly.
+    const a = (t < 0.12 ? t / 0.12 : Math.min(1, (1 - t) / 0.45)) * 0.95;
+    if (a <= 0) continue;
+    c.save();
+    c.globalAlpha = a;
+    c.translate(n.x, n.y);
+    c.rotate(Math.sin(n.phase * 0.8) * 0.22);
+    c.font = `${n.size.toFixed(1)}px "Helvetica Neue",Helvetica,Arial,sans-serif`;
+    c.textAlign = "center";
+    c.textBaseline = "middle";
+    /* Drawn against a lit teal ground, so a single flat fill washes out. A dark
+       outline underneath gives the glyph its own edge and lets it stay legible
+       wherever it drifts — over dark water, over the pale surface line, or
+       across a bubble. The fill is near-white warm rather than the previous
+       muted amber, which was only ~0.55 alpha over water of a similar value
+       and effectively camouflaged. */
+    c.lineWidth = Math.max(2, n.size * 0.14);
+    c.lineJoin = "round";
+    c.strokeStyle = "rgba(4,16,22,0.85)";
+    c.strokeText(n.glyph, 0, 0);
+    c.fillStyle = "rgba(255,232,190,0.98)";
+    c.fillText(n.glyph, 0, 0);
+    c.restore();
+  }
+}
+
+function hzSurge(sh) {
+  return 0.45 + 1.05 * Math.max(0, Math.sin(sh.bob * 1.5));
+}
+
+function hzSeahorseSpawn(now) {
+  const dir = Math.random() < 0.5 ? 1 : -1;
+  const linger = Math.random() < 0.45;
+  return {
+    dir,
+    x: dir > 0 ? -18 : 818,
+    y: 150 + Math.random() * 220,
+    bob: Math.random() * Math.PI * 2,
+    linger,
+    // A lingering visit picks somewhere to hang about, and how long for.
+    stopX: 200 + Math.random() * 400,
+    stopFor: 6 + Math.random() * 12,
+    stopped: 0,
+    state: "swim",
+    react: 0,          // 1 while he is looking at you, decaying back to 0
+    alpha: 0,
+    born: now,
+  };
+}
+
+function hzSeahorseStep(sh, dt, surf) {
+  const x0 = sh.x, y0 = sh.y;
+  sh.bob += dt * 1.6;
+  // He holds your eye for a moment, then goes back to what he was doing.
+  if (sh.react > 0) sh.react = Math.max(0, sh.react - dt / 2.6);
+  sh.alpha = Math.min(1, sh.alpha + dt * 0.8);
+
+  // Coast on whatever momentum you gave him, bleeding off over about a second.
+  if (sh.throwVx || sh.throwVy) {
+    sh.x += (sh.throwVx || 0) * dt;
+    sh.y += (sh.throwVy || 0) * dt;
+    const d = Math.max(0, 1 - dt * 1.6);
+    sh.throwVx = Math.abs(sh.throwVx) < 4 ? 0 : sh.throwVx * d;
+    sh.throwVy = Math.abs(sh.throwVy) < 4 ? 0 : sh.throwVy * d;
+  }
+
+  if (hzState.grab) { sh.alpha = Math.min(1, sh.alpha + dt * 0.8); sh.vx = 0; return true; }
+
+  if (sh.state === "swim") {
+    const reached = sh.dir > 0 ? sh.x >= sh.stopX : sh.x <= sh.stopX;
+    if (sh.linger && reached) { sh.state = "hover"; }
+    else sh.x += sh.dir * SEA.SPEED * hzSurge(sh) * dt;
+  } else if (sh.state === "hover") {
+    // Hovering is not standing still: it drifts a little, as they do.
+    sh.x += Math.sin(sh.bob * 0.4) * 6 * dt;
+    sh.stopped += dt;
+    if (sh.stopped >= sh.stopFor) sh.state = "leave";   // the one way out
+  } else {
+    sh.x += sh.dir * SEA.SPEED * hzSurge(sh) * dt;
+  }
+
+  /* Keep him under the surface above his own column, and fade him where there
+     is genuinely no water.
+
+     The off-screen guard is not cosmetic — it was killing him at birth. He
+     enters from x=-40, which clamps to surf[0]; the oldest history entries are
+     nulls from before the first reading arrived, so surf[0] is null, so the
+     fade fired on his very first frame, cancelled his fade-in, and left alpha
+     at 0 — and the cull test at the bottom of this function is `alpha > 0.02`.
+     He was spawning and being removed in the same frame, every time, which is
+     why he stopped appearing at all. A position outside the water's x-range is
+     not a gap in the data; it is simply not on screen yet. */
+  const onScreen = sh.x >= 0 && sh.x <= 799;
+  const s = onScreen ? surf[Math.round(sh.x)] : null;
+  if (onScreen && s == null) { sh.alpha = Math.max(0, sh.alpha - dt * 1.6); }
+  else if (s != null && sh.y < s + 46) sh.y += (s + 46 - sh.y) * Math.min(1, dt * 1.5);
+
+  // Real velocity, not the nominal cruise speed: a hovering seahorse should
+  // barely stir the water while a transiting one pushes bubbles aside.
+  sh.vx = dt > 0 ? (sh.x - x0) / dt : 0;
+  sh.vy = dt > 0 ? (sh.y - y0) / dt : 0;
+
+  /* Only a seahorse that has decided to leave may exit. One that is still
+     swimming or hovering turns at the edge, so a throw toward the side of the
+     screen bounces him back into the water rather than costing you his
+     company for the next half minute. */
+  if (sh.state !== "leave") {
+    if (sh.x < 46 && sh.dir < 0) { sh.dir = 1; sh.throwVx = Math.abs(sh.throwVx || 0) * 0.5; }
+    if (sh.x > 754 && sh.dir > 0) { sh.dir = -1; sh.throwVx = -Math.abs(sh.throwVx || 0) * 0.5; }
+    sh.x = Math.max(40, Math.min(760, sh.x));
+  }
+
+  const gone = sh.dir > 0 ? sh.x > 880 : sh.x < -80;
+  // A grace period, so a seahorse can never be culled before he has had time
+  // to fade in. Belt and braces against the class of bug above rather than
+  // just the one instance of it.
+  const settling = performance.now() - sh.born < 2000;
+  return !gone && (settling || sh.alpha > 0.02);
+}
+
+/* Drawn, not lifted from a font — a glyph has no coronet, no ring armour and
+   no tail to curl.
+   ── CUTE, on purpose and by the book ─────────────────────────────────────────
+   Lorenz's Kindchenschema: a large head relative to the body, large LOW-SET
+   eyes, a rounded face, a small nose and a high forehead. So this one has a
+   head nearly a third of its height, a snout cut to a stub (the one place
+   realism is deliberately sacrificed — a real snout is long and reads as a
+   beak, which is the opposite of cute), a chubby forward belly, and an eye
+   with a catchlight, because a matte eye reads as dead.
+   ── STILL A SEAHORSE ─────────────────────────────────────────────────────────
+   The identity lives in four things, all kept: the CORONET, which differs by
+   species like a fingerprint; the BONY RINGS, skin stretched over armour, drawn
+   as ridges down the flank; the spineless DORSAL FIN that actually powers
+   swimming; and the PREHENSILE TAIL, which curls forward to grasp.
+   ── COLOUR ───────────────────────────────────────────────────────────────────
+   Amber through coral to rose along the body, a cream belly, and a fin left
+   translucent so the water shows through it. Multi-hued but low-luminance: this
+   is still an object in a dark bedroom, so the range runs warm-dim to warm-mid
+   and never reaches white. */
+function hzDrawSeahorse(c, sh) {
+  const k = SEA.SCALE, q = sh.react || 0;
+  /* Exaggerated locomotion. A seahorse is a famously poor swimmer: it hangs
+     upright, bobs, and is driven by a dorsal fin beating far faster than
+     anything else about it moves. So the bob is deliberately larger than life,
+     the whole body ROCKS about the tail as if hinged there, and forward motion
+     comes in surges rather than at a constant glide. */
+  const bobY = Math.sin(sh.bob) * 6.5;
+  const rock = Math.sin(sh.bob * 0.9) * 0.16;
+
+  c.save();
+  c.translate(sh.x, sh.y + bobY);
+  c.scale(sh.dir * k, k);
+  c.rotate(rock);
+  c.globalAlpha = sh.alpha;
+
+  const grad = c.createLinearGradient(0, -40, 0, 42);
+  grad.addColorStop(0.00, "#E8A462");   // amber crown
+  grad.addColorStop(0.45, "#D8846A");   // coral flank
+  grad.addColorStop(1.00, "#B4626E");   // rose tail
+  const edge = "rgba(246,214,170,0.55)";
+
+  // ── dorsal fin, behind the body: the engine, fluttering fast ──────────────
+  const f = Math.sin(sh.bob * 7) * 2.6;          // deliberately much faster than the bob
+  c.beginPath();
+  c.moveTo(-6, -6);
+  c.quadraticCurveTo(-17 - f, 2, -14 + f * 0.5, 12);
+  c.quadraticCurveTo(-10, 16, -5, 12);
+  c.closePath();
+  c.fillStyle = "rgba(127,212,222,0.30)";
+  c.fill();
+  c.strokeStyle = "rgba(160,228,236,0.35)";
+  c.lineWidth = 0.9;
+  c.stroke();
+
+  // ── body and prehensile tail ─────────────────────────────────────────────
+  c.beginPath();
+  c.moveTo(6, -18);
+  c.quadraticCurveTo(11, -8, 11, 2);       // chubby chest, pushed forward
+  c.quadraticCurveTo(11, 12, 7, 19);       // belly falling away
+  c.quadraticCurveTo(14, 23, 14, 31);      // tail sweeping forward
+  c.quadraticCurveTo(14, 39, 5, 39);       // outer curl
+  c.quadraticCurveTo(-3, 39, -3, 31);      // round the bottom
+  c.quadraticCurveTo(-3, 26, 2, 25);       // closing inward
+  c.quadraticCurveTo(6, 25, 5, 29);        // the eye of the spiral
+  c.quadraticCurveTo(4, 32, 1, 31);        // and back out
+  c.quadraticCurveTo(-6, 30, -5, 22);      // tail root
+  c.quadraticCurveTo(-4, 12, -6, 2);       // lower back
+  c.quadraticCurveTo(-8, -10, -3, -17);    // upper back into the nape
+  c.closePath();
+  c.fillStyle = grad;
+  c.fill();
+  c.strokeStyle = edge;
+  c.lineWidth = 1;
+  c.stroke();
+
+  // Cream belly, the lighter underside almost every seahorse carries.
+  c.save();
+  c.clip();
+  c.beginPath();
+  c.moveTo(4, -14);
+  c.quadraticCurveTo(12, -2, 8, 20);
+  c.quadraticCurveTo(4, 30, 12, 34);
+  c.lineTo(20, 34); c.lineTo(20, -20); c.closePath();
+  c.fillStyle = "rgba(246,222,186,0.35)";
+  c.fill();
+  c.restore();
+
+  // Bony rings: skin stretched over armour. Faint, so they read as texture.
+  c.strokeStyle = "rgba(255,226,186,0.22)";
+  c.lineWidth = 0.9;
+  for (let i = 0; i < 7; i++) {
+    const yy = -12 + i * 5.2;
+    c.beginPath();
+    c.moveTo(-5.5 + i * 0.25, yy);
+    c.quadraticCurveTo(3, yy + 2.6, 10 - i * 0.5, yy - 0.5);
+    c.stroke();
+  }
+
+  /* ── head ────────────────────────────────────────────────────────────────
+     The head TURNS rather than being cross-faded. Everything below is a
+     continuous function of `e`, so the same code plays the turn forwards on
+     touch and backwards as the glance decays — there is no separate "front
+     face" drawn over the profile, which is what made the first version look
+     like a mask appearing and disappearing.
+
+     What a head actually does between profile and full-face, and what is
+     modelled here:
+       · the SNOUT foreshortens toward the viewer until it is nearly a point
+       · the silhouette WIDENS, because a face is broader than a profile
+       · the near eye slides back toward centre
+       · the far eye emerges from behind the cheek, growing as it comes round
+       · the whole head yaws and tips, as anything looking up at you does */
+  const e = q * q * (3 - 2 * q);          // smoothstep, so it eases both ways
+  c.save();
+  c.translate(1, -27);
+  c.rotate(-0.22 * e);
+
+  // Snout first, so the head sits over its root. It SHORTENS rather than being
+  // hidden — the honest projection of a snout swinging toward the viewer.
+  const snout = 1 - 0.82 * e;
+  c.beginPath();
+  c.moveTo(9, -3);
+  c.quadraticCurveTo(9 + 11 * snout, -2, 9 + 11 * snout, 2);
+  c.quadraticCurveTo(9 + 11 * snout, 5, 9, 5);
+  c.closePath();
+  c.fillStyle = "#E8A462";
+  c.fill();
+  c.strokeStyle = edge;
+  c.lineWidth = 1;
+  c.stroke();
+
+  c.beginPath();
+  c.ellipse(0, 0, 12.5 + 3 * e, 12.5 + 0.8 * e, 0, 0, Math.PI * 2);
+  c.fillStyle = grad;
+  c.fill();
+  c.strokeStyle = edge;
+  c.stroke();
+
+  // Coronet. The knobs spread apart as the head comes round, which is most of
+  // what tells you it turned rather than merely grew.
+  c.fillStyle = "#F0C08A";
+  [[-7, -11, 2.6], [-2, -13, 3.0], [3, -11.5, 2.4]].forEach(function (kn) {
+    c.beginPath();
+    c.arc(kn[0] * (1 + 0.5 * e) + 2 * e, kn[1], kn[2], 0, Math.PI * 2);
+    c.fill();
+  });
+
+  // Cheek blush; a second arrives with the far side of the face.
+  c.beginPath(); c.arc(6 - 1.5 * e, 4.5, 3.4, 0, Math.PI * 2);
+  c.fillStyle = "rgba(232,138,132,0.32)"; c.fill();
+  if (e > 0.05) {
+    c.globalAlpha = sh.alpha * e;
+    c.beginPath(); c.arc(-7 * e, 4.5, 3.4 * e, 0, Math.PI * 2); c.fill();
+    c.globalAlpha = sh.alpha;
+  }
+
+  // Eyes. Idle, the near one drifts on its own — seahorse eyes really do move
+  // independently of one another.
+  const wander = q > 0.01 ? 0 : Math.sin(sh.bob * 0.7) * 0.9;
+  const eye = function (ex, ey, r, a) {
+    if (r < 0.4) return;
+    c.globalAlpha = sh.alpha * a;
+    c.beginPath(); c.arc(ex, ey, r, 0, Math.PI * 2);
+    c.fillStyle = "#12262E"; c.fill();
+    // Catchlight: without it the eye is a hole and the whole face is dead.
+    c.beginPath(); c.arc(ex + r * 0.34, ey - r * 0.36, r * 0.32, 0, Math.PI * 2);
+    c.fillStyle = "rgba(255,252,246,0.92)"; c.fill();
+    c.globalAlpha = sh.alpha;
+  };
+  eye(4.2 - 0.8 * e + wander, 1.5, 3.5, 1);
+  eye(-5.0 * e, 1.5, 3.5 * Math.min(1, e * 1.4), Math.min(1, e * 1.6));
+
+  // The smile widens as the face arrives, rather than switching on.
+  if (e > 0.03) {
+    c.beginPath();
+    c.arc(-0.5 + 1.5 * (1 - e), 6, 3.4 + 2.2 * e, 0.16 * Math.PI, 0.84 * Math.PI);
+    c.strokeStyle = "rgba(96,44,48," + (0.9 * e).toFixed(2) + ")";
+    c.lineWidth = 1.7;
+    c.lineCap = "round";
+    c.stroke();
+  }
+  c.restore();
+  c.restore();
+}
+
+/* Touch it and it burps — and the burp IS the answer, not a bubble that
+   carries one away. It bursts at the snout with the same treatment a tapped
+   bubble gets: ring, dark plate, number. Spawning a bubble that rose and
+   popped somewhere else seconds later made you hunt for the reply, which is
+   not what touching something to ask it a question should feel like.
+
+   The value is the last pulse the ring actually reported. With no current
+   reading it burps a "?" — the seahorse does not get to invent one either. */
+function hzSeahorseBurp(sh) {
+  const hr = (hzState.st && hzState.st.params && hzState.st.params[1]) || {};
+  const label = hr.stale ? "?" : String(hr.val);
+  /* Placed BEHIND and above him, on his far side, so the burst never sits over
+     the face — the whole point of touching him is that he looks up at you, and
+     a number covering his head hides the reaction you came for. */
+  hzState.pops.push({
+    x: sh.x - sh.dir * 40,
+    y: sh.y - 46,
+    r: 8,
+    age: 0,
+    label,
+    behind: true,
+  });
+  sh.react = 1;   // and he looks up at you
+}
+
+/* Drag him and he goes where you put him; let go and he keeps your momentum
+   and turns to face it. Releasing with no real movement is a tap, and taps
+   burp. The velocity is measured over the last few milliseconds of the drag
+   rather than across the whole of it, so a slow reposition ending in a flick
+   throws him, and a flick ending in a stop does not. */
+function hzDragMove(ev) {
+  const g = hzState.grab, sh = hzState.sh;
+  if (!g || !sh) return;
+  const cv = document.getElementById("hzCanvas");
+  if (!cv) return;
+  const r = cv.getBoundingClientRect();
+  const x = (ev.clientX - r.left) * (800 / r.width);
+  const y = (ev.clientY - r.top) * (480 / r.height);
+  const now = performance.now();
+  const dt = Math.max(0.008, (now - g.t) / 1000);
+  const nx = g.ox + (x - g.x), ny = g.oy + (y - g.y);
+  g.vx = (nx - sh.x) / dt;
+  g.vy = (ny - sh.y) / dt;
+  g.moved += Math.abs(nx - sh.x) + Math.abs(ny - sh.y);
+  g.t = now;
+  sh.x = nx;
+  sh.y = Math.max(60, Math.min(430, ny));
+  // Once it is a drag, any glance in progress is cancelled: he is being
+  // carried, not greeted, and a fixed grin while hauled around is unsettling
+  // rather than charming.
+  if (g.moved >= 8) sh.react = 0;
+}
+
+function hzDragEnd() {
+  const g = hzState.grab, sh = hzState.sh;
+  hzState.grab = null;
+  if (!g || !sh) return;
+  if (g.moved < 8) { hzSeahorseBurp(sh); return; }   // barely moved: that was a tap
+
+  // Your momentum becomes his. He turns to face the way he was thrown, and
+  // coasts before settling back to his own cruising speed.
+  const speed = Math.hypot(g.vx, g.vy);
+  if (speed > 30) {
+    sh.dir = g.vx >= 0 ? 1 : -1;
+    sh.throwVx = Math.max(-420, Math.min(420, g.vx));
+    sh.throwVy = Math.max(-260, Math.min(260, g.vy));
+    /* He does NOT leave. Setting state to "leave" here meant that playing with
+       him was punished by him swimming off, and then a long wait for the next
+       visit — the opposite of what an interaction should do. He keeps your
+       momentum, settles wherever he ends up, and carries on. */
+    sh.state = "swim";
+    sh.linger = true;
+    sh.stopped = 0;
+    sh.stopFor = 8 + Math.random() * 14;
+    sh.stopX = Math.max(120, Math.min(680, sh.x + sh.dir * 60));
+  }
+}
+
+function hzWall(c, x) {
+  c.save();
+  c.setLineDash([3, 6]);
+  c.beginPath(); c.moveTo(x, 40); c.lineTo(x, HZ.BASE);
+  c.strokeStyle = "#8B97A3"; c.lineWidth = 1.5; c.stroke();
+  c.restore();
+}
+
+function hzText(st) {
+  const sp = (st.params && st.params[0]) || {};
+  const hr = (st.params && st.params[1]) || {};
+  const stale = sp.stale !== false && sp.stale !== undefined ? sp.stale : false;
+  const head = document.getElementById("hzHead");
+  const meta = document.getElementById("hzMeta");
+  if (!head || !meta) return;
+  head.innerHTML =
+    `<span style="font-size:13px;letter-spacing:3px;color:#5E7A83">SpO₂ · ${live.hist.length} SAMPLES</span>
+     <div style="display:flex;align-items:flex-end;gap:10px">
+       <span class="lim" style="font-size:96px;font-weight:200;line-height:.85;color:${stale ? "#8B97A3" : "#CFE9EE"};${stale ? "border-bottom:3px dashed #8B97A3" : ""}">${stale ? "?" : esc(sp.val)}</span>
+       <span style="font-size:15px;color:#5E7A83;padding-bottom:12px">${stale ? "NOT MEASURED" : "%"}</span>
+     </div>`;
+  // The bubble legend states the mapping, so the motion is information rather
+  // than atmosphere. When there is no pulse it says so instead of going quiet.
+  meta.innerHTML =
+    `<div class="lim" style="font-size:15px;color:#5E7A83">${esc(st.clock)}</div>
+     <div style="font-size:13px;letter-spacing:2px;color:#5E7A83;margin-top:4px">${esc(st.tier)}</div>
+     `;
+  const leg = document.getElementById("hzLegend");
+  if (leg) leg.textContent = hr.stale
+    ? "no pulse · no bubbles"
+    : `1 bubble = 1 beat · ${hr.val} bpm · deepening from 80 · tap one to read it`;
+}
+
+function mountHorizon(st) {
+  const cv = document.getElementById("hzCanvas");
+  if (!cv) return;
+  hzState.ctx = cv.getContext("2d");
+  hzState.st = st;
+  hzState.bubbles = [];
+  hzState.pops = [];
+  hzState.nextBeat = 0;
+  hzState.sh = null;
+  hzState.nextSh = 6 + Math.random() * 10;
+  hzState.notes = [];
+  hzState.nextNote = 1.2;
+  hzState.last = performance.now();
+  hzText(st);
+  // Bound to the panel, not the canvas: the readouts, legend and footer are
+  // absolutely positioned on top and would otherwise eat any touch that landed
+  // on them.
+  const host = document.getElementById("panel");
+  if (host) {
+    host.addEventListener("pointerdown", hzTap);
+    window.addEventListener("pointermove", hzDragMove);
+    window.addEventListener("pointerup", hzDragEnd);
+    window.addEventListener("pointercancel", hzDragEnd);
+  }
+  hzState.host = host;
+  const frame = (now) => {
+    // Clamp dt: after a tab stall or a slow poll a huge delta would teleport
+    // every bubble through the surface without popping.
+    const dt = Math.min(0.12, (now - hzState.last) / 1000);
+    if (dt >= 1 / HZ.FPS) { hzState.last = now; hzDraw(dt); }
+    hzState.raf = requestAnimationFrame(frame);
+  };
+  hzState.raf = requestAnimationFrame(frame);
+}
+
+function updateHorizon(st) {
+  hzState.st = st;
+  hzText(st);
+}
+
+function unmountHorizon() {
+  if (hzState.host) hzState.host.removeEventListener("pointerdown", hzTap);
+  window.removeEventListener("pointermove", hzDragMove);
+  window.removeEventListener("pointerup", hzDragEnd);
+  window.removeEventListener("pointercancel", hzDragEnd);
+  hzState.grab = null;
+  hzState.notes = [];
+  hzState.host = null;
+  cancelAnimationFrame(hzState.raf);
+  hzState.raf = 0;
+  hzState.ctx = null;
+  hzState.bubbles = [];
+  hzState.pops = [];
+  hzState.sh = null;
+}
+
+/* ── PULSE ──────────────────────────────────────────────────────────────────
+   One ring, expanding once per beat at the ACTUAL measured rate. The lit area
+   is a few thousand pixels and the room stays dark; from the bed it reads as a
+   slow heartbeat you can watch instead of a number you have to parse.
+
+   When the ring stops, it stops — dashed and still, with a "?". A ring that
+   kept beating on the last known rate would be the panel inventing a pulse,
+   which is the single worst thing anything in this repo could do. */
+function renderPulse(st) {
+  const hr = st.params && st.params[1];
+  const sp = st.params && st.params[0];
+  const stale = !hr || hr.stale;
+  const bpm = stale ? 0 : Number(hr.val) || 0;
+  const period = bpm > 0 ? (60 / bpm).toFixed(2) : 0;
+  return `<div style="width:800px;height:480px;position:relative;background:#000;overflow:hidden;font-family:var(--sans);display:flex;align-items:center;justify-content:center">
+    <style>
+      @keyframes beat { 0%{transform:scale(.55);opacity:.95} 70%{transform:scale(1.25);opacity:0} 100%{opacity:0} }
+      .ring{position:absolute;width:230px;height:230px;border-radius:50%;border:2px solid #4ADE80}
+    </style>
+    ${stale ? `
+      <div style="position:absolute;width:230px;height:230px;border-radius:50%;border:3px dashed #8B97A3;display:flex;align-items:center;justify-content:center;font-size:96px;color:#8B97A3">?</div>`
+    : `
+      <div class="ring" style="animation:beat ${period}s ease-out infinite"></div>
+      <div class="ring" style="animation:beat ${period}s ease-out infinite;animation-delay:${(period / 2).toFixed(2)}s"></div>
+      <div style="position:absolute;width:96px;height:96px;border-radius:50%;background:#0B2B18;border:1px solid #2C6B45"></div>`}
+    <div style="position:absolute;text-align:center">
+      <div class="lim" style="font-size:64px;font-weight:200;color:${stale ? "#8B97A3" : "#D6F5E3"};line-height:1">${stale ? "" : esc(hr.val)}</div>
+      <div style="font-size:13px;letter-spacing:3px;color:#4A6A57">${stale ? "" : "bpm"}</div>
+    </div>
+    <div style="position:absolute;left:34px;top:26px">
+      <div style="font-size:13px;letter-spacing:3px;color:#4A6A57">SpO₂</div>
+      <div class="lim" style="font-size:44px;font-weight:200;color:${!sp || sp.stale ? "#8B97A3" : "#CFE9EE"}">${!sp || sp.stale ? "?" : esc(sp.val)}</div>
+    </div>
+    <div style="position:absolute;right:34px;top:26px;text-align:right">
+      <div class="lim" style="font-size:15px;color:#4A6A57">${esc(st.clock)}</div>
+      <div style="font-size:13px;letter-spacing:2px;color:#4A6A57;margin-top:4px">${esc(st.tier)}</div>
+    </div>
+    ${creativeFooter(st)}
+  </div>`;
+}
+
+/* ── TRAIL ──────────────────────────────────────────────────────────────────
+   The night as one long-exposure photograph. Every sample is a dot; the night
+   accretes into a shape you can read at a glance in the morning — steady bands
+   where you were settled, scatter where you were not, and holes where nothing
+   was measured. Closer to a star-trail exposure than a chart, and the only view
+   here whose value goes UP the longer it runs. */
+function renderTrail(st) {
+  const W = 800, H = 340, TOP = 70;
+  const h = live.hist;
+  const n = Math.max(h.length, 2);
+  const band = (v, lo, hi) => TOP + H - ((Math.max(lo, Math.min(hi, v)) - lo) / (hi - lo)) * H;
+  let dots = "", holes = "";
+  h.forEach((r, i) => {
+    const x = ((i / (n - 1)) * (W - 68) + 34).toFixed(1);
+    if (r.s == null && r.h == null) { holes += `<rect x="${x}" y="${TOP}" width="1.2" height="${H}" fill="#1B2429"/>`; return; }
+    if (r.s != null) dots += `<circle cx="${x}" cy="${band(r.s, 80, 100).toFixed(1)}" r="1.5" fill="#22D3EE" opacity=".55"/>`;
+    if (r.h != null) dots += `<circle cx="${x}" cy="${band(r.h, 40, 110).toFixed(1)}" r="1.5" fill="#4ADE80" opacity=".45"/>`;
+  });
+  const mins = Math.round(h.length / 60);
+  return `<div style="width:800px;height:480px;position:relative;background:#000;overflow:hidden;font-family:var(--sans)">
+    <svg width="800" height="480" style="position:absolute;inset:0">${holes}${dots}</svg>
+    <div style="position:absolute;left:34px;top:22px;display:flex;gap:26px;align-items:baseline">
+      <span style="font-size:13px;letter-spacing:3px;color:#5A6A70">TRAIL · ${mins} MIN</span>
+      <span style="font-size:12px;letter-spacing:2px;color:#22D3EE">SpO₂</span>
+      <span style="font-size:12px;letter-spacing:2px;color:#4ADE80">HR</span>
+      <span style="font-size:12px;letter-spacing:2px;color:#5A6A70">▏NOT MEASURED</span>
+    </div>
+    <div style="position:absolute;right:34px;top:22px;text-align:right">
+      <div class="lim" style="font-size:15px;color:#5A6A70">${esc(st.clock)}</div>
+      <div style="font-size:13px;letter-spacing:2px;color:#5A6A70;margin-top:4px">${esc(st.tier)}</div>
+    </div>
+    ${creativeFooter(st)}
+  </div>`;
+}
+
+/* ── AURORA (designed by a dedicated agent, integrated verbatim) ────────────
+   An ambient light-field. Both signals become slow soft bands, like an aurora
+   through a window: SpO2 is the upper curtain whose HEIGHT is the saturation,
+   pulse is the lower ribbon of rays. A desaturation makes the light physically
+   sink, warm from jade to ember, and grow downward filaments — three cues at
+   once, so it registers from three feet with one eye open.
+
+   Two decisions worth keeping: the light budget is spent as AREA (~1-2% of the
+   panel lit) rather than as brightness, so the few lit strokes can sit at a
+   readable luminance without the panel acting as a lamp; and the palette
+   avoids cyan on purpose, because melanopic sensitivity peaks near 480nm and
+   the obvious "aurora cyan" is the worst possible hue for a bedroom.
+
+   Gaps are structural: only contiguous runs of measured samples become paths,
+   so there is no code path that could bridge a null. */
+function renderAurora(st) {
+  const W = 800, H = 480;
+  const FX0 = 18, NOW_X = 650;
+  const N = NOW_X - FX0;
+
+  const S_HI = 100, S_LO = 86, S_TOP = 72, S_BOT = 300;
+  const S_WATCH = 93, S_ALERT = 90;
+  const H_HI = 120, H_LO = 40, H_TOP = 324, H_BOT = 400;
+  const RAIL_Y = 56;
+
+  const sy = v => S_TOP + (S_HI - Math.min(S_HI, Math.max(S_LO, v))) * (S_BOT - S_TOP) / (S_HI - S_LO);
+  const hy = v => H_BOT - (Math.min(H_HI, Math.max(H_LO, v)) - H_LO) * (H_BOT - H_TOP) / (H_HI - H_LO);
+
+  const C_CORE = '#4FA773', C_ECHO = '#2E7A50', C_WARN = '#C08A3E',
+        C_ALERT = '#D0552E', C_HR = '#B07A3A', C_RAIL = '#514B42';
+
+  const hist = Array.isArray(live.hist) ? live.hist : [];
+  const base = hist.length - N;
+  const cols = new Array(N);
+  for (let i = 0; i < N; i++) {
+    const recorded = base + i >= 0;
+    const e = recorded ? hist[base + i] : null;
+    // NaN must never reach a coordinate: SVG silently drops a NaN vertex and
+    // joins its neighbours, which is exactly the false bridge across a gap.
+    const s = e && typeof e.s === 'number' && isFinite(e.s) ? e.s : null;
+    const h = e && typeof e.h === 'number' && isFinite(e.h) ? e.h : null;
+    cols[i] = { x: FX0 + i + 0.5, s: s, h: h, k: recorded };
+  }
+
+  const runsOf = pick => {
+    const out = [];
+    let cur = null;
+    for (let i = 0; i < N; i++) {
+      const v = pick(cols[i]);
+      if (v === null) { cur = null; continue; }
+      if (!cur) { cur = []; out.push(cur); }
+      cur.push([cols[i].x, v]);
+    }
+    return out;
+  };
+
+  const pathOf = (run, ymap) => {
+    if (run.length === 1) {
+      // A one-second island would render as nothing; give it a dash so a
+      // single real measurement is never silently discarded.
+      const y = ymap(run[0][1]).toFixed(1);
+      return `M${(run[0][0] - 0.6).toFixed(1)} ${y}L${(run[0][0] + 0.6).toFixed(1)} ${y}`;
+    }
+    let d = '';
+    for (let i = 0; i < run.length; i++) d += (i ? 'L' : 'M') + run[i][0].toFixed(1) + ' ' + ymap(run[i][1]).toFixed(1);
+    return d;
+  };
+
+  let defs = '';
+  const layerOf = (runs, ymap, pfx) => {
+    const ids = [];
+    runs.forEach((r, i) => { const id = pfx + i; defs += `<path id="${id}" d="${pathOf(r, ymap)}"/>`; ids.push(id); });
+    return dy => ids.map(id => `<use href="#${id}"${dy ? ` transform="translate(0 ${dy})"` : ''}/>`).join('');
+  };
+
+  const useSp = layerOf(runsOf(c => c.s), sy, 'aurS');
+  const useWarn = layerOf(runsOf(c => (c.s !== null && c.s < S_WATCH && c.s >= S_ALERT) ? c.s : null), sy, 'aurW');
+  const useAlert = layerOf(runsOf(c => (c.s !== null && c.s < S_ALERT) ? c.s : null), sy, 'aurA');
+
+  const CURTAIN = [[4, 3, .13], [10, 5, .085], [18, 7, .055], [28, 9, .034]];
+
+  let filaments = '';
+  for (let i = N - 1; i >= 0; i -= 3) {
+    const v = cols[i].s;
+    if (v === null || v >= S_ALERT) continue;
+    const y = sy(v);
+    filaments += `<line x1="${cols[i].x}" y1="${(y + 3).toFixed(1)}" x2="${cols[i].x}" y2="${(y + 21).toFixed(1)}"/>`;
+  }
+
+  // A sample below the floor is clamped for drawing and would otherwise
+  // impersonate exactly 86; these stubs say "this went off the bottom".
+  let floored = '';
+  for (let i = 0; i < N; i++) {
+    if (cols[i].s !== null && cols[i].s < S_LO) floored += `<line x1="${cols[i].x}" y1="${S_BOT}" x2="${cols[i].x}" y2="${S_BOT + 7}"/>`;
+  }
+
+  // Each ray stands for a fully-measured 3s window: if ANY of its seconds is
+  // missing the ray is not drawn, so the ribbon can never look continuous
+  // across data it does not have.
+  let rays = '';
+  for (let i = N - 3; i >= 0; i -= 3) {
+    if (cols[i].h === null || cols[i + 1].h === null || cols[i + 2].h === null) continue;
+    const y = hy((cols[i].h + cols[i + 1].h + cols[i + 2].h) / 3);
+    const x = cols[i + 1].x;
+    rays += `<line x1="${x}" y1="${(y - 5).toFixed(1)}" x2="${x}" y2="${(y + 5).toFixed(1)}"/>`;
+  }
+
+  // Blur makes a 1-2s break easy to miss, so absence gets its own un-blurred
+  // mark. Solid = the recorder ran and got nothing; faint = before the buffer.
+  const railRuns = [];
+  let missing = 0, lastIdx = -1;
+  for (let i = 0; i < N; i++) {
+    if (cols[i].s !== null) { lastIdx = i; continue; }
+    missing++;
+    const last = railRuns[railRuns.length - 1];
+    if (last && last[1] === i && last[2] === cols[i].k) last[1] = i + 1;
+    else railRuns.push([i, i + 1, cols[i].k]);
+  }
+  const rail = railRuns.map(r =>
+    `<rect x="${FX0 + r[0]}" y="${RAIL_Y}" width="${Math.max(1, r[1] - r[0])}" height="3" rx="1.5" opacity="${r[2] ? .72 : .3}"/>`
+  ).join('');
+
+  const ago = n => n === null ? 'no SpO₂ in this window' : (n >= 120 ? `last SpO₂ ${Math.floor(n / 60)} min ago` : `last SpO₂ ${n} s ago`);
+  const coverage = `${(N / 60).toFixed(1)} min shown · ${missing} s unmeasured · ${ago(lastIdx >= 0 ? N - 1 - lastIdx : null)}`;
+
+  const svg = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" style="position:absolute;inset:0">
+<defs>
+<filter id="aurSoft" filterUnits="userSpaceOnUse" x="0" y="0" width="${W}" height="${H}" color-interpolation-filters="sRGB"><feGaussianBlur stdDeviation="6"/></filter>
+${defs}
+</defs>
+<g fill="${C_RAIL}">${rail}</g>
+<line x1="${FX0}" y1="${sy(S_ALERT).toFixed(1)}" x2="${NOW_X}" y2="${sy(S_ALERT).toFixed(1)}" stroke="#2C4433" stroke-width="1" stroke-dasharray="2 11"/>
+<line x1="${NOW_X + 0.5}" y1="60" x2="${NOW_X + 0.5}" y2="406" stroke="#3A352E" stroke-width="1"/>
+<g fill="none" stroke="${C_ECHO}" stroke-linecap="round" stroke-linejoin="round">${CURTAIN.map(l => `<g opacity="${l[2]}" stroke-width="${l[1]}">${useSp(l[0])}</g>`).join('')}</g>
+<g filter="url(#aurSoft)" fill="none" stroke-linecap="round"><g stroke="${C_CORE}" stroke-width="2.5" opacity=".26">${useSp(0)}</g><g stroke="${C_ALERT}" stroke-width="3" opacity=".42">${useAlert(0)}</g><g stroke="${C_HR}" stroke-width="2" opacity=".2">${rays}</g></g>
+<g fill="none" stroke-linecap="round" stroke-linejoin="round">
+<g stroke="${C_CORE}" stroke-width="1.6" opacity=".72">${useSp(0)}</g>
+<g stroke="${C_WARN}" stroke-width="1.8" opacity=".85">${useWarn(0)}</g>
+<g stroke="${C_ALERT}" stroke-width="2" opacity=".95">${useAlert(0)}</g>
+<g stroke="${C_ALERT}" stroke-width="1" opacity=".3">${filaments}</g>
+<g stroke="${C_ALERT}" stroke-width="1.4" opacity=".85">${floored}</g>
+<g stroke="${C_HR}" stroke-width="1.3" opacity=".5">${rays}</g>
+</g>
+</svg>`;
+
+  const P = Array.isArray(st.params) ? st.params : [];
+  const readout = (p, top, fallbackName, tone) => {
+    p = p || {};
+    // Unknown if it says so OR the value is empty. Both collapse to "?" — the
+    // last good number is never reprinted as if it were now.
+    const unknown = p.stale === true || p.val === null || p.val === undefined || p.val === '';
+    const note = p.note ? esc(p.note) : (unknown ? 'no current reading' : '');
+    return `<div class="aur-ro" style="top:${top}px">
+<div class="aur-lbl">${esc(p.name || fallbackName)}</div>
+<div class="aur-val lim ${unknown ? 'aur-q' : tone}">${unknown ? '?' : esc(p.val)}${unknown || !p.unit ? '' : `<span class="aur-unit">${esc(p.unit)}</span>`}</div>
+${note ? `<div class="aur-note">${note}</div>` : ''}
+</div>`;
+  };
+
+  const sil = st.silence || {};
+
+  return `<div style="width:800px;height:480px;position:relative;background:#000;overflow:hidden">
+<style>
+.aur{position:absolute;inset:0;font-family:var(--sans);-webkit-font-smoothing:antialiased}
+.aur-hd{position:absolute;left:18px;right:16px;top:11px;display:flex;justify-content:space-between;align-items:baseline}
+.aur-clk{font-family:var(--mono);font-size:20px;letter-spacing:.08em;color:#8A8175}
+.aur-tier{font-size:13px;letter-spacing:.22em;text-transform:uppercase;color:#8A8175}
+.aur-ro{position:absolute;right:16px;width:152px;text-align:right}
+.aur-lbl{font-size:13px;letter-spacing:.2em;text-transform:uppercase;color:#8A8175}
+.aur-val{font-family:var(--mono);font-size:38px;line-height:1.06;margin-top:5px}
+.aur-unit{font-family:var(--sans);font-size:14px;letter-spacing:.04em;margin-left:5px;color:#8A8175}
+.aur-note{font-size:13px;line-height:1.35;color:#8A8175;margin-top:5px}
+.aur-j{color:#3E7551}
+.aur-e{color:#8A5C2E}
+.aur-q{color:#8A8175}
+.aur-bl{position:absolute;left:18px;top:408px;width:372px}
+.aur-br{position:absolute;right:16px;top:408px;width:376px;text-align:right}
+.aur-sil{font-size:15px;line-height:1.3;color:#8A8175}
+.aur-sub{font-size:13px;line-height:1.4;color:#8A8175;margin-top:3px;letter-spacing:.02em}
+.aur-key{font-size:13px;line-height:1.5;color:#8A8175}
+</style>
+${svg}
+<div class="aur">
+<div class="aur-hd"><span class="aur-clk lim">${esc(st.clock || '')}</span><span class="aur-tier">${esc(st.tier || '')}</span></div>
+${readout(P[0], 118, 'SpO₂', 'aur-j')}
+${readout(P[1], 330, 'Pulse', 'aur-e')}
+<div class="aur-bl">
+<div class="aur-sil">${esc(sil.text || '')}</div>
+<div class="aur-sub">${esc(sil.sub || '')}</div>
+</div>
+<div class="aur-br">
+<div class="aur-key">upper curtain 100–86 %SpO₂, dashes at 90 · lower rays 40–120 bpm</div>
+<div class="aur-key">${esc(coverage)} · top bar marks every unmeasured second</div>
+</div>
+</div>
+</div>`;
+}
+
+/* ── ORBIT (designed by a dedicated agent, integrated) ──────────────────────
+   The observation window drawn as a chronometer dial. Reading outward → in:
+     halo of dots ... pulse (radius = bpm)
+     bezel ticks .... 1 minute, long tick = 5 minutes
+     the RAIL ....... one arc per contiguous run of seconds that actually
+                      carried an SpO2 reading. This is the headline: a closed
+                      ring means a measured night, and every break is a real
+                      hole you can see from across the room.
+     inward fringe .. SpO2 hanging down from the rail; deeper and warmer as
+                      saturation falls.
+     centre ......... the current SpO2 only.
+
+   Time runs clockwise from a notch at 12 o'clock. The notch exists because a
+   rolling window has a seam: without it the oldest and newest samples would
+   sit shoulder to shoulder and read as continuous.
+
+   Everything is drawn as UNCONNECTED marks — radial ticks, dots, and arcs cut
+   to exact sample runs. Nothing here is a polyline, so no code path could ever
+   bridge a null. The no-interpolation rule is structural, not a promise. */
+function renderOrbit(st) {
+  const S = st || {};
+  const E = esc;
+  const HIST = (live && Array.isArray(live.hist)) ? live.hist : [];
+  const n = HIST.length;
+
+  const CX = 232, CY = 222;
+  const R_RAIL = 158, R_FRINGE_TOP = 154, D_MIN = 4, D_MAX = 54;
+  const R_FLAG_IN = 160, R_FLAG_OUT = 165;
+  const R_TICK_IN = 168, R_TICK_OUT = 172, R_TICK5_IN = 166, R_TICK5_OUT = 174;
+  const R_HR_IN = 178, R_HR_SPAN = 16;
+  const SEAM = 4.2, A0 = SEAM, A1 = 360 - SEAM;
+  const SPO2_HI = 100, SPO2_LO = 85, HR_LO = 40, HR_HI = 120;
+  const PANEL = 452;
+
+  const rad = t => { const c = t < 0 ? 0 : (t > 1 ? 1 : t); return (A0 + (A1 - A0) * c) * Math.PI / 180; };
+  const PXa = (a, r) => (CX + r * Math.sin(a)).toFixed(2);
+  const PYa = (a, r) => (CY - r * Math.cos(a)).toFixed(2);
+
+  // Butt caps and exact endpoints. Round caps would extend each run by half a
+  // stroke at both ends — on a 2000-second dial that is coverage the sensor
+  // never delivered. Understating is the only safe direction to round.
+  const arc = (t0, t1, r) => {
+    const a0 = rad(t0), a1 = rad(t1);
+    if (!(a1 > a0)) return '';
+    const large = (a1 - a0) > Math.PI ? 1 : 0;
+    return 'M' + PXa(a0, r) + ' ' + PYa(a0, r) + 'A' + r + ' ' + r + ' 0 ' + large + ' 1 ' + PXa(a1, r) + ' ' + PYa(a1, r);
+  };
+  const depthFor = s => {
+    const c = Math.max(SPO2_LO, Math.min(SPO2_HI, s));
+    return D_MIN + (D_MAX - D_MIN) * Math.pow((SPO2_HI - c) / (SPO2_HI - SPO2_LO), 0.8);
+  };
+
+  // Anything not a finite number is NOT MEASURED. Never coerce to 0 (which
+  // would render as a catastrophic desat that never happened) nor carry a
+  // previous value forward.
+  const num = v => (typeof v === 'number' && isFinite(v)) ? v : null;
+  const sArr = new Array(n), hArr = new Array(n);
+  for (let i = 0; i < n; i++) {
+    const e = HIST[i];
+    sArr[i] = (e && typeof e === 'object') ? num(e.s) : null;
+    hArr[i] = (e && typeof e === 'object') ? num(e.h) : null;
+  }
+
+  // Runs of PRESENT samples. The rail is built from these exact indices, never
+  // from the display bins below, so bin aliasing can neither invent coverage
+  // nor invent a hole.
+  const sRuns = [];
+  { let start = -1;
+    for (let i = 0; i < n; i++) {
+      const has = sArr[i] !== null;
+      if (has && start < 0) start = i;
+      else if (!has && start >= 0) { sRuns.push([start, i - 1]); start = -1; }
+    }
+    if (start >= 0) sRuns.push([start, n - 1]); }
+
+  const gaps = [];
+  { let prevEnd = -1;
+    for (const r of sRuns) { if (r[0] > prevEnd + 1) gaps.push([prevEnd + 1, r[0] - 1]); prevEnd = r[1]; }
+    if (n > 0 && prevEnd < n - 1) gaps.push([prevEnd + 1, n - 1]); }
+
+  let sCount = 0, sMin = null, below90 = 0, hCount = 0, hMin = null, hMax = null;
+  for (let i = 0; i < n; i++) {
+    const s = sArr[i];
+    if (s !== null) { sCount++; if (sMin === null || s < sMin) sMin = s; if (s < 90) below90++; }
+    const h = hArr[i];
+    if (h !== null) { hCount++; if (hMin === null || h < hMin) hMin = h; if (hMax === null || h > hMax) hMax = h; }
+  }
+  let longGap = 0;
+  for (const g of gaps) { const len = g[1] - g[0] + 1; if (len > longGap) longGap = len; }
+
+  const fmtDur = sec => {
+    sec = Math.max(0, Math.round(sec));
+    const h = Math.floor(sec / 3600), m = Math.floor(sec / 60) % 60, s = sec % 60;
+    if (h) return h + 'h ' + String(m).padStart(2, '0') + 'm';
+    if (m) return m + 'm ' + String(s).padStart(2, '0') + 's';
+    return s + 's';
+  };
+
+  // Bins capped at the sample count, so a short history can never be spread
+  // across empty bins and draw gaps that do not exist.
+  const NB = n > 0 ? Math.max(1, Math.min(240, n)) : 0;
+  const TIER_COLOR = ['#5f4a1e', '#9a6b1c', '#cf6a2a'];
+  const TIER_WIDTH = [1.0, 1.9, 2.8];
+  const fringe = [[], [], [], [], [], [], [], [], []];
+  const halo = [];
+
+  for (let b = 0; b < NB; b++) {
+    const i0 = Math.floor(b * n / NB), i1 = Math.floor((b + 1) * n / NB);
+    const slots = Math.max(1, i1 - i0);
+    let sm = null, sc = 0, hs = 0, hc = 0;
+    for (let i = i0; i < i1; i++) {
+      const s = sArr[i];
+      // The bin carries the MINIMUM, not the mean: a mean would erase a
+      // six-second desaturation inside an eight-second bin. The minimum is
+      // always a value that was actually observed.
+      if (s !== null) { sc++; if (sm === null || s < sm) sm = s; }
+      const h = hArr[i];
+      if (h !== null) { hs += h; hc++; }
+    }
+    const a = rad((b + 0.5) / NB);
+    if (sm !== null) {
+      // Stroke width reports how much of the bin was sampled, so a bin holding
+      // one lonely second is a hairline rather than impersonating eight
+      // seconds of continuous monitoring.
+      const cov = sc / slots;
+      const wl = cov < 0.34 ? 0 : (cov < 0.75 ? 1 : 2);
+      const tier = sm >= 94 ? 0 : (sm >= 90 ? 1 : 2);
+      const d = depthFor(sm);
+      fringe[tier * 3 + wl].push('M' + PXa(a, R_FRINGE_TOP) + ' ' + PYa(a, R_FRINGE_TOP) + 'L' + PXa(a, R_FRINGE_TOP - d) + ' ' + PYa(a, R_FRINGE_TOP - d));
+    }
+    // A bin with no SpO2 sample emits no tick. That absence IS the gap.
+    if (hc > 0) {
+      const f = Math.min(1, Math.max(0, (hs / hc - HR_LO) / (HR_HI - HR_LO)));
+      const r = R_HR_IN + f * R_HR_SPAN;
+      halo.push('M' + PXa(a, r) + ' ' + PYa(a, r) + 'l0.01 0');
+    }
+  }
+
+  const ticksMinor = [], ticksMajor = [];
+  if (n > 1) {
+    for (let i = n - 1, k = 0; i >= 0 && k < 240; i -= 60, k++) {
+      const major = ((n - 1 - i) % 300 === 0);
+      const a = rad((i + 0.5) / n);
+      const ri = major ? R_TICK5_IN : R_TICK_IN, ro = major ? R_TICK5_OUT : R_TICK_OUT;
+      (major ? ticksMajor : ticksMinor).push('M' + PXa(a, ri) + ' ' + PYa(a, ri) + 'L' + PXa(a, ro) + ' ' + PYa(a, ro));
+    }
+  }
+
+  const railD = sRuns.map(r => arc(r[0] / n, (r[1] + 1) / n, R_RAIL)).join('');
+  // Holes under half a minute stay plain darkness; longer ones get an outward
+  // flag so a 3 a.m. glance can find them without counting.
+  const flagD = gaps.filter(g => (g[1] - g[0] + 1) >= 30).map(g => {
+    const a = rad(((g[0] + g[1] + 1) / 2) / n);
+    return 'M' + PXa(a, R_FLAG_IN) + ' ' + PYa(a, R_FLAG_IN) + 'L' + PXa(a, R_FLAG_OUT) + ' ' + PYa(a, R_FLAG_OUT);
+  }).join('');
+
+  const params = Array.isArray(S.params) ? S.params : [];
+  const pS = params[0] || null, pH = params[1] || null;
+  // A stale param has NO current reading; its last value must never appear
+  // here, where it would be indistinguishable from a live one.
+  const liveVal = p => {
+    if (!p || p.stale) return null;
+    const v = String(p.val == null ? '' : p.val).trim();
+    return v ? v : null;
+  };
+  const sNow = liveVal(pS), hNow = liveVal(pH);
+  const sNowNum = sNow === null ? NaN : parseFloat(sNow);
+  const sNowColor = !isFinite(sNowNum) ? '#c3ced8' : (sNowNum >= 94 ? '#a9b6c0' : (sNowNum >= 90 ? '#d0932f' : '#e0603c'));
+
+  const covPct = n > 0 ? (sCount / n * 100) : 0;
+  const covTxt = n > 0 ? (covPct >= 99.95 ? '100' : covPct.toFixed(1)) + '%' : '—';
+  const gapsTxt = n === 0 ? 'nothing recorded'
+    : (gaps.length === 0 ? 'no gaps · rail is closed'
+      : gaps.length + (gaps.length === 1 ? ' gap · ' : ' gaps · ') + 'longest ' + fmtDur(longGap));
+  const minTxt = sMin === null ? 'no SpO₂ samples in this window' : 'min ' + (Math.round(sMin * 10) / 10) + '%';
+  const belowTxt = sCount === 0 ? '—' : 'below 90% for ' + fmtDur(below90) + ' of ' + fmtDur(sCount) + ' measured';
+  const hrRangeTxt = hCount === 0 ? 'no pulse samples in window'
+    : 'window ' + Math.round(hMin) + '–' + Math.round(hMax) + ' bpm · ' + (n > 0 ? Math.round(hCount / n * 100) : 0) + '% covered';
+  const sil = S.silence || {};
+
+  const g = [];
+  g.push('<svg width="800" height="480" viewBox="0 0 800 480" style="position:absolute;left:0;top:0">');
+  // Substrate: where the rail COULD be, so a hole reads as a hole rather than
+  // as empty space that might mean "nothing scheduled here".
+  g.push('<path d="' + arc(0, 1, R_RAIL) + '" fill="none" stroke="#191d22" stroke-width="2.5"/>');
+  g.push('<path d="' + arc(0, 1, R_FRINGE_TOP - depthFor(94)) + '" fill="none" stroke="#1e2329" stroke-width="1" stroke-dasharray="1 6"/>');
+  g.push('<path d="' + arc(0, 1, R_FRINGE_TOP - depthFor(90)) + '" fill="none" stroke="#2a2119" stroke-width="1" stroke-dasharray="1 6"/>');
+  for (let k = 0; k < 9; k++) {
+    if (!fringe[k].length) continue;
+    g.push('<path d="' + fringe[k].join('') + '" fill="none" stroke="' + TIER_COLOR[(k / 3) | 0] + '" stroke-width="' + TIER_WIDTH[k % 3] + '" stroke-linecap="butt"/>');
+  }
+  if (halo.length) g.push('<path d="' + halo.join('') + '" fill="none" stroke="#41616f" stroke-width="2.1" stroke-linecap="round"/>');
+  if (railD) g.push('<path d="' + railD + '" fill="none" stroke="#7d8f9b" stroke-width="2.5" stroke-linecap="butt"/>');
+  if (flagD) g.push('<path d="' + flagD + '" fill="none" stroke="#7a3226" stroke-width="1.6"/>');
+  if (ticksMinor.length) g.push('<path d="' + ticksMinor.join('') + '" fill="none" stroke="#262c33" stroke-width="1"/>');
+  if (ticksMajor.length) g.push('<path d="' + ticksMajor.join('') + '" fill="none" stroke="#3b444d" stroke-width="1.4"/>');
+  // Seam cursor: filled only while SpO2 is actually arriving. Hollow says the
+  // cursor is here but nothing is landing on it.
+  g.push('<path d="M' + CX + ' ' + (CY - 159) + 'L' + (CX - 6) + ' ' + (CY - 173) + 'L' + (CX + 6) + ' ' + (CY - 173) + 'Z" ' +
+         (sNow !== null ? 'fill="#d0932f" stroke="none"' : 'fill="none" stroke="#5a646d" stroke-width="1.2"') + '/>');
+  g.push('</svg>');
+
+  const row = (y, html) => '<div style="position:absolute;left:' + PANEL + 'px;top:' + y + 'px;width:322px">' + html + '</div>';
+  const rule = y => '<div style="position:absolute;left:' + PANEL + 'px;top:' + y + 'px;width:322px;height:1px;background:#20262c"></div>';
+  const hd = t => '<span class="orb-hd">' + t + '</span>';
+
+  return `<div class="orb" style="width:800px;height:480px;position:relative;background:#000;overflow:hidden">
+<style>
+/* No animation of any kind: a bedside panel that moves is a panel that wakes
+   you. The host re-renders at most once a second and that is the only change
+   on screen. */
+.orb{font-family:var(--sans);-webkit-font-smoothing:antialiased}
+.orb .orb-hd{font-size:13px;letter-spacing:.15em;color:#6f7c86;text-transform:uppercase}
+.orb .bd{font-size:13px;line-height:16px;color:#8d9aa6}
+</style>
+${g.join('')}
+<div style="position:absolute;left:${CX - 80}px;top:${CY - 52}px;width:160px;height:104px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center">
+  <div class="lim" style="font-size:46px;line-height:50px;color:${sNow === null ? '#98a2ab' : sNowColor}">${sNow === null ? '?' : E(sNow)}</div>
+  <div style="font-size:13px;letter-spacing:.12em;color:#6f7c86;margin-top:4px">${sNow === null ? 'NO CURRENT READING' : 'SpO₂ %'}</div>
+</div>
+<div class="bd" style="position:absolute;left:28px;top:424px;width:410px;color:#6f7c86">▼ now · clockwise · tick 1 min, long 5 min · rings 94 / 90%</div>
+${row(22, '<span class="lim" style="font-size:30px;line-height:34px;color:#c3ced8">' + E(S.clock || '--:--:--') + '</span>')}
+${row(62, '<span class="bd">' + hd('tier') + ' &nbsp;<span style="color:#8d9aa6">' + E(S.tier || '—') + '</span></span>')}
+${rule(86)}
+${row(96, hd('halo · pulse'))}
+${row(114, '<span class="lim" style="font-size:32px;line-height:36px;color:' + (hNow === null ? '#98a2ab' : '#a9b6c0') + '">' + (hNow === null ? '?' : E(hNow)) + '</span><span style="font-size:14px;color:#6f7c86;margin-left:8px">' + (hNow === null ? 'no current reading' : 'bpm') + '</span>')}
+${row(154, '<span class="bd">' + E(hrRangeTxt) + '</span>')}
+${rule(192)}
+${row(202, hd('ring · measured seconds'))}
+${row(220, '<span class="lim" style="font-size:26px;line-height:30px;color:' + (n > 0 && covPct < 90 ? '#d0932f' : '#c3ced8') + '">' + E(covTxt) + '</span><span class="bd lim" style="margin-left:10px">' + (n > 0 ? sCount + ' / ' + n + ' s' : '0 s') + '</span>')}
+${row(258, '<span class="bd" style="color:' + (gaps.length ? '#d0932f' : '#8d9aa6') + '">' + E(gapsTxt) + '</span>')}
+${rule(292)}
+${row(302, hd('fringe · spo₂ depth'))}
+${row(320, '<span class="bd" style="color:' + (sMin !== null && sMin < 90 ? '#e0603c' : '#8d9aa6') + '">' + E(minTxt) + '</span>')}
+${row(338, '<span class="bd">' + E(belowTxt) + '</span>')}
+${rule(366)}
+${row(376, '<span style="font-size:15px;line-height:18px;color:#8d9aa6">' + E(sil.text || '') + '</span>')}
+${row(398, '<span class="bd" style="color:#6f7c86">' + E(sil.sub || '') + '</span>')}
+</div>`;
+}
+
+/* The directions the user can swipe between. Ordered quietest-first so a swipe
+   left from the default always lights less, never more. */
+const PANELS = [
+  { id: "clinical", name: "CLINICAL", render: null },
+];
+
+function render() {
+  const st = S.live ? (live.state || liveState()) : STATES[S.state];
+
+  /* The invariant this whole mode is built around. Live mode has no detection
+     engine behind it, so any tier that implies a judgement has been made is a
+     lie the panel is telling with a true number next to it. If this ever fires,
+     the mode is unsafe to look at, not merely wrong. */
+  if (S.live && ["CLEAR", "WATCH", "CONFIRM", "KLAXON"].includes(st.tier)) {
+    console.error("LIVE MODE asserted tier", st.tier, "— nothing evaluates these numbers; this tier is unreachable by design");
+  }
+  const sil = silenceFor(st) || {};
+  const active = !!sil.active;
+  const silColor = sil.color || (active ? AM : "var(--rule)");
+  const p = Math.max(0, Math.min(1, sil.p || 0));
+
+  const bandStyle = [
+    `border:2px ${st.indeterminate ? "dashed" : "solid"} ${st.accent}`,
+    `background:${st.bandBg || "transparent"}`,
+  ].join(";");
+  const glyphStyle = [
+    "width:56px;height:56px;flex:0 0 auto;display:flex;align-items:center;justify-content:center",
+    "font-size:30px;font-weight:700;line-height:1",
+    `color:${st.indeterminate || st.solid ? "#000" : st.accent}`,
+    `background:${st.indeterminate ? "var(--hatch)" : st.solid ? st.accent : "transparent"}`,
+    `border:2px ${st.indeterminate ? "dashed" : "solid"} ${st.accent}`,
+  ].join(";");
+
+  const panel = document.getElementById("panel");
+  const spec = PANELS[S.panel];
+  const alt = spec.render;
+
+  /* Animated views must SURVIVE the poll.
+     render() runs once a second and replaces innerHTML wholesale, which
+     destroys any canvas and restarts any CSS animation — a bubble field would
+     reset every second and never rise. A view may therefore declare `update`:
+     if it is already mounted, it keeps its DOM and is handed the new state
+     instead of being rebuilt. `mount` runs once when it first appears, and
+     unmount() tears down its animation frame when you swipe away, so a view
+     you are not looking at costs nothing. */
+  if (alt && S.mounted === spec.id && spec.update) { spec.update(st); return; }
+  if (S.mounted && S.mounted !== spec.id) {
+    const prev = PANELS.find(v => v.id === S.mounted);
+    if (prev && prev.unmount) prev.unmount();
+    S.mounted = null;
+  }
+  /* Alternate directions return their OWN full-bleed 800x480 root with their
+     own margins. #panel carries 13/16 padding for the clinical layout, which
+     would lay an 800px child inside a 768px box and clip it off the right edge
+     — Aurora's readouts were running past the screen. Zero the padding for a
+     full-bleed view and restore it for the clinical one. */
+  panel.style.padding = alt ? "0" : "13px 16px";
+  if (alt) {
+    panel.innerHTML = alt(st) + viewIndicator();
+    S.mounted = spec.id;
+    if (spec.mount) spec.mount(st);
+    afterRender(st);
+    return;
+  }
+  S.mounted = null;
+
+  document.getElementById("panel").innerHTML = `
+    <div class="r-top">
+      <span class="monitor-name">${st.detail === false ? "" : "BEDSIDE MONITOR · ADULT"}</span>
+      <span style="font-size:14px;letter-spacing:1.4px;font-weight:700;color:${st.chanFg || "var(--label)"}">${esc(st.chanLabel)}</span>
+      <span class="lim" style="font-size:15px;letter-spacing:.5px;color:var(--unknown)">${esc(st.clock)}</span>
+    </div>
+
+    <div class="r-band${st.flash ? " flash" : ""}" style="${bandStyle}">
+      <div style="${glyphStyle}">${esc(st.glyph)}</div>
+      <div style="font-size:${st.restWord ? 44 : 50}px;font-weight:700;letter-spacing:${st.restWord ? 3 : 4}px;line-height:1;color:${st.accent};white-space:nowrap">${esc(st.tier)}</div>
+      <div style="margin-left:auto;text-align:right;display:flex;flex-direction:column;gap:4px">
+        <span style="font-size:15px;font-weight:700;letter-spacing:1.2px;color:${st.prioFg || "var(--unknown)"}">${esc(st.prio)}</span>
+        <span class="lim" style="font-size:14px;color:var(--unknown)">${esc(st.since)}</span>
+      </div>
+    </div>
+
+    ${st.detail === false ? "" : `
+    <div class="r-params">${st.params.map(paramBox).join("")}</div>
+
+    <div class="r-sensors">${st.sensors.map(d => `
+      <div class="sbox${d.ok === null ? " off" : d.ok ? "" : " bad"}">
+        <div class="sdot${d.ok === null ? " off" : d.ok ? "" : " bad"}">${d.ok === null ? "—" : d.ok ? "✓" : "?"}</div>
+        <div style="display:flex;flex-direction:column;gap:1px;min-width:0">
+          <span style="font-size:14px;letter-spacing:.6px;color:var(--unknown);white-space:nowrap">${esc(d.name)}</span>
+          <span class="age" style="font-size:15px;color:${d.ok === null ? "var(--label)" : d.ok ? "var(--nibp)" : "var(--unknown-hi)"};white-space:nowrap">${esc(d.age)}</span>
+        </div>
+      </div>`).join("")}
+    </div>
+
+    <div class="r-sys">${st.sys.map(y => `
+      <div class="ybox${y.ok === null ? " off" : y.ok ? "" : " bad"}">
+        <span style="font-size:14px;letter-spacing:.6px;color:var(--label);white-space:nowrap">${esc(y.name)}</span>
+        <span class="sysval" style="font-size:15px;color:${y.ok === null ? "var(--label)" : y.ok ? "var(--unknown-hi)" : "var(--watch)"};white-space:nowrap">${esc(y.val)}</span>
+      </div>`).join("")}
+    </div>`}
+
+    <div class="r-sil" id="sil" style="border:2px ${active ? "solid" : "dashed"} ${silColor};background:${active ? "var(--field)" : "transparent"};cursor:${active ? "pointer" : "default"}"
+         role="button" aria-label="${active ? "Hold three seconds to silence the alarm audio" : esc(sil.text)}" tabindex="${active ? 0 : -1}">
+      <div style="position:absolute;left:0;top:0;bottom:0;width:${(p * 100).toFixed(1)}%;background:${sil.fill || "#3A2E12"};${p > 0 ? `border-right:2px solid ${silColor}` : ""}"></div>
+      <div style="position:relative;height:100%;display:flex;align-items:center;gap:14px;padding:0 16px">
+        <span style="font-size:22px;font-weight:700;color:${silColor};line-height:1;display:${sil.glyph ? "block" : "none"}">${esc(sil.glyph)}</span>
+        <span style="font-size:${sil.big ? 24 : 20}px;font-weight:700;letter-spacing:1.6px;color:${sil.textColor || silColor};white-space:nowrap">${esc(sil.text)}</span>
+        <span class="lim" style="margin-left:auto;font-size:15px;color:${sil.subColor || "var(--unknown)"};text-align:right;white-space:nowrap">${esc(sil.sub)}</span>
+      </div>
+    </div>`;
+
+  document.getElementById("panel").insertAdjacentHTML("beforeend", viewIndicator());
+  afterRender(st);
+}
+
+/* Wiring that both directions need. Kept out of the markup builders so a new
+   direction cannot forget it — the silence bar losing its handlers would be a
+   silent regression, and the bar is the one control on the panel. */
+function afterRender(st) {
+  const bar = document.getElementById("sil");
+  if (bar) {
+    bar.addEventListener("pointerdown", down);
+    bar.addEventListener("pointerup", up);
+    bar.addEventListener("pointerleave", up);
+    bar.addEventListener("pointercancel", up);
+  }
+  document.querySelectorAll("#states button").forEach(b =>
+    b.setAttribute("aria-pressed", String(b.dataset.s === S.state)));
+  const n = document.getElementById("note");
+  if (n) n.textContent = st.caption + " — " + st.note;
+}
+
+/* Shown for a moment after a change, then gone. Neither design should carry
+   permanent chrome for a control used once a week, and a persistent indicator
+   would be lit area spent on navigation rather than on vital signs. */
+function viewIndicator() {
+  if (!S.indicatorUntil || Date.now() > S.indicatorUntil) return "";
+  const dots = PANELS.map((_, i) => `<span class="dot${i === S.panel ? " on" : ""}"></span>`).join("");
+  return `<div class="vind">${PANELS[S.panel].name}${dots}</div>`;
+}
+
+/* ── swipe ──────────────────────────────────────────────────────────────────
+   Horizontal changes design direction. The threshold is 60px and the gesture
+   must be more horizontal than vertical, so a stray touch while reaching past
+   the panel in the dark does not silently change what you are looking at. */
+function initSwipe() {
+  /* Listeners go on WINDOW, not on #panel.
+     render() replaces #panel's children once a second. The browser's implicit
+     pointer capture targets whatever child was under the finger at pointerdown,
+     so when that child is destroyed mid-gesture the browser fires
+     `pointercancel` and never `pointerup` — the swipe is silently dropped. At
+     1 Hz that swallows a large share of attempts, which is exactly the
+     "sometimes works, mostly doesn't" this was reported as.
+
+     Tracking on window, remembering the last move position, and treating
+     pointercancel as an end means a re-render can no longer eat the gesture.
+     #panel also declares touch-action:none, without which the compositor
+     claims the horizontal drag as a pan and cancels the stream before any of
+     this runs. */
+  let x0 = null, y0 = null, t0 = 0, lastX = 0, lastY = 0;
+
+  const start = (e) => { x0 = e.clientX; y0 = e.clientY; lastX = e.clientX; lastY = e.clientY; t0 = Date.now(); };
+  const move = (e) => { if (x0 !== null) { lastX = e.clientX; lastY = e.clientY; } };
+  const end = () => {
+    if (x0 === null) return;
+    const dx = lastX - x0, dy = lastY - y0, dt = Date.now() - t0;
+    x0 = null;
+    /* A view can claim the gesture for itself — dragging the seahorse is a
+       horizontal drag, which is also exactly the shape of a view swipe. The
+       claim is cleared here so it can never leak into the next gesture. */
+    if (S.claimed) { S.claimed = false; return; }
+    // 2.5s, not 900ms. The distance and direction tests do the real work of
+    // rejecting an accidental brush; the time limit only exists to stop a
+    // finger that rested on the panel and moved much later from counting. A
+    // deliberate drag across a 7-inch panel, made half asleep, routinely takes
+    // well over a second — the original 900ms budget rejected exactly the
+    // gesture a human actually makes, which is how this shipped "not working".
+    if (dt > 2500 || Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy)) return;
+    changePanel(dx < 0 ? 1 : -1);
+  };
+
+  window.addEventListener("pointerdown", start, { passive: true });
+  window.addEventListener("pointermove", move, { passive: true });
+  window.addEventListener("pointerup", end, { passive: true });
+  window.addEventListener("pointercancel", end, { passive: true });
+  // Touch events as a fallback: if anything upstream suppresses the pointer
+  // stream entirely, these still arrive.
+  window.addEventListener("touchstart", (e) => { if (e.touches[0]) start(e.touches[0]); }, { passive: true });
+  window.addEventListener("touchmove", (e) => { if (e.touches[0]) move(e.touches[0]); }, { passive: true });
+  window.addEventListener("touchend", end, { passive: true });
+
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowRight") changePanel(1);
+    else if (e.key === "ArrowLeft") changePanel(-1);
+  });
+}
+
+function changePanel(delta) {
+  S.panel = (S.panel + delta + PANELS.length) % PANELS.length;
+  // Remember the choice. Restarting the kiosk (an update, a crash, a reboot)
+  // otherwise silently reverts to CLINICAL, and a panel that forgets what you
+  // set it to is one you stop bothering to set.
+  try { localStorage.setItem("panelView", PANELS[S.panel].id); } catch (e) { /* private mode */ }
+  S.indicatorUntil = Date.now() + 1800;
+  render();
+  clearTimeout(S.indicatorTimer);
+  S.indicatorTimer = setTimeout(render, 1900);
+}
+
+document.getElementById("states").innerHTML = ORDER
+  .map(([k, label]) => `<button data-s="${k}">${label}</button>`).join("");
+document.getElementById("states").addEventListener("click", e => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  S.state = b.dataset.s;
+  hold.phase = "idle"; hold.p = 0;
+  cancelAnimationFrame(hold.raf); clearTimeout(hold.tid);
+  clearTimeout(S.restTimer);
+  render();
+  armRest();
+});
+
+// A hand landing anywhere wakes the panel — not just on the one touch target.
+document.getElementById("panel").addEventListener("pointerdown", wake);
+
+const qs = new URLSearchParams(location.search);
+if (qs.get("kiosk") === "1") document.body.classList.add("kiosk");
+// This copy is the conventional clinical window, not the layout evaluator.
+// It remains locked to Clinical even if another panel stored a prior view.
+S.panel = 0;
+const start = qs.get("state");
+if (start && STATES[start]) S.state = start;
+
+// ?live or ?live=<url>. Bare ?live means the sibling status.json, which is what
+// the stopgap systemd units in deploy/stopgap/ produce.
+if (qs.has("live")) {
+  S.live = true;
+  const v = qs.get("live");
+  live.url = v && v !== "1" && v !== "" ? v : "status.json";
+  live.demo = qs.has("demo");
+  live.debug = qs.has("debug");
+  document.getElementById("states").innerHTML =
+    `<span style="color:#8E8A83">live — polling <code>${esc(live.url)}</code> at 1 Hz. `
+    + `The state buttons are off; the panel shows what the ring reports.</span>`;
+  // Deliberately no resting in live mode. Resting exists for a panel that has
+  // something to say when it wakes; a display-only panel that goes dark is just
+  // a dark panel, and the point of tonight's run is watching the numbers move.
+  live.state = liveState();
+  render();
+  poll();
+  setInterval(poll, 1000);
+  /* ?cycle=<seconds> — attract mode. Advances through every direction on a
+     fixed interval. Exists because driving the cycle with synthetic keypresses
+     drops one occasionally, which is invisible until you are watching the
+     recording afterwards. Also the honest way to see all eight without
+     standing over the panel. */
+  const cyc = Number(qs.get("cycle"));
+  if (cyc > 0) setInterval(() => changePanel(1), cyc * 1000);
+} else {
+  render();
+  armRest();
+}
+
+/* ── layout assertion ──────────────────────────────────────────────────────
+   The design's prose claimed the row heights "= 480 exactly". They do not:
+   22+86+152+54+34+56 = 404, plus five 8px gaps = 444, plus 26px of vertical
+   padding = 470. The remaining 10px is absorbed above the silence bar by
+   margin-top:auto. That is harmless -- but "480 exactly" was still an
+   arithmetic claim that nothing checked, so it is checked here instead of
+   restated. What actually has to hold is that the panel is exactly 800x480 and
+   that the silence bar sits flush on its bottom edge, which is what makes the
+   layout non-reflowing. panel-check.mjs asserts the same sums offline. */
+requestAnimationFrame(() => {
+  const el = document.getElementById("panel"), r = el.getBoundingClientRect();
+  const bar = document.getElementById("sil").getBoundingClientRect();
+  const problems = [];
+  if (Math.round(r.width) !== 800 || Math.round(r.height) !== 480)
+    problems.push(`panel is ${Math.round(r.width)}x${Math.round(r.height)}, must be 800x480`);
+  if (Math.abs(bar.bottom - (r.bottom - 13)) > 1)
+    problems.push(`silence bar is ${(r.bottom - 13 - bar.bottom).toFixed(1)}px off the bottom padding edge`);
+  if (problems.length) console.error("PANEL LAYOUT:", problems.join(" · "));
+  else console.log("PANEL LAYOUT: 800x480, silence bar flush — ok");
+});
+</script>
+</body>
+</html>
