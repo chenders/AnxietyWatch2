@@ -26,12 +26,32 @@ DESCENT_FPM = -400.0
 # Fields whose traffic reaches this station. An aircraft that reaches a runway
 # stops being an airborne noise source, so the projection must terminate there
 # rather than extrapolating the descent into the ground. Public data.
+#
+# Hospital helipads are listed for one reason: without them the nearest landing
+# site to a descending air ambulance is PDX, and attributing the descent to PDX
+# suppressed the alert. Their coordinates are approximate to a few hundred
+# metres, which is harmless because attribution is gated on track alignment
+# rather than on distance alone.
 AIRPORTS = (
     {"id": "PDX", "lat": 45.5887, "lon": -122.5975, "elevation_ft": 31},
     {"id": "TTD", "lat": 45.5494, "lon": -122.4011, "elevation_ft": 39},
     {"id": "VUO", "lat": 45.6205, "lon": -122.6562, "elevation_ft": 25},
     {"id": "HIO", "lat": 45.5404, "lon": -122.9498, "elevation_ft": 208},
+    {"id": "PROVIDENCE-PDX", "lat": 45.5265, "lon": -122.6136, "elevation_ft": 200},
+    {"id": "LEGACY-EMANUEL", "lat": 45.5433, "lon": -122.6663, "elevation_ft": 60},
+    {"id": "OHSU", "lat": 45.4993, "lon": -122.6857, "elevation_ft": 500},
+    {"id": "ADVENTIST", "lat": 45.5133, "lon": -122.5590, "elevation_ft": 250},
 )
+ARRIVAL_ALIGNMENT_DEG = 35.0
+
+# Geometry-only proximity. Deliberately independent of the loudness model: we
+# can always tell that something is close and low, even when we cannot tell how
+# loud it will be. An air ambulance that never sends an emitter category is
+# still an air ambulance over the house.
+OVERHEAD_GROUND_M = 1_500.0
+OVERHEAD_CEILING_FT = 5_000.0
+NEAR_GROUND_M = 4_000.0
+NEAR_CEILING_FT = 8_000.0
 
 # Relative source levels at 300 m, in dB *relative to an unvalidated reference*.
 # Differences between these are meaningful for ranking; the absolute numbers are
@@ -46,6 +66,30 @@ SOURCE_LEVELS = {
     "rotorcraft": {"CLIMB": 92.0, "LEVEL": 92.0, "DESCENT": 90.0},
 }
 ATMOSPHERIC_DB_PER_M = 0.002
+
+# One set of thresholds drives both the risk verdict and the word the panel
+# prints, so the list can never say LOUD about something rated POSSIBLE.
+VERY_LOUD_INDEX = 88.0
+LIKELY_INDEX = 78.0
+POSSIBLE_INDEX = 68.0
+
+
+def loudness_band(index):
+    """The word the panel prints. Never a decibel figure.
+
+    There is no microphone yet, so nothing here knows how loud anything is
+    indoors. These are ranked estimates of relative received level outdoors and
+    the panel labels them as unvalidated on every frame.
+    """
+    if index is None:
+        return "UNKNOWN"
+    if index >= VERY_LOUD_INDEX:
+        return "VERY LOUD"
+    if index >= LIKELY_INDEX:
+        return "LOUD"
+    if index >= POSSIBLE_INDEX:
+        return "AUDIBLE"
+    return "FAINT"
 
 
 def required_coordinate(name):
@@ -146,19 +190,49 @@ def nearest_airport(lat, lon):
     return best, best_m
 
 
-def unpredictable(reason):
-    """The third state. Not measured is not the same as not a threat."""
+def proximity_band(ground_m, altitude_above_station_ft):
+    """Where it passes, on geometry alone. Never needs a category or a phase."""
+    if ground_m <= OVERHEAD_GROUND_M and altitude_above_station_ft <= OVERHEAD_CEILING_FT:
+        return "OVERHEAD"
+    if ground_m <= NEAR_GROUND_M and altitude_above_station_ft <= NEAR_CEILING_FT:
+        return "NEAR"
+    return "DISTANT"
+
+
+def bearing_to(from_lat, from_lon, to_lat, to_lon):
+    lat1, lat2 = math.radians(from_lat), math.radians(to_lat)
+    dlon = math.radians(to_lon - from_lon)
+    y = math.sin(dlon) * math.cos(lat2)
+    x = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(dlon)
+    return (math.degrees(math.atan2(y, x)) + 360) % 360
+
+
+def angular_gap(a, b):
+    return abs((a - b + 180) % 360 - 180)
+
+
+def unpredictable(reason, proximity=None, ground_m=None, altitude_ft=None, eta_seconds=None):
+    """The third state. Not measured is not the same as not a threat.
+
+    Carries whatever geometry *was* established -- proximity, distance, and the
+    time of closest approach -- so an aircraft we cannot score for loudness is
+    still reported as overhead, with a countdown, rather than vanishing from the
+    advisory. Only the loudness is withheld, because only the loudness is
+    unknown.
+    """
     return {
         "risk": "UNKNOWN",
         "confidence": "NONE",
-        "approaching": None,
+        "approaching": proximity == "OVERHEAD",
         "reasons": [reason],
-        "eta_seconds": None,
-        "ground_distance_m": None,
+        "eta_seconds": eta_seconds,
+        "ground_distance_m": ground_m,
         "slant_distance_m": None,
-        "altitude_ft": None,
+        "altitude_ft": altitude_ft,
         "noise_index": None,
+        "loudness_band": "UNKNOWN",
         "phase": None,
+        "proximity": proximity,
         "arrival_at": None,
         "terminated_by": None,
         "model": MODEL_NOTE,
@@ -186,18 +260,23 @@ def predict_pass(lat, lon, altitude_ft, category, speed_kt, track_deg, vertical_
       3. It never guesses a source level for an aircraft of unknown class or
          unknown vertical rate. That returns UNKNOWN, not LOW.
     """
-    if not isinstance(speed_kt, (int, float)) or not isinstance(track_deg, (int, float)):
-        return unpredictable("no groundspeed or ground track in the ADS-B feed")
-    if speed_kt < 20:
-        return unpredictable(f"groundspeed {speed_kt} kt is below the 20 kt projection floor")
-
     east, north = local_offsets(lat, lon)
-    speed = speed_kt * KNOTS_TO_METERS_PER_SECOND
-    track = math.radians(track_deg)
-    velocity_east = speed * math.sin(track)
-    velocity_north = speed * math.cos(track)
-    speed_squared = velocity_east**2 + velocity_north**2
-    eta_cpa = -(east * velocity_east + north * velocity_north) / speed_squared
+
+    # A helicopter slowing over a helipad is not unpredictable, it is stationary
+    # -- and that is the loudest moment of the whole arrival. Refusing to
+    # predict below 20 kt silently dropped exactly the aircraft this station
+    # most needs to see.
+    stationary = (not isinstance(speed_kt, (int, float)) or speed_kt < 20
+                  or not isinstance(track_deg, (int, float)))
+    if stationary:
+        velocity_east = velocity_north = 0.0
+        eta_cpa = 0.0
+    else:
+        speed = speed_kt * KNOTS_TO_METERS_PER_SECOND
+        track = math.radians(track_deg)
+        velocity_east = speed * math.sin(track)
+        velocity_north = speed * math.cos(track)
+        eta_cpa = -(east * velocity_east + north * velocity_north) / (velocity_east**2 + velocity_north**2)
 
     phase = thrust_phase(vertical_rate_fpm)
     klass = airframe_class(category)
@@ -212,8 +291,16 @@ def predict_pass(lat, lon, altitude_ft, category, speed_kt, track_deg, vertical_
     floor_ft = STATION_ALT_FT
     terminated_by = None
     eta_limit = PREDICTION_HORIZON_SECONDS
-    if rate < 0:
-        if field is not None and field_m <= 25_000 and altitude_ft - field["elevation_ft"] <= 6_000:
+
+    # Rotorcraft are exempt from arrival termination. Their descents are steep
+    # and local, helipads are everywhere, and suppressing an air ambulance
+    # because a runway happens to lie within 25 km is the worst false negative
+    # this station can produce.
+    if rate < 0 and klass != "rotorcraft":
+        aligned = (field is not None and not stationary
+                   and angular_gap(bearing_to(lat, lon, field["lat"], field["lon"]),
+                                   track_deg) <= ARRIVAL_ALIGNMENT_DEG)
+        if aligned and field_m <= 25_000 and altitude_ft - field["elevation_ft"] <= 6_000:
             arrival_at = field["id"]
             floor_ft = field["elevation_ft"]
         seconds_to_floor = (altitude_ft - floor_ft) / (-rate) * 60.0
@@ -233,25 +320,43 @@ def predict_pass(lat, lon, altitude_ft, category, speed_kt, track_deg, vertical_
     # Explicit None test: the index is a relative level and is routinely
     # negative at long range, so truthiness would read a distant aircraft as
     # unscorable.
+    proximity = proximity_band(ground_cpa, altitude_above_station)
+
     index = noise_index(slant_cpa, klass, phase)
     if index is None:
         missing = "emitter category" if klass is None else "vertical rate"
-        return unpredictable(f"no {missing}; cannot rank loudness without guessing a source level")
+        return unpredictable(
+            f"no {missing}; close pass reported on geometry alone" if proximity == "OVERHEAD"
+            else f"no {missing}; cannot rank loudness without guessing a source level",
+            proximity=proximity, ground_m=round(ground_cpa, 1),
+            altitude_ft=round(projected_altitude), eta_seconds=round(eta))
 
     # A pass only exists if the aircraft is still meaningfully above us when it
     # gets there. ASA783 was projected over the house at 0 ft and called LIKELY
     # while it was landing at PDX, 6.4 km north; height above the station is
     # what distinguishes an overflight from an arrival at somebody else's runway.
-    overhead = altitude_above_station >= 100.0
-    approaching = eta >= 5 and eta < PREDICTION_HORIZON_SECONDS and overhead
-    if approaching and index >= 78.0:
+    #
+    # There is no minimum ETA. Requiring one silenced the advisory at the exact
+    # moment an aircraft was overhead, which is when the noise happens and when
+    # the panel is most worth reading.
+    # The discriminator is *landing somewhere else*, not merely being low. An
+    # earlier version suppressed anything projected below 100 ft above the
+    # station, which silenced a helicopter descending onto a hospital pad beside
+    # the house -- and reported "below the loudness threshold" while the index
+    # was 92. A guard that misstates its own blocker is worse than no guard.
+    landing_elsewhere = arrival_at is not None and altitude_above_station < 100.0
+    receding = eta_cpa < -5.0
+    approaching = not receding and not landing_elsewhere and eta < PREDICTION_HORIZON_SECONDS
+    if approaching and index >= LIKELY_INDEX:
         risk, reasons = "LIKELY", [f"{phase.lower()} thrust at {ground_cpa/1000:.1f} km"]
-    elif approaching and index >= 68.0:
+    elif approaching and index >= POSSIBLE_INDEX:
         risk, reasons = "POSSIBLE", [f"{phase.lower()} thrust at {ground_cpa/1000:.1f} km"]
-    elif not overhead and arrival_at:
+    elif receding:
+        risk, reasons = "LOW", ["closest approach is already behind it"]
+    elif landing_elsewhere:
         risk, reasons = "LOW", [f"descending into {arrival_at}; below station height at closest approach"]
     else:
-        risk, reasons = "LOW", ["below the unvalidated relative-loudness threshold"]
+        risk, reasons = "LOW", [f"relative index {index:.0f} is below the unvalidated threshold"]
 
     return {
         "risk": risk,
@@ -263,7 +368,9 @@ def predict_pass(lat, lon, altitude_ft, category, speed_kt, track_deg, vertical_
         "slant_distance_m": round(slant_cpa, 1),
         "altitude_ft": round(projected_altitude),
         "noise_index": round(index, 1),
+        "loudness_band": loudness_band(index),
         "phase": phase,
+        "proximity": proximity,
         "arrival_at": arrival_at,
         "terminated_by": terminated_by,
         "model": MODEL_NOTE,
@@ -302,7 +409,10 @@ def make_report(item, source_now):
     now_index = noise_index(distance, airframe_class(category), phase)
     return {
         "hex": str(item.get("hex", "")).upper(),
-        "callsign": str(item.get("flight", "")).strip() or None,
+        # str(None) is the string "None", which the panel would print as a
+        # callsign. Coerce only when there is something to coerce.
+        "callsign": (str(item["flight"]).strip() or None)
+        if isinstance(item.get("flight"), str) else None,
         "category": item.get("category"),
         "squawk": item.get("squawk"),
         "lat": lat,
@@ -373,12 +483,42 @@ def publish():
     # who arrives first. A narrowbody climbing at takeoff thrust 4 km away beats
     # a light single gliding in at 1 km, and the old ETA ordering had that
     # exactly backwards.
+    #
+    # An OVERHEAD aircraft is a candidate even when it cannot be scored. Air
+    # ambulances frequently arrive with no emitter category, and dropping them
+    # for that reason would silence the advisory for the loudest, lowest,
+    # closest traffic this station sees.
+    # An aircraft we scored and found quiet is not "expected noise", even if it
+    # passes overhead -- listing it would bury the ones that matter. An aircraft
+    # we could NOT score stays, because absence of a score is not evidence of
+    # quiet.
     candidates = [
         report for report in reports
         if report["prediction"]["risk"] in ("LIKELY", "POSSIBLE")
+        or (report["prediction"].get("proximity") == "OVERHEAD"
+            and report["prediction"]["noise_index"] is None)
     ]
-    candidates.sort(key=lambda report: -report["prediction"]["noise_index"])
-    unknown = [report for report in reports if report["prediction"]["risk"] == "UNKNOWN"]
+    # Unscored-but-overhead sorts first: it is the one case where the geometry
+    # is known to be bad and the loudness cannot be shown not to be. Ranking it
+    # below a scored aircraft would hide it behind a number we do have, which is
+    # the failure this whole state exists to prevent.
+    def rank(report):
+        index = report["prediction"]["noise_index"]
+        return (1, -index) if index is not None else (0, 0.0)
+
+    candidates.sort(key=rank)
+
+    # Absolute instant rather than a relative countdown. The panel re-renders
+    # once a second from whatever status.json it last fetched, so a stored
+    # "in 90 s" would freeze at 90 if the feed stalled and keep promising a
+    # flyover that already happened. An epoch lets the page count down honestly
+    # and reach zero on its own.
+    for report in candidates:
+        eta = report["prediction"]["eta_seconds"]
+        report["prediction"]["at_epoch"] = None if eta is None else now + eta
+    unknown = [report for report in reports
+               if report["prediction"]["risk"] == "UNKNOWN"
+               and report["prediction"].get("proximity") != "OVERHEAD"]
 
     out = {
         "schema": 3,

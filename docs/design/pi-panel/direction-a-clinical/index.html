@@ -519,7 +519,7 @@ function liveState() {
     return { ...common,
       tier: "CAN’T ASSESS", glyph: "?", accent: "var(--unknown)", indeterminate: true,
       prio: "NOT MEASURED", prioFg: "var(--unknown-hi)", since: stamp,
-      chanLabel: live.demo ? "DEMO · SpO₂/HR REAL · REST SIMULATED" : "DISPLAY ONLY · NO ALARM", chanFg: "var(--unknown-hi)",
+      chanLabel: live.demo ? "SpO₂/HR + AIRCRAFT REAL · BP/SYS DEMO" : "DISPLAY ONLY · NO ALARM", chanFg: "var(--unknown-hi)",
       params: params(null, null, true),
       caption: "live · can’t assess", note: fault,
     };
@@ -528,7 +528,7 @@ function liveState() {
     // Solid border, slate hue: the data is present, the judgement is not.
     tier: "NOT ARMED", glyph: "○", accent: "var(--unknown)",
     prio: "NO ALARM ARMED", prioFg: "var(--unknown-hi)", since: "display only",
-    chanLabel: live.demo ? "DEMO · SpO₂/HR REAL · REST SIMULATED" : "DISPLAY ONLY · NO ALARM", chanFg: "var(--unknown-hi)",
+    chanLabel: live.demo ? "SpO₂/HR + AIRCRAFT REAL · BP/SYS DEMO" : "DISPLAY ONLY · NO ALARM", chanFg: "var(--unknown-hi)",
     params: params(s.spo2, s.pulse_bpm, false),
     caption: "live", note: `SpO₂ ${s.spo2} · ${s.pulse_bpm} bpm · ${s.frames} frames — nothing is evaluating these numbers`,
   };
