@@ -68,17 +68,19 @@
     return header + body;
   }
 
+  /* Unknown is a third state. An aircraft we could not score is never folded
+     into "nothing expected" -- that would let a missing emitter category read as
+     reassurance. It is counted here, in its own colour, whenever it exists.
+
+     The standing "nothing is evaluating these" disclaimer was removed at the
+     owner's request as redundant. The NOT ARMED claim itself is NOT redundant
+     and stays in the list header on every frame. */
   function advisoryMarkup(advisory) {
-    /* Unknown is a third state. An aircraft we could not score is never folded
-       into "nothing expected" -- that would let a missing emitter category read
-       as reassurance. It is counted here, in its own colour, always. */
     const unscored = (advisory && advisory.unscored) || [];
-    const unknownLine = unscored.length
-      ? `<br><span style="color:var(--unknown-hi)">${unscored.length} FURTHER AIRCRAFT NOT SCORED — ${esc(unscored[0].reason)}</span>`
-      : "";
-    return `<div style="grid-column:1/-1;color:var(--unknown-hi);margin-bottom:5px;`
+    if (!unscored.length) return "";
+    return `<div style="grid-column:1/-1;color:var(--unknown-hi);margin-top:4px;`
       + `border:1px solid #52606A;padding:4px;letter-spacing:.5px;font-size:11px">`
-      + `NOTHING IS EVALUATING THESE · NO ALARM CAN FIRE${unknownLine}</div>`;
+      + `${unscored.length} FURTHER AIRCRAFT NOT SCORED — ${esc(unscored[0].reason)}</div>`;
   }
 
   /* The radar canvas hardcodes a "NNdB" suffix on every blip. The number behind
