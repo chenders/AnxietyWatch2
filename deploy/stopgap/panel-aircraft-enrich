@@ -1,0 +1,200 @@
+#!/usr/bin/env python3
+"""Look up exact aircraft types for addresses we have seen but cannot identify.
+
+The problem
+-----------
+
+Roughly half the aircraft this receiver hears broadcast no emitter category, and
+the category is uselessly coarse even when present -- `A3` covers a 737 MAX and
+an E175 alike. The curated roster in `panel_loud_operators` fixes this for the
+sixteen airframes that matter most, but everything else stays unscorable.
+
+adsbdb.com publishes Mode S address -> registration, ICAO type and owner, free
+and without a key. That closes the gap for most of the remaining traffic.
+
+Why a timer and not the hot path
+--------------------------------
+
+`panel-adsb-status` rewrites the bedside panel once a second and must never
+block on the network. This runs on its own schedule, writes results to the
+database and to a small local cache file, and the publisher reads that file.
+Nothing in the publish loop ever waits on a lookup.
+
+Being a good citizen of a free service
+--------------------------------------
+
+Every address is looked up ONCE and the answer is kept, including a negative
+answer -- otherwise a hex adsbdb has never heard of would be re-queried forever.
+Requests are paced, batches are capped, and the User-Agent names the project so
+the traffic is attributable. A missing entry is not an error: a38c66 returned no
+data during evaluation, and that is simply how coverage works.
+
+Retention: this is static airframe reference data from a public database, not
+flight data from a metered vendor API, so the FR24 30-day rule does not reach
+it. It is kept, which is the entire point of caching it.
+"""
+
+import json
+import os
+import ssl
+import sys
+import time
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+try:
+    import psycopg2
+except ImportError:  # pragma: no cover
+    psycopg2 = None
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import panel_airframe_types  # noqa: E402
+
+API = os.environ.get("ADSBDB_BASE", "https://api.adsbdb.com/v0/aircraft")
+DSN = os.environ.get("PANEL_NOISE_DSN", "host=/var/run/postgresql dbname=vitals user=chris")
+CACHE = Path(os.environ.get("PANEL_AIRCRAFT_CACHE",
+                            "/var/lib/panel-noise/aircraft_types.json"))
+
+# Pace, cap and identify. A free service deserves all three.
+REQUEST_SPACING = float(os.environ.get("ADSBDB_SPACING_SECONDS", "1.5"))
+BATCH = int(os.environ.get("ADSBDB_BATCH", "40"))
+USER_AGENT = os.environ.get(
+    "ADSBDB_USER_AGENT", "anxietywatch-panel/1.0 (+aircraft noise forecast)")
+
+# A negative answer is kept, but not forever: coverage improves over time, so an
+# address that was unknown a month ago is worth one more try.
+RETRY_AFTER_DAYS = float(os.environ.get("ADSBDB_RETRY_AFTER_DAYS", "30"))
+
+# Addresses that need an answer: seen in the record, no type yet, and either
+# never looked up or looked up long enough ago to be worth retrying. Roster rows
+# are excluded outright -- curated identity always wins over a lookup.
+SELECT_PENDING = """
+SELECT DISTINCT a.icao_hex
+  FROM aircraft a
+ WHERE a.icao_type IS NULL
+   AND a.source <> 'roster'
+   AND (a.looked_up_at IS NULL OR a.looked_up_at < now() - %s * interval '1 day')
+ ORDER BY a.icao_hex
+ LIMIT %s
+"""
+
+# Never overwrites a roster row, and never clears a value we already had: a
+# lookup may return null for a field the curated entry knows.
+UPDATE_FOUND = """
+UPDATE aircraft SET
+    registration = COALESCE(registration, %s),
+    icao_type    = COALESCE(icao_type, %s),
+    model        = COALESCE(model, %s),
+    operator_name = COALESCE(operator_name, %s),
+    source       = CASE WHEN source = 'roster' THEN source ELSE 'adsbdb' END,
+    looked_up_at = now(),
+    updated_at   = now()
+ WHERE icao_hex = %s AND source <> 'roster'
+"""
+
+# Records that we asked and got nothing, so we stop asking.
+UPDATE_MISSING = """
+UPDATE aircraft SET looked_up_at = now(), updated_at = now()
+ WHERE icao_hex = %s AND source <> 'roster'
+"""
+
+
+def lookup(hex_code, context):
+    """(record, error). A missing aircraft is (None, None) -- not an error."""
+    request = urllib.request.Request(
+        f"{API}/{hex_code.lower()}",
+        headers={"Accept": "application/json", "User-Agent": USER_AGENT})
+    try:
+        with urllib.request.urlopen(request, timeout=12, context=context) as response:
+            payload = json.loads(response.read())
+    except urllib.error.HTTPError as exc:
+        # 404 is the documented "we do not have this airframe" answer.
+        if exc.code == 404:
+            return None, None
+        return None, f"HTTP {exc.code}"
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        return None, f"unreachable: {exc}"
+    except ValueError as exc:
+        return None, f"unparseable: {exc}"
+
+    aircraft = (payload or {}).get("response", {}).get("aircraft")
+    if not isinstance(aircraft, dict):
+        return None, None
+    return aircraft, None
+
+
+def write_cache(rows):
+    """Compact hex -> identity map for the publish loop.
+
+    The publisher must not touch PostgreSQL, so the same facts are mirrored into
+    a small file it can read cheaply. The database stays the system of record.
+    """
+    CACHE.parent.mkdir(parents=True, exist_ok=True)
+    tmp = CACHE.with_name(f".{CACHE.name}.tmp")
+    with tmp.open("w") as stream:
+        json.dump({"written_at": time.time(), "aircraft": rows}, stream,
+                  separators=(",", ":"), allow_nan=False)
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(tmp, CACHE)
+    os.chmod(CACHE, 0o644)
+
+
+def refresh_cache(cur):
+    cur.execute("""
+        SELECT icao_hex, registration, icao_type, operator_name
+          FROM aircraft WHERE icao_type IS NOT NULL
+    """)
+    rows = {h: {"reg": r, "type": t, "operator": o} for h, r, t, o in cur.fetchall()}
+    write_cache(rows)
+    return len(rows)
+
+
+def main():
+    if psycopg2 is None:
+        print("panel-aircraft-enrich: psycopg2 is not installed", file=sys.stderr)
+        return 1
+    context = ssl.create_default_context()
+    found = missing = failed = 0
+
+    with psycopg2.connect(DSN) as conn:
+        with conn.cursor() as cur:
+            cur.execute(SELECT_PENDING, (RETRY_AFTER_DAYS, BATCH))
+            pending = [row[0] for row in cur.fetchall()]
+
+        for index, hex_code in enumerate(pending):
+            if index:
+                time.sleep(REQUEST_SPACING)
+            record, error = lookup(hex_code, context)
+            with conn.cursor() as cur:
+                if error is not None:
+                    # Do NOT mark it looked-up: the answer is unknown, not
+                    # absent, and burning the retry on a network blip would
+                    # leave the aircraft unidentified for a month.
+                    failed += 1
+                    print(f"panel-aircraft-enrich: {hex_code}: {error}", flush=True)
+                elif record is None:
+                    cur.execute(UPDATE_MISSING, (hex_code,))
+                    missing += 1
+                else:
+                    cur.execute(UPDATE_FOUND, (
+                        record.get("registration"),
+                        panel_airframe_types.normalise_type(record.get("icao_type")),
+                        record.get("type"),
+                        record.get("registered_owner"),
+                        hex_code))
+                    found += 1
+            conn.commit()
+
+        with conn.cursor() as cur:
+            cached = refresh_cache(cur)
+
+    print(f"panel-aircraft-enrich: {len(pending)} queried, {found} identified, "
+          f"{missing} not in the database, {failed} failed; cache holds {cached}",
+          flush=True)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

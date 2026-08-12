@@ -1,0 +1,22 @@
+[Unit]
+Description=Look up exact aircraft types for addresses seen but not identified
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=chris
+# Quoted: systemd splits an unquoted value on whitespace, which silently drops
+# every parameter after the first and falls back to the OS user.
+Environment="PANEL_NOISE_DSN=host=/var/run/postgresql dbname=vitals user=chris"
+Environment=PANEL_AIRCRAFT_CACHE=/var/lib/panel-noise/aircraft_types.json
+ExecStart=/usr/local/bin/panel-aircraft-enrich
+StateDirectory=panel-noise
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+# Not on the alarm path. If memory is short this may be killed; the panel
+# degrades to whatever aircraft broadcast about themselves.
+OOMScoreAdjust=300

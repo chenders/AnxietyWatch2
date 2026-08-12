@@ -1,0 +1,12 @@
+[Unit]
+Description=Look up unidentified aircraft types periodically
+
+[Timer]
+# Well after boot, then every 15 minutes. Nothing here is urgent: an aircraft
+# identified an hour late is still identified for every future pass.
+OnBootSec=4min
+OnUnitActiveSec=15min
+AccuracySec=60s
+
+[Install]
+WantedBy=timers.target

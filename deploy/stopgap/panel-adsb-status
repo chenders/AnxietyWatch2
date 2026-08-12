@@ -13,6 +13,7 @@ import time
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import panel_loud_operators  # noqa: E402  (path must be set before the import)
 import panel_noise_log  # noqa: E402
+import panel_airframe_types  # noqa: E402
 
 SOURCE = Path(os.environ.get("DUMP1090_AIRCRAFT_JSON", "/run/dump1090-mutability/aircraft.json"))
 OUTPUT = Path(os.environ.get("ADSB_STATUS_JSON", "/home/chris/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical/adsb_status.json"))
@@ -160,20 +161,37 @@ def local_offsets(lat, lon):
     return east, north
 
 
-# ICAO type designator -> airframe class, for aircraft on the operator roster.
-# Only types actually on the roster appear here; this is not a general type
-# database and must not become one.
-ROSTER_TYPE_CLASS = {
-    "A119": "rotorcraft",
-    "B407": "rotorcraft",
-    "EC35": "rotorcraft",
-    "EC45": "rotorcraft",
-    # Clark County's Bell OH-58C -- the only police rotorcraft in the area.
-    "B06": "rotorcraft",
-    "C182": "light",
-    "C172": "light",
-    "R172": "light",
-}
+# Exact ICAO types learned from the public airframe database, written by
+# panel-aircraft-enrich. Read from a FILE, never from PostgreSQL: this loop
+# rewrites the bedside panel once a second and must not block on a database.
+AIRCRAFT_CACHE = Path(os.environ.get(
+    "PANEL_AIRCRAFT_CACHE", "/var/lib/panel-noise/aircraft_types.json"))
+_cache = {}
+_cache_mtime = None
+
+
+def enriched_types():
+    """hex -> {reg, type, operator}, reloaded only when the file changes.
+
+    A missing or unreadable cache is not an error: it means no enrichment has
+    run yet, and every aircraft simply falls through to whatever it broadcasts.
+    """
+    global _cache, _cache_mtime
+    try:
+        mtime = AIRCRAFT_CACHE.stat().st_mtime
+    except OSError:
+        return _cache
+    if mtime != _cache_mtime:
+        try:
+            with AIRCRAFT_CACHE.open() as stream:
+                loaded = json.load(stream)
+            entries = loaded.get("aircraft")
+            if isinstance(entries, dict):
+                _cache = entries
+                _cache_mtime = mtime
+        except (OSError, ValueError):
+            pass
+    return _cache
 
 
 def airframe_class(category, hex_code=None):
@@ -201,9 +219,23 @@ def airframe_class(category, hex_code=None):
     if code == "A7":
         return "rotorcraft"
 
+    # 1. The curated roster: hand-verified, with provenance. Always wins over a
+    #    lookup, because it carries judgement a lookup cannot.
     airframe = panel_loud_operators.lookup_hex(hex_code)
     if airframe is not None:
-        return ROSTER_TYPE_CLASS.get(airframe["type"])
+        return panel_airframe_types.classify(airframe["type"])
+
+    # 2. The exact ICAO type from the public airframe database, if one has been
+    #    learned for this address. This is what turns "A3, could be anything"
+    #    into "B739" -- a widebody and a regional jet are no longer the same
+    #    source level.
+    key = panel_loud_operators.normalise_hex(hex_code)
+    entry = enriched_types().get(key) if key else None
+    if isinstance(entry, dict):
+        return panel_airframe_types.classify(entry.get("type"))
+
+    # 3. Unknown, and stays unknown. Never folded into "jet" on the grounds that
+    #    most traffic is jets.
     return None
 
 
@@ -494,6 +526,8 @@ def make_report(item, source_now):
 
     # Identification from the local roster. Costs nothing, needs no network, and
     # works for the aircraft that broadcast no emitter category at all.
+    learned = enriched_types().get(panel_loud_operators.normalise_hex(hex_code) or "")
+    learned = learned if isinstance(learned, dict) else {}
     operator_state, operator_reason, airframe = panel_loud_operators.identify(
         hex_code=hex_code, callsign=callsign, aircraft_type=None)
     return {
@@ -511,8 +545,11 @@ def make_report(item, source_now):
         "operator_kind": panel_loud_operators.operator_kind(airframe) if airframe else None,
         "operator_state": operator_state,
         "operator_reason": operator_reason,
-        "registration": (airframe or {}).get("reg"),
-        "icao_type": (airframe or {}).get("type"),
+        # Roster first, then whatever the airframe database supplied. A
+        # registration is what a person recognises; a hex is not.
+        "registration": (airframe or {}).get("reg") or learned.get("reg"),
+        "icao_type": (airframe or {}).get("type") or learned.get("type"),
+        "owner": (airframe or {}).get("model") or learned.get("operator"),
         "category": item.get("category"),
         "squawk": item.get("squawk"),
         "lat": lat,
