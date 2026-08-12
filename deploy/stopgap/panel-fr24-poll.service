@@ -1,0 +1,56 @@
+[Unit]
+Description=Poll Flightradar24 for low rotorcraft near the station
+Documentation=file:///home/chris/anxietywatch-panel/deploy/stopgap/README.md
+After=network-online.target
+Wants=network-online.target
+Before=panel-adsb-status.service
+
+[Service]
+Type=simple
+User=chris
+
+# The API key and the station coordinates are BOTH secrets and neither may ever
+# be committed. Set them in a drop-in:
+#
+#   sudo systemctl edit panel-fr24-poll
+#   [Service]
+#   Environment=FR24_API_KEY=...
+#   Environment=STATION_LAT=...
+#   Environment=STATION_LON=...
+#
+# The key already exists at ~/.fr24_key on this host, mode 600. Prefer moving it
+# into the drop-in over reading the file, so the daemon needs no home access.
+
+# 3 s matches FR24's own per-aircraft refresh rate. A Providence departure gives
+# only ~34 s of warning in total, so the interval is the warning budget. Raise
+# to 5 s for the sustainable steady state -- see README for the credit maths.
+Environment=FR24_POLL_INTERVAL_SECONDS=3
+Environment=FR24_CACHE_JSON=/run/panel-fr24/fr24_aircraft.json
+Environment=FR24_CREDIT_LEDGER=/var/lib/panel-fr24/credits.json
+Environment=PANEL_NOISE_LOG=/var/lib/panel-noise/loud-aircraft.jsonl
+
+ExecStart=/usr/local/bin/panel-fr24-poll
+Restart=always
+RestartSec=5
+
+# The cache lives in tmpfs and the ledger and log in /var/lib. RuntimeDirectory
+# and StateDirectory create both with the right ownership, so the unit needs no
+# ReadWritePaths for them.
+RuntimeDirectory=panel-fr24
+StateDirectory=panel-fr24 panel-noise
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+# This daemon is not on the alarm path. If the kernel is short of memory it may
+# be killed; the bedside display degrades to the local receiver, which is the
+# correct trade. Do NOT copy the OOMScoreAdjust=-1000 used by vitalsd here.
+OOMScoreAdjust=200
+
+[Install]
+WantedBy=multi-user.target

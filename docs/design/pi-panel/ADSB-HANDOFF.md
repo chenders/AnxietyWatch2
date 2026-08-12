@@ -182,6 +182,63 @@ cutting the southeast corner onto final — ASA783's true CPA was 5.50 km.
 Everything in this section was run against the real API, not read off a page.
 The credential works. Historic access works.
 
+> ### CORRECTIONS, 2026-08-12 — read these before trusting §5
+>
+> §5 was written from a partial survey. Implementation measured the following
+> against the live API and the vendor documentation. **Where this block and the
+> rest of §5 disagree, this block wins.** Shipped in `deploy/stopgap/`:
+> `panel-fr24-poll`, `panel_loud_operators.py`, `panel_noise_log.py`,
+> `panel-fr24-poll.service`, `test_panel_fr24_poll.py` (54 tests).
+>
+> 1. **"Cost is per RETURNED AIRCRAFT, not per query" is incomplete.** There is
+>    a **flat 1-credit floor on any query returning no results** — measured
+>    (5 empty polls → 5 credits) and documented verbatim at
+>    `/docs/credit-overview`. This floor, not the per-aircraft rate, is what
+>    prices continuous polling, because nearly every poll is empty.
+>
+> 2. **The identity cache "cached forever" is not permitted, and would not have
+>    worked anyway.** FR24's storage rules cap retention at 30 days from
+>    receipt. Separately, the API returns `reg`, `hex` **and** `callsign` as
+>    null for the Portland Life Flight tails on the summary and registration
+>    endpoints — a `hex -> type` cache would have had nothing to key on for
+>    exactly the aircraft that matter. Only N443LF (Redmond) is named. A
+>    registration-filtered poll, the obvious cheap design, silently misses the
+>    target fleet.
+>
+> 3. **Identity is recoverable without the API.** `flight-tracks` still carries
+>    the callsign, and FR24's public aircraft pages give the **Mode S address**,
+>    which the aircraft broadcasts whether or not it broadcasts a category. The
+>    roster in `panel_loud_operators.py` therefore identifies these helicopters
+>    **locally, for free**, and keeps working if the subscription lapses.
+>    N406LF (`A4C3EB`) is Portland-based and by volume the most likely overhead.
+>
+> 4. **The account holds 666,000 credits/month, not the documented 333,000**,
+>    and they do not roll over. Aggressive polling inside a cycle is free;
+>    sustained 3 s polling is not (~925k/mo).
+>
+> 5. **Warning time is ~34 s and geometrically fixed.** Measured from FR24's
+>    first fix at liftoff to closest approach for a Providence departure
+>    (`41032ec0`, N776LF: 0.95 km at 600 ft, +1088 fpm). No poll rate beats it.
+>
+> 6. **Quiet hours do not exist.** Across 14 days of Portland-area Life Flight
+>    helicopters, **no hour of the day is ever empty** (6.6 flights/day;
+>    quietest 02:00 and 05:00 at one flight each in 14 days). Gating FR24 by
+>    time trades coverage for money — it is not free.
+>
+> 7. **A 403 from this API is usually not an auth failure.** urllib's default
+>    User-Agent is rejected at the edge with an HTML body while the identical
+>    request from curl returns 200. Set a User-Agent; check the content type
+>    before blaming the credential.
+>
+> 8. **The vendor's geofence example has a bug for our use case.** Its
+>    `alerted` set is never cleared, so an aircraft that leaves and returns is
+>    suppressed forever — which would silence the Providence *departure*, the
+>    louder half of the visit.
+>
+> 9. **`categories=H` was silently ignored** on a `flight-summary` query that
+>    also carried `airports=`; the response contained fixed-wing traffic.
+>    Filter on explicit ICAO types when the category filter matters.
+
 ### Why it matters here
 
 The owner is emphatic, from direct experience, and the data agrees:

@@ -1,0 +1,591 @@
+#!/usr/bin/env python3
+"""Poll Flightradar24 for low rotorcraft near the station and cache the result.
+
+Why this is a separate process from `panel-adsb-status`:
+
+The publish loop must never block. `panel-adsb-status` re-reads dump1090 and
+rewrites the panel's status file once a second; a synchronous HTTPS call inside
+that loop would stall the whole bedside display on FR24's latency, on a TCP
+retransmit, or on a rate-limit backoff. So this daemon owns the network and
+writes a cache file, and the publisher reads that cache and never waits.
+
+Why FR24 at all, when there is already an ADS-B receiver:
+
+The receiver reports ~50% of aircraft with no emitter category, which makes them
+unscorable, and air ambulances are over-represented in that group. FR24 supplies
+the ICAO type independently. It is a *primary* source here, not an enricher: it
+must work whether or not the local dongle ever hears these aircraft.
+
+What this is for, specifically:
+
+Life Flight air ambulances serving the Providence Portland helipad. Measured
+2026-08-11 from FR24 tracks: a departure off that pad passes the station at
+under 1 km, at 600 ft, climbing at over 1000 fpm -- the loudest configuration a
+rotorcraft has. Total warning from FR24's first fix to closest approach was
+34 seconds, because the pad is only ~1.6 km away. That 34 s is a property of the
+geometry, not of the poll rate; it is the ceiling on how much notice is
+obtainable, and it is why the poll interval is short.
+
+Cost, measured against the live API on 2026-08-11 and confirmed in the vendor
+docs (`/docs/credit-overview`):
+
+  - a query returning no aircraft costs a flat 1 credit
+  - live/flight-positions/light costs 6 credits per returned aircraft
+  - live/flight-positions/full costs 8 credits per returned aircraft
+
+The 1-credit floor is what prices continuous polling: at a 3 s interval the
+overwhelming majority of polls are empty, so cost is ~1 credit per poll
+regardless of filtering. Filtering still matters, because it keeps the
+*non*-empty polls small. `categories=H` plus an altitude ceiling is what keeps a
+poll from returning thirty airliners at cruise.
+
+FR24 refreshes a given aircraft's position about every 3 s, so polling faster
+than that buys nothing but credits.
+
+Storage: FR24's terms (`/docs/storage-rules`) forbid retaining API data beyond
+30 days. The cache this writes is a single current-state file under /run
+(tmpfs), so it does not survive a reboot and is overwritten every poll. Nothing
+here accumulates history. Do not add a persistent identity cache without
+re-reading those terms -- an earlier design note proposed caching hex->type
+"forever", which is not permitted.
+"""
+
+import json
+import math
+import os
+import ssl
+import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+from pathlib import Path
+
+# The module sits beside this script. Both are installed into /usr/local/bin,
+# which is not on the default import path for a script invoked by absolute path.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import panel_loud_operators  # noqa: E402  (path must be set before the import)
+import panel_noise_log  # noqa: E402
+
+API_BASE = os.environ.get("FR24_API_BASE", "https://fr24api.flightradar24.com")
+OUTPUT = Path(os.environ.get("FR24_CACHE_JSON", "/run/panel-fr24/fr24_aircraft.json"))
+LEDGER = Path(os.environ.get("FR24_CREDIT_LEDGER", "/var/lib/panel-fr24/credits.json"))
+
+# Prototype default is 3 s, matching FR24's own per-aircraft refresh rate, so no
+# position update is ever aliased away. At 92 kt -- the measured ground speed of
+# a Life Flight departure over the station -- a 5 s interval carries up to 235 m
+# of position error, which is a fifth of the whole closest-approach distance.
+BASE_INTERVAL = float(os.environ.get("FR24_POLL_INTERVAL_SECONDS", "3"))
+
+# Floor on spacing between requests. Eight requests fired back-to-back drew
+# `429 Rate limit exceeded` on 2026-08-11, and 3 s spacing drew it again while
+# mixed with other calls. The sibling project (phx-pd-helicopter-tracker) landed
+# on a 10 s floor after the same pain. This is deliberately below that because
+# this daemon issues exactly one kind of request, but it is never zero.
+MIN_REQUEST_SPACING = float(os.environ.get("FR24_MIN_REQUEST_SPACING", "2.5"))
+BACKOFF_SECONDS = float(os.environ.get("FR24_BACKOFF_SECONDS", "30"))
+
+# Radius of the watched circle. The bounding box is the coarse filter the API
+# accepts; the circle is applied locally afterwards, per the vendor's own
+# geofence example. 12 km covers every hospital pad that feeds traffic across
+# this station, with margin for a helicopter that routes around the airport.
+RADIUS_KM = float(os.environ.get("FR24_RADIUS_KM", "12"))
+
+# Rotorcraft, plus aircraft FR24 has not categorised. `N` is included because
+# "no category" is exactly the failure mode that makes the local receiver
+# useless for air ambulances, and excluding it here would rebuild that blind
+# spot in the replacement.
+CATEGORIES = os.environ.get("FR24_CATEGORIES", "H,N")
+
+# Noise happens low. Anything above this is not the complaint, and excluding it
+# keeps a non-empty poll from being charged for airliners at cruise.
+ALTITUDE_RANGES = os.environ.get("FR24_ALTITUDE_RANGES", "0-10000")
+
+# A hard ceiling so a bug cannot drain the balance. Copied in spirit from
+# FR24_MONTHLY_CREDIT_LIMIT in the sibling project. Subscription credits do not
+# roll over between billing periods, so the ceiling is per cycle, and the cycle
+# resets on the billing day rather than on the 1st.
+CREDIT_CEILING = int(os.environ.get("FR24_CREDIT_CEILING", "600000"))
+BILLING_DAY = int(os.environ.get("FR24_BILLING_DAY", "6"))
+
+# Identifies this daemon to the API edge. Must not be left as urllib's default:
+# see the note in Fr24Client.fetch. Naming the project rather than impersonating
+# a browser keeps the traffic honestly attributable if FR24 ever asks.
+USER_AGENT = os.environ.get(
+    "FR24_USER_AGENT", "anxietywatch-panel-fr24-poll/1.0 (+aircraft noise forecast)")
+
+EARTH_KM = 6371.0
+CREDITS_PER_AIRCRAFT_LIGHT = 6
+CREDITS_PER_EMPTY_QUERY = 1
+
+# A pass this close gets logged for the admin console. 4 km matches the model's
+# NEAR band in `panel-adsb-status`, so the log and the panel agree about what
+# counts as close. A confirmed air ambulance is logged at any range inside the
+# watched circle, because identifying one at all is the thing this daemon exists
+# to do and the owner reports them as the dominant noise source.
+NOTABLE_KM = float(os.environ.get("FR24_NOTABLE_KM", "4.0"))
+
+# How long an aircraft must be unseen before its pass is considered over and the
+# event written. Must exceed the poll interval by enough to survive a single
+# failed poll, or one dropped request would split one overflight into two events.
+PASS_GAP_SECONDS = float(os.environ.get("FR24_PASS_GAP_SECONDS", "120"))
+
+def required_coordinate(name):
+    raw = os.environ.get(name)
+    if raw is None:
+        raise SystemExit(f"panel-fr24-poll: {name} is required")
+    try:
+        return float(raw)
+    except ValueError as exc:
+        raise SystemExit(f"panel-fr24-poll: invalid {name}={raw!r}") from exc
+
+
+def api_token():
+    token = os.environ.get("FR24_API_KEY") or os.environ.get("FR24_API_TOKEN")
+    if not token:
+        raise SystemExit(
+            "panel-fr24-poll: FR24_API_KEY is required; set it in a systemd "
+            "drop-in (systemctl edit panel-fr24-poll), never in the unit file "
+            "and never in git"
+        )
+    return token.strip()
+
+
+def haversine_km(lat1, lon1, lat2, lon2):
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = (math.sin(dlat / 2) ** 2
+         + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2) ** 2)
+    return EARTH_KM * 2 * math.atan2(math.sqrt(a), math.sqrt(max(0.0, 1 - a)))
+
+
+def bounds_for(lat, lon, radius_km):
+    """Coarse box enclosing the circle. Order is north,south,west,east.
+
+    The API filters on a rectangle only, so the circle is applied afterwards in
+    `within_circle`. The box is the cost lever -- everything inside it is billed
+    -- so it is sized to the circle and not padded.
+    """
+    dlat = radius_km / 111.32
+    # cos() collapses toward the poles; guard so a bad latitude cannot produce a
+    # division by zero and a box spanning the planet.
+    scale = max(0.01, math.cos(math.radians(lat)))
+    dlon = radius_km / (111.32 * scale)
+
+    # The API processes at most 3 decimal places, so the box must be quantised
+    # to 3 dp before it is sent. Rounding to *nearest* silently shrinks the box
+    # by up to ~55 m on each edge, which clips the circle the model believes it
+    # is watching and can drop an aircraft at the boundary. Round outward
+    # instead: the box is always a superset of the circle, and the exact circle
+    # is applied locally afterwards in `within_circle`, so the extra margin
+    # costs nothing but a slightly larger coarse filter.
+    north = math.ceil((lat + dlat) * 1000) / 1000
+    south = math.floor((lat - dlat) * 1000) / 1000
+    west = math.floor((lon - dlon) * 1000) / 1000
+    east = math.ceil((lon + dlon) * 1000) / 1000
+    return f"{north:.3f},{south:.3f},{west:.3f},{east:.3f}"
+
+
+def cycle_key(now, billing_day):
+    """Billing cycle this instant falls in.
+
+    Credits expire on the billing day rather than the calendar month end, so a
+    ledger keyed on year-month would reset up to three weeks late and let a
+    runaway loop spend an entire cycle's credits before the guard noticed.
+    """
+    stamp = time.gmtime(now)
+    year, month = stamp.tm_year, stamp.tm_mon
+    if stamp.tm_mday < billing_day:
+        month -= 1
+        if month == 0:
+            year, month = year - 1, 12
+    return f"{year:04d}-{month:02d}"
+
+
+class CreditLedger:
+    """Estimated spend for the current billing cycle, persisted across restarts.
+
+    Estimated, not authoritative: FR24 bills server-side and exposes no balance
+    endpoint (probed 2026-08-12: /api/balance, /api/credits, /api/subscription,
+    /api/account and /api/me all return 404). `/api/usage` reports consumption
+    but is rate-limited to one call per minute, so it cannot gate a 3 s loop.
+    This ledger therefore over-counts rather than under-counts, and the ceiling
+    exists to bound a bug, not to bill accurately.
+    """
+
+    def __init__(self, path, ceiling, billing_day):
+        self.path = path
+        self.ceiling = ceiling
+        self.billing_day = billing_day
+        self.cycle = None
+        self.spent = 0
+        self._load()
+
+    def _load(self):
+        try:
+            with self.path.open() as stream:
+                state = json.load(stream)
+            if isinstance(state, dict):
+                self.cycle = state.get("cycle")
+                spent = state.get("spent")
+                self.spent = spent if isinstance(spent, int) and spent >= 0 else 0
+        except (OSError, ValueError):
+            # A missing or corrupt ledger must not stop the daemon, but it must
+            # not silently license unlimited spending either: starting at zero
+            # is the conservative reading only because the ceiling still applies.
+            self.cycle, self.spent = None, 0
+
+    def _save(self):
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = self.path.with_name(f".{self.path.name}.tmp")
+            with tmp.open("w") as stream:
+                json.dump({"cycle": self.cycle, "spent": self.spent}, stream)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(tmp, self.path)
+        except OSError as exc:
+            print(f"panel-fr24-poll: cannot persist credit ledger: {exc}", flush=True)
+
+    def roll(self, now):
+        current = cycle_key(now, self.billing_day)
+        if current != self.cycle:
+            self.cycle, self.spent = current, 0
+            self._save()
+
+    def charge(self, credits):
+        self.spent += credits
+        self._save()
+
+    def blocked(self):
+        """Name the blocker and the value that blocked it, or return None."""
+        if self.spent >= self.ceiling:
+            return (f"credit ceiling reached: {self.spent} of {self.ceiling} "
+                    f"estimated credits spent in cycle {self.cycle}")
+        return None
+
+
+class Fr24Client:
+    def __init__(self, token):
+        self.token = token
+        self.last_request = 0.0
+        self.blocked_until = 0.0
+        self.context = ssl.create_default_context()
+
+    def _spacing_delay(self, now):
+        elapsed = now - self.last_request
+        return max(0.0, MIN_REQUEST_SPACING - elapsed)
+
+    def fetch(self, bounds):
+        """One live position query. Returns (aircraft, credits, error).
+
+        `error` is a named string on failure and None on success. An empty
+        aircraft list with error=None means the sky is genuinely clear; an empty
+        list with an error set means we do not know. Callers must not conflate
+        them -- that distinction is the whole point of the return shape.
+        """
+        now = time.time()
+        if now < self.blocked_until:
+            return None, 0, f"backing off for {self.blocked_until - now:.0f}s after a rate limit"
+
+        delay = self._spacing_delay(now)
+        if delay > 0:
+            time.sleep(delay)
+
+        query = urllib.parse.urlencode({
+            "bounds": bounds,
+            "categories": CATEGORIES,
+            "altitude_ranges": ALTITUDE_RANGES,
+        })
+        url = f"{API_BASE}/api/live/flight-positions/light?{query}"
+        request = urllib.request.Request(url, headers={
+            "Accept": "application/json",
+            "Accept-Version": "v1",
+            "Authorization": f"Bearer {self.token}",
+            # Without this urllib sends "Python-urllib/3.x", which the edge in
+            # front of the API rejects with a 403 and an HTML body. The
+            # identical query succeeds from curl. Measured 2026-08-12: every
+            # request from this daemon returned 403 until the agent was set,
+            # while the same URL and credential returned 200 from curl. This is
+            # exactly the "403 is not necessarily an auth failure" trap the
+            # handoff notes warned about.
+            "User-Agent": USER_AGENT,
+        })
+
+        self.last_request = time.time()
+        try:
+            with urllib.request.urlopen(request, timeout=10, context=self.context) as response:
+                content_type = response.headers.get("Content-Type", "")
+                body = response.read()
+                # A 403 carrying an HTML maintenance page was mistaken for an
+                # auth failure once. Check the content type before drawing any
+                # conclusion about the credential.
+                if "application/json" not in content_type:
+                    return None, 0, (
+                        f"FR24 returned {content_type or 'no content type'} rather than JSON; "
+                        "likely a maintenance page, not a credential problem"
+                    )
+                payload = json.loads(body)
+        except urllib.error.HTTPError as exc:
+            return None, 0, self._http_error(exc)
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            return None, 0, f"FR24 unreachable: {exc}"
+        except ValueError as exc:
+            return None, 0, f"FR24 returned unparseable JSON: {exc}"
+
+        aircraft = payload.get("data") if isinstance(payload, dict) else None
+        if not isinstance(aircraft, list):
+            return None, 0, "FR24 response has no data array"
+
+        credits = (len(aircraft) * CREDITS_PER_AIRCRAFT_LIGHT) if aircraft else CREDITS_PER_EMPTY_QUERY
+        return aircraft, credits, None
+
+    def _http_error(self, exc):
+        """Name the blocker, and distinguish an API refusal from an edge refusal.
+
+        A 403 carrying HTML is the CDN or WAF, not the API: the credential is
+        fine and the request never reached Flightradar24. Reporting that as an
+        auth failure sends the next reader to regenerate a working key. The
+        content type is the discriminator, so it is checked here and not only on
+        the success path.
+        """
+        if exc.code == 429:
+            self.blocked_until = time.time() + BACKOFF_SECONDS
+            return f"FR24 rate limit (429); backing off {BACKOFF_SECONDS:.0f}s"
+
+        content_type = ""
+        detail = ""
+        try:
+            content_type = exc.headers.get("Content-Type", "") if exc.headers else ""
+            detail = exc.read(400).decode("utf-8", "replace").strip()
+        except (OSError, AttributeError):
+            pass
+
+        if "application/json" not in content_type:
+            return (
+                f"FR24 edge refused the request with HTTP {exc.code} and a "
+                f"{content_type or 'non-JSON'} body; this is a CDN/WAF block or a "
+                "maintenance page, NOT a credential problem -- do not rotate the key"
+            )
+        if exc.code == 401:
+            return f"FR24 rejected the credential (401); check FR24_API_KEY: {detail}"
+        if exc.code == 402:
+            return (f"FR24 reports payment required (402); subscription or credits "
+                    f"exhausted: {detail}")
+        return f"FR24 returned HTTP {exc.code}: {detail}"
+
+
+def to_report(item, station_lat, station_lon):
+    """Normalise one FR24 record, or None if it cannot be placed.
+
+    A record without a usable position is dropped rather than defaulted: a
+    coordinate of 0,0 is in the Gulf of Guinea, and letting it through would put
+    a phantom aircraft 12,000 km away into a proximity calculation.
+    """
+    lat, lon = item.get("lat"), item.get("lon")
+    if not isinstance(lat, (int, float)) or not isinstance(lon, (int, float)):
+        return None
+
+    distance_km = haversine_km(station_lat, station_lon, lat, lon)
+    callsign = item.get("callsign")
+    aircraft_type = item.get("type")
+    hex_code = str(item["hex"]).upper() if isinstance(item.get("hex"), str) else None
+    identification, reason, airframe = panel_loud_operators.identify(
+        hex_code=hex_code, callsign=callsign, aircraft_type=aircraft_type)
+
+    # FR24 withholds `reg` and `type` for these tails on several endpoints. When
+    # the broadcast Mode S address is on the roster we already know both, so
+    # fill them in rather than publishing null -- this is what makes the
+    # flight-playback link constructible for an aircraft the API refused to name.
+    registration = str(item["reg"]).strip() if isinstance(item.get("reg"), str) else None
+    resolved_type = str(aircraft_type).strip() if isinstance(aircraft_type, str) else None
+    if airframe is not None:
+        registration = registration or airframe["reg"]
+        resolved_type = resolved_type or airframe["type"]
+
+    return {
+        "fr24_id": item.get("fr24_id"),
+        "hex": hex_code,
+        # str(None) renders as the string "None" on the panel. Coerce only when
+        # there is something to coerce.
+        "callsign": (str(callsign).strip() or None) if isinstance(callsign, str) else None,
+        "reg": registration or None,
+        "type": resolved_type or None,
+        "lat": lat,
+        "lon": lon,
+        "alt_ft": item.get("alt"),
+        "speed_kt": item.get("gspeed"),
+        "track_deg": item.get("track"),
+        "vertical_rate_fpm": item.get("vspeed"),
+        "squawk": item.get("squawk"),
+        "data_source": item.get("source"),
+        "distance_km": round(distance_km, 3),
+        "air_ambulance": identification,
+        "air_ambulance_reason": reason,
+    }
+
+
+def within_circle(reports, radius_km):
+    return [r for r in reports if r["distance_km"] <= radius_km]
+
+
+def is_notable(report):
+    """Whether a pass earns a row in the durable log.
+
+    Two independent triggers, deliberately OR'd: close enough to be heard, OR
+    identified as an operator the owner reports as loud. The second exists
+    because an identified air ambulance at 6 km is more worth recording than an
+    anonymous light aircraft at 3 km -- the whole point of the roster is that
+    identity carries information the geometry does not.
+    """
+    if report.get("air_ambulance") == panel_loud_operators.CONFIRMED:
+        return True
+    distance = report.get("distance_km")
+    return isinstance(distance, (int, float)) and distance <= NOTABLE_KM
+
+
+def log_finished_passes(tracker, now):
+    """Write one row per completed pass. Never raises into the poll loop."""
+    for _, report in tracker.close_finished(now):
+        if not is_notable(report):
+            continue
+        try:
+            panel_noise_log.append(panel_noise_log.build_event(
+                at=now,
+                provenance=panel_noise_log.FR24,
+                callsign=report.get("callsign"),
+                hex_code=report.get("hex"),
+                registration=report.get("reg"),
+                aircraft_type=report.get("type"),
+                fr24_id=report.get("fr24_id"),
+                air_ambulance=report.get("air_ambulance"),
+                air_ambulance_reason=report.get("air_ambulance_reason"),
+                distance_km=report.get("distance_km"),
+                altitude_ft=report.get("alt_ft"),
+                phase=thrust_phase(report.get("vertical_rate_fpm")),
+                # No loudness figure: this daemon reports geometry and identity
+                # only. Inventing an index here would put a fabricated number in
+                # the durable record, where it would later be mistaken for a
+                # measurement. The band stays UNKNOWN until a microphone exists.
+                noise_index=None,
+                loudness_band="UNKNOWN",
+                reason=report.get("air_ambulance_reason"),
+            ))
+        except OSError as exc:
+            print(f"panel-fr24-poll: cannot append noise log: {exc}", flush=True)
+
+
+def thrust_phase(vertical_rate_fpm):
+    """Flight phase from vertical rate, or None when the rate is not reported.
+
+    Mirrors the thresholds in `panel-adsb-status` so the log and the panel
+    describe the same aircraft the same way. A climbing rotorcraft is the loud
+    case: the measured Providence departure was climbing at over 1000 fpm as it
+    crossed the station.
+    """
+    if not isinstance(vertical_rate_fpm, (int, float)):
+        return None
+    if vertical_rate_fpm >= 400.0:
+        return "CLIMB"
+    if vertical_rate_fpm <= -400.0:
+        return "DESCENT"
+    return "LEVEL"
+
+
+def publish(path, document):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.tmp")
+    with tmp.open("w") as stream:
+        json.dump(document, stream, separators=(",", ":"), allow_nan=False)
+        stream.write("\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.chmod(tmp, 0o644)
+    os.replace(tmp, path)
+
+
+def build_document(now, aircraft, error, ledger, interval, blocker):
+    """Assemble the cache file.
+
+    `feed_state` is load-bearing. FRESH means the list is the sky. UNAVAILABLE
+    means we do not know what is up there, and an empty list under UNAVAILABLE
+    must never be read as "nothing overhead" -- a dead feed has to hold state,
+    not reassure.
+    """
+    if blocker is not None:
+        state = "BLOCKED"
+    elif error is not None:
+        state = "UNAVAILABLE"
+    else:
+        state = "FRESH"
+
+    return {
+        "schema": 1,
+        "source": "fr24",
+        "written_at": now,
+        "feed_state": state,
+        "error": blocker or error,
+        "poll_interval_s": interval,
+        "radius_km": RADIUS_KM,
+        "categories": CATEGORIES,
+        "altitude_ranges": ALTITUDE_RANGES,
+        # Null rather than [] when the feed is not FRESH, so a consumer that
+        # forgets to check feed_state gets a TypeError instead of a false all-clear.
+        "aircraft": aircraft if state == "FRESH" else None,
+        "credits": {
+            "cycle": ledger.cycle,
+            "estimated_spent": ledger.spent,
+            "ceiling": ledger.ceiling,
+        },
+    }
+
+
+def main():
+    station_lat = required_coordinate("STATION_LAT")
+    station_lon = required_coordinate("STATION_LON")
+    token = api_token()
+
+    client = Fr24Client(token)
+    ledger = CreditLedger(LEDGER, CREDIT_CEILING, BILLING_DAY)
+    tracker = panel_noise_log.PassTracker(gap_seconds=PASS_GAP_SECONDS)
+    bounds = bounds_for(station_lat, station_lon, RADIUS_KM)
+
+    while True:
+        now = time.time()
+        ledger.roll(now)
+
+        blocker = ledger.blocked()
+        if blocker is None:
+            aircraft, credits, error = client.fetch(bounds)
+            if credits:
+                ledger.charge(credits)
+            reports = None
+            if aircraft is not None:
+                reports = within_circle(
+                    [r for item in aircraft if (r := to_report(item, station_lat, station_lon))],
+                    RADIUS_KM,
+                )
+                for report in reports:
+                    tracker.observe(report, now)
+        else:
+            reports, error = None, None
+            print(f"panel-fr24-poll: {blocker}", flush=True)
+
+        # Passes are closed on every tick, including ticks where the fetch
+        # failed. A pass that ended while the API was unreachable still ended,
+        # and holding it open indefinitely would lose the row entirely.
+        log_finished_passes(tracker, now)
+
+        try:
+            publish(OUTPUT, build_document(time.time(), reports, error, ledger, BASE_INTERVAL, blocker))
+        except OSError as exc:
+            print(f"panel-fr24-poll: cannot write {OUTPUT}: {exc}", flush=True)
+
+        if error is not None:
+            print(f"panel-fr24-poll: {error}", flush=True)
+
+        time.sleep(BASE_INTERVAL)
+
+
+if __name__ == "__main__":
+    main()

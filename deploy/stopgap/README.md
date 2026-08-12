@@ -252,11 +252,174 @@ assumptions at once. Each is now a test in `test_panel_adsb_status.py`.
   actually sound like, every threshold above is a guess and the advisory stays
   `NOT ARMED`.
 
+## Flightradar24 as a second, independent source — `panel-fr24-poll`
+
+The local receiver reports ~50% of aircraft with **no ADS-B emitter category**,
+which makes them unscorable — and the aircraft that actually generate complaints
+here are over-represented in that group. This daemon polls FR24 for the same
+airspace so identification does not depend on the dongle hearing anything.
+
+It is a **separate process** from `panel-adsb-status` on purpose: the publish
+loop rewrites the panel once a second and must never block on HTTPS latency, a
+retransmit, or a rate-limit backoff. This daemon owns the network and writes a
+cache; the publisher reads the cache and never waits.
+
+### What it is for
+
+Life Flight Network air ambulances serving the **Providence Portland** helipad,
+1.6 km west of the station. Measured 2026-08-11 from FR24 tracks (`41032ec0`,
+N776LF): a departure off that pad crossed the station at **0.95 km, 600 ft,
+climbing at +1088 fpm** — the loudest configuration a rotorcraft has.
+
+**Warning time is ~34 seconds and that is a hard ceiling.** It is the interval
+between FR24's first fix at liftoff and closest approach, set by the pad being
+1.6 km away. No poll rate can beat it; the poll interval only decides how much
+of those 34 s is usable.
+
+### Portland Police air support — the local receiver's job, not FR24's
+
+The other reported noise source. Both airframes are **fixed-wing Cessna 182T**;
+PPB operates no helicopters, so a rotorcraft orbiting Portland belongs to
+another agency and must not be attributed here.
+
+| Reg | Mode S | Airframe |
+|---|---|---|
+| N2163J | `A1D296` | Cessna 182T (2003) |
+| N425EJ | `A50E9F` | Cessna 182T (2015) |
+
+**These are invisible to `panel-fr24-poll` as configured.** It filters
+`categories=H,N`, and a 182T is category `T` (General Aviation). That is a
+deliberate trade, not an oversight: widening to `T` would return every light
+aircraft in the box at 6 credits each, and PPB is the case the *dongle* handles
+best — they orbit for long periods at 3,400–5,400 ft, comfortably inside line of
+sight, so there is no 34-second warning problem to solve. The roster makes them
+identifiable locally for free. If FR24 coverage of PPB is wanted anyway, a
+separate registration-filtered poll (`registrations=N2163J,N425EJ`) is the cheap
+route — 1 credit when they are not flying — and needs a cost decision first.
+
+Match on **Mode S, never callsign**. The flight ID is pilot-entered, often
+blank, and rotatable; one spotter source claims `IDAHO44` for N2163J but that is
+unverified and is deliberately not matched on.
+
+**`N739MR` is excluded by name.** It is the 172N that PPB surplused in 2023, now
+privately owned — and it was the single most frequent registration in the 14-day
+Aurora sample, with five flights. `RETIRED_REGISTRATIONS` makes attributing it
+to the police impossible rather than merely unlikely.
+
+Loiter, not transit, is the PPB signature: a patrol aircraft orbits, so it is
+loud for far longer than a helicopter passing through, and a model tuned only to
+closest approach will understate it. Orbit detection (turn accumulation over a
+rolling window, positional containment, altitude stability) is not built yet.
+
+### Cost, measured 2026-08-12 and confirmed in the vendor docs
+
+| | credits |
+|---|---|
+| query returning **no** aircraft | **1** (flat floor) |
+| `live/flight-positions/light` | 6 per returned aircraft |
+| `live/flight-positions/full` | 8 per returned aircraft |
+| `flight-tracks` | 40 per flight (~$0.012) |
+
+The 1-credit floor is what prices continuous polling: at 3 s almost every poll
+is empty, so the bill is ~1 credit per poll regardless of filtering. Filtering
+still matters — it keeps the *non*-empty polls small.
+
+The account carries **666,000 credits/month** (double the documented Essential
+allowance) and they **do not roll over** — unused credits expire on the billing
+date. Approximate monthly cost:
+
+| interval | credits/mo | fits 666k? |
+|---|---|---|
+| 3 s | ~925k | no — ~$70/mo top-up |
+| 5 s | ~555k | yes, with headroom |
+| 12 s | ~215k | comfortably |
+
+Default is **3 s for the prototype**, matching FR24's own ~3 s per-aircraft
+refresh so no update is aliased away. At 92 kt a 5 s interval carries up to
+235 m of position error — a fifth of the whole closest-approach distance.
+**5 s is the sustainable steady state.** `FR24_CREDIT_CEILING` is a hard
+per-cycle stop so a bug cannot drain the balance.
+
+### Identification without spending anything
+
+`panel_loud_operators.py` maps **Mode S address → airframe**. The addresses were
+collected from FR24's public aircraft pages and cross-checked against the API
+(which independently returned `A556C2` for N443LF). Because the Mode S address
+is broadcast whether or not a category is, this makes identification free,
+local, and independent of the API entirely:
+
+| tail | type | Mode S | note |
+|---|---|---|---|
+| N406LF | B407 | `A4C3EB` | Portland-based (HIO/PDX); most likely overhead |
+| N776LF | A119 | `AA8051` | the measured 0.95 km Providence departure |
+| N826LF | EC35 | `AB4825` | |
+| N843LF | EC45 | `AB8BFE` | |
+| N458LF | B407 | `A590D4` | |
+| N443LF | B407 | `A556C2` | Redmond-based; the one tail the API will name |
+
+FR24 returns `reg`, `hex` and `callsign` as **null** for the Portland tails on
+the summary and registration endpoints, so the roster is what recovers the
+registration — and therefore what makes the flight-playback link constructible.
+
+### The loud-aircraft log
+
+`panel_noise_log.py` appends one row per **pass** (not per poll) to
+`/var/lib/panel-noise/loud-aircraft.jsonl`, for the admin console. Each row
+carries identity, geometry, phase, provenance and deep links back to FR24
+(`/data/aircraft/<reg>#<fr24_id>`).
+
+Two rules worth knowing before changing it:
+
+- **Retention is 6 months for FR24-sourced rows, by owner decision.** FR24's
+  terms specify 30 days. The exposure is confined to one constant; the module
+  docstring records the decision so it is not mistaken for an oversight. Rows
+  from the local receiver carry no expiry — no licence governs our own antenna.
+- **A returning aircraft gets a second row.** FR24's own geofence example keeps
+  an `alerted` set it never clears, which would permanently suppress the
+  Providence *departure* — the louder half of the visit.
+
+An unscored aircraft is never logged as quiet: `noise_index` stays `null` and
+the band stays `UNKNOWN`. Absence of a score is not evidence of quiet.
+
+### Install and verify
+
+```sh
+sudo install -m 0755 panel-fr24-poll /usr/local/bin/
+sudo install -m 0644 panel_loud_operators.py panel_noise_log.py /usr/local/bin/
+sudo install -m 0644 panel-fr24-poll.service /etc/systemd/system/
+
+# Key AND station coordinates are secrets. Neither may ever be committed.
+sudo systemctl edit panel-fr24-poll     # FR24_API_KEY, STATION_LAT, STATION_LON
+sudo systemctl enable --now panel-fr24-poll
+
+# 54 tests, no network.
+cd deploy/stopgap && python3 -m unittest test_panel_fr24_poll
+# Feed must read FRESH, and `aircraft` must be null whenever it is not.
+jq '{feed_state, error, credits, n: (.aircraft|length?)}' /run/panel-fr24/fr24_aircraft.json
+```
+
+### Gotchas already paid for
+
+- **A 403 here is usually not an auth failure.** urllib's default User-Agent is
+  rejected at the edge with an HTML body while the identical request from curl
+  returns 200. `USER_AGENT` must stay set. The error path checks content type
+  and says so rather than blaming the credential.
+- Bounds order is `north,south,west,east`, quantised to 3 dp — and rounded
+  **outward**, because rounding to nearest silently clips ~55 m off the watched
+  circle.
+- `categories=H` alone is documented as needing a companion filter; `bounds`
+  satisfies that. `N` (non-categorised) is included deliberately — excluding it
+  would rebuild the exact blind spot this daemon exists to close.
+- No push/webhook exists; polling is the only option. `/api/usage` is capped at
+  **1 call per minute**, so it cannot gate the loop — hence the local ledger.
+- There is **no balance endpoint**. `/api/balance`, `/credits`, `/subscription`,
+  `/account` and `/me` all 404. Balance is visible only in the web dashboard.
+
 ## Removing it
 
 ```sh
-sudo systemctl disable --now panel-kiosk emay-live panel-http panel-adsb-status
-sudo rm /etc/systemd/system/{panel-kiosk,emay-live,panel-http,panel-adsb-status}.service
+sudo systemctl disable --now panel-kiosk emay-live panel-http panel-adsb-status panel-fr24-poll
+sudo rm /etc/systemd/system/{panel-kiosk,emay-live,panel-http,panel-adsb-status,panel-fr24-poll}.service
 sudo rm -rf /etc/systemd/system/panel-kiosk.service.d
 sudo systemctl daemon-reload
 sudo systemctl enable --now lightdm        # put the desktop back
