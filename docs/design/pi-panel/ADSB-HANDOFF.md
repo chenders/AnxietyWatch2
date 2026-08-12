@@ -153,8 +153,11 @@ it. Do not arm anything.
 
 ## 4. What was measured, and what it cost
 
-Georeferenced from `FlightAS783.jpg` (a FlightRadar24 screenshot, in the repo
-root). Two independent pixel scales — 55.0 m/px from latitude, 52.0 m/px from
+Measured against a FlightRadar24 screenshot of ASA783, taken 2026-08-11
+10:25 local. Two independent pixel scales derived from it -- 55.0 m/px
+from latitude and 52.0 m/px from longitude -- agree, which is what
+establishes that the station marker is the house. The screenshot is not
+kept; the numbers it produced are below and pinned by the tests. Two independent pixel scales — 55.0 m/px from latitude, 52.0 m/px from
 longitude — agree, which is what confirms the blue dot is the house.
 
 | bug | consequence |
