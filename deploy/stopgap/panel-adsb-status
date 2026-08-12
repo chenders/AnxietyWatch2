@@ -147,8 +147,11 @@ ROSTER_TYPE_CLASS = {
     "B407": "rotorcraft",
     "EC35": "rotorcraft",
     "EC45": "rotorcraft",
+    # Clark County's Bell OH-58C -- the only police rotorcraft in the area.
+    "B06": "rotorcraft",
     "C182": "light",
     "C172": "light",
+    "R172": "light",
 }
 
 

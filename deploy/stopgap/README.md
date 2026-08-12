@@ -313,13 +313,38 @@ separate registration-filtered poll (`registrations=N2163J,N425EJ`) is the cheap
 route — 1 credit when they are not flying — and needs a cost decision first.
 
 Match on **Mode S, never callsign**. The flight ID is pilot-entered, often
-blank, and rotatable; one spotter source claims `IDAHO44` for N2163J but that is
-unverified and is deliberately not matched on.
+blank, and rotatable. N2163J is reported to fly as `IDAHO44` and the retired
+N739MR as `IDAHO33` ("IDAHO" being the law-enforcement ATC series), but
+N425EJ's is undocumented, so the roster does not match on any of them.
 
-**`N739MR` is excluded by name.** It is the 172N that PPB surplused in 2023, now
-privately owned — and it was the single most frequent registration in the 14-day
-Aurora sample, with five flights. `RETIRED_REGISTRATIONS` makes attributing it
-to the police impossible rather than merely unlikely.
+**`N739MR` is excluded by Mode S address, not just by name.** It is the 172N
+PPB surplused and sold to a private owner in February 2024, and it still flies
+out of Aurora — five flights in the 14-day sample, the most frequent
+registration in it. Its current address is **`A9ED9D`**, confirmed both from the
+registry research and directly in that sample. Excluding it by registration
+alone would never have fired, because a receiver reports the address.
+
+### Neighbouring agencies — so they are not misattributed
+
+Several agencies fly the same Cessnas out of the same fields on the same
+orbiting missions. Each is on the roster under its own operator, so a flight is
+named correctly rather than blamed on Portland:
+
+| Reg | Mode S | Aircraft | Operator |
+|---|---|---|---|
+| N575RW | `A76288` | Cessna R172K | Washington County Sheriff (OR) |
+| N910TW | `AC9869` | Cessna R172K | Multnomah County Sheriff (OR) |
+| N931EM | `ACE9D0` | Cessna 182P | Clackamas County Sheriff (OR) |
+| N92PD | `ACBD1A` | **Bell OH-58C** | Clark County Sheriff (WA) |
+| N2237S | `A1EF84` | Cessna T182T | Oregon State Police |
+| N2181N | `A1D9C2` | Cessna 182T | State of Oregon (OSP use probable) |
+
+`N92PD` is the **only police rotorcraft** in the area. PPB has never operated a
+helicopter, so a police helicopter overhead is Clark County's.
+
+`AC9869` matters for a second reason: the handoff records the local receiver
+hearing that exact address, with FR24 resolving it to N910TW. **The dongle
+demonstrably receives low-flying local law-enforcement traffic.**
 
 Loiter, not transit, is the PPB signature: a patrol aircraft orbits, so it is
 loud for far longer than a helicopter passing through, and a model tuned only to

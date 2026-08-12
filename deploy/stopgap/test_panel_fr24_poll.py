@@ -133,13 +133,17 @@ class OperatorIdentification(unittest.TestCase):
         self.assertEqual(state, ops.UNCONFIRMED)
 
     def test_surplused_police_aircraft_is_never_attributed_to_the_police(self):
-        # N739MR was sold by PPB in 2023 and is now private -- and it was the
-        # single most frequent registration in the 14-day Aurora sample. This is
-        # the exact false positive a stale roster would produce.
+        # N739MR was surplused by PPB and re-registered to a private owner in
+        # February 2024 -- and it was the single most frequent registration in
+        # the 14-day Aurora sample. This is the exact false positive a stale
+        # roster would produce. Asserting on the tail and the operator rather
+        # than on a bare year, so tightening the provenance note cannot break
+        # the test that guards the behaviour.
         state, reason, airframe = ops.identify(callsign="N739MR")
         self.assertEqual(state, ops.UNCONFIRMED)
         self.assertIsNone(airframe)
-        self.assertIn("2023", reason)
+        self.assertIn("N739MR", reason)
+        self.assertIn("Portland Police", reason)
 
     def test_no_roster_entry_is_a_retired_registration(self):
         for entry in ops.ROSTER.values():
@@ -494,3 +498,52 @@ class PassCollapsing(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NeighbouringAgenciesAreDistinguished(unittest.TestCase):
+    """Several agencies fly the same Cessnas out of the same fields.
+
+    Attributing one of them to Portland Police would be a confident false
+    positive, so each is on the roster under its own operator.
+    """
+
+    def test_each_neighbouring_aircraft_names_its_own_agency(self):
+        expected = {
+            "A76288": "Washington County Sheriff (OR)",
+            "AC9869": "Multnomah County Sheriff (OR)",
+            "ACE9D0": "Clackamas County Sheriff (OR)",
+            "ACBD1A": "Clark County Sheriff (WA)",
+            "A1EF84": "Oregon State Police",
+        }
+        for hex_code, agency in expected.items():
+            state, reason, airframe = ops.identify(hex_code=hex_code)
+            self.assertEqual(state, ops.CONFIRMED, hex_code)
+            self.assertEqual(ops.operator_name(airframe), agency)
+            self.assertIn(agency, reason)
+
+    def test_no_neighbour_is_labelled_portland_police(self):
+        for hex_code in ("A76288", "AC9869", "ACE9D0", "ACBD1A", "A1EF84", "A1D9C2"):
+            _, _, airframe = ops.identify(hex_code=hex_code)
+            self.assertNotEqual(airframe["operator"], "PORTLAND_POLICE", hex_code)
+
+    def test_the_only_police_rotorcraft_is_clark_county(self):
+        # PPB has never operated a helicopter. If a police helicopter is
+        # overhead it is this one, and saying otherwise would be wrong.
+        rotor = [e for e in ops.ROSTER.values()
+                 if ops.operator_kind(e) == ops.POLICE and e["type"] == "B06"]
+        self.assertEqual([e["reg"] for e in rotor], ["N92PD"])
+        self.assertEqual(rotor[0]["operator"], "CLARK_CO_SO")
+
+    def test_the_sold_police_aircraft_is_excluded_by_its_mode_s_address(self):
+        # A9ED9D is N739MR's current address, observed five times at Aurora in
+        # the 14 days to 2026-08-12. A receiver reports the address, not the
+        # tail, so excluding by registration alone would never have fired.
+        state, reason, airframe = ops.identify(hex_code="A9ED9D")
+        self.assertEqual(state, ops.UNCONFIRMED)
+        self.assertIsNone(airframe)
+        self.assertIn("N739MR", reason)
+
+    def test_the_sold_aircraft_is_excluded_even_if_it_is_on_the_roster_somehow(self):
+        for hex_code in ops.RETIRED_HEXES:
+            self.assertNotIn(hex_code, ops.ROSTER,
+                             f"{hex_code} is excluded but also on the roster")

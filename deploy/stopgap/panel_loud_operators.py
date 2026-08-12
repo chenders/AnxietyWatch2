@@ -91,6 +91,36 @@ OPERATORS = {
         # hint.
         "fleet_types": frozenset(),
     },
+    # --- Neighbouring agencies ---
+    #
+    # These are NOT Portland Police. They are listed so their flights are
+    # attributed correctly instead of being mistaken for PPB: several operate
+    # the same Cessna airframes, out of the same fields, on the same kind of
+    # orbiting mission. Distinguishing them is the point.
+    #
+    # They are still POLICE for display purposes -- an orbiting sheriff's
+    # aircraft is exactly as loud over this house as an orbiting city one -- so
+    # the glyph is the same and only the named operator differs.
+    "WASHINGTON_CO_SO": {
+        "name": "Washington County Sheriff (OR)",
+        "kind": POLICE, "callsign_pattern": None, "fleet_types": frozenset(),
+    },
+    "MULTNOMAH_CO_SO": {
+        "name": "Multnomah County Sheriff (OR)",
+        "kind": POLICE, "callsign_pattern": None, "fleet_types": frozenset(),
+    },
+    "CLACKAMAS_CO_SO": {
+        "name": "Clackamas County Sheriff (OR)",
+        "kind": POLICE, "callsign_pattern": None, "fleet_types": frozenset(),
+    },
+    "CLARK_CO_SO": {
+        "name": "Clark County Sheriff (WA)",
+        "kind": POLICE, "callsign_pattern": None, "fleet_types": frozenset(),
+    },
+    "OREGON_STATE_POLICE": {
+        "name": "Oregon State Police",
+        "kind": POLICE, "callsign_pattern": None, "fleet_types": frozenset(),
+    },
 }
 
 # Registrations that must NEVER be attributed to an operator, with the reason.
@@ -102,7 +132,23 @@ OPERATORS = {
 # attribute those flights to the police. This list exists so that mistake is
 # made impossible rather than merely unlikely.
 RETIRED_REGISTRATIONS = {
-    "N739MR": "surplused and sold by Portland Police Bureau in 2023; now private",
+    "N739MR": ("surplused by Portland Police Bureau and re-registered to a private "
+               "owner on 2024-02-07; still based at Aurora"),
+}
+
+# The same exclusion keyed on the Mode S address, which is the only join key
+# that actually reaches this code from a receiver.
+#
+# A9ED9D is N739MR's address, confirmed twice over: named in the FAA registry
+# research and observed directly in the 14-day Aurora sample on 2026-08-12,
+# where it was the single most frequent registration with five flights. It is
+# flying near this station regularly, right now, under an address that a stale
+# Portland Police roster would happily match. Excluding it by registration alone
+# would not have worked -- a receiver reports the address, not the tail.
+RETIRED_HEXES = {
+    "A9ED9D": ("N739MR, surplused by Portland Police Bureau and sold to a private "
+               "owner in 2024; five flights observed at Aurora in the 14 days to "
+               "2026-08-12"),
 }
 
 # Mode S / ICAO 24-bit address -> airframe. Keys are uppercase hex without
@@ -140,10 +186,34 @@ ROSTER = {
     # the case the local receiver handles well -- they orbit for long periods at
     # 3,400-5,400 ft, well inside line of sight -- so the roster is what makes
     # them identifiable, for free, without touching the API. See README.
+    # N2163J flies as IDAHO44 ("IDAHO" is the law-enforcement ATC callsign
+    # series). N425EJ's callsign is undocumented -- observed flight IDs are
+    # logged per hex so the table builds itself rather than being guessed.
     "A1D296": {"reg": "N2163J", "type": "C182", "model": "Cessna 182T (2003)",
                "operator": "PORTLAND_POLICE"},
     "A50E9F": {"reg": "N425EJ", "type": "C182", "model": "Cessna 182T (2015)",
                "operator": "PORTLAND_POLICE"},
+
+    # --- Neighbouring agencies, so their flights are not misattributed ---
+    # ACE9D0 and A9ED9D below are not theory: both appeared in the 14-day
+    # Aurora sample pulled 2026-08-12, with exactly these addresses.
+    "A76288": {"reg": "N575RW", "type": "R172", "model": "Cessna R172K Hawk XP",
+               "operator": "WASHINGTON_CO_SO"},
+    "AC9869": {"reg": "N910TW", "type": "R172", "model": "Cessna R172K",
+               "operator": "MULTNOMAH_CO_SO"},
+    "ACE9D0": {"reg": "N931EM", "type": "C182", "model": "Cessna 182P",
+               "operator": "CLACKAMAS_CO_SO"},
+    # The only police ROTORCRAFT in the area. If a police helicopter is
+    # overhead it is this one, not Portland -- PPB has never operated one.
+    "ACBD1A": {"reg": "N92PD", "type": "B06", "model": "Bell OH-58C",
+               "operator": "CLARK_CO_SO"},
+    "A1EF84": {"reg": "N2237S", "type": "C182", "model": "Cessna T182T",
+               "operator": "OREGON_STATE_POLICE"},
+    # Registered to "State of Oregon" rather than literally to OSP; the
+    # association is probable, not certain, and the model string says so.
+    "A1D9C2": {"reg": "N2181N", "type": "C182",
+               "model": "Cessna 182T (State of Oregon; OSP use probable)",
+               "operator": "OREGON_STATE_POLICE"},
 }
 
 
@@ -194,8 +264,13 @@ def identify(hex_code=None, callsign=None, aircraft_type=None):
     call = str(callsign or "").strip()
 
     # Retired airframes are rejected before anything else, including the roster.
-    # A sold aircraft keeps its Mode S address and its registration, so a stale
-    # entry anywhere upstream would otherwise still match.
+    # A sold aircraft keeps flying under the same Mode S address, so a stale
+    # entry anywhere upstream would otherwise still match. The address is
+    # checked first because that is what a receiver actually reports.
+    retired_hex = RETIRED_HEXES.get(normalise_hex(hex_code) or "")
+    if retired_hex is not None:
+        return UNCONFIRMED, f"excluded: {retired_hex}", None
+
     retired = RETIRED_REGISTRATIONS.get(call.upper())
     if retired is not None:
         return UNCONFIRMED, f"{call.upper()} was {retired}", None
