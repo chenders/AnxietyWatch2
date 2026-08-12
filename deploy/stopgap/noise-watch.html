@@ -73,14 +73,27 @@ body{
 }
 /* A real window gets the room it has, plus detail the 7-inch panel cannot fit. */
 @media (min-width:860px){
-  /* The hero sizes to its CONTENT here, not to 1fr. Given 1fr it stretched to
-     the full window height and left a large void under "NOTHING INBOUND",
-     which is most of the time. The spare height belongs to the detail table,
-     which is the thing a big screen is actually useful for. */
+  /* Anchor both ends rather than centring everything.
+     Two earlier attempts each produced a void: 1fr on the hero left a gap under
+     "NOTHING INBOUND", and 1fr on the table left a gap under an empty table.
+     Both read as "the content ran out". Instead the hero holds the top, the
+     feeds strip and WATCHING hold the bottom, and the detail table absorbs the
+     slack between them -- so the empty space sits BETWEEN two anchored groups,
+     where it reads as separation instead of as a mistake.
+
+     WATCHING is moved below the table with `order`, not by reordering the DOM:
+     the appliance layout keeps it directly under the hero where it belongs on a
+     7-inch screen, and only the desktop layout drops it to the foot. */
   body{width:100vw;height:100vh;overflow:hidden;
-       grid-template-rows:auto auto 1fr 26px}
-  .hero{align-content:center}
-  .more{overflow:auto}
+       grid-template-rows:auto 1fr auto 26px}
+  .hero{align-content:start}
+  /* EVERY item needs an explicit order once any item has one: an unset item
+     defaults to 0 and jumps to the front. Omitting it here sent the feeds strip
+     into the middle of the page. */
+  .hero{order:1}
+  .more{order:2;overflow:auto;border-bottom:1px solid var(--rule-quiet)}
+  .queue{order:3;padding-bottom:8px}
+  .feeds{order:4}
   .count{font-size:132px}
   .reg{font-size:54px}
 }
