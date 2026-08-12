@@ -12,7 +12,10 @@ OUTPUT = Path(os.environ.get("ADSB_STATUS_JSON", "/home/chris/anxietywatch-panel
 INTERVAL = float(os.environ.get("ADSB_PUBLISH_INTERVAL_SECONDS", "1"))
 STALE_SECONDS = float(os.environ.get("ADSB_STALE_SECONDS", "15"))
 HISTORY_SECONDS = 30 * 60
+PREDICTION_HORIZON_SECONDS = float(os.environ.get("ADSB_PREDICTION_HORIZON_SECONDS", "600"))
 EARTH_METERS = 6_371_000.0
+KNOTS_TO_METERS_PER_SECOND = 0.514444
+FEET_TO_METERS = 0.3048
 
 
 def required_coordinate(name):
@@ -51,6 +54,61 @@ def geometry(lat, lon, altitude_ft):
     return distance, bearing, estimated_db
 
 
+def predict_pass(lat, lon, altitude_ft, speed_kt, track_deg, vertical_rate_fpm, seen):
+    """Project a constant-velocity track and report closest approach.
+
+    This is deliberately a proximity heuristic, not a sound or cat-response
+    model. Air-traffic vectors can change at any time, so every output is
+    explicitly marked unvalidated and recalculated from live ADS-B each tick.
+    """
+    if not all(isinstance(value, (int, float)) for value in (speed_kt, track_deg)):
+        return None
+    if speed_kt < 20:
+        return None
+
+    lat0 = math.radians(STATION_LAT)
+    north = math.radians(lat - STATION_LAT) * EARTH_METERS
+    east = math.radians(lon - STATION_LON) * EARTH_METERS * math.cos(lat0)
+    speed = speed_kt * KNOTS_TO_METERS_PER_SECOND
+    track = math.radians(track_deg)
+    velocity_east = speed * math.sin(track)
+    velocity_north = speed * math.cos(track)
+    speed_squared = velocity_east**2 + velocity_north**2
+    eta = max(0.0, min(PREDICTION_HORIZON_SECONDS, -(east * velocity_east + north * velocity_north) / speed_squared))
+    cpa_east = east + velocity_east * eta
+    cpa_north = north + velocity_north * eta
+    ground_cpa = math.hypot(cpa_east, cpa_north)
+
+    climb_fpm = vertical_rate_fpm if isinstance(vertical_rate_fpm, (int, float)) else 0.0
+    projected_altitude = max(STATION_ALT_FT, altitude_ft + climb_fpm * eta / 60.0)
+    altitude_above_station = max(0.0, projected_altitude - STATION_ALT_FT)
+    slant_cpa = math.hypot(ground_cpa, altitude_above_station * FEET_TO_METERS)
+
+    approaching = eta >= 5 and eta < PREDICTION_HORIZON_SECONDS
+    if approaching and ground_cpa <= 3_000 and altitude_above_station <= 5_000:
+        risk = "LIKELY"
+        reasons = ["projected within 3 km", "projected below 5,000 ft above station"]
+    elif approaching and ground_cpa <= 8_000 and altitude_above_station <= 10_000:
+        risk = "POSSIBLE"
+        reasons = ["projected within 8 km", "projected below 10,000 ft above station"]
+    else:
+        risk = "LOW"
+        reasons = ["live track does not meet the unvalidated proximity envelope"]
+
+    confidence = "HIGH" if seen <= 5 and vertical_rate_fpm is not None else "MEDIUM"
+    return {
+        "eta_seconds": round(eta),
+        "ground_distance_m": round(ground_cpa, 1),
+        "slant_distance_m": round(slant_cpa, 1),
+        "altitude_ft": round(projected_altitude),
+        "risk": risk,
+        "confidence": confidence,
+        "approaching": approaching,
+        "reasons": reasons,
+        "model": "constant velocity; unvalidated; no indoor sound measurement",
+    }
+
+
 def read_source():
     with SOURCE.open() as stream:
         data = json.load(stream)
@@ -68,6 +126,15 @@ def make_report(item, source_now):
     if seen > STALE_SECONDS:
         return None
     distance, bearing, estimated_db = geometry(lat, lon, altitude)
+    prediction = predict_pass(
+        lat,
+        lon,
+        altitude,
+        item.get("speed"),
+        item.get("track"),
+        item.get("vert_rate"),
+        seen,
+    )
     return {
         "hex": str(item.get("hex", "")).upper(),
         "callsign": str(item.get("flight", "")).strip() or None,
@@ -81,8 +148,10 @@ def make_report(item, source_now):
         "dist": round(distance, 1),
         "bearing": round(bearing, 1),
         "db": round(estimated_db, 1),
+        "vertical_rate_fpm": item.get("vert_rate"),
         "rssi": item.get("rssi"),
         "last_seen": source_now - seen,
+        "prediction": prediction,
     }
 
 
@@ -100,13 +169,25 @@ def publish():
         if previous is None or entry["db"] > previous["db"]:
             loudest[entry["hex"]] = entry
     top = sorted(loudest.values(), key=lambda entry: entry["db"], reverse=True)[:10]
+    candidates = [
+        report for report in reports
+        if report["prediction"] and report["prediction"]["risk"] in ("LIKELY", "POSSIBLE")
+    ]
+    candidates.sort(key=lambda report: (report["prediction"]["eta_seconds"], report["prediction"]["ground_distance_m"]))
     out = {
-        "schema": 1,
+        "schema": 2,
         "written_at": now,
         "source_age_s": max(0.0, now - source_now),
         "messages": source.get("messages"),
         "adsb_planes": reports,
         "adsb_top": top,
+        "adsb_predictions": candidates,
+        "adsb_advisory": {
+            "armed": False,
+            "status": "NOT ARMED",
+            "model": "unvalidated live-track proximity; not measured indoor sound or cat response",
+            "next": candidates[0] if candidates else None,
+        },
     }
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
     with TMP.open("w") as stream:
