@@ -25,7 +25,11 @@ User=chris
 # only ~34 s of warning in total, so the interval is the warning budget. Raise
 # to 5 s for the sustainable steady state -- see README for the credit maths.
 Environment=FR24_POLL_INTERVAL_SECONDS=3
-Environment=FR24_CACHE_JSON=/run/panel-fr24/fr24_aircraft.json
+# Written into the directory panel-http serves, so the kiosk page can fetch it
+# as a sibling of status.json. It is a single current-state file, rewritten
+# every poll and never appended to, so nothing accumulates -- which is what
+# keeps it clear of FR24's 30-day retention rule.
+Environment=FR24_CACHE_JSON=/home/chris/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical/fr24_aircraft.json
 Environment=FR24_CREDIT_LEDGER=/var/lib/panel-fr24/credits.json
 Environment=PANEL_NOISE_LOG=/var/lib/panel-noise/loud-aircraft.jsonl
 
@@ -38,6 +42,9 @@ RestartSec=5
 # ReadWritePaths for them.
 RuntimeDirectory=panel-fr24
 StateDirectory=panel-fr24 panel-noise
+# ProtectHome=read-only above blocks the served directory, which is under
+# /home. Punch through for exactly that one directory and nothing else.
+ReadWritePaths=/home/chris/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical
 
 NoNewPrivileges=yes
 PrivateTmp=yes

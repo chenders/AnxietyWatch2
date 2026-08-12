@@ -412,6 +412,31 @@ def predict_pass(lat, lon, altitude_ft, category, speed_kt, track_deg, vertical_
     }
 
 
+def landmarks():
+    """Nearby fields and helipads as bearing + distance from the station.
+
+    Published as RELATIVE geometry, never as coordinates. The panel needs to
+    draw Providence west of the house to make the approach corridor legible,
+    but the station's position is the home address and must not reach the
+    served files as a coordinate pair, let alone git. A bearing and a range
+    give the map everything it needs and disclose nothing on their own.
+    """
+    out = []
+    for field in AIRPORTS:
+        east = math.radians(field["lon"] - STATION_LON) * EARTH_METERS * math.cos(
+            math.radians(STATION_LAT))
+        north = math.radians(field["lat"] - STATION_LAT) * EARTH_METERS
+        metres = math.hypot(east, north)
+        if metres > 25_000:
+            continue
+        out.append({
+            "id": field["id"],
+            "bearing": round((math.degrees(math.atan2(east, north)) + 360) % 360, 1),
+            "distance_km": round(metres / 1000.0, 2),
+        })
+    return sorted(out, key=lambda f: f["distance_km"])
+
+
 def read_source():
     with SOURCE.open() as stream:
         data = json.load(stream)
@@ -459,6 +484,9 @@ def make_report(item, source_now):
         # recognised -- which is NOT the same as "not a known-loud operator",
         # and the panel must render it as unknown rather than as ordinary.
         "operator": (airframe or {}).get("operator"),
+        # Display name, so the panel never has to translate an enum key into
+        # something a person reads at 3am.
+        "operator_name": panel_loud_operators.operator_name(airframe) if airframe else None,
         "operator_kind": panel_loud_operators.operator_kind(airframe) if airframe else None,
         "operator_state": operator_state,
         "operator_reason": operator_reason,
@@ -577,6 +605,12 @@ def publish():
         "source_age_s": max(0.0, now - source_now),
         "messages": source.get("messages"),
         "station_alt_ft": STATION_ALT_FT,
+        # Relative geometry only -- see landmarks(). Never coordinates.
+        "landmarks": landmarks(),
+        # Outer extent of the plan view. Matched to the FR24 watch circle rather
+        # than to the NEAR band, so the map shows traffic while it is still
+        # approaching instead of only once it is already close.
+        "watch_radius_km": float(os.environ.get("ADSB_MAP_RADIUS_KM", "12")),
         "adsb_planes": reports,
         "adsb_top": top,
         "adsb_predictions": candidates,

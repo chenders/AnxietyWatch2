@@ -1,0 +1,709 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=800, height=480, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no">
+<title>Noise Watch</title>
+<!--
+  Aircraft noise watch — bedside DSI panel at exactly 800x480, and a larger
+  layout for any browser on the LAN. No health data on this screen.
+
+  THE ONE QUESTION
+  ----------------
+  "Is something about to be loud over this house, and when." Everything else is
+  supporting evidence for that sentence.
+
+  WHY THE SCREEN IS BLACK MOST OF THE TIME
+  ----------------------------------------
+  This panel sits in a bedroom and is read at 3am. The clinical screen's thesis
+  is that "escalation is paid for in area" — lit pixels are the alarm channel,
+  with true black around every glyph. That idea is extended here rather than
+  replaced: nothing inbound means almost nothing emits, and brightness and lit
+  area grow as an aircraft closes. A quiet sky must not light a bedroom.
+
+  WHY CYAN, NOT RED
+  -----------------
+  --klaxon red is reserved project-wide for high-priority medical alarm and
+  "appears nowhere else". An aircraft must never read as a physiological alarm,
+  so the aircraft channel is the radar's cyan, with amber only at the top band.
+
+  WHY THE COUNTDOWN IS THE HERO
+  -----------------------------
+  Measured 2026-08-11: a Life Flight departure off the Providence Portland pad
+  crosses this station 34 seconds after FR24's first fix, at 0.95 km and 600 ft,
+  climbing at over 1000 fpm. Thirty-four seconds is the whole warning budget and
+  it is set by geometry, not poll rate. Counted from an absolute epoch, never a
+  stored duration, so a stalled feed runs to zero and stops instead of promising
+  a flyover forever.
+
+  THE MAP
+  -------
+  North up, house at the centre, rings at the model's own proximity bands. Its
+  job is to make one thing legible: traffic crossing this house inbound to the
+  Providence pad 1.6 km west. Landmarks arrive from the daemon as BEARING AND
+  RANGE ONLY — the station's coordinates are the home address and never reach
+  this file or the served JSON.
+
+  UNKNOWN IS NOT OK
+  -----------------
+  A feed that cannot be read is not a quiet sky. FR24 UNAVAILABLE and a stale
+  dongle render as explicit warning states, never as absence. An aircraft that
+  could not be scored shows as unscored, never as quiet.
+-->
+<style>
+:root{
+  /* Reused verbatim from the clinical panel; every ratio was verified against
+     pure black with panel-check.mjs. Nothing new is invented here. */
+  --bg:#000000; --field:#0A0B0C;
+  --rule:#5E6670; --rule-quiet:#3A4048;
+  --air:#3FC8D8;        /* 10.46:1 — the aircraft channel */
+  --watch:#E0A227;      /*  9.37:1 — top band only */
+  --nibp:#DCE1E6;       /* 15.96:1 — primary readout */
+  --unknown:#8B97A3;    /*  7.05:1 — indeterminate, hue-free by design */
+  --unknown-hi:#B9C0C7; /* 11.43:1 — indeterminate that must out-read a live value */
+  --label:#7A828C;      /*  5.40:1 — region labels */
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:"Helvetica Neue",Helvetica,Arial,sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{background:var(--bg);overflow:hidden}
+body{
+  width:800px;height:480px;
+  font-family:var(--mono);color:var(--nibp);
+  touch-action:none;-webkit-user-select:none;user-select:none;
+  display:grid;grid-template-rows:1fr 152px 24px;
+}
+/* A real window gets the room it has, plus detail the 7-inch panel cannot fit. */
+@media (min-width:860px){
+  /* The hero sizes to its CONTENT here, not to 1fr. Given 1fr it stretched to
+     the full window height and left a large void under "NOTHING INBOUND",
+     which is most of the time. The spare height belongs to the detail table,
+     which is the thing a big screen is actually useful for. */
+  body{width:100vw;height:100vh;overflow:hidden;
+       grid-template-rows:auto auto 1fr 26px}
+  .hero{align-content:center}
+  .more{overflow:auto}
+  .count{font-size:132px}
+  .reg{font-size:54px}
+}
+
+/* ---- hero: readout left, plan view right ---- */
+.hero{position:relative;display:grid;grid-template-columns:1fr var(--mapw,212px);
+      align-items:center;gap:16px;padding:14px 14px 0}
+@media (min-width:860px){.hero{padding:22px 22px 0}}
+
+.quiet .big{font-family:var(--sans);font-size:19px;letter-spacing:.42em;
+            color:var(--unknown);text-indent:.42em}
+.quiet .sub{margin-top:10px;font-size:11px;letter-spacing:.16em;color:var(--label)}
+
+.who{min-width:0}
+.glyphline{display:flex;align-items:center;gap:12px}
+.glyphline .gwrap{color:var(--air);display:flex}
+.glyphline .gwrap.dim{color:var(--unknown)}
+.reg{font-size:42px;letter-spacing:.03em;font-variant-numeric:tabular-nums}
+.op{margin-top:6px;font-size:13px;letter-spacing:.2em;color:var(--air)}
+.op.dim{color:var(--unknown-hi)}
+.facts{margin-top:11px;font-size:15px;color:var(--unknown-hi);letter-spacing:.05em}
+.facts .sep{color:var(--rule-quiet);padding:0 7px}
+.band{margin-top:11px;font-size:17px;letter-spacing:.22em}
+.band .est{font-size:10px;letter-spacing:.14em;color:var(--label);margin-left:9px}
+.hlinks{margin-top:12px;display:flex;gap:14px;font-size:11px;letter-spacing:.12em}
+.hlinks a{color:var(--air);text-decoration:none;border-bottom:1px solid var(--rule-quiet);padding-bottom:2px}
+.hlinks a:focus-visible{outline:2px solid var(--air);outline-offset:3px}
+
+/* Kept clear of the map whatever size the map has been set to. */
+.clockwrap{position:absolute;right:calc(var(--mapw,212px) + 30px);top:50%;
+           transform:translateY(-50%);text-align:right}
+.count{font-size:92px;line-height:.86;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.count.now{font-size:70px;letter-spacing:.06em}
+.clocklab{margin-top:7px;font-size:9px;letter-spacing:.26em;color:var(--label)}
+.clockabs{margin-top:5px;font-size:13px;color:var(--unknown-hi);font-variant-numeric:tabular-nums;
+          letter-spacing:.04em}
+.clocknow{margin-top:3px;font-size:10px;color:var(--label);font-variant-numeric:tabular-nums;
+          letter-spacing:.1em}
+.clocknow.stale{color:var(--watch);letter-spacing:.06em}
+
+/* The signature: lit width IS proximity. Escalation paid for in area. */
+.closing{position:absolute;left:0;right:0;bottom:0;height:3px;background:var(--rule-quiet)}
+.closing i{display:block;height:100%;background:var(--air);transition:width .5s linear}
+
+/* ---- map ---- */
+.map{justify-self:end;position:relative}
+.map svg.plan{width:var(--mapw,212px);height:var(--mapw,212px);display:block}
+/* Size controls. Deliberately tiny and unlit until touched: on the bedside
+   panel this is furniture, not information, and it must not emit at 3am. */
+.mapctl{display:flex;gap:4px;justify-content:flex-end;margin-top:5px}
+.mapctl button{
+  font-family:var(--mono);font-size:11px;line-height:1;padding:3px 7px;
+  background:transparent;color:var(--rule);border:1px solid var(--rule-quiet);
+  cursor:pointer;min-width:24px;
+}
+.mapctl button:hover,.mapctl button:focus-visible{color:var(--air);border-color:var(--rule)}
+.mapctl button:focus-visible{outline:2px solid var(--air);outline-offset:2px}
+.mapctl button[disabled]{opacity:.35;cursor:default}
+.ring{fill:none;stroke:var(--rule-quiet);stroke-width:1}
+.ring.near{stroke:var(--rule);stroke-dasharray:2 4}
+.cross{stroke:var(--rule-quiet);stroke-width:1}
+.lm{fill:var(--label)}
+.lmt,.nlab{fill:var(--label);font-size:7px;letter-spacing:.12em;font-family:var(--mono)}
+.home{fill:none;stroke:var(--nibp);stroke-width:1.6}
+.actrack{stroke-width:1.2;opacity:.5;fill:none}
+
+/* ---- watch list ---- */
+.queue{padding:6px 14px 0;border-top:1px solid var(--rule-quiet);overflow:hidden}
+.queue .lab{font-size:9px;letter-spacing:.24em;color:var(--label);display:block;margin-bottom:5px}
+.rows{display:flex;flex-direction:column;gap:3px}
+.row{display:grid;grid-template-columns:18px 86px 1fr 66px 56px 82px;gap:9px;
+     align-items:center;font-size:12px;color:var(--unknown-hi);white-space:nowrap}
+@media (min-width:860px){.row{grid-template-columns:18px 96px 1fr 76px 64px 92px 64px}}
+.row .g{color:var(--unknown);display:flex}
+.row .g.known{color:var(--air)}
+.row .id{color:var(--nibp)}
+.row .op2{color:var(--air);overflow:hidden;text-overflow:ellipsis;font-size:11px}
+.row .op2.dim{color:var(--unknown)}
+.row .eta{color:var(--nibp);font-variant-numeric:tabular-nums;text-align:right}
+.row .eta.soon{color:var(--watch)}
+.row .rng{font-variant-numeric:tabular-nums;text-align:right}
+.row .bd{font-size:10px;letter-spacing:.1em;text-align:right}
+.row a{color:var(--air);text-decoration:none;font-size:10px;letter-spacing:.1em;text-align:right}
+.none{color:var(--label);font-size:11px;letter-spacing:.14em}
+.row[data-key],.tbl tr[data-key],.acg[data-key]{cursor:pointer}
+.row.sel{background:#0E1A20;box-shadow:inset 2px 0 0 var(--nibp)}
+.tbl tr.sel td{background:#0E1A20}
+
+/* ---- feeds: health is never hidden ---- */
+.feeds{display:flex;align-items:center;padding:0 14px;
+       border-top:1px solid var(--rule-quiet);font-size:10px;
+       letter-spacing:.1em;color:var(--label);white-space:nowrap;overflow:hidden}
+.cell{display:flex;align-items:center;gap:5px;padding-right:15px}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--rule);flex:none}
+.ok .dot{background:var(--air)}
+.bad .dot{background:var(--watch)}
+.bad{color:var(--watch)}
+.v{color:var(--unknown)}
+.right{margin-left:auto;padding-right:0;color:var(--unknown);font-variant-numeric:tabular-nums}
+
+/* ---- expanded detail, never on the appliance ----
+   The reveal lives AFTER the base rule on purpose. Declaring `.more{display:block}`
+   inside the media query near the top of this file loses to `.more{display:none}`
+   here at equal specificity, and the section could never appear. */
+.more{display:none;border-top:1px solid var(--rule-quiet);padding:12px 22px 18px}
+.more h2{font-family:var(--sans);font-size:10px;letter-spacing:.26em;color:var(--label);
+         font-weight:400;margin-bottom:8px}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:34px}
+.tbl{width:100%;border-collapse:collapse;font-size:12px}
+.tbl th{text-align:left;font-weight:400;font-size:9px;letter-spacing:.18em;color:var(--label);
+        padding:0 10px 5px 0;border-bottom:1px solid var(--rule-quiet)}
+.tbl td{padding:5px 10px 5px 0;color:var(--unknown-hi);white-space:nowrap;
+        font-variant-numeric:tabular-nums}
+.tbl td.id{color:var(--nibp)}
+.tbl td.op{color:var(--air)}
+.tbl a{color:var(--air);text-decoration:none}
+.tbl .gc{width:20px;color:var(--air)}
+.tbl .gc.dim{color:var(--unknown)}
+@media (min-width:860px){.more{display:block}}
+
+/* Emission scales with closeness. */
+.lvl0 .count,.lvl0 .band{color:var(--unknown)}
+.lvl1 .count{color:var(--air);opacity:.7}
+.lvl1 .band,.lvl2 .band{color:var(--air)}
+.lvl2 .count{color:var(--air)}
+.lvl3 .count,.lvl3 .band{color:var(--watch)}
+.lvl3 .closing i{background:var(--watch)}
+
+@media (prefers-reduced-motion:reduce){.closing i{transition:none}}
+</style>
+
+<div class="hero" id="hero"></div>
+<div class="queue" id="queue"></div>
+<div class="more" id="more"></div>
+<div class="feeds" id="feeds"></div>
+
+<script>
+"use strict";
+(() => {
+  const HORIZON_S = 180;                 /* the model forecasts no further */
+  const NOTIFY_WITHIN_S = 30 * 60;       /* owner's rule: hours out is context, not an alert */
+  const ADSB_STALE_S = 20, FR24_STALE_S = 30;
+  const FR24 = "https://www.flightradar24.com";
+
+  /* Links navigate away from the panel, which would strand the appliance on a
+     web page it cannot leave. They are rendered only for a real browser.
+     Evaluated per render, never cached: a window opened small and then
+     maximised would otherwise stay in appliance mode forever, which is exactly
+     what happened during review. */
+  const forcedKiosk = /[?&]kiosk=1/.test(location.search);
+  const isKiosk = () => forcedKiosk || window.innerWidth <= 860;
+
+  /* Glyphs are drawn, not typed. A Unicode mark depends on whatever font the
+     appliance happens to have — U+271A degraded to a thin "+" during review,
+     and the Pi's font set is narrower still. On a panel where the glyph is the
+     colour-blind-safe channel carrying aircraft type, silently rendering a
+     different shape is not acceptable. Each is a distinct SILHOUETTE. */
+  const PATHS = {
+    AIR_AMBULANCE:{t:"air ambulance", d:'<path d="M12 3v18M3 12h18" stroke-width="5"/>'},
+    /* An orbit: patrol aircraft loiter, and loitering is the whole signature. */
+    POLICE:{t:"police", d:'<circle cx="12" cy="12" r="8.5" stroke-width="2"/>' +
+      '<circle cx="12" cy="12" r="2.6" fill="currentColor" stroke="none"/>'},
+    rotorcraft:{t:"rotorcraft", d:'<path d="M3 5h18M12 5v14M6 19h12" stroke-width="2.4"/>'},
+    heavy:{t:"heavy jet", d:'<path d="M2 9l10 4 10-4M2 15l10 4 10-4" stroke-width="2.4"/>'},
+    jet:{t:"jet", d:'<path d="M2 11l10 5 10-5" stroke-width="2.6"/>'},
+    light:{t:"light aircraft", d:'<path d="M12 4l7 15H5z" stroke-width="2.2"/>'},
+    /* Broken ring: present but not identified. Deliberately NOT blank — a blank
+       cell reads as "ordinary", and unknown is never ordinary here. */
+    unknown:{t:"type not reported",
+      d:'<circle cx="12" cy="12" r="8" stroke-width="2.2" stroke-dasharray="3.6 3.4"/>'},
+  };
+  const glyphFor = p => (p && p.operator_kind && PATHS[p.operator_kind]) ||
+                        (p && p.airframe_class && PATHS[p.airframe_class]) || PATHS.unknown;
+  const known = p => !!(p && (p.operator_kind || p.airframe_class));
+  const svgGlyph = (p, size) => {
+    const g = glyphFor(p);
+    return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 24 24" fill="none" ' +
+      'stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" role="img" ' +
+      'aria-label="' + esc(g.t) + '"><title>' + esc(g.t) + '</title>' + g.d + '</svg>';
+  };
+
+  const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g,
+    c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+  const el = id => document.getElementById(id);
+  const S = { adsb:null, fr24:null, sel:null };
+
+  /* Map size is the reader's choice, not ours: the 7-inch panel wants it small
+     enough to leave the countdown dominant, while someone studying an approach
+     on a laptop wants it as large as the window allows. Persisted, so the
+     choice survives the nightly kiosk restart. */
+  const MAP_BASE = () => (window.innerWidth >= 860 ? 300 : 212);
+  const MAP_STEPS = [0.75, 1, 1.35, 1.8, 2.4];
+  let mapStep = 1;
+  try {
+    const v = parseInt(localStorage.getItem("noiseWatchMapStep"), 10);
+    if (Number.isInteger(v) && v >= 0 && v < MAP_STEPS.length) mapStep = v;
+  } catch (e) { /* private mode: fall back to the default, never fail */ }
+
+  function applyMapSize() {
+    const px = Math.round(MAP_BASE() * MAP_STEPS[mapStep]);
+    /* Never let the map crowd out the readout it exists to support. */
+    const cap = Math.max(150, Math.min(px, window.innerWidth - 320));
+    document.body.style.setProperty("--mapw", cap + "px");
+  }
+  function setMapStep(n) {
+    mapStep = Math.max(0, Math.min(MAP_STEPS.length - 1, n));
+    try { localStorage.setItem("noiseWatchMapStep", String(mapStep)); } catch (e) {}
+    applyMapSize(); draw();
+  }
+
+  /* Stable identity for selection. Prefers the FR24 flight id, then the Mode S
+     address, then the callsign — the same fall-through the daemon uses, because
+     no single field is reliably present for these aircraft. */
+  const keyOf = p => p && (p.fr24_id || p.hex || p.callsign || null);
+
+  /* Selecting a row highlights the same aircraft on the map, and vice versa.
+     The panel redraws four times a second, so listeners are delegated to the
+     containers, which survive, rather than bound to rows, which do not.
+     Selection is held in S.sel and survives every redraw. */
+  function wireSelection() {
+    ["hero","queue","more"].forEach(id => {
+      const host = el(id);
+      if (!host) return;
+      host.addEventListener("click", ev => {
+        /* A link is a link: never swallow a click meant for Flightradar24. */
+        if (ev.target.closest("a")) return;
+        const mb = ev.target.closest("[data-map]");
+        if (mb) {
+          const v = mb.getAttribute("data-map");
+          setMapStep(v === "reset" ? 1 : mapStep + parseInt(v, 10));
+          return;
+        }
+        const hit = ev.target.closest("[data-key]");
+        if (!hit) return;
+        const k = hit.getAttribute("data-key");
+        S.sel = (S.sel === k) ? null : k;   /* click again to clear */
+        draw();
+      });
+    });
+  }
+
+  /* ---- FR24 deep links ------------------------------------------------
+     "Play" on FR24's own aircraft page — the see-it-on-the-map action — is
+     /data/aircraft/<reg>#<fr24_id>, verified against the live site. When the
+     tail is unknown, fall back to the live map centred on the AIRCRAFT's own
+     position; never on the station, which is the home address. */
+  function mapLink(p) {
+    const id = p.fr24_id, reg = p.registration || p.reg;
+    if (reg && id) return FR24 + "/data/aircraft/" + encodeURIComponent(String(reg).toLowerCase()) +
+                          "#" + encodeURIComponent(id);
+    if (Number.isFinite(p.lat) && Number.isFinite(p.lon))
+      return FR24 + "/" + p.lat.toFixed(3) + "," + p.lon.toFixed(3) + "/11";
+    return null;
+  }
+  const acLink = p => {
+    const reg = p.registration || p.reg;
+    return reg ? FR24 + "/data/aircraft/" + encodeURIComponent(String(reg).toLowerCase()) : null;
+  };
+
+  async function pull(u){ const r = await fetch(u,{cache:"no-store"});
+                          if(!r.ok) throw new Error(r.status); return r.json(); }
+  /* Read the aircraft daemon's own output, not the merged status.json.
+     panel-status-merge passes through a hard-coded key whitelist and is
+     hand-edited in place on the Pi rather than kept in git (see handoff §1), so
+     every new field would need a manual edit there before it could ever reach
+     this page. adsb_status.json is the aircraft source of truth and is already
+     served from the same directory; depending on it directly removes an
+     untracked single point of failure from this screen entirely. */
+  async function poll(){
+    try { S.adsb = await pull("adsb_status.json"); } catch(e){ S.adsb = null; }
+    try { S.fr24 = await pull("fr24_aircraft.json"); } catch(e){ S.fr24 = null; }
+  }
+
+  const secondsTo = pr => pr && Number.isFinite(pr.at_epoch) ? pr.at_epoch - Date.now()/1000 : null;
+  function fmt(left){
+    if (left == null) return "--";
+    if (left <= 0) return "NOW";
+    if (left < 60) return Math.round(left) + "s";
+    return Math.floor(left/60) + "m" + String(Math.round(left%60)).padStart(2,"0");
+  }
+  function level(left, band){
+    if (left == null || left > NOTIFY_WITHIN_S) return 0;
+    if (band === "VERY LOUD" || left <= 45) return 3;
+    if (left <= HORIZON_S) return 2;
+    return 1;
+  }
+
+  /* ---- map markers ----------------------------------------------------
+     Three redundant channels, so no single one has to carry the distinction:
+
+       SHAPE      helicopter (rotor disc + tail) vs aeroplane (dart), from the
+                  airframe class — so the map says what kind of thing it is.
+       ENCLOSURE  a ring around police aircraft (their signature is loitering),
+                  a cross badge on air ambulances.
+       COLOUR     amber for the top band, cyan for identified, slate for not.
+
+     Colour alone would fail a colour-blind reader and fail again in daylight on
+     this panel, which is why shape and enclosure carry the same information.
+
+     Aeroplanes rotate to their track; helicopters do too, so the tail points
+     the way it is going. A <title> gives the browser's native hover tooltip
+     with no JavaScript, which is all the detail-on-hover this needs. */
+  const HELI_TYPES = new Set(["A119","B407","EC35","EC45","B06","H125","B429"]);
+  const isHeli = p => p.airframe_class === "rotorcraft" ||
+                      HELI_TYPES.has(String(p.icao_type || "").toUpperCase());
+
+  function markerTitle(p) {
+    const bits = [];
+    bits.push(p.registration || p.callsign || p.hex || "unidentified");
+    if (p.operator_name) bits.push(p.operator_name);
+    if (p.icao_type) bits.push(p.icao_type);
+    const pr = p.prediction || {};
+    const facts = [];
+    if (Number.isFinite(p.alt_ft)) facts.push(p.alt_ft.toLocaleString() + " ft");
+    if (Number.isFinite(p.dist)) facts.push((p.dist/1000).toFixed(1) + " km");
+    if (Number.isFinite(p.bearing)) facts.push("brg " + Math.round(p.bearing) + "°");
+    if (p.phase) facts.push(p.phase.toLowerCase());
+    if (facts.length) bits.push(facts.join(" · "));
+    if (pr.loudness_band) bits.push(pr.loudness_band);
+    /* Say why it is unidentified rather than leaving a silent gap. */
+    if (!p.operator_name && p.operator_reason) bits.push(p.operator_reason);
+    return bits.join("\n");
+  }
+
+  function marker(p, x, y) {
+    const band = (p.prediction || {}).loudness_band;
+    const col = band === "VERY LOUD" ? "var(--watch)"
+              : known(p) ? "var(--air)" : "var(--unknown)";
+    const rot = Number.isFinite(p.track_deg) ? p.track_deg : 0;
+    const kind = p.operator_kind;
+    let body;
+    if (isHeli(p)) {
+      /* Rotor disc across the top, stub body, tail boom trailing. */
+      body = '<line x1="-6.5" y1="-3" x2="6.5" y2="-3" stroke="' + col + '" stroke-width="1.5"/>' +
+             '<circle cx="0" cy="0" r="2.2" fill="' + col + '"/>' +
+             '<line x1="0" y1="1.5" x2="0" y2="6" stroke="' + col + '" stroke-width="1.4"/>';
+    } else {
+      body = '<path d="M0,-6.5 L4.6,4.6 L0,2.2 L-4.6,4.6 Z" fill="' + col + '"/>';
+    }
+    let deco = "";
+    if (kind === "POLICE") {
+      deco = '<circle cx="0" cy="0" r="8.6" fill="none" stroke="' + col + '" ' +
+             'stroke-width="1.1" opacity=".85"/>';
+    } else if (kind === "AIR_AMBULANCE") {
+      deco = '<path d="M7.4,-7.4 v4 M5.4,-5.4 h4" stroke="' + col + '" stroke-width="1.8" ' +
+             'stroke-linecap="round"/>';
+    }
+    /* Track leader: where it is going, not where it has been. */
+    let lead = "";
+    if (Number.isFinite(p.track_deg)) {
+      lead = '<line class="actrack" stroke="' + col + '" x1="0" y1="-7" x2="0" y2="-15"/>';
+    }
+    const k = keyOf(p);
+    /* The selection ring is drawn in the neutral readout white, not the
+       aircraft's own colour, so highlighting never alters the band a marker is
+       reporting. It says "this one", not "this one is worse". */
+    const ring = (k && k === S.sel)
+      ? '<circle cx="0" cy="0" r="12" fill="none" stroke="var(--nibp)" stroke-width="1.4" ' +
+        'stroke-dasharray="3 2.6"/>' : "";
+    return '<g class="acg" ' + (k ? 'data-key="' + esc(k) + '" ' : '') +
+      'transform="translate(' + x.toFixed(1) + ',' + y.toFixed(1) + ')">' +
+      '<title>' + esc(markerTitle(p)) + '</title>' + ring +
+      '<g transform="rotate(' + rot.toFixed(0) + ')">' + lead + body + '</g>' + deco +
+      /* Invisible hit area: a 6px dart is far too small to click or tap. */
+      '<circle cx="0" cy="0" r="13" fill="transparent"/></g>';
+  }
+
+  /* ---- plan view ---- */
+  function renderMap(planes, landmarks, radiusKm) {
+    const R = 106, C = 112, SZ = 224;               /* viewBox units; CSS scales it */
+    const km2px = km => Math.min(R, (km / radiusKm) * R);
+    const pos = (brg, km) => {
+      const a = (brg - 90) * Math.PI / 180, r = km2px(km);
+      return [C + r * Math.cos(a), C + r * Math.sin(a)];
+    };
+    let s = '<svg class="plan" viewBox="0 0 ' + SZ + ' ' + SZ + '" role="img" ' +
+            'aria-label="plan view of nearby aircraft">';
+    /* Rings at the model's own bands, so the picture and the verdict agree. */
+    [[1.5,'near'],[4,'near'],[radiusKm,'']].forEach(([km,cls]) =>
+      s += '<circle class="ring ' + cls + '" cx="' + C + '" cy="' + C + '" r="' + km2px(km).toFixed(1) + '"/>');
+    s += '<line class="cross" x1="' + C + '" y1="' + (C-R) + '" x2="' + C + '" y2="' + (C+R) + '"/>' +
+         '<line class="cross" x1="' + (C-R) + '" y1="' + C + '" x2="' + (C+R) + '" y2="' + C + '"/>' +
+         '<text class="nlab" x="' + C + '" y="' + (C-R-3) + '" text-anchor="middle">N</text>';
+
+    (landmarks || []).forEach(l => {
+      if (l.distance_km > radiusKm) return;
+      const [x,y] = pos(l.bearing, l.distance_km);
+      /* Labels are placed on the side facing AWAY from the house, so a landmark
+         close in — Providence is only 1.6 km — does not write its name across
+         the house marker, which is the one fixed point the map is read from. */
+      const out = x >= C;
+      s += '<circle class="lm" cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="2"/>' +
+           '<text class="lmt" x="' + (x + (out ? 4 : -4)).toFixed(1) + '" y="' + (y+2.6).toFixed(1) +
+           '" text-anchor="' + (out ? 'start' : 'end') + '">' +
+           esc(l.id.replace("PROVIDENCE-PDX","PROVIDENCE").slice(0,11)) + '</text>';
+    });
+
+    /* The house. Hollow, so it never competes with a live aircraft. */
+    s += '<rect class="home" x="' + (C-4) + '" y="' + (C-4) + '" width="8" height="8"/>';
+
+    planes.forEach(p => {
+      const km = (p.dist || 0) / 1000;
+      if (!Number.isFinite(p.bearing) || km > radiusKm) return;
+      const [x,y] = pos(p.bearing, km);
+      s += marker(p, x, y);
+    });
+    return s + '</svg>';
+  }
+
+  /* ---- hero ---- */
+  const two = n => String(n).padStart(2, "0");
+  const nowStr = () => {
+    const d = new Date();
+    return two(d.getHours()) + ":" + two(d.getMinutes()) + ":" + two(d.getSeconds());
+  };
+  /* The wall-clock instant of closest approach. Same day is the overwhelming
+     case at a 3-minute horizon, so the date is shown only when it differs —
+     an unnecessary date is noise on a panel this small. */
+  function whenAbs(epoch) {
+    if (!Number.isFinite(epoch)) return "";
+    const d = new Date(epoch * 1000), n = new Date();
+    const t = two(d.getHours()) + ":" + two(d.getMinutes()) + ":" + two(d.getSeconds());
+    return d.toDateString() === n.toDateString()
+      ? "at " + t
+      : "at " + t + " on " + d.toLocaleDateString(undefined, {month:"short", day:"numeric"});
+  }
+
+  function renderHero(lead, planes, landmarks, radiusKm, quietReason, staleFeed) {
+    const map = '<div class="map">' + renderMap(planes, landmarks, radiusKm) +
+      '<div class="mapctl">' +
+        '<button type="button" data-map="-1" title="Smaller map" aria-label="Smaller map"' +
+          (mapStep === 0 ? ' disabled' : '') + '>&minus;</button>' +
+        '<button type="button" data-map="reset" title="Reset map size" ' +
+          'aria-label="Reset map size">&#9633;</button>' +
+        '<button type="button" data-map="1" title="Larger map" aria-label="Larger map"' +
+          (mapStep === MAP_STEPS.length - 1 ? ' disabled' : '') + '>+</button>' +
+      '</div></div>';
+    if (!lead) {
+      el("hero").className = "hero";
+      el("hero").innerHTML =
+        '<div class="quiet"><div class="big">NOTHING INBOUND</div>' +
+        '<div class="sub">' + esc(quietReason) + '</div></div>' + map;
+      return;
+    }
+    const pr = lead.prediction || {}, left = secondsTo(pr);
+    const band = pr.loudness_band || "UNKNOWN";
+    const lvl = level(left, band), isNow = left != null && left <= 0;
+    const name = lead.registration || lead.callsign || lead.hex || "UNIDENTIFIED";
+    const op = lead.operator_name ? lead.operator_name.toUpperCase()
+             : lead.operator_kind ? glyphFor(lead).t.toUpperCase() : "OPERATOR NOT IDENTIFIED";
+    const km = Number.isFinite(pr.ground_distance_m)
+      ? (pr.ground_distance_m/1000).toFixed(1) + " km" : "range unknown";
+    const alt = Number.isFinite(pr.altitude_ft)
+      ? Math.round(pr.altitude_ft).toLocaleString() + " ft" : "altitude unknown";
+    const phase = pr.phase ? pr.phase.toLowerCase() : "flight phase unknown";
+    const frac = left == null ? 0 : Math.max(0, Math.min(1, 1 - Math.max(0,left)/HORIZON_S));
+
+    let links = "";
+    if (!isKiosk()) {
+      const m = mapLink(lead), a = acLink(lead);
+      const parts = [];
+      if (m) parts.push('<a href="' + esc(m) + '" target="_blank" rel="noopener">SEE ON MAP</a>');
+      if (a) parts.push('<a href="' + esc(a) + '" target="_blank" rel="noopener">FLIGHT HISTORY</a>');
+      if (parts.length) links = '<div class="hlinks">' + parts.join("") + '</div>';
+    }
+
+    el("hero").className = "hero lvl" + lvl;
+    el("hero").innerHTML =
+      '<div class="who">' +
+        '<div class="glyphline"><span class="gwrap' + (known(lead) ? '' : ' dim') + '">' +
+          svgGlyph(lead, 34) + '</span><span class="reg">' + esc(name) + '</span></div>' +
+        '<div class="op' + (lead.operator_kind ? '' : ' dim') + '">' + esc(op) +
+          (lead.icao_type ? ' · ' + esc(lead.icao_type) : '') + '</div>' +
+        '<div class="facts">' + esc(phase) + '<span class="sep">·</span>' + esc(alt) +
+          '<span class="sep">·</span>' + esc(km) + '</div>' +
+        /* The clinical panel's standing "NOT ARMED · ESTIMATED, NEVER MEASURED"
+           banner is deliberately absent from this screen, by explicit owner
+           decision. That disclaimer exists to stop a loudness estimate being
+           read as a measurement on a screen that also carries physiological
+           alarms. This screen carries no health data at all -- its job is
+           warning that a noise may startle the cat -- so the confusion it
+           guards against cannot arise here. Do not reinstate it from the spec
+           without asking; the exception was made knowingly. */
+        '<div class="band">' + esc(band) + '</div>' +
+        links +
+      '</div>' +
+      '<div class="clockwrap">' +
+        '<div class="count' + (isNow ? ' now' : '') + '">' + esc(fmt(left)) + '</div>' +
+        '<div class="clocklab">' + (isNow ? 'OVERHEAD' : 'TO CLOSEST APPROACH') + '</div>' +
+        /* The absolute instant, so the countdown can be checked against a
+           watch, and the wall clock beside it, so a frozen page is obvious at a
+           glance: if "now" is not moving, nothing on this screen is trustworthy. */
+        '<div class="clockabs">' + esc(whenAbs(pr.at_epoch)) + '</div>' +
+        '<div class="clocknow' + (staleFeed ? ' stale' : '') + '">' +
+          (staleFeed ? 'FEED STALE — COUNTDOWN NOT TRUSTWORTHY'
+                     : 'now ' + esc(nowStr())) + '</div>' +
+      '</div>' +
+      map +
+      '<div class="closing"><i style="width:' + (frac*100).toFixed(1) + '%"></i></div>';
+  }
+
+  /* ---- watch list: everything expected to be loud, with its countdown ---- */
+  function renderQueue(rows) {
+    const box = el("queue");
+    if (!rows.length) {
+      box.innerHTML = '<span class="lab">WATCHING</span>' +
+        '<span class="none">nothing forecast in the next ' + (HORIZON_S/60) + ' minutes</span>';
+      return;
+    }
+    box.innerHTML = '<span class="lab">WATCHING · ' + rows.length + '</span><div class="rows">' +
+      rows.slice(0, isKiosk() ? 5 : 12).map(r => {
+        const pr = r.prediction || {}, left = secondsTo(pr);
+        const km = Number.isFinite(pr.ground_distance_m)
+          ? (pr.ground_distance_m/1000).toFixed(1) + "km" : "--";
+        const m = isKiosk() ? null : mapLink(r);
+        const k = keyOf(r);
+        return '<div class="row' + (k && k === S.sel ? ' sel' : '') + '"' +
+          (k ? ' data-key="' + esc(k) + '"' : '') + '>' +
+          '<span class="g' + (known(r) ? ' known' : '') + '">' + svgGlyph(r, 15) + '</span>' +
+          '<span class="id">' + esc(r.registration || r.callsign || r.hex || "—") + '</span>' +
+          '<span class="op2' + (r.operator_name ? '' : ' dim') + '">' +
+            esc(r.operator_name || (r.icao_type ? r.icao_type : "not identified")) + '</span>' +
+          '<span class="eta' + (left != null && left <= 45 ? ' soon' : '') + '">' + esc(fmt(left)) + '</span>' +
+          '<span class="rng">' + esc(km) + '</span>' +
+          '<span class="bd">' + esc(pr.loudness_band || "UNKNOWN") + '</span>' +
+          (isKiosk() ? '' : '<a href="' + esc(m || "#") + '" target="_blank" rel="noopener">' +
+            (m ? 'MAP' : '') + '</a>') +
+          '</div>';
+      }).join("") + '</div>';
+  }
+
+  const cell = (ok,l,v) => '<span class="cell ' + (ok?'ok':'bad') + '"><i class="dot"></i>' +
+    esc(l) + ' <span class="v">' + esc(v) + '</span></span>';
+
+  function renderFeeds(now) {
+    const f = S.fr24, d = S.adsb; let out = "";
+    if (!f) out += cell(false, "FR24", "unreachable");
+    else {
+      const age = now - (f.written_at || 0);
+      const fresh = f.feed_state === "FRESH" && age < FR24_STALE_S;
+      /* Report the verdict, not the stored label. A file that SAYS "FRESH" but
+         was written 151 s ago is stale, and echoing its own claim next to a
+         warning dot is exactly the kind of mixed message this panel must not
+         send. Age wins over self-description. */
+      const word = age >= FR24_STALE_S ? "stale"
+                 : f.feed_state === "FRESH" ? (f.aircraft || []).length + " heli"
+                 : String(f.feed_state).toLowerCase();
+      out += cell(fresh, "FR24", word + " " + Math.round(age) + "s");
+      if (f.credits) out += cell(true, "CREDITS", f.credits.estimated_spent.toLocaleString());
+    }
+    if (!d) out += cell(false, "DONGLE", "unreachable");
+    else {
+      const age = now - (d.written_at || 0), planes = d.adsb_planes || [];
+      out += cell(age < ADSB_STALE_S, "DONGLE",
+        (age < ADSB_STALE_S ? planes.length + " ac" : "stale") + " " + Math.round(age) + "s");
+      out += cell(true, "ID", String(planes.filter(p => p.operator).length));
+    }
+    const un = (d && d.adsb_advisory && d.adsb_advisory.unscored) || [];
+    if (un.length) out += cell(false, "UNSCORED", String(un.length));
+    out += '<span class="cell right">' + new Date().toLocaleTimeString("en-GB") + '</span>';
+    el("feeds").innerHTML = out;
+  }
+
+  /* ---- expanded detail, browser only ---- */
+  function renderMore(planes) {
+    if (isKiosk()) return;
+    const rows = planes.slice()
+      .sort((a,b) => (a.dist||1e9) - (b.dist||1e9)).slice(0, 14);
+    const body = rows.length ? rows.map(p => {
+      const m = mapLink(p), a = acLink(p);
+      const k = keyOf(p);
+      return '<tr' + (k ? ' data-key="' + esc(k) + '"' : '') +
+        (k && k === S.sel ? ' class="sel"' : '') + '>' +
+        '<td class="gc' + (known(p) ? '' : ' dim') + '">' + svgGlyph(p, 14) + '</td>' +
+        '<td class="id">' + esc(p.registration || p.callsign || p.hex || "—") + '</td>' +
+        '<td class="op">' + esc(p.operator_name || "") + '</td>' +
+        '<td>' + esc(p.icao_type || p.category || "—") + '</td>' +
+        '<td>' + (Number.isFinite(p.dist) ? (p.dist/1000).toFixed(1) + " km" : "—") + '</td>' +
+        '<td>' + (Number.isFinite(p.alt_ft) ? p.alt_ft.toLocaleString() + " ft" : "—") + '</td>' +
+        '<td>' + (Number.isFinite(p.bearing) ? Math.round(p.bearing) + "°" : "—") + '</td>' +
+        '<td>' + esc(p.phase || "—") + '</td>' +
+        '<td>' + (m ? '<a href="' + esc(m) + '" target="_blank" rel="noopener">map</a>' : "") +
+          (a ? ' · <a href="' + esc(a) + '" target="_blank" rel="noopener">history</a>' : "") + '</td>' +
+        '</tr>';
+    }).join("") : '<tr><td colspan="9" class="none">no aircraft received</td></tr>';
+
+    el("more").innerHTML = '<h2>ALL AIRCRAFT RECEIVED · nearest first</h2>' +
+      '<table class="tbl"><thead><tr><th></th><th>ID</th><th>OPERATOR</th><th>TYPE</th>' +
+      '<th>RANGE</th><th>ALT</th><th>BRG</th><th>PHASE</th><th>FLIGHTRADAR24</th></tr></thead>' +
+      '<tbody>' + body + '</tbody></table>';
+  }
+
+  function draw() {
+    const now = Date.now()/1000, d = S.adsb;
+    const fresh = d && (now - (d.written_at || 0)) < ADSB_STALE_S;
+    const planes = (d && d.adsb_planes) || [];
+    const radius = (d && d.watch_radius_km) || 12;
+    const landmarks = (d && d.landmarks) || [];
+
+    let rows = ((d && d.adsb_predictions) || []).slice().sort((a,b) => {
+      const la = secondsTo(a.prediction), lb = secondsTo(b.prediction);
+      return (la == null ? 1e9 : la) - (lb == null ? 1e9 : lb);
+    });
+    const lead = rows.find(r => {
+      const l = secondsTo(r.prediction);
+      return l != null && l <= NOTIFY_WITHIN_S;
+    });
+
+    const reason = !fresh && !S.fr24 ? "no feed — nothing is being watched"
+      : rows.length ? rows.length + " tracked, none within " + (NOTIFY_WITHIN_S/60) + " min"
+      : planes.length + " aircraft received · " + radius + " km watch";
+
+    renderHero(lead, planes, landmarks, radius, reason, !fresh);
+    renderQueue(rows);
+    renderMore(planes);
+    renderFeeds(now);
+  }
+
+  wireSelection();
+  applyMapSize();
+  window.addEventListener("resize", () => { applyMapSize(); draw(); });
+  poll().then(draw);
+  setInterval(poll, 1000);
+  setInterval(draw, 250);   /* the countdown must not visibly stutter */
+})();
+</script>
