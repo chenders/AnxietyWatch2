@@ -321,3 +321,57 @@ class NeverArmed(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RosterRescuesUnscorableAircraft(unittest.TestCase):
+    """The receiver reports ~50% of aircraft with no emitter category.
+
+    Air ambulances are over-represented in that group, so without the Mode S
+    roster the loudest, lowest traffic over the station is exactly the traffic
+    that scores nothing at all.
+    """
+
+    def test_life_flight_with_no_category_is_scorable_as_a_rotorcraft(self):
+        # N776LF -- the airframe measured at 0.95 km and 600 ft off Providence.
+        self.assertEqual(adsb.airframe_class(None, "AA8051"), "rotorcraft")
+
+    def test_police_airframe_with_no_category_resolves_to_light(self):
+        self.assertEqual(adsb.airframe_class(None, "A1D296"), "light")
+
+    def test_an_unrecognised_address_stays_unknown(self):
+        # Unknown must not be folded into a class: a guessed source level would
+        # let an unidentified return borrow a narrowbody's loudness.
+        self.assertIsNone(adsb.airframe_class(None, "ABCDEF"))
+        self.assertIsNone(adsb.airframe_class(None, None))
+
+    def test_a_broadcast_category_still_wins_over_the_roster(self):
+        # The aircraft's own broadcast is better evidence than our static table.
+        self.assertEqual(adsb.airframe_class("A3", "AA8051"), "jet")
+
+    def test_an_uncategorised_air_ambulance_now_produces_a_prediction(self):
+        # Before the roster this returned risk UNKNOWN with noise_index None.
+        overhead = dict(lat=adsb.STATION_LAT + 0.004, lon=adsb.STATION_LON,
+                        altitude_ft=700, category=None, speed_kt=92,
+                        track_deg=180, vertical_rate_fpm=1088, seen=1.0)
+        scored = adsb.predict_pass(**overhead, hex_code="AA8051")
+        unscored = adsb.predict_pass(**overhead, hex_code="ABCDEF")
+        self.assertIsNotNone(scored["noise_index"])
+        self.assertEqual(scored["phase"], "CLIMB")
+        self.assertIsNone(unscored["noise_index"])
+        self.assertEqual(unscored["risk"], "UNKNOWN")
+
+    def test_make_report_labels_the_operator(self):
+        item = {"hex": "a4c3eb", "lat": adsb.STATION_LAT + 0.004,
+                "lon": adsb.STATION_LON, "altitude": 700, "seen": 1.0}
+        report = adsb.make_report(item, 0.0)
+        self.assertEqual(report["registration"], "N406LF")
+        self.assertEqual(report["operator_kind"], "AIR_AMBULANCE")
+        self.assertEqual(report["operator_state"], "CONFIRMED")
+
+    def test_make_report_leaves_an_unknown_aircraft_unlabelled(self):
+        item = {"hex": "abcdef", "lat": adsb.STATION_LAT + 0.004,
+                "lon": adsb.STATION_LON, "altitude": 700, "seen": 1.0}
+        report = adsb.make_report(item, 0.0)
+        self.assertIsNone(report["operator"])
+        self.assertIsNone(report["operator_kind"])
+        self.assertEqual(report["operator_state"], "UNCONFIRMED")

@@ -16,6 +16,53 @@
     "UNKNOWN": "var(--unknown-hi)",
   };
 
+  /* Type and operator glyphs.
+   *
+   * The glyph is a REDUNDANT channel, not a decorative one. Band colour already
+   * carries urgency, but colour alone fails for a colour-blind reader and fails
+   * again on the panel's washed-out daylight rendering -- so shape has to carry
+   * the same distinction independently. Every glyph is a distinct silhouette,
+   * not a distinct hue.
+   *
+   * Operator outranks airframe: knowing it is the air ambulance matters more
+   * than knowing it is a rotorcraft, because the owner reports those as the
+   * dominant noise source and they routinely broadcast no emitter category.
+   *
+   * The empty case is deliberately NOT blank. An unidentified aircraft gets a
+   * visible "unknown" mark, because a blank cell reads as "ordinary" and this
+   * panel must never render not-measured as measured-and-fine. */
+  const GLYPH = {
+    AIR_AMBULANCE: { mark: "✚", title: "air ambulance" },
+    POLICE: { mark: "◎", title: "police air support (orbits)" },
+    rotorcraft: { mark: "✜", title: "rotorcraft" },
+    heavy: { mark: "▚", title: "heavy jet" },
+    jet: { mark: "▞", title: "jet" },
+    light: { mark: "▵", title: "light aircraft" },
+    unknown: { mark: "◌", title: "type not reported" },
+  };
+
+  function glyphFor(plane) {
+    if (!plane) return GLYPH.unknown;
+    /* operator_kind is only ever set from the Mode S roster, which is a
+       positive identification -- never inferred from a shared airframe type. */
+    if (plane.operator_kind && GLYPH[plane.operator_kind]) return GLYPH[plane.operator_kind];
+    if (plane.airframe_class && GLYPH[plane.airframe_class]) return GLYPH[plane.airframe_class];
+    return GLYPH.unknown;
+  }
+
+  function glyphCell(plane) {
+    const g = glyphFor(plane);
+    /* Police get the radar's cyan rather than the klaxon red: the alarm colour
+       is spoken for by the medical path and must not be diluted by aircraft. */
+    const tint = plane && plane.operator_kind === "POLICE" ? "var(--spo2)"
+      : plane && plane.operator_kind === "AIR_AMBULANCE" ? "var(--klaxon)"
+      : "var(--unknown-hi)";
+    const label = plane && plane.registration
+      ? `${g.title} · ${plane.registration}` : g.title;
+    return `<span title="${esc(label)}" aria-label="${esc(label)}" `
+      + `style="color:${tint};font-size:13px;line-height:1">${g.mark}</span>`;
+  }
+
   /* Counted down from an absolute instant, not from a stored duration, so a
      stalled feed runs to NOW and stops instead of promising a flyover forever. */
   function countdown(atEpoch) {
@@ -55,10 +102,14 @@
         ? `${Math.round(p.altitude_ft).toLocaleString()}ft` : "--";
       const edge = BAND_COLOUR[p.loudness_band] || "var(--unknown-hi)";
       const style = "grid-column:1/-1;display:grid;"
-        + "grid-template-columns:76px 92px 62px 96px 1fr;gap:6px;padding:3px 4px;"
+        + "grid-template-columns:16px 76px 92px 62px 96px 1fr;gap:6px;padding:3px 4px;"
         + `border-left:3px solid ${edge};background:#0B1924;margin-bottom:3px`;
+      /* An identified aircraft shows its registration in place of a blank or a
+         raw hex: N406LF is meaningful to the reader, A4C3EB is not. */
+      const name = r.registration || r.callsign || r.hex;
       return `<div style="${style}">`
-        + `<span style="color:var(--nibp)">${esc(r.callsign || r.hex)}</span>`
+        + glyphCell(r)
+        + `<span style="color:var(--nibp)">${esc(name)}</span>`
         + loudnessCell(p)
         + `<b style="color:${urgent ? "var(--klaxon)" : "var(--label)"}">${esc(when)}</b>`
         + `<span style="color:var(--unknown)">${where} ${alt}</span>`
@@ -91,9 +142,41 @@
      of the call. Restored in a finally so a throw cannot leave it patched. */
   const ctxProto = CanvasRenderingContext2D.prototype;
   const originalFillText = ctxProto.fillText;
-  function withHonestLabels(draw) {
+
+  /* Identifier -> glyph for whatever the radar is about to draw.
+   *
+   * The radar's blip labels are the aircraft's callsign or hex, so keying on
+   * both lets a glyph be prefixed onto the label without knowing anything about
+   * the canvas projection -- which matters because drawRadar() and its
+   * lat/lon-to-pixel maths live only in the deployed index.html and are not in
+   * git. Overlaying by coordinate would require forking that file; prefixing a
+   * label does not. */
+  function glyphIndex(planes) {
+    const index = new Map();
+    (planes || []).forEach(p => {
+      const g = glyphFor(p);
+      if (!g || g === GLYPH.unknown) return;
+      [p.callsign, p.hex, p.registration].forEach(key => {
+        if (key) index.set(String(key).trim().toUpperCase(), g.mark);
+      });
+    });
+    return index;
+  }
+
+  function withHonestLabels(index, draw) {
     ctxProto.fillText = function (text, x, y, maxWidth) {
-      const fixed = typeof text === "string" ? text.replace(/\s*(-?\d+)dB\b/, " ·$1") : text;
+      let fixed = text;
+      if (typeof text === "string") {
+        /* The canvas hardcodes a "NNdB" suffix. The number is a relative index
+           against an unvalidated reference, not a sound pressure level. */
+        fixed = text.replace(/\s*(-?\d+)dB\b/, " ·$1");
+        /* Prefix the glyph when the label leads with an identifier we know.
+           Matching the leading token only, so a substring inside some other
+           caption cannot pick up a spurious aircraft mark. */
+        const lead = fixed.trim().split(/\s+/)[0];
+        const mark = lead ? index.get(lead.toUpperCase()) : undefined;
+        if (mark) fixed = `${mark} ${fixed}`;
+      }
       return maxWidth === undefined
         ? originalFillText.call(this, fixed, x, y)
         : originalFillText.call(this, fixed, x, y, maxWidth);
@@ -102,7 +185,7 @@
   }
 
   window.drawRadar = function drawRadarWithAdvisory(planes, topNoise) {
-    withHonestLabels(() => originalDrawRadar(planes, topNoise));
+    withHonestLabels(glyphIndex(planes), () => originalDrawRadar(planes, topNoise));
     const list = document.getElementById("live-radar-list");
     if (!list) return;
     /* Reached by bare name, not through `window`. The page declares `S` and
@@ -127,7 +210,16 @@
       const closest = prediction && Number.isFinite(prediction.ground_distance_m)
         ? `${(prediction.ground_distance_m / 1000).toFixed(1)} km at ${Math.round(prediction.altitude_ft).toLocaleString()} ft in ${prediction.eta_seconds}s`
         : null;
+      /* Identification is stated with its evidence, never as a bare label. A
+         CONFIRMED here means a Mode S address matched the roster; UNCONFIRMED
+         means we do not know, which is not the same as "not one of them". */
+      const identified = p && p.operator_kind
+        ? `${glyphFor(p).title.toUpperCase()}${p.registration ? ` · ${p.registration}` : ""}`
+          + `${p.icao_type ? ` · ${p.icao_type}` : ""}`
+        : null;
       body.insertAdjacentHTML("beforeend", [
+        detail("IDENTIFIED AS", identified),
+        detail("IDENTIFIED HOW", p && p.operator_reason),
         detail("PASS RISK", prediction ? `${prediction.risk} · ${prediction.confidence} data confidence · NOT ARMED` : null),
         detail("WHY", prediction && prediction.reasons && prediction.reasons[0]),
         detail("CLOSEST APPROACH", closest),

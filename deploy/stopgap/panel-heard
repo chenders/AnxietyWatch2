@@ -1,0 +1,138 @@
+#!/usr/bin/env python3
+"""Mark that you just heard a loud aircraft, and see what it might have been.
+
+Usage:
+
+    panel-heard                       # mark "I hear it now"
+    panel-heard -n "low orbit, west"  # mark with a note
+    panel-heard --ago 90              # heard it 90 seconds ago
+    panel-heard --report              # rank candidates against the marks so far
+
+The owner can recognise Portland Police air support by sound, but those aircraft
+frequently broadcast no registration, and their airframe type is shared with
+thousands of civil Cessnas. The ear is therefore the only sensor that currently
+works -- this turns it into data.
+
+Marking is the whole job. Each mark is one observation; the report needs several
+before it will name anything, because a single coincidence must not create a
+roster entry that is then trusted forever. Mark every time you hear one, even
+when you are fairly sure you already know which aircraft it is -- the quiet
+windows matter as much as the loud ones, and they can only be inferred from a
+complete record of the loud ones.
+"""
+
+import argparse
+import sys
+import time
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import panel_candidate_id as cid  # noqa: E402
+import panel_loud_operators as ops  # noqa: E402
+import panel_noise_log as noise_log  # noqa: E402
+
+# Quiet windows are sampled from the gaps between marks. Without them there is
+# no contrast, and every frequent flyer scores identically -- see the module
+# docstring in panel_candidate_id.
+QUIET_SAMPLES = 60
+QUIET_CLEARANCE_S = 1800.0
+
+
+def quiet_moments(marks, observations, samples=QUIET_SAMPLES):
+    """Timestamps well away from any mark, drawn from the observed period.
+
+    Sampled deterministically at even spacing rather than randomly, so two runs
+    over the same data agree. A moment within QUIET_CLEARANCE_S of any mark is
+    discarded: the aircraft may still have been audible, and counting it as
+    quiet would penalise the very address being looked for.
+    """
+    times = [o["at"] for o in observations if isinstance(o.get("at"), (int, float))]
+    if not times or not marks:
+        return []
+    start, end = min(times), max(times)
+    if end <= start:
+        return []
+    marked = [m["at"] for m in marks]
+    step = (end - start) / (samples + 1)
+    out = []
+    for index in range(1, samples + 1):
+        moment = start + step * index
+        if all(abs(moment - at) > QUIET_CLEARANCE_S for at in marked):
+            out.append(moment)
+    return out
+
+
+def observations_from_log(path=None):
+    """Flatten the loud-aircraft log into the shape the correlator wants."""
+    rows = []
+    for row in noise_log.read_all(path):
+        identity = row.get("identity") or {}
+        rows.append({
+            "at": row.get("at"),
+            "hex": identity.get("hex"),
+            "distance_km": row.get("distance_km"),
+        })
+    return [r for r in rows if r["hex"]]
+
+
+def report(args):
+    marks = cid.read_marks(args.marks)
+    observations = observations_from_log(args.log)
+    quiet = quiet_moments(marks, observations)
+    verdict, rows = cid.rank(marks, observations, quiet, radius_km=args.radius)
+
+    print(f"{len(marks)} marks, {len(observations)} logged observations, "
+          f"{len(quiet)} quiet windows")
+    print(f"verdict: {verdict} -- {cid.explain(verdict, rows)}")
+    if not rows:
+        return 0
+
+    print()
+    print(f"{'Mode S':8s} {'heard':>9s} {'quiet':>9s} {'ratio':>7s}  known as")
+    for row in rows[:15]:
+        entry = ops.lookup_hex(row["hex"])
+        known = f"{entry['reg']} ({ops.operator_name(entry)})" if entry else "-"
+        print(f"{row['hex']:8s} {row['heard_hits']:4d}/{row['heard_total']:<4d} "
+              f"{row['quiet_hits']:4d}/{row['quiet_total']:<4d} "
+              f"{row['ratio']:7.1f}  {known}")
+    print()
+    print("Verify any candidate against https://registry.faa.gov/aircraftinquiry/")
+    print("before adding it to ROSTER in panel_loud_operators.py. This tool")
+    print("proposes; it never edits the roster itself.")
+    return 0
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("-n", "--note", help="what it sounded like, where it was")
+    parser.add_argument("--ago", type=float, default=0.0,
+                        help="seconds ago you heard it (default: now)")
+    parser.add_argument("--suspected", default="POLICE",
+                        help="who you think it was (default: POLICE)")
+    parser.add_argument("--report", action="store_true",
+                        help="rank candidates instead of adding a mark")
+    parser.add_argument("--marks", default=None, help="override the marks file")
+    parser.add_argument("--log", default=None, help="override the loud-aircraft log")
+    parser.add_argument("--radius", type=float, default=6.0,
+                        help="km around the station to consider overhead")
+    args = parser.parse_args()
+
+    if args.report:
+        return report(args)
+
+    record = cid.mark_heard(at=time.time() - args.ago, note=args.note,
+                            suspected=args.suspected, path=args.marks)
+    total = len(cid.read_marks(args.marks))
+    remaining = max(0, cid.MIN_MARKS - total)
+    stamp = time.strftime("%H:%M:%S", time.localtime(record["at"]))
+    print(f"marked {stamp} ({args.suspected}); {total} marks recorded")
+    if remaining:
+        print(f"{remaining} more needed before a candidate can be named")
+    else:
+        print("run `panel-heard --report` to rank candidates")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

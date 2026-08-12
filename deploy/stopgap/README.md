@@ -311,6 +311,44 @@ loud for far longer than a helicopter passing through, and a model tuned only to
 closest approach will understate it. Orbit detection (turn accumulation over a
 rolling window, positional containment, altitude stability) is not built yet.
 
+### Finding the unknown ones by ear — `panel-heard`
+
+The owner can recognise these aircraft by sound, but they often broadcast no
+registration and their type is shared with thousands of civil Cessnas. The ear
+is the only sensor that currently works, so `panel-heard` turns it into data.
+
+```sh
+panel-heard                        # "I hear it now"
+panel-heard -n "low orbit, west"   # with a note
+panel-heard --ago 90               # heard it 90 s ago
+panel-heard --report               # rank candidates
+```
+
+The scoring is a **likelihood ratio**, not a set intersection, and the
+difference is the whole point:
+
+```
+Mode S       heard     quiet   ratio  known as
+A1D296      6/6       0/54      55.0  N2163J (Portland Police Bureau)
+BUSY01      6/6       4/54      11.0  -
+```
+
+Both aircraft were overhead at every mark. An intersection ranks them equal and
+returns the busiest aircraft in the sky as a confident answer. Scoring
+`P(overhead | heard) / P(overhead | not heard)` separates them, because the
+frequent flyer is also up during quiet windows.
+
+It reports `INSUFFICIENT` until at least five marks exist, and names the blocker
+with its numbers rather than offering a best guess — one coincidence must not
+create a roster entry that is then trusted forever. Quiet windows are sampled
+from gaps at least 30 minutes clear of any mark, since an aircraft may still be
+audible either side of one.
+
+**Mark every time you hear one**, including when you are confident you already
+know which aircraft it is. The quiet windows carry as much information as the
+loud ones and can only be inferred from a complete record. The tool proposes; it
+never edits the roster — verify a candidate against the FAA registry first.
+
 ### Cost, measured 2026-08-12 and confirmed in the vendor docs
 
 | | credits |

@@ -5,7 +5,13 @@ import json
 import math
 import os
 from pathlib import Path
+import sys
 import time
+
+# Installed alongside this script in /usr/local/bin, which is not on the import
+# path for a script invoked by absolute path.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import panel_loud_operators  # noqa: E402  (path must be set before the import)
 
 SOURCE = Path(os.environ.get("DUMP1090_AIRCRAFT_JSON", "/run/dump1090-mutability/aircraft.json"))
 OUTPUT = Path(os.environ.get("ADSB_STATUS_JSON", "/home/chris/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical/adsb_status.json"))
@@ -133,12 +139,33 @@ def local_offsets(lat, lon):
     return east, north
 
 
-def airframe_class(category):
+# ICAO type designator -> airframe class, for aircraft on the operator roster.
+# Only types actually on the roster appear here; this is not a general type
+# database and must not become one.
+ROSTER_TYPE_CLASS = {
+    "A119": "rotorcraft",
+    "B407": "rotorcraft",
+    "EC35": "rotorcraft",
+    "EC45": "rotorcraft",
+    "C182": "light",
+    "C172": "light",
+}
+
+
+def airframe_class(category, hex_code=None):
     """Coarse airframe class from the ADS-B emitter category.
 
-    Returns None when the category is absent. Unknown is a third state: it must
-    not be silently folded into 'jet', because that would let an unidentified
-    return borrow a narrowbody's source level.
+    Returns None when the class cannot be established. Unknown is a third state:
+    it must not be silently folded into 'jet', because that would let an
+    unidentified return borrow a narrowbody's source level.
+
+    When the emitter category is absent, the Mode S address is consulted against
+    the operator roster. Roughly half the aircraft this receiver hears broadcast
+    no category at all, and the air ambulances that generate the complaints here
+    are over-represented in that group -- so without this fallback the loudest,
+    lowest traffic over the station is precisely the traffic that scores
+    nothing. The address is broadcast whether or not the category is, so this
+    costs nothing and needs no network.
     """
     code = str(category or "").strip().upper()
     if code in ("A5", "A6"):
@@ -149,6 +176,10 @@ def airframe_class(category):
         return "light"
     if code == "A7":
         return "rotorcraft"
+
+    airframe = panel_loud_operators.lookup_hex(hex_code)
+    if airframe is not None:
+        return ROSTER_TYPE_CLASS.get(airframe["type"])
     return None
 
 
@@ -245,7 +276,8 @@ MODEL_NOTE = (
 )
 
 
-def predict_pass(lat, lon, altitude_ft, category, speed_kt, track_deg, vertical_rate_fpm, seen):
+def predict_pass(lat, lon, altitude_ft, category, speed_kt, track_deg, vertical_rate_fpm, seen,
+                 hex_code=None):
     """Project the live track and report the closest approach *while airborne*.
 
     Three things this deliberately refuses to do, each of which the 2026-08-11
@@ -279,7 +311,7 @@ def predict_pass(lat, lon, altitude_ft, category, speed_kt, track_deg, vertical_
         eta_cpa = -(east * velocity_east + north * velocity_north) / (velocity_east**2 + velocity_north**2)
 
     phase = thrust_phase(vertical_rate_fpm)
-    klass = airframe_class(category)
+    klass = airframe_class(category, hex_code)
     rate = vertical_rate_fpm if isinstance(vertical_rate_fpm, (int, float)) else 0.0
 
     # Where does this track end? A descent aimed at a nearby field terminates at
@@ -395,6 +427,8 @@ def make_report(item, source_now):
         return None
     distance, bearing = geometry(lat, lon, altitude)
     category = item.get("category")
+    hex_code = str(item.get("hex", "")).upper()
+    callsign = (str(item["flight"]).strip() or None) if isinstance(item.get("flight"), str) else None
     prediction = predict_pass(
         lat,
         lon,
@@ -404,15 +438,29 @@ def make_report(item, source_now):
         item.get("track"),
         item.get("vert_rate"),
         seen,
+        hex_code=hex_code,
     )
     phase = thrust_phase(item.get("vert_rate"))
-    now_index = noise_index(distance, airframe_class(category), phase)
+    now_index = noise_index(distance, airframe_class(category, hex_code), phase)
+
+    # Identification from the local roster. Costs nothing, needs no network, and
+    # works for the aircraft that broadcast no emitter category at all.
+    operator_state, operator_reason, airframe = panel_loud_operators.identify(
+        hex_code=hex_code, callsign=callsign, aircraft_type=None)
     return {
-        "hex": str(item.get("hex", "")).upper(),
+        "hex": hex_code,
         # str(None) is the string "None", which the panel would print as a
         # callsign. Coerce only when there is something to coerce.
-        "callsign": (str(item["flight"]).strip() or None)
-        if isinstance(item.get("flight"), str) else None,
+        "callsign": callsign,
+        # Roster identification. `operator` is None when the airframe is not
+        # recognised -- which is NOT the same as "not a known-loud operator",
+        # and the panel must render it as unknown rather than as ordinary.
+        "operator": (airframe or {}).get("operator"),
+        "operator_kind": panel_loud_operators.operator_kind(airframe) if airframe else None,
+        "operator_state": operator_state,
+        "operator_reason": operator_reason,
+        "registration": (airframe or {}).get("reg"),
+        "icao_type": (airframe or {}).get("type"),
         "category": item.get("category"),
         "squawk": item.get("squawk"),
         "lat": lat,
@@ -427,7 +475,7 @@ def make_report(item, source_now):
         # canvas on the Pi keeps colouring and labelling. NOT decibels.
         "db": None if now_index is None else round(now_index, 1),
         "phase": phase,
-        "airframe_class": airframe_class(category),
+        "airframe_class": airframe_class(category, hex_code),
         "vertical_rate_fpm": item.get("vert_rate"),
         "rssi": item.get("rssi"),
         "last_seen": source_now - seen,
