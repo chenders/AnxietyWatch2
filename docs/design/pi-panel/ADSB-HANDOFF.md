@@ -228,34 +228,80 @@ gspeed/timestamp series — **this is the calibration set the model has never
 had.** Pull a larger sample, find the ones that actually cross the house, and
 fit the thresholds against them instead of guessing.
 
-### The constraint that decides the architecture
+### Account, rate limits, cost — the owner decides, not you
 
-**FR24 cannot be a continuous feed. Not at any sane price.**
+**Cost is never a blocker here.** Report numbers, ask, move on. A previous draft
+of this document declared FR24 "cannot be a continuous feed at any sane price"
+and then designed around that verdict. That was wrong twice over: the owner
+holds a substantial credit balance, and the decision was never the author's to
+make. Do not do this again.
 
-- Rate limits: **10 queries/min** (Explorer $9), 30/min (Essential $90),
-  90/min (Advanced $900). We poll dump1090 at 1 Hz; FR24 cannot match that.
-- Cost is **per returned flight**, not per query:
-  `live flight positions full` = **8 credits per aircraft returned**.
-- Explorer = 30,000 credits/month. Our 20 km box returns ~5 aircraft, so one
-  query costs ~40 credits. That is **~750 queries per month, total** — roughly
-  one per hour. Continuous polling would exhaust the month in about 75 minutes.
-- History: Explorer 30 days, Essential 2 years, Advanced unlimited.
-- `flight-summary` accepts a maximum 14-day window per query.
+**Measured account usage, last 30 days** (`GET /api/usage?period=30d`):
 
-### Therefore
+| endpoint | requests | credits |
+|---|---|---|
+| `live/flight-positions/light` | 574 | 46,453 |
+| `flight-summary/light` | 151 | 7,997 |
+| `flight-tracks` | 142 | 5,680 |
 
-1. **Local ADS-B stays the real-time feed.** 1 Hz, free, low latency, works
-   offline. FR24 never touches the geometry path.
-2. **Cache hex -> type/registration/operator permanently.** These are static per
-   airframe and the aircraft that matter here *recur*. Life Flight flies a
-   handful of tails; look each up once and the identification problem is solved
-   forever for a few credits. This is the highest-value, lowest-cost use.
-3. **Trigger lookups, never poll them.** When the local receiver sees an
-   unknown-but-overhead target, spend one query. That is rare by construction.
-4. **Do the historical calibration as a one-off**, offline, and commit the
-   derived thresholds — not the raw data (see storage rules below).
-5. **Never block the publish loop**, and surface an FR24 outage as its own
-   state. A network fault must never render as an empty sky.
+Well past the Explorer allowance, so the account is **Essential or above** —
+confirmed independently by the sibling project (below), whose config comments
+name the Essential plan and whose original limits were 30/min.
+
+There is **no balance endpoint** in the API. Usage is queryable; remaining
+credits are visible only in the FR24 web dashboard. Ask the owner rather than
+inferring.
+
+Published tiers: Explorer $9/mo, 30,000 credits, 10 q/min, 30 days history ·
+Essential $90/mo, 333,000 credits, 30 q/min, 2 years · Advanced $900/mo,
+4,050,000 credits, 90 q/min, unlimited.
+
+**Cost is per RETURNED AIRCRAFT, not per query.** `live/flight-positions/full`
+is 8 credits per aircraft in the response; `light` is 6. So the bounding box is
+as much a cost lever as the poll interval. At $0.0003/credit:
+
+| interval | 20 km box (~5 ac) | 6 km box (~2 ac) |
+|---|---|---|
+| 6 s | $5,184/mo | $2,074/mo |
+| 30 s | $1,037/mo | $415/mo |
+| 60 s | $518/mo | $207/mo |
+| 5 min | $104/mo | $41/mo |
+| 30 min | $17/mo | $7/mo |
+
+Aircraft counts are from a single 23:40 sample; daytime is higher. Levers, in
+rough order of effect: poll interval, box size, `light` vs `full`, and
+altitude/category filters to shrink the returned set.
+
+A per-airframe identity cache (`hex -> type/reg/operator`) is ~8 credits per new
+tail, cached forever — Life Flight's whole fleet costs about $0.02 once, and it
+solves the 50%-no-category problem outright. Worth doing whatever else is
+chosen. It does not preclude continuous polling; both can run.
+
+### Prior art: `~/Source/phx-pd-helicopter-tracker`
+
+**Read this before writing any FR24 client.** It is a working helicopter-noise
+tracker by the same owner, against the same API, and it has already paid for the
+operational lessons:
+
+- `backend/app/services/fr24_official_api.py` — base URL, `Accept-Version: v1`
+  headers, `live/flight-positions/light` usage.
+- `backend/app/services/fr24_rate_limiter.py` — Redis-backed limiter with
+  per-minute/hour/day buckets, a **10 s minimum delay between requests**, and a
+  30 s backoff on 429. Its comments record that the limits were tightened from
+  30/min after real rate-limit pain. I reproduced that pain in this session by
+  firing eight requests in a burst and getting `429 Rate limit exceeded`.
+- **Serve stale rather than nothing.** On a rate-limit block it returns cached
+  data up to an hour old rather than failing. Bounds queries cache for 300 s.
+  That pattern maps directly onto our "never block the publish loop" rule.
+- `fr24_sdk_service.py`, `fr24_mock_service.py` — SDK wrapper and a mock for
+  tests, so the test suite never touches the network.
+- `download_fr24_flights.py`, `app/api/endpoints/historical_import.py` — bulk
+  historical import, which is the shape of the calibration job we want.
+- `FR24_MONTHLY_CREDIT_LIMIT` in `app/core/config.py` — a self-imposed monthly
+  credit ceiling. Worth copying as a guard so a bug cannot drain the balance.
+
+Also on disk and possibly relevant: `~/Source/phx-noisy-helicopters`,
+`~/Source/phx-helicopter-tracker`, `~/Source/phx-pd-helicopters`.
 
 ### Practical gotchas already paid for
 
