@@ -31,22 +31,8 @@
   /* Every ratio here is against pure black and was verified with panel-check.mjs.
      The design's own table stated all twelve correctly -- unusually, they
      survived checking unchanged. */
-  --bg:#000000;          /* panel ground. true zero emission around every glyph */
-  --field:#0A0B0C;       /* 1.07:1 — interior of boxes: region without emission */
-  --rule:#5E6670;        /* 3.61:1 — boxed-region borders (WCAG 1.4.11 graphical) */
-  --rule-quiet:#3A4048;  /* 2.01:1 — system hairlines. decorative, carries nothing */
-  --spo2:#3FC8D8;        /* 10.46:1 — oxygen saturation. cyan, per monitor convention */
-  --hr:#35C46A;          /*  9.26:1 — pulse. green. never used for anything else */
-  --nibp:#DCE1E6;        /* 15.96:1 — non-invasive pressure. neutral white */
-  --watch:#E0A227;       /*  9.37:1 — medium physiological + technical warnings */
-  --klaxon:#E2453C;      /*  5.15:1 — high priority ONLY. appears nowhere else */
-  --unknown:#8B97A3;     /*  7.05:1 — indeterminate. neutral slate, hue-free by design */
-  --unknown-hi:#B9C0C7;  /* 11.43:1 — indeterminate text that must out-read a live value */
-  --label:#7A828C;       /*  5.40:1 — region labels at 14px, clears the 4.5:1 bar */
-  --rest:#585F52;        /*  3.17:1 — resting tier word at 44px. large-text AA at min emission */
   --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
   --sans:"Helvetica Neue",Helvetica,Arial,sans-serif;
-  --hatch:repeating-linear-gradient(135deg,#8B97A3 0 2px,rgba(0,0,0,0) 2px 7px);
 }
 *{box-sizing:border-box}
 /* The page must not own ANY gesture.
@@ -57,7 +43,6 @@
    properties surrender pan/zoom/overscroll on the whole document; the kiosk
    unit additionally passes --disable-pinch and disables overscroll history
    navigation, because CSS alone does not stop the browser-level ones. */
-html,body{margin:0;background:#17191B;font-family:var(--sans);
   touch-action:none;overscroll-behavior:none;overscroll-behavior-x:none;
   user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
 body.kiosk{background:#000;overflow:hidden}
@@ -98,9 +83,6 @@ body.kiosk .review{display:none}
 /* View indicator: shown for a moment after a swipe, then gone. Neither design
    should carry permanent chrome for a control that is used once a week. */
 .vind{position:absolute;left:0;right:0;bottom:0;display:flex;gap:10px;align-items:center;justify-content:center;padding:6px 0;background:rgba(0,0,0,.75);
-      font-family:var(--mono);font-size:14px;letter-spacing:2px;color:#B9C0C7;transition:opacity .4s;pointer-events:none}
-.dot{width:7px;height:7px;border:1px solid #7A828C;border-radius:50%}
-.dot.on{background:#B9C0C7;border-color:#B9C0C7}
 .r-sil{margin-top:auto;height:56px;flex:0 0 auto;position:relative;overflow:hidden;touch-action:none;user-select:none;-webkit-user-select:none}
 
 .pbox{border:1px solid var(--rule);background:var(--field);padding:8px 10px 6px;display:flex;flex-direction:column;min-width:0}
@@ -129,14 +111,7 @@ body.kiosk .review{display:none}
 @keyframes klx{0%,49%{opacity:1}50%,100%{opacity:.28}}
 .flash{animation:klx 1s steps(1,end) infinite}
 
-.review{width:800px;margin:24px auto 64px;color:#B4AFA6;font-size:15px;line-height:1.6}
-.review h1{font-size:22px;color:#E8E4DC;margin:0 0 4px;letter-spacing:-.2px}
-.review button{font:inherit;font-size:14px;letter-spacing:1px;font-weight:700;background:transparent;color:#9BA3AB;border:1px solid #2F343A;padding:9px 12px;cursor:pointer}
-.review button[aria-pressed="true"]{background:#3FC8D8;border-color:#3FC8D8;color:#000}
-.review button:hover{color:#E8E4DC}
 .review .strip{display:flex;flex-wrap:wrap;gap:6px;margin:14px 0}
-.review code{font-family:var(--mono);color:#B9C0C7}
-#frame{width:800px;margin:0 auto;outline:1px solid #2F343A}
 </style>
 </head>
 <body>
@@ -149,11 +124,8 @@ body.kiosk .review{display:none}
   Hosyond 7″ DSI shows. Everything here is review scaffolding — load with
   <code>?kiosk=1</code> and it disappears.</p>
   <div class="strip" id="states"></div>
-  <p id="note" style="min-height:3em;color:#8E8A83"></p>
-  <p><strong style="color:#D6D2CB">Hold to silence:</strong> press and hold the bar for a full
   3 seconds. Releasing early resets to zero — no partial credit, and a tap does nothing at all.
   Silencing stops the <em>audio</em>, for two minutes. The visual alarm never silences.</p>
-  <p><strong style="color:#D6D2CB">Resting:</strong> at <code>clear</code>, untouched for 45 s,
   every region but the tier line goes dark — about 1.5 % of the field lit. Touching anywhere wakes
   it for 20 s. Escalation wakes it immediately and nothing dims while an alarm is active. Use the
   <em>resting</em> button to see it without waiting.</p>
@@ -294,7 +266,6 @@ STATES.confirm = { ...base,
     hr({ val: "102", note: "↑44\n11 m", trend: [66,72,78,84,89,93,97,100,102,102] }),
     nibp({ val: "118/76", note: "MAP 90\n43 m · RE-TAKE" }),
   ],
-  silence: { active: true, text: "HOLD 3 s TO SILENCE", sub: "AUDIO 2 MIN · ALARM CONTINUES", glyph: "⏻", color: AM, fill: "#3A2E12" },
 };
 
 STATES.klaxon = { ...base,
@@ -306,7 +277,6 @@ STATES.klaxon = { ...base,
     hr({ val: "121", note: "↑63\n13 m", trend: [70,80,90,98,105,111,116,119,121,121] }),
     nibp({ val: "118/76", note: "MAP 90\n44 m · RE-TAKE" }),
   ],
-  silence: { active: true, text: "HOLD 3 s TO SILENCE", sub: "AUDIO 2 MIN · ALARM CONTINUES", glyph: "⏻", color: RD, fill: "#3A1512", textColor: RD },
 };
 
 /* Resting is not "the panel dimmed". It is a different, smaller panel: the tier
@@ -317,7 +287,6 @@ STATES.resting = {
   detail: false, clock: "", chanLabel: "", tier: "CLEAR", glyph: "●", accent: "var(--rest)",
   prio: "", since: "", sensors: [], sys: [], params: [],
   restWord: true,
-  silence: { active: false, text: "", sub: "TOUCH ANYWHERE TO WAKE", color: "#2A2E33", subColor: "var(--label)" },
 };
 
 const ORDER = [
@@ -519,7 +488,7 @@ function liveState() {
     return { ...common,
       tier: "CAN’T ASSESS", glyph: "?", accent: "var(--unknown)", indeterminate: true,
       prio: "NOT MEASURED", prioFg: "var(--unknown-hi)", since: stamp,
-      chanLabel: live.demo ? "DEMO · SpO₂/HR REAL · REST SIMULATED" : "DISPLAY ONLY · NO ALARM", chanFg: "var(--unknown-hi)",
+      chanLabel: live.demo ? "SpO₂/HR + AIRCRAFT REAL · BP/SYS DEMO" : "DISPLAY ONLY · NO ALARM", chanFg: "var(--unknown-hi)",
       params: params(null, null, true),
       caption: "live · can’t assess", note: fault,
     };
@@ -528,7 +497,7 @@ function liveState() {
     // Solid border, slate hue: the data is present, the judgement is not.
     tier: "NOT ARMED", glyph: "○", accent: "var(--unknown)",
     prio: "NO ALARM ARMED", prioFg: "var(--unknown-hi)", since: "display only",
-    chanLabel: live.demo ? "DEMO · SpO₂/HR REAL · REST SIMULATED" : "DISPLAY ONLY · NO ALARM", chanFg: "var(--unknown-hi)",
+    chanLabel: live.demo ? "SpO₂/HR + AIRCRAFT REAL · BP/SYS DEMO" : "DISPLAY ONLY · NO ALARM", chanFg: "var(--unknown-hi)",
     params: params(s.spo2, s.pulse_bpm, false),
     caption: "live", note: `SpO₂ ${s.spo2} · ${s.pulse_bpm} bpm · ${s.frames} frames — nothing is evaluating these numbers`,
   };
@@ -546,13 +515,11 @@ function silenceFor(st) {
   if (!st.silence || !st.silence.active) return st.silence;
   if (hold.phase === "done")
     return { active: true, p: 1, text: "AUDIO SILENCED 2:00", sub: "ALARM STILL ACTIVE · RE-SOUNDS 03:16:11",
-             glyph: "✓", color: AM, fill: "#3A2E12", textColor: AM, big: true };
   if (hold.phase === "released")
     return { active: true, p: 0, text: "RELEASED — RESET TO 0", sub: "NO PARTIAL CREDIT · HOLD THE FULL 3 s",
              glyph: "↺", color: SL, textColor: "var(--unknown-hi)" };
   if (hold.phase === "holding")
     return { active: true, p: hold.p, text: "KEEP HOLDING — " + (3 - hold.p * 3).toFixed(1) + " s",
-             sub: "RELEASE NOW AND THIS RESETS TO ZERO", glyph: "⏻", color: RD, fill: "#3A1512", textColor: WH };
   return st.silence;
 }
 
@@ -633,7 +600,6 @@ function paramBox(p) {
    It lights far less of the 800x480 than Clinical does, which is the reason to
    carry both — the panel's stated position is dim by lit area, and this is the
    dimmer end of that. */
-const PEN = { bone:"#D6D2CB", sage:"#8E9A86", slate:"#8B97A3", hi:"#B9C0C7", mute:"#7F7A72", rest:"#585F52" };
 
 /* Segments for the coverage bar, built from the rolling buffer: unbroken runs
    of samples are solid, and every null run becomes a dashed break with a "?"
@@ -745,8 +711,6 @@ function renderPenumbra(st) {
    SOLID outline. Filled = assessed and calm; solid-hollow = present but not
    judged; dashed-hollow = not measured at all. Three states, three silhouettes,
    still no hue. */
-const SEM = { calm:"#585F52", watch:"#9A948C", confirm:"#D6D2CB", quiet:"#7F7A72",
-              slate:"#8B97A3", hi:"#B9C0C7", klaxon:"#E2453C", hair:"#262A25" };
 
 function semGlyph(st) {
   const box = "width:176px;display:flex;flex-direction:column;gap:18px;align-items:flex-start";
@@ -833,7 +797,6 @@ function renderSemaphore(st) {
 
 function creativeFooter(st) {
   const sil = st.silence || {};
-  return `<div style="position:absolute;left:34px;right:34px;bottom:16px;display:flex;align-items:baseline;gap:14px;font-family:var(--mono);font-size:13px;letter-spacing:1.4px;color:#5A5F63">
     <span>${esc(sil.text || "")}</span>
     <span style="margin-left:auto">${esc(sil.sub || "")}</span>
   </div>`;
@@ -912,11 +875,9 @@ const hzState = { raf: 0, last: 0, bubbles: [], pops: [], nextBeat: 0, st: null,
 function renderHorizon(st) {
   // The scene is a canvas so it can animate across polls; the text is DOM so
   // it stays crisp and reuses esc().
-  return `<div style="width:800px;height:480px;position:relative;background:#000308;overflow:hidden;font-family:var(--sans)">
     <canvas id="hzCanvas" width="800" height="480" style="position:absolute;inset:0"></canvas>
     <div id="hzHead" style="position:absolute;left:34px;top:22px"></div>
     <div id="hzMeta" style="position:absolute;right:34px;top:26px;text-align:right"></div>
-    <div id="hzLegend" style="position:absolute;left:34px;bottom:44px;font-size:13px;color:#5E7A83"></div>
     ${creativeFooter(st)}
   </div>`;
 }
@@ -960,7 +921,6 @@ function hzDraw(dt) {
   const surf = hzSurface();
 
   c.clearRect(0, 0, 800, 480);
-  c.fillStyle = "#000308";
   c.fillRect(0, 0, 800, 480);
 
   // ── water ────────────────────────────────────────────────────────────────
@@ -975,7 +935,6 @@ function hzDraw(dt) {
     if (end > start) {
       const g = c.createLinearGradient(0, HZ.TOP, 0, 480);
       /* The body starts dim and falls away fast — the surface stroke carries
-         the reading, and lighting most of an 800x480 panel in a dark bedroom
          is exactly what this design's "dim by lit area" position forbids.
 
          It also DARKENS AS THE RATE CLIMBS. Tinting the bubble outlines alone
@@ -988,7 +947,6 @@ function hzDraw(dt) {
          the two move apart and the field gains contrast exactly when there is
          more to see. The previous version darkened both together, which made
          a fast heart merely muddier. Kept deliberately restrained at the top
-         end: this is still a panel in a dark bedroom, so "lighter" is a shift
          from near-black to a dim teal, not to a lit screen. */
       const wt = hzTint(bpm).t;
       const wmix = (a, b) => Math.round(a + (b - a) * wt);
@@ -1041,7 +999,6 @@ function hzDraw(dt) {
     const sh2 = hzState.sh;
     c.save();
     c.font = "13px ui-monospace,Menlo,monospace";
-    c.fillStyle = "#7FD4DE";
     c.fillText(sh2
       ? `sh x=${sh2.x.toFixed(0)} y=${sh2.y.toFixed(0)} dir=${sh2.dir} st=${sh2.state} a=${sh2.alpha.toFixed(2)} linger=${sh2.linger}`
       : `sh NONE · next in ${hzState.nextSh.toFixed(1)}s`, 34, 452);
@@ -1489,7 +1446,6 @@ function hzSeahorseStep(sh, dt, surf) {
    ── COLOUR ───────────────────────────────────────────────────────────────────
    Amber through coral to rose along the body, a cream belly, and a fin left
    translucent so the water shows through it. Multi-hued but low-luminance: this
-   is still an object in a dark bedroom, so the range runs warm-dim to warm-mid
    and never reaches white. */
 function hzDrawSeahorse(c, sh) {
   const k = SEA.SCALE, q = sh.react || 0;
@@ -1508,9 +1464,6 @@ function hzDrawSeahorse(c, sh) {
   c.globalAlpha = sh.alpha;
 
   const grad = c.createLinearGradient(0, -40, 0, 42);
-  grad.addColorStop(0.00, "#E8A462");   // amber crown
-  grad.addColorStop(0.45, "#D8846A");   // coral flank
-  grad.addColorStop(1.00, "#B4626E");   // rose tail
   const edge = "rgba(246,214,170,0.55)";
 
   // ── dorsal fin, behind the body: the engine, fluttering fast ──────────────
@@ -1597,7 +1550,6 @@ function hzDrawSeahorse(c, sh) {
   c.quadraticCurveTo(9 + 11 * snout, -2, 9 + 11 * snout, 2);
   c.quadraticCurveTo(9 + 11 * snout, 5, 9, 5);
   c.closePath();
-  c.fillStyle = "#E8A462";
   c.fill();
   c.strokeStyle = edge;
   c.lineWidth = 1;
@@ -1612,7 +1564,6 @@ function hzDrawSeahorse(c, sh) {
 
   // Coronet. The knobs spread apart as the head comes round, which is most of
   // what tells you it turned rather than merely grew.
-  c.fillStyle = "#F0C08A";
   [[-7, -11, 2.6], [-2, -13, 3.0], [3, -11.5, 2.4]].forEach(function (kn) {
     c.beginPath();
     c.arc(kn[0] * (1 + 0.5 * e) + 2 * e, kn[1], kn[2], 0, Math.PI * 2);
@@ -1635,7 +1586,6 @@ function hzDrawSeahorse(c, sh) {
     if (r < 0.4) return;
     c.globalAlpha = sh.alpha * a;
     c.beginPath(); c.arc(ex, ey, r, 0, Math.PI * 2);
-    c.fillStyle = "#12262E"; c.fill();
     // Catchlight: without it the eye is a hole and the whole face is dead.
     c.beginPath(); c.arc(ex + r * 0.34, ey - r * 0.36, r * 0.32, 0, Math.PI * 2);
     c.fillStyle = "rgba(255,252,246,0.92)"; c.fill();
@@ -1739,7 +1689,6 @@ function hzWall(c, x) {
   c.save();
   c.setLineDash([3, 6]);
   c.beginPath(); c.moveTo(x, 40); c.lineTo(x, HZ.BASE);
-  c.strokeStyle = "#8B97A3"; c.lineWidth = 1.5; c.stroke();
   c.restore();
 }
 
@@ -1751,16 +1700,11 @@ function hzText(st) {
   const meta = document.getElementById("hzMeta");
   if (!head || !meta) return;
   head.innerHTML =
-    `<span style="font-size:13px;letter-spacing:3px;color:#5E7A83">SpO₂ · ${live.hist.length} SAMPLES</span>
      <div style="display:flex;align-items:flex-end;gap:10px">
-       <span class="lim" style="font-size:96px;font-weight:200;line-height:.85;color:${stale ? "#8B97A3" : "#CFE9EE"};${stale ? "border-bottom:3px dashed #8B97A3" : ""}">${stale ? "?" : esc(sp.val)}</span>
-       <span style="font-size:15px;color:#5E7A83;padding-bottom:12px">${stale ? "NOT MEASURED" : "%"}</span>
      </div>`;
   // The bubble legend states the mapping, so the motion is information rather
   // than atmosphere. When there is no pulse it says so instead of going quiet.
   meta.innerHTML =
-    `<div class="lim" style="font-size:15px;color:#5E7A83">${esc(st.clock)}</div>
-     <div style="font-size:13px;letter-spacing:2px;color:#5E7A83;margin-top:4px">${esc(st.tier)}</div>
      `;
   const leg = document.getElementById("hzLegend");
   if (leg) leg.textContent = hr.stale
@@ -1841,25 +1785,16 @@ function renderPulse(st) {
   return `<div style="width:800px;height:480px;position:relative;background:#000;overflow:hidden;font-family:var(--sans);display:flex;align-items:center;justify-content:center">
     <style>
       @keyframes beat { 0%{transform:scale(.55);opacity:.95} 70%{transform:scale(1.25);opacity:0} 100%{opacity:0} }
-      .ring{position:absolute;width:230px;height:230px;border-radius:50%;border:2px solid #4ADE80}
     </style>
     ${stale ? `
-      <div style="position:absolute;width:230px;height:230px;border-radius:50%;border:3px dashed #8B97A3;display:flex;align-items:center;justify-content:center;font-size:96px;color:#8B97A3">?</div>`
     : `
       <div class="ring" style="animation:beat ${period}s ease-out infinite"></div>
       <div class="ring" style="animation:beat ${period}s ease-out infinite;animation-delay:${(period / 2).toFixed(2)}s"></div>
-      <div style="position:absolute;width:96px;height:96px;border-radius:50%;background:#0B2B18;border:1px solid #2C6B45"></div>`}
     <div style="position:absolute;text-align:center">
-      <div class="lim" style="font-size:64px;font-weight:200;color:${stale ? "#8B97A3" : "#D6F5E3"};line-height:1">${stale ? "" : esc(hr.val)}</div>
-      <div style="font-size:13px;letter-spacing:3px;color:#4A6A57">${stale ? "" : "bpm"}</div>
     </div>
     <div style="position:absolute;left:34px;top:26px">
-      <div style="font-size:13px;letter-spacing:3px;color:#4A6A57">SpO₂</div>
-      <div class="lim" style="font-size:44px;font-weight:200;color:${!sp || sp.stale ? "#8B97A3" : "#CFE9EE"}">${!sp || sp.stale ? "?" : esc(sp.val)}</div>
     </div>
     <div style="position:absolute;right:34px;top:26px;text-align:right">
-      <div class="lim" style="font-size:15px;color:#4A6A57">${esc(st.clock)}</div>
-      <div style="font-size:13px;letter-spacing:2px;color:#4A6A57;margin-top:4px">${esc(st.tier)}</div>
     </div>
     ${creativeFooter(st)}
   </div>`;
@@ -1879,29 +1814,18 @@ function renderTrail(st) {
   let dots = "", holes = "";
   h.forEach((r, i) => {
     const x = ((i / (n - 1)) * (W - 68) + 34).toFixed(1);
-    if (r.s == null && r.h == null) { holes += `<rect x="${x}" y="${TOP}" width="1.2" height="${H}" fill="#1B2429"/>`; return; }
-    if (r.s != null) dots += `<circle cx="${x}" cy="${band(r.s, 80, 100).toFixed(1)}" r="1.5" fill="#22D3EE" opacity=".55"/>`;
-    if (r.h != null) dots += `<circle cx="${x}" cy="${band(r.h, 40, 110).toFixed(1)}" r="1.5" fill="#4ADE80" opacity=".45"/>`;
   });
   const mins = Math.round(h.length / 60);
   return `<div style="width:800px;height:480px;position:relative;background:#000;overflow:hidden;font-family:var(--sans)">
     <svg width="800" height="480" style="position:absolute;inset:0">${holes}${dots}</svg>
     <div style="position:absolute;left:34px;top:22px;display:flex;gap:26px;align-items:baseline">
-      <span style="font-size:13px;letter-spacing:3px;color:#5A6A70">TRAIL · ${mins} MIN</span>
-      <span style="font-size:12px;letter-spacing:2px;color:#22D3EE">SpO₂</span>
-      <span style="font-size:12px;letter-spacing:2px;color:#4ADE80">HR</span>
-      <span style="font-size:12px;letter-spacing:2px;color:#5A6A70">▏NOT MEASURED</span>
     </div>
     <div style="position:absolute;right:34px;top:22px;text-align:right">
-      <div class="lim" style="font-size:15px;color:#5A6A70">${esc(st.clock)}</div>
-      <div style="font-size:13px;letter-spacing:2px;color:#5A6A70;margin-top:4px">${esc(st.tier)}</div>
     </div>
     ${creativeFooter(st)}
   </div>`;
 }
 
-/* ── AURORA (designed by a dedicated agent, integrated verbatim) ────────────
-   An ambient light-field. Both signals become slow soft bands, like an aurora
    through a window: SpO2 is the upper curtain whose HEIGHT is the saturation,
    pulse is the lower ribbon of rays. A desaturation makes the light physically
    sink, warm from jade to ember, and grow downward filaments — three cues at
@@ -1911,7 +1835,6 @@ function renderTrail(st) {
    panel lit) rather than as brightness, so the few lit strokes can sit at a
    readable luminance without the panel acting as a lamp; and the palette
    avoids cyan on purpose, because melanopic sensitivity peaks near 480nm and
-   the obvious "aurora cyan" is the worst possible hue for a bedroom.
 
    Gaps are structural: only contiguous runs of measured samples become paths,
    so there is no code path that could bridge a null. */
@@ -1928,8 +1851,6 @@ function renderAurora(st) {
   const sy = v => S_TOP + (S_HI - Math.min(S_HI, Math.max(S_LO, v))) * (S_BOT - S_TOP) / (S_HI - S_LO);
   const hy = v => H_BOT - (Math.min(H_HI, Math.max(H_LO, v)) - H_LO) * (H_BOT - H_TOP) / (H_HI - H_LO);
 
-  const C_CORE = '#4FA773', C_ECHO = '#2E7A50', C_WARN = '#C08A3E',
-        C_ALERT = '#D0552E', C_HR = '#B07A3A', C_RAIL = '#514B42';
 
   const hist = Array.isArray(live.hist) ? live.hist : [];
   const base = hist.length - N;
@@ -2031,8 +1952,6 @@ function renderAurora(st) {
 ${defs}
 </defs>
 <g fill="${C_RAIL}">${rail}</g>
-<line x1="${FX0}" y1="${sy(S_ALERT).toFixed(1)}" x2="${NOW_X}" y2="${sy(S_ALERT).toFixed(1)}" stroke="#2C4433" stroke-width="1" stroke-dasharray="2 11"/>
-<line x1="${NOW_X + 0.5}" y1="60" x2="${NOW_X + 0.5}" y2="406" stroke="#3A352E" stroke-width="1"/>
 <g fill="none" stroke="${C_ECHO}" stroke-linecap="round" stroke-linejoin="round">${CURTAIN.map(l => `<g opacity="${l[2]}" stroke-width="${l[1]}">${useSp(l[0])}</g>`).join('')}</g>
 <g filter="url(#aurSoft)" fill="none" stroke-linecap="round"><g stroke="${C_CORE}" stroke-width="2.5" opacity=".26">${useSp(0)}</g><g stroke="${C_ALERT}" stroke-width="3" opacity=".42">${useAlert(0)}</g><g stroke="${C_HR}" stroke-width="2" opacity=".2">${rays}</g></g>
 <g fill="none" stroke-linecap="round" stroke-linejoin="round">
@@ -2065,21 +1984,10 @@ ${note ? `<div class="aur-note">${note}</div>` : ''}
 <style>
 .aur{position:absolute;inset:0;font-family:var(--sans);-webkit-font-smoothing:antialiased}
 .aur-hd{position:absolute;left:18px;right:16px;top:11px;display:flex;justify-content:space-between;align-items:baseline}
-.aur-clk{font-family:var(--mono);font-size:20px;letter-spacing:.08em;color:#8A8175}
-.aur-tier{font-size:13px;letter-spacing:.22em;text-transform:uppercase;color:#8A8175}
 .aur-ro{position:absolute;right:16px;width:152px;text-align:right}
-.aur-lbl{font-size:13px;letter-spacing:.2em;text-transform:uppercase;color:#8A8175}
 .aur-val{font-family:var(--mono);font-size:38px;line-height:1.06;margin-top:5px}
-.aur-unit{font-family:var(--sans);font-size:14px;letter-spacing:.04em;margin-left:5px;color:#8A8175}
-.aur-note{font-size:13px;line-height:1.35;color:#8A8175;margin-top:5px}
-.aur-j{color:#3E7551}
-.aur-e{color:#8A5C2E}
-.aur-q{color:#8A8175}
 .aur-bl{position:absolute;left:18px;top:408px;width:372px}
 .aur-br{position:absolute;right:16px;top:408px;width:376px;text-align:right}
-.aur-sil{font-size:15px;line-height:1.3;color:#8A8175}
-.aur-sub{font-size:13px;line-height:1.4;color:#8A8175;margin-top:3px;letter-spacing:.02em}
-.aur-key{font-size:13px;line-height:1.5;color:#8A8175}
 </style>
 ${svg}
 <div class="aur">
@@ -2098,7 +2006,6 @@ ${readout(P[1], 330, 'Pulse', 'aur-e')}
 </div>`;
 }
 
-/* ── ORBIT (designed by a dedicated agent, integrated) ──────────────────────
    The observation window drawn as a chronometer dial. Reading outward → in:
      halo of dots ... pulse (radius = bpm)
      bezel ticks .... 1 minute, long tick = 5 minutes
@@ -2348,8 +2255,6 @@ const PANELS = [
   { id: "horizon",   name: "HORIZON",   render: renderHorizon, mount: mountHorizon, update: updateHorizon, unmount: unmountHorizon },
   { id: "pulse",     name: "PULSE",     render: renderPulse },
   { id: "trail",     name: "TRAIL",     render: renderTrail },
-  { id: "aurora",    name: "AURORA",    render: renderAurora },
-  { id: "orbit",     name: "ORBIT",     render: renderOrbit },
 ];
 
 function render() {
@@ -2400,7 +2305,6 @@ function render() {
   /* Alternate directions return their OWN full-bleed 800x480 root with their
      own margins. #panel carries 13/16 padding for the clinical layout, which
      would lay an 800px child inside a 768px box and clip it off the right edge
-     — Aurora's readouts were running past the screen. Zero the padding for a
      full-bleed view and restore it for the clinical one. */
   panel.style.padding = alt ? "0" : "13px 16px";
   if (alt) {
@@ -2450,7 +2354,6 @@ function render() {
 
     <div class="r-sil" id="sil" style="border:2px ${active ? "solid" : "dashed"} ${silColor};background:${active ? "var(--field)" : "transparent"};cursor:${active ? "pointer" : "default"}"
          role="button" aria-label="${active ? "Hold three seconds to silence the alarm audio" : esc(sil.text)}" tabindex="${active ? 0 : -1}">
-      <div style="position:absolute;left:0;top:0;bottom:0;width:${(p * 100).toFixed(1)}%;background:${sil.fill || "#3A2E12"};${p > 0 ? `border-right:2px solid ${silColor}` : ""}"></div>
       <div style="position:relative;height:100%;display:flex;align-items:center;gap:14px;padding:0 16px">
         <span style="font-size:22px;font-weight:700;color:${silColor};line-height:1;display:${sil.glyph ? "block" : "none"}">${esc(sil.glyph)}</span>
         <span style="font-size:${sil.big ? 24 : 20}px;font-weight:700;letter-spacing:1.6px;color:${sil.textColor || silColor};white-space:nowrap">${esc(sil.text)}</span>
@@ -2592,7 +2495,6 @@ if (qs.has("live")) {
   const idx = PANELS.findIndex(v => v.id === want);
   if (idx >= 0) S.panel = idx;
   document.getElementById("states").innerHTML =
-    `<span style="color:#8E8A83">live — polling <code>${esc(live.url)}</code> at 1 Hz. `
     + `The state buttons are off; the panel shows what the ring reports.</span>`;
   // Deliberately no resting in live mode. Resting exists for a panel that has
   // something to say when it wakes; a display-only panel that goes dark is just
