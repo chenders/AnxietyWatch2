@@ -174,99 +174,131 @@ cutting the southeast corner onto final — ASA783's true CPA was 5.50 km.
 
 ---
 
-## 5. The next task: FR24 enrichment
+## 5. FR24 — verified against the live API on 2026-08-11
 
-### Why
+Everything in this section was run against the real API, not read off a page.
+The credential works. Historic access works.
 
-A 7-minute survey of this receiver measured **50% of aircraft broadcasting no
-emitter category at all**. Those score `UNKNOWN` and cannot be ranked. Emitter
-category is also uselessly coarse when present — `A3` covers a 737 and an E175.
+### Why it matters here
 
-The owner reports, from experience, that **FlightRadar24 does show the Life
-Flight air ambulances** that pass low over the house on their way to the
-hospital ~1.6 km southwest. That is the loudest routine event at this address and
-the whole reason the forecast exists. A single receiver cannot do MLAT, which is
-very likely why FR24 sees them and we may not.
+The owner is emphatic, from direct experience, and the data agrees:
+**Life Flight air ambulances are the majority of the noise problem at this
+address**, not PDX jets. Earlier drafts of this document treated FR24 as a
+range-extension nice-to-have and pushed MLAT-via-feeder first. That was wrong
+and is corrected here. FR24 tracks these helicopters; that is the requirement.
 
-### The constraint that shapes the whole design
+A 7-minute survey of our own receiver measured **50% of aircraft broadcasting no
+emitter category at all**, and the category is uselessly coarse when present
+(`A3` covers a 737 MAX and an E175 alike). FR24 returns the exact ICAO type and
+registration, which fixes both.
 
-**`panel-adsb-status` can never use MCP.** It is a Python daemon running
-unattended on a Raspberry Pi at 3am with no agent attached. MCP is an
-agent-to-tool protocol.
+### What it actually returns
 
-So the MCP server is for *your* interactive exploration — learning the API
-shape, checking what fields come back, confirming Life Flight is visible. The
-shipped integration must be a plain HTTP client inside `panel-adsb-status`.
-Use the MCP to design it; do not try to ship it.
-
-### API facts
+`GET /api/live/flight-positions/full?bounds=N,S,W,E` fields:
 
 ```
-base    https://fr24api.flightradar24.com
-headers Accept: application/json
-        Accept-Version: v1
-        Authorization: Bearer <FR24_API_KEY>
-useful  GET /api/usage?period=24h                      cheap auth check + quota
-        GET /api/live/flight-positions/full?bounds=N,S,W,E
+alt, callsign, dest_iata, dest_icao, eta, flight, fr24_id, gspeed, hex, lat,
+lon, operating_as, orig_iata, orig_icao, painted_as, reg, source, squawk,
+timestamp, track, type, vspeed
 ```
 
-MCP server is configured at
-`~/.claude.json` → `projects` → `/Users/chris/Source/AnxietyWatch2` →
-`mcpServers` → `fr24api` (`npx -y @flightradar24/fr24api-mcp`), key in
-`env.FR24_API_KEY`. It is set to a real 85-char token as of this writing.
+Our receiver called `AC9869` category `A1`. FR24: **type `C172`, reg `N910TW`**.
 
-Docs the owner found useful:
-- https://fr24api.flightradar24.com/docs/mcp-server
-- https://www.flightradar24.com/blog/b2b/using-claude-and-the-flightradar-api-for-dummies/
+### Life Flight, confirmed
 
-**Known local snag:** this Mac's `python3` (3.13, python.org build) has no CA
-bundle — a direct `urllib` call fails with `CERTIFICATE_VERIFY_FAILED`. Run
-`/Applications/Python 3.13/Install Certificates.command`, or `pip install
-certifi` and pass `ssl.create_default_context(cafile=certifi.where())`. The Pi
-does not have this problem.
+`GET /api/flight-summary/light?flight_datetime_from=..&flight_datetime_to=..&airports=KUAO&categories=H`
 
-### Design requirements
+Aurora State (KUAO) is Life Flight Network's base. **59 helicopter flights in
+7 days** (~8.4/day). Type mix matches their fleet: `A119` ×23, `B407` ×11,
+`EC35` ×4, `EC45` ×2. Registration `N443LF` is confirmed Life Flight ("LF").
 
-1. **Cache by ICAO hex.** We poll at 1 Hz. Type, registration and operator are
-   static per airframe, so look each hex up once and persist it. An uncached
-   per-tick query will burn the quota in an afternoon.
-2. **Fail loudly, never silently.** If FR24 is unreachable or out of quota, that
-   is a *third state*, not an empty sky. Surface it on the panel the way
-   `unscored` already is. Never let a network fault read as "no aircraft".
-3. **Never block the publish loop.** `panel-adsb-status` must keep writing every
-   second whether or not FR24 answers. Enrichment is strictly additive; a lookup
-   in flight must not delay a tick.
-4. **Local ADS-B stays authoritative for position.** FR24 adds identity, not
-   geometry. Live trajectory from our own receiver is lower-latency and does not
-   depend on the internet.
-5. **Key goes in a systemd drop-in,** never in git:
-   ```sh
-   sudo systemctl edit panel-adsb-status
-   # [Service]
-   # Environment=FR24_API_KEY=...
-   ```
-6. **Map type → source level.** Replace the four-bucket `SOURCE_LEVELS` guess
-   with a per-type table once real types arrive. ICAO/EASA noise certification
-   figures (EPNdB, takeoff/approach/sideline) are public and would make the
-   index defensible for the ~30 types that actually fly over Portland.
-7. **Tag air ambulances explicitly.** Life Flight Network airframes are
-   identifiable by registration/operator. They deserve their own class rather
-   than a generic rotorcraft source level.
-8. Every change gets a test. `deploy/stopgap/test_panel_adsb_status.py` is the
-   pattern: pure decision functions, no network in the tests.
+Pulling `GET /api/flight-tracks?flight_id=<fr24_id>` for 5 of those flights and
+measuring closest approach to the station:
 
-### A cheaper alternative worth pricing first
+| flight | points | closest | altitude there |
+|---|---|---|---|
+| 40ff898f | 328 | **6.04 km** | 550 ft |
+| 4100ef5a | 855 | **6.78 km** | 1,100 ft |
+| 4100819a | 626 | 33.30 km | 600 ft |
+| 41022416 | 393 | 32.99 km | 775 ft |
+| 41022096 | 406 | 34.82 km | 225 ft |
 
-Feeding dump1090 to FlightAware (`piaware`) or ADSBexchange (`mlat-client`)
-returns **MLAT positions into the local feed** — free, no quota, no per-lookup
-latency, and it keeps working when the internet does not. That closes the
-"invisible helicopter" gap directly. FR24's distinct advantage is *range*: their
-network sees aircraft long before our antenna's horizon does, which is the
-earlier-warning problem rather than the identification one.
+Two of five came within 7 km at 550–1,100 ft. Tracks carry full lat/lon/alt/
+gspeed/timestamp series — **this is the calibration set the model has never
+had.** Pull a larger sample, find the ones that actually cross the house, and
+fit the thresholds against them instead of guessing.
 
-Both may be worth having. They solve different halves.
+### The constraint that decides the architecture
 
----
+**FR24 cannot be a continuous feed. Not at any sane price.**
+
+- Rate limits: **10 queries/min** (Explorer $9), 30/min (Essential $90),
+  90/min (Advanced $900). We poll dump1090 at 1 Hz; FR24 cannot match that.
+- Cost is **per returned flight**, not per query:
+  `live flight positions full` = **8 credits per aircraft returned**.
+- Explorer = 30,000 credits/month. Our 20 km box returns ~5 aircraft, so one
+  query costs ~40 credits. That is **~750 queries per month, total** — roughly
+  one per hour. Continuous polling would exhaust the month in about 75 minutes.
+- History: Explorer 30 days, Essential 2 years, Advanced unlimited.
+- `flight-summary` accepts a maximum 14-day window per query.
+
+### Therefore
+
+1. **Local ADS-B stays the real-time feed.** 1 Hz, free, low latency, works
+   offline. FR24 never touches the geometry path.
+2. **Cache hex -> type/registration/operator permanently.** These are static per
+   airframe and the aircraft that matter here *recur*. Life Flight flies a
+   handful of tails; look each up once and the identification problem is solved
+   forever for a few credits. This is the highest-value, lowest-cost use.
+3. **Trigger lookups, never poll them.** When the local receiver sees an
+   unknown-but-overhead target, spend one query. That is rare by construction.
+4. **Do the historical calibration as a one-off**, offline, and commit the
+   derived thresholds — not the raw data (see storage rules below).
+5. **Never block the publish loop**, and surface an FR24 outage as its own
+   state. A network fault must never render as an empty sky.
+
+### Practical gotchas already paid for
+
+- **Airport codes must be ICAO for GA fields.** `airports=UAO` returns nothing;
+  `airports=KUAO` works. `PDX` and `KPDX` both work.
+- `categories=H` (Helicopters) cannot be used alone — combine with another
+  filter. Other letters: P C M J T B G D V O N.
+- `categories=H` on *historic positions* returned empty for our box: that
+  endpoint is a point-in-time snapshot, so a helicopter must be airborne at that
+  exact second. Use `flight-summary` for history, not positions.
+- Bounds order is `north,south,west,east`.
+- Headers: `Accept: application/json`, `Accept-Version: v1`,
+  `Authorization: Bearer <token>`.
+- **This Mac's python3 has no CA bundle** (`CERTIFICATE_VERIFY_FAILED`). `curl`
+  works fine and uses the system store; the Pi is also fine. Fix properly with
+  `Install Certificates.command` or `pip install certifi`.
+- The Pi returned an HTML **maintenance page** with HTTP 403 at one point. That
+  is not an auth failure — check the content type before concluding anything
+  about the credential.
+- Official SDK: `pip install fr24sdk`, `client.live.flight_positions.get_light(bounds=...)`,
+  token via `FR24_API_TOKEN`. Docs carry a near-identical use case:
+  `/docs/examples-and-use-cases/use-case-triggering-alerts-when-a-flight-enters-a-circular-area`.
+- Useful third-party prior art: `stiles/pyfr24` (CLI, track export, lookup by
+  registration), `Flightradar24/fr24api-sdk-python` (official).
+- Check `/docs/storage-rules` before persisting any FR24 payload — there are
+  contractual limits on retention.
+
+### Key handling
+
+Currently in two places. The MCP one is for interactive exploration only; the
+daemon can never use MCP.
+
+- MCP: `~/.claude.json` -> projects -> this repo -> `mcpServers.fr24api.env.FR24_API_KEY`
+- Pi: `~/.fr24_key` on minidude, mode 600. For the daemon, move it to
+  `sudo systemctl edit panel-adsb-status` as `Environment=FR24_API_KEY=...`.
+  **Never in git.**
+
+### Still worth pricing separately
+
+Feeding dump1090 to FlightAware or ADSBexchange returns MLAT positions into the
+local feed for free. That is a *supplement* for real-time coverage, not a
+replacement for FR24's identification and history. They solve different halves
+and the FR24 half is the one tied to the actual complaint.
 
 ## 6. Open requests not started
 
