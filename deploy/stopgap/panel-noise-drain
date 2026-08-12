@@ -1,0 +1,209 @@
+#!/usr/bin/env python3
+"""Drain the loud-aircraft spool into PostgreSQL.
+
+Why a drain, rather than writing to the database from the daemons
+----------------------------------------------------------------
+
+`panel-adsb-status` rewrites the bedside panel once a second. A synchronous
+INSERT inside that loop would stall the whole display on a lock, a checkpoint,
+an autovacuum, or a database that is simply down -- on the same box that runs
+the clinical panel. So the daemons append to a file and this drains it, exactly
+the pattern amendment 01 established for the vitals collectors: collectors write
+a spool, a separate drainer moves it into Postgres, and the spool is what makes
+a database outage survivable instead of fatal.
+
+The spool is the write-ahead record. Postgres is the queryable one. If this
+process never runs, nothing is lost -- the JSONL still has every pass, and the
+next run picks up from where the last one stopped.
+
+Idempotence
+-----------
+
+Progress is a byte offset, as in `spool_status`. A crash between INSERT and
+offset-advance replays the tail, so every insert is `ON CONFLICT DO NOTHING`
+against a unique index that tolerates the NULLs these rows genuinely contain --
+neither hex nor callsign is reliably present, and a plain unique constraint over
+nullable columns silently admits duplicates.
+
+The offset is validated against the file: if the spool is shorter than the
+recorded offset it was rotated or truncated, and starting from a stale offset
+would skip real rows. That case restarts from zero and relies on ON CONFLICT to
+absorb the replay.
+"""
+
+import json
+import os
+import sys
+import time
+from pathlib import Path
+
+try:
+    import psycopg2
+    import psycopg2.extras
+except ImportError:  # pragma: no cover - exercised only on a host without the driver
+    psycopg2 = None
+
+SPOOL = Path(os.environ.get("PANEL_NOISE_LOG", "/var/lib/panel-noise/loud-aircraft.jsonl"))
+STATE = Path(os.environ.get("PANEL_NOISE_DRAIN_STATE", "/var/lib/panel-noise/drain.json"))
+DSN = os.environ.get("PANEL_NOISE_DSN", "host=/var/run/postgresql dbname=vitals user=vitals")
+
+BANDS = {"VERY LOUD", "LOUD", "AUDIBLE", "FAINT", "UNKNOWN"}
+PHASES = {"CLIMB", "LEVEL", "DESCENT"}
+
+
+def read_offset():
+    try:
+        with STATE.open() as stream:
+            state = json.load(stream)
+        offset = state.get("offset_bytes")
+        return offset if isinstance(offset, int) and offset >= 0 else 0
+    except (OSError, ValueError):
+        return 0
+
+
+def write_offset(offset):
+    STATE.parent.mkdir(parents=True, exist_ok=True)
+    tmp = STATE.with_name(f".{STATE.name}.tmp")
+    with tmp.open("w") as stream:
+        json.dump({"offset_bytes": offset, "advanced_at": time.time()}, stream)
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(tmp, STATE)
+
+
+def normalise(row):
+    """One spool row -> one database row, or None if it cannot be trusted.
+
+    Rejects rather than repairs. A row whose band and index disagree is a bug
+    somewhere upstream, and quietly coercing it here would hide the bug and put
+    a wrong loudness in the permanent record.
+    """
+    if not isinstance(row, dict):
+        return None
+    at = row.get("at")
+    provenance = row.get("provenance")
+    if not isinstance(at, (int, float)) or provenance not in ("adsb", "fr24"):
+        return None
+
+    band = row.get("loudness_band") or "UNKNOWN"
+    if band not in BANDS:
+        return None
+    index = row.get("noise_index")
+    if not isinstance(index, (int, float)):
+        index = None
+    # The schema enforces this too; checking here means a bad row is skipped
+    # with the rest of the batch still landing, rather than aborting the
+    # transaction and blocking the spool behind it forever.
+    if (index is None) != (band == "UNKNOWN"):
+        return None
+
+    identity = row.get("identity") or {}
+    hex_code = identity.get("hex")
+    hex_code = hex_code.upper() if isinstance(hex_code, str) and hex_code else None
+
+    phase = row.get("phase")
+    if phase not in PHASES:
+        phase = None
+
+    retain = row.get("retain_until")
+    if provenance == "fr24" and not isinstance(retain, (int, float)):
+        # The vendor deadline is mandatory for their data. Without one the row
+        # is undeletable by the retention sweep, so it is not admitted at all.
+        return None
+    if provenance == "adsb":
+        retain = None
+
+    return (at, provenance, hex_code, identity.get("callsign"), identity.get("reg"),
+            identity.get("type"), identity.get("fr24_id"), row.get("distance_km"),
+            row.get("altitude_ft"), phase, index, band, row.get("notable"),
+            row.get("air_ambulance"), row.get("reason"), retain)
+
+
+INSERT = """
+INSERT INTO aircraft_pass
+    (at, provenance, icao_hex, callsign, registration, icao_type, fr24_id,
+     distance_km, altitude_ft, phase, noise_index, loudness_band, notable,
+     operator_state, reason, retain_until)
+VALUES (to_timestamp(%s), %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+        CASE WHEN %s IS NULL THEN NULL ELSE to_timestamp(%s) END)
+ON CONFLICT DO NOTHING
+"""
+
+# Identity learned from traffic, tagged with the source that supplied it.
+# Never overwrites a hand-curated roster row:
+# `source` stays whatever it was, and a roster entry always wins, because the
+# roster carries provenance and judgement a lookup cannot.
+UPSERT_AIRCRAFT = """
+INSERT INTO aircraft (icao_hex, registration, icao_type, source, first_seen, last_seen)
+VALUES (%s, %s, %s, %s, to_timestamp(%s), to_timestamp(%s))
+ON CONFLICT (icao_hex) DO UPDATE SET
+    registration = COALESCE(aircraft.registration, EXCLUDED.registration),
+    icao_type    = COALESCE(aircraft.icao_type, EXCLUDED.icao_type),
+    first_seen   = LEAST(aircraft.first_seen, EXCLUDED.first_seen),
+    last_seen    = GREATEST(aircraft.last_seen, EXCLUDED.last_seen),
+    updated_at   = now()
+"""
+
+
+def drain():
+    if psycopg2 is None:
+        print("panel-noise-drain: psycopg2 is not installed", file=sys.stderr)
+        return 1
+    if not SPOOL.exists():
+        return 0
+
+    size = SPOOL.stat().st_size
+    offset = read_offset()
+    if offset > size:
+        # Rotated or truncated. Starting from the stale offset would skip real
+        # rows; replaying is safe because every insert is ON CONFLICT DO NOTHING.
+        print(f"panel-noise-drain: spool shrank ({size} < {offset}); replaying from 0",
+              flush=True)
+        offset = 0
+    if offset == size:
+        return 0
+
+    rows, skipped = [], 0
+    with SPOOL.open() as stream:
+        stream.seek(offset)
+        for line in stream:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                parsed = normalise(json.loads(line))
+            except ValueError:
+                parsed = None
+            if parsed is None:
+                skipped += 1
+                continue
+            rows.append(parsed)
+        end = stream.tell()
+
+    if not rows and not skipped:
+        return 0
+
+    with psycopg2.connect(DSN) as conn:
+        with conn.cursor() as cur:
+            for row in rows:
+                # The final column is built by a CASE that needs the value
+                # twice, so the last field is dropped from the positional tail
+                # and supplied explicitly. Passing the whole row plus two would
+                # be one argument too many.
+                cur.execute(INSERT, row[:15] + (row[15], row[15]))
+                hex_code = row[2]
+                if hex_code:
+                    # Provenance is the row's own, not a constant: a hardcoded
+                    # 'fr24' labelled receiver-learned identities as vendor data.
+                    cur.execute(UPSERT_AIRCRAFT,
+                                (hex_code, row[4], row[5], row[1], row[0], row[0]))
+    # Offset advances only after the transaction commits, so a failure replays
+    # rather than silently dropping the batch.
+    write_offset(end)
+    print(f"panel-noise-drain: {len(rows)} passes drained, {skipped} skipped, "
+          f"offset {offset} -> {end}", flush=True)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(drain())

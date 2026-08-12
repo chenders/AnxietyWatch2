@@ -33,6 +33,13 @@ docs (`/docs/credit-overview`):
   - live/flight-positions/light costs 6 credits per returned aircraft
   - live/flight-positions/full costs 8 credits per returned aircraft
 
+This uses `full`. Verified against the OpenAPI spec 2026-08-12: `light` returns
+NO aircraft type and NO registration -- only position, speed and callsign -- so
+it cannot identify anything. `full` adds type, reg, origin and destination,
+which is the difference between "a helicopter" and "N776LF, an AW119 inbound to
+Providence". The extra 2 credits per returned aircraft is immaterial at this
+poll rate because almost every poll returns nothing at all.
+
 The 1-credit floor is what prices continuous polling: at a 3 s interval the
 overwhelming majority of polls are empty, so cost is ~1 credit per poll
 regardless of filtering. Filtering still matters, because it keeps the
@@ -115,7 +122,7 @@ USER_AGENT = os.environ.get(
     "FR24_USER_AGENT", "anxietywatch-panel-fr24-poll/1.0 (+aircraft noise forecast)")
 
 EARTH_KM = 6371.0
-CREDITS_PER_AIRCRAFT_LIGHT = 6
+CREDITS_PER_AIRCRAFT_FULL = 8
 CREDITS_PER_EMPTY_QUERY = 1
 
 # A pass this close gets logged for the admin console. 4 km matches the model's
@@ -297,7 +304,7 @@ class Fr24Client:
             "categories": CATEGORIES,
             "altitude_ranges": ALTITUDE_RANGES,
         })
-        url = f"{API_BASE}/api/live/flight-positions/light?{query}"
+        url = f"{API_BASE}/api/live/flight-positions/full?{query}"
         request = urllib.request.Request(url, headers={
             "Accept": "application/json",
             "Accept-Version": "v1",
@@ -337,7 +344,7 @@ class Fr24Client:
         if not isinstance(aircraft, list):
             return None, 0, "FR24 response has no data array"
 
-        credits = (len(aircraft) * CREDITS_PER_AIRCRAFT_LIGHT) if aircraft else CREDITS_PER_EMPTY_QUERY
+        credits = (len(aircraft) * CREDITS_PER_AIRCRAFT_FULL) if aircraft else CREDITS_PER_EMPTY_QUERY
         return aircraft, credits, None
 
     def _http_error(self, exc):
@@ -419,6 +426,15 @@ def to_report(item, station_lat, station_lon):
         "vertical_rate_fpm": item.get("vspeed"),
         "squawk": item.get("squawk"),
         "data_source": item.get("source"),
+        # Only present on `full`. Destination is the interesting one for this
+        # station: an air ambulance bound for the Providence pad 1.6 km west is
+        # a different proposition from one transiting to Aurora.
+        "flight": (str(item["flight"]).strip() or None) if isinstance(item.get("flight"), str) else None,
+        "orig_icao": item.get("orig_icao"),
+        "dest_icao": item.get("dest_icao"),
+        "operating_as": item.get("operating_as"),
+        "painted_as": item.get("painted_as"),
+        "eta": item.get("eta"),
         "distance_km": round(distance_km, 3),
         "air_ambulance": identification,
         "air_ambulance_reason": reason,

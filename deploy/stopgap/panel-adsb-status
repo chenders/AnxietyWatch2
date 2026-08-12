@@ -608,7 +608,11 @@ def log_finished_passes(reports, now):
                 callsign=report.get("callsign"),
                 hex_code=report.get("hex"),
                 registration=report.get("registration"),
-                aircraft_type=report.get("icao_type") or report.get("category"),
+                # ICAO type designator ONLY. The ADS-B emitter category ("A3")
+                # is a different vocabulary describing a size class, not a type,
+                # and putting one in the other's column makes every later
+                # type-based lookup wrong. Absent stays absent.
+                aircraft_type=report.get("icao_type"),
                 air_ambulance=report.get("operator_state") or "UNCONFIRMED",
                 air_ambulance_reason=report.get("operator_reason"),
                 distance_km=report.get("distance_km"),

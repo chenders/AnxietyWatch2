@@ -227,7 +227,7 @@ class CreditAccounting(unittest.TestCase):
         self.assertEqual(poll.CREDITS_PER_EMPTY_QUERY, 1)
 
     def test_light_endpoint_costs_six_per_aircraft(self):
-        self.assertEqual(poll.CREDITS_PER_AIRCRAFT_LIGHT, 6)
+        self.assertEqual(poll.CREDITS_PER_AIRCRAFT_FULL, 8)
 
     def test_cycle_rolls_on_the_billing_day_not_the_first(self):
         # Subscription credits expire on the billing day. A ledger keyed on the
