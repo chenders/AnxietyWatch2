@@ -55,10 +55,16 @@ FR24 = "fr24"
 ADSB = "adsb"
 
 # Deep links back to Flightradar24, so a row in the admin console can be opened
-# against the source. Cloudflare challenges automated requests to the public
-# site, so these formats could not be machine-verified from here; they are the
-# site's documented public URL conventions. Click one before trusting the
-# column.
+# against the source.
+#
+# Format verified 2026-08-12 against the live site: the aircraft page generates
+# its own per-flight links in exactly this shape, e.g.
+# `/data/aircraft/n406lf#411c02b5`. This is FR24's convention, not a guess.
+#
+# Caveat: the fragment selects a row only if that flight is inside the history
+# window the account's plan has loaded (the page paginates with "Load earlier
+# flights"). An older flight degrades to the aircraft page with no row selected,
+# which is acceptable -- it is still the right aircraft.
 FR24_SITE = "https://www.flightradar24.com"
 
 

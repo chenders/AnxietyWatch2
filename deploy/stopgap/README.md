@@ -271,6 +271,21 @@ Life Flight Network air ambulances serving the **Providence Portland** helipad,
 N776LF): a departure off that pad crossed the station at **0.95 km, 600 ft,
 climbing at +1088 fpm** — the loudest configuration a rotorcraft has.
 
+**FR24 is the guarantee of detection; the roster is only the guarantee of
+identification.** The Mode S roster below removes FR24 from the *identification*
+path, but not from the *detection* path — it fires only for aircraft the local
+receiver actually hears, and as of 2026-08-12 the receiver has never been
+observed to hear one of these helicopters.
+
+There is good evidence it should be able to: all 9,648 track points across the
+20 sampled flights, including all 365 points within 10 km of the station, carry
+`source: ADSB` — these aircraft broadcast 1090ES themselves, and 1–7 km at
+200–1,100 ft is trivial line-of-sight. Only ~5 of 20 sorties came within 7 km,
+so exposure is roughly 1–2/day and the 7-minute category survey would very
+likely have caught none. That is consistent with a working receiver rather than
+a broken one — but it is unverified, and until one of the six roster hexes is
+observed locally, FR24 is the only source that can be relied on.
+
 **Warning time is ~34 seconds and that is a hard ceiling.** It is the interval
 between FR24's first fix at liftoff and closest approach, set by the pad being
 1.6 km away. No poll rate can beat it; the poll interval only decides how much
