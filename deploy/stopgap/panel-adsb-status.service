@@ -13,9 +13,17 @@ User=chris
 #   Environment=STATION_LAT=...
 #   Environment=STATION_LON=...
 Environment=ADSB_STATUS_JSON=/home/chris/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical/adsb_status.json
+# Durable record of what actually flew over: one row per PASS, not per publish.
+# Shared with panel-fr24-poll, which writes rows to the same file under a
+# different provenance. Receiver rows never expire -- that data came off an
+# antenna on this roof, so no vendor licence governs how long it is kept.
+Environment=PANEL_NOISE_LOG=/var/lib/panel-noise/loud-aircraft.jsonl
 ExecStart=/usr/local/bin/panel-adsb-status
 Restart=always
 RestartSec=3
+# Creates /var/lib/panel-noise with the right ownership, so it needs no
+# ReadWritePaths entry despite ProtectSystem=strict.
+StateDirectory=panel-noise
 NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=strict

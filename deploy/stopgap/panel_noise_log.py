@@ -120,6 +120,7 @@ def build_event(
     noise_index=None,
     loudness_band="UNKNOWN",
     reason=None,
+    notable=None,
 ):
     """One pass of one aircraft.
 
@@ -155,6 +156,10 @@ def build_event(
         "noise_index": noise_index,
         "loudness_band": loudness_band,
         "reason": reason,
+        # Whether this pass is one the owner probably cared about. A FLAG, not a
+        # filter: the row exists either way, so a later question about a quiet
+        # hour can still be answered from the record.
+        "notable": notable,
     }
 
 

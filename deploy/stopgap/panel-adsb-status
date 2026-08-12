@@ -12,6 +12,7 @@ import time
 # path for a script invoked by absolute path.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import panel_loud_operators  # noqa: E402  (path must be set before the import)
+import panel_noise_log  # noqa: E402
 
 SOURCE = Path(os.environ.get("DUMP1090_AIRCRAFT_JSON", "/run/dump1090-mutability/aircraft.json"))
 OUTPUT = Path(os.environ.get("ADSB_STATUS_JSON", "/home/chris/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical/adsb_status.json"))
@@ -114,6 +115,26 @@ STATION_ALT_FT = float(os.environ.get("STATION_ALT", "0"))
 TMP = OUTPUT.with_name(f".{OUTPUT.name}.tmp")
 history = []
 held = None
+
+# One row per PASS in the durable log, not one per publish. At a 1 s interval an
+# aircraft crossing the watch circle would otherwise write hundreds of rows and
+# the admin console would show one helicopter as hundreds of events.
+passes = panel_noise_log.PassTracker(
+    gap_seconds=float(os.environ.get("ADSB_PASS_GAP_SECONDS", "90")))
+
+# EVERY pass inside this radius is recorded. The log is meant to answer "what
+# was over the house at 03:14?" after the fact, and a threshold makes that
+# unanswerable for anything it excluded -- a jet at 6 km that was audibly
+# obvious would simply not exist in the record. Storage is not the constraint:
+# these are single JSON lines, a few hundred a day.
+LOG_WITHIN_KM = float(os.environ.get("ADSB_LOG_WITHIN_KM", "12.0"))
+
+# Still recorded per row, but as a FLAG rather than a filter, so the admin
+# console can show "loud passes" by default without the raw record having thrown
+# anything away.
+NOTABLE_KM = float(os.environ.get("ADSB_NOTABLE_KM", "4.0"))
+PRUNE_EVERY_SECONDS = 3600.0
+last_prune = 0.0
 
 
 def geometry(lat, lon, altitude_ft):
@@ -500,6 +521,9 @@ def make_report(item, source_now):
         "speed_kt": item.get("speed"),
         "track_deg": item.get("track"),
         "dist": round(distance, 1),
+        # Kilometres as well as metres: the pass tracker and the durable log key
+        # on distance_km, and deriving it in two places invites them to disagree.
+        "distance_km": round(distance / 1000.0, 3),
         "bearing": round(bearing, 1),
         "noise_index": None if now_index is None else round(now_index, 1),
         # Deprecated alias of noise_index, kept only so the un-updated radar
@@ -537,6 +561,75 @@ def select_candidate(candidates):
         return None
     held = open_passes[0]["hex"]
     return open_passes[0]
+
+
+def notable(report):
+    """Whether a pass is one the owner probably cared about.
+
+    Recorded on the row as a flag; it never decides whether the row exists.
+    Close enough to hear, OR positively identified as an operator reported as
+    loud -- the second is independent because an identified air ambulance at
+    6 km matters and an anonymous light aircraft at 3 km usually does not.
+    """
+    if report.get("operator_state") == panel_loud_operators.CONFIRMED:
+        return True
+    km = report.get("distance_km")
+    return isinstance(km, (int, float)) and km <= NOTABLE_KM
+
+
+def worth_logging(report):
+    """Every pass inside the watch radius, so the record has no blind spot."""
+    km = report.get("distance_km")
+    return isinstance(km, (int, float)) and km <= LOG_WITHIN_KM
+
+
+def log_finished_passes(reports, now):
+    """Record one row per completed pass. Never raises into the publish loop.
+
+    This is the receiver's own record, so unlike the FR24 path it carries a
+    loudness estimate when the model could produce one -- and `None` when it
+    could not, which is the state that matters most. An unscored aircraft that
+    passed overhead is the single most important row this log can hold, and
+    writing a number there would make it read as a quiet one.
+    """
+    global last_prune
+    for report in reports:
+        passes.observe(report, now)
+    for _, report in passes.close_finished(now):
+        if not worth_logging(report):
+            continue
+        prediction = report.get("prediction") or {}
+        try:
+            panel_noise_log.append(panel_noise_log.build_event(
+                at=now,
+                # Ours, off an antenna on this roof -- no vendor licence governs
+                # it, so these rows never expire.
+                provenance=panel_noise_log.ADSB,
+                callsign=report.get("callsign"),
+                hex_code=report.get("hex"),
+                registration=report.get("registration"),
+                aircraft_type=report.get("icao_type") or report.get("category"),
+                air_ambulance=report.get("operator_state") or "UNCONFIRMED",
+                air_ambulance_reason=report.get("operator_reason"),
+                distance_km=report.get("distance_km"),
+                altitude_ft=report.get("alt_ft"),
+                phase=report.get("phase"),
+                noise_index=report.get("noise_index"),
+                loudness_band=loudness_band(report.get("noise_index")),
+                reason=(prediction.get("reasons") or [None])[0],
+                notable=notable(report),
+            ))
+        except OSError as exc:
+            print(f"panel-adsb-status: cannot append noise log: {exc}", flush=True)
+
+    if now - last_prune >= PRUNE_EVERY_SECONDS:
+        last_prune = now
+        try:
+            removed = panel_noise_log.prune(now=now)
+            if removed:
+                print(f"panel-adsb-status: pruned {removed} expired log rows", flush=True)
+        except OSError as exc:
+            print(f"panel-adsb-status: cannot prune noise log: {exc}", flush=True)
 
 
 def publish():
@@ -626,6 +719,8 @@ def publish():
             ],
         },
     }
+    log_finished_passes(reports, now)
+
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
     with TMP.open("w") as stream:
         json.dump(out, stream, separators=(",", ":"), allow_nan=False)

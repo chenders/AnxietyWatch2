@@ -14,6 +14,7 @@ some part of that failure from coming back.
 """
 
 import importlib.machinery
+import tempfile
 import os
 import pathlib
 import unittest
@@ -375,3 +376,114 @@ class RosterRescuesUnscorableAircraft(unittest.TestCase):
         self.assertIsNone(report["operator"])
         self.assertIsNone(report["operator_kind"])
         self.assertEqual(report["operator_state"], "UNCONFIRMED")
+
+
+class ReceiverWritesItsOwnDurableLog(unittest.TestCase):
+    """The dongle's passes are recorded too, not just FR24's.
+
+    Before this the durable log held only FR24-sourced rows, so "was anything
+    overhead five minutes ago?" was unanswerable for anything the receiver saw
+    but the API did not.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.path = pathlib.Path(self.tmp.name) / "log.jsonl"
+        adsb.panel_noise_log.DEFAULT_PATH = self.path
+        adsb.passes = adsb.panel_noise_log.PassTracker(gap_seconds=10.0)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _report(self, **over):
+        base = {"hex": "AA8051", "callsign": None, "registration": "N776LF",
+                "icao_type": "A119", "operator_state": "CONFIRMED",
+                "operator_reason": "Mode S AA8051 is N776LF", "distance_km": 0.9,
+                "alt_ft": 600, "phase": "CLIMB", "noise_index": 91.4,
+                "prediction": {"reasons": ["climb thrust at 0.9 km"]}}
+        base.update(over)
+        return base
+
+    def test_a_completed_pass_is_written_once(self):
+        r = self._report()
+        for tick in range(12):
+            adsb.log_finished_passes([r], float(tick))
+        self.assertEqual(adsb.panel_noise_log.read_all(self.path), [])
+        adsb.log_finished_passes([], 500.0)
+        rows = adsb.panel_noise_log.read_all(self.path)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["identity"]["reg"], "N776LF")
+
+    def test_receiver_rows_never_expire(self):
+        # Ours, off an antenna on this roof. No vendor licence governs it.
+        adsb.log_finished_passes([self._report()], 0.0)
+        adsb.log_finished_passes([], 500.0)
+        row = adsb.panel_noise_log.read_all(self.path)[0]
+        self.assertEqual(row["provenance"], "adsb")
+        self.assertIsNone(row["retain_until"])
+
+    def test_the_loudness_estimate_is_carried_when_the_model_had_one(self):
+        adsb.log_finished_passes([self._report()], 0.0)
+        adsb.log_finished_passes([], 500.0)
+        row = adsb.panel_noise_log.read_all(self.path)[0]
+        self.assertLess(abs(row["noise_index"] - 91.4), TOLERANCE)
+        self.assertEqual(row["loudness_band"], "VERY LOUD")
+
+    def test_an_unscored_pass_is_never_recorded_as_quiet(self):
+        # The most important row this log can hold.
+        adsb.log_finished_passes([self._report(noise_index=None)], 0.0)
+        adsb.log_finished_passes([], 500.0)
+        row = adsb.panel_noise_log.read_all(self.path)[0]
+        self.assertIsNone(row["noise_index"])
+        self.assertEqual(row["loudness_band"], "UNKNOWN")
+
+    def test_a_distant_anonymous_aircraft_is_still_logged_but_not_notable(self):
+        # Deliberately NOT filtered out. The log has to answer "what was over
+        # the house at 03:14?" after the fact, and anything it discarded is
+        # unanswerable forever -- including a jet at 6 km that was audibly
+        # obvious. `notable` records the judgement without losing the row.
+        far = self._report(distance_km=9.0, operator_state="UNCONFIRMED",
+                           registration=None, icao_type=None)
+        adsb.log_finished_passes([far], 0.0)
+        adsb.log_finished_passes([], 500.0)
+        rows = adsb.panel_noise_log.read_all(self.path)
+        self.assertEqual(len(rows), 1)
+        self.assertFalse(rows[0]["notable"])
+
+    def test_a_confirmed_operator_is_notable_even_when_further_out(self):
+        adsb.log_finished_passes([self._report(distance_km=7.0)], 0.0)
+        adsb.log_finished_passes([], 500.0)
+        rows = adsb.panel_noise_log.read_all(self.path)
+        self.assertEqual(len(rows), 1)
+        self.assertTrue(rows[0]["notable"])
+
+    def test_a_close_pass_is_notable_even_when_unidentified(self):
+        near = self._report(distance_km=1.2, operator_state="UNCONFIRMED",
+                            registration=None, icao_type=None)
+        adsb.log_finished_passes([near], 0.0)
+        adsb.log_finished_passes([], 500.0)
+        self.assertTrue(adsb.panel_noise_log.read_all(self.path)[0]["notable"])
+
+    def test_an_aircraft_beyond_the_watch_radius_is_not_logged(self):
+        # 12 km is the edge of what this station watches at all; beyond that
+        # there is no observation to record.
+        out = self._report(distance_km=40.0, operator_state="UNCONFIRMED",
+                           registration=None, icao_type=None)
+        adsb.log_finished_passes([out], 0.0)
+        adsb.log_finished_passes([], 500.0)
+        self.assertEqual(adsb.panel_noise_log.read_all(self.path), [])
+
+    def test_the_closest_point_of_the_pass_is_what_gets_recorded(self):
+        adsb.log_finished_passes([self._report(distance_km=6.0)], 0.0)
+        adsb.log_finished_passes([self._report(distance_km=0.62)], 2.0)
+        adsb.log_finished_passes([self._report(distance_km=5.0)], 4.0)
+        adsb.log_finished_passes([], 500.0)
+        row = adsb.panel_noise_log.read_all(self.path)[0]
+        self.assertLess(abs(row["distance_km"] - 0.62), TOLERANCE)
+
+
+class N450LFIsOnTheRoster(unittest.TestCase):
+    def test_the_tail_the_system_caught_unaided_is_now_known(self):
+        # Logged three passes overnight on 2026-08-12, closest 1.31 km, while
+        # absent from the roster. Identified then by callsign pattern alone.
+        self.assertEqual(adsb.airframe_class(None, "A5731C"), "rotorcraft")

@@ -168,6 +168,16 @@ ROSTER = {
                "operator": "LIFE_FLIGHT"},
     "A590D4": {"reg": "N458LF", "type": "B407", "model": "Bell 407GXi",
                "operator": "LIFE_FLIGHT"},
+    # Added 2026-08-12 after the running system caught it unaided. It is not
+    # Portland-based -- its history is mostly Pendleton and eastern Oregon -- but
+    # it flew three passes over this station overnight, the closest at 1.31 km,
+    # and the roster had never heard of it. It was identified anyway by the
+    # N<digits>LF callsign pattern below, which is the entire reason that
+    # fallback exists: a tail nobody has added yet still gets recognised the
+    # first time it flies. Adding the address recovers the registration and type
+    # that FR24 withholds, and with them the flight-playback links.
+    "A5731C": {"reg": "N450LF", "type": "B407", "model": "Bell 407GXi",
+               "operator": "LIFE_FLIGHT"},
     # Redmond-based; reaches Portland only occasionally. Kept because it is the
     # one tail FR24's API will name, which makes it the reference case when
     # checking whether identification is working at all.
