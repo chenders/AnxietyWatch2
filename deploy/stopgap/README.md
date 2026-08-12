@@ -186,11 +186,77 @@ picture of what this stopgap actually knows.
 SpO₂ and HR are never simulated under either flag. If the ring stops reporting
 they go to `- -` and the tier drops to `CAN'T ASSESS`.
 
+## Aircraft noise forecast — `panel-adsb-status`
+
+An RTL-SDR dongle feeds `dump1090-mutability`; `panel-adsb-status` turns
+`/run/dump1090-mutability/aircraft.json` into an advisory that
+`panel-status-merge` folds into `status.json`. It is display only and reads
+`NOT ARMED` on every frame.
+
+**It forecasts proximity, not sound.** Nothing here has ever heard an aeroplane.
+`noise_index` is a *relative* level in dB against an unvalidated reference:
+differences rank aircraft, the absolute number means nothing, and it is never
+rendered as a sound pressure level. There is no microphone, so there is no
+measured indoor loudness and no evidence about what actually startles a cat.
+
+| | |
+|---|---|
+| horizon | 180 s — terminal-area traffic turns, and constant heading is fiction past that |
+| `LIKELY` | relative index ≥ 78 at closest airborne approach |
+| `POSSIBLE` | relative index ≥ 68 |
+| ranking | by predicted loudness, **not** by who arrives first |
+| unscorable | `UNKNOWN`, carrying no numbers — never `LOW` |
+
+**Set the station coordinate in a drop-in, never in git:**
+
+```sh
+sudo systemctl edit panel-adsb-status   # STATION_LAT / STATION_LON / STATION_ALT
+```
+
+Without it the unit exits and says which variable is missing, rather than
+starting up and quietly measuring distances from somewhere else.
+
+```sh
+cd deploy/stopgap && python3 -m unittest test_panel_adsb_status
+```
+
+### What the FlightRadar24 comparison found, 2026-08-11
+
+Checking a live `LIKELY` against FR24's own track of ASA783 broke four
+assumptions at once. Each is now a test in `test_panel_adsb_status.py`.
+
+- **The station was 6.8 km wrong.** It had been left on a coarse city-centre
+  reference, so every range, bearing and closest approach was computed for
+  downtown. Reported CPA 10.24 km; true 5.50 km.
+- **A landing aircraft was called a threat.** The old model extrapolated
+  ASA783's −1088 fpm descent to 0 ft over the house and rated it `LIKELY`. It
+  was on short final at 700 ft, and the runway is 6.4 km north. Projections now
+  terminate at the runway, and a pass requires ≥ 100 ft above the station.
+- **The runway floor is the field's, not ours.** PDX sits at 31 ft and this
+  station near 200 ft. Flooring the descent at the station truncates the
+  projection above the runway and reports an altitude the aircraft never flies.
+- **Thrust state was ignored.** It is worth ~15 dB — larger than the position
+  error — and `vert_rate` carries it for free. A narrowbody at takeoff thrust
+  4 km away outranks a light single gliding in at 1 km; the old distance-only
+  ordering had that exactly backwards.
+
+### Known limits
+
+- Constant heading cannot represent a turn, and arrivals are mostly turn. The
+  ASA783 track flew due west, then broke onto 300° for its last 5 km.
+- Source levels are published-figure intuition, not measurements, and are keyed
+  on the coarse ADS-B emitter category rather than the actual type.
+- No terrain, no wind, no temperature inversion, no open-window state.
+- No flight-plan or route lookup, so warning time is limited to reception range.
+- **No validation loop.** Until an indoor microphone records what these passes
+  actually sound like, every threshold above is a guess and the advisory stays
+  `NOT ARMED`.
+
 ## Removing it
 
 ```sh
-sudo systemctl disable --now panel-kiosk emay-live panel-http
-sudo rm /etc/systemd/system/{panel-kiosk,emay-live,panel-http}.service
+sudo systemctl disable --now panel-kiosk emay-live panel-http panel-adsb-status
+sudo rm /etc/systemd/system/{panel-kiosk,emay-live,panel-http,panel-adsb-status}.service
 sudo rm -rf /etc/systemd/system/panel-kiosk.service.d
 sudo systemctl daemon-reload
 sudo systemctl enable --now lightdm        # put the desktop back

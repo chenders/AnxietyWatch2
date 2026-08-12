@@ -12,10 +12,40 @@ OUTPUT = Path(os.environ.get("ADSB_STATUS_JSON", "/home/chris/anxietywatch-panel
 INTERVAL = float(os.environ.get("ADSB_PUBLISH_INTERVAL_SECONDS", "1"))
 STALE_SECONDS = float(os.environ.get("ADSB_STALE_SECONDS", "15"))
 HISTORY_SECONDS = 30 * 60
-PREDICTION_HORIZON_SECONDS = float(os.environ.get("ADSB_PREDICTION_HORIZON_SECONDS", "600"))
+# Terminal-area traffic turns. Beyond a couple of minutes a constant-heading
+# projection is fiction, and the FR24 track of ASA783 on 2026-08-11 showed why:
+# the aircraft flew due west, then broke onto 300 deg for the last 5 km. A
+# 10-minute horizon extrapolated straight through that turn.
+PREDICTION_HORIZON_SECONDS = float(os.environ.get("ADSB_PREDICTION_HORIZON_SECONDS", "180"))
 EARTH_METERS = 6_371_000.0
 KNOTS_TO_METERS_PER_SECOND = 0.514444
 FEET_TO_METERS = 0.3048
+CLIMB_FPM = 400.0
+DESCENT_FPM = -400.0
+
+# Fields whose traffic reaches this station. An aircraft that reaches a runway
+# stops being an airborne noise source, so the projection must terminate there
+# rather than extrapolating the descent into the ground. Public data.
+AIRPORTS = (
+    {"id": "PDX", "lat": 45.5887, "lon": -122.5975, "elevation_ft": 31},
+    {"id": "TTD", "lat": 45.5494, "lon": -122.4011, "elevation_ft": 39},
+    {"id": "VUO", "lat": 45.6205, "lon": -122.6562, "elevation_ft": 25},
+    {"id": "HIO", "lat": 45.5404, "lon": -122.9498, "elevation_ft": 208},
+)
+
+# Relative source levels at 300 m, in dB *relative to an unvalidated reference*.
+# Differences between these are meaningful for ranking; the absolute numbers are
+# not measured and must never be rendered as a sound pressure level.
+# Thrust state is the dominant term: a narrowbody at takeoff thrust is roughly
+# 15 dB louder than the same airframe at idle on final. ADS-B gives us that for
+# free in vert_rate, and ignoring it was the largest error in the first model.
+SOURCE_LEVELS = {
+    "heavy": {"CLIMB": 105.0, "LEVEL": 95.0, "DESCENT": 92.0},
+    "jet": {"CLIMB": 100.0, "LEVEL": 88.0, "DESCENT": 85.0},
+    "light": {"CLIMB": 85.0, "LEVEL": 78.0, "DESCENT": 75.0},
+    "rotorcraft": {"CLIMB": 92.0, "LEVEL": 92.0, "DESCENT": 90.0},
+}
+ATMOSPHERIC_DB_PER_M = 0.002
 
 
 def required_coordinate(name):
@@ -33,79 +63,210 @@ STATION_LON = required_coordinate("STATION_LON")
 STATION_ALT_FT = float(os.environ.get("STATION_ALT", "0"))
 TMP = OUTPUT.with_name(f".{OUTPUT.name}.tmp")
 history = []
+held = None
 
 
 def geometry(lat, lon, altitude_ft):
+    """Slant range and bearing from the station. Pure geometry, no acoustics."""
     lat1, lat2 = math.radians(STATION_LAT), math.radians(lat)
     dlat = lat2 - lat1
     dlon = math.radians(lon - STATION_LON)
     a = math.sin(dlat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
     ground = EARTH_METERS * 2 * math.atan2(math.sqrt(a), math.sqrt(max(0.0, 1 - a)))
-    vertical = abs(altitude_ft - STATION_ALT_FT) * 0.3048
+    vertical = abs(altitude_ft - STATION_ALT_FT) * FEET_TO_METERS
     distance = math.hypot(ground, vertical)
 
     y = math.sin(dlon) * math.cos(lat2)
     x = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(dlon)
     bearing = (math.degrees(math.atan2(y, x)) + 360) % 360
-
-    # Display-only acoustic estimate, matching the existing kiosk model.
-    divergence = 20 * math.log10(max(1.0, distance / 30.0))
-    estimated_db = max(30.0, 140.0 - divergence - distance * 0.005)
-    return distance, bearing, estimated_db
+    return distance, bearing
 
 
-def predict_pass(lat, lon, altitude_ft, speed_kt, track_deg, vertical_rate_fpm, seen):
-    """Project a constant-velocity track and report closest approach.
-
-    This is deliberately a proximity heuristic, not a sound or cat-response
-    model. Air-traffic vectors can change at any time, so every output is
-    explicitly marked unvalidated and recalculated from live ADS-B each tick.
-    """
-    if not all(isinstance(value, (int, float)) for value in (speed_kt, track_deg)):
-        return None
-    if speed_kt < 20:
-        return None
-
-    lat0 = math.radians(STATION_LAT)
+def local_offsets(lat, lon):
+    """Metres east and north of the station."""
+    east = math.radians(lon - STATION_LON) * EARTH_METERS * math.cos(math.radians(STATION_LAT))
     north = math.radians(lat - STATION_LAT) * EARTH_METERS
-    east = math.radians(lon - STATION_LON) * EARTH_METERS * math.cos(lat0)
+    return east, north
+
+
+def airframe_class(category):
+    """Coarse airframe class from the ADS-B emitter category.
+
+    Returns None when the category is absent. Unknown is a third state: it must
+    not be silently folded into 'jet', because that would let an unidentified
+    return borrow a narrowbody's source level.
+    """
+    code = str(category or "").strip().upper()
+    if code in ("A5", "A6"):
+        return "heavy"
+    if code in ("A3", "A4"):
+        return "jet"
+    if code in ("A1", "A2"):
+        return "light"
+    if code == "A7":
+        return "rotorcraft"
+    return None
+
+
+def thrust_phase(vertical_rate_fpm):
+    """Flight phase from vertical rate, or None when the rate is not reported."""
+    if not isinstance(vertical_rate_fpm, (int, float)):
+        return None
+    if vertical_rate_fpm >= CLIMB_FPM:
+        return "CLIMB"
+    if vertical_rate_fpm <= DESCENT_FPM:
+        return "DESCENT"
+    return "LEVEL"
+
+
+def noise_index(slant_m, klass, phase):
+    """Relative received level in dB against an unvalidated reference.
+
+    Only *differences* carry meaning. This is never a sound pressure level and
+    must not be rendered as one until a calibrated indoor microphone exists.
+    Returns None when class or phase is unknown, because a ranking built on a
+    guessed source level would silently prefer the wrong aircraft.
+    """
+    if klass is None or phase is None:
+        return None
+    source = SOURCE_LEVELS[klass][phase]
+    distance = max(30.0, slant_m)
+    divergence = 20.0 * math.log10(distance / 300.0)
+    return source - divergence - ATMOSPHERIC_DB_PER_M * distance
+
+
+def nearest_airport(lat, lon):
+    best, best_m = None, None
+    for field in AIRPORTS:
+        east = math.radians(lon - field["lon"]) * EARTH_METERS * math.cos(math.radians(field["lat"]))
+        north = math.radians(lat - field["lat"]) * EARTH_METERS
+        metres = math.hypot(east, north)
+        if best_m is None or metres < best_m:
+            best, best_m = field, metres
+    return best, best_m
+
+
+def unpredictable(reason):
+    """The third state. Not measured is not the same as not a threat."""
+    return {
+        "risk": "UNKNOWN",
+        "confidence": "NONE",
+        "approaching": None,
+        "reasons": [reason],
+        "eta_seconds": None,
+        "ground_distance_m": None,
+        "slant_distance_m": None,
+        "altitude_ft": None,
+        "noise_index": None,
+        "phase": None,
+        "arrival_at": None,
+        "terminated_by": None,
+        "model": MODEL_NOTE,
+    }
+
+
+MODEL_NOTE = (
+    "constant heading over a 3 min horizon, terminated at the runway; "
+    "relative loudness only; no measured sound; unvalidated"
+)
+
+
+def predict_pass(lat, lon, altitude_ft, category, speed_kt, track_deg, vertical_rate_fpm, seen):
+    """Project the live track and report the closest approach *while airborne*.
+
+    Three things this deliberately refuses to do, each of which the 2026-08-11
+    FR24 comparison showed to be wrong:
+
+      1. It never extrapolates a descent below the runway it is aimed at. A
+         landing aircraft stops being an airborne noise source at touchdown;
+         the old model projected ASA783 to 0 ft over the house and called it
+         LIKELY while it was seconds from the PDX threshold, 6.4 km north.
+      2. It never ranks by proximity alone. Thrust state moves the received
+         level by ~15 dB and is free in vert_rate.
+      3. It never guesses a source level for an aircraft of unknown class or
+         unknown vertical rate. That returns UNKNOWN, not LOW.
+    """
+    if not isinstance(speed_kt, (int, float)) or not isinstance(track_deg, (int, float)):
+        return unpredictable("no groundspeed or ground track in the ADS-B feed")
+    if speed_kt < 20:
+        return unpredictable(f"groundspeed {speed_kt} kt is below the 20 kt projection floor")
+
+    east, north = local_offsets(lat, lon)
     speed = speed_kt * KNOTS_TO_METERS_PER_SECOND
     track = math.radians(track_deg)
     velocity_east = speed * math.sin(track)
     velocity_north = speed * math.cos(track)
     speed_squared = velocity_east**2 + velocity_north**2
-    eta = max(0.0, min(PREDICTION_HORIZON_SECONDS, -(east * velocity_east + north * velocity_north) / speed_squared))
+    eta_cpa = -(east * velocity_east + north * velocity_north) / speed_squared
+
+    phase = thrust_phase(vertical_rate_fpm)
+    klass = airframe_class(category)
+    rate = vertical_rate_fpm if isinstance(vertical_rate_fpm, (int, float)) else 0.0
+
+    # Where does this track end? A descent aimed at a nearby field terminates at
+    # THAT FIELD's elevation, which may be well below ours -- PDX sits at 31 ft
+    # and this station at ~200 ft. Flooring at the station instead would cut the
+    # projection short and report an altitude the aircraft never flies.
+    field, field_m = nearest_airport(lat, lon)
+    arrival_at = None
+    floor_ft = STATION_ALT_FT
+    terminated_by = None
+    eta_limit = PREDICTION_HORIZON_SECONDS
+    if rate < 0:
+        if field is not None and field_m <= 25_000 and altitude_ft - field["elevation_ft"] <= 6_000:
+            arrival_at = field["id"]
+            floor_ft = field["elevation_ft"]
+        seconds_to_floor = (altitude_ft - floor_ft) / (-rate) * 60.0
+        if 0 <= seconds_to_floor < eta_limit:
+            eta_limit = seconds_to_floor
+            terminated_by = (f"reaches {arrival_at} field elevation" if arrival_at
+                             else "reaches station elevation")
+
+    eta = max(0.0, min(eta_limit, eta_cpa))
     cpa_east = east + velocity_east * eta
     cpa_north = north + velocity_north * eta
     ground_cpa = math.hypot(cpa_east, cpa_north)
-
-    climb_fpm = vertical_rate_fpm if isinstance(vertical_rate_fpm, (int, float)) else 0.0
-    projected_altitude = max(STATION_ALT_FT, altitude_ft + climb_fpm * eta / 60.0)
+    projected_altitude = max(floor_ft, altitude_ft + rate * eta / 60.0)
     altitude_above_station = max(0.0, projected_altitude - STATION_ALT_FT)
     slant_cpa = math.hypot(ground_cpa, altitude_above_station * FEET_TO_METERS)
 
-    approaching = eta >= 5 and eta < PREDICTION_HORIZON_SECONDS
-    if approaching and ground_cpa <= 3_000 and altitude_above_station <= 5_000:
-        risk = "LIKELY"
-        reasons = ["projected within 3 km", "projected below 5,000 ft above station"]
-    elif approaching and ground_cpa <= 8_000 and altitude_above_station <= 10_000:
-        risk = "POSSIBLE"
-        reasons = ["projected within 8 km", "projected below 10,000 ft above station"]
-    else:
-        risk = "LOW"
-        reasons = ["live track does not meet the unvalidated proximity envelope"]
+    # Explicit None test: the index is a relative level and is routinely
+    # negative at long range, so truthiness would read a distant aircraft as
+    # unscorable.
+    index = noise_index(slant_cpa, klass, phase)
+    if index is None:
+        missing = "emitter category" if klass is None else "vertical rate"
+        return unpredictable(f"no {missing}; cannot rank loudness without guessing a source level")
 
-    confidence = "HIGH" if seen <= 5 and vertical_rate_fpm is not None else "MEDIUM"
+    # A pass only exists if the aircraft is still meaningfully above us when it
+    # gets there. ASA783 was projected over the house at 0 ft and called LIKELY
+    # while it was landing at PDX, 6.4 km north; height above the station is
+    # what distinguishes an overflight from an arrival at somebody else's runway.
+    overhead = altitude_above_station >= 100.0
+    approaching = eta >= 5 and eta < PREDICTION_HORIZON_SECONDS and overhead
+    if approaching and index >= 78.0:
+        risk, reasons = "LIKELY", [f"{phase.lower()} thrust at {ground_cpa/1000:.1f} km"]
+    elif approaching and index >= 68.0:
+        risk, reasons = "POSSIBLE", [f"{phase.lower()} thrust at {ground_cpa/1000:.1f} km"]
+    elif not overhead and arrival_at:
+        risk, reasons = "LOW", [f"descending into {arrival_at}; below station height at closest approach"]
+    else:
+        risk, reasons = "LOW", ["below the unvalidated relative-loudness threshold"]
+
     return {
+        "risk": risk,
+        "confidence": "HIGH" if seen <= 5 else "MEDIUM",
+        "approaching": approaching,
+        "reasons": reasons,
         "eta_seconds": round(eta),
         "ground_distance_m": round(ground_cpa, 1),
         "slant_distance_m": round(slant_cpa, 1),
         "altitude_ft": round(projected_altitude),
-        "risk": risk,
-        "confidence": confidence,
-        "approaching": approaching,
-        "reasons": reasons,
-        "model": "constant velocity; unvalidated; no indoor sound measurement",
+        "noise_index": round(index, 1),
+        "phase": phase,
+        "arrival_at": arrival_at,
+        "terminated_by": terminated_by,
+        "model": MODEL_NOTE,
     }
 
 
@@ -125,16 +286,20 @@ def make_report(item, source_now):
         return None
     if seen > STALE_SECONDS:
         return None
-    distance, bearing, estimated_db = geometry(lat, lon, altitude)
+    distance, bearing = geometry(lat, lon, altitude)
+    category = item.get("category")
     prediction = predict_pass(
         lat,
         lon,
         altitude,
+        category,
         item.get("speed"),
         item.get("track"),
         item.get("vert_rate"),
         seen,
     )
+    phase = thrust_phase(item.get("vert_rate"))
+    now_index = noise_index(distance, airframe_class(category), phase)
     return {
         "hex": str(item.get("hex", "")).upper(),
         "callsign": str(item.get("flight", "")).strip() or None,
@@ -147,12 +312,42 @@ def make_report(item, source_now):
         "track_deg": item.get("track"),
         "dist": round(distance, 1),
         "bearing": round(bearing, 1),
-        "db": round(estimated_db, 1),
+        "noise_index": None if now_index is None else round(now_index, 1),
+        # Deprecated alias of noise_index, kept only so the un-updated radar
+        # canvas on the Pi keeps colouring and labelling. NOT decibels.
+        "db": None if now_index is None else round(now_index, 1),
+        "phase": phase,
+        "airframe_class": airframe_class(category),
         "vertical_rate_fpm": item.get("vert_rate"),
         "rssi": item.get("rssi"),
         "last_seen": source_now - seen,
         "prediction": prediction,
     }
+
+
+def select_candidate(candidates):
+    """Pick the advisory subject, and hold it until it resolves.
+
+    Without the hold the subject changed identity every second -- three
+    different callsigns inside one minute on 2026-08-11 -- because ranking ran
+    fresh over a terminal area that always has several aircraft in it. A warning
+    that renames itself faster than it can be read is not a warning.
+
+    Approach state is re-checked here rather than assumed from the caller's
+    filtering: this function decides what the panel names, so it enforces its
+    own precondition.
+    """
+    global held
+    open_passes = [r for r in candidates if r["prediction"]["approaching"]]
+    if held is not None:
+        still = next((r for r in open_passes if r["hex"] == held), None)
+        if still is not None:
+            return still
+        held = None
+    if not open_passes:
+        return None
+    held = open_passes[0]["hex"]
+    return open_passes[0]
 
 
 def publish():
@@ -161,32 +356,49 @@ def publish():
     source_now = float(source.get("now", time.time()))
     reports = [report for item in source["aircraft"] if (report := make_report(item, source_now))]
     now = time.time()
-    history.extend({"hex": report["hex"], "db": report["db"], "time": now} for report in reports)
+    history.extend(
+        {"hex": report["hex"], "noise_index": report["noise_index"], "db": report["db"],
+         "phase": report["phase"], "time": now}
+        for report in reports if report["noise_index"] is not None
+    )
     history = [entry for entry in history if entry["time"] >= now - HISTORY_SECONDS]
     loudest = {}
     for entry in history:
         previous = loudest.get(entry["hex"])
-        if previous is None or entry["db"] > previous["db"]:
+        if previous is None or entry["noise_index"] > previous["noise_index"]:
             loudest[entry["hex"]] = entry
-    top = sorted(loudest.values(), key=lambda entry: entry["db"], reverse=True)[:10]
+    top = sorted(loudest.values(), key=lambda entry: entry["noise_index"], reverse=True)[:10]
+
+    # Rank by predicted relative loudness at closest airborne approach, not by
+    # who arrives first. A narrowbody climbing at takeoff thrust 4 km away beats
+    # a light single gliding in at 1 km, and the old ETA ordering had that
+    # exactly backwards.
     candidates = [
         report for report in reports
-        if report["prediction"] and report["prediction"]["risk"] in ("LIKELY", "POSSIBLE")
+        if report["prediction"]["risk"] in ("LIKELY", "POSSIBLE")
     ]
-    candidates.sort(key=lambda report: (report["prediction"]["eta_seconds"], report["prediction"]["ground_distance_m"]))
+    candidates.sort(key=lambda report: -report["prediction"]["noise_index"])
+    unknown = [report for report in reports if report["prediction"]["risk"] == "UNKNOWN"]
+
     out = {
-        "schema": 2,
+        "schema": 3,
         "written_at": now,
         "source_age_s": max(0.0, now - source_now),
         "messages": source.get("messages"),
+        "station_alt_ft": STATION_ALT_FT,
         "adsb_planes": reports,
         "adsb_top": top,
         "adsb_predictions": candidates,
         "adsb_advisory": {
             "armed": False,
             "status": "NOT ARMED",
-            "model": "unvalidated live-track proximity; not measured indoor sound or cat response",
-            "next": candidates[0] if candidates else None,
+            "model": MODEL_NOTE,
+            "next": select_candidate(candidates),
+            # Aircraft we could not score at all. Never counted as quiet.
+            "unscored": [
+                {"hex": report["hex"], "reason": report["prediction"]["reasons"][0]}
+                for report in unknown
+            ],
         },
     }
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
