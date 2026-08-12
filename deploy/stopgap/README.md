@@ -189,8 +189,8 @@ they go to `- -` and the tier drops to `CAN'T ASSESS`.
 ## Removing it
 
 ```sh
-sudo systemctl disable --now panel-kiosk emay-live panel-http
-sudo rm /etc/systemd/system/{panel-kiosk,emay-live,panel-http}.service
+sudo systemctl disable --now panel-kiosk emay-live panel-http panel-adsb-status
+sudo rm /etc/systemd/system/{panel-kiosk,emay-live,panel-http,panel-adsb-status}.service
 sudo rm -rf /etc/systemd/system/panel-kiosk.service.d
 sudo systemctl daemon-reload
 sudo systemctl enable --now lightdm        # put the desktop back
