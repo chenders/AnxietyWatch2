@@ -1,0 +1,28 @@
+[Unit]
+Description=Publish dump1090 aircraft to the bedside panel
+After=dump1090-mutability.service panel-http.service
+Requires=dump1090-mutability.service
+Before=panel-status-merge.service
+
+[Service]
+Type=simple
+User=chris
+# Set the receiver location without committing a home location:
+#   sudo systemctl edit panel-adsb-status
+#   [Service]
+#   Environment=STATION_LAT=...
+#   Environment=STATION_LON=...
+Environment=ADSB_STATUS_JSON=/home/chris/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical/adsb_status.json
+ExecStart=/usr/local/bin/panel-adsb-status
+Restart=always
+RestartSec=3
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadOnlyPaths=/run/dump1090-mutability
+ReadWritePaths=/home/chris/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical
+RestrictAddressFamilies=AF_UNIX
+
+[Install]
+WantedBy=multi-user.target

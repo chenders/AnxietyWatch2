@@ -1,0 +1,131 @@
+#!/usr/bin/env python3
+"""Publish dump1090 aircraft data for the bedside panel's status merger."""
+
+import json
+import math
+import os
+from pathlib import Path
+import time
+
+SOURCE = Path(os.environ.get("DUMP1090_AIRCRAFT_JSON", "/run/dump1090-mutability/aircraft.json"))
+OUTPUT = Path(os.environ.get("ADSB_STATUS_JSON", "/home/chris/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical/adsb_status.json"))
+INTERVAL = float(os.environ.get("ADSB_PUBLISH_INTERVAL_SECONDS", "1"))
+STALE_SECONDS = float(os.environ.get("ADSB_STALE_SECONDS", "15"))
+HISTORY_SECONDS = 30 * 60
+EARTH_METERS = 6_371_000.0
+
+
+def required_coordinate(name):
+    raw = os.environ.get(name)
+    if raw is None:
+        raise SystemExit(f"panel-adsb-status: {name} is required")
+    try:
+        return float(raw)
+    except ValueError as exc:
+        raise SystemExit(f"panel-adsb-status: invalid {name}={raw!r}") from exc
+
+
+STATION_LAT = required_coordinate("STATION_LAT")
+STATION_LON = required_coordinate("STATION_LON")
+STATION_ALT_FT = float(os.environ.get("STATION_ALT", "0"))
+TMP = OUTPUT.with_name(f".{OUTPUT.name}.tmp")
+history = []
+
+
+def geometry(lat, lon, altitude_ft):
+    lat1, lat2 = math.radians(STATION_LAT), math.radians(lat)
+    dlat = lat2 - lat1
+    dlon = math.radians(lon - STATION_LON)
+    a = math.sin(dlat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
+    ground = EARTH_METERS * 2 * math.atan2(math.sqrt(a), math.sqrt(max(0.0, 1 - a)))
+    vertical = abs(altitude_ft - STATION_ALT_FT) * 0.3048
+    distance = math.hypot(ground, vertical)
+
+    y = math.sin(dlon) * math.cos(lat2)
+    x = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(dlon)
+    bearing = (math.degrees(math.atan2(y, x)) + 360) % 360
+
+    # Display-only acoustic estimate, matching the existing kiosk model.
+    divergence = 20 * math.log10(max(1.0, distance / 30.0))
+    estimated_db = max(30.0, 140.0 - divergence - distance * 0.005)
+    return distance, bearing, estimated_db
+
+
+def read_source():
+    with SOURCE.open() as stream:
+        data = json.load(stream)
+    if not isinstance(data, dict) or not isinstance(data.get("aircraft"), list):
+        raise ValueError("aircraft.json has no aircraft array")
+    return data
+
+
+def make_report(item, source_now):
+    lat, lon = item.get("lat"), item.get("lon")
+    altitude = item.get("altitude")
+    seen = item.get("seen", STALE_SECONDS + 1)
+    if not all(isinstance(value, (int, float)) for value in (lat, lon, altitude, seen)):
+        return None
+    if seen > STALE_SECONDS:
+        return None
+    distance, bearing, estimated_db = geometry(lat, lon, altitude)
+    return {
+        "hex": str(item.get("hex", "")).upper(),
+        "callsign": str(item.get("flight", "")).strip() or None,
+        "category": item.get("category"),
+        "squawk": item.get("squawk"),
+        "lat": lat,
+        "lon": lon,
+        "alt_ft": altitude,
+        "speed_kt": item.get("speed"),
+        "track_deg": item.get("track"),
+        "dist": round(distance, 1),
+        "bearing": round(bearing, 1),
+        "db": round(estimated_db, 1),
+        "rssi": item.get("rssi"),
+        "last_seen": source_now - seen,
+    }
+
+
+def publish():
+    global history
+    source = read_source()
+    source_now = float(source.get("now", time.time()))
+    reports = [report for item in source["aircraft"] if (report := make_report(item, source_now))]
+    now = time.time()
+    history.extend({"hex": report["hex"], "db": report["db"], "time": now} for report in reports)
+    history = [entry for entry in history if entry["time"] >= now - HISTORY_SECONDS]
+    loudest = {}
+    for entry in history:
+        previous = loudest.get(entry["hex"])
+        if previous is None or entry["db"] > previous["db"]:
+            loudest[entry["hex"]] = entry
+    top = sorted(loudest.values(), key=lambda entry: entry["db"], reverse=True)[:10]
+    out = {
+        "schema": 1,
+        "written_at": now,
+        "source_age_s": max(0.0, now - source_now),
+        "messages": source.get("messages"),
+        "adsb_planes": reports,
+        "adsb_top": top,
+    }
+    OUTPUT.parent.mkdir(parents=True, exist_ok=True)
+    with TMP.open("w") as stream:
+        json.dump(out, stream, separators=(",", ":"), allow_nan=False)
+        stream.write("\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.chmod(TMP, 0o644)
+    os.replace(TMP, OUTPUT)
+
+
+def main():
+    while True:
+        try:
+            publish()
+        except (OSError, ValueError, TypeError) as exc:
+            print(f"panel-adsb-status: {exc}", flush=True)
+        time.sleep(INTERVAL)
+
+
+if __name__ == "__main__":
+    main()
