@@ -1,0 +1,314 @@
+#!/usr/bin/env python3
+"""Flash a Hue light when something loud is about to pass over the house.
+
+The design constraints below are not preferences. Each came out of the original
+discussion recorded in docs/design/pi-panel/ADSB-HANDOFF.md §6, and every one of
+them describes a way this feature could do harm if built carelessly.
+
+1. IT MUST NOT LOOK LIKE A MEDICAL ALARM
+   The bedside panel reserves klaxon red for high-priority physiological alarm
+   and it "appears nowhere else". A light that turns a bedroom red at 3am, for
+   an aeroplane, teaches the household to distrust the colour that matters. The
+   aircraft channel is the radar's cyan, and amber only for the loudest band.
+
+2. IT MUST RESTORE WHAT IT FOUND
+   This is the one that can actually hurt: leaving a bedroom lamp on at 3am, or
+   leaving it a colour it was never set to. The previous state of every light
+   touched is captured BEFORE the first change and restored afterwards --
+   including on failure, and including on shutdown. A light that was off goes
+   back off; a light that was warm white at 40% goes back to warm white at 40%.
+
+3. IT MUST NOT FIRE PER AIRCRAFT
+   Portland traffic is continuous. Without a cooldown this would strobe a
+   bedroom all evening and be unplugged within a day, which is the same as not
+   existing. One warning, then quiet for the cooldown.
+
+4. IT MUST FAIL LOUDLY
+   A silent failure here is indistinguishable from a quiet sky, which is exactly
+   the state this system refuses to conflate. Bridge unreachable, auth rejected,
+   light missing: all logged with the blocker named, and surfaced in the status
+   file the panel reads.
+
+5. IT MUST NOT BE THE ALARM
+   This is an early warning that a noise is coming, so it can be braced for. It
+   is not armed, it controls nothing, and nothing depends on it.
+
+Why the local v1 API
+--------------------
+`/api/<username>/lights/<id>/state` needs no cloud account and no internet: the
+bridge is on the LAN and the Pi talks to it directly. v2 exists and v1 is
+formally deprecated, but v1 is still supported on current bridges (this one
+reports apiversion 1.78.0) and is dramatically simpler -- v2 requires an
+event-stream client and TLS with a bridge-specific certificate for what is, for
+us, three field writes.
+"""
+
+import json
+import os
+import signal
+import sys
+import time
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+BRIDGE = os.environ.get("HUE_BRIDGE")
+USERNAME = os.environ.get("HUE_USERNAME")
+LIGHTS = [x.strip() for x in os.environ.get("HUE_LIGHTS", "").split(",") if x.strip()]
+
+STATUS_JSON = Path(os.environ.get(
+    "ADSB_STATUS_JSON",
+    "/home/chris/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical/adsb_status.json"))
+OUTPUT = Path(os.environ.get(
+    "HUE_STATUS_JSON",
+    "/home/chris/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical/hue_status.json"))
+
+POLL_SECONDS = float(os.environ.get("HUE_POLL_SECONDS", "1"))
+
+# Only these bands warrant lighting a room. FAINT and a distant AUDIBLE do not:
+# a warning that fires for everything is noise itself.
+WARN_BANDS = {b.strip() for b in
+              os.environ.get("HUE_BANDS", "VERY LOUD,LOUD").split(",") if b.strip()}
+
+# An aircraft we could NOT score, passing directly overhead, also warrants a
+# warning. Absence of a score is not evidence of quiet -- and air ambulances are
+# over-represented among the aircraft that broadcast no category at all.
+WARN_ON_UNSCORED_OVERHEAD = os.environ.get("HUE_WARN_UNSCORED", "1") != "0"
+
+# Fire no more than once per this window. Portland traffic is continuous.
+COOLDOWN_SECONDS = float(os.environ.get("HUE_COOLDOWN_SECONDS", "600"))
+
+# How long the warning lasts before the previous state is restored.
+FLASH_SECONDS = float(os.environ.get("HUE_FLASH_SECONDS", "12"))
+
+# The measured warning budget for a Providence departure is ~34 s, so a warning
+# is only useful inside roughly that window. Firing 3 minutes ahead trains the
+# household to ignore it.
+LEAD_SECONDS = float(os.environ.get("HUE_LEAD_SECONDS", "45"))
+
+# Hue CIE xy. Cyan matches the panel's aircraft channel; amber is the top band.
+# Red is deliberately absent: it belongs to the medical alarm and nothing else.
+XY_CYAN = [0.17, 0.33]
+XY_AMBER = [0.53, 0.42]
+
+TIMEOUT = float(os.environ.get("HUE_TIMEOUT_SECONDS", "4"))
+
+
+def require(name, value):
+    if not value:
+        raise SystemExit(
+            f"panel-hue-warn: {name} is required; set it in a systemd drop-in "
+            f"(systemctl edit panel-hue-warn). The bridge address and username "
+            f"are credentials and must never be committed.")
+    return value
+
+
+def call(method, path, body=None):
+    """One bridge request. Returns (payload, error) -- never raises.
+
+    The bridge answers 200 with an error object in the body rather than an HTTP
+    status, so the payload is inspected for one. Treating HTTP 200 as success
+    would report a rejected credential as a successful write.
+    """
+    url = f"http://{BRIDGE}/api/{USERNAME}{path}"
+    data = json.dumps(body).encode() if body is not None else None
+    request = urllib.request.Request(url, data=data, method=method,
+                                     headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
+            payload = json.loads(response.read() or b"null")
+    except urllib.error.HTTPError as exc:
+        return None, f"bridge returned HTTP {exc.code}"
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        return None, f"bridge {BRIDGE} unreachable: {exc}"
+    except ValueError as exc:
+        return None, f"bridge returned unparseable JSON: {exc}"
+
+    if isinstance(payload, list):
+        for item in payload:
+            if isinstance(item, dict) and "error" in item:
+                detail = item["error"]
+                return None, (f"bridge rejected the request: "
+                              f"{detail.get('description')} ({detail.get('address')})")
+    return payload, None
+
+
+def capture(light_id):
+    """The light's current state, or (None, error).
+
+    Captured BEFORE anything is changed. Without this the warning cannot be
+    undone, and an unattended light left on overnight is a worse outcome than no
+    warning at all.
+    """
+    payload, error = call("GET", f"/lights/{light_id}")
+    if error is not None:
+        return None, error
+    state = (payload or {}).get("state") or {}
+    if "on" not in state:
+        return None, f"light {light_id} reported no state"
+
+    # Only the fields needed to put it back. `colormode` decides which of
+    # xy/ct/hs is authoritative; restoring the wrong one changes the colour.
+    restore = {"on": bool(state["on"])}
+    if state["on"]:
+        if "bri" in state:
+            restore["bri"] = state["bri"]
+        mode = state.get("colormode")
+        if mode == "xy" and "xy" in state:
+            restore["xy"] = state["xy"]
+        elif mode == "ct" and "ct" in state:
+            restore["ct"] = state["ct"]
+        elif mode == "hs":
+            if "hue" in state:
+                restore["hue"] = state["hue"]
+            if "sat" in state:
+                restore["sat"] = state["sat"]
+    return restore, None
+
+
+def apply_state(light_id, state):
+    return call("PUT", f"/lights/{light_id}/state", state)
+
+
+def publish(document):
+    try:
+        OUTPUT.parent.mkdir(parents=True, exist_ok=True)
+        tmp = OUTPUT.with_name(f".{OUTPUT.name}.tmp")
+        with tmp.open("w") as stream:
+            json.dump(document, stream, separators=(",", ":"), allow_nan=False)
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.chmod(tmp, 0o644)
+        os.replace(tmp, OUTPUT)
+    except OSError as exc:
+        print(f"panel-hue-warn: cannot write {OUTPUT}: {exc}", flush=True)
+
+
+def choose(status, now):
+    """The aircraft worth lighting a room for, or None.
+
+    Returns (report, band, seconds_away).
+    """
+    for report in (status.get("adsb_predictions") or []):
+        prediction = report.get("prediction") or {}
+        at = prediction.get("at_epoch")
+        if not isinstance(at, (int, float)):
+            continue
+        left = at - now
+        if left < 0 or left > LEAD_SECONDS:
+            continue
+        band = prediction.get("loudness_band")
+        if band in WARN_BANDS:
+            return report, band, left
+        # The third state. Not measured is not the same as not loud.
+        if (WARN_ON_UNSCORED_OVERHEAD and prediction.get("noise_index") is None
+                and prediction.get("proximity") == "OVERHEAD"):
+            return report, "UNKNOWN", left
+    return None
+
+
+def warn(band, reason):
+    """Flash, then put every light back exactly as it was.
+
+    Restoration runs in a finally: a failure partway through must not leave a
+    bedroom lit. If restoring a light fails, that is reported rather than
+    swallowed, because the household needs to know a lamp was left on.
+    """
+    colour = XY_AMBER if band == "VERY LOUD" else XY_CYAN
+    captured, errors = {}, []
+
+    for light_id in LIGHTS:
+        state, error = capture(light_id)
+        if error is not None:
+            errors.append(f"{light_id}: {error}")
+            continue
+        captured[light_id] = state
+
+    if not captured:
+        return errors or ["no lights could be read"]
+
+    try:
+        for light_id in captured:
+            _, error = apply_state(light_id, {
+                "on": True, "bri": 160, "xy": colour,
+                "alert": "lselect",          # the bridge's own ~15 s breathe
+                "transitiontime": 2,
+            })
+            if error is not None:
+                errors.append(f"{light_id}: {error}")
+        print(f"panel-hue-warn: warned — {reason}", flush=True)
+        time.sleep(FLASH_SECONDS)
+    finally:
+        for light_id, state in captured.items():
+            # Cancel the alert explicitly: it outlives a plain state write.
+            _, error = apply_state(light_id, dict(state, alert="none",
+                                                  transitiontime=4))
+            if error is not None:
+                errors.append(f"{light_id}: NOT RESTORED: {error}")
+                print(f"panel-hue-warn: light {light_id} may have been left on: "
+                      f"{error}", flush=True)
+    return errors
+
+
+def _terminate(signum, _frame):
+    """Turn SIGTERM into an exception so `finally` blocks run.
+
+    Default SIGTERM handling kills the process outright. If that lands during
+    the flash -- `systemctl stop`, a reboot, a package upgrade -- the restore in
+    `warn()` never executes and the lamp is left on, which is the single
+    outcome this whole design exists to prevent.
+    """
+    raise SystemExit(f"panel-hue-warn: signal {signum}; restoring and exiting")
+
+
+def main():
+    global BRIDGE, USERNAME
+    signal.signal(signal.SIGTERM, _terminate)
+    signal.signal(signal.SIGINT, _terminate)
+    BRIDGE = require("HUE_BRIDGE", BRIDGE)
+    USERNAME = require("HUE_USERNAME", USERNAME)
+    if not LIGHTS:
+        raise SystemExit("panel-hue-warn: HUE_LIGHTS is required (comma-separated ids)")
+
+    last_warned = 0.0
+    while True:
+        now = time.time()
+        errors, subject = [], None
+        try:
+            with STATUS_JSON.open() as stream:
+                status = json.load(stream)
+        except (OSError, ValueError) as exc:
+            status, errors = {}, [f"cannot read the aircraft feed: {exc}"]
+
+        if status:
+            picked = choose(status, now)
+            if picked and now - last_warned >= COOLDOWN_SECONDS:
+                report, band, left = picked
+                subject = report.get("registration") or report.get("callsign") or report.get("hex")
+                last_warned = now
+                errors += warn(band, f"{subject} {band} in {left:.0f}s")
+
+        publish({
+            "schema": 1, "written_at": time.time(),
+            "armed": False,
+            "bridge": BRIDGE,
+            "lights": LIGHTS,
+            "cooldown_s": COOLDOWN_SECONDS,
+            "last_warned_at": last_warned or None,
+            "last_subject": subject,
+            # Named, never a bare boolean: a guard that blocks without saying
+            # why is worse than no guard.
+            "errors": errors or None,
+            "healthy": not errors,
+        })
+        for error in errors:
+            print(f"panel-hue-warn: {error}", flush=True)
+        time.sleep(POLL_SECONDS)
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except KeyboardInterrupt:
+        sys.exit(0)

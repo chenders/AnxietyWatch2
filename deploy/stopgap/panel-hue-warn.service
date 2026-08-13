@@ -1,0 +1,36 @@
+[Unit]
+Description=Flash a Hue light when a loud aircraft is about to pass
+After=network-online.target panel-adsb-status.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=chris
+# Bridge address, API username and light ids are credentials and configuration
+# for THIS house. They live in a drop-in, never in git:
+#   sudo systemctl edit panel-hue-warn
+#   [Service]
+#   Environment=HUE_BRIDGE=...
+#   Environment=HUE_USERNAME=...
+#   Environment=HUE_LIGHTS=...
+Environment=ADSB_STATUS_JSON=/home/chris/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical/adsb_status.json
+Environment=HUE_STATUS_JSON=/home/chris/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical/hue_status.json
+ExecStart=/usr/local/bin/panel-hue-warn
+Restart=always
+RestartSec=5
+# Long enough for the flash to finish and the restore to complete before the
+# process is killed. Shorter than the flash would leave a lamp on.
+TimeoutStopSec=30
+KillSignal=SIGTERM
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/chris/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+# Not the alarm path. If memory is short this may be killed; the panel itself
+# keeps working and the lamp is restored on the way out.
+OOMScoreAdjust=300
+
+[Install]
+WantedBy=multi-user.target
