@@ -96,19 +96,30 @@ FLASH_SECONDS = float(os.environ.get("HUE_FLASH_SECONDS", "17"))
 # on this cadence to keep it pulsing for the whole duration.
 ALERT_REFRESH_SECONDS = 14.0
 
+# How often an alternating zone swaps colour. Slow enough to read as two
+# distinct colours rather than a blur, fast enough to be obviously deliberate.
+# At two lights this is under 2 writes/second, well inside what the bridge
+# tolerates (it starts dropping commands past roughly ten per second).
+ALTERNATE_SECONDS = float(os.environ.get("HUE_ALTERNATE_SECONDS", "1.2"))
+
 # The measured warning budget for a Providence departure is ~34 s, so a warning
 # is only useful inside roughly that window. Firing 3 minutes ahead trains the
 # household to ignore it.
 LEAD_SECONDS = float(os.environ.get("HUE_LEAD_SECONDS", "45"))
 
-# Hue CIE xy. Cyan matches the panel's aircraft channel; amber is the top band.
-# Red is deliberately absent: it belongs to the medical alarm and nothing else.
-# Purple for the bedroom, at the owner's request. Still emphatically not red,
-# which the panel reserves for medical alarm -- purple reads as "something is
-# happening" without borrowing the colour that means "something is wrong with a
-# person". Kept clear of blue, which at low brightness reads as ordinary
-# night-light rather than as a warning.
+# Hue CIE xy.
+#
+# The bedroom alternates PURPLE and ORANGE. Neither is red: red belongs to the
+# medical alarm and appears nowhere else in this house's visual language, so a
+# bedroom turning red for an aeroplane would erode the colour that means
+# something is wrong with a person. The kitchen IS red -- a different room in a
+# different context, where the job is to carry across a house.
+#
+# Purple is kept clear of blue, which at low brightness reads as an ordinary
+# night-light rather than a warning. Orange is far enough from purple that the
+# alternation reads as two distinct states rather than one drifting colour.
 XY_PURPLE = [0.2919, 0.1327]
+XY_ORANGE = [0.5820, 0.3901]
 XY_CYAN = [0.17, 0.33]
 XY_AMBER = [0.53, 0.42]
 XY_RED = [0.675, 0.322]
@@ -254,19 +265,20 @@ def choose(status, now):
 
 
 def zones(band):
-    """Which lights flash, in what colour, at what brightness.
+    """Which lights flash, in which colours, at what brightness.
 
-    The primary set follows the loudness band. The alert set has a fixed colour
-    and brightness because its job is to be unmistakable from another room, not
-    to encode a gradient.
+    Each zone carries a LIST of colours. One colour is a steady flash; more than
+    one alternates between them for the duration, which is far harder to mistake
+    for a lamp someone left on than any single colour is.
+
+    The bedroom alternates purple and orange. Neither is red -- that belongs to
+    medical alarm, and a bedroom turning red for an aeroplane erodes the colour
+    that means something is wrong with a person. The kitchen is red, because it
+    is a different room in a different context and needs to carry across a house.
     """
-    # One colour for every band. The earlier amber-at-top-band escalation is
-    # gone: the countdown and the panel already carry loudness, and a light that
-    # changes hue is a distinction nobody reads correctly half asleep.
-    primary = XY_PURPLE
-    out = [(LIGHTS, primary, FLASH_BRIGHTNESS)]
+    out = [(LIGHTS, [XY_PURPLE, XY_ORANGE], FLASH_BRIGHTNESS)]
     if ALERT_LIGHTS:
-        out.append((ALERT_LIGHTS, XY_RED, ALERT_BRIGHTNESS))
+        out.append((ALERT_LIGHTS, [XY_RED], ALERT_BRIGHTNESS))
     return out
 
 
@@ -280,14 +292,14 @@ def warn(band, reason):
     plan = zones(band)
     captured, colours, errors = {}, {}, []
 
-    for light_ids, colour, brightness in plan:
+    for light_ids, palette, brightness in plan:
         for light_id in light_ids:
             state, error = capture(light_id)
             if error is not None:
                 errors.append(f"{light_id}: {error}")
                 continue
             captured[light_id] = state
-            colours[light_id] = (colour, brightness)
+            colours[light_id] = (palette, brightness)
 
     if not captured:
         return errors or ["no lights could be read"]
@@ -299,25 +311,41 @@ def warn(band, reason):
             # applies the LAST zone's settings to every light -- which is exactly
             # what happened: the bedroom went red at the kitchen's colour. The
             # bedroom must never go red; that belongs to medical alarm.
-            colour, brightness = colours[light_id]
-            _, error = apply_state(light_id, {
-                "on": True, "bri": brightness, "xy": colour,
-                "alert": "lselect",          # the bridge's own ~15 s breathe
-                "transitiontime": 2,
-            })
+            palette, brightness = colours[light_id]
+            state = {"on": True, "bri": brightness, "xy": palette[0],
+                     "transitiontime": 2}
+            # A single-colour zone leans on the bridge's own ~15 s breathe. An
+            # alternating zone drives itself, and asking for `lselect` as well
+            # would fight the colour writes.
+            if len(palette) == 1:
+                state["alert"] = "lselect"
+            _, error = apply_state(light_id, state)
             if error is not None:
                 errors.append(f"{light_id}: {error}")
         print(f"panel-hue-warn: warned — {reason}", flush=True)
         # Sleep in slices, re-arming the breathe as it expires. A single long
         # sleep would leave the light solid for the tail of a long flash.
-        remaining = FLASH_SECONDS
-        while remaining > 0:
-            slice_seconds = min(ALERT_REFRESH_SECONDS, remaining)
-            time.sleep(slice_seconds)
-            remaining -= slice_seconds
-            if remaining > 0:
+        elapsed, step, since_refresh = 0.0, 0, 0.0
+        while elapsed < FLASH_SECONDS:
+            tick = min(ALTERNATE_SECONDS, FLASH_SECONDS - elapsed)
+            time.sleep(tick)
+            elapsed += tick
+            since_refresh += tick
+            if elapsed >= FLASH_SECONDS:
+                break
+            step += 1
+            for light_id in captured:
+                palette, brightness = colours[light_id]
+                if len(palette) > 1:
+                    # transitiontime 0: snap between colours. A fade reads as
+                    # one drifting colour rather than two alternating ones.
+                    apply_state(light_id, {"xy": palette[step % len(palette)],
+                                           "bri": brightness, "transitiontime": 0})
+            if since_refresh >= ALERT_REFRESH_SECONDS:
+                since_refresh = 0.0
                 for light_id in captured:
-                    apply_state(light_id, {"alert": "lselect"})
+                    if len(colours[light_id][0]) == 1:
+                        apply_state(light_id, {"alert": "lselect"})
     finally:
         for light_id, state in captured.items():
             # Cancel the alert explicitly: it outlives a plain state write.

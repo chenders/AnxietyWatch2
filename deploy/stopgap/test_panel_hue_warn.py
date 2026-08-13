@@ -172,29 +172,31 @@ class SecondZone(unittest.TestCase):
     def tearDown(self):
         hue.LIGHTS, hue.ALERT_LIGHTS = self._lights, self._alert
 
-    def test_both_zones_flash_in_their_own_colour(self):
+    def test_both_zones_flash_in_their_own_colours(self):
         plan = hue.zones("LOUD")
         self.assertEqual(len(plan), 2)
-        (bed_ids, bed_colour, bed_bri), (kit_ids, kit_colour, kit_bri) = plan
+        (bed_ids, bed_palette, bed_bri), (kit_ids, kit_palette, kit_bri) = plan
         self.assertEqual(bed_ids, ["2", "8"])
-        self.assertEqual(bed_colour, hue.XY_PURPLE)
+        self.assertEqual(bed_palette, [hue.XY_PURPLE, hue.XY_ORANGE])
         self.assertEqual(kit_ids, ["10"])
-        self.assertEqual(kit_colour, hue.XY_RED)
+        self.assertEqual(kit_palette, [hue.XY_RED])
 
     def test_the_bedroom_never_goes_red(self):
         # Red belongs to the medical alarm. A bedroom turning red at 3am for an
         # aeroplane erodes that, whatever the kitchen is doing.
         for band in ("LOUD", "VERY LOUD", "UNKNOWN"):
-            bed_colour = hue.zones(band)[0][1]
-            self.assertNotEqual(bed_colour, hue.XY_RED, band)
+            for colour in hue.zones(band)[0][1]:
+                self.assertNotEqual(colour, hue.XY_RED, band)
 
-    def test_the_bedroom_colour_is_the_same_for_every_band(self):
-        colours = {hue.zones(b)[0][1][0] for b in ("LOUD", "VERY LOUD", "UNKNOWN")}
-        self.assertEqual(len(colours), 1)
+    def test_the_bedroom_alternates_two_distinct_colours(self):
+        palette = hue.zones("LOUD")[0][1]
+        self.assertEqual(len(palette), 2)
+        self.assertNotEqual(palette[0], palette[1])
 
-    def test_the_kitchen_colour_does_not_track_the_band(self):
+    def test_the_kitchen_is_a_single_steady_colour(self):
         # Its job is to be unmistakable from another room, not to encode a
         # gradient the reader cannot see the rest of.
+        self.assertEqual(hue.zones("LOUD")[1][1], [hue.XY_RED])
         self.assertEqual(hue.zones("LOUD")[1][1], hue.zones("VERY LOUD")[1][1])
 
     def test_kitchen_is_at_full_brightness(self):
@@ -235,15 +237,45 @@ class WhatWarnActuallyApplies(unittest.TestCase):
         hue.FLASH_SECONDS = self._flash
 
     def _flashes(self):
-        hue.warn("LOUD", "test")
-        return {lid: st for lid, st in self.applied if st.get("alert") == "lselect"
-                and "xy" in st}
+        """The opening flash state per light.
 
-    def test_the_bedroom_flashes_purple_and_the_kitchen_red(self):
+        Keys on the FIRST colour write rather than on alert == "lselect": an
+        alternating zone drives itself and never sets that flag, so filtering on
+        it silently returned nothing for the bedroom.
+        """
+        hue.warn("LOUD", "test")
+        first = {}
+        for lid, st in self.applied:
+            if "xy" in st and st.get("alert") != "none" and lid not in first:
+                first[lid] = st
+        return first
+
+    def test_the_bedroom_opens_purple_and_the_kitchen_is_red(self):
         f = self._flashes()
         self.assertEqual(f["2"]["xy"], hue.XY_PURPLE)
         self.assertEqual(f["8"]["xy"], hue.XY_PURPLE)
         self.assertEqual(f["10"]["xy"], hue.XY_RED)
+
+    def test_the_bedroom_actually_alternates_during_the_flash(self):
+        # The palette being right proves nothing if the flash loop never uses
+        # the second colour.
+        hue.FLASH_SECONDS = 0.6
+        hue.ALTERNATE_SECONDS = 0.01
+        self.applied.clear()
+        hue.warn("LOUD", "test")
+        seen = [tuple(st["xy"]) for lid, st in self.applied
+                if lid == "2" and "xy" in st and st.get("alert") != "none"]
+        self.assertIn(tuple(hue.XY_PURPLE), seen)
+        self.assertIn(tuple(hue.XY_ORANGE), seen)
+
+    def test_the_kitchen_does_not_alternate(self):
+        hue.FLASH_SECONDS = 0.6
+        hue.ALTERNATE_SECONDS = 0.01
+        self.applied.clear()
+        hue.warn("LOUD", "test")
+        seen = {tuple(st["xy"]) for lid, st in self.applied
+                if lid == "10" and "xy" in st and st.get("alert") != "none"}
+        self.assertEqual(seen, {tuple(hue.XY_RED)})
 
     def test_the_bedroom_is_never_sent_red(self):
         for band in ("LOUD", "VERY LOUD", "UNKNOWN"):
