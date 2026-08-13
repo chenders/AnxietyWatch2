@@ -547,3 +547,20 @@ class NeighbouringAgenciesAreDistinguished(unittest.TestCase):
         for hex_code in ops.RETIRED_HEXES:
             self.assertNotIn(hex_code, ops.ROSTER,
                              f"{hex_code} is excluded but also on the roster")
+
+
+class EveryRosterTypeIsClassifiable(unittest.TestCase):
+    """A roster entry whose ICAO type the model cannot classify is worse than
+    no entry: the aircraft is positively identified and still scores nothing.
+
+    Caught for real — the audit removed "R172" as a non-designator, silently
+    un-scoring two sheriff's Cessnas that the roster names by tail.
+    """
+
+    def test_every_rostered_type_maps_to_an_airframe_class(self):
+        import panel_airframe_types as types
+        for hex_code, entry in ops.ROSTER.items():
+            self.assertIsNotNone(
+                types.classify(entry["type"]),
+                f"{entry['reg']} ({hex_code}) has type {entry['type']!r}, "
+                f"which classify() does not recognise")

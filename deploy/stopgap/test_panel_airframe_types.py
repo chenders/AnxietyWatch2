@@ -14,7 +14,7 @@ class Classification(unittest.TestCase):
             "B763": "heavy",      # 767 freighter — NOT the same as a 737
             "A320": "jet",
             "B77W": "heavy",
-            "E175": "jet",        # shares emitter category A3 with the 737 MAX
+            "E75L": "jet",        # shares emitter category A3 with the 737 MAX
             "B38M": "jet",
             "C172": "light",
             "PC12": "turboprop",   # reclassified 2026-08-13; see TurbopropsAreNotLightAircraft
@@ -24,7 +24,7 @@ class Classification(unittest.TestCase):
             "EC45": "rotorcraft",
             "B06": "rotorcraft",  # Clark County's OH-58C
             "C182": "light",      # both Portland Police aircraft
-            "R172": "light",
+            "C172": "light",  # Doc 8643 lists the R172 under C172
         }
         for code, expected in cases.items():
             self.assertEqual(types.classify(code), expected, code)
@@ -95,7 +95,7 @@ class TurbopropsAreNotLightAircraft(unittest.TestCase):
             self.assertEqual(types.classify(code), "turboprop", code)
 
     def test_piston_singles_are_still_light(self):
-        for code in ("C172", "C182", "SR22", "P28A", "PA28", "BE36"):
+        for code in ("C172", "C182", "SR22", "P28A", "P28S", "BE36"):
             self.assertEqual(types.classify(code), "light", code)
 
     def test_no_turboprop_leaked_into_the_light_set(self):

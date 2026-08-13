@@ -109,6 +109,11 @@ ALERT_REFRESH_SECONDS = 14.0
 # tolerates (it starts dropping commands past roughly ten per second).
 ALTERNATE_SECONDS = float(os.environ.get("HUE_ALTERNATE_SECONDS", "1.2"))
 
+# The all-clear tail: how long, and how bright. Dimmer than the warning, because
+# it is closing punctuation rather than an alert.
+ALL_CLEAR_SECONDS = float(os.environ.get("HUE_ALL_CLEAR_SECONDS", "3"))
+ALL_CLEAR_BRIGHTNESS = max(1, min(254, int(os.environ.get("HUE_ALL_CLEAR_BRIGHTNESS", "120"))))
+
 
 # The measured warning budget for a Providence departure is ~34 s, so a warning
 # is only useful inside roughly that window. Firing 3 minutes ahead trains the
@@ -131,6 +136,10 @@ XY_ORANGE = [0.5820, 0.3901]
 XY_CYAN = [0.17, 0.33]
 XY_AMBER = [0.53, 0.42]
 XY_RED = [0.675, 0.322]
+# All-clear. Shown briefly when the warning ends, so the lights stopping is a
+# statement rather than an absence -- "it has gone" reads differently from "the
+# timer ran out", and only one of those is information.
+XY_GREEN = [0.2100, 0.6800]
 
 # Brightness of the warning itself, on Hue's 1-254 scale. Raised from 160 to
 # 200 (+25%) at the owner's request after watching a live flash: the point is to
@@ -312,12 +321,17 @@ def zones(band):
     return out
 
 
-def warn(band, reason):
+def warn(band, reason, still_inbound=None):
     """Flash every zone, then put every light back exactly as it was.
 
     Restoration runs in a finally: a failure partway through must not leave a
     bedroom lit. If restoring a light fails, that is reported rather than
     swallowed, because the household needs to know a lamp was left on.
+
+    `still_inbound` is re-checked each tick. Without it the flash runs its full
+    duration regardless of what the aircraft actually did -- which the owner
+    saw: the panel cleared while the lights kept going. A warning that outlives
+    the thing it is warning about teaches people to ignore it.
     """
     plan = zones(band)
     captured, colours, errors = {}, {}, []
@@ -355,13 +369,19 @@ def warn(band, reason):
         print(f"panel-hue-warn: warned — {reason}", flush=True)
         # Sleep in slices, re-arming the breathe as it expires. A single long
         # sleep would leave the light solid for the tail of a long flash.
-        elapsed, step, since_refresh = 0.0, 0, 0.0
+        elapsed, step, since_refresh, cleared = 0.0, 0, 0.0, False
         while elapsed < FLASH_SECONDS:
             tick = min(ALTERNATE_SECONDS, FLASH_SECONDS - elapsed)
             time.sleep(tick)
             elapsed += tick
             since_refresh += tick
             if elapsed >= FLASH_SECONDS:
+                break
+            # Ended early because the aircraft is no longer inbound, not because
+            # the timer expired. Say so with the all-clear rather than just
+            # stopping.
+            if still_inbound is not None and not still_inbound():
+                cleared = True
                 break
             step += 1
             for light_id in captured:
@@ -376,6 +396,13 @@ def warn(band, reason):
                 for light_id in captured:
                     if len(colours[light_id][0]) == 1:
                         apply_state(light_id, {"alert": "lselect"})
+        if cleared:
+            for light_id in captured:
+                apply_state(light_id, {"on": True, "bri": ALL_CLEAR_BRIGHTNESS,
+                                       "xy": XY_GREEN, "alert": "none",
+                                       "transitiontime": 3})
+            print("panel-hue-warn: all clear — aircraft is past", flush=True)
+            time.sleep(ALL_CLEAR_SECONDS)
     finally:
         for light_id, state in captured.items():
             # Cancel the alert explicitly: it outlives a plain state write.
@@ -431,8 +458,28 @@ def main():
                                or report.get("hex"))
                     if not testing:
                         last_warned = now
+                    watched = report.get("hex")
+
+                    def still_inbound(_hex=watched, _testing=testing):
+                        """Is that same aircraft still forecast to pass?
+
+                        A test aircraft is injected once and never updated, so
+                        it would 'clear' on the very first tick; tests hold for
+                        the full duration so they demonstrate the real thing.
+                        """
+                        if _testing:
+                            return True
+                        try:
+                            with STATUS_JSON.open() as fresh:
+                                current = json.load(fresh)
+                        except (OSError, ValueError):
+                            return True   # unknown is not cleared
+                        return any((r.get("hex") == _hex)
+                                   for r in (current.get("adsb_predictions") or []))
+
                     errors += warn(band, f"{subject} {band} in {left:.0f}s"
-                                         + (" [TEST — cooldown untouched]" if testing else ""))
+                                         + (" [TEST — cooldown untouched]" if testing else ""),
+                                   still_inbound=still_inbound)
                     if testing:
                         last_test = now
 

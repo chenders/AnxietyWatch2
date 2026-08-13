@@ -207,9 +207,11 @@ ROSTER = {
     # --- Neighbouring agencies, so their flights are not misattributed ---
     # ACE9D0 and A9ED9D below are not theory: both appeared in the 14-day
     # Aurora sample pulled 2026-08-12, with exactly these addresses.
-    "A76288": {"reg": "N575RW", "type": "R172", "model": "Cessna R172K Hawk XP",
+    # Doc 8643 lists the R172 under C172; "R172" is not a designator and would
+    # classify as unknown, silently un-scoring a sheriff's aircraft.
+    "A76288": {"reg": "N575RW", "type": "C172", "model": "Cessna R172K Hawk XP",
                "operator": "WASHINGTON_CO_SO"},
-    "AC9869": {"reg": "N910TW", "type": "R172", "model": "Cessna R172K",
+    "AC9869": {"reg": "N910TW", "type": "C172", "model": "Cessna R172K",
                "operator": "MULTNOMAH_CO_SO"},
     "ACE9D0": {"reg": "N931EM", "type": "C182", "model": "Cessna 182P",
                "operator": "CLACKAMAS_CO_SO"},

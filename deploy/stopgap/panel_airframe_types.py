@@ -82,7 +82,7 @@ LIGHT = frozenset({
     # Piston and turboprop singles and light twins.
     "AA5", "AC11", "BE33", "BE35", "BE36", "BE58", "C150", "C152", "C162", "C172", "C177", "C180", "C182", "C185",
     "C206", "C210", "C310", "C337", "C82S", "DHC2", "C72R", "DA40", "DA42", "DV20",
-    "GA5C", "GLST", "M20P", "P28A", "P28B", "P28R", "P28S", "P32R", "PA12", "PA18", "PA22", "PA24", "PA31",
+    "GLST", "M20P", "P28A", "P28B", "P28R", "P28S", "P32R", "PA12", "PA18", "PA22", "PA24", "PA31",
     "PA32", "PA34", "PA44", "PA46", "RV4", "RV6",
     "RV7", "RV8", "RV9", "RV10", "RV12", "RV14", "S22T", "SR20", "SR22",
     "T206", 

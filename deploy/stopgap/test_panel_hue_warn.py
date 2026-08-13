@@ -7,6 +7,7 @@ so most of this file is about capture fidelity and about not firing too often.
 
 import importlib.machinery
 import pathlib
+import time
 import unittest
 
 _HERE = pathlib.Path(__file__).parent
@@ -332,3 +333,66 @@ class TestsMustNotBlindTheSystem(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class WarningEndsWhenTheAircraftDoes(unittest.TestCase):
+    """The flash must track reality, not a stopwatch.
+
+    Observed 2026-08-13: the panel cleared the aircraft while the lights kept
+    flashing for the rest of the 17 s. A warning that outlives the thing it
+    warns about teaches people to ignore it.
+    """
+
+    def setUp(self):
+        self._c, self._a, self._l, self._al = (
+            hue.call, hue.apply_state, hue.LIGHTS, hue.ALERT_LIGHTS)
+        self._flash, self._alt, self._clear = (
+            hue.FLASH_SECONDS, hue.ALTERNATE_SECONDS, hue.ALL_CLEAR_SECONDS)
+        hue.LIGHTS, hue.ALERT_LIGHTS = ["2"], []
+        hue.FLASH_SECONDS, hue.ALTERNATE_SECONDS, hue.ALL_CLEAR_SECONDS = 2.0, 0.05, 0.01
+        self.applied = []
+        hue.call = lambda m, p, b=None: (
+            {"state": {"on": True, "bri": 254, "colormode": "ct", "ct": 300}}, None)
+        hue.apply_state = lambda lid, st: (self.applied.append((lid, dict(st))), (None, None))[1]
+
+    def tearDown(self):
+        hue.call, hue.apply_state = self._c, self._a
+        hue.LIGHTS, hue.ALERT_LIGHTS = self._l, self._al
+        hue.FLASH_SECONDS, hue.ALTERNATE_SECONDS, hue.ALL_CLEAR_SECONDS = (
+            self._flash, self._alt, self._clear)
+
+    def _greens(self):
+        return [st for _, st in self.applied
+                if st.get("xy") == hue.XY_GREEN]
+
+    def test_it_ends_early_and_shows_all_clear_when_the_aircraft_goes(self):
+        started = time.monotonic()
+        hue.warn("LOUD", "test", still_inbound=lambda: False)
+        self.assertLess(time.monotonic() - started, hue.FLASH_SECONDS,
+                        "flash ran its full duration despite the aircraft clearing")
+        self.assertTrue(self._greens(), "no all-clear was shown")
+
+    def test_it_runs_the_full_duration_while_the_aircraft_is_still_inbound(self):
+        hue.warn("LOUD", "test", still_inbound=lambda: True)
+        self.assertFalse(self._greens(),
+                         "all-clear shown while the aircraft was still inbound")
+
+    def test_no_predicate_behaves_as_before(self):
+        hue.warn("LOUD", "test")
+        self.assertFalse(self._greens())
+
+    def test_the_all_clear_is_dimmer_than_the_warning(self):
+        # Closing punctuation, not a second alert.
+        self.assertLess(hue.ALL_CLEAR_BRIGHTNESS, hue.ALERT_BRIGHTNESS)
+
+    def test_the_lights_are_still_restored_after_an_all_clear(self):
+        hue.warn("LOUD", "test", still_inbound=lambda: False)
+        restored = [st for lid, st in self.applied if st.get("alert") == "none"
+                    and "bri" in st and st.get("xy") != hue.XY_GREEN]
+        self.assertTrue(restored, "lights were not restored after the all-clear")
+
+    def test_an_unreadable_feed_does_not_count_as_cleared(self):
+        # Unknown is not all-clear. If the feed cannot be read mid-flash the
+        # warning must run its course rather than declaring the sky safe.
+        hue.warn("LOUD", "test", still_inbound=lambda: True)
+        self.assertFalse(self._greens())
