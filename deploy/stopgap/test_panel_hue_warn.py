@@ -396,3 +396,53 @@ class WarningEndsWhenTheAircraftDoes(unittest.TestCase):
         # warning must run its course rather than declaring the sky safe.
         hue.warn("LOUD", "test", still_inbound=lambda: True)
         self.assertFalse(self._greens())
+
+
+class HeardWithoutAPosition(unittest.TestCase):
+    """The N826LF case. A Life Flight helicopter heard for two minutes at
+    -33 dBm, never located, and therefore never warned about."""
+
+    HELI = {"hex": "AB4825", "reg": "N826LF", "operator_kind": "AIR_AMBULANCE",
+            "state": "HEARD_NO_POSITION"}
+    POLICE = {"hex": "A1D296", "reg": "N2163J", "operator_kind": "POLICE",
+              "state": "HEARD_NO_POSITION"}
+
+    def test_an_unlocated_air_ambulance_is_chosen(self):
+        picked = hue.choose_unlocated({"adsb_heard_unlocated": [self.HELI]})
+        self.assertIsNotNone(picked)
+        self.assertEqual(picked["reg"], "N826LF")
+
+    def test_police_are_not_chosen_by_default(self):
+        """They loiter here for hours. Firing on every unlocated police contact
+        would mean near-continuous flashing, which trains the eye to ignore the
+        light -- costing more than it buys."""
+        self.assertIsNone(hue.choose_unlocated({"adsb_heard_unlocated": [self.POLICE]}))
+
+    def test_an_air_ambulance_behind_a_police_contact_is_still_found(self):
+        picked = hue.choose_unlocated({"adsb_heard_unlocated": [self.POLICE, self.HELI]})
+        self.assertEqual(picked["reg"], "N826LF")
+
+    def test_an_empty_or_absent_feed_chooses_nothing(self):
+        self.assertIsNone(hue.choose_unlocated({}))
+        self.assertIsNone(hue.choose_unlocated({"adsb_heard_unlocated": []}))
+        self.assertIsNone(hue.choose_unlocated({"adsb_heard_unlocated": None}))
+
+    def test_a_missing_operator_kind_chooses_nothing(self):
+        # Never coerced to a default. An entry that does not say what it is
+        # does not get to fire a light.
+        self.assertIsNone(hue.choose_unlocated(
+            {"adsb_heard_unlocated": [{"hex": "AB4825"}]}))
+        self.assertIsNone(hue.choose_unlocated(
+            {"adsb_heard_unlocated": [{"hex": "AB4825", "operator_kind": None}]}))
+
+    def test_the_kind_match_is_case_insensitive(self):
+        entry = dict(self.HELI, operator_kind="air_ambulance")
+        self.assertIsNotNone(hue.choose_unlocated({"adsb_heard_unlocated": [entry]}))
+
+    def test_it_carries_no_countdown_to_invent(self):
+        # choose() returns (report, band, seconds). This returns a bare entry
+        # precisely so no caller can read a time off it.
+        picked = hue.choose_unlocated({"adsb_heard_unlocated": [self.HELI]})
+        self.assertNotIsInstance(picked, tuple)
+        for forbidden in ("at_epoch", "eta_seconds", "prediction", "distance_km"):
+            self.assertNotIn(forbidden, picked)
