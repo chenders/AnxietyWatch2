@@ -17,6 +17,7 @@ import importlib.machinery
 import tempfile
 import os
 import pathlib
+import math
 import unittest
 
 # The real station coordinate lives only in the systemd drop-in on the Pi, never
@@ -81,17 +82,33 @@ class LandingIsNotAFlyover(unittest.TestCase):
 
 
 class ThrustStateDominates(unittest.TestCase):
-    """~15 dB between takeoff and idle. Ignoring it was the largest error."""
+    """Thrust state matters, but by less than this model once claimed.
+
+    Superseded 2026-08-13. These asserted a ~15 dB climb-to-descent spread for
+    jets, invented along with the source levels. Published NPD data puts
+    departure above approach at a given distance by roughly 3-8 dB. The old
+    assertion was not merely imprecise -- it was why a distant departing jet
+    could outrank a light aircraft passing directly overhead.
+    """
 
     def test_climb_is_louder_than_descent_at_equal_range(self):
         climb = adsb.noise_index(3000.0, "jet", "CLIMB")
         descent = adsb.noise_index(3000.0, "jet", "DESCENT")
-        self.assertGreater(climb - descent, 14.0)
+        self.assertGreater(climb - descent, 3.0)
+        self.assertLessEqual(climb - descent, 8.0)
 
-    def test_departing_jet_outranks_nearer_light_aircraft(self):
-        jet = adsb.noise_index(4000.0, "jet", "CLIMB")
-        light = adsb.noise_index(1000.0, "light", "DESCENT")
-        self.assertGreater(jet, light)
+    def test_every_fixed_wing_class_is_louder_climbing_than_descending(self):
+        # Replaces test_departing_jet_outranks_nearer_light_aircraft, which
+        # compared a jet at 4 km against a light aircraft at 1 km. That
+        # ordering flipped under the corrected phase spread and per-class
+        # absorption, and it was removed rather than inverted: the two now sit
+        # ~6 dB apart, the jet row carries +/-5-8 dB error bars because no ANP
+        # data was obtainable for it, and a model cannot assert an ordering
+        # narrower than its own uncertainty. Rotorcraft are excluded here --
+        # they invert, and have their own test.
+        for klass in ("jet", "heavy", "turboprop", "light"):
+            self.assertGreater(adsb.noise_index(2000.0, klass, "CLIMB"),
+                               adsb.noise_index(2000.0, klass, "DESCENT"), klass)
 
     def test_phase_boundaries(self):
         self.assertEqual(adsb.thrust_phase(2000), "CLIMB")
@@ -123,9 +140,15 @@ class UnknownIsNotOK(unittest.TestCase):
         self.assertIn("vertical rate", p["reasons"][0])
 
     def test_distant_negative_index_is_scored_not_unknown(self):
-        """The relative index goes negative far out; truthiness must not read
-        that as unscorable."""
-        self.assertLess(adsb.noise_index(40000.0, "jet", "CLIMB"), 0.0)
+        """The index goes negative far out; truthiness must not read that as
+        unscorable.
+
+        The range moved from 40 km to 60 km on 2026-08-13. Under the two-band
+        absorption model the low-frequency component survives much further, so
+        40 km now scores about +1.5 dBA rather than negative -- which is the
+        point of the model, not a regression.
+        """
+        self.assertLess(adsb.noise_index(60000.0, "jet", "CLIMB"), 0.0)
         p = adsb.predict_pass(45.90, -122.10, 30000, "A3", 450, 270, 0, 1.0)
         self.assertEqual(p["risk"], "LOW")
         self.assertIsNotNone(p["noise_index"])
@@ -317,11 +340,14 @@ class ForecastList(unittest.TestCase):
 class NeverArmed(unittest.TestCase):
     def test_model_note_disclaims_measured_sound(self):
         self.assertIn("no measured sound", adsb.MODEL_NOTE)
+        # Still unvalidated even though the source levels are now sourced:
+        # nothing has ever been checked against a microphone at this site.
         self.assertIn("unvalidated", adsb.MODEL_NOTE)
 
+    def test_model_note_states_its_error_bars_and_ambient(self):
+        self.assertIn("dBA", adsb.MODEL_NOTE)
+        self.assertIn("+/-", adsb.MODEL_NOTE)
 
-if __name__ == "__main__":
-    unittest.main()
 
 
 class RosterRescuesUnscorableAircraft(unittest.TestCase):
@@ -512,9 +538,26 @@ class TurbopropSourceLevel(unittest.TestCase):
         light = adsb.noise_index(slant, "light", "LEVEL")
         turbo = adsb.noise_index(slant, "turboprop", "LEVEL")
         self.assertGreater(turbo, light)
-        # And it must clear the AUDIBLE threshold, which as `light` it did not.
+        # It must clear the AUDIBLE floor, which as `light` it did not.
         self.assertGreaterEqual(turbo, adsb.POSSIBLE_INDEX)
-        self.assertLess(light, adsb.POSSIBLE_INDEX)
+        # It must also now read LOUD, not merely audible. The owner reported it
+        # as "at least moderate" from indoors, and a Caravan-class turboprop at
+        # 1.4 km is 22 dB above a 40 dBA ambient.
+        self.assertEqual(adsb.loudness_band(turbo), "LOUD")
+
+    def test_a_light_aircraft_at_that_range_is_audible_not_faint(self):
+        """Superseded assertion, kept as its own test because it was wrong in a
+        way that mattered.
+
+        This case previously asserted `light < POSSIBLE_INDEX` — that a piston
+        single 1.4 km away is inaudible. That is the same miscalibration the
+        owner hit on 2026-08-13 from the other direction, when a Cessna 172
+        passing 0.89 km away scored 63, was labelled FAINT, and was plainly
+        audible. With the floor at ambient+5 rather than a flat 68, it reads
+        AUDIBLE, which is what it is.
+        """
+        self.assertEqual(adsb.loudness_band(adsb.noise_index(1400.0, "light", "LEVEL")),
+                         "AUDIBLE")
 
 
 class HeardWithoutPosition(unittest.TestCase):
@@ -584,3 +627,134 @@ class HeardWithoutPosition(unittest.TestCase):
         fresh = dict(self.LIFE_FLIGHT, hex="a4c3eb", seen=2.0)
         out = adsb.heard_unlocated([stale, fresh])
         self.assertEqual([e["hex"] for e in out], ["A4C3EB", "AB4825"])
+
+
+class RecalibratedAgainstPublishedData(unittest.TestCase):
+    """Locks in the 2026-08-13 recalibration.
+
+    Every source level before that date was invented. These assert the parts
+    the research actually established, so a later reader cannot quietly revert
+    to the guessed table.
+    """
+
+    def test_a_helicopter_is_loudest_on_approach(self):
+        """The inversion, and the single most consequential fix here.
+
+        Descent was modelled as the QUIETEST rotorcraft phase. Certification
+        data shows approach is the loudest, by +5.4 EPNdB on a Bell 407 and
+        +8.7-9.2 on an EC135 -- blade-vortex interaction, the "blade slap" of a
+        helicopter descending at 6-12 degrees. Life Flight arrivals at the
+        Providence pad descend over this house, so the old model was quietest
+        exactly where it needed to be loudest.
+        """
+        level = adsb.SOURCE_LEVELS["rotorcraft"]["LEVEL"]
+        climb = adsb.SOURCE_LEVELS["rotorcraft"]["CLIMB"]
+        descent = adsb.SOURCE_LEVELS["rotorcraft"]["DESCENT"]
+        self.assertGreater(descent, level)
+        self.assertGreater(descent, climb)
+        self.assertAlmostEqual(descent - level, 6.0, places=1)
+        self.assertAlmostEqual(climb - level, 3.0, places=1)
+
+    def test_rotorcraft_is_the_only_class_that_inverts(self):
+        for klass in ("heavy", "jet", "turboprop", "light"):
+            levels = adsb.SOURCE_LEVELS[klass]
+            self.assertGreater(levels["CLIMB"], levels["DESCENT"], klass)
+
+    def test_thresholds_track_the_assumed_ambient(self):
+        # Bands are levels above ambient, not absolute constants, so a quieter
+        # site is one env var away rather than four edited numbers.
+        self.assertAlmostEqual(adsb.POSSIBLE_INDEX - adsb.AMBIENT_DBA, 5.0)
+        self.assertAlmostEqual(adsb.LIKELY_INDEX - adsb.AMBIENT_DBA, 15.0)
+        self.assertAlmostEqual(adsb.VERY_LOUD_INDEX - adsb.AMBIENT_DBA, 30.0)
+
+    def test_the_audible_floor_is_near_ambient_not_far_above_it(self):
+        # The old floor of 68 sat 28 dB above a 40 dBA ambient, which is why a
+        # sub-kilometre Cessna pass was labelled FAINT.
+        self.assertLess(adsb.POSSIBLE_INDEX - adsb.AMBIENT_DBA, 10.0)
+
+    def test_jets_fade_with_distance_faster_than_rotorcraft(self):
+        """Jets carry more high-frequency energy, which the air removes first.
+
+        Asserted as behaviour rather than as a coefficient: a single absorption
+        rate was replaced by a two-band model on 2026-08-13, and a test tied to
+        one constant would not have survived that.
+        """
+        def fade(klass):
+            return (adsb.noise_index(1000.0, klass, "LEVEL")
+                    - adsb.noise_index(6000.0, klass, "LEVEL"))
+        self.assertGreater(fade("jet"), fade("rotorcraft"))
+
+    def test_every_class_has_a_spectral_split(self):
+        self.assertEqual(set(adsb.LOW_BAND_FRACTION), set(adsb.SOURCE_LEVELS))
+
+    def test_rotor_noise_is_the_most_low_frequency(self):
+        # Blade slap carries; it is the reason a helicopter is heard before it
+        # is seen. Rotorcraft must hold the largest low-band share.
+        self.assertEqual(max(adsb.LOW_BAND_FRACTION,
+                             key=lambda k: adsb.LOW_BAND_FRACTION[k]), "rotorcraft")
+
+    def test_band_fractions_are_proportions(self):
+        for klass, f in adsb.LOW_BAND_FRACTION.items():
+            self.assertTrue(0.0 < f < 1.0, f"{klass}={f}")
+
+    def test_bands_are_summed_in_energy_not_in_decibels(self):
+        """Two incoherent bands combine in energy, never by adding decibels.
+
+        Adding dB would give roughly 160 here instead of 82. The invariant that
+        catches it without restating the arithmetic: an energy sum always lands
+        between the louder band alone and 3.01 dB above it, that ceiling being
+        the case where both bands are equal.
+        """
+        import math as _m
+        klass, phase, distance = "jet", "LEVEL", 300.0
+        spread = (adsb.SOURCE_LEVELS[klass][phase]
+                  - 20.0 * _m.log10(distance / 300.0))
+        f = adsb.LOW_BAND_FRACTION[klass]
+        low = spread + 10.0 * _m.log10(f) - adsb.LOW_BAND_DB_PER_M * distance
+        high = spread + 10.0 * _m.log10(1 - f) - adsb.HIGH_BAND_DB_PER_M * distance
+        total = adsb.noise_index(distance, klass, phase)
+        self.assertGreaterEqual(total, max(low, high))
+        self.assertLessEqual(total, max(low, high) + 3.011)
+
+    def test_a_descending_heavy_is_still_audible_at_five_km(self):
+        """The check that caught the single-coefficient error.
+
+        4 dB/km compounded to 37 dB over 9.3 km and rated a descending heavy at
+        17.7 dBA -- 22 dB below ambient, i.e. silent. Airliners at that range
+        are plainly audible, and the model must not claim otherwise.
+        """
+        self.assertGreater(adsb.noise_index(5000.0, "heavy", "DESCENT"),
+                           adsb.AMBIENT_DBA)
+
+    def test_but_it_does_fall_below_ambient_eventually(self):
+        # The opposite failure: absorption too low means everything in the
+        # county reads audible and the list stops meaning anything.
+        self.assertLess(adsb.noise_index(20000.0, "heavy", "DESCENT"),
+                        adsb.AMBIENT_DBA)
+
+    def test_the_c172_that_read_faint_at_890_m_now_reads_audible(self):
+        """The owner's own report, 2026-08-13.
+
+        N7353T, a Cessna 172, predicted to pass 0.89 km away at 3,105 ft. It
+        scored 63.0 and the panel called it FAINT.
+        """
+        slant = math.hypot(890.0, (3105 - 200) * 0.3048)
+        band = adsb.loudness_band(adsb.noise_index(slant, "light", "LEVEL"))
+        self.assertEqual(band, "AUDIBLE")
+
+    def test_a_life_flight_arrival_over_the_house_reads_loud(self):
+        """1 km out at 600 ft, descending to the Providence pad."""
+        slant = math.hypot(1000.0, (600 - 200) * 0.3048)
+        band = adsb.loudness_band(adsb.noise_index(slant, "rotorcraft", "DESCENT"))
+        self.assertEqual(band, "LOUD")
+
+    def test_source_levels_are_plausible_as_dba_not_as_the_old_scale(self):
+        # The old table ran to 105 "dB relative to an unvalidated reference".
+        # These are outdoor LAmax at 300 m and nothing here is above 95 dBA.
+        for klass, levels in adsb.SOURCE_LEVELS.items():
+            for phase, value in levels.items():
+                self.assertTrue(60.0 <= value <= 95.0, f"{klass}/{phase}={value}")
+
+
+if __name__ == "__main__":
+    unittest.main()

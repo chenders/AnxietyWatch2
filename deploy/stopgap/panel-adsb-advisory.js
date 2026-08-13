@@ -134,10 +134,12 @@
       + `${unscored.length} FURTHER AIRCRAFT NOT SCORED — ${esc(unscored[0].reason)}</div>`;
   }
 
-  /* The radar canvas hardcodes a "NNdB" suffix on every blip. The number behind
-     it is a relative index against an unvalidated reference, not a sound
-     pressure level, and labelling it dB is the single most misleading thing on
-     the screen. The canvas is drawn imperatively, so the only way to correct it
+  /* The radar canvas hardcodes a "NNdB" suffix on every blip. Since the
+     2026-08-13 recalibration that number IS an estimated outdoor dBA rather
+     than an index against an invented reference -- but it carries +/-5-10 dB,
+     so rendering it as a crisp two-digit dB figure still overstates what is
+     known. The suffix stays stripped, for a better reason than before.
+     The canvas is drawn imperatively, so the only way to correct it
      without forking the whole radar is to intercept fillText for the duration
      of the call. Restored in a finally so a throw cannot leave it patched. */
   const ctxProto = CanvasRenderingContext2D.prototype;
@@ -167,8 +169,8 @@
     ctxProto.fillText = function (text, x, y, maxWidth) {
       let fixed = text;
       if (typeof text === "string") {
-        /* The canvas hardcodes a "NNdB" suffix. The number is a relative index
-           against an unvalidated reference, not a sound pressure level. */
+        /* The canvas hardcodes a "NNdB" suffix. The figure is an estimated
+           dBA with +/-5-10 dB error bars -- shown as a rank, not a reading. */
         fixed = text.replace(/\s*(-?\d+)dB\b/, " ·$1");
         /* Prefix the glyph when the label leads with an identifier we know.
            Matching the leading token only, so a substring inside some other

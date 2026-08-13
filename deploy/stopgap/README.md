@@ -194,16 +194,21 @@ An RTL-SDR dongle feeds `dump1090-mutability`; `panel-adsb-status` turns
 `NOT ARMED` on every frame.
 
 **It forecasts proximity, not sound.** Nothing here has ever heard an aeroplane.
-`noise_index` is a *relative* level in dB against an unvalidated reference:
-differences rank aircraft, the absolute number means nothing, and it is never
-rendered as a sound pressure level. There is no microphone, so there is no
-measured indoor loudness and no evidence about what actually startles a cat.
+Since 2026-08-13 `noise_index` is an estimated *outdoor A-weighted LAmax in
+dBA* at the station, anchored to published certification and FAA AEDT data
+rather than to the invented scale that preceded it. It carries +/-5-10 dB
+absolute, so it is rendered as a band and never as a number. Ranking between
+types is much tighter, roughly +/-2-3 dB. There is still no microphone, so
+there is no measured indoor loudness and no evidence about what startles a cat.
+
+Bands are set relative to an assumed 40 dBA suburban ambient
+(`ADSB_AMBIENT_DBA`), not as absolute constants.
 
 | | |
 |---|---|
 | horizon | 180 s — terminal-area traffic turns, and constant heading is fiction past that |
-| `LIKELY` | relative index ≥ 78 at closest airborne approach |
-| `POSSIBLE` | relative index ≥ 68 |
+| `LIKELY` | ≥ ambient+15 dBA (55) at closest airborne approach — intrusive |
+| `POSSIBLE` | ≥ ambient+5 dBA (45) — reliably detectable |
 | ranking | by predicted loudness, **not** by who arrives first |
 | unscorable | `UNKNOWN`, carrying no numbers — never `LOW` |
 

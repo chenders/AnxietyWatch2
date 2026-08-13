@@ -71,32 +71,107 @@ OVERHEAD_CEILING_FT = 5_000.0
 NEAR_GROUND_M = 4_000.0
 NEAR_CEILING_FT = 8_000.0
 
-# Relative source levels at 300 m, in dB *relative to an unvalidated reference*.
-# Differences between these are meaningful for ranking; the absolute numbers are
-# not measured and must never be rendered as a sound pressure level.
-# Thrust state is the dominant term: a narrowbody at takeoff thrust is roughly
-# 15 dB louder than the same airframe at idle on final. ADS-B gives us that for
-# free in vert_rate, and ignoring it was the largest error in the first model.
+# Source levels: outdoor A-weighted LAmax at 300 m slant, in dBA.
+#
+# Replaces the invented "relative to an unvalidated reference" scale that
+# shipped until 2026-08-13. These are anchored to published data -- see
+# `aircraft noise prediction research report.md`. The reference distance is a
+# lucky fit: FAA AEDT publishes LAmax at 1,000 ft = 305 m, within 0.15 dB of
+# the 300 m this model already used, so those figures drop in unconverted.
+#
+# Still estimates, with honest error bars from the report: +/-6-10 dB absolute
+# for pistons on generic defaults, +/-5-7 dB for helicopters, +/-5-8 dB for
+# jets without ANP/NPD data. Ranking between types is much tighter, roughly
+# +/-2-3 dB. So the panel prints a band and never a number.
 SOURCE_LEVELS = {
-    "heavy": {"CLIMB": 105.0, "LEVEL": 95.0, "DESCENT": 92.0},
-    "jet": {"CLIMB": 100.0, "LEVEL": 88.0, "DESCENT": 85.0},
-    # Turboprops sit between a jet and a piston single, and were previously
-    # grouped with "light" -- which cost a real warning on 2026-08-13, when a
-    # TBM 850 passed 1.07 km overhead at 2,075 ft, was rated FAINT, and the
-    # owner reported it as at least moderate. A 700 hp PT6 driving a propeller
-    # is not a Cessna 172, and the propeller is why it is closer to a jet on
-    # approach than the shaft power alone suggests.
-    "turboprop": {"CLIMB": 94.0, "LEVEL": 86.0, "DESCENT": 83.0},
-    "light": {"CLIMB": 85.0, "LEVEL": 78.0, "DESCENT": 75.0},
-    "rotorcraft": {"CLIMB": 92.0, "LEVEL": 92.0, "DESCENT": 90.0},
+    # UNSOURCED. The report could not supply LAmax anchors for airliners
+    # without the ANP/NPD dataset, which is access-restricted (EU Reg.
+    # 598/2014). These keep the old ranking on the new dBA scale, with the
+    # phase spread corrected. Replace from ANP when it is obtained -- until
+    # then these are the weakest rows in the table.
+    #
+    # The spread is the fix that is sourced: the old 13-15 dB climb-to-descent
+    # gap was far too wide. Departure LAmax exceeds approach LAmax at a given
+    # distance by roughly 3-8 dB, not 15.
+    "heavy": {"CLIMB": 91.0, "LEVEL": 87.0, "DESCENT": 85.0},
+    "jet": {"CLIMB": 87.0, "LEVEL": 83.0, "DESCENT": 81.0},
+    # AEDT CNA208 (Cessna Caravan): 77.5 dBA LAmax at 1,000 ft. The TBM 850
+    # that was rated FAINT on 2026-08-13 while the owner heard it clearly is a
+    # 700 hp PT6 single -- Caravan class, not Cessna 172 class. Under these
+    # numbers that same pass reads LOUD.
+    "turboprop": {"CLIMB": 80.5, "LEVEL": 77.5, "DESCENT": 75.5},
+    # AEDT GASEPV (variable-pitch piston single, the C182/PA32 class): 69.0 dBA
+    # at 1,000 ft. Chosen over GASEPF (fixed-pitch, 63.4) because "light" here
+    # spans both and under-calling is the failure that matters.
+    "light": {"CLIMB": 72.0, "LEVEL": 69.0, "DESCENT": 67.0},
+    # Derived from the one field measurement available for any of the four
+    # helicopters that matter here: NPS report GRCA-07-05 measured a Bell 407
+    # level overflight at 77.5 dBA LAmax at 400 ft AGL, which converts to
+    # 69.3 dBA at 300 m under this model's own propagation.
+    #
+    # The phase relationship was INVERTED before. Descent was modelled as the
+    # quietest rotorcraft phase; certification data shows approach is the
+    # LOUDEST, by +5.4 EPNdB (B407), +8.7-9.2 (EC135), +5.6 (H145). The cause
+    # is blade-vortex interaction -- the "blade slap" of a helicopter on
+    # approach, strongest in 6-12 degree descents at 60-80 kt. Applying the
+    # report's recommendation of APP = FO+6, TO = FO+3, level = FO.
+    #
+    # This matters more here than anywhere else in the table: Life Flight
+    # arrivals at the Providence pad are descending over this house.
+    "rotorcraft": {"CLIMB": 72.3, "LEVEL": 69.3, "DESCENT": 75.3},
 }
-ATMOSPHERIC_DB_PER_M = 0.002
 
-# One set of thresholds drives both the risk verdict and the word the panel
-# prints, so the list can never say LOUD about something rated POSSIBLE.
-VERY_LOUD_INDEX = 88.0
-LIKELY_INDEX = 78.0
-POSSIBLE_INDEX = 68.0
+# Atmospheric absorption, as two bands summed in energy.
+#
+# A single coefficient cannot work across a 40x distance range, and trying it
+# produced an obvious absurdity on the first live run: a heavy descending 9.3 km
+# out scored 17.7 dBA, twenty-two decibels BELOW ambient, i.e. silent. Airliners
+# at 9 km are plainly audible.
+#
+# The cause is that absorption is strongly frequency-dependent. High frequencies
+# are absorbed far faster than low ones, so a receding aircraft's spectrum
+# shifts downward and the surviving low-frequency energy then attenuates slowly.
+# Any fixed rate is therefore either too low near the source or far too high in
+# the far field, and 4 dB/km compounds to 37 dB over 9.3 km.
+#
+# Two bands reproduce that shift for a few lines of arithmetic: ~500 Hz at
+# 1 dB/km and ~2-4 kHz at 10 dB/km, recombined as energy. The high band is gone
+# by a few kilometres, which is exactly the real behaviour.
+LOW_BAND_DB_PER_M = 0.001
+HIGH_BAND_DB_PER_M = 0.010
+
+# Fraction of A-weighted source energy in the low band. Rotor noise is
+# low-frequency dominated -- blade slap is felt as much as heard, and carries a
+# long way. Jets carry proportionally more high-frequency energy, which is why
+# they fade with distance faster than a helicopter of the same source level.
+LOW_BAND_FRACTION = {
+    "heavy": 0.50,
+    "jet": 0.50,
+    "turboprop": 0.65,
+    "light": 0.65,
+    "rotorcraft": 0.80,
+}
+
+# Outdoor ambient assumed for this location: low-density suburban, ~40 dBA.
+# Every threshold below is derived from it, so a quieter or noisier site is one
+# constant away rather than four. Report it alongside any score.
+AMBIENT_DBA = float(os.environ.get("ADSB_AMBIENT_DBA", "40"))
+
+# Bands as levels above ambient, not absolute constants.
+#
+# The old thresholds (88/78/68) put the audible floor 28 dB above ambient,
+# which is why a Cessna 172 passing 0.89 km away scored 63 and was labelled
+# FAINT. Detectability practice treats an aircraft as audible at roughly 3-4 dB
+# above ambient; FAR Part 36 requires 3 dB per third-octave for a measurement
+# to count at all. +5 is a conservative floor that allows for masking.
+#
+# LOUD begins at ambient+15, the region where a single event interferes with
+# speech and where sleep-disturbance onset sits: WHO puts the indoor no-effect
+# maximum at 42 dBA and asks that events above 45 dBA indoors be limited, which
+# through an open window (~15 dB) is about 57-60 dBA outdoors.
+VERY_LOUD_INDEX = AMBIENT_DBA + 30.0   # 70 dBA — dominant single events
+LIKELY_INDEX = AMBIENT_DBA + 15.0      # 55 dBA — intrusive
+POSSIBLE_INDEX = AMBIENT_DBA + 5.0     # 45 dBA — reliably detectable
 
 
 def loudness_band(index):
@@ -268,10 +343,15 @@ def thrust_phase(vertical_rate_fpm):
 
 
 def noise_index(slant_m, klass, phase):
-    """Relative received level in dB against an unvalidated reference.
+    """Estimated outdoor A-weighted LAmax at the station, in dBA.
 
-    Only *differences* carry meaning. This is never a sound pressure level and
-    must not be rendered as one until a calibrated indoor microphone exists.
+    Spherical spreading from a 300 m reference plus per-class atmospheric
+    absorption. Spreading is exact for a point source at these ranges; the
+    absorption term is a single effective coefficient standing in for a
+    frequency-resolved calculation, which costs a few dB at the far end.
+
+    Absolute accuracy is roughly +/-5 dB at best and +/-10 dB for pistons on
+    generic defaults, so this is rendered as a band and never as a number.
     Returns None when class or phase is unknown, because a ranking built on a
     guessed source level would silently prefer the wrong aircraft.
     """
@@ -280,7 +360,15 @@ def noise_index(slant_m, klass, phase):
     source = SOURCE_LEVELS[klass][phase]
     distance = max(30.0, slant_m)
     divergence = 20.0 * math.log10(distance / 300.0)
-    return source - divergence - ATMOSPHERIC_DB_PER_M * distance
+    spread = source - divergence
+
+    # Split the source energy, attenuate each band at its own rate, and sum in
+    # energy rather than in decibels -- adding dB directly would be wrong by up
+    # to 3 dB where the bands are comparable.
+    low_fraction = LOW_BAND_FRACTION[klass]
+    low = spread + 10.0 * math.log10(low_fraction) - LOW_BAND_DB_PER_M * distance
+    high = spread + 10.0 * math.log10(1.0 - low_fraction) - HIGH_BAND_DB_PER_M * distance
+    return 10.0 * math.log10(10.0 ** (low / 10.0) + 10.0 ** (high / 10.0))
 
 
 def nearest_airport(lat, lon):
@@ -345,7 +433,8 @@ def unpredictable(reason, proximity=None, ground_m=None, altitude_ft=None, eta_s
 
 MODEL_NOTE = (
     "constant heading over a 3 min horizon, terminated at the runway; "
-    "relative loudness only; no measured sound; unvalidated"
+    f"estimated outdoor dBA against a {AMBIENT_DBA:.0f} dBA ambient, from "
+    "published certification and AEDT data; no measured sound; unvalidated at this site; +/-5-10 dB"
 )
 
 
