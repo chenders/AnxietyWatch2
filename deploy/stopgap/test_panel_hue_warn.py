@@ -126,3 +126,15 @@ class Colour(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FlashDuration(unittest.TestCase):
+    def test_the_alert_is_refreshed_before_the_bridge_drops_it(self):
+        # `lselect` stops after roughly 15 s. If the refresh cadence were not
+        # shorter than that, a long flash would sit solid for its tail.
+        self.assertLess(hue.ALERT_REFRESH_SECONDS, 15.0)
+
+    def test_the_flash_is_shorter_than_the_lead_time(self):
+        # Otherwise the light would still be pulsing after the aircraft has
+        # already passed, which reads as a stuck warning rather than a warning.
+        self.assertLess(hue.FLASH_SECONDS, hue.LEAD_SECONDS)

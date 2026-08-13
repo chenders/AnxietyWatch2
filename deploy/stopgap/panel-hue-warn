@@ -79,7 +79,12 @@ WARN_ON_UNSCORED_OVERHEAD = os.environ.get("HUE_WARN_UNSCORED", "1") != "0"
 COOLDOWN_SECONDS = float(os.environ.get("HUE_COOLDOWN_SECONDS", "600"))
 
 # How long the warning lasts before the previous state is restored.
-FLASH_SECONDS = float(os.environ.get("HUE_FLASH_SECONDS", "12"))
+FLASH_SECONDS = float(os.environ.get("HUE_FLASH_SECONDS", "17"))
+
+# The bridge's own `lselect` breathe stops after roughly 15 seconds. Any flash
+# longer than that would sit solid for the remainder, so the alert is re-issued
+# on this cadence to keep it pulsing for the whole duration.
+ALERT_REFRESH_SECONDS = 14.0
 
 # The measured warning budget for a Providence departure is ~34 s, so a warning
 # is only useful inside roughly that window. Firing 3 minutes ahead trains the
@@ -238,7 +243,16 @@ def warn(band, reason):
             if error is not None:
                 errors.append(f"{light_id}: {error}")
         print(f"panel-hue-warn: warned — {reason}", flush=True)
-        time.sleep(FLASH_SECONDS)
+        # Sleep in slices, re-arming the breathe as it expires. A single long
+        # sleep would leave the light solid for the tail of a long flash.
+        remaining = FLASH_SECONDS
+        while remaining > 0:
+            slice_seconds = min(ALERT_REFRESH_SECONDS, remaining)
+            time.sleep(slice_seconds)
+            remaining -= slice_seconds
+            if remaining > 0:
+                for light_id in captured:
+                    apply_state(light_id, {"alert": "lselect"})
     finally:
         for light_id, state in captured.items():
             # Cancel the alert explicitly: it outlives a plain state write.
