@@ -96,6 +96,13 @@ LEAD_SECONDS = float(os.environ.get("HUE_LEAD_SECONDS", "45"))
 XY_CYAN = [0.17, 0.33]
 XY_AMBER = [0.53, 0.42]
 
+# Brightness of the warning itself, on Hue's 1-254 scale. Raised from 160 to
+# 200 (+25%) at the owner's request after watching a live flash: the point is to
+# be noticed from across a room without being the brightest thing in it. This
+# does not affect what is restored afterwards -- the light's own brightness is
+# captured before the flash and put back regardless.
+FLASH_BRIGHTNESS = max(1, min(254, int(os.environ.get("HUE_FLASH_BRIGHTNESS", "200"))))
+
 TIMEOUT = float(os.environ.get("HUE_TIMEOUT_SECONDS", "4"))
 
 
@@ -247,7 +254,7 @@ def warn(band, reason):
     try:
         for light_id in captured:
             _, error = apply_state(light_id, {
-                "on": True, "bri": 160, "xy": colour,
+                "on": True, "bri": FLASH_BRIGHTNESS, "xy": colour,
                 "alert": "lselect",          # the bridge's own ~15 s breathe
                 "transitiontime": 2,
             })

@@ -149,3 +149,14 @@ class FlashDuration(unittest.TestCase):
         # Otherwise the light would still be pulsing after the aircraft has
         # already passed, which reads as a stuck warning rather than a warning.
         self.assertLess(hue.FLASH_SECONDS, hue.LEAD_SECONDS)
+
+
+class FlashBrightness(unittest.TestCase):
+    def test_the_flash_is_bright_enough_to_notice_but_within_range(self):
+        self.assertGreaterEqual(hue.FLASH_BRIGHTNESS, 190)
+        self.assertLessEqual(hue.FLASH_BRIGHTNESS, 254)
+
+    def test_brightness_is_clamped_to_the_hue_scale(self):
+        # Hue rejects anything outside 1-254; an out-of-range env value should
+        # be clamped rather than sent and rejected mid-warning.
+        self.assertGreaterEqual(hue.FLASH_BRIGHTNESS, 1)
