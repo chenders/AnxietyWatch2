@@ -515,3 +515,72 @@ class TurbopropSourceLevel(unittest.TestCase):
         # And it must clear the AUDIBLE threshold, which as `light` it did not.
         self.assertGreaterEqual(turbo, adsb.POSSIBLE_INDEX)
         self.assertLess(light, adsb.POSSIBLE_INDEX)
+
+
+class HeardWithoutPosition(unittest.TestCase):
+    """The N826LF case of 2026-08-13.
+
+    The receiver heard a rostered Life Flight helicopter for over two minutes
+    at -33 dBm and never decoded a position, so it produced no panel entry, no
+    log row and no light while the aircraft was audible from the ground.
+    """
+
+    # AB4825 is N826LF in the roster. Shaped like a real dump1090 entry for an
+    # aircraft heard without a CPR position pair: no lat, no lon, no altitude.
+    LIFE_FLIGHT = {"hex": "ab4825", "rssi": -33.2, "messages": 3, "seen": 12.0}
+
+    def test_a_rostered_airframe_heard_without_a_position_is_reported(self):
+        out = adsb.heard_unlocated([self.LIFE_FLIGHT])
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0]["hex"], "AB4825")
+        self.assertEqual(out[0]["reg"], "N826LF")
+
+    def test_it_carries_no_distance_eta_or_noise_index(self):
+        # The whole point of the separate state. A number here would be
+        # fabricated, and downstream would render it as a real measurement.
+        entry = adsb.heard_unlocated([self.LIFE_FLIGHT])[0]
+        for forbidden in ("distance_km", "noise_index", "eta_seconds",
+                          "prediction", "ground_distance_m", "db"):
+            self.assertNotIn(forbidden, entry)
+
+    def test_it_is_marked_so_the_panel_cannot_confuse_it_with_a_located_plane(self):
+        self.assertEqual(adsb.heard_unlocated([self.LIFE_FLIGHT])[0]["state"],
+                         "HEARD_NO_POSITION")
+
+    def test_an_aircraft_with_a_position_is_left_to_make_report(self):
+        located = dict(self.LIFE_FLIGHT, lat=45.53, lon=-122.61, altitude=800)
+        self.assertEqual(adsb.heard_unlocated([located]), [])
+
+    def test_an_unrostered_address_is_not_reported(self):
+        # Every pass carries a dozen unlocated addresses. An advisory that
+        # fires on all of them says nothing.
+        other = dict(self.LIFE_FLIGHT, hex="a07ee3")
+        self.assertEqual(adsb.heard_unlocated([other]), [])
+
+    def test_a_single_frame_is_not_enough(self):
+        # Mode S addresses are recovered with error correction, so one frame
+        # can yield a plausible but wrong hex.
+        lone = dict(self.LIFE_FLIGHT, messages=1)
+        self.assertEqual(adsb.heard_unlocated([lone]), [])
+
+    def test_a_stale_contact_ages_out(self):
+        old = dict(self.LIFE_FLIGHT, seen=adsb.UNLOCATED_SECONDS + 1)
+        self.assertEqual(adsb.heard_unlocated([old]), [])
+
+    def test_it_stays_reportable_far_longer_than_a_located_aircraft(self):
+        # A located aircraft going stale is replaced by a fresher fix a second
+        # later. An unlocated one has no successor.
+        self.assertGreater(adsb.UNLOCATED_SECONDS, adsb.STALE_SECONDS)
+
+    def test_missing_or_malformed_fields_are_rejected_not_defaulted(self):
+        for broken in ({"hex": "ab4825", "messages": 3},
+                       {"hex": "ab4825", "seen": 5.0},
+                       {"hex": "ab4825", "messages": "3", "seen": 5.0},
+                       {"hex": "ab4825", "messages": 3, "seen": None}):
+            self.assertEqual(adsb.heard_unlocated([broken]), [], broken)
+
+    def test_the_freshest_contact_is_reported_first(self):
+        stale = dict(self.LIFE_FLIGHT, seen=60.0)
+        fresh = dict(self.LIFE_FLIGHT, hex="a4c3eb", seen=2.0)
+        out = adsb.heard_unlocated([stale, fresh])
+        self.assertEqual([e["hex"] for e in out], ["A4C3EB", "AB4825"])

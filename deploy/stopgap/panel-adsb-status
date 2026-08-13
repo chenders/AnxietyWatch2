@@ -19,6 +19,16 @@ SOURCE = Path(os.environ.get("DUMP1090_AIRCRAFT_JSON", "/run/dump1090-mutability
 OUTPUT = Path(os.environ.get("ADSB_STATUS_JSON", "/home/chris/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical/adsb_status.json"))
 INTERVAL = float(os.environ.get("ADSB_PUBLISH_INTERVAL_SECONDS", "1"))
 STALE_SECONDS = float(os.environ.get("ADSB_STALE_SECONDS", "15"))
+# An aircraft heard without a position stays reportable longer than one with
+# geometry. A located aircraft going stale at 15 s is replaced by a fresher fix
+# a second later; an unlocated one has no successor, and its whole value is
+# saying "something on the roster is nearby right now". N826LF on 2026-08-13
+# was last heard 147 s before the panel was inspected and was still audible.
+UNLOCATED_SECONDS = float(os.environ.get("ADSB_UNLOCATED_SECONDS", "90"))
+# Mode S addresses are recovered with error correction, so a single frame can
+# yield a plausible but wrong hex. Two frames from the same address is cheap
+# insurance against announcing a Life Flight helicopter that does not exist.
+UNLOCATED_MIN_MESSAGES = 2
 HISTORY_SECONDS = 30 * 60
 # Terminal-area traffic turns. Beyond a couple of minutes a constant-heading
 # projection is fiction, and the FR24 track of ASA783 on 2026-08-11 showed why:
@@ -505,6 +515,62 @@ def read_source():
     return data
 
 
+def heard_unlocated(items):
+    """Roster airframes the receiver is hearing but has not managed to locate.
+
+    dump1090 lists an aircraft as soon as it decodes any Mode S message from
+    it, but a position needs a matched even/odd pair of CPR-encoded frames. A
+    helicopter that transmits briefly, or that is shadowed for part of its
+    pass, can be heard for minutes and never be located. `make_report` drops
+    those, which is right for the geometry it computes and wrong as a warning:
+    on 2026-08-13 the receiver heard AB4825 -- N826LF, a Life Flight
+    helicopter -- for over two minutes at -33 dBm while the panel showed
+    nothing at all and the aircraft was audible from the ground.
+
+    Reported as its own state. Deliberately no distance, no ETA and no noise
+    index: none of them can be computed without a position, and signal
+    strength is not a calibrated range -- a strong signal means a good path,
+    not a short one. "Heard, not located" is the honest third state, and it is
+    the one that matters most here, because the roster is precisely the loud
+    traffic this station exists to warn about.
+
+    Restricted to the roster on purpose. Every pass has a dozen unlocated
+    addresses, and an advisory that fires on all of them says nothing.
+    """
+    out = []
+    for item in items:
+        if isinstance(item.get("lat"), (int, float)) and isinstance(item.get("lon"), (int, float)):
+            continue
+        hex_code = str(item.get("hex", "")).upper()
+        airframe = panel_loud_operators.lookup_hex(hex_code)
+        if airframe is None:
+            continue
+        seen = item.get("seen")
+        messages = item.get("messages")
+        if not isinstance(seen, (int, float)) or seen > UNLOCATED_SECONDS:
+            continue
+        if not isinstance(messages, int) or messages < UNLOCATED_MIN_MESSAGES:
+            continue
+        out.append({
+            "hex": hex_code,
+            "reg": airframe.get("reg"),
+            "operator": airframe.get("operator"),
+            "operator_name": panel_loud_operators.operator_name(airframe),
+            "operator_kind": panel_loud_operators.operator_kind(airframe),
+            "icao_type": airframe.get("type"),
+            "callsign": (str(item["flight"]).strip() or None) if isinstance(item.get("flight"), str) else None,
+            "rssi_dbm": item.get("rssi") if isinstance(item.get("rssi"), (int, float)) else None,
+            "messages": messages,
+            "seen_seconds": round(float(seen), 1),
+            "alt_ft": item.get("altitude") if isinstance(item.get("altitude"), (int, float)) else None,
+            # Named so the panel cannot render this as a quiet aircraft or as a
+            # located one. There is no number here to mistake for a distance.
+            "state": "HEARD_NO_POSITION",
+        })
+    out.sort(key=lambda entry: entry["seen_seconds"])
+    return out
+
+
 def make_report(item, source_now):
     lat, lon = item.get("lat"), item.get("lon")
     altitude = item.get("altitude")
@@ -685,6 +751,7 @@ def publish():
     source = read_source()
     source_now = float(source.get("now", time.time()))
     reports = [report for item in source["aircraft"] if (report := make_report(item, source_now))]
+    unlocated = heard_unlocated(source["aircraft"])
     now = time.time()
     history.extend(
         {"hex": report["hex"], "noise_index": report["noise_index"], "db": report["db"],
@@ -755,6 +822,9 @@ def publish():
         "adsb_planes": reports,
         "adsb_top": top,
         "adsb_predictions": candidates,
+        # Separate from adsb_planes because these have no geometry. Anything
+        # that plots, ranges or scores an aircraft must not read this array.
+        "adsb_heard_unlocated": unlocated,
         "adsb_advisory": {
             "armed": False,
             "status": "NOT ARMED",
