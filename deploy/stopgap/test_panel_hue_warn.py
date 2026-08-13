@@ -160,3 +160,108 @@ class FlashBrightness(unittest.TestCase):
         # Hue rejects anything outside 1-254; an out-of-range env value should
         # be clamped rather than sent and rejected mid-warning.
         self.assertGreaterEqual(hue.FLASH_BRIGHTNESS, 1)
+
+
+class SecondZone(unittest.TestCase):
+    """The kitchen set flashes red alongside the bedroom's cyan."""
+
+    def setUp(self):
+        self._lights, self._alert = hue.LIGHTS, hue.ALERT_LIGHTS
+        hue.LIGHTS, hue.ALERT_LIGHTS = ["2", "8"], ["10"]
+
+    def tearDown(self):
+        hue.LIGHTS, hue.ALERT_LIGHTS = self._lights, self._alert
+
+    def test_both_zones_flash_in_their_own_colour(self):
+        plan = hue.zones("LOUD")
+        self.assertEqual(len(plan), 2)
+        (bed_ids, bed_colour, bed_bri), (kit_ids, kit_colour, kit_bri) = plan
+        self.assertEqual(bed_ids, ["2", "8"])
+        self.assertEqual(bed_colour, hue.XY_PURPLE)
+        self.assertEqual(kit_ids, ["10"])
+        self.assertEqual(kit_colour, hue.XY_RED)
+
+    def test_the_bedroom_never_goes_red(self):
+        # Red belongs to the medical alarm. A bedroom turning red at 3am for an
+        # aeroplane erodes that, whatever the kitchen is doing.
+        for band in ("LOUD", "VERY LOUD", "UNKNOWN"):
+            bed_colour = hue.zones(band)[0][1]
+            self.assertNotEqual(bed_colour, hue.XY_RED, band)
+
+    def test_the_bedroom_colour_is_the_same_for_every_band(self):
+        colours = {hue.zones(b)[0][1][0] for b in ("LOUD", "VERY LOUD", "UNKNOWN")}
+        self.assertEqual(len(colours), 1)
+
+    def test_the_kitchen_colour_does_not_track_the_band(self):
+        # Its job is to be unmistakable from another room, not to encode a
+        # gradient the reader cannot see the rest of.
+        self.assertEqual(hue.zones("LOUD")[1][1], hue.zones("VERY LOUD")[1][1])
+
+    def test_kitchen_is_at_full_brightness(self):
+        # It is the only light in that room carrying the warning.
+        self.assertEqual(hue.ALERT_BRIGHTNESS, 254)
+
+    def test_with_no_alert_lights_configured_there_is_only_one_zone(self):
+        hue.ALERT_LIGHTS = []
+        self.assertEqual(len(hue.zones("LOUD")), 1)
+
+
+class WhatWarnActuallyApplies(unittest.TestCase):
+    """Tests the STATE SENT TO THE BRIDGE, not the plan that describes it.
+
+    The earlier tests exercised zones() and passed while warn() was applying the
+    last zone's colour to every light -- the bedroom went red at the kitchen's
+    setting during a live test. A correct plan proves nothing if the code that
+    consumes it ignores it.
+    """
+
+    def setUp(self):
+        self._c, self._a, self._l, self._al = (
+            hue.call, hue.apply_state, hue.LIGHTS, hue.ALERT_LIGHTS)
+        self._flash = hue.FLASH_SECONDS
+        hue.LIGHTS, hue.ALERT_LIGHTS = ["2", "8"], ["10"]
+        hue.FLASH_SECONDS = 0.0
+        self.applied = []
+        hue.call = lambda m, p, b=None: (
+            {"state": {"on": True, "bri": 254, "colormode": "ct", "ct": 300}}, None)
+        def record(light_id, state):
+            self.applied.append((light_id, dict(state)))
+            return (None, None)
+        hue.apply_state = record
+
+    def tearDown(self):
+        hue.call, hue.apply_state = self._c, self._a
+        hue.LIGHTS, hue.ALERT_LIGHTS = self._l, self._al
+        hue.FLASH_SECONDS = self._flash
+
+    def _flashes(self):
+        hue.warn("LOUD", "test")
+        return {lid: st for lid, st in self.applied if st.get("alert") == "lselect"
+                and "xy" in st}
+
+    def test_the_bedroom_flashes_purple_and_the_kitchen_red(self):
+        f = self._flashes()
+        self.assertEqual(f["2"]["xy"], hue.XY_PURPLE)
+        self.assertEqual(f["8"]["xy"], hue.XY_PURPLE)
+        self.assertEqual(f["10"]["xy"], hue.XY_RED)
+
+    def test_the_bedroom_is_never_sent_red(self):
+        for band in ("LOUD", "VERY LOUD", "UNKNOWN"):
+            self.applied.clear()
+            hue.warn(band, "test")
+            for lid, st in self.applied:
+                if lid in ("2", "8") and "xy" in st:
+                    self.assertNotEqual(st["xy"], hue.XY_RED,
+                                        f"bedroom light {lid} sent red on {band}")
+
+    def test_each_zone_gets_its_own_brightness(self):
+        f = self._flashes()
+        self.assertEqual(f["2"]["bri"], hue.FLASH_BRIGHTNESS)
+        self.assertEqual(f["10"]["bri"], hue.ALERT_BRIGHTNESS)
+        self.assertNotEqual(f["2"]["bri"], f["10"]["bri"])
+
+    def test_every_light_touched_is_also_restored(self):
+        hue.warn("LOUD", "test")
+        touched = {lid for lid, _ in self.applied}
+        restored = {lid for lid, st in self.applied if st.get("alert") == "none"}
+        self.assertEqual(touched, restored)
