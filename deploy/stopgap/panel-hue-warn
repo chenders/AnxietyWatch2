@@ -152,22 +152,33 @@ def capture(light_id):
     if "on" not in state:
         return None, f"light {light_id} reported no state"
 
-    # Only the fields needed to put it back. `colormode` decides which of
-    # xy/ct/hs is authoritative; restoring the wrong one changes the colour.
+    # Colour and brightness are captured whether the light is on or OFF.
+    #
+    # Restoring only {"on": false} looks correct -- the light is off, as it was
+    # -- but leaves the bridge holding the FLASH colour as that light's stored
+    # state. The next time someone switches the fixture on by hand it comes up
+    # cyan at brightness 160 instead of their warm white. The failure is
+    # invisible at the time and surfaces hours later, which makes it worse than
+    # an obvious one.
+    #
+    # Verified against the real bridge: a PUT carrying bri/ct alongside
+    # "on": false is accepted with no error and does not light the room, so the
+    # full state can be put back without a second flash.
     restore = {"on": bool(state["on"])}
-    if state["on"]:
-        if "bri" in state:
-            restore["bri"] = state["bri"]
-        mode = state.get("colormode")
-        if mode == "xy" and "xy" in state:
-            restore["xy"] = state["xy"]
-        elif mode == "ct" and "ct" in state:
-            restore["ct"] = state["ct"]
-        elif mode == "hs":
-            if "hue" in state:
-                restore["hue"] = state["hue"]
-            if "sat" in state:
-                restore["sat"] = state["sat"]
+    if "bri" in state:
+        restore["bri"] = state["bri"]
+    # `colormode` decides which of xy/ct/hs is authoritative; restoring the
+    # wrong one changes the colour even when every value is faithfully copied.
+    mode = state.get("colormode")
+    if mode == "xy" and "xy" in state:
+        restore["xy"] = state["xy"]
+    elif mode == "ct" and "ct" in state:
+        restore["ct"] = state["ct"]
+    elif mode == "hs":
+        if "hue" in state:
+            restore["hue"] = state["hue"]
+        if "sat" in state:
+            restore["sat"] = state["sat"]
     return restore, None
 
 

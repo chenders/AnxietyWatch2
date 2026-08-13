@@ -44,11 +44,22 @@ class CaptureFidelity(unittest.TestCase):
         self.assertEqual(got["sat"], 200)
         self.assertNotIn("xy", got)
 
-    def test_a_light_that_was_off_goes_back_off_and_nothing_else(self):
-        # The important case: brightness and colour must NOT be restored onto a
-        # light that was off, or it comes back on.
+    def test_a_light_that_was_off_restores_its_colour_as_well_as_being_off(self):
+        # Restoring only {"on": False} looks right -- the light is off, as it
+        # was -- but leaves the bridge holding the FLASH colour as that light's
+        # stored state, so the next manual switch-on comes up cyan. The failure
+        # is invisible at the time and surfaces hours later.
+        #
+        # The bridge accepts bri/ct alongside "on": False without lighting the
+        # room, verified against the real hardware.
         got = self._capture({"on": False, "bri": 155, "colormode": "ct", "ct": 300})
-        self.assertEqual(got, {"on": False})
+        self.assertEqual(got, {"on": False, "bri": 155, "ct": 300})
+
+    def test_an_off_light_still_follows_colormode(self):
+        got = self._capture({"on": False, "bri": 80, "colormode": "xy",
+                             "xy": [0.3, 0.35], "ct": 250})
+        self.assertEqual(got, {"on": False, "bri": 80, "xy": [0.3, 0.35]})
+        self.assertNotIn("ct", got)
 
     def test_a_light_with_no_state_is_an_error_not_a_guess(self):
         hue.call = lambda method, path, body=None: ({"state": {}}, None)
