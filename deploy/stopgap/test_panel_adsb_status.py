@@ -34,6 +34,8 @@ os.environ.setdefault("STATION_LON", repr(PDX_LON))
 os.environ.setdefault("STATION_ALT", "200")
 
 _SCRIPT = pathlib.Path(__file__).with_name("panel-adsb-status")
+import panel_airframe_types  # noqa: E402
+
 adsb = importlib.machinery.SourceFileLoader("panel_adsb_status", str(_SCRIPT)).load_module()
 
 # ASA783, georeferenced from the screenshot.
@@ -371,9 +373,55 @@ class RosterRescuesUnscorableAircraft(unittest.TestCase):
         self.assertIsNone(adsb.airframe_class(None, "ABCDEF"))
         self.assertIsNone(adsb.airframe_class(None, None))
 
-    def test_a_broadcast_category_still_wins_over_the_roster(self):
-        # The aircraft's own broadcast is better evidence than our static table.
-        self.assertEqual(adsb.airframe_class("A3", "AA8051"), "jet")
+    def test_a_known_type_beats_the_broadcast_category(self):
+        """Reversed on 2026-08-13. This asserted the opposite, on the reasoning
+        that "the aircraft's own broadcast is better evidence than our static
+        table" -- which sounds right and is not, because the two do not
+        describe the same property. The emitter category is a WEIGHT bucket;
+        the roster names the airframe.
+
+        AA8051 is N776LF, a Life Flight H135. Under the old rule, broadcasting
+        A3 made it a jet and cost it the rotorcraft approach penalty -- on the
+        single airframe class this whole system exists to warn about.
+        """
+        self.assertEqual(adsb.airframe_class("A3", "AA8051"), "rotorcraft")
+
+    def test_a_turboprop_broadcasting_a_light_category_is_not_light(self):
+        """The defect that made the turboprop class dead code.
+
+        A1 means "under 15,500 lb", which is a Cessna 172 and a TBM 850 alike.
+        Every turboprop that broadcasts a category was scored as a piston
+        single -- including the TBM 850 the turboprop level was added for.
+        """
+        original = adsb.enriched_types
+        try:
+            for designator in ("TBM8", "PC12", "C208", "B350"):
+                adsb.enriched_types = lambda d=designator: {"A00001": {"type": d}}
+                self.assertEqual(adsb.airframe_class("A1", "A00001"),
+                                 "turboprop", designator)
+        finally:
+            adsb.enriched_types = original
+
+    def test_a_learned_type_that_classifies_to_nothing_falls_back(self):
+        """A designator we cannot classify must not blank out the category.
+
+        adsbdb returns codes ICAO Doc 8643 does not carry, so `classify` can
+        return None for a real learned type. Returning None there would score
+        the aircraft UNKNOWN despite a perfectly usable broadcast category.
+        """
+        original = adsb.enriched_types
+        try:
+            adsb.enriched_types = lambda: {"A00001": {"type": "ZZZZ"}}
+            self.assertEqual(adsb.airframe_class("A5", "A00001"), "heavy")
+        finally:
+            adsb.enriched_types = original
+
+    def test_the_category_is_still_used_when_no_type_is_known(self):
+        # It is coarse, but roughly half of what this receiver hears carries
+        # nothing better, and discarding it would score that half as UNKNOWN.
+        self.assertEqual(adsb.airframe_class("A5", "ABCDEF"), "heavy")
+        self.assertEqual(adsb.airframe_class("A7", "ABCDEF"), "rotorcraft")
+        self.assertIsNone(adsb.airframe_class(None, "ABCDEF"))
 
     def test_an_uncategorised_air_ambulance_now_produces_a_prediction(self):
         # Before the roster this returned risk UNKNOWN with noise_index None.
@@ -758,3 +806,62 @@ class RecalibratedAgainstPublishedData(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PerTypeCorrections(unittest.TestCase):
+    """A type that is anomalous for its class needs its own correction.
+
+    Kept tiny on purpose: each entry claims a specific airframe differs from
+    everything else in its bucket, and must name its evidence.
+    """
+
+    SKYMASTER = "A00337"
+
+    def _with_type(self, designator):
+        original = adsb.enriched_types
+        adsb.enriched_types = lambda: {self.SKYMASTER: {"type": designator}}
+        self.addCleanup(lambda: setattr(adsb, "enriched_types", original))
+
+    def test_an_ordinary_type_gets_no_correction(self):
+        self._with_type("C172")
+        self.assertEqual(adsb.type_offset_db(self.SKYMASTER), 0.0)
+
+    def test_an_unknown_address_gets_no_correction(self):
+        self.assertEqual(adsb.type_offset_db("ABCDEF"), 0.0)
+        self.assertEqual(adsb.type_offset_db(None), 0.0)
+
+    def test_the_skymaster_is_corrected_upward(self):
+        """Its rear pusher propeller works in the front propeller's wake,
+        driving blade tips toward transonic. The research report puts it 5-8 dB
+        above a conventional light twin, which is itself above the piston
+        single this model uses for `light`."""
+        self._with_type("C337")
+        self.assertGreater(adsb.type_offset_db(self.SKYMASTER), 0.0)
+
+    def test_the_correction_reaches_the_score(self):
+        self._with_type("C337")
+        plain = adsb.noise_index(600.0, "light", "LEVEL")
+        corrected = adsb.noise_index(600.0, "light", "LEVEL",
+                                     adsb.type_offset_db(self.SKYMASTER))
+        self.assertGreater(corrected, plain)
+
+    def test_the_skymaster_the_owner_heard_at_1_43_km_is_not_faint(self):
+        """Logged FAINT on 2026-08-13 at 1.43 km. The owner heard it and asked
+        who owned it, which is not what FAINT predicts."""
+        self._with_type("C337")
+        slant = math.hypot(1430.0, (1382 - 200) * 0.3048)
+        index = adsb.noise_index(slant, "light", "LEVEL",
+                                 adsb.type_offset_db(self.SKYMASTER))
+        self.assertNotEqual(adsb.loudness_band(index), "FAINT")
+
+    def test_every_corrected_type_is_a_valid_designator(self):
+        # A typo here silently does nothing, since the lookup simply misses.
+        for designator in adsb.TYPE_SOURCE_OFFSET_DB:
+            self.assertEqual(panel_airframe_types.normalise_type(designator),
+                             designator, designator)
+            self.assertIsNotNone(panel_airframe_types.classify(designator), designator)
+
+    def test_corrections_stay_within_a_defensible_magnitude(self):
+        # Anything beyond ~10 dB is a class error being papered over.
+        for designator, db in adsb.TYPE_SOURCE_OFFSET_DB.items():
+            self.assertTrue(0.0 < db <= 10.0, f"{designator}={db}")

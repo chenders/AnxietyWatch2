@@ -286,6 +286,54 @@ def enriched_types():
     return _cache
 
 
+def resolved_type(hex_code):
+    """The ICAO type designator known for this address, or None.
+
+    Roster first: it is hand-verified and carries judgement a bulk lookup does
+    not. Then whatever the enricher has learned. Never the emitter category --
+    that is a weight bucket, not a designator, and writing one into the other
+    conflated two vocabularies in a single column once already.
+    """
+    airframe = panel_loud_operators.lookup_hex(hex_code)
+    if airframe is not None and airframe.get("type"):
+        return airframe["type"]
+    key = panel_loud_operators.normalise_hex(hex_code)
+    entry = enriched_types().get(key) if key else None
+    if isinstance(entry, dict) and entry.get("type"):
+        return entry["type"]
+    return None
+
+
+# Per-type corrections to the class source level, in dB.
+#
+# The class table cannot express an airframe that is anomalous for its class.
+# Kept deliberately tiny: an entry here is a claim that a specific type differs
+# from everything else in its bucket, and each one names its evidence.
+TYPE_SOURCE_OFFSET_DB = {
+    # Cessna Skymaster. The rear pusher propeller works in the turbulent wake
+    # of the front one, which drives its blade tips toward transonic speed and
+    # makes it markedly louder than its airframe class suggests. The research
+    # report puts it 5-8 dB above a conventional light twin, and its own light
+    # twin reference (AEDT BEC58P, 72.2 dBA) is itself above the piston single
+    # this model uses for `light` (GASEPV, 69.0) -- so the correction carries
+    # both gaps. A labelled engineering estimate, not a measurement: no clean
+    # certification figure for the type could be found.
+    #
+    # It earns its place because the owner has picked this type out by ear
+    # twice, on 2026-08-13, including at 1.43 km.
+    "C337": 9.5,
+}
+
+
+def type_offset_db(hex_code):
+    """dB to add to the class source level for this specific airframe."""
+    designator = resolved_type(hex_code)
+    if designator is None:
+        return 0.0
+    return TYPE_SOURCE_OFFSET_DB.get(
+        panel_airframe_types.normalise_type(designator) or "", 0.0)
+
+
 def airframe_class(category, hex_code=None):
     """Coarse airframe class from the ADS-B emitter category.
 
@@ -301,6 +349,31 @@ def airframe_class(category, hex_code=None):
     nothing. The address is broadcast whether or not the category is, so this
     costs nothing and needs no network.
     """
+    # 1. The curated roster: hand-verified, with provenance.
+    # 2. The exact ICAO type learned from the public airframe database.
+    #
+    # Both beat the broadcast emitter category, which is the reverse of what
+    # this function did until 2026-08-13. That ordering was justified as "the
+    # aircraft's own broadcast is better evidence than our static table", which
+    # sounds right and is not: the two do not describe the same property. The
+    # emitter category is a WEIGHT bucket -- A1 means "under 15,500 lb", which
+    # covers a Cessna 172, a TBM 850 and a King Air alike -- while a designator
+    # names the airframe. A type is strictly more informative, never less.
+    #
+    # The cost was concrete. Every turboprop that broadcasts A1 -- TBM8, PC12,
+    # C208, B350 -- was classed `light`, so the turboprop source level added
+    # after the TBM 850 was missed on 2026-08-13 was dead code for exactly the
+    # aircraft it was added for. Worse, a rostered helicopter broadcasting a
+    # fixed-wing category would have been scored as a jet and lost the
+    # rotorcraft approach penalty entirely.
+    designator = resolved_type(hex_code)
+    if designator is not None:
+        klass = panel_airframe_types.classify(designator)
+        if klass is not None:
+            return klass
+
+    # 3. The broadcast category, as a fallback when no type is known. Coarse,
+    #    but roughly half of what this receiver hears carries nothing better.
     code = str(category or "").strip().upper()
     if code in ("A5", "A6"):
         return "heavy"
@@ -311,22 +384,7 @@ def airframe_class(category, hex_code=None):
     if code == "A7":
         return "rotorcraft"
 
-    # 1. The curated roster: hand-verified, with provenance. Always wins over a
-    #    lookup, because it carries judgement a lookup cannot.
-    airframe = panel_loud_operators.lookup_hex(hex_code)
-    if airframe is not None:
-        return panel_airframe_types.classify(airframe["type"])
-
-    # 2. The exact ICAO type from the public airframe database, if one has been
-    #    learned for this address. This is what turns "A3, could be anything"
-    #    into "B739" -- a widebody and a regional jet are no longer the same
-    #    source level.
-    key = panel_loud_operators.normalise_hex(hex_code)
-    entry = enriched_types().get(key) if key else None
-    if isinstance(entry, dict):
-        return panel_airframe_types.classify(entry.get("type"))
-
-    # 3. Unknown, and stays unknown. Never folded into "jet" on the grounds that
+    # 4. Unknown, and stays unknown. Never folded into "jet" on the grounds that
     #    most traffic is jets.
     return None
 
@@ -342,7 +400,7 @@ def thrust_phase(vertical_rate_fpm):
     return "LEVEL"
 
 
-def noise_index(slant_m, klass, phase):
+def noise_index(slant_m, klass, phase, offset_db=0.0):
     """Estimated outdoor A-weighted LAmax at the station, in dBA.
 
     Spherical spreading from a 300 m reference plus per-class atmospheric
@@ -357,7 +415,7 @@ def noise_index(slant_m, klass, phase):
     """
     if klass is None or phase is None:
         return None
-    source = SOURCE_LEVELS[klass][phase]
+    source = SOURCE_LEVELS[klass][phase] + offset_db
     distance = max(30.0, slant_m)
     divergence = 20.0 * math.log10(distance / 300.0)
     spread = source - divergence
@@ -516,7 +574,7 @@ def predict_pass(lat, lon, altitude_ft, category, speed_kt, track_deg, vertical_
     # unscorable.
     proximity = proximity_band(ground_cpa, altitude_above_station)
 
-    index = noise_index(slant_cpa, klass, phase)
+    index = noise_index(slant_cpa, klass, phase, type_offset_db(hex_code))
     if index is None:
         missing = "emitter category" if klass is None else "vertical rate"
         return unpredictable(
@@ -684,7 +742,8 @@ def make_report(item, source_now):
         hex_code=hex_code,
     )
     phase = thrust_phase(item.get("vert_rate"))
-    now_index = noise_index(distance, airframe_class(category, hex_code), phase)
+    now_index = noise_index(distance, airframe_class(category, hex_code), phase,
+                            type_offset_db(hex_code))
 
     # Identification from the local roster. Costs nothing, needs no network, and
     # works for the aircraft that broadcast no emitter category at all.
