@@ -11,3 +11,4 @@ samples_1min [samples_hypertable] 2026-08-03T11:05:00Z Chris Henderson <chenders
 retention [samples_1min] 2026-08-03T11:06:00Z Chris Henderson <chenders@users.noreply.github.com> # drop raw samples after 2 years; rollups kept
 aircraft [extensions] 2026-08-12T19:20:00Z Chris Henderson <chenders@users.noreply.github.com> # aircraft roster + per-pass hypertable for the noise watch
 aircraft_enrichment [aircraft] 2026-08-12T19:35:00Z Chris Henderson <chenders@users.noreply.github.com> # remember negative airframe lookups so a free service is not re-queried forever
+aircraft_source_adsb [aircraft] 2026-08-13T21:20:00Z Chris Henderson <chenders@users.noreply.github.com> # allow 'adsb' as an identity source; the drain was dying on every receiver-learned row
