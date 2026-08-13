@@ -487,3 +487,31 @@ class N450LFIsOnTheRoster(unittest.TestCase):
         # Logged three passes overnight on 2026-08-12, closest 1.31 km, while
         # absent from the roster. Identified then by callsign pattern alone.
         self.assertEqual(adsb.airframe_class(None, "A5731C"), "rotorcraft")
+
+
+class TurbopropSourceLevel(unittest.TestCase):
+    """A turboprop must score above a piston single at the same geometry.
+
+    Added after the model called a TBM 850 at 1.07 km FAINT.
+    """
+
+    def test_a_turboprop_has_its_own_source_level(self):
+        self.assertIn("turboprop", adsb.SOURCE_LEVELS)
+
+    def test_it_sits_between_a_light_aircraft_and_a_jet(self):
+        for phase in ("CLIMB", "LEVEL", "DESCENT"):
+            light = adsb.SOURCE_LEVELS["light"][phase]
+            turbo = adsb.SOURCE_LEVELS["turboprop"][phase]
+            jet = adsb.SOURCE_LEVELS["jet"][phase]
+            self.assertGreater(turbo, light, phase)
+            self.assertLess(turbo, jet, phase)
+
+    def test_the_tbm_at_the_range_it_was_missed_now_scores_higher(self):
+        # 1.07 km ground, 2,075 ft, level — the geometry that produced FAINT.
+        slant = 1400.0
+        light = adsb.noise_index(slant, "light", "LEVEL")
+        turbo = adsb.noise_index(slant, "turboprop", "LEVEL")
+        self.assertGreater(turbo, light)
+        # And it must clear the AUDIBLE threshold, which as `light` it did not.
+        self.assertGreaterEqual(turbo, adsb.POSSIBLE_INDEX)
+        self.assertLess(light, adsb.POSSIBLE_INDEX)

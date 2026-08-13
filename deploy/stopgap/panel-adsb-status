@@ -70,6 +70,13 @@ NEAR_CEILING_FT = 8_000.0
 SOURCE_LEVELS = {
     "heavy": {"CLIMB": 105.0, "LEVEL": 95.0, "DESCENT": 92.0},
     "jet": {"CLIMB": 100.0, "LEVEL": 88.0, "DESCENT": 85.0},
+    # Turboprops sit between a jet and a piston single, and were previously
+    # grouped with "light" -- which cost a real warning on 2026-08-13, when a
+    # TBM 850 passed 1.07 km overhead at 2,075 ft, was rated FAINT, and the
+    # owner reported it as at least moderate. A 700 hp PT6 driving a propeller
+    # is not a Cessna 172, and the propeller is why it is closer to a jet on
+    # approach than the shaft power alone suggests.
+    "turboprop": {"CLIMB": 94.0, "LEVEL": 86.0, "DESCENT": 83.0},
     "light": {"CLIMB": 85.0, "LEVEL": 78.0, "DESCENT": 75.0},
     "rotorcraft": {"CLIMB": 92.0, "LEVEL": 92.0, "DESCENT": 90.0},
 }

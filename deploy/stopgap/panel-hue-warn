@@ -85,8 +85,15 @@ WARN_BANDS = {b.strip() for b in
 # over-represented among the aircraft that broadcast no category at all.
 WARN_ON_UNSCORED_OVERHEAD = os.environ.get("HUE_WARN_UNSCORED", "1") != "0"
 
-# Fire no more than once per this window. Portland traffic is continuous.
-COOLDOWN_SECONDS = float(os.environ.get("HUE_COOLDOWN_SECONDS", "600"))
+# Fire no more than once per this window.
+#
+# 30 s, down from 10 minutes. The long cooldown existed to stop continuous
+# Portland traffic strobing a bedroom all evening, but the band threshold does
+# most of that work already -- only LOUD and above fire, which is a couple of
+# aircraft a day. A short cooldown means two genuinely loud aircraft a minute
+# apart both get announced, which is the case that matters and which a
+# 10-minute window silently swallowed.
+COOLDOWN_SECONDS = float(os.environ.get("HUE_COOLDOWN_SECONDS", "30"))
 
 # How long the warning lasts before the previous state is restored.
 FLASH_SECONDS = float(os.environ.get("HUE_FLASH_SECONDS", "17"))
@@ -101,6 +108,7 @@ ALERT_REFRESH_SECONDS = 14.0
 # At two lights this is under 2 writes/second, well inside what the bridge
 # tolerates (it starts dropping commands past roughly ten per second).
 ALTERNATE_SECONDS = float(os.environ.get("HUE_ALTERNATE_SECONDS", "1.2"))
+
 
 # The measured warning budget for a Providence departure is ~34 s, so a warning
 # is only useful inside roughly that window. Firing 3 minutes ahead trains the
@@ -131,10 +139,9 @@ XY_RED = [0.675, 0.322]
 # captured before the flash and put back regardless.
 FLASH_BRIGHTNESS = max(1, min(254, int(os.environ.get("HUE_FLASH_BRIGHTNESS", "200"))))
 
-# Hue's brightness scale is 1-254 (0 is not valid; off is a separate state).
-# Full brightness: the kitchen strip is the only light in that room carrying the
-# warning, so it has no neighbours to share the job with.
-ALERT_BRIGHTNESS = max(1, min(254, int(os.environ.get("HUE_ALERT_BRIGHTNESS", "254"))))
+# Hue's brightness scale is 1-254 (0 is not valid; off is a separate state), so
+# 90% is 229. Used by every zone now that they share one signature.
+ALERT_BRIGHTNESS = max(1, min(254, int(os.environ.get("HUE_ALERT_BRIGHTNESS", "229"))))
 
 TIMEOUT = float(os.environ.get("HUE_TIMEOUT_SECONDS", "4"))
 
@@ -241,6 +248,18 @@ def publish(document):
         print(f"panel-hue-warn: cannot write {OUTPUT}: {exc}", flush=True)
 
 
+def is_test(report):
+    """A synthetic aircraft injected to exercise the chain.
+
+    Marked rather than inferred, because guessing would eventually suppress a
+    real warning. A test fires the lights exactly as a real aircraft does, but
+    never records a warning -- so it cannot consume the cooldown and blind the
+    system to the next real one. That happened for real: a test at 14:33 left a
+    ten-minute hole during which an audible aircraft went unannounced.
+    """
+    return bool(report.get("test") or (report.get("prediction") or {}).get("test"))
+
+
 def choose(status, now):
     """The aircraft worth lighting a room for, or None.
 
@@ -276,9 +295,20 @@ def zones(band):
     that means something is wrong with a person. The kitchen is red, because it
     is a different room in a different context and needs to carry across a house.
     """
-    out = [(LIGHTS, [XY_PURPLE, XY_ORANGE], FLASH_BRIGHTNESS)]
+    # Every zone now flashes the SAME pattern, at the owner's explicit request:
+    # purple alternating with red, at 90%. The earlier per-room split (purple in
+    # the bedroom, red in the kitchen) is gone -- one unmistakable signature
+    # everywhere is easier to recognise half asleep than a colour that has to be
+    # decoded per room.
+    #
+    # This does put red in the bedroom, which the original design in handoff §6
+    # avoided so an aircraft warning could not be confused with a medical alarm.
+    # The owner decided otherwise, knowing that. Recorded here so it is not
+    # quietly reverted by a later reader who only finds the §6 note.
+    palette = [XY_PURPLE, XY_RED]
+    out = [(LIGHTS, palette, ALERT_BRIGHTNESS)]
     if ALERT_LIGHTS:
-        out.append((ALERT_LIGHTS, [XY_RED], ALERT_BRIGHTNESS))
+        out.append((ALERT_LIGHTS, palette, ALERT_BRIGHTNESS))
     return out
 
 
@@ -379,6 +409,7 @@ def main():
         raise SystemExit("panel-hue-warn: HUE_LIGHTS is required (comma-separated ids)")
 
     last_warned = 0.0
+    last_test = 0.0
     while True:
         now = time.time()
         errors, subject = [], None
@@ -390,20 +421,34 @@ def main():
 
         if status:
             picked = choose(status, now)
-            if picked and now - last_warned >= COOLDOWN_SECONDS:
+            if picked:
                 report, band, left = picked
-                subject = report.get("registration") or report.get("callsign") or report.get("hex")
-                last_warned = now
-                errors += warn(band, f"{subject} {band} in {left:.0f}s")
+                testing = is_test(report)
+                # A test bypasses the cooldown so it always demonstrates, and
+                # never sets it so it cannot suppress the next real aircraft.
+                if testing or now - last_warned >= COOLDOWN_SECONDS:
+                    subject = (report.get("registration") or report.get("callsign")
+                               or report.get("hex"))
+                    if not testing:
+                        last_warned = now
+                    errors += warn(band, f"{subject} {band} in {left:.0f}s"
+                                         + (" [TEST — cooldown untouched]" if testing else ""))
+                    if testing:
+                        last_test = now
 
         publish({
             "schema": 1, "written_at": time.time(),
             "armed": False,
             "bridge": BRIDGE,
             "lights": LIGHTS,
-        "alert_lights": ALERT_LIGHTS,
+            "alert_lights": ALERT_LIGHTS,
             "cooldown_s": COOLDOWN_SECONDS,
             "last_warned_at": last_warned or None,
+            # Recorded separately so a test is never mistaken for a real
+            # warning when reading back why the light did or did not fire.
+            "last_test_at": last_test or None,
+            "cooldown_remaining_s": (max(0.0, COOLDOWN_SECONDS - (time.time() - last_warned))
+                                     if last_warned else 0.0),
             "last_subject": subject,
             # Named, never a bare boolean: a guard that blocks without saying
             # why is worse than no guard.

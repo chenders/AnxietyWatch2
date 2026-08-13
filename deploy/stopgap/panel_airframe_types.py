@@ -34,6 +34,23 @@ and shows on the panel as UNKNOWN.
 
 import re
 
+# AUDITED 2026-08-13 against ICAO Doc 8643 (engine type and wake category per
+# designator). That audit found five real errors, all of the same shape as the
+# TBM 850 miss: aircraft sitting in a quieter bucket than they belong in.
+#
+#   B752/B753  heavy -> jet        single-aisle, WTC M
+#   PC24       light -> jet        the Pilatus PC-24 is a jet
+#   GA5C       light -> jet        Gulfstream business jet
+#   DHC2       turboprop -> light  the Beaver is radial-piston
+#
+# It also caught six entries that are not Doc 8643 designators at all and would
+# never have matched anything: PA28, R172, E175, DA20, A220, B731. The real
+# codes are P28A/P28S, C172, E75L/E75S, DV20, BCS1/BCS3 and B732.
+#
+# H125/H130/H135/H145/H155 and the 747/777 freighter codes are absent from the
+# reference dataset because it predates those designators, not because they are
+# wrong. They are retained deliberately.
+#
 # Explicit designators, grouped by the model's source-level classes. Listed
 # rather than pattern-matched wherever a pattern would be wrong: "B06" is a Bell
 # 206 helicopter while "B06x" prefixes nothing else, but "B74" is a 747 and
@@ -42,18 +59,18 @@ HEAVY = frozenset({
     # Widebodies. Four-engine and twin-aisle, the loudest civil traffic here.
     "A124", "A332", "A333", "A337", "A338", "A339", "A342", "A343", "A345",
     "A346", "A359", "A35K", "A388", "B741", "B742", "B743", "B744", "B748",
-    "B74D", "B74F", "B74R", "B74S", "B752", "B753", "B762", "B763", "B764",
-    "B772", "B773", "B77F", "B77L", "B77W", "B778", "B779", "B788", "B789",
+    "B74R", "B74S", "B762", "B763", "B764",
+    "B772", "B773", "B77L", "B77W", "B778", "B779", "B788", "B789",
     "B78X", "DC10", "MD11", "IL76", "C5M", "C17",
 })
 JET = frozenset({
     # Narrowbodies and regional jets.
     "A19N", "A20N", "A21N", "A318", "A319", "A320", "A321", "B37M", "B38M",
-    "B39M", "B3XM", "B712", "B721", "B722", "B731", "B732", "B733", "B734",
-    "B735", "B736", "B737", "B738", "B739", "BCS1", "BCS3", "CRJ1", "CRJ2",
-    "CRJ7", "CRJ9", "CRJX", "E135", "E145", "E170", "E175", "E190", "E195",
+    "B39M", "B3XM", "B712", "B721", "B722", "B732", "B733", "B734",
+    "B735", "B736", "B737", "B738", "B739", "B752", "B753", "BCS1", "BCS3", "CRJ1", "CRJ2",
+    "CRJ7", "CRJ9", "CRJX", "E135", "E145", "E170", "E190", "E195",
     "E75L", "E75S", "E290", "E295", "MD81", "MD82", "MD83", "MD87", "MD88",
-    "MD90", "A220", "SU95",
+    "MD90", "SU95", "PC24", "GA5C",
     # Business jets. Smaller, but still turbofan.
     "C25A", "C25B", "C25C", "C25M", "C500", "C510", "C525", "C550", "C55B",
     "C560", "C56X", "C650", "C680", "C68A", "C700", "C750", "CL30", "CL35",
@@ -63,14 +80,22 @@ JET = frozenset({
 })
 LIGHT = frozenset({
     # Piston and turboprop singles and light twins.
-    "AA5", "AC11", "BE33", "BE35", "BE36", "BE20", "BE58", "BE9L", "BE9T",
-    "B350", "C150", "C152", "C162", "C172", "C177", "C180", "C182", "C185",
-    "C206", "C208", "C210", "C310", "C337", "C82S", "DA20", "DA40", "DA42",
-    "DHC2", "DHC6", "EPIC", "GA5C", "GLST", "M20P", "M600", "P28A", "P28B",
-    "P28R", "P32R", "P46T", "PA12", "PA18", "PA22", "PA24", "PA28", "PA31",
-    "PA32", "PA34", "PA44", "PA46", "PC12", "PC24", "R172", "RV4", "RV6",
+    "AA5", "AC11", "BE33", "BE35", "BE36", "BE58", "C150", "C152", "C162", "C172", "C177", "C180", "C182", "C185",
+    "C206", "C210", "C310", "C337", "C82S", "DHC2", "C72R", "DA40", "DA42", "DV20",
+    "GA5C", "GLST", "M20P", "P28A", "P28B", "P28R", "P28S", "P32R", "PA12", "PA18", "PA22", "PA24", "PA31",
+    "PA32", "PA34", "PA44", "PA46", "RV4", "RV6",
     "RV7", "RV8", "RV9", "RV10", "RV12", "RV14", "S22T", "SR20", "SR22",
-    "T206", "TBM7", "TBM8", "TBM9", "AT8T", "AT5T",
+    "T206", 
+})
+# Single- and twin-engine turboprops. Split out of LIGHT after a TBM 850 passed
+# 1.07 km overhead at 2,075 ft on 2026-08-13 and the model called it FAINT while
+# the owner plainly heard it. A 700 hp PT6 is not a Cessna 172, and grouping
+# them cost a real warning.
+TURBOPROP = frozenset({
+    "TBM7", "TBM8", "TBM9", "PC12", "P46T", "M600", "EPIC", "C208", "DHC6",
+    "BE20", "B350", "BE9L", "BE9T", "C441", "AT8T", "AT5T", "SF34",
+    "DH8A", "DH8B", "DH8C", "DH8D", "AT43", "AT45", "AT72", "AT75", "AT76",
+    "E110", "SW4", "BE99", "C212", "D228", "PC6T",
 })
 ROTORCRAFT = frozenset({
     "A109", "A119", "A139", "A169", "A189", "AS32", "AS3B", "AS50", "AS55",
@@ -84,6 +109,7 @@ _CLASSES = (
     (ROTORCRAFT, "rotorcraft"),
     (HEAVY, "heavy"),
     (JET, "jet"),
+    (TURBOPROP, "turboprop"),
     (LIGHT, "light"),
 )
 

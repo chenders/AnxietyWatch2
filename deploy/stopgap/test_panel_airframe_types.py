@@ -17,7 +17,7 @@ class Classification(unittest.TestCase):
             "E175": "jet",        # shares emitter category A3 with the 737 MAX
             "B38M": "jet",
             "C172": "light",
-            "PC12": "light",
+            "PC12": "turboprop",   # reclassified 2026-08-13; see TurbopropsAreNotLightAircraft
             "B407": "rotorcraft", # the Life Flight fleet
             "A119": "rotorcraft",
             "EC35": "rotorcraft",
@@ -76,3 +76,31 @@ class Classification(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TurbopropsAreNotLightAircraft(unittest.TestCase):
+    """Split out on 2026-08-13 after a real miss.
+
+    A TBM 850 passed 1.07 km overhead at 2,075 ft, the model rated it FAINT, and
+    the owner heard it plainly. It was classed `light` — the same source level as
+    a Cessna 172 — because TBM8 sat in that set. A 700 hp PT6 is not a 172.
+    """
+
+    def test_the_aircraft_that_exposed_this_is_a_turboprop(self):
+        self.assertEqual(types.classify("TBM8"), "turboprop")
+
+    def test_common_local_turboprops_are_classified(self):
+        for code in ("TBM7", "TBM9", "PC12", "C208", "B350", "BE20", "DHC6",
+                     "P46T", "M600", "EPIC", "DH8D", "AT72"):
+            self.assertEqual(types.classify(code), "turboprop", code)
+
+    def test_piston_singles_are_still_light(self):
+        for code in ("C172", "C182", "SR22", "P28A", "PA28", "BE36"):
+            self.assertEqual(types.classify(code), "light", code)
+
+    def test_no_turboprop_leaked_into_the_light_set(self):
+        self.assertEqual(types.TURBOPROP & types.LIGHT, frozenset())
+
+    def test_turboprops_did_not_leak_into_jet_or_heavy(self):
+        self.assertEqual(types.TURBOPROP & types.JET, frozenset())
+        self.assertEqual(types.TURBOPROP & types.HEAVY, frozenset())

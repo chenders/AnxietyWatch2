@@ -126,8 +126,15 @@ class Colour(unittest.TestCase):
         for xy in (hue.XY_CYAN, hue.XY_AMBER):
             self.assertLess(xy[0], 0.6, f"{xy} is in the red corner of CIE xy")
 
-    def test_the_cooldown_is_long_enough_to_not_strobe_a_bedroom(self):
-        self.assertGreaterEqual(hue.COOLDOWN_SECONDS, 300)
+    def test_the_cooldown_outlasts_its_own_flash(self):
+        # Reduced from 10 minutes to 30 s at the owner's request. The old test
+        # asserted >= 300 s, which encoded the assumption that continuous
+        # traffic would strobe the bedroom -- but the LOUD-and-above threshold
+        # already limits firing to a couple of aircraft a day, and a 10-minute
+        # window silently swallowed a second genuinely loud aircraft. The
+        # constraint that actually matters is that a warning cannot retrigger
+        # while its own flash is still running.
+        self.assertGreater(hue.COOLDOWN_SECONDS, hue.FLASH_SECONDS)
 
     def test_the_lead_window_is_near_the_real_warning_budget(self):
         # Measured: ~34 s from first fix to closest approach off the Providence
@@ -177,31 +184,29 @@ class SecondZone(unittest.TestCase):
         self.assertEqual(len(plan), 2)
         (bed_ids, bed_palette, bed_bri), (kit_ids, kit_palette, kit_bri) = plan
         self.assertEqual(bed_ids, ["2", "8"])
-        self.assertEqual(bed_palette, [hue.XY_PURPLE, hue.XY_ORANGE])
+        # Same signature everywhere, by owner decision.
+        self.assertEqual(bed_palette, [hue.XY_PURPLE, hue.XY_RED])
         self.assertEqual(kit_ids, ["10"])
-        self.assertEqual(kit_palette, [hue.XY_RED])
+        self.assertEqual(kit_palette, [hue.XY_PURPLE, hue.XY_RED])
 
-    def test_the_bedroom_never_goes_red(self):
-        # Red belongs to the medical alarm. A bedroom turning red at 3am for an
-        # aeroplane erodes that, whatever the kitchen is doing.
-        for band in ("LOUD", "VERY LOUD", "UNKNOWN"):
-            for colour in hue.zones(band)[0][1]:
-                self.assertNotEqual(colour, hue.XY_RED, band)
+    def test_every_zone_flashes_the_same_signature(self):
+        # One pattern everywhere is easier to recognise half asleep than a
+        # colour that must be decoded per room. Red now appears in the bedroom
+        # by explicit owner decision, overriding the handoff §6 guidance.
+        palettes = [z[1] for z in hue.zones("LOUD")]
+        self.assertEqual(len(set(map(tuple, map(lambda p: tuple(map(tuple, p)), palettes)))), 1)
 
     def test_the_bedroom_alternates_two_distinct_colours(self):
         palette = hue.zones("LOUD")[0][1]
         self.assertEqual(len(palette), 2)
         self.assertNotEqual(palette[0], palette[1])
 
-    def test_the_kitchen_is_a_single_steady_colour(self):
-        # Its job is to be unmistakable from another room, not to encode a
-        # gradient the reader cannot see the rest of.
-        self.assertEqual(hue.zones("LOUD")[1][1], [hue.XY_RED])
+    def test_the_signature_does_not_track_the_band(self):
         self.assertEqual(hue.zones("LOUD")[1][1], hue.zones("VERY LOUD")[1][1])
 
-    def test_kitchen_is_at_full_brightness(self):
-        # It is the only light in that room carrying the warning.
-        self.assertEqual(hue.ALERT_BRIGHTNESS, 254)
+    def test_every_zone_is_at_90_percent(self):
+        self.assertEqual(hue.ALERT_BRIGHTNESS, 229)
+        self.assertLess(abs(hue.ALERT_BRIGHTNESS / 254 - 0.90), 0.01)
 
     def test_with_no_alert_lights_configured_there_is_only_one_zone(self):
         hue.ALERT_LIGHTS = []
@@ -250,13 +255,12 @@ class WhatWarnActuallyApplies(unittest.TestCase):
                 first[lid] = st
         return first
 
-    def test_the_bedroom_opens_purple_and_the_kitchen_is_red(self):
+    def test_every_light_opens_on_the_same_colour(self):
         f = self._flashes()
-        self.assertEqual(f["2"]["xy"], hue.XY_PURPLE)
-        self.assertEqual(f["8"]["xy"], hue.XY_PURPLE)
-        self.assertEqual(f["10"]["xy"], hue.XY_RED)
+        for lid in ("2", "8", "10"):
+            self.assertEqual(f[lid]["xy"], hue.XY_PURPLE, lid)
 
-    def test_the_bedroom_actually_alternates_during_the_flash(self):
+    def test_lights_actually_alternate_during_the_flash(self):
         # The palette being right proves nothing if the flash loop never uses
         # the second colour.
         hue.FLASH_SECONDS = 0.6
@@ -266,16 +270,16 @@ class WhatWarnActuallyApplies(unittest.TestCase):
         seen = [tuple(st["xy"]) for lid, st in self.applied
                 if lid == "2" and "xy" in st and st.get("alert") != "none"]
         self.assertIn(tuple(hue.XY_PURPLE), seen)
-        self.assertIn(tuple(hue.XY_ORANGE), seen)
+        self.assertIn(tuple(hue.XY_RED), seen)
 
-    def test_the_kitchen_does_not_alternate(self):
+    def test_the_kitchen_alternates_too(self):
         hue.FLASH_SECONDS = 0.6
         hue.ALTERNATE_SECONDS = 0.01
         self.applied.clear()
         hue.warn("LOUD", "test")
         seen = {tuple(st["xy"]) for lid, st in self.applied
                 if lid == "10" and "xy" in st and st.get("alert") != "none"}
-        self.assertEqual(seen, {tuple(hue.XY_RED)})
+        self.assertEqual(seen, {tuple(hue.XY_PURPLE), tuple(hue.XY_RED)})
 
     def test_the_bedroom_is_never_sent_red(self):
         for band in ("LOUD", "VERY LOUD", "UNKNOWN"):
@@ -286,14 +290,45 @@ class WhatWarnActuallyApplies(unittest.TestCase):
                     self.assertNotEqual(st["xy"], hue.XY_RED,
                                         f"bedroom light {lid} sent red on {band}")
 
-    def test_each_zone_gets_its_own_brightness(self):
+    def test_every_zone_shares_one_brightness(self):
         f = self._flashes()
-        self.assertEqual(f["2"]["bri"], hue.FLASH_BRIGHTNESS)
+        self.assertEqual(f["2"]["bri"], hue.ALERT_BRIGHTNESS)
         self.assertEqual(f["10"]["bri"], hue.ALERT_BRIGHTNESS)
-        self.assertNotEqual(f["2"]["bri"], f["10"]["bri"])
 
     def test_every_light_touched_is_also_restored(self):
         hue.warn("LOUD", "test")
         touched = {lid for lid, _ in self.applied}
         restored = {lid for lid, st in self.applied if st.get("alert") == "none"}
         self.assertEqual(touched, restored)
+
+
+class TestsMustNotBlindTheSystem(unittest.TestCase):
+    """A test warning fires, but must never consume the real cooldown.
+
+    This is not hypothetical: a test at 14:33 set the then-10-minute cooldown
+    and an audible aircraft minutes later went unannounced.
+    """
+
+    def test_a_marked_test_aircraft_is_recognised(self):
+        self.assertTrue(hue.is_test({"test": True}))
+        self.assertTrue(hue.is_test({"prediction": {"test": True}}))
+
+    def test_a_real_aircraft_is_not_mistaken_for_a_test(self):
+        # Inferring rather than marking would eventually suppress a real
+        # warning, which is the failure this guard exists to prevent.
+        self.assertFalse(hue.is_test({}))
+        self.assertFalse(hue.is_test({"registration": "N776LF"}))
+        self.assertFalse(hue.is_test({"prediction": {"loudness_band": "LOUD"}}))
+        self.assertFalse(hue.is_test({"test": False}))
+
+    def test_the_cooldown_is_short_enough_to_catch_a_second_aircraft(self):
+        # Two genuinely loud aircraft a minute apart must both be announced.
+        self.assertLessEqual(hue.COOLDOWN_SECONDS, 60)
+
+    def test_the_cooldown_still_outlasts_the_flash(self):
+        # Otherwise a warning could retrigger while its own flash is running.
+        self.assertGreater(hue.COOLDOWN_SECONDS, hue.FLASH_SECONDS)
+
+
+if __name__ == "__main__":
+    unittest.main()
