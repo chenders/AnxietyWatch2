@@ -85,6 +85,21 @@ WARN_BANDS = {b.strip() for b in
 # over-represented among the aircraft that broadcast no category at all.
 WARN_ON_UNSCORED_OVERHEAD = os.environ.get("HUE_WARN_UNSCORED", "1") != "0"
 
+# Operator kinds that warrant a warning when the receiver hears them but never
+# decodes a position. There is no geometry at all in this case -- no range, no
+# countdown, no score -- so this trades a precise warning for an early vague
+# one. The owner chose that trade on 2026-08-13, after N826LF was heard for two
+# minutes at -33 dBm and produced nothing while being audible from the ground.
+#
+# AIR_AMBULANCE only, by default. The roster also carries Portland Police
+# airframes, which the owner describes as "nearly constantly flying around" --
+# firing on those unlocated would mean near-continuous flashing, which trains
+# the eye to ignore the light and costs more than it buys. Add POLICE here
+# deliberately if that judgement changes.
+WARN_UNLOCATED_KINDS = {k.strip().upper() for k in
+                        os.environ.get("HUE_UNLOCATED_KINDS", "AIR_AMBULANCE").split(",")
+                        if k.strip()}
+
 # Fire no more than once per this window.
 #
 # 30 s, down from 10 minutes. The long cooldown existed to stop continuous
@@ -292,6 +307,22 @@ def choose(status, now):
     return None
 
 
+def choose_unlocated(status):
+    """A rostered airframe the receiver hears but has never located, or None.
+
+    Deliberately checked only when `choose` found nothing. A located aircraft
+    carries real geometry and a real countdown; an unlocated one carries
+    neither, and letting it pre-empt a precise warning would trade information
+    for noise. This fires only in the case where the alternative is silence.
+
+    There is no `left` to return. The caller must not invent one.
+    """
+    for entry in (status.get("adsb_heard_unlocated") or []):
+        if str(entry.get("operator_kind") or "").upper() in WARN_UNLOCATED_KINDS:
+            return entry
+    return None
+
+
 def zones(band):
     """Which lights flash, in which colours, at what brightness.
 
@@ -437,6 +468,11 @@ def main():
 
     last_warned = 0.0
     last_test = 0.0
+    # Hexes already flashed for while unlocated. An unlocated contact stays in
+    # the feed for up to 90 s after its last message, so without this it would
+    # re-fire every cooldown for the whole contact. Entries are dropped when the
+    # airframe leaves the feed, so a genuine second arrival flashes again.
+    warned_unlocated = {}
     while True:
         now = time.time()
         errors, subject = [], None
@@ -482,6 +518,44 @@ def main():
                                    still_inbound=still_inbound)
                     if testing:
                         last_test = now
+            else:
+                # Nothing located is worth a warning. Fall back to anything the
+                # receiver is hearing but cannot place -- the case that produced
+                # silence for N826LF on 2026-08-13.
+                heard = choose_unlocated(status)
+                if heard is not None:
+                    heard_hex = heard.get("hex")
+                    if (heard_hex not in warned_unlocated
+                            and now - last_warned >= COOLDOWN_SECONDS):
+                        last_warned = now
+                        warned_unlocated[heard_hex] = now
+                        subject = heard.get("reg") or heard_hex
+
+                        def still_heard(_hex=heard_hex):
+                            """Is it still being received?
+
+                            The only 'still happening' test available without a
+                            position. A read failure holds the warning: unknown
+                            is not cleared.
+                            """
+                            try:
+                                with STATUS_JSON.open() as fresh:
+                                    current = json.load(fresh)
+                            except (OSError, ValueError):
+                                return True
+                            return any(e.get("hex") == _hex for e in
+                                       (current.get("adsb_heard_unlocated") or []))
+
+                        errors += warn(
+                            "UNLOCATED",
+                            f"{subject} heard, position unknown — no countdown possible",
+                            still_inbound=still_heard)
+
+            # Forget contacts that have left the feed, so a later arrival fires
+            # again. Only when the feed actually read: an unreadable status is
+            # not evidence that an aircraft has gone.
+            present = {e.get("hex") for e in (status.get("adsb_heard_unlocated") or [])}
+            warned_unlocated = {h: t for h, t in warned_unlocated.items() if h in present}
 
         publish({
             "schema": 1, "written_at": time.time(),
