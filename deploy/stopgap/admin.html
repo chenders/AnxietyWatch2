@@ -73,6 +73,10 @@ button.quiet:hover{background:var(--rule);color:var(--text)}
 <div class="sub">Aircraft noise only. Nothing medical is reachable from this page.</div>
 <div class="warn">No authentication. Anyone on this network can change when the light fires.</div>
 
+<div id="disarmed" style="display:none;margin-top:12px;padding:9px 12px;
+     border:1px solid var(--bad);color:var(--bad);font-size:12px;letter-spacing:.06em">
+</div>
+
 <h2>FEEDS</h2>
 <div class="grid" id="feeds"></div>
 
@@ -156,7 +160,12 @@ button.quiet:hover{background:var(--rule);color:var(--text)}
     el("settings").innerHTML = Object.entries(schema).map(([name, spec]) => {
       const value = current[name];
       let control;
-      if (spec.kind === "number") {
+      if (spec.kind === "flag") {
+        const on = value == null ? spec.default : value;
+        control = `<label style="display:flex;align-items:center;gap:8px;margin:0">` +
+          `<input type="checkbox" id="f_${name}"${on ? " checked" : ""}>` +
+          `<span>${on ? "on" : "off"}</span></label>`;
+      } else if (spec.kind === "number") {
         const v = value ?? spec.default;
         control = `<input type="number" id="f_${name}" value="${esc(v)}" ` +
           `min="${spec.min}" max="${spec.max}" step="0.5">` +
@@ -177,7 +186,9 @@ button.quiet:hover{background:var(--rule);color:var(--text)}
   function collect() {
     const out = {};
     for (const [name, spec] of Object.entries(STATE.schema)) {
-      if (spec.kind === "number") {
+      if (spec.kind === "flag") {
+        out[name] = el("f_" + name).checked;
+      } else if (spec.kind === "number") {
         const raw = el("f_" + name).value.trim();
         out[name] = raw === "" ? null : Number(raw);
       } else {
@@ -201,6 +212,8 @@ button.quiet:hover{background:var(--rule);color:var(--text)}
       const r = await fetch("/api/state", {cache: "no-store"});
       STATE = await r.json();
     } catch (e) { say("cannot reach the admin service", "err"); return; }
+    el("disarmed").style.display =
+      STATE.feeds.hue.warnings_enabled === false ? "block" : "none";
     renderFeeds(STATE.feeds);
     renderUnits(STATE.units);
     renderWatching(STATE.watching || []);

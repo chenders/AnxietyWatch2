@@ -115,6 +115,7 @@ def state():
                      "unlocated": len(adsb.get("adsb_heard_unlocated") or []),
                      "model": (adsb.get("adsb_advisory") or {}).get("model")},
             "hue": {"age_s": age(hue), "lights": hue.get("lights"),
+                    "warnings_enabled": hue.get("warnings_enabled"),
                     "alert_lights": hue.get("alert_lights"),
                     "cooldown_s": hue.get("cooldown_s"),
                     "last_warned_at": hue.get("last_warned_at"),
