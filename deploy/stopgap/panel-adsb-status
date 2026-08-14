@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import panel_loud_operators  # noqa: E402  (path must be set before the import)
 import panel_noise_log  # noqa: E402
 import panel_airframe_types  # noqa: E402
+import panel_settings  # noqa: E402
 
 SOURCE = Path(os.environ.get("DUMP1090_AIRCRAFT_JSON", "/run/dump1090-mutability/aircraft.json"))
 OUTPUT = Path(os.environ.get("ADSB_STATUS_JSON", "/home/chris/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical/adsb_status.json"))
@@ -155,7 +156,20 @@ LOW_BAND_FRACTION = {
 # Outdoor ambient assumed for this location: low-density suburban, ~40 dBA.
 # Every threshold below is derived from it, so a quieter or noisier site is one
 # constant away rather than four. Report it alongside any score.
-AMBIENT_DBA = float(os.environ.get("ADSB_AMBIENT_DBA", "40"))
+# Read live, not once at import. The admin console changes this to recalibrate
+# every band at once, and a publisher that had to be restarted to notice would
+# drop the warning state mid-pass -- which has already cost a real alert.
+#
+# 25-70 dBA is the range from a quiet rural night to a busy urban street.
+# Outside it the value is refused and the previous one kept: an ambient of 0
+# would call every aircraft VERY LOUD, and one of 200 would silence the system
+# entirely. Either is a plausible typo and neither should be obeyed.
+def ambient_dba():
+    return panel_settings.number("ambient_dba", "ADSB_AMBIENT_DBA", 40.0,
+                                 minimum=25.0, maximum=70.0)
+
+
+AMBIENT_DBA = ambient_dba()
 
 # Bands as levels above ambient, not absolute constants.
 #
@@ -169,9 +183,25 @@ AMBIENT_DBA = float(os.environ.get("ADSB_AMBIENT_DBA", "40"))
 # speech and where sleep-disturbance onset sits: WHO puts the indoor no-effect
 # maximum at 42 dBA and asks that events above 45 dBA indoors be limited, which
 # through an open window (~15 dB) is about 57-60 dBA outdoors.
-VERY_LOUD_INDEX = AMBIENT_DBA + 30.0   # 70 dBA — dominant single events
-LIKELY_INDEX = AMBIENT_DBA + 15.0      # 55 dBA — intrusive
-POSSIBLE_INDEX = AMBIENT_DBA + 5.0     # 45 dBA — reliably detectable
+# Offsets from ambient, not absolute constants. The module-level values below
+# are the boot-time snapshot; anything deciding a band at runtime must call
+# thresholds() so a live ambient change takes effect on the next frame.
+VERY_LOUD_OVER_AMBIENT = 30.0   # dominant single events
+LIKELY_OVER_AMBIENT = 15.0      # intrusive; speech interference, sleep onset
+POSSIBLE_OVER_AMBIENT = 5.0     # reliably detectable above masking
+
+
+def thresholds():
+    """(very loud, loud, audible) in dBA, against the current ambient."""
+    ambient = ambient_dba()
+    return (ambient + VERY_LOUD_OVER_AMBIENT,
+            ambient + LIKELY_OVER_AMBIENT,
+            ambient + POSSIBLE_OVER_AMBIENT)
+
+
+VERY_LOUD_INDEX = AMBIENT_DBA + VERY_LOUD_OVER_AMBIENT   # 70 dBA at 40 ambient
+LIKELY_INDEX = AMBIENT_DBA + LIKELY_OVER_AMBIENT         # 55 dBA
+POSSIBLE_INDEX = AMBIENT_DBA + POSSIBLE_OVER_AMBIENT     # 45 dBA
 
 
 def loudness_band(index):
@@ -183,11 +213,12 @@ def loudness_band(index):
     """
     if index is None:
         return "UNKNOWN"
-    if index >= VERY_LOUD_INDEX:
+    very_loud, loud, audible = thresholds()
+    if index >= very_loud:
         return "VERY LOUD"
-    if index >= LIKELY_INDEX:
+    if index >= loud:
         return "LOUD"
-    if index >= POSSIBLE_INDEX:
+    if index >= audible:
         return "AUDIBLE"
     return "FAINT"
 
@@ -532,15 +563,25 @@ def unpredictable(reason, proximity=None, ground_m=None, altitude_ft=None, eta_s
         "proximity": proximity,
         "arrival_at": None,
         "terminated_by": None,
-        "model": MODEL_NOTE,
+        "model": model_note(),
     }
 
 
-MODEL_NOTE = (
-    "constant heading over a 3 min horizon, terminated at the runway; "
-    f"estimated outdoor dBA against a {AMBIENT_DBA:.0f} dBA ambient, from "
-    "published certification and AEDT data; no measured sound; unvalidated at this site; +/-5-10 dB"
-)
+def model_note():
+    """What the panel prints about how a score was produced.
+
+    Built per call, not once at import: it quotes the ambient, and the ambient
+    is now live. A note claiming 40 dBA while the model actually used 32 would
+    be worse than no note at all, because it is the line a reader trusts to
+    explain the number printed beside it.
+    """
+    return ("constant heading over a 3 min horizon, terminated at the runway; "
+            f"estimated outdoor dBA against a {ambient_dba():.0f} dBA ambient, "
+            "from published certification and AEDT data; no measured sound; "
+            "unvalidated at this site; +/-5-10 dB")
+
+
+MODEL_NOTE = model_note()
 
 
 def predict_pass(lat, lon, altitude_ft, category, speed_kt, track_deg, vertical_rate_fpm, seen,
@@ -646,9 +687,10 @@ def predict_pass(lat, lon, altitude_ft, category, speed_kt, track_deg, vertical_
     landing_elsewhere = arrival_at is not None and altitude_above_station < 100.0
     receding = eta_cpa < -5.0
     approaching = not receding and not landing_elsewhere and eta < PREDICTION_HORIZON_SECONDS
-    if approaching and index >= LIKELY_INDEX:
+    _very_loud, loud_at, audible_at = thresholds()
+    if approaching and index >= loud_at:
         risk, reasons = "LIKELY", [f"{phase.lower()} thrust at {ground_cpa/1000:.1f} km"]
-    elif approaching and index >= POSSIBLE_INDEX:
+    elif approaching and index >= audible_at:
         risk, reasons = "POSSIBLE", [f"{phase.lower()} thrust at {ground_cpa/1000:.1f} km"]
     elif receding:
         risk, reasons = "LOW", ["closest approach is already behind it"]
@@ -657,8 +699,8 @@ def predict_pass(lat, lon, altitude_ft, category, speed_kt, track_deg, vertical_
     else:
         risk, reasons = "LOW", [
             f"estimated {index:.0f} dBA at closest approach, under the "
-            f"{POSSIBLE_INDEX:.0f} dBA audible floor for a "
-            f"{AMBIENT_DBA:.0f} dBA ambient"]
+            f"{audible_at:.0f} dBA audible floor for a "
+            f"{ambient_dba():.0f} dBA ambient"]
 
     return {
         "risk": risk,
@@ -675,7 +717,7 @@ def predict_pass(lat, lon, altitude_ft, category, speed_kt, track_deg, vertical_
         "proximity": proximity,
         "arrival_at": arrival_at,
         "terminated_by": terminated_by,
-        "model": MODEL_NOTE,
+        "model": model_note(),
     }
 
 
@@ -968,7 +1010,7 @@ def log_finished_passes(reports, now):
                     # Without this a stored score is uninterpretable: the same
                     # column held an invented relative index before
                     # 2026-08-13 and estimated dBA after.
-                    "ambient_dba": AMBIENT_DBA,
+                    "ambient_dba": ambient_dba(),
                 },
             ))
         except OSError as exc:
@@ -1066,7 +1108,7 @@ def publish():
         "adsb_advisory": {
             "armed": False,
             "status": "NOT ARMED",
-            "model": MODEL_NOTE,
+            "model": model_note(),
             "next": select_candidate(candidates),
             # Aircraft we could not score at all. Never counted as quiet.
             "unscored": [

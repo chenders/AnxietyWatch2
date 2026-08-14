@@ -52,6 +52,11 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+# Installed alongside this script in /usr/local/bin, which is not on the
+# import path for a script invoked by absolute path.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import panel_settings  # noqa: E402  (path must be set before the import)
+
 BRIDGE = os.environ.get("HUE_BRIDGE")
 USERNAME = os.environ.get("HUE_USERNAME")
 LIGHTS = [x.strip() for x in os.environ.get("HUE_LIGHTS", "").split(",") if x.strip()]
@@ -77,8 +82,18 @@ POLL_SECONDS = float(os.environ.get("HUE_POLL_SECONDS", "1"))
 
 # Only these bands warrant lighting a room. FAINT and a distant AUDIBLE do not:
 # a warning that fires for everything is noise itself.
-WARN_BANDS = {b.strip() for b in
-              os.environ.get("HUE_BANDS", "VERY LOUD,LOUD").split(",") if b.strip()}
+def warn_bands():
+    """Which loudness bands fire the light, read live.
+
+    An empty set is honoured rather than replaced by the default: "fire on
+    nothing" is a legitimate request, and quietly re-arming a light someone
+    deliberately disarmed would be worse than obeying them.
+    """
+    return panel_settings.words("hue_bands", "HUE_BANDS",
+                                frozenset(("VERY LOUD", "LOUD")))
+
+
+WARN_BANDS = warn_bands()
 
 # An aircraft we could NOT score, passing directly overhead, also warrants a
 # warning. Absence of a score is not evidence of quiet -- and air ambulances are
@@ -96,9 +111,13 @@ WARN_ON_UNSCORED_OVERHEAD = os.environ.get("HUE_WARN_UNSCORED", "1") != "0"
 # firing on those unlocated would mean near-continuous flashing, which trains
 # the eye to ignore the light and costs more than it buys. Add POLICE here
 # deliberately if that judgement changes.
-WARN_UNLOCATED_KINDS = {k.strip().upper() for k in
-                        os.environ.get("HUE_UNLOCATED_KINDS", "AIR_AMBULANCE").split(",")
-                        if k.strip()}
+def warn_unlocated_kinds():
+    return frozenset(k.upper() for k in panel_settings.words(
+        "hue_unlocated_kinds", "HUE_UNLOCATED_KINDS",
+        frozenset(("AIR_AMBULANCE",))))
+
+
+WARN_UNLOCATED_KINDS = warn_unlocated_kinds()
 
 # Fire no more than once per this window.
 #
@@ -108,7 +127,14 @@ WARN_UNLOCATED_KINDS = {k.strip().upper() for k in
 # aircraft a day. A short cooldown means two genuinely loud aircraft a minute
 # apart both get announced, which is the case that matters and which a
 # 10-minute window silently swallowed.
-COOLDOWN_SECONDS = float(os.environ.get("HUE_COOLDOWN_SECONDS", "30"))
+def cooldown_seconds():
+    # 0 is allowed -- it means "never suppress" -- but a negative value would
+    # make the comparison always true in a way that reads as a cooldown.
+    return panel_settings.number("hue_cooldown_seconds", "HUE_COOLDOWN_SECONDS",
+                                 30.0, minimum=0.0, maximum=3600.0)
+
+
+COOLDOWN_SECONDS = cooldown_seconds()
 
 # How long the warning lasts before the previous state is restored.
 FLASH_SECONDS = float(os.environ.get("HUE_FLASH_SECONDS", "17"))
@@ -133,7 +159,15 @@ ALL_CLEAR_BRIGHTNESS = max(1, min(254, int(os.environ.get("HUE_ALL_CLEAR_BRIGHTN
 # The measured warning budget for a Providence departure is ~34 s, so a warning
 # is only useful inside roughly that window. Firing 3 minutes ahead trains the
 # household to ignore it.
-LEAD_SECONDS = float(os.environ.get("HUE_LEAD_SECONDS", "45"))
+def lead_seconds():
+    # Capped at 300: the entire warning budget for a Life Flight departure off
+    # the Providence pad is 34 seconds, so a lead of an hour is a typo, not a
+    # preference.
+    return panel_settings.number("hue_lead_seconds", "HUE_LEAD_SECONDS",
+                                 45.0, minimum=1.0, maximum=300.0)
+
+
+LEAD_SECONDS = lead_seconds()
 
 # Hue CIE xy.
 #
@@ -295,10 +329,10 @@ def choose(status, now):
         if not isinstance(at, (int, float)):
             continue
         left = at - now
-        if left < 0 or left > LEAD_SECONDS:
+        if left < 0 or left > lead_seconds():
             continue
         band = prediction.get("loudness_band")
-        if band in WARN_BANDS:
+        if band in warn_bands():
             return report, band, left
         # The third state. Not measured is not the same as not loud.
         if (WARN_ON_UNSCORED_OVERHEAD and prediction.get("noise_index") is None
@@ -318,7 +352,7 @@ def choose_unlocated(status):
     There is no `left` to return. The caller must not invent one.
     """
     for entry in (status.get("adsb_heard_unlocated") or []):
-        if str(entry.get("operator_kind") or "").upper() in WARN_UNLOCATED_KINDS:
+        if str(entry.get("operator_kind") or "").upper() in warn_unlocated_kinds():
             return entry
     return None
 
@@ -489,7 +523,7 @@ def main():
                 testing = is_test(report)
                 # A test bypasses the cooldown so it always demonstrates, and
                 # never sets it so it cannot suppress the next real aircraft.
-                if testing or now - last_warned >= COOLDOWN_SECONDS:
+                if testing or now - last_warned >= cooldown_seconds():
                     subject = (report.get("registration") or report.get("callsign")
                                or report.get("hex"))
                     if not testing:
@@ -526,7 +560,7 @@ def main():
                 if heard is not None:
                     heard_hex = heard.get("hex")
                     if (heard_hex not in warned_unlocated
-                            and now - last_warned >= COOLDOWN_SECONDS):
+                            and now - last_warned >= cooldown_seconds()):
                         last_warned = now
                         warned_unlocated[heard_hex] = now
                         subject = heard.get("reg") or heard_hex
@@ -563,7 +597,7 @@ def main():
             "bridge": BRIDGE,
             "lights": LIGHTS,
             "alert_lights": ALERT_LIGHTS,
-            "cooldown_s": COOLDOWN_SECONDS,
+            "cooldown_s": cooldown_seconds(),
             "last_warned_at": last_warned or None,
             # Recorded separately so a test is never mistaken for a real
             # warning when reading back why the light did or did not fire.
