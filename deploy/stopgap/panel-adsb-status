@@ -762,7 +762,22 @@ def make_report(item, source_now):
         "operator": (airframe or {}).get("operator"),
         # Display name, so the panel never has to translate an enum key into
         # something a person reads at 3am.
-        "operator_name": panel_loud_operators.operator_name(airframe) if airframe else None,
+        #
+        # Falls back to the registered owner the enricher learned from adsbdb.
+        # Until 2026-08-13 this was roster-only -- sixteen hand-curated
+        # airframes -- while the learned owner was published under `owner`,
+        # which the panel never read for this line. So an aircraft whose
+        # operator was sitting in the database, correctly, still displayed
+        # "OPERATOR NOT IDENTIFIED": N643QX read as unidentified while the row
+        # next to it said Alaska Airlines. 440 of 509 known airframes carry an
+        # operator, so the effect was to hide almost everything we know.
+        "operator_name": (panel_loud_operators.operator_name(airframe) if airframe
+                          else None) or learned.get("operator"),
+        # Where that name came from. A hand-verified roster entry carries
+        # judgement and provenance; a bulk lookup carries neither, and the two
+        # must stay distinguishable rather than being merged into one string.
+        "operator_source": ("ROSTER" if airframe else
+                            "LOOKUP" if learned.get("operator") else None),
         "operator_kind": panel_loud_operators.operator_kind(airframe) if airframe else None,
         "operator_state": operator_state,
         "operator_reason": operator_reason,

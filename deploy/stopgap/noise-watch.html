@@ -749,6 +749,31 @@ body{
   wireSelection();
   applyMapSize();
   window.addEventListener("resize", () => { applyMapSize(); draw(); });
+  /* ---- reload when this page itself is superseded ----
+     The kiosk browser is launched once at boot and never navigates. It polls
+     JSON every second, so its DATA stays live while its CODE silently does
+     not: on 2026-08-13 it had been running 6h28m and was rendering a build
+     from before that morning's changes, which is why it stopped matching what
+     a freshly-opened browser showed. Deploying a file does not reach a client
+     that never reloads.
+
+     Watches its own Last-Modified and reloads once when it changes. A failed
+     check does nothing at all -- unknown is not "changed", and a reload loop
+     on a flaky fetch would be far worse than a stale page. */
+  let ownVersion = null;
+  async function checkForNewBuild() {
+    try {
+      const r = await fetch(location.pathname, {method: "HEAD", cache: "no-store"});
+      if (!r.ok) return;
+      const stamp = r.headers.get("Last-Modified") || r.headers.get("ETag");
+      if (!stamp) return;
+      if (ownVersion === null) { ownVersion = stamp; return; }
+      if (stamp !== ownVersion) location.reload();
+    } catch (e) { /* offline or server restarting; keep showing what we have */ }
+  }
+  checkForNewBuild();
+  setInterval(checkForNewBuild, 60000);
+
   poll().then(draw);
   setInterval(poll, 1000);
   setInterval(draw, 250);   /* the countdown must not visibly stutter */

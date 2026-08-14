@@ -865,3 +865,65 @@ class PerTypeCorrections(unittest.TestCase):
         # Anything beyond ~10 dB is a class error being papered over.
         for designator, db in adsb.TYPE_SOURCE_OFFSET_DB.items():
             self.assertTrue(0.0 < db <= 10.0, f"{designator}={db}")
+
+
+class OperatorNameReachesThePanel(unittest.TestCase):
+    """Until 2026-08-13 the panel said "OPERATOR NOT IDENTIFIED" for aircraft
+    whose operator was sitting in the database, correctly.
+
+    `operator_name` was roster-only -- sixteen hand-curated airframes -- while
+    the owner learned from adsbdb was published under `owner`, which the panel
+    never read for that line. 440 of 509 known airframes carried an operator,
+    so the effect was to hide almost everything the system knew.
+    """
+
+    ALASKA = "A871D4"      # N643QX, learned from adsbdb
+    POLICE = "A50E9F"      # N425EJ, hand-curated roster entry
+
+    def _learned(self, mapping):
+        original = adsb.enriched_types
+        adsb.enriched_types = lambda: mapping
+        self.addCleanup(lambda: setattr(adsb, "enriched_types", original))
+
+    def _report(self, hex_code):
+        return adsb.make_report(
+            {"hex": hex_code, "lat": adsb.STATION_LAT + 0.01, "lon": adsb.STATION_LON,
+             "altitude": 3000, "seen": 1.0, "speed": 250, "track": 180,
+             "vert_rate": 0, "category": "A3"}, 1_000_000.0)
+
+    def test_a_learned_owner_now_reaches_the_panel(self):
+        self._learned({self.ALASKA: {"type": "B738", "operator": "Alaska Airlines"}})
+        self.assertEqual(self._report(self.ALASKA)["operator_name"], "Alaska Airlines")
+
+    def test_the_roster_still_wins_over_a_lookup(self):
+        # Hand-verified, with provenance. A bulk lookup must not overwrite it.
+        self._learned({self.POLICE: {"type": "C182", "operator": "Some Leasing LLC"}})
+        self.assertEqual(self._report(self.POLICE)["operator_name"],
+                         "Portland Police Bureau")
+
+    def test_the_two_stay_distinguishable(self):
+        # Merging them into one string would lose the distinction between a
+        # curated judgement and a bulk lookup.
+        self._learned({self.ALASKA: {"type": "B738", "operator": "Alaska Airlines"}})
+        self.assertEqual(self._report(self.ALASKA)["operator_source"], "LOOKUP")
+        self.assertEqual(self._report(self.POLICE)["operator_source"], "ROSTER")
+
+    def test_an_unknown_airframe_reports_no_operator_and_no_source(self):
+        # Still the third state. Absence is never rendered as ordinary.
+        self._learned({})
+        report = self._report("ABCDEF")
+        self.assertIsNone(report["operator_name"])
+        self.assertIsNone(report["operator_source"])
+
+    def test_a_learned_entry_without_an_owner_does_not_invent_one(self):
+        self._learned({self.ALASKA: {"type": "B738"}})
+        report = self._report(self.ALASKA)
+        self.assertIsNone(report["operator_name"])
+        self.assertIsNone(report["operator_source"])
+
+    def test_operator_kind_stays_roster_only(self):
+        """The glyph and the light key off this. adsbdb saying "Life Flight
+        Network" must not by itself promote an airframe to AIR_AMBULANCE and
+        start firing a bedroom light."""
+        self._learned({self.ALASKA: {"type": "B738", "operator": "Life Flight Network"}})
+        self.assertIsNone(self._report(self.ALASKA)["operator_kind"])
