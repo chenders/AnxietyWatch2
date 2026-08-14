@@ -608,7 +608,10 @@ def predict_pass(lat, lon, altitude_ft, category, speed_kt, track_deg, vertical_
     elif landing_elsewhere:
         risk, reasons = "LOW", [f"descending into {arrival_at}; below station height at closest approach"]
     else:
-        risk, reasons = "LOW", [f"relative index {index:.0f} is below the unvalidated threshold"]
+        risk, reasons = "LOW", [
+            f"estimated {index:.0f} dBA at closest approach, under the "
+            f"{POSSIBLE_INDEX:.0f} dBA audible floor for a "
+            f"{AMBIENT_DBA:.0f} dBA ambient"]
 
     return {
         "risk": risk,
