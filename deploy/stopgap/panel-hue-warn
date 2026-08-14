@@ -98,7 +98,24 @@ WARN_BANDS = warn_bands()
 # An aircraft we could NOT score, passing directly overhead, also warrants a
 # warning. Absence of a score is not evidence of quiet -- and air ambulances are
 # over-represented among the aircraft that broadcast no category at all.
-WARN_ON_UNSCORED_OVERHEAD = os.environ.get("HUE_WARN_UNSCORED", "1") != "0"
+def warn_on_unscored_overhead():
+    return panel_settings.flag("hue_warn_unscored", "HUE_WARN_UNSCORED", True)
+
+
+WARN_ON_UNSCORED_OVERHEAD = warn_on_unscored_overhead()
+
+
+def armed():
+    """The master switch, checked before any trigger is evaluated.
+
+    One switch rather than three. There are three independent paths to a
+    flash -- a scored band, an unlocated air ambulance, and an unscored
+    aircraft overhead -- and disabling only the obvious one leaves the light
+    still firing while the operator believes it is off. That is the precise
+    failure this project legislates against everywhere else, so the disable
+    is a single gate rather than three things to remember.
+    """
+    return panel_settings.flag("hue_enabled", "HUE_ENABLED", True)
 
 # Operator kinds that warrant a warning when the receiver hears them but never
 # decodes a position. There is no geometry at all in this case -- no range, no
@@ -323,6 +340,8 @@ def choose(status, now):
 
     Returns (report, band, seconds_away).
     """
+    if not armed():
+        return None
     for report in (status.get("adsb_predictions") or []):
         prediction = report.get("prediction") or {}
         at = prediction.get("at_epoch")
@@ -335,7 +354,7 @@ def choose(status, now):
         if band in warn_bands():
             return report, band, left
         # The third state. Not measured is not the same as not loud.
-        if (WARN_ON_UNSCORED_OVERHEAD and prediction.get("noise_index") is None
+        if (warn_on_unscored_overhead() and prediction.get("noise_index") is None
                 and prediction.get("proximity") == "OVERHEAD"):
             return report, "UNKNOWN", left
     return None
@@ -351,6 +370,8 @@ def choose_unlocated(status):
 
     There is no `left` to return. The caller must not invent one.
     """
+    if not armed():
+        return None
     for entry in (status.get("adsb_heard_unlocated") or []):
         if str(entry.get("operator_kind") or "").upper() in warn_unlocated_kinds():
             return entry
@@ -502,6 +523,10 @@ def main():
 
     last_warned = 0.0
     last_test = 0.0
+    # Announced on change, not every second. A disarmed warning system must
+    # say so -- silence here is indistinguishable from a broken bridge, and
+    # this file exists because that distinction matters.
+    was_armed = None
     # Hexes already flashed for while unlocated. An unlocated contact stays in
     # the feed for up to 90 s after its last message, so without this it would
     # re-fire every cooldown for the whole contact. Entries are dropped when the
@@ -515,6 +540,13 @@ def main():
                 status = json.load(stream)
         except (OSError, ValueError) as exc:
             status, errors = {}, [f"cannot read the aircraft feed: {exc}"]
+
+        if armed() != was_armed:
+            was_armed = armed()
+            print("panel-hue-warn: " + ("warnings ARMED" if was_armed else
+                  "warnings DISARMED by hue_enabled=false — nothing will flash, "
+                  "including air ambulances and unscored aircraft overhead"),
+                  flush=True)
 
         if status:
             picked = choose(status, now)
@@ -594,6 +626,10 @@ def main():
         publish({
             "schema": 1, "written_at": time.time(),
             "armed": False,
+            # Distinct from "armed" above, which records that this is an
+            # advisory and not an alarm system. This one says whether any
+            # trigger can fire at all.
+            "warnings_enabled": armed(),
             "bridge": BRIDGE,
             "lights": LIGHTS,
             "alert_lights": ALERT_LIGHTS,

@@ -446,3 +446,63 @@ class HeardWithoutAPosition(unittest.TestCase):
         self.assertNotIsInstance(picked, tuple)
         for forbidden in ("at_epoch", "eta_seconds", "prediction", "distance_km"):
             self.assertNotIn(forbidden, picked)
+
+
+class TheMasterSwitch(unittest.TestCase):
+    """hue_enabled=false must silence EVERY path to a flash.
+
+    There are three independent triggers, and disabling only the obvious one
+    leaves the light firing while the operator believes it is off. That is the
+    exact failure this project legislates against elsewhere, so the disable is
+    one gate rather than three things to remember.
+    """
+
+    LOUD = {"hex": "A12345", "registration": "N123AB",
+            "prediction": {"at_epoch": 1000.0, "loudness_band": "LOUD",
+                           "noise_index": 62.0, "proximity": "OVERHEAD"}}
+    UNSCORED_OVERHEAD = {"hex": "A99999",
+                         "prediction": {"at_epoch": 1000.0, "loudness_band": "UNKNOWN",
+                                        "noise_index": None, "proximity": "OVERHEAD"}}
+    HEARD = {"hex": "AB4825", "reg": "N826LF", "operator_kind": "AIR_AMBULANCE",
+             "state": "HEARD_NO_POSITION"}
+
+    def arm(self, enabled):
+        original = hue.armed
+        hue.armed = lambda: enabled
+        self.addCleanup(lambda: setattr(hue, "armed", original))
+
+    def test_armed_by_default(self):
+        # Absent settings must not silently disarm a warning system.
+        self.assertTrue(hue.armed())
+
+    def test_a_loud_aircraft_is_chosen_when_armed(self):
+        self.arm(True)
+        self.assertIsNotNone(hue.choose({"adsb_predictions": [self.LOUD]}, 970.0))
+
+    def test_a_loud_aircraft_is_not_chosen_when_disarmed(self):
+        self.arm(False)
+        self.assertIsNone(hue.choose({"adsb_predictions": [self.LOUD]}, 970.0))
+
+    def test_an_unscored_overhead_aircraft_is_not_chosen_when_disarmed(self):
+        """The second trigger. Independent of the band list, so clearing
+        hue_bands alone would leave this one firing."""
+        self.arm(False)
+        self.assertIsNone(
+            hue.choose({"adsb_predictions": [self.UNSCORED_OVERHEAD]}, 970.0))
+
+    def test_an_unlocated_air_ambulance_is_not_chosen_when_disarmed(self):
+        """The third trigger, and the one most likely to be forgotten: it does
+        not read hue_bands at all."""
+        self.arm(False)
+        self.assertIsNone(hue.choose_unlocated({"adsb_heard_unlocated": [self.HEARD]}))
+
+    def test_the_unlocated_path_still_works_when_armed(self):
+        self.arm(True)
+        self.assertIsNotNone(
+            hue.choose_unlocated({"adsb_heard_unlocated": [self.HEARD]}))
+
+    def test_the_unscored_overhead_trigger_has_its_own_switch(self):
+        # Reachable from the console now; it was environment-only before, so
+        # the admin page could not turn off a trigger that fires the light.
+        self.assertIn("hue_warn_unscored", hue.panel_settings.SCHEMA)
+        self.assertIn("hue_enabled", hue.panel_settings.SCHEMA)

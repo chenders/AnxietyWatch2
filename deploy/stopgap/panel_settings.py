@@ -54,6 +54,15 @@ _last_error = None
 # `label` and `note` exist so the console can explain a setting without the
 # HTML restating anything, which is the other half of the same drift problem.
 SCHEMA = {
+    "hue_enabled": {
+        "kind": "flag", "default": True,
+        "label": "Light warnings armed",
+        "note": "The master switch. Off means NOTHING flashes -- not a scored "
+                "aircraft, not an unlocated air ambulance, not an unscored "
+                "one overhead. One switch rather than three, because turning "
+                "off only the obvious trigger leaves the light still firing "
+                "while you believe it is disarmed.",
+    },
     "ambient_dba": {
         "kind": "number", "default": 40.0, "min": 25.0, "max": 70.0,
         "label": "Assumed outdoor ambient (dBA)",
@@ -82,6 +91,14 @@ SCHEMA = {
         "note": "The entire warning budget for a Life Flight departure off "
                 "the Providence pad is 34 seconds, set by geometry. A lead "
                 "longer than that cannot be met for those.",
+    },
+    "hue_warn_unscored": {
+        "kind": "flag", "default": True,
+        "label": "Flash for an unscored aircraft directly overhead",
+        "note": "Absence of a score is not evidence of quiet, and air "
+                "ambulances are over-represented among aircraft that "
+                "broadcast no category at all. Turning this off silences the "
+                "case this system was built for.",
     },
     "hue_cooldown_seconds": {
         "kind": "number", "default": 30.0, "min": 0.0, "max": 3600.0,
@@ -117,6 +134,15 @@ def validate(name, value):
             return False, (f"{name} must be between {spec['min']:g} and "
                            f"{spec['max']:g}, got {parsed:g}")
         return True, parsed
+    if spec["kind"] == "flag":
+        if isinstance(value, bool):
+            return True, value
+        text_value = str(value).strip().lower()
+        if text_value in ("1", "true", "yes", "on"):
+            return True, True
+        if text_value in ("0", "false", "no", "off"):
+            return True, False
+        return False, f"{name} must be true or false, got {value!r}"
     if spec["kind"] == "words":
         items = value if isinstance(value, (list, tuple)) else str(value).split(",")
         cleaned = [str(v).strip() for v in items if str(v).strip()]

@@ -119,6 +119,7 @@ def state():
             "fr24": {"age_s": age(fr24), "state": fr24.get("feed_state"),
                      "credits": fr24.get("credits"), "error": fr24.get("error")},
             "hue": {"age_s": age(hue), "lights": hue.get("lights"),
+                    "warnings_enabled": hue.get("warnings_enabled"),
                     "alert_lights": hue.get("alert_lights"),
                     "cooldown_s": hue.get("cooldown_s"),
                     "last_warned_at": hue.get("last_warned_at"),
