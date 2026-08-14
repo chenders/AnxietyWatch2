@@ -170,6 +170,7 @@ body{
 .unloc .lab{font-size:9px;letter-spacing:.24em;color:var(--unknown);display:block;margin-bottom:4px}
 .unloc .who{font-size:15px;color:var(--unknown-hi);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .unloc .why{font-size:11px;color:var(--unknown);margin-top:2px}
+.tbl .rt{color:var(--unknown);white-space:nowrap}
 .queue{padding:6px 14px 0;border-top:1px solid var(--rule-quiet);overflow:hidden}
 .queue .lab{font-size:9px;letter-spacing:.24em;color:var(--label);display:block;margin-bottom:5px}
 .rows{display:flex;flex-direction:column;gap:3px}
@@ -410,11 +411,26 @@ body{
   const isHeli = p => p.airframe_class === "rotorcraft" ||
                       HELI_TYPES.has(String(p.icao_type || "").toUpperCase());
 
+  /* "ATL → PDX", or "Atlanta → Portland" when no IATA code is known.
+     Returns "" when there is no route, which is the common case here: a
+     private aircraft transmits its registration as its callsign and has none.
+     Absence, not failure, so it renders as nothing rather than as a gap. */
+  function routeText(p) {
+    const r = p.route;
+    if (!r) return "";
+    const from = r.from || r.from_city, to = r.to || r.to_city;
+    if (!from && !to) return "";
+    return (from || "?") + " \u2192 " + (to || "?");
+  }
+
   function markerTitle(p) {
     const bits = [];
     bits.push(p.registration || p.callsign || p.hex || "unidentified");
     if (p.operator_name) bits.push(p.operator_name);
     if (p.icao_type) bits.push(p.icao_type);
+    const route = routeText(p);
+    if (route) bits.push(route + (p.route.from_city && p.route.to_city
+      ? "  (" + p.route.from_city + " to " + p.route.to_city + ")" : ""));
     const pr = p.prediction || {};
     const facts = [];
     if (Number.isFinite(p.alt_ft)) facts.push(p.alt_ft.toLocaleString() + " ft");
@@ -704,6 +720,7 @@ body{
         '<td class="id">' + esc(p.registration || p.callsign || p.hex || "—") + '</td>' +
         '<td class="op">' + esc(p.operator_name || "") + '</td>' +
         '<td>' + esc(p.icao_type || p.category || "—") + '</td>' +
+        '<td class="rt">' + esc(routeText(p) || "—") + '</td>' +
         '<td>' + (Number.isFinite(p.dist) ? (p.dist/1000).toFixed(1) + " km" : "—") + '</td>' +
         '<td>' + (Number.isFinite(p.alt_ft) ? p.alt_ft.toLocaleString() + " ft" : "—") + '</td>' +
         '<td>' + (Number.isFinite(p.bearing) ? Math.round(p.bearing) + "°" : "—") + '</td>' +
@@ -711,10 +728,10 @@ body{
         '<td>' + (m ? '<a href="' + esc(m) + '" target="_blank" rel="noopener">map</a>' : "") +
           (a ? ' · <a href="' + esc(a) + '" target="_blank" rel="noopener">history</a>' : "") + '</td>' +
         '</tr>';
-    }).join("") : '<tr><td colspan="9" class="none">no aircraft received</td></tr>';
+    }).join("") : '<tr><td colspan="10" class="none">no aircraft received</td></tr>';
 
     el("more").innerHTML = '<h2>ALL AIRCRAFT RECEIVED · nearest first</h2>' +
-      '<table class="tbl"><thead><tr><th></th><th>ID</th><th>OPERATOR</th><th>TYPE</th>' +
+      '<table class="tbl"><thead><tr><th></th><th>ID</th><th>OPERATOR</th><th>TYPE</th><th>ROUTE</th>' +
       '<th>RANGE</th><th>ALT</th><th>BRG</th><th>PHASE</th><th>FLIGHTRADAR24</th></tr></thead>' +
       '<tbody>' + body + '</tbody></table>';
   }

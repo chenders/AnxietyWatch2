@@ -36,6 +36,7 @@ it. It is kept, which is the entire point of caching it.
 
 import json
 import os
+import re
 import ssl
 import sys
 import time
@@ -55,6 +56,8 @@ API = os.environ.get("ADSBDB_BASE", "https://api.adsbdb.com/v0/aircraft")
 DSN = os.environ.get("PANEL_NOISE_DSN", "host=/var/run/postgresql dbname=vitals user=chris")
 CACHE = Path(os.environ.get("PANEL_AIRCRAFT_CACHE",
                             "/var/lib/panel-noise/aircraft_types.json"))
+ROUTE_CACHE = Path(os.environ.get("PANEL_ROUTE_CACHE",
+                                  "/var/lib/panel-noise/flight_routes.json"))
 
 # Pace, cap and identify. A free service deserves all three.
 REQUEST_SPACING = float(os.environ.get("ADSBDB_SPACING_SECONDS", "1.5"))
@@ -98,6 +101,117 @@ UPDATE_MISSING = """
 UPDATE aircraft SET looked_up_at = now(), updated_at = now()
  WHERE icao_hex = %s AND source <> 'roster'
 """
+
+# ---- flight routes -------------------------------------------------------
+#
+# Keyed on callsign, not on the airframe: ASA783 flies Atlanta to Portland
+# whichever aircraft operates it that day.
+
+ROUTE_API = os.environ.get("ADSBDB_ROUTE_API", "https://api.adsbdb.com/v0/callsign")
+ROUTE_BATCH = int(os.environ.get("ADSBDB_ROUTE_BATCH", "20"))
+ROUTE_RETRY_AFTER_DAYS = float(os.environ.get("ADSBDB_ROUTE_RETRY_AFTER_DAYS", "90"))
+
+# An ICAO airline callsign is a three-letter operator code followed by a flight
+# number: ASA783, UAL1234, SWA55. A private aircraft transmits its registration
+# instead -- N425EJ, the Portland Police Cessna -- and adsbdb answers 404 for
+# those, correctly.
+#
+# Filtering here rather than letting the 404s happen is the difference between
+# spending the batch on callsigns that might have a route and spending it on
+# ones that provably cannot. Most of what this receiver hears is the latter.
+AIRLINE_CALLSIGN = re.compile(r"^[A-Z]{3}[0-9]{1,4}[A-Z]{0,2}$")
+
+
+def looks_like_airline_callsign(callsign):
+    """Whether it is worth spending a request on this callsign."""
+    if not isinstance(callsign, str):
+        return False
+    return bool(AIRLINE_CALLSIGN.match(callsign.strip().upper()))
+
+
+# Callsigns seen in the record with no route row yet, or one old enough to be
+# worth refreshing. Routes change with airline schedules, so the retry horizon
+# is longer than the airframe one but not infinite.
+#
+# MOST RECENTLY SEEN FIRST. The first version ordered alphabetically, which is
+# the worst possible order for a queue that is drained a few at a time: it
+# spent the whole first run on AAL1625, AAL1636, AAL1665 -- aircraft that flew
+# days ago -- while the flights actually overhead waited behind 560 others and
+# would land long before their turn. Recency is what makes the answer arrive
+# while it can still be displayed.
+SELECT_PENDING_ROUTES = """
+SELECT p.callsign
+  FROM aircraft_pass p
+  LEFT JOIN flight_route r ON r.callsign = p.callsign
+ WHERE p.callsign IS NOT NULL
+   AND p.callsign <> ''
+   AND (r.callsign IS NULL
+        OR r.looked_up_at < now() - %s * interval '1 day')
+ GROUP BY p.callsign
+ ORDER BY max(p.at) DESC
+ LIMIT %s
+"""
+
+UPSERT_ROUTE = """
+INSERT INTO flight_route (
+    callsign, airline_name, airline_icao, airline_iata,
+    origin_iata, origin_icao, origin_name, origin_municipality,
+    destination_iata, destination_icao, destination_name, destination_municipality,
+    looked_up_at, updated_at)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now(), now())
+ON CONFLICT (callsign) DO UPDATE SET
+    airline_name             = COALESCE(EXCLUDED.airline_name, flight_route.airline_name),
+    airline_icao             = COALESCE(EXCLUDED.airline_icao, flight_route.airline_icao),
+    airline_iata             = COALESCE(EXCLUDED.airline_iata, flight_route.airline_iata),
+    origin_iata              = COALESCE(EXCLUDED.origin_iata, flight_route.origin_iata),
+    origin_icao              = COALESCE(EXCLUDED.origin_icao, flight_route.origin_icao),
+    origin_name              = COALESCE(EXCLUDED.origin_name, flight_route.origin_name),
+    origin_municipality      = COALESCE(EXCLUDED.origin_municipality, flight_route.origin_municipality),
+    destination_iata         = COALESCE(EXCLUDED.destination_iata, flight_route.destination_iata),
+    destination_icao         = COALESCE(EXCLUDED.destination_icao, flight_route.destination_icao),
+    destination_name         = COALESCE(EXCLUDED.destination_name, flight_route.destination_name),
+    destination_municipality = COALESCE(EXCLUDED.destination_municipality, flight_route.destination_municipality),
+    looked_up_at             = now(),
+    updated_at               = now()
+"""
+
+
+def lookup_route(callsign, context):
+    """(flightroute, error). No route is (None, None) -- not an error."""
+    request = urllib.request.Request(
+        f"{ROUTE_API}/{callsign.upper()}",
+        headers={"Accept": "application/json", "User-Agent": USER_AGENT})
+    try:
+        with urllib.request.urlopen(request, timeout=12, context=context) as response:
+            payload = json.loads(response.read())
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            return None, None
+        return None, f"HTTP {exc.code}"
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        return None, f"unreachable: {exc}"
+    except ValueError as exc:
+        return None, f"unparseable: {exc}"
+
+    route = (payload or {}).get("response", {}).get("flightroute")
+    if not isinstance(route, dict):
+        return None, None
+    return route, None
+
+
+def route_columns(route):
+    """Flatten adsbdb's nested route into the row this table stores."""
+    def field(section, key):
+        block = (route or {}).get(section)
+        return block.get(key) if isinstance(block, dict) else None
+
+    return (
+        field("airline", "name"), field("airline", "icao"), field("airline", "iata"),
+        field("origin", "iata_code"), field("origin", "icao_code"),
+        field("origin", "name"), field("origin", "municipality"),
+        field("destination", "iata_code"), field("destination", "icao_code"),
+        field("destination", "name"), field("destination", "municipality"),
+    )
 
 
 def lookup(hex_code, context):
@@ -151,6 +265,82 @@ def refresh_cache(cur):
     return len(rows)
 
 
+def refresh_route_cache(cur):
+    """Mirror known routes into a file the publish loop can read cheaply.
+
+    Same reasoning as the airframe cache: the 1 Hz publisher must never touch
+    PostgreSQL, so the database stays the system of record and the panel reads
+    a small file. Only rows that actually carry a route are written -- a
+    negative lookup exists to pace retries, and putting it here would make the
+    panel iterate rows that can never render anything.
+    """
+    cur.execute("""
+        SELECT callsign, airline_name,
+               origin_iata, origin_municipality,
+               destination_iata, destination_municipality
+          FROM flight_route
+         WHERE origin_iata IS NOT NULL OR destination_iata IS NOT NULL
+    """)
+    rows = {
+        callsign: {"airline": airline,
+                   "from": origin, "from_city": origin_city,
+                   "to": dest, "to_city": dest_city}
+        for callsign, airline, origin, origin_city, dest, dest_city in cur.fetchall()
+    }
+    ROUTE_CACHE.parent.mkdir(parents=True, exist_ok=True)
+    tmp = ROUTE_CACHE.with_name(f".{ROUTE_CACHE.name}.tmp")
+    with tmp.open("w") as stream:
+        json.dump({"written_at": time.time(), "routes": rows}, stream,
+                  separators=(",", ":"), allow_nan=False)
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(tmp, ROUTE_CACHE)
+    os.chmod(ROUTE_CACHE, 0o644)
+    return len(rows)
+
+
+def enrich_routes(conn, context):
+    """(queried, found, absent, skipped, failed)."""
+    with conn.cursor() as cur:
+        cur.execute(SELECT_PENDING_ROUTES, (ROUTE_RETRY_AFTER_DAYS, ROUTE_BATCH))
+        pending = [row[0] for row in cur.fetchall()]
+
+    found = absent = skipped = failed = 0
+    queried = 0
+    for callsign in pending:
+        callsign = callsign.strip().upper()
+        if not looks_like_airline_callsign(callsign):
+            # Recorded as asked-and-absent so the queue does not return it
+            # every run. No request is spent: a registration cannot have a
+            # route, and adsbdb would only tell us so at the cost of a call.
+            with conn.cursor() as cur:
+                cur.execute(UPSERT_ROUTE, (callsign,) + (None,) * 11)
+            conn.commit()
+            skipped += 1
+            continue
+
+        if queried:
+            time.sleep(REQUEST_SPACING)
+        queried += 1
+        route, error = lookup_route(callsign, context)
+        if error is not None:
+            # Same rule as the airframe path: do NOT record the attempt. The
+            # answer is unknown, not absent, and burning the retry on a network
+            # blip would hide the route for months.
+            failed += 1
+            print(f"panel-aircraft-enrich: route {callsign}: {error}", flush=True)
+            continue
+        with conn.cursor() as cur:
+            cur.execute(UPSERT_ROUTE, (callsign,) + (route_columns(route) if route
+                                                     else (None,) * 11))
+        conn.commit()
+        if route:
+            found += 1
+        else:
+            absent += 1
+    return queried, found, absent, skipped, failed
+
+
 def main():
     if psycopg2 is None:
         print("panel-aircraft-enrich: psycopg2 is not installed", file=sys.stderr)
@@ -187,12 +377,19 @@ def main():
                     found += 1
             conn.commit()
 
+        routes = enrich_routes(conn, context)
+
         with conn.cursor() as cur:
             cached = refresh_cache(cur)
+            cached_routes = refresh_route_cache(cur)
 
     print(f"panel-aircraft-enrich: {len(pending)} queried, {found} identified, "
           f"{missing} not in the database, {failed} failed; cache holds {cached}",
           flush=True)
+    queried, r_found, r_absent, r_skipped, r_failed = routes
+    print(f"panel-aircraft-enrich: routes {queried} queried, {r_found} found, "
+          f"{r_absent} no route, {r_skipped} not airline callsigns, "
+          f"{r_failed} failed; cache holds {cached_routes}", flush=True)
     return 0
 
 
