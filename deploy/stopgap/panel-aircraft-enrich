@@ -111,6 +111,11 @@ ROUTE_API = os.environ.get("ADSBDB_ROUTE_API", "https://api.adsbdb.com/v0/callsi
 ROUTE_BATCH = int(os.environ.get("ADSBDB_ROUTE_BATCH", "20"))
 ROUTE_RETRY_AFTER_DAYS = float(os.environ.get("ADSBDB_ROUTE_RETRY_AFTER_DAYS", "90"))
 
+# The panel's live output, read to find out what is overhead right now.
+LIVE_STATUS = Path(os.environ.get(
+    "ADSB_STATUS_JSON",
+    "/home/chris/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical/adsb_status.json"))
+
 # An ICAO airline callsign is a three-letter operator code followed by a flight
 # number: ASA783, UAL1234, SWA55. A private aircraft transmits its registration
 # instead -- N425EJ, the Portland Police Cessna -- and adsbdb answers 404 for
@@ -299,11 +304,47 @@ def refresh_route_cache(cur):
     return len(rows)
 
 
+def live_callsigns():
+    """Callsigns airborne right now, from the panel's own status file.
+
+    The pass log only learns a callsign once the aircraft has finished
+    crossing, so a queue fed from it alone resolves routes for flights that
+    have already gone -- which is what happened on the first run here: 489
+    historical routes cached, and not one of the four aircraft actually
+    overhead. Reading the live feed puts what is in the sky at the front.
+
+    A missing or unreadable file is not an error; it just means no live hint.
+    """
+    try:
+        with LIVE_STATUS.open() as stream:
+            data = json.load(stream)
+    except (OSError, ValueError):
+        return []
+    seen, out = set(), []
+    for plane in (data.get("adsb_planes") or []):
+        callsign = plane.get("callsign")
+        if isinstance(callsign, str):
+            callsign = callsign.strip().upper()
+            if callsign and callsign not in seen:
+                seen.add(callsign)
+                out.append(callsign)
+    return out
+
+
 def enrich_routes(conn, context):
     """(queried, found, absent, skipped, failed)."""
     with conn.cursor() as cur:
         cur.execute(SELECT_PENDING_ROUTES, (ROUTE_RETRY_AFTER_DAYS, ROUTE_BATCH))
-        pending = [row[0] for row in cur.fetchall()]
+        logged = [row[0] for row in cur.fetchall()]
+
+    # Airborne first, then the backlog. Deduplicated, and anything already
+    # known is filtered by the same query that built `logged`, so a live
+    # callsign we already have a route for costs nothing.
+    with conn.cursor() as cur:
+        cur.execute("SELECT callsign FROM flight_route")
+        known = {row[0] for row in cur.fetchall()}
+    live = [c for c in live_callsigns() if c not in known]
+    pending = live + [c for c in logged if c not in set(live)]
 
     found = absent = skipped = failed = 0
     queried = 0
