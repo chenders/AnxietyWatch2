@@ -121,6 +121,7 @@ def build_event(
     loudness_band="UNKNOWN",
     reason=None,
     notable=None,
+    detail=None,
 ):
     """One pass of one aircraft.
 
@@ -134,6 +135,12 @@ def build_event(
         "at": at,
         "provenance": provenance,
         "retain_until": retain_until_for(provenance, at),
+        # Everything the panel showed but the log used to discard: live
+        # geometry, the class the model chose, and the ambient the score was
+        # computed against. Nested so an older reader that knows nothing of
+        # these simply ignores the key, and a row written before they existed
+        # is not malformed -- merely less detailed.
+        "detail": dict(detail or {}),
         "identity": {
             "callsign": callsign,
             "hex": hex_code,

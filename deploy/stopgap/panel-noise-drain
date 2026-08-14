@@ -71,6 +71,28 @@ def write_offset(offset):
     os.replace(tmp, STATE)
 
 
+# Values the publisher may report for these columns. A value outside the set
+# is dropped rather than stored: the schema CHECK would reject the whole row,
+# and one typo upstream must not block the spool behind it forever.
+AIRFRAME_CLASSES = frozenset(("heavy", "jet", "turboprop", "light", "rotorcraft"))
+OPERATOR_SOURCES = frozenset(("ROSTER", "LOOKUP"))
+
+
+def number(value):
+    """A float, or None. Never coerces a string or a bool into a measurement."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return float(value)
+
+
+def integer(value):
+    """An int, or None. Truncates a float rather than rejecting it, because
+    the publisher reports altitudes and speeds as floats."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return int(value)
+
+
 def normalise(row):
     """One spool row -> one database row, or None if it cannot be trusted.
 
@@ -113,19 +135,72 @@ def normalise(row):
     if provenance == "adsb":
         retain = None
 
-    return (at, provenance, hex_code, identity.get("callsign"), identity.get("reg"),
-            identity.get("type"), identity.get("fr24_id"), row.get("distance_km"),
-            row.get("altitude_ft"), phase, index, band, row.get("notable"),
-            row.get("air_ambulance"), row.get("reason"), retain)
+    detail = row.get("detail") or {}
+    klass = detail.get("airframe_class")
+    if klass not in AIRFRAME_CLASSES:
+        klass = None
+    source = detail.get("operator_source")
+    if source not in OPERATOR_SOURCES:
+        source = None
+
+    # Named, not positional. This tuple was built by index until 2026-08-13,
+    # with the retain_until value spliced in twice by hand as
+    # `row[:15] + (row[15], row[15])`. That had already produced one
+    # parameter-count bug, and widening the row by thirteen columns positionally
+    # would have been asking for a second. Every value is now bound by name, so
+    # a column added to one place and forgotten in the other fails loudly.
+    return {
+        "at": at,
+        "provenance": provenance,
+        "icao_hex": hex_code,
+        "callsign": identity.get("callsign"),
+        "registration": identity.get("reg"),
+        "icao_type": identity.get("type"),
+        "fr24_id": identity.get("fr24_id"),
+        "distance_km": row.get("distance_km"),
+        "altitude_ft": row.get("altitude_ft"),
+        "phase": phase,
+        "noise_index": index,
+        "loudness_band": band,
+        "notable": row.get("notable"),
+        "operator_state": row.get("air_ambulance"),
+        "reason": row.get("reason"),
+        "retain_until": retain,
+        # Everything below is nullable and absent from rows written before the
+        # detail columns existed. A missing key is not an error.
+        "bearing_deg": number(detail.get("bearing_deg")),
+        "speed_kt": integer(detail.get("speed_kt")),
+        "track_deg": number(detail.get("track_deg")),
+        "vertical_rate_fpm": integer(detail.get("vertical_rate_fpm")),
+        "rssi_dbm": number(detail.get("rssi_dbm")),
+        "emitter_category": detail.get("emitter_category") or None,
+        "airframe_class": klass,
+        "operator_source": source,
+        "cpa_ground_m": number(detail.get("cpa_ground_m")),
+        "cpa_slant_m": number(detail.get("cpa_slant_m")),
+        "cpa_altitude_ft": integer(detail.get("cpa_altitude_ft")),
+        "eta_seconds": integer(detail.get("eta_seconds")),
+        "ambient_dba": number(detail.get("ambient_dba")),
+    }
 
 
 INSERT = """
 INSERT INTO aircraft_pass
     (at, provenance, icao_hex, callsign, registration, icao_type, fr24_id,
      distance_km, altitude_ft, phase, noise_index, loudness_band, notable,
-     operator_state, reason, retain_until)
-VALUES (to_timestamp(%s), %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-        CASE WHEN %s IS NULL THEN NULL ELSE to_timestamp(%s) END)
+     operator_state, reason, retain_until,
+     bearing_deg, speed_kt, track_deg, vertical_rate_fpm, rssi_dbm,
+     emitter_category, airframe_class, operator_source,
+     cpa_ground_m, cpa_slant_m, cpa_altitude_ft, eta_seconds, ambient_dba)
+VALUES (to_timestamp(%(at)s), %(provenance)s, %(icao_hex)s, %(callsign)s,
+        %(registration)s, %(icao_type)s, %(fr24_id)s, %(distance_km)s,
+        %(altitude_ft)s, %(phase)s, %(noise_index)s, %(loudness_band)s,
+        %(notable)s, %(operator_state)s, %(reason)s,
+        to_timestamp(%(retain_until)s),
+        %(bearing_deg)s, %(speed_kt)s, %(track_deg)s, %(vertical_rate_fpm)s,
+        %(rssi_dbm)s, %(emitter_category)s, %(airframe_class)s,
+        %(operator_source)s, %(cpa_ground_m)s, %(cpa_slant_m)s,
+        %(cpa_altitude_ft)s, %(eta_seconds)s, %(ambient_dba)s)
 ON CONFLICT DO NOTHING
 """
 
@@ -186,17 +261,17 @@ def drain():
     with psycopg2.connect(DSN) as conn:
         with conn.cursor() as cur:
             for row in rows:
-                # The final column is built by a CASE that needs the value
-                # twice, so the last field is dropped from the positional tail
-                # and supplied explicitly. Passing the whole row plus two would
-                # be one argument too many.
-                cur.execute(INSERT, row[:15] + (row[15], row[15]))
-                hex_code = row[2]
+                # Bound by name. The CASE that used to wrap retain_until is
+                # gone with it: to_timestamp(NULL) is already NULL, so the
+                # branch only existed to serve the positional binding.
+                cur.execute(INSERT, row)
+                hex_code = row["icao_hex"]
                 if hex_code:
                     # Provenance is the row's own, not a constant: a hardcoded
                     # 'fr24' labelled receiver-learned identities as vendor data.
                     cur.execute(UPSERT_AIRCRAFT,
-                                (hex_code, row[4], row[5], row[1], row[0], row[0]))
+                                (hex_code, row["registration"], row["icao_type"],
+                                 row["provenance"], row["at"], row["at"]))
     # Offset advances only after the transaction commits, so a failure replays
     # rather than silently dropping the batch.
     write_offset(end)

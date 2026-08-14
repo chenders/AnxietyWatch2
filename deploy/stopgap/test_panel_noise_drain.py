@@ -33,20 +33,20 @@ class Normalisation(unittest.TestCase):
     def test_a_good_receiver_row_survives(self):
         out = drain.normalise(row())
         self.assertIsNotNone(out)
-        self.assertEqual(out[1], "adsb")
-        self.assertEqual(out[2], "A5731C")
-        self.assertIsNone(out[-1], "receiver rows must carry no deletion deadline")
+        self.assertEqual(out["provenance"], "adsb")
+        self.assertEqual(out["icao_hex"], "A5731C")
+        self.assertIsNone(out["retain_until"], "receiver rows must carry no deletion deadline")
 
     def test_hex_is_upper_cased_to_match_the_roster(self):
         out = drain.normalise(row(identity={"hex": "a5731c"}))
-        self.assertEqual(out[2], "A5731C")
+        self.assertEqual(out["icao_hex"], "A5731C")
 
     def test_an_unscored_row_keeps_its_null(self):
         # The row this whole system exists to catch. It must never acquire a
         # number on the way into the database.
         out = drain.normalise(row(noise_index=None, loudness_band="UNKNOWN"))
-        self.assertIsNone(out[10])
-        self.assertEqual(out[11], "UNKNOWN")
+        self.assertIsNone(out["noise_index"])
+        self.assertEqual(out["loudness_band"], "UNKNOWN")
 
     def test_a_row_whose_band_and_index_disagree_is_rejected(self):
         # Rejected, not repaired: the disagreement is a bug upstream, and
@@ -61,13 +61,13 @@ class Normalisation(unittest.TestCase):
 
     def test_an_fr24_row_with_a_deadline_is_accepted(self):
         out = drain.normalise(row(provenance="fr24", retain_until=1802253546.0))
-        self.assertEqual(out[1], "fr24")
-        self.assertEqual(out[-1], 1802253546.0)
+        self.assertEqual(out["provenance"], "fr24")
+        self.assertEqual(out["retain_until"], 1802253546.0)
 
     def test_a_receiver_row_never_inherits_a_deadline(self):
         # Even if one is somehow present in the spool.
         out = drain.normalise(row(provenance="adsb", retain_until=1802253546.0))
-        self.assertIsNone(out[-1])
+        self.assertIsNone(out["retain_until"])
 
     def test_junk_is_rejected_rather_than_crashing_the_batch(self):
         for bad in (None, [], "text", {}, {"at": "soon", "provenance": "adsb"},
@@ -75,8 +75,8 @@ class Normalisation(unittest.TestCase):
             self.assertIsNone(drain.normalise(bad))
 
     def test_an_unrecognised_phase_becomes_null_rather_than_being_invented(self):
-        self.assertIsNone(drain.normalise(row(phase="HOVER"))[9])
-        self.assertEqual(drain.normalise(row(phase="CLIMB"))[9], "CLIMB")
+        self.assertIsNone(drain.normalise(row(phase="HOVER"))["phase"])
+        self.assertEqual(drain.normalise(row(phase="CLIMB"))["phase"], "CLIMB")
 
 
 class OffsetTracking(unittest.TestCase):
@@ -108,18 +108,89 @@ if __name__ == "__main__":
 
 
 class ParameterBinding(unittest.TestCase):
-    """The INSERT builds its last column with a CASE that needs the value twice.
+    """Every placeholder must have a value, and every value a placeholder.
 
-    Getting the count wrong fails only at execute() against a live database,
-    which is exactly where it did fail. Counting statically catches it here.
+    Binding was positional until 2026-08-13, with retain_until spliced in twice
+    by hand. That produced a parameter-count bug that failed only at execute()
+    against a live database. Named binding makes the mismatch checkable here,
+    and these two tests are what stop a column being added to the INSERT and
+    forgotten in normalise(), or the reverse.
     """
 
-    def test_placeholder_count_matches_the_bound_tuple(self):
-        placeholders = drain.INSERT.count("%s")
-        sample = drain.normalise(row())
-        bound = sample[:15] + (sample[15], sample[15])
-        self.assertEqual(placeholders, len(bound))
+    import re as _re
+    NAMED = _re.compile(r"%\((\w+)\)s")
 
-    def test_a_normalised_row_has_one_field_per_column(self):
-        columns = drain.INSERT.split("(", 1)[1].split(")", 1)[0].count(",") + 1
-        self.assertEqual(len(drain.normalise(row())), columns)
+    def test_every_placeholder_has_a_value(self):
+        placeholders = set(self.NAMED.findall(drain.INSERT))
+        self.assertTrue(placeholders, "INSERT uses no named placeholders")
+        missing = placeholders - set(drain.normalise(row()))
+        self.assertEqual(missing, set(), f"INSERT binds names normalise() omits: {missing}")
+
+    def test_every_value_has_a_placeholder(self):
+        extra = set(drain.normalise(row())) - set(self.NAMED.findall(drain.INSERT))
+        self.assertEqual(extra, set(), f"normalise() returns names the INSERT drops: {extra}")
+
+    def test_no_positional_placeholders_remain(self):
+        # A stray bare %s alongside named ones is a psycopg2 error at execute
+        # time, not a parse error here.
+        self.assertEqual(drain.INSERT.count("%s"), 0)
+
+    def test_the_column_list_and_the_values_list_are_the_same_length(self):
+        head = drain.INSERT.split("(", 1)[1].split(")", 1)[0]
+        self.assertEqual(head.count(",") + 1, len(set(self.NAMED.findall(drain.INSERT))))
+
+
+class DetailColumns(unittest.TestCase):
+    """What the panel showed, recorded so a pass can be reconstructed.
+
+    Added 2026-08-13. Until then the log kept identity, one distance, one
+    altitude, a phase and a score, and discarded the rest -- so a disputed
+    verdict could only be reviewed by replaying a live feed.
+    """
+
+    DETAIL = {"bearing_deg": 167.4, "speed_kt": 96, "track_deg": 78.0,
+              "vertical_rate_fpm": 0, "rssi_dbm": -18.3, "emitter_category": "A1",
+              "airframe_class": "light", "operator_source": "ROSTER",
+              "cpa_ground_m": 480.0, "cpa_slant_m": 600.0,
+              "cpa_altitude_ft": 1382, "eta_seconds": 42, "ambient_dba": 40.0}
+
+    def test_detail_round_trips(self):
+        out = drain.normalise(row(detail=self.DETAIL))
+        for key, value in self.DETAIL.items():
+            self.assertEqual(out[key], value, key)
+
+    def test_a_row_written_before_detail_existed_still_normalises(self):
+        # 700+ such rows are already in the spool and the table.
+        out = drain.normalise(row())
+        self.assertIsNotNone(out)
+        for key in self.DETAIL:
+            self.assertIsNone(out[key], key)
+
+    def test_an_unknown_airframe_class_is_dropped_not_stored(self):
+        """The schema CHECK would reject the whole row, and one typo upstream
+        must not block the spool behind it forever."""
+        out = drain.normalise(row(detail={"airframe_class": "helicopter"}))
+        self.assertIsNotNone(out)
+        self.assertIsNone(out["airframe_class"])
+
+    def test_an_unknown_operator_source_is_dropped_not_stored(self):
+        out = drain.normalise(row(detail={"operator_source": "guess"}))
+        self.assertIsNone(out["operator_source"])
+
+    def test_a_string_is_never_coerced_into_a_measurement(self):
+        out = drain.normalise(row(detail={"bearing_deg": "167.4", "speed_kt": "96"}))
+        self.assertIsNone(out["bearing_deg"])
+        self.assertIsNone(out["speed_kt"])
+
+    def test_a_bool_is_not_a_number(self):
+        # True == 1 in Python, so an unguarded isinstance check stores a
+        # vertical rate of 1 fpm for a boolean.
+        out = drain.normalise(row(detail={"vertical_rate_fpm": True}))
+        self.assertIsNone(out["vertical_rate_fpm"])
+
+    def test_the_ambient_is_recorded_so_a_score_stays_interpretable(self):
+        """The same column held an invented relative index before 2026-08-13
+        and estimated dBA after. Without the ambient the two are
+        indistinguishable."""
+        self.assertEqual(drain.normalise(row(detail={"ambient_dba": 40.0}))["ambient_dba"], 40.0)
+        self.assertIsNone(drain.normalise(row())["ambient_dba"])

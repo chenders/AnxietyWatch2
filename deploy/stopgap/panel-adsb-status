@@ -286,6 +286,53 @@ def enriched_types():
     return _cache
 
 
+# Flight routes learned from adsbdb, keyed on callsign. Same file-not-database
+# rule as the airframe cache above.
+ROUTE_CACHE = Path(os.environ.get(
+    "PANEL_ROUTE_CACHE", "/var/lib/panel-noise/flight_routes.json"))
+_routes = {}
+_routes_mtime = None
+
+
+def flight_routes():
+    """callsign -> {airline, from, from_city, to, to_city}."""
+    global _routes, _routes_mtime
+    try:
+        mtime = ROUTE_CACHE.stat().st_mtime
+    except OSError:
+        return _routes
+    if mtime != _routes_mtime:
+        try:
+            with ROUTE_CACHE.open() as stream:
+                loaded = json.load(stream)
+            entries = loaded.get("routes")
+            if isinstance(entries, dict):
+                _routes, _routes_mtime = entries, mtime
+        except (OSError, ValueError):
+            pass
+    return _routes
+
+
+def route_for(callsign):
+    """Where this flight came from and where it is going, or None.
+
+    Keyed on the callsign rather than the airframe, because that is what a
+    route belongs to. Returns None for the majority of traffic here: a private
+    aircraft transmits its registration as its callsign and has no route at
+    all, which is absence rather than failure.
+    """
+    if not isinstance(callsign, str):
+        return None
+    key = callsign.strip().upper()
+    # A blank callsign is not a key. dump1090 reports them constantly, and one
+    # reaching a dict lookup would match whatever happened to be stored under
+    # "" and attribute a stranger's route to an unidentified aircraft. The
+    # database CHECK forbids the row; this forbids the lookup.
+    if not key:
+        return None
+    return flight_routes().get(key) or None
+
+
 def resolved_type(hex_code):
     """The ICAO type designator known for this address, or None.
 
@@ -789,6 +836,10 @@ def make_report(item, source_now):
         "registration": (airframe or {}).get("reg") or learned.get("reg"),
         "icao_type": (airframe or {}).get("type") or learned.get("type"),
         "owner": (airframe or {}).get("model") or learned.get("operator"),
+        # Where it came from and where it is going. None for most traffic here,
+        # which is absence rather than failure: a private aircraft transmits
+        # its registration as a callsign and has no route.
+        "route": route_for(callsign),
         "category": item.get("category"),
         "squawk": item.get("squawk"),
         "lat": lat,
@@ -898,6 +949,27 @@ def log_finished_passes(reports, now):
                 loudness_band=loudness_band(report.get("noise_index")),
                 reason=(prediction.get("reasons") or [None])[0],
                 notable=notable(report),
+                # What the panel showed. Recorded so a pass can be
+                # reconstructed later without replaying a live feed -- which is
+                # what reviewing a disputed FAINT verdict used to require.
+                detail={
+                    "bearing_deg": report.get("bearing"),
+                    "speed_kt": report.get("speed_kt"),
+                    "track_deg": report.get("track_deg"),
+                    "vertical_rate_fpm": report.get("vertical_rate_fpm"),
+                    "rssi_dbm": report.get("rssi"),
+                    "emitter_category": report.get("category"),
+                    "airframe_class": report.get("airframe_class"),
+                    "operator_source": report.get("operator_source"),
+                    "cpa_ground_m": prediction.get("ground_distance_m"),
+                    "cpa_slant_m": prediction.get("slant_distance_m"),
+                    "cpa_altitude_ft": prediction.get("altitude_ft"),
+                    "eta_seconds": prediction.get("eta_seconds"),
+                    # Without this a stored score is uninterpretable: the same
+                    # column held an invented relative index before
+                    # 2026-08-13 and estimated dBA after.
+                    "ambient_dba": AMBIENT_DBA,
+                },
             ))
         except OSError as exc:
             print(f"panel-adsb-status: cannot append noise log: {exc}", flush=True)
