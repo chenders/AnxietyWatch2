@@ -1,0 +1,252 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Noise Watch · Admin</title>
+<!--
+  Admin console for the aircraft noise watch.
+
+  DELIBERATELY THE SAME LANGUAGE AS THE PANEL
+  -------------------------------------------
+  Same palette, same monospace, same rule that an unknown is rendered as an
+  unknown. This is the configuration surface for the screen next to it, not a
+  separate product, and a console that looked like a different application
+  would make the operator translate between two visual systems to answer one
+  question.
+
+  WHERE IT DIFFERS
+  ----------------
+  The panel is read at 3am and stays black so it does not light a bedroom.
+  This is read at a desk, deliberately, so it can afford density and does not
+  need the black-field discipline.
+
+  SCOPE: aircraft noise only. Nothing medical is reachable from here.
+-->
+<style>
+:root{
+  --bg:#0B0D0F; --field:#131619; --raised:#191D21;
+  --rule:#5E6670; --rule-quiet:#2E343A;
+  --air:#3FC8D8; --watch:#E0A227; --ok:#5BC98B; --bad:#E06C5A;
+  --text:#DCE1E6; --unknown:#8B97A3; --label:#7A828C;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--text);font-family:var(--mono);font-size:13px;
+     line-height:1.5;padding:22px 20px 60px;max-width:1180px;margin:0 auto}
+h1{font-size:15px;letter-spacing:.26em;font-weight:400;color:var(--air)}
+h2{font-size:9px;letter-spacing:.28em;color:var(--label);font-weight:400;
+   margin:26px 0 9px;padding-bottom:5px;border-bottom:1px solid var(--rule-quiet)}
+.sub{color:var(--unknown);font-size:11px;margin-top:5px}
+.warn{margin-top:12px;padding:8px 11px;border:1px solid var(--watch);
+      color:var(--watch);font-size:11px;letter-spacing:.04em}
+
+.grid{display:grid;gap:9px;grid-template-columns:repeat(auto-fill,minmax(196px,1fr))}
+.card{background:var(--field);border:1px solid var(--rule-quiet);padding:9px 11px}
+.card .k{font-size:9px;letter-spacing:.22em;color:var(--label)}
+.card .v{font-size:17px;margin-top:3px;font-variant-numeric:tabular-nums}
+.card .n{font-size:10px;color:var(--unknown);margin-top:2px}
+.ok{color:var(--ok)} .bad{color:var(--bad)} .idk{color:var(--unknown)}
+
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{text-align:left;font-size:9px;letter-spacing:.2em;color:var(--label);
+   font-weight:400;padding:5px 9px 5px 0;border-bottom:1px solid var(--rule-quiet)}
+td{padding:5px 9px 5px 0;border-bottom:1px solid var(--rule-quiet);white-space:nowrap}
+td.dim{color:var(--unknown)}
+
+.set{background:var(--field);border:1px solid var(--rule-quiet);padding:13px;margin-bottom:9px}
+.set label{display:block;font-size:12px;color:var(--text);margin-bottom:3px}
+.set .note{font-size:11px;color:var(--unknown);margin:4px 0 9px;max-width:74ch}
+input[type=number]{font-family:var(--mono);font-size:14px;background:var(--raised);
+  color:var(--text);border:1px solid var(--rule);padding:5px 8px;width:130px}
+input[type=number]:focus,button:focus-visible,input[type=checkbox]:focus-visible{
+  outline:2px solid var(--air);outline-offset:2px}
+.choices{display:flex;flex-wrap:wrap;gap:14px}
+.choices label{display:flex;align-items:center;gap:6px;font-size:12px;margin:0}
+.bar{position:sticky;bottom:0;background:var(--bg);padding:13px 0 0;margin-top:16px;
+     border-top:1px solid var(--rule);display:flex;align-items:center;gap:14px}
+button{font-family:var(--mono);font-size:12px;letter-spacing:.14em;padding:8px 18px;
+  background:transparent;color:var(--air);border:1px solid var(--air);cursor:pointer}
+button:hover{background:var(--air);color:var(--bg)}
+button.quiet{color:var(--unknown);border-color:var(--rule)}
+button.quiet:hover{background:var(--rule);color:var(--text)}
+#msg{font-size:11px}
+#msg.good{color:var(--ok)} #msg.err{color:var(--bad)}
+#msg ul{margin:4px 0 0 16px}
+.foot{margin-top:30px;font-size:10px;color:var(--label);line-height:1.7}
+</style>
+
+<h1>NOISE WATCH · ADMIN</h1>
+<div class="sub">Aircraft noise only. Nothing medical is reachable from this page.</div>
+<div class="warn">No authentication. Anyone on this network can change when the light fires.</div>
+
+<h2>FEEDS</h2>
+<div class="grid" id="feeds"></div>
+
+<h2>SERVICES</h2>
+<div class="grid" id="units"></div>
+
+<h2>WATCHING</h2>
+<div id="watching"></div>
+
+<h2>SETTINGS</h2>
+<div id="settings"></div>
+<div class="bar">
+  <button id="save">SAVE</button>
+  <button id="revert" class="quiet">REVERT TO DEFAULTS</button>
+  <span id="msg"></span>
+</div>
+
+<div class="foot" id="foot"></div>
+
+<script>
+(() => {
+  "use strict";
+  const el = id => document.getElementById(id);
+  const esc = s => String(s ?? "").replace(/[&<>"]/g, c =>
+    ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  let STATE = null, dirty = false;
+
+  /* An age, never a bare "fresh". A number can be argued with; a word cannot.
+     Unknown renders as unknown and is never shown as healthy. */
+  function age(seconds, limit) {
+    if (seconds == null) return '<span class="idk">no data</span>';
+    const cls = seconds <= limit ? "ok" : "bad";
+    return `<span class="${cls}">${seconds.toFixed(1)}s</span>`;
+  }
+
+  function card(k, v, n) {
+    return `<div class="card"><div class="k">${esc(k)}</div>` +
+           `<div class="v">${v}</div>` + (n ? `<div class="n">${esc(n)}</div>` : "") + "</div>";
+  }
+
+  function renderFeeds(f) {
+    const a = f.adsb, r = f.fr24, h = f.hue;
+    el("feeds").innerHTML =
+      card("DONGLE", age(a.age_s, 5), `${a.aircraft} aircraft · ${a.identified} named · ${a.with_route} routed`) +
+      card("HEARD, NO POSITION", a.unlocated > 0
+            ? `<span class="bad">${a.unlocated}</span>` : `<span class="idk">0</span>`,
+           "roster airframes heard but not located") +
+      card("FLIGHTRADAR24", age(r.age_s, 30),
+           (r.state || "unknown") + (r.credits ? ` · ${r.credits.estimated_spent} credits` : "")) +
+      card("HUE", age(h.age_s, 10),
+           `${(h.lights || []).length + (h.alert_lights || []).length} lights · cooldown ${h.cooldown_s ?? "?"}s`);
+  }
+
+  function renderUnits(units) {
+    el("units").innerHTML = Object.entries(units).map(([name, st]) => {
+      const cls = st === "active" ? "ok" : st === "unknown" ? "idk" : "bad";
+      return card(name, `<span class="${cls}">${esc(st)}</span>`);
+    }).join("");
+  }
+
+  function renderWatching(rows) {
+    if (!rows.length) {
+      el("watching").innerHTML = '<div class="card"><div class="n">nothing forecast to pass</div></div>';
+      return;
+    }
+    el("watching").innerHTML = "<table><thead><tr><th>ID</th><th>OPERATOR</th>" +
+      "<th>TYPE</th><th>ROUTE</th><th>BAND</th><th>ETA</th></tr></thead><tbody>" +
+      rows.map(r => {
+        const route = r.route ? `${r.route.from || "?"} → ${r.route.to || "?"}` : "";
+        return "<tr>" +
+          `<td>${esc(r.reg || r.hex || "—")}</td>` +
+          `<td class="${r.operator ? "" : "dim"}">${esc(r.operator || "not identified")}</td>` +
+          `<td>${esc(r.type || "—")}</td>` +
+          `<td class="dim">${esc(route || "—")}</td>` +
+          `<td>${esc(r.band || "UNKNOWN")}</td>` +
+          `<td>${r.eta_s == null ? "—" : esc(r.eta_s) + "s"}</td></tr>`;
+      }).join("") + "</tbody></table>";
+  }
+
+  /* The form is generated from the schema the daemons themselves use, so a
+     bound shown here cannot drift from the bound actually enforced. */
+  function renderSettings(schema, current) {
+    el("settings").innerHTML = Object.entries(schema).map(([name, spec]) => {
+      const value = current[name];
+      let control;
+      if (spec.kind === "number") {
+        const v = value ?? spec.default;
+        control = `<input type="number" id="f_${name}" value="${esc(v)}" ` +
+          `min="${spec.min}" max="${spec.max}" step="0.5">` +
+          `<span class="note" style="display:inline;margin-left:9px">` +
+          `${spec.min}–${spec.max}${value == null ? " · unset, using " + spec.default : ""}</span>`;
+      } else {
+        const chosen = new Set(value ?? spec.default);
+        control = '<div class="choices">' + spec.choices.map(c =>
+          `<label><input type="checkbox" name="${name}" value="${esc(c)}"` +
+          `${chosen.has(c) ? " checked" : ""}> ${esc(c)}</label>`).join("") + "</div>";
+      }
+      return `<div class="set"><label for="f_${name}">${esc(spec.label)}</label>` +
+             `<div class="note">${esc(spec.note)}</div>${control}</div>`;
+    }).join("");
+    el("settings").addEventListener("input", () => { dirty = true; }, {once: true});
+  }
+
+  function collect() {
+    const out = {};
+    for (const [name, spec] of Object.entries(STATE.schema)) {
+      if (spec.kind === "number") {
+        const raw = el("f_" + name).value.trim();
+        out[name] = raw === "" ? null : Number(raw);
+      } else {
+        out[name] = [...document.querySelectorAll(`input[name="${name}"]:checked`)]
+          .map(i => i.value);
+      }
+    }
+    return out;
+  }
+
+  function say(text, cls, reasons) {
+    const m = el("msg");
+    m.className = cls || "";
+    m.innerHTML = esc(text) +
+      (reasons && reasons.length
+        ? "<ul>" + reasons.map(r => `<li>${esc(r)}</li>`).join("") + "</ul>" : "");
+  }
+
+  async function load() {
+    try {
+      const r = await fetch("/api/state", {cache: "no-store"});
+      STATE = await r.json();
+    } catch (e) { say("cannot reach the admin service", "err"); return; }
+    renderFeeds(STATE.feeds);
+    renderUnits(STATE.units);
+    renderWatching(STATE.watching || []);
+    if (!dirty) renderSettings(STATE.schema, STATE.settings.settings || {});
+    const s = STATE.settings;
+    el("foot").innerHTML =
+      `settings file: ${esc(s.path)} · ${s.present ? "present" : "absent, using defaults"}` +
+      (s.error ? `<br><span class="bad">${esc(s.error)}</span>` : "") +
+      `<br>model: ${esc(STATE.feeds.adsb.model || "—")}` +
+      (STATE.disk ? `<br>disk: ${STATE.disk.free_gb} GB free · ${STATE.disk.used_pct}% used` : "");
+  }
+
+  el("save").addEventListener("click", async () => {
+    say("saving…");
+    try {
+      const r = await fetch("/api/settings", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(collect())});
+      const body = await r.json();
+      if (!r.ok) { say("rejected — nothing was changed:", "err", body.reasons); return; }
+      dirty = false;
+      say("saved · the daemons pick this up within a second, no restart", "good");
+      load();
+    } catch (e) { say("save failed: " + e, "err"); }
+  });
+
+  el("revert").addEventListener("click", async () => {
+    say("clearing…");
+    try {
+      await fetch("/api/settings", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({})});
+      dirty = false;
+      say("cleared · every value falls back to its built-in default", "good");
+      load();
+    } catch (e) { say("clear failed: " + e, "err"); }
+  });
+
+  load();
+  setInterval(load, 4000);
+})();
+</script>

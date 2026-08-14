@@ -1,0 +1,22 @@
+[Unit]
+# Deliberately NOT part of panel-http. That serves the bedside clinical panel
+# with python -m http.server, and adding a write API would mean replacing it
+# with custom code on a box where a crash takes down the screen someone reads
+# at 3am. Separate process, separate port: the worst case here is that the
+# admin page is unavailable, which nobody depends on.
+Description=Aircraft noise watch admin console (read state, change settings)
+After=network-online.target
+
+[Service]
+Type=simple
+Environment=PANEL_ADMIN_PORT=8976
+Environment=PANEL_SETTINGS_JSON=/var/lib/panel-noise/settings.json
+Environment=PANEL_ADMIN_PAGE=/usr/local/share/panel-admin/admin.html
+ExecStart=/usr/local/bin/panel-admin
+Restart=always
+RestartSec=5
+User=chris
+Group=chris
+
+[Install]
+WantedBy=multi-user.target

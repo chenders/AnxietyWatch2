@@ -43,6 +43,89 @@ _cache = {}
 _cache_mtime = None
 _last_error = None
 
+# Every tunable, its bounds, and what it does. ONE definition, used by the
+# daemons to clamp-or-refuse and by the admin console both to validate a write
+# and to render the form.
+#
+# Kept in one place deliberately. Bounds written twice drift, and this project
+# has already paid for that pattern: the emitter category was interpreted in
+# two places and ended up written into the wrong column in eleven rows.
+#
+# `label` and `note` exist so the console can explain a setting without the
+# HTML restating anything, which is the other half of the same drift problem.
+SCHEMA = {
+    "ambient_dba": {
+        "kind": "number", "default": 40.0, "min": 25.0, "max": 70.0,
+        "label": "Assumed outdoor ambient (dBA)",
+        "note": "Every loudness band is an offset from this, so it moves all "
+                "of them at once. 25 is a quiet rural night, 40 low-density "
+                "suburban, 60 urban. Outside 25-70 is refused as a typo.",
+    },
+    "hue_bands": {
+        "kind": "words", "default": ["VERY LOUD", "LOUD"],
+        "choices": ["VERY LOUD", "LOUD", "AUDIBLE", "FAINT", "UNKNOWN"],
+        "label": "Bands that flash the light",
+        "note": "An empty selection is honoured and means the light never "
+                "fires on a scored aircraft.",
+    },
+    "hue_unlocated_kinds": {
+        "kind": "words", "default": ["AIR_AMBULANCE"],
+        "choices": ["AIR_AMBULANCE", "POLICE"],
+        "label": "Flash for these, heard without a position",
+        "note": "No geometry exists in this case, so there is no countdown. "
+                "Police airframes loiter here for hours; including them means "
+                "near-continuous flashing.",
+    },
+    "hue_lead_seconds": {
+        "kind": "number", "default": 45.0, "min": 1.0, "max": 300.0,
+        "label": "Warn this many seconds ahead",
+        "note": "The entire warning budget for a Life Flight departure off "
+                "the Providence pad is 34 seconds, set by geometry. A lead "
+                "longer than that cannot be met for those.",
+    },
+    "hue_cooldown_seconds": {
+        "kind": "number", "default": 30.0, "min": 0.0, "max": 3600.0,
+        "label": "Minimum gap between warnings (s)",
+        "note": "0 means never suppress. Tests never consume this.",
+    },
+}
+
+
+def describe():
+    """The schema, for the console to render. Never the values."""
+    return SCHEMA
+
+
+def validate(name, value):
+    """(ok, cleaned_or_reason). Used by the write API before anything lands.
+
+    Rejects with a reason rather than silently dropping. A console that
+    appears to save a value the daemons then ignore is worse than one that
+    refuses, because the operator believes the light is armed.
+    """
+    spec = SCHEMA.get(name)
+    if spec is None:
+        return False, f"{name} is not a known setting"
+    if value is None:
+        return True, None            # explicit clear, falls back to env/default
+    if spec["kind"] == "number":
+        try:
+            parsed = float(value)
+        except (TypeError, ValueError):
+            return False, f"{name} must be a number, got {value!r}"
+        if parsed < spec["min"] or parsed > spec["max"]:
+            return False, (f"{name} must be between {spec['min']:g} and "
+                           f"{spec['max']:g}, got {parsed:g}")
+        return True, parsed
+    if spec["kind"] == "words":
+        items = value if isinstance(value, (list, tuple)) else str(value).split(",")
+        cleaned = [str(v).strip() for v in items if str(v).strip()]
+        unknown = [v for v in cleaned if v not in spec["choices"]]
+        if unknown:
+            return False, f"{name} does not accept {', '.join(unknown)}"
+        return True, cleaned
+    return False, f"{name} has no validator"
+
 
 def _load():
     """Re-read only when the file changes. Cheap enough for a 1 Hz loop."""
