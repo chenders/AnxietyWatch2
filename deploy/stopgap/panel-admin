@@ -1,0 +1,240 @@
+#!/usr/bin/env python3
+"""Admin console for the aircraft noise watch: read state, change settings.
+
+WHY ITS OWN PORT AND ITS OWN PROCESS
+------------------------------------
+`panel-http` is `python3 -m http.server` and it serves the bedside CLINICAL
+panel. Adding a write API to it would mean replacing that process with custom
+code, on a box where a crash takes down the screen someone reads at 3am. This
+runs separately on its own port so the worst case is that the admin page is
+unavailable, which nobody is relying on at 3am.
+
+SCOPE
+-----
+The aircraft noise watch only. Nothing here touches vitals, the cuff, the
+oximeter or anything medical -- those have their own services and are
+deliberately not reachable from this page.
+
+NO AUTHENTICATION
+-----------------
+This binds the LAN, like the kiosk, and has none. Anyone on the network can
+change when the light fires. That is a deliberate trade for a home network and
+it is written down here rather than left to be discovered: if this box ever
+faces anything wider, this service needs auth or needs to stop listening.
+
+WHAT IT REFUSES
+---------------
+A write is validated against panel_settings.SCHEMA before it lands, and a
+rejected value returns the reason. Accepting a value the daemons will later
+ignore would be the worst outcome available -- the operator would believe the
+light is armed when it is not.
+"""
+import json
+import os
+import shutil
+import socket
+import subprocess
+import sys
+import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import panel_settings  # noqa: E402
+
+PORT = int(os.environ.get("PANEL_ADMIN_PORT", "8976"))
+BIND = os.environ.get("PANEL_ADMIN_BIND", "0.0.0.0")
+PAGE = Path(os.environ.get("PANEL_ADMIN_PAGE", "/usr/local/share/panel-admin/admin.html"))
+STATUS_JSON = Path(os.environ.get(
+    "ADSB_STATUS_JSON",
+    "$HOME/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical/adsb_status.json"))
+FR24_JSON = Path(os.environ.get(
+    "FR24_CACHE_JSON",
+    "$HOME/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical/fr24_aircraft.json"))
+HUE_JSON = Path(os.environ.get(
+    "HUE_STATUS_JSON",
+    "$HOME/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical/hue_status.json"))
+
+# Reported as up/down only. The console shows what is running; it does not
+# offer to start or stop anything, because a web page that can stop the
+# collector is a way to lose a night of data by misclick.
+                 "panel-noise-drain.timer", "panel-aircraft-enrich.timer",
+                 "panel-http", "vitals-bp", "vitals-bp-connect", "emay-live")
+
+MAX_BODY = 64 * 1024
+
+
+def read_json(path):
+    try:
+        with path.open() as stream:
+            return json.load(stream)
+    except (OSError, ValueError):
+        return None
+
+
+def unit_state(name):
+    try:
+        out = subprocess.run(["systemctl", "is-active", name],
+                             capture_output=True, text=True, timeout=5)
+        return out.stdout.strip() or "unknown"
+    except (OSError, subprocess.SubprocessError):
+        return "unknown"
+
+
+def disk_free():
+    try:
+        usage = shutil.disk_usage("/")
+        return {"free_gb": round(usage.free / 1e9, 1),
+                "used_pct": round(100 * usage.used / usage.total)}
+    except OSError:
+        return None
+
+
+def state():
+    now = time.time()
+    adsb = read_json(STATUS_JSON) or {}
+    hue = read_json(HUE_JSON) or {}
+
+    def age(doc):
+        written = doc.get("written_at")
+        return round(now - written, 1) if isinstance(written, (int, float)) else None
+
+    planes = adsb.get("adsb_planes") or []
+    return {
+        "now": now,
+        "schema": panel_settings.describe(),
+        "settings": panel_settings.snapshot(),
+        "units": {name: unit_state(name) for name in WATCHED_UNITS},
+        "disk": disk_free(),
+        "feeds": {
+            # Age, never a bare boolean. "Fresh" with no number cannot be
+            # argued with; 0.6 s can.
+            "adsb": {"age_s": age(adsb), "aircraft": len(planes),
+                     "identified": sum(1 for p in planes if p.get("operator_name")),
+                     "with_route": sum(1 for p in planes if p.get("route")),
+                     "unlocated": len(adsb.get("adsb_heard_unlocated") or []),
+                     "model": (adsb.get("adsb_advisory") or {}).get("model")},
+            "hue": {"age_s": age(hue), "lights": hue.get("lights"),
+                    "alert_lights": hue.get("alert_lights"),
+                    "cooldown_s": hue.get("cooldown_s"),
+                    "last_warned_at": hue.get("last_warned_at"),
+                    "errors": hue.get("errors")},
+        },
+        "watching": [
+            {"hex": r.get("hex"), "reg": r.get("registration"),
+             "operator": r.get("operator_name"), "type": r.get("icao_type"),
+             "route": r.get("route"),
+             "band": (r.get("prediction") or {}).get("loudness_band"),
+             "eta_s": (r.get("prediction") or {}).get("eta_seconds")}
+            for r in (adsb.get("adsb_predictions") or [])[:8]
+        ],
+    }
+
+
+def save(payload):
+    """(ok, reasons). Validates everything BEFORE writing anything.
+
+    All-or-nothing on purpose: a partial save would leave the operator with a
+    page showing values that are half applied, which is harder to reason about
+    than a refusal.
+    """
+    if not isinstance(payload, dict):
+        return False, ["body must be a JSON object"]
+    cleaned, reasons = {}, []
+    for name, value in payload.items():
+        ok, result = panel_settings.validate(name, value)
+        if ok:
+            if result is not None:
+                cleaned[name] = result
+        else:
+            reasons.append(result)
+    if reasons:
+        return False, reasons
+
+    path = panel_settings.SETTINGS_PATH
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.tmp")
+    # Written whole then renamed. A reader that catches a half-written file
+    # keeps its previous configuration, but not needing to is better.
+    with tmp.open("w") as stream:
+        json.dump({"written_at": time.time(), "settings": cleaned}, stream,
+                  indent=2, sort_keys=True)
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(tmp, path)
+    os.chmod(path, 0o644)
+    return True, []
+
+
+class Handler(BaseHTTPRequestHandler):
+    server_version = "panel-admin/1.0"
+
+    def log_message(self, fmt, *args):
+        # journald already timestamps. Keep the client, drop the noise.
+        print(f"panel-admin: {self.address_string()} {fmt % args}", flush=True)
+
+    def _send(self, code, body, content_type="application/json"):
+        raw = body if isinstance(body, bytes) else body.encode()
+        self.send_response(code)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(raw)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(raw)
+
+    def do_GET(self):
+        if self.path.split("?")[0] in ("/", "/index.html", "/admin.html"):
+            try:
+                self._send(200, PAGE.read_bytes(), "text/html; charset=utf-8")
+            except OSError as exc:
+                self._send(500, f"admin page missing: {exc}", "text/plain")
+            return
+        if self.path.split("?")[0] == "/api/state":
+            self._send(200, json.dumps(state(), default=str))
+            return
+        self._send(404, json.dumps({"error": "not found"}))
+
+    def do_POST(self):
+        if self.path.split("?")[0] != "/api/settings":
+            self._send(404, json.dumps({"error": "not found"}))
+            return
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            length = 0
+        if length <= 0 or length > MAX_BODY:
+            self._send(400, json.dumps({"error": "missing or oversized body"}))
+            return
+        try:
+            payload = json.loads(self.rfile.read(length))
+        except ValueError as exc:
+            self._send(400, json.dumps({"error": f"invalid JSON: {exc}"}))
+            return
+        ok, reasons = save(payload)
+        if not ok:
+            # Named, every one of them. "Rejected" without the value that was
+            # rejected is the failure mode this project keeps legislating
+            # against.
+            self._send(400, json.dumps({"error": "rejected", "reasons": reasons}))
+            return
+        self._send(200, json.dumps({"saved": True, "settings": panel_settings.snapshot()}))
+
+
+def main():
+    if not PAGE.exists():
+        print(f"panel-admin: warning, page not found at {PAGE}", flush=True)
+    server = ThreadingHTTPServer((BIND, PORT), Handler)
+    server.daemon_threads = True
+    host = socket.gethostname()
+    print(f"panel-admin: listening on http://{BIND}:{PORT}/ ({host}); "
+          f"settings at {panel_settings.SETTINGS_PATH}; no authentication",
+          flush=True)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
