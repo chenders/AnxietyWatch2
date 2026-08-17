@@ -1,0 +1,233 @@
+#!/usr/bin/env python3
+"""Turn the bedroom-door Hue button into aircraft-noise ground truth.
+
+One press records that the resident heard/noticed an aircraft. Two presses in
+one gesture record that the cat heard it and was frightened. The second label
+is deliberately retained as a stronger, separate outcome rather than being
+collapsed into "heard".
+"""
+
+import json
+import os
+import ssl
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+BRIDGE = os.environ.get("HUE_BRIDGE", "192.168.1.174")
+USERNAME = os.environ.get("HUE_USERNAME")
+BUTTON_ID = os.environ.get("HUE_AIRCRAFT_BUTTON_ID", "0600c927-c283-481f-919e-e7749a6c960c")
+STATUS = Path(os.environ.get("ADSB_STATUS_JSON", "/opt/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical/adsb_status.json"))
+PASS_LOG = Path(os.environ.get("PANEL_NOISE_LOG", "/var/lib/panel-noise/loud-aircraft.jsonl"))
+LABELS = Path(os.environ.get("PANEL_AIRCRAFT_LABELS", "/var/lib/panel-noise/aircraft-labels.jsonl"))
+STATE = Path(os.environ.get("PANEL_AIRCRAFT_BUTTON_STATE", "/var/lib/panel-noise/hue-button-state.json"))
+DOUBLE_SECONDS = float(os.environ.get("HUE_BUTTON_DOUBLE_SECONDS", "1.35"))
+CONTEXT_BEFORE_SECONDS = 240.0
+CONTEXT_AFTER_SECONDS = 0.0
+SYNTHETIC = os.environ.get("PANEL_AIRCRAFT_LABEL_SYNTHETIC", "").lower() in ("1", "true", "yes")
+
+
+def atomic_json(path, value):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    with tmp.open("w") as stream:
+        json.dump(value, stream, separators=(",", ":"))
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(tmp, path)
+
+
+def append_fsync(path, value):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    encoded = json.dumps(value, separators=(",", ":"), sort_keys=True) + "\n"
+    with path.open("a") as stream:
+        stream.write(encoded)
+        stream.flush()
+        os.fsync(stream.fileno())
+
+
+def read_json(path):
+    try:
+        with path.open() as stream:
+            return json.load(stream)
+    except (OSError, ValueError):
+        return None
+
+
+def write_health(state, reason=None):
+    """Publish connection health without erasing the last accepted label."""
+    health = read_json(STATE) or {}
+    health["stream_state"] = state
+    health["stream_changed_at"] = time.time()
+    if reason is None:
+        health.pop("stream_error", None)
+    else:
+        health["stream_error"] = reason
+    atomic_json(STATE, health)
+
+
+def recent_passes(at):
+    rows = []
+    try:
+        with PASS_LOG.open() as stream:
+            for line in stream:
+                try:
+                    row = json.loads(line)
+                except ValueError:
+                    continue
+                stamp = row.get("at")
+                if isinstance(stamp, (int, float)) and at - CONTEXT_BEFORE_SECONDS <= stamp <= at + CONTEXT_AFTER_SECONDS:
+                    rows.append(row)
+    except OSError:
+        pass
+    return rows[-250:]
+
+
+def current_candidates(snapshot):
+    if not isinstance(snapshot, dict):
+        return []
+    out = []
+    seen = set()
+    for key in ("adsb_planes", "adsb_predictions", "adsb_heard_unlocated"):
+        for aircraft in snapshot.get(key) or []:
+            ident = aircraft.get("hex") or aircraft.get("registration") or aircraft.get("callsign")
+            marker = (key, ident)
+            if marker not in seen:
+                seen.add(marker)
+                out.append({"feed": key, "aircraft": aircraft})
+    return out
+
+
+def record_label(first_press, presses):
+    recorded = time.time()
+    priority = "cat_scared_top_priority" if presses >= 2 else "human_heard"
+    snapshot = read_json(STATUS)
+    row = {
+        "schema": 1,
+        "event_id": f"hue-{int(first_press * 1000)}-{presses}",
+        "observed_at": first_press,
+        "recorded_at": recorded,
+        "press_count": presses,
+        "label": priority,
+        "priority": 2 if presses >= 2 else 1,
+        "provenance": "synthetic" if SYNTHETIC else "hue_button",
+        "eligible_for_training": not SYNTHETIC,
+        "meaning": ("cat heard the aircraft and was frightened; top-priority false-negative evidence"
+                    if presses >= 2 else
+                    "resident heard and noticed an aircraft; false-negative/threshold-training evidence"),
+        "button": {"resource_id": BUTTON_ID, "double_window_seconds": DOUBLE_SECONDS},
+        "clock": {"source": "system UTC epoch", "ntp_required_by_service": True},
+        "live_feed_written_at": snapshot.get("written_at") if isinstance(snapshot, dict) else None,
+        "live_candidates": current_candidates(snapshot),
+        "recent_completed_passes": recent_passes(first_press),
+    }
+    append_fsync(LABELS, row)
+    # Feed only real observations into the existing contrast-based correlator.
+    # Synthetic events prove the plumbing; treating them as heard aircraft would
+    # poison the very threshold model they are intended to test.
+    if SYNTHETIC:
+        correlator = {"skipped": "synthetic labels are ineligible for training"}
+    else:
+        note = "Hue button: cat heard and scared (TOP PRIORITY)" if presses >= 2 else "Hue button: human heard aircraft"
+        suspected = "CAT_SCARED" if presses >= 2 else "AIRCRAFT_HEARD"
+        try:
+            result = subprocess.run(["/usr/local/bin/panel-heard", "--ago", str(max(0.0, recorded - first_press)),
+                                     "--suspected", suspected, "--note", note],
+                                    check=False, capture_output=True, text=True, timeout=15)
+            correlator = {"returncode": result.returncode, "stdout": result.stdout[-1000:], "stderr": result.stderr[-1000:]}
+        except (OSError, subprocess.SubprocessError) as exc:
+            correlator = {"error": str(exc)}
+    atomic_json(STATE, {"last_label": priority, "press_count": presses, "observed_at": first_press,
+                        "recorded_at": recorded, "correlator": correlator})
+    print(f"panel-hue-aircraft-label: recorded {priority} ({presses} press{'es' if presses != 1 else ''}, "
+          f"provenance={'synthetic' if SYNTHETIC else 'hue_button'})", flush=True)
+
+
+def events_from_payload(payload):
+    try:
+        batches = json.loads(payload)
+    except ValueError:
+        return []
+    found = []
+    if not isinstance(batches, list):
+        return found
+    for batch in batches:
+        if not isinstance(batch, dict) or batch.get("type") != "update":
+            continue
+        for item in batch.get("data") or []:
+            if item.get("id") != BUTTON_ID or item.get("type") != "button":
+                continue
+            report = (item.get("button") or {}).get("button_report") or {}
+            if report.get("event") == "initial_press":
+                found.append(report.get("updated") or batch.get("creationtime") or str(time.time()))
+    return found
+
+
+def stream_once(on_press, on_tick):
+    if not USERNAME:
+        raise RuntimeError("HUE_USERNAME is not configured")
+    request = urllib.request.Request(
+        f"https://{BRIDGE}/eventstream/clip/v2",
+        headers={"hue-application-key": USERNAME, "Accept": "text/event-stream"})
+    context = ssl._create_unverified_context()
+    with urllib.request.urlopen(request, context=context, timeout=90) as response:
+        write_health("connected")
+        data = []
+        for raw in response:
+            line = raw.decode("utf-8", "replace").rstrip("\r\n")
+            if line.startswith("data:"):
+                data.append(line[5:].lstrip())
+            elif not line:
+                if data:
+                    payload = "\n".join(data)
+                    data = []
+                    for token in events_from_payload(payload):
+                        on_press(token)
+                on_tick()
+
+
+def main():
+    pending_at = None
+    pending_count = 0
+    seen_tokens = []
+
+    def press(token):
+        nonlocal pending_at, pending_count
+        if token in seen_tokens:
+            return
+        seen_tokens.append(token)
+        del seen_tokens[:-32]
+        now = time.time()
+        if pending_at is not None and now - pending_at <= DOUBLE_SECONDS:
+            pending_count += 1
+        else:
+            if pending_at is not None:
+                record_label(pending_at, pending_count)
+            pending_at, pending_count = now, 1
+
+    def tick():
+        nonlocal pending_at, pending_count
+        if pending_at is not None and time.time() - pending_at > DOUBLE_SECONDS:
+            record_label(pending_at, pending_count)
+            pending_at, pending_count = None, 0
+
+    delay = 1.0
+    while True:
+        tick()
+        try:
+            stream_once(press, tick)
+            delay = 1.0
+        except (OSError, urllib.error.URLError, TimeoutError, RuntimeError) as exc:
+            write_health("disconnected", str(exc))
+            print(f"panel-hue-aircraft-label: event stream disconnected: {exc}; retry in {delay:.0f}s", file=sys.stderr, flush=True)
+            # urlopen's read timeout provides the tick that finalises singles.
+            tick()
+            time.sleep(delay)
+            delay = min(30.0, delay * 2.0)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

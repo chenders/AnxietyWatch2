@@ -1,0 +1,35 @@
+[Unit]
+Description=Capture aircraft-noise labels from the bedroom-door Hue button
+After=network-online.target panel-adsb-status.service
+Wants=network-online.target panel-adsb-status.service
+
+[Service]
+Type=simple
+User=anxietywatch
+Group=anxietywatch
+# Bridge address, API username, and button resource identify this house and live
+# in a root-readable drop-in, never in git:
+#   sudo systemctl edit panel-hue-aircraft-label
+#   [Service]
+#   Environment=HUE_BRIDGE=...
+#   Environment=HUE_USERNAME=...
+#   Environment=HUE_AIRCRAFT_BUTTON_ID=...
+Environment=ADSB_STATUS_JSON=/opt/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical/adsb_status.json
+Environment=PANEL_NOISE_LOG=/var/lib/panel-noise/loud-aircraft.jsonl
+Environment=PANEL_AIRCRAFT_LABELS=/var/lib/panel-noise/aircraft-labels.jsonl
+Environment=PANEL_AIRCRAFT_BUTTON_STATE=/var/lib/panel-noise/hue-button-state.json
+Environment=HUE_BUTTON_DOUBLE_SECONDS=1.35
+ExecStart=/usr/local/bin/panel-hue-aircraft-label
+Restart=always
+RestartSec=3
+StateDirectory=panel-noise
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadOnlyPaths=/opt/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+OOMScoreAdjust=200
+
+[Install]
+WantedBy=multi-user.target
