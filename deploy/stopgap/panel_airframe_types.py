@@ -85,7 +85,7 @@ LIGHT = frozenset({
     "GLST", "M20P", "P28A", "P28B", "P28R", "P28S", "P32R", "PA12", "PA18", "PA22", "PA24", "PA31",
     "PA32", "PA34", "PA44", "PA46", "RV4", "RV6",
     "RV7", "RV8", "RV9", "RV10", "RV12", "RV14", "S22T", "SR20", "SR22",
-    "T206", 
+    "T206",
 })
 # Single- and twin-engine turboprops. Split out of LIGHT after a TBM 850 passed
 # 1.07 km overhead at 2,075 ft on 2026-08-13 and the model called it FAINT while

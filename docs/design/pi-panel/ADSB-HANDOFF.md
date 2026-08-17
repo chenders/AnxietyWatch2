@@ -16,21 +16,21 @@ every task. Nothing here overrides either.
 | | lines |
 |---|---|
 | `docs/design/pi-panel/direction-a-clinical/index.html` (tracked) | 2640 |
-| the same file deployed on `minidude` | 2851 |
+| the same file deployed on `pi-host` | 2851 |
 
 The ~211-line difference is the entire air-traffic radar: `live-radar`,
 `drawRadar()`, `showAircraftModal()`, `wireAircraftModal()`, `aircraftIcon()`.
 `grep -c 'live-radar\|drawRadar'` returns **0** against the tracked file.
 
 The README for this stopgap says "updating the panel is `git pull`". **That is
-now a destructive operation.** A `git pull` in `/home/chris/anxietywatch-panel`
+now a destructive operation.** A `git pull` in `/opt/anxietywatch-panel`
 would revert the panel to a version with no radar at all.
 
 Reconciling this is the highest-value cleanup available and it is unstarted.
 The Pi's copy is authoritative. Suggested route: pull the Pi's `index.html` back
 into the repo on a branch, diff it against tracked, and land the radar properly.
 
-`/home/chris/anxietywatch-panel` currently reports `M .../index.html` plus a
+`/opt/anxietywatch-panel` currently reports `M .../index.html` plus a
 scattering of stale `.vitals_status.*` temp files.
 
 ### Two more files live only on the Pi
@@ -53,7 +53,7 @@ scattering of stale `.vitals_status.*` temp files.
 
 ## 2. Current state
 
-Branch `feat/clinical-monitor-kiosk`, worktree `/Users/chris/Source/aw2-clinical-monitor`.
+Branch `feat/clinical-monitor-kiosk`, worktree `~/Source/aw2-clinical-monitor`.
 
 ```
 ed243c7 style(adsb): drop the standing no-alarm disclaimer
@@ -77,7 +77,7 @@ worktree → branch → commit → push → PR → `/respond-to-copilot` → squ
 | `deploy/stopgap/panel-status-merge-adsb.conf` | marker for the untracked merger edit |
 | `deploy/stopgap/README.md` | model, thresholds, limits, the FR24 comparison |
 
-### Data path on `minidude`
+### Data path on `pi-host`
 
 ```
 RTL-SDR (Realtek RTL2838, USB 1:3)
@@ -90,18 +90,18 @@ RTL-SDR (Realtek RTL2838, USB 1:3)
 
 All five units active. Kiosk URL:
 `http://127.0.0.1:8975/index.html?kiosk=1&live&demo`
-Remote: `http://192.168.1.48:8975/index.html?kiosk=1&live&demo`
+Remote: `http://pi-host:8975/index.html?kiosk=1&live&demo`
 
 ### Verify
 
 ```sh
 cd deploy/stopgap && python3 -m unittest test_panel_adsb_status     # 37 tests
-ssh minidude 'python3 /tmp/verify_adsb.py'                          # live feed
-ssh minidude 'systemctl is-active dump1090-mutability panel-adsb-status \
+ssh pi-host 'python3 /tmp/verify_adsb.py'                          # live feed
+ssh pi-host 'systemctl is-active dump1090-mutability panel-adsb-status \
     panel-status-merge panel-http panel-kiosk'
 # screenshot the real panel:
-ssh minidude 'sudo -u chris env XDG_RUNTIME_DIR=/run/user/1000 \
-    WAYLAND_DISPLAY=wayland-0 grim /tmp/k.png' && scp minidude:/tmp/k.png /tmp/
+ssh pi-host 'sudo -u anxietywatch env XDG_RUNTIME_DIR=/run/user/1000 \
+    WAYLAND_DISPLAY=wayland-0 grim /tmp/k.png' && scp pi-host:/tmp/k.png /tmp/
 ```
 
 ---
@@ -395,7 +395,7 @@ Currently in two places. The MCP one is for interactive exploration only; the
 daemon can never use MCP.
 
 - MCP: `~/.claude.json` -> projects -> this repo -> `mcpServers.fr24api.env.FR24_API_KEY`
-- Pi: `~/.fr24_key` on minidude, mode 600. For the daemon, move it to
+- Pi: `~/.fr24_key` on pi-host, mode 600. For the daemon, move it to
   `sudo systemctl edit panel-adsb-status` as `Environment=FR24_API_KEY=...`.
   **Never in git.**
 
@@ -428,7 +428,7 @@ and the FR24 half is the one tied to the actual complaint.
 
 ## 7. Useful scratch files on the Pi
 
-Left in `/tmp` on `minidude`, not part of the deploy:
+Left in `/tmp` on `pi-host`, not part of the deploy:
 
 - `verify_adsb.py` — prints the live merged feed and asserts the advisory is unarmed
 - `fake_aircraft.py` — writes a synthetic `aircraft.json` (includes a `LIFEGD1`

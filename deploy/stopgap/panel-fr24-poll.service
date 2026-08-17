@@ -1,13 +1,13 @@
 [Unit]
 Description=Poll Flightradar24 for low rotorcraft near the station
-Documentation=file:///home/chris/anxietywatch-panel/deploy/stopgap/README.md
+Documentation=file:///opt/anxietywatch-panel/deploy/stopgap/README.md
 After=network-online.target
 Wants=network-online.target
 Before=panel-adsb-status.service
 
 [Service]
 Type=simple
-User=chris
+User=anxietywatch
 
 # The API key and the station coordinates are BOTH secrets and neither may ever
 # be committed. Set them in a drop-in:
@@ -29,7 +29,7 @@ Environment=FR24_POLL_INTERVAL_SECONDS=3
 # as a sibling of status.json. It is a single current-state file, rewritten
 # every poll and never appended to, so nothing accumulates -- which is what
 # keeps it clear of FR24's 30-day retention rule.
-Environment=FR24_CACHE_JSON=/home/chris/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical/fr24_aircraft.json
+Environment=FR24_CACHE_JSON=/opt/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical/fr24_aircraft.json
 Environment=FR24_CREDIT_LEDGER=/var/lib/panel-fr24/credits.json
 Environment=PANEL_NOISE_LOG=/var/lib/panel-noise/loud-aircraft.jsonl
 
@@ -44,7 +44,7 @@ RuntimeDirectory=panel-fr24
 StateDirectory=panel-fr24 panel-noise
 # ProtectHome=read-only above blocks the served directory, which is under
 # /home. Punch through for exactly that one directory and nothing else.
-ReadWritePaths=/home/chris/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical
+ReadWritePaths=/opt/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical
 
 NoNewPrivileges=yes
 PrivateTmp=yes

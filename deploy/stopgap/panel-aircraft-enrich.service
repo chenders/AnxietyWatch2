@@ -5,10 +5,10 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-User=chris
+User=anxietywatch
 # Quoted: systemd splits an unquoted value on whitespace, which silently drops
 # every parameter after the first and falls back to the OS user.
-Environment="PANEL_NOISE_DSN=host=/var/run/postgresql dbname=vitals user=chris"
+Environment="PANEL_NOISE_DSN=host=/var/run/postgresql dbname=vitals user=anxietywatch"
 Environment=PANEL_AIRCRAFT_CACHE=/var/lib/panel-noise/aircraft_types.json
 ExecStart=/usr/local/bin/panel-aircraft-enrich
 StateDirectory=panel-noise

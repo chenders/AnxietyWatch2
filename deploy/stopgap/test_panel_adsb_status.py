@@ -351,7 +351,6 @@ class NeverArmed(unittest.TestCase):
         self.assertIn("+/-", adsb.MODEL_NOTE)
 
 
-
 class RosterRescuesUnscorableAircraft(unittest.TestCase):
     """The receiver reports ~50% of aircraft with no emitter category.
 
@@ -728,8 +727,8 @@ class RecalibratedAgainstPublishedData(unittest.TestCase):
         one constant would not have survived that.
         """
         def fade(klass):
-            return (adsb.noise_index(1000.0, klass, "LEVEL")
-                    - adsb.noise_index(6000.0, klass, "LEVEL"))
+            return (adsb.noise_index(1000.0, klass, "LEVEL") -
+                    adsb.noise_index(6000.0, klass, "LEVEL"))
         self.assertGreater(fade("jet"), fade("rotorcraft"))
 
     def test_every_class_has_a_spectral_split(self):
@@ -755,8 +754,8 @@ class RecalibratedAgainstPublishedData(unittest.TestCase):
         """
         import math as _m
         klass, phase, distance = "jet", "LEVEL", 300.0
-        spread = (adsb.SOURCE_LEVELS[klass][phase]
-                  - 20.0 * _m.log10(distance / 300.0))
+        spread = (adsb.SOURCE_LEVELS[klass][phase] -
+                  20.0 * _m.log10(distance / 300.0))
         f = adsb.LOW_BAND_FRACTION[klass]
         low = spread + 10.0 * _m.log10(f) - adsb.LOW_BAND_DB_PER_M * distance
         high = spread + 10.0 * _m.log10(1 - f) - adsb.HIGH_BAND_DB_PER_M * distance

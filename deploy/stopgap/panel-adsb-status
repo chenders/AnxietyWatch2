@@ -17,7 +17,7 @@ import panel_airframe_types  # noqa: E402
 import panel_settings  # noqa: E402
 
 SOURCE = Path(os.environ.get("DUMP1090_AIRCRAFT_JSON", "/run/dump1090-mutability/aircraft.json"))
-OUTPUT = Path(os.environ.get("ADSB_STATUS_JSON", "/home/chris/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical/adsb_status.json"))
+OUTPUT = Path(os.environ.get("ADSB_STATUS_JSON", "/opt/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical/adsb_status.json"))
 INTERVAL = float(os.environ.get("ADSB_PUBLISH_INTERVAL_SECONDS", "1"))
 STALE_SECONDS = float(os.environ.get("ADSB_STALE_SECONDS", "15"))
 # An aircraft heard without a position stays reportable longer than one with

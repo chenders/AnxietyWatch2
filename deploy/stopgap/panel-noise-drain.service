@@ -5,7 +5,7 @@ Wants=postgresql.service
 
 [Service]
 Type=oneshot
-User=chris
+User=anxietywatch
 # The spool is the write-ahead record and Postgres is the queryable one. This
 # runs on a timer rather than continuously: a missed run costs nothing because
 # progress is a byte offset, and the next run picks up where it left off.
@@ -15,7 +15,7 @@ Environment=PANEL_NOISE_DRAIN_STATE=/var/lib/panel-noise/drain.json
 # without these quotes the DSN silently becomes just "host=/var/run/postgresql"
 # and psycopg2 falls back to the OS user -- which is a different role, and fails
 # with a confusing "role does not exist" rather than anything about the DSN.
-Environment="PANEL_NOISE_DSN=host=/var/run/postgresql dbname=vitals user=chris"
+Environment="PANEL_NOISE_DSN=host=/var/run/postgresql dbname=vitals user=anxietywatch"
 ExecStart=/usr/local/bin/panel-noise-drain
 StateDirectory=panel-noise
 NoNewPrivileges=yes

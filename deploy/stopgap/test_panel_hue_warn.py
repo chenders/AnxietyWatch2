@@ -232,6 +232,7 @@ class WhatWarnActuallyApplies(unittest.TestCase):
         self.applied = []
         hue.call = lambda m, p, b=None: (
             {"state": {"on": True, "bri": 254, "colormode": "ct", "ct": 300}}, None)
+
         def record(light_id, state):
             self.applied.append((light_id, dict(state)))
             return (None, None)
@@ -387,8 +388,8 @@ class WarningEndsWhenTheAircraftDoes(unittest.TestCase):
 
     def test_the_lights_are_still_restored_after_an_all_clear(self):
         hue.warn("LOUD", "test", still_inbound=lambda: False)
-        restored = [st for lid, st in self.applied if st.get("alert") == "none"
-                    and "bri" in st and st.get("xy") != hue.XY_GREEN]
+        restored = [st for lid, st in self.applied if st.get("alert") == "none" and
+                    "bri" in st and st.get("xy") != hue.XY_GREEN]
         self.assertTrue(restored, "lights were not restored after the all-clear")
 
     def test_an_unreadable_feed_does_not_count_as_cleared(self):

@@ -63,6 +63,22 @@ cargo build --release -p emay-spike           # on the Pi, or cross-build
 sudo install -m755 target/release/emay-spike /usr/local/bin/
 
 sudo cp deploy/stopgap/*.service /etc/systemd/system/
+
+# The stopgap drain and enricher use PostgreSQL peer authentication as the
+# dedicated service account. Provision only the objects they need; do not make
+# the service account a database owner or superuser.
+sudo -u postgres psql -d vitals <<'SQL'
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'anxietywatch') THEN
+    CREATE ROLE anxietywatch LOGIN;
+  END IF;
+END $$;
+GRANT CONNECT ON DATABASE vitals TO anxietywatch;
+GRANT USAGE ON SCHEMA public TO anxietywatch;
+GRANT SELECT, INSERT, UPDATE ON aircraft, aircraft_pass, flight_route TO anxietywatch;
+SQL
+sudo -u anxietywatch psql -d vitals -c 'SELECT 1 FROM aircraft_pass LIMIT 0'
+
 sudo systemctl daemon-reload
 
 # cage needs the display, so the desktop session has to stop first.
@@ -498,12 +514,70 @@ jq '{feed_state, error, credits, n: (.aircraft|length?)}' /run/panel-fr24/fr24_a
 - There is **no balance endpoint**. `/api/balance`, `/credits`, `/subscription`,
   `/account` and `/me` all 404. Balance is visible only in the web dashboard.
 
+## Aircraft ground-truth button
+
+The Hue device named **bedroom door button** is deliberately unbound from Hue
+room/scene behavior and consumed directly from the bridge's local v2 event
+stream by `panel-hue-aircraft-label`:
+
+- one press = the resident heard and noticed an aircraft;
+- two presses within 1.35 seconds = the cat heard it and was frightened, stored
+  as a separate top-priority outcome rather than a heavier copy of "heard".
+
+Every gesture is fsynced to
+`/var/lib/panel-noise/aircraft-labels.jsonl` with the NTP-synchronized event
+time, complete current ADS-B prediction context, and recently completed passes.
+Real labels also enter `panel-heard`'s contrast-based candidate analysis. No
+label directly edits a threshold or roster: enough positive and quiet evidence
+must accumulate, and proposed identities still require verification. This
+prevents one coincidence or one busy flight path from teaching the warning the
+wrong rule.
+
+Install it after deleting the button's old Hue behavior in the Hue app or API:
+
+```sh
+sudo install -m 0755 panel-hue-aircraft-label /usr/local/bin/
+sudo install -m 0644 panel-hue-aircraft-label.service /etc/systemd/system/
+# Export the bridge's certificate once over a trusted local path, verify its
+# fingerprint against the bridge, then install it root-owned:
+sudo install -d -o root -g root -m 0755 /etc/panel-hue
+sudo install -o root -g root -m 0644 bridge.pem /etc/panel-hue/bridge.pem
+sudo systemctl edit panel-hue-aircraft-label  # HUE_BRIDGE, HUE_USERNAME, HUE_AIRCRAFT_BUTTON_ID, HUE_CERTIFICATE
+sudo systemctl daemon-reload
+sudo systemctl enable --now panel-hue-aircraft-label
+```
+
+A synthetic plumbing test must be marked at its source so it cannot contaminate
+training data:
+
+```sh
+sudo systemctl edit panel-hue-aircraft-label
+# Temporarily add Environment=PANEL_AIRCRAFT_LABEL_SYNTHETIC=true, then simulate.
+# Synthetic rows say provenance=synthetic and eligible_for_training=false.
+```
+
+The button's battery state is health information, not an ingestion gate. A
+connected button at a reported low battery continues to produce real labels;
+monitor it and replace the battery, but do not silently discard its events.
+
+Verify code and the live deployment:
+
+```sh
+cd deploy/stopgap && python3 -m unittest test_panel_hue_aircraft_label
+ssh "$PI_HOST" 'systemctl is-enabled panel-hue-aircraft-label && systemctl is-active panel-hue-aircraft-label && python3 -m py_compile /usr/local/bin/panel-hue-aircraft-label'
+```
+
 ## Removing it
 
 ```sh
-sudo systemctl disable --now panel-kiosk emay-live panel-http panel-adsb-status panel-fr24-poll
-sudo rm /etc/systemd/system/{panel-kiosk,emay-live,panel-http,panel-adsb-status,panel-fr24-poll}.service
-sudo rm -rf /etc/systemd/system/panel-kiosk.service.d
+sudo systemctl disable --now panel-kiosk emay-live panel-http panel-adsb-status panel-fr24-poll panel-hue-aircraft-label
+sudo rm /etc/systemd/system/{panel-kiosk,emay-live,panel-http,panel-adsb-status,panel-fr24-poll,panel-hue-aircraft-label}.service
+sudo rm -rf /etc/systemd/system/panel-kiosk.service.d \
+  /etc/systemd/system/panel-hue-aircraft-label.service.d
+# Remove the pinned certificate only after confirming no other Hue client uses it.
+sudo rm -rf /etc/panel-hue
+# Labels and state are evidence and are retained by default. To erase them
+# deliberately, archive as required, then remove /var/lib/panel-noise separately.
 sudo systemctl daemon-reload
 sudo systemctl enable --now lightdm        # put the desktop back
 sudo rm -rf /opt/anxietywatch-panel                # the checkout

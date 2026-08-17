@@ -6,13 +6,13 @@ Before=panel-status-merge.service
 
 [Service]
 Type=simple
-User=chris
+User=anxietywatch
 # Set the receiver location without committing a home location:
 #   sudo systemctl edit panel-adsb-status
 #   [Service]
 #   Environment=STATION_LAT=...
 #   Environment=STATION_LON=...
-Environment=ADSB_STATUS_JSON=/home/chris/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical/adsb_status.json
+Environment=ADSB_STATUS_JSON=/opt/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical/adsb_status.json
 # Durable record of what actually flew over: one row per PASS, not per publish.
 # Shared with panel-fr24-poll, which writes rows to the same file under a
 # different provenance. Receiver rows never expire -- that data came off an
@@ -29,7 +29,7 @@ PrivateTmp=yes
 ProtectSystem=strict
 ProtectHome=read-only
 ReadOnlyPaths=/run/dump1090-mutability
-ReadWritePaths=/home/chris/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical
+ReadWritePaths=/opt/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical
 RestrictAddressFamilies=AF_UNIX
 
 [Install]

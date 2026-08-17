@@ -15,8 +15,8 @@ Environment=PANEL_ADMIN_PAGE=/usr/local/share/panel-admin/admin.html
 ExecStart=/usr/local/bin/panel-admin
 Restart=always
 RestartSec=5
-User=chris
-Group=chris
+User=anxietywatch
+Group=anxietywatch
 
 [Install]
 WantedBy=multi-user.target
