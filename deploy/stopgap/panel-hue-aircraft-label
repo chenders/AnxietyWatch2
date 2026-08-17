@@ -44,6 +44,7 @@ def synthetic_mode(value):
 
 
 SYNTHETIC = synthetic_mode(os.environ.get("PANEL_AIRCRAFT_LABEL_SYNTHETIC", ""))
+STATE_LOCK = threading.RLock()
 
 
 def atomic_json(path, value):
@@ -74,23 +75,25 @@ def read_json(path):
 
 
 def merge_state(changes, remove=()):
-    """Atomically change status without erasing independent health fields."""
-    state = read_json(STATE) or {}
-    state.update(changes)
-    for key in remove:
-        state.pop(key, None)
-    atomic_json(STATE, state)
+    """Atomically change status without erasing concurrent health fields."""
+    with STATE_LOCK:
+        state = read_json(STATE) or {}
+        state.update(changes)
+        for key in remove:
+            state.pop(key, None)
+        atomic_json(STATE, state)
 
 
 def write_health(state, reason=None):
     """Publish a health transition without write-amplifying steady state."""
-    current = read_json(STATE) or {}
-    if current.get("stream_state") == state and current.get("stream_error") == reason:
-        return
-    changes = {"stream_state": state, "stream_changed_at": time.time()}
-    if reason is not None:
-        changes["stream_error"] = reason
-    merge_state(changes, () if reason is not None else ("stream_error",))
+    with STATE_LOCK:
+        current = read_json(STATE) or {}
+        if current.get("stream_state") == state and current.get("stream_error") == reason:
+            return
+        changes = {"stream_state": state, "stream_changed_at": time.time()}
+        if reason is not None:
+            changes["stream_error"] = reason
+        merge_state(changes, () if reason is not None else ("stream_error",))
 
 
 def recent_passes(at):
