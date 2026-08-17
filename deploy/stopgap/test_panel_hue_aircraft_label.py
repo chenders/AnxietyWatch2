@@ -36,6 +36,21 @@ class EventParsing(unittest.TestCase):
     def test_invalid_event_data_is_ignored(self):
         self.assertEqual(label.events_from_payload("not json"), [])
         self.assertEqual(label.events_from_payload("{}"), [])
+        malformed = json.dumps([{"type": "update", "data": [None, "bad", {"id": label.BUTTON_ID, "type": "button", "button": []}]}])
+        self.assertEqual(label.events_from_payload(malformed), [])
+
+
+class Configuration(unittest.TestCase):
+    def test_synthetic_mode_fails_closed_on_typo(self):
+        self.assertTrue(label.synthetic_mode(" on "))
+        self.assertFalse(label.synthetic_mode("off"))
+        with self.assertRaisesRegex(ValueError, "unrecognized"):
+            label.synthetic_mode("synthetci")
+
+    def test_all_private_identifiers_are_required(self):
+        with mock.patch.object(label, "BRIDGE", None), mock.patch.object(label, "USERNAME", None), mock.patch.object(label, "BUTTON_ID", None):
+            with self.assertRaisesRegex(SystemExit, "HUE_BRIDGE.*HUE_USERNAME.*HUE_AIRCRAFT_BUTTON_ID"):
+                label.validate_configuration()
 
 
 class Health(unittest.TestCase):
@@ -52,6 +67,46 @@ class Health(unittest.TestCase):
             self.assertEqual(first["stream_error"], "bridge timeout")
             self.assertEqual(second["stream_state"], "connected")
             self.assertNotIn("stream_error", second)
+
+
+class Gestures(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.state = pathlib.Path(self.tmp.name) / "state.json"
+        self.now = 1000.0
+        self.emitted = []
+        self.patch = mock.patch.object(label, "STATE", self.state)
+        self.patch.start()
+        self.addCleanup(self.patch.stop)
+        self.addCleanup(self.tmp.cleanup)
+
+    def tracker(self):
+        return label.GestureTracker(emit=lambda at, count: self.emitted.append((at, count)),
+                                    clock=lambda: self.now)
+
+    def test_duplicate_token_is_ignored_and_double_press_is_classified(self):
+        tracker = self.tracker()
+        tracker.press("same")
+        tracker.press("same")
+        self.now += 0.5
+        tracker.press("second")
+        self.now += label.DOUBLE_SECONDS + 0.01
+        tracker.tick()
+        self.assertEqual(self.emitted, [(1000.0, 2)])
+
+    def test_single_flushes_on_its_own_deadline(self):
+        tracker = self.tracker()
+        tracker.press("one")
+        self.now += label.DOUBLE_SECONDS + 0.01
+        tracker.tick()
+        self.assertEqual(self.emitted, [(1000.0, 1)])
+
+    def test_pending_gesture_survives_restart(self):
+        self.tracker().press("one")
+        self.now += label.DOUBLE_SECONDS + 0.01
+        recovered = self.tracker()
+        recovered.tick()
+        self.assertEqual(self.emitted, [(1000.0, 1)])
 
 
 class DurableLabels(unittest.TestCase):
@@ -90,6 +145,7 @@ class DurableLabels(unittest.TestCase):
     @mock.patch.object(label.subprocess, "run")
     def test_single_press_is_real_human_heard_training_evidence(self, run, _time):
         run.return_value = mock.Mock(returncode=0, stdout="marked", stderr="")
+        self.paths["STATE"].write_text(json.dumps({"stream_state": "connected"}))
         with mock.patch.object(label, "SYNTHETIC", False):
             label.record_label(1000.0, 1)
         row = self.row()
@@ -100,6 +156,7 @@ class DurableLabels(unittest.TestCase):
         self.assertEqual(row["live_candidates"][0]["aircraft"]["hex"], "ABC123")
         self.assertEqual(row["recent_completed_passes"][0]["detail"]["rssi_dbm"], -15.0)
         run.assert_called_once()
+        self.assertEqual(json.loads(self.paths["STATE"].read_text())["stream_state"], "connected")
 
     @mock.patch.object(label.time, "time", return_value=1002.0)
     @mock.patch.object(label.subprocess, "run")

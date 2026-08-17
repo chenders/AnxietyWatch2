@@ -1,7 +1,7 @@
 [Unit]
 Description=Capture aircraft-noise labels from the bedroom-door Hue button
-After=network-online.target panel-adsb-status.service
-Wants=network-online.target panel-adsb-status.service
+After=network-online.target time-sync.target panel-adsb-status.service
+Wants=network-online.target time-sync.target panel-adsb-status.service
 
 [Service]
 Type=simple

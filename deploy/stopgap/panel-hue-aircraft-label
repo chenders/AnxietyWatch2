@@ -19,7 +19,7 @@ from pathlib import Path
 
 BRIDGE = os.environ.get("HUE_BRIDGE")
 USERNAME = os.environ.get("HUE_USERNAME")
-BUTTON_ID = os.environ.get("HUE_AIRCRAFT_BUTTON_ID", "0600c927-c283-481f-919e-e7749a6c960c")
+BUTTON_ID = os.environ.get("HUE_AIRCRAFT_BUTTON_ID")
 STATUS = Path(os.environ.get("ADSB_STATUS_JSON", "/opt/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical/adsb_status.json"))
 PASS_LOG = Path(os.environ.get("PANEL_NOISE_LOG", "/var/lib/panel-noise/loud-aircraft.jsonl"))
 LABELS = Path(os.environ.get("PANEL_AIRCRAFT_LABELS", "/var/lib/panel-noise/aircraft-labels.jsonl"))
@@ -27,7 +27,19 @@ STATE = Path(os.environ.get("PANEL_AIRCRAFT_BUTTON_STATE", "/var/lib/panel-noise
 DOUBLE_SECONDS = float(os.environ.get("HUE_BUTTON_DOUBLE_SECONDS", "1.35"))
 CONTEXT_BEFORE_SECONDS = 240.0
 CONTEXT_AFTER_SECONDS = 0.0
-SYNTHETIC = os.environ.get("PANEL_AIRCRAFT_LABEL_SYNTHETIC", "").lower() in ("1", "true", "yes")
+
+
+def synthetic_mode(value):
+    """Parse provenance configuration closed; a typo must never create real evidence."""
+    normalized = value.strip().lower()
+    if normalized in ("1", "true", "yes", "on"):
+        return True
+    if normalized in ("", "0", "false", "no", "off"):
+        return False
+    raise ValueError(f"synthetic provenance blocked: unrecognized value {value!r}")
+
+
+SYNTHETIC = synthetic_mode(os.environ.get("PANEL_AIRCRAFT_LABEL_SYNTHETIC", ""))
 
 
 def atomic_json(path, value):
@@ -57,16 +69,21 @@ def read_json(path):
         return None
 
 
+def merge_state(changes, remove=()):
+    """Atomically change status without erasing independent health fields."""
+    state = read_json(STATE) or {}
+    state.update(changes)
+    for key in remove:
+        state.pop(key, None)
+    atomic_json(STATE, state)
+
+
 def write_health(state, reason=None):
     """Publish connection health without erasing the last accepted label."""
-    health = read_json(STATE) or {}
-    health["stream_state"] = state
-    health["stream_changed_at"] = time.time()
-    if reason is None:
-        health.pop("stream_error", None)
-    else:
-        health["stream_error"] = reason
-    atomic_json(STATE, health)
+    changes = {"stream_state": state, "stream_changed_at": time.time()}
+    merge_state(changes, () if reason is not None else ("stream_error",))
+    if reason is not None:
+        merge_state({"stream_error": reason})
 
 
 def recent_passes(at):
@@ -140,8 +157,8 @@ def record_label(first_press, presses):
             correlator = {"returncode": result.returncode, "stdout": result.stdout[-1000:], "stderr": result.stderr[-1000:]}
         except (OSError, subprocess.SubprocessError) as exc:
             correlator = {"error": str(exc)}
-    atomic_json(STATE, {"last_label": priority, "press_count": presses, "observed_at": first_press,
-                        "recorded_at": recorded, "correlator": correlator})
+    merge_state({"last_label": priority, "press_count": presses, "observed_at": first_press,
+                 "recorded_at": recorded, "correlator": correlator}, remove=("pending_gesture",))
     print(f"panel-hue-aircraft-label: recorded {priority} ({presses} press{'es' if presses != 1 else ''}, "
           f"provenance={'synthetic' if SYNTHETIC else 'hue_button'})", flush=True)
 
@@ -157,24 +174,38 @@ def events_from_payload(payload):
     for batch in batches:
         if not isinstance(batch, dict) or batch.get("type") != "update":
             continue
-        for item in batch.get("data") or []:
-            if item.get("id") != BUTTON_ID or item.get("type") != "button":
+        data = batch.get("data")
+        if not isinstance(data, list):
+            continue
+        for item in data:
+            if not isinstance(item, dict) or item.get("id") != BUTTON_ID or item.get("type") != "button":
                 continue
-            report = (item.get("button") or {}).get("button_report") or {}
+            button = item.get("button")
+            if not isinstance(button, dict):
+                continue
+            report = button.get("button_report")
+            if not isinstance(report, dict):
+                continue
             if report.get("event") == "initial_press":
                 found.append(report.get("updated") or batch.get("creationtime") or str(time.time()))
     return found
 
 
-def stream_once(on_press, on_tick):
-    missing = [name for name, value in (("HUE_BRIDGE", BRIDGE), ("HUE_USERNAME", USERNAME)) if not value]
+def validate_configuration():
+    missing = [name for name, value in (("HUE_BRIDGE", BRIDGE), ("HUE_USERNAME", USERNAME),
+                                        ("HUE_AIRCRAFT_BUTTON_ID", BUTTON_ID)) if not value]
     if missing:
-        raise RuntimeError(f"Hue stream blocked: {', '.join(missing)} not configured")
+        raise SystemExit(f"Hue stream blocked: {', '.join(missing)} not configured")
+
+
+def stream_once(on_press, on_tick):
     request = urllib.request.Request(
         f"https://{BRIDGE}/eventstream/clip/v2",
         headers={"hue-application-key": USERNAME, "Accept": "text/event-stream"})
     context = ssl._create_unverified_context()
-    with urllib.request.urlopen(request, context=context, timeout=90) as response:
+    # The read timeout is the gesture clock. A quiet bridge must not delay a
+    # single-press label for 90 seconds while waiting for another SSE frame.
+    with urllib.request.urlopen(request, context=context, timeout=min(1.0, DOUBLE_SECONDS / 2.0)) as response:
         write_health("connected")
         data = []
         for raw in response:
@@ -188,46 +219,64 @@ def stream_once(on_press, on_tick):
                     for token in events_from_payload(payload):
                         on_press(token)
                 on_tick()
+        raise RuntimeError("Hue event stream ended")
+
+
+class GestureTracker:
+    """Durable, duplicate-resistant one/double-press classifier."""
+
+    def __init__(self, emit=record_label, clock=time.time):
+        self.emit = emit
+        self.clock = clock
+        state = read_json(STATE) or {}
+        pending = state.get("pending_gesture")
+        self.pending_at = pending.get("at") if isinstance(pending, dict) else None
+        self.pending_count = pending.get("count", 0) if isinstance(pending, dict) else 0
+        self.seen_tokens = []
+
+    def press(self, token):
+        if token in self.seen_tokens:
+            return
+        self.seen_tokens.append(token)
+        del self.seen_tokens[:-32]
+        now = self.clock()
+        if self.pending_at is not None and now - self.pending_at <= DOUBLE_SECONDS:
+            self.pending_count += 1
+        else:
+            self.flush()
+            self.pending_at, self.pending_count = now, 1
+        merge_state({"pending_gesture": {"at": self.pending_at, "count": self.pending_count}})
+
+    def flush(self):
+        if self.pending_at is not None:
+            at, count = self.pending_at, self.pending_count
+            self.pending_at, self.pending_count = None, 0
+            self.emit(at, count)
+
+    def tick(self):
+        if self.pending_at is not None and self.clock() - self.pending_at > DOUBLE_SECONDS:
+            self.flush()
 
 
 def main():
-    pending_at = None
-    pending_count = 0
-    seen_tokens = []
-
-    def press(token):
-        nonlocal pending_at, pending_count
-        if token in seen_tokens:
-            return
-        seen_tokens.append(token)
-        del seen_tokens[:-32]
-        now = time.time()
-        if pending_at is not None and now - pending_at <= DOUBLE_SECONDS:
-            pending_count += 1
-        else:
-            if pending_at is not None:
-                record_label(pending_at, pending_count)
-            pending_at, pending_count = now, 1
-
-    def tick():
-        nonlocal pending_at, pending_count
-        if pending_at is not None and time.time() - pending_at > DOUBLE_SECONDS:
-            record_label(pending_at, pending_count)
-            pending_at, pending_count = None, 0
-
+    validate_configuration()
+    tracker = GestureTracker()
     retry_seconds = 1.0
     while True:
-        tick()
+        tracker.tick()
         try:
-            stream_once(press, tick)
-        except (OSError, urllib.error.URLError, TimeoutError, RuntimeError) as exc:
+            stream_once(tracker.press, tracker.tick)
+        except TimeoutError as exc:
+            # A quiet bridge times out to give the gesture classifier its own
+            # clock. Reconnect immediately: this is expected clocking, not an
+            # outage, and sleeping here would create a button-event blind spot.
+            write_health("reconnecting", str(exc))
+            tracker.tick()
+        except (OSError, urllib.error.URLError, RuntimeError) as exc:
             write_health("disconnected", str(exc))
             print(f"panel-hue-aircraft-label: event stream disconnected: {exc}; "
                   f"retry in {retry_seconds:.0f}s", file=sys.stderr, flush=True)
-            # A read timeout is expected on a quiet button. Reconnect promptly
-            # every time: exponential backoff would eventually create a 30 s
-            # window in which a real press could be missed after every timeout.
-            tick()
+            tracker.tick()
             time.sleep(retry_seconds)
 
 
