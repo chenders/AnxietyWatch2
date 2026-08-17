@@ -109,6 +109,23 @@ class Gestures(unittest.TestCase):
         recovered.tick()
         self.assertEqual(self.emitted, [(1000.0, 1)])
 
+    def test_failed_emit_is_retried_without_losing_pending_gesture(self):
+        attempts = []
+
+        def emit(at, count):
+            attempts.append((at, count))
+            if len(attempts) == 1:
+                raise RuntimeError("temporary")
+
+        tracker = label.GestureTracker(emit=emit, clock=lambda: self.now, scheduler=None)
+        tracker.press("one")
+        self.now += label.DOUBLE_SECONDS + 0.01
+        tracker.tick()
+        self.assertEqual(tracker.pending_count, 1)
+        tracker.tick()
+        self.assertEqual(attempts, [(1000.0, 1), (1000.0, 1)])
+        self.assertEqual(tracker.pending_count, 0)
+
     def test_replayed_press_after_restart_cannot_become_false_double(self):
         self.tracker().press("one")
         recovered = self.tracker()
@@ -179,6 +196,26 @@ class DurableLabels(unittest.TestCase):
         self.assertEqual(row["priority"], 2)
         self.assertEqual(row["press_count"], 2)
         self.assertIn("TOP PRIORITY", run.call_args.args[0][-1])
+
+    @mock.patch.object(label.time, "time", return_value=1002.0)
+    @mock.patch.object(label.subprocess, "run")
+    def test_failed_correlation_preserves_pending_for_idempotent_retry(self, run, _time):
+        run.return_value = mock.Mock(returncode=1, stdout="", stderr="unavailable")
+        self.paths["STATE"].write_text(json.dumps({
+            "pending_gesture": {"at": 1000.0, "count": 1},
+        }))
+        with mock.patch.object(label, "SYNTHETIC", False):
+            with self.assertRaisesRegex(RuntimeError, "correlation incomplete"):
+                label.record_label(1000.0, 1)
+        state = json.loads(self.paths["STATE"].read_text())
+        self.assertEqual(state["pending_gesture"], {"at": 1000.0, "count": 1})
+        self.assertEqual(state["correlator"]["returncode"], 1)
+
+        run.return_value = mock.Mock(returncode=0, stdout="marked", stderr="")
+        with mock.patch.object(label, "SYNTHETIC", False):
+            label.record_label(1000.0, 1)
+        self.assertNotIn("pending_gesture", json.loads(self.paths["STATE"].read_text()))
+        self.assertEqual(len(self.paths["LABELS"].read_text().splitlines()), 1)
 
     def test_retry_after_label_append_does_not_duplicate_evidence(self):
         event_id = "hue-1000000-1"

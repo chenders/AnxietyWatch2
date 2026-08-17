@@ -63,6 +63,22 @@ cargo build --release -p emay-spike           # on the Pi, or cross-build
 sudo install -m755 target/release/emay-spike /usr/local/bin/
 
 sudo cp deploy/stopgap/*.service /etc/systemd/system/
+
+# The stopgap drain and enricher use PostgreSQL peer authentication as the
+# dedicated service account. Provision only the objects they need; do not make
+# the service account a database owner or superuser.
+sudo -u postgres psql -d vitals <<'SQL'
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'anxietywatch') THEN
+    CREATE ROLE anxietywatch LOGIN;
+  END IF;
+END $$;
+GRANT CONNECT ON DATABASE vitals TO anxietywatch;
+GRANT USAGE ON SCHEMA public TO anxietywatch;
+GRANT SELECT, INSERT, UPDATE ON aircraft, aircraft_pass, flight_route TO anxietywatch;
+SQL
+sudo -u anxietywatch psql -d vitals -c 'SELECT 1 FROM aircraft_pass LIMIT 0'
+
 sudo systemctl daemon-reload
 
 # cage needs the display, so the desktop session has to stop first.
@@ -556,7 +572,12 @@ ssh "$PI_HOST" 'systemctl is-enabled panel-hue-aircraft-label && systemctl is-ac
 ```sh
 sudo systemctl disable --now panel-kiosk emay-live panel-http panel-adsb-status panel-fr24-poll panel-hue-aircraft-label
 sudo rm /etc/systemd/system/{panel-kiosk,emay-live,panel-http,panel-adsb-status,panel-fr24-poll,panel-hue-aircraft-label}.service
-sudo rm -rf /etc/systemd/system/panel-kiosk.service.d
+sudo rm -rf /etc/systemd/system/panel-kiosk.service.d \
+  /etc/systemd/system/panel-hue-aircraft-label.service.d
+# Remove the pinned certificate only after confirming no other Hue client uses it.
+sudo rm -rf /etc/panel-hue
+# Labels and state are evidence and are retained by default. To erase them
+# deliberately, archive as required, then remove /var/lib/panel-noise separately.
 sudo systemctl daemon-reload
 sudo systemctl enable --now lightdm        # put the desktop back
 sudo rm -rf /opt/anxietywatch-panel                # the checkout

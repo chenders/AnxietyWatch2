@@ -6,6 +6,7 @@ The load-bearing case is `test_a_constant_flyer_never_wins`: an intersection of
 the confident wrong answer this module exists to avoid.
 """
 
+import multiprocessing
 import pathlib
 import tempfile
 import unittest
@@ -15,6 +16,11 @@ import panel_candidate_id as cid
 
 def obs(at, hex_code, distance_km=1.0):
     return {"at": at, "hex": hex_code, "distance_km": distance_km}
+
+
+def concurrent_mark(path, gate):
+    gate.wait()
+    cid.mark_heard(at=1000.0, event_id="hue-concurrent", path=path)
 
 
 class Windowing(unittest.TestCase):
@@ -132,6 +138,20 @@ class Marks(unittest.TestCase):
             marks = cid.read_marks(path)
             self.assertEqual(len(marks), 1)
             self.assertEqual(marks[0]["at"], 1000.0)
+
+    def test_concurrent_retry_with_same_event_id_is_idempotent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = pathlib.Path(tmp) / "marks.jsonl"
+            gate = multiprocessing.Event()
+            workers = [multiprocessing.Process(target=concurrent_mark, args=(path, gate))
+                       for _ in range(4)]
+            for worker in workers:
+                worker.start()
+            gate.set()
+            for worker in workers:
+                worker.join(5)
+                self.assertEqual(worker.exitcode, 0)
+            self.assertEqual(len(cid.read_marks(path)), 1)
 
     def test_marks_come_back_in_time_order(self):
         with tempfile.TemporaryDirectory() as tmp:

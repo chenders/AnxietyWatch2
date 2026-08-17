@@ -193,8 +193,13 @@ def record_label(first_press, presses):
             correlator = {"returncode": result.returncode, "stdout": result.stdout[-1000:], "stderr": result.stderr[-1000:]}
         except (OSError, subprocess.SubprocessError) as exc:
             correlator = {"error": str(exc)}
-    merge_state({"last_label": priority, "press_count": presses, "observed_at": first_press,
-                 "recorded_at": recorded, "correlator": correlator}, remove=("pending_gesture",))
+    complete = SYNTHETIC or correlator.get("returncode") == 0
+    if complete:
+        merge_state({"last_label": priority, "press_count": presses, "observed_at": first_press,
+                     "recorded_at": recorded, "correlator": correlator}, remove=("pending_gesture",))
+    else:
+        merge_state({"correlator": correlator})
+        raise RuntimeError(f"label correlation incomplete: {correlator}")
     print(f"panel-hue-aircraft-label: recorded {priority} ({presses} press{'es' if presses != 1 else ''}, "
           f"provenance={'synthetic' if SYNTHETIC else 'hue_button'})", flush=True)
 
@@ -298,12 +303,13 @@ class GestureTracker:
         if self.pending_at is not None:
             self._schedule()
 
-    def _schedule(self):
+    def _schedule(self, retry_seconds=None):
         if self.scheduler is None:
             return
         if self.timer is not None:
             self.timer.cancel()
-        remaining = max(0.0, DOUBLE_SECONDS - (self.clock() - self.pending_at))
+        remaining = (retry_seconds if retry_seconds is not None else
+                     max(0.0, DOUBLE_SECONDS - (self.clock() - self.pending_at)))
         self.timer = self.scheduler(remaining, self.flush)
         self.timer.daemon = True
         self.timer.start()
@@ -330,7 +336,13 @@ class GestureTracker:
                 at, count = self.pending_at, self.pending_count
                 self.pending_at, self.pending_count = None, 0
                 self.timer = None
-                self.emit(at, count)
+                try:
+                    self.emit(at, count)
+                except Exception as exc:  # keep durable evidence retryable
+                    self.pending_at, self.pending_count = at, count
+                    print(f"panel-hue-aircraft-label: gesture finalization retry: {exc}",
+                          file=sys.stderr, flush=True)
+                    self._schedule(retry_seconds=3.0)
 
     def tick(self):
         with self.lock:
