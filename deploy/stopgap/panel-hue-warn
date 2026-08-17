@@ -73,10 +73,10 @@ ALERT_LIGHTS = [x.strip() for x in os.environ.get("HUE_ALERT_LIGHTS", "").split(
 
 STATUS_JSON = Path(os.environ.get(
     "ADSB_STATUS_JSON",
-    "/home/chris/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical/adsb_status.json"))
+    "/opt/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical/adsb_status.json"))
 OUTPUT = Path(os.environ.get(
     "HUE_STATUS_JSON",
-    "/home/chris/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical/hue_status.json"))
+    "/opt/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical/hue_status.json"))
 
 POLL_SECONDS = float(os.environ.get("HUE_POLL_SECONDS", "1"))
 

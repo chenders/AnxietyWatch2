@@ -96,12 +96,12 @@ Remote: `http://192.168.1.48:8975/index.html?kiosk=1&live&demo`
 
 ```sh
 cd deploy/stopgap && python3 -m unittest test_panel_adsb_status     # 37 tests
-ssh minidude 'python3 /tmp/verify_adsb.py'                          # live feed
-ssh minidude 'systemctl is-active dump1090-mutability panel-adsb-status \
+ssh pi-host 'python3 /tmp/verify_adsb.py'                          # live feed
+ssh pi-host 'systemctl is-active dump1090-mutability panel-adsb-status \
     panel-status-merge panel-http panel-kiosk'
 # screenshot the real panel:
-ssh minidude 'sudo -u chris env XDG_RUNTIME_DIR=/run/user/1000 \
-    WAYLAND_DISPLAY=wayland-0 grim /tmp/k.png' && scp minidude:/tmp/k.png /tmp/
+ssh pi-host 'sudo -u anxietywatch env XDG_RUNTIME_DIR=/run/user/1000 \
+    WAYLAND_DISPLAY=wayland-0 grim /tmp/k.png' && scp pi-host:/tmp/k.png /tmp/
 ```
 
 ---

@@ -53,7 +53,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import panel_airframe_types  # noqa: E402
 
 API = os.environ.get("ADSBDB_BASE", "https://api.adsbdb.com/v0/aircraft")
-DSN = os.environ.get("PANEL_NOISE_DSN", "host=/var/run/postgresql dbname=vitals user=chris")
+DSN = os.environ.get("PANEL_NOISE_DSN", "host=/var/run/postgresql dbname=vitals user=anxietywatch")
 CACHE = Path(os.environ.get("PANEL_AIRCRAFT_CACHE",
                             "/var/lib/panel-noise/aircraft_types.json"))
 ROUTE_CACHE = Path(os.environ.get("PANEL_ROUTE_CACHE",
@@ -114,7 +114,7 @@ ROUTE_RETRY_AFTER_DAYS = float(os.environ.get("ADSBDB_ROUTE_RETRY_AFTER_DAYS", "
 # The panel's live output, read to find out what is overhead right now.
 LIVE_STATUS = Path(os.environ.get(
     "ADSB_STATUS_JSON",
-    "/home/chris/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical/adsb_status.json"))
+    "/opt/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical/adsb_status.json"))
 
 # An ICAO airline callsign is a three-letter operator code followed by a flight
 # number: ASA783, UAL1234, SWA55. A private aircraft transmits its registration
