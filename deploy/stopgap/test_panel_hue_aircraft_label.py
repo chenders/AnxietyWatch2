@@ -38,6 +38,7 @@ class EventParsing(unittest.TestCase):
         self.assertEqual(label.events_from_payload("{}"), [])
         malformed = json.dumps([{"type": "update", "data": [None, "bad", {"id": label.BUTTON_ID, "type": "button", "button": []}]}])
         self.assertEqual(label.events_from_payload(malformed), [])
+        self.assertEqual(label.current_candidates({"adsb_planes": [None, "bad"], "adsb_predictions": {}}), [])
 
 
 class Configuration(unittest.TestCase):
@@ -82,7 +83,7 @@ class Gestures(unittest.TestCase):
 
     def tracker(self):
         return label.GestureTracker(emit=lambda at, count: self.emitted.append((at, count)),
-                                    clock=lambda: self.now)
+                                    clock=lambda: self.now, scheduler=None)
 
     def test_duplicate_token_is_ignored_and_double_press_is_classified(self):
         tracker = self.tracker()
