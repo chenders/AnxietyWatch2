@@ -214,19 +214,20 @@ def main():
             record_label(pending_at, pending_count)
             pending_at, pending_count = None, 0
 
-    delay = 1.0
+    retry_seconds = 1.0
     while True:
         tick()
         try:
             stream_once(press, tick)
-            delay = 1.0
         except (OSError, urllib.error.URLError, TimeoutError, RuntimeError) as exc:
             write_health("disconnected", str(exc))
-            print(f"panel-hue-aircraft-label: event stream disconnected: {exc}; retry in {delay:.0f}s", file=sys.stderr, flush=True)
-            # urlopen's read timeout provides the tick that finalises singles.
+            print(f"panel-hue-aircraft-label: event stream disconnected: {exc}; "
+                  f"retry in {retry_seconds:.0f}s", file=sys.stderr, flush=True)
+            # A read timeout is expected on a quiet button. Reconnect promptly
+            # every time: exponential backoff would eventually create a 30 s
+            # window in which a real press could be missed after every timeout.
             tick()
-            time.sleep(delay)
-            delay = min(30.0, delay * 2.0)
+            time.sleep(retry_seconds)
 
 
 if __name__ == "__main__":
