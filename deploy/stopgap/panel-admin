@@ -47,13 +47,13 @@ BIND = os.environ.get("PANEL_ADMIN_BIND", "0.0.0.0")
 PAGE = Path(os.environ.get("PANEL_ADMIN_PAGE", "/usr/local/share/panel-admin/admin.html"))
 STATUS_JSON = Path(os.environ.get(
     "ADSB_STATUS_JSON",
-    "$HOME/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical/adsb_status.json"))
+    "/opt/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical/adsb_status.json"))
 FR24_JSON = Path(os.environ.get(
     "FR24_CACHE_JSON",
-    "$HOME/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical/fr24_aircraft.json"))
+    "/opt/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical/fr24_aircraft.json"))
 HUE_JSON = Path(os.environ.get(
     "HUE_STATUS_JSON",
-    "$HOME/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical/hue_status.json"))
+    "/opt/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical/hue_status.json"))
 
 # Reported as up/down only. The console shows what is running; it does not
 # offer to start or stop anything, because a web page that can stop the
