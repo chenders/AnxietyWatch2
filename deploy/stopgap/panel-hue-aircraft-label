@@ -17,7 +17,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-BRIDGE = os.environ.get("HUE_BRIDGE", "192.168.1.174")
+BRIDGE = os.environ.get("HUE_BRIDGE")
 USERNAME = os.environ.get("HUE_USERNAME")
 BUTTON_ID = os.environ.get("HUE_AIRCRAFT_BUTTON_ID", "0600c927-c283-481f-919e-e7749a6c960c")
 STATUS = Path(os.environ.get("ADSB_STATUS_JSON", "/opt/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical/adsb_status.json"))
@@ -167,8 +167,9 @@ def events_from_payload(payload):
 
 
 def stream_once(on_press, on_tick):
-    if not USERNAME:
-        raise RuntimeError("HUE_USERNAME is not configured")
+    missing = [name for name, value in (("HUE_BRIDGE", BRIDGE), ("HUE_USERNAME", USERNAME)) if not value]
+    if missing:
+        raise RuntimeError(f"Hue stream blocked: {', '.join(missing)} not configured")
     request = urllib.request.Request(
         f"https://{BRIDGE}/eventstream/clip/v2",
         headers={"hue-application-key": USERNAME, "Accept": "text/event-stream"})
