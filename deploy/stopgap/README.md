@@ -522,7 +522,11 @@ Install it after deleting the button's old Hue behavior in the Hue app or API:
 ```sh
 sudo install -m 0755 panel-hue-aircraft-label /usr/local/bin/
 sudo install -m 0644 panel-hue-aircraft-label.service /etc/systemd/system/
-sudo systemctl edit panel-hue-aircraft-label  # HUE_BRIDGE, HUE_USERNAME, HUE_AIRCRAFT_BUTTON_ID
+# Export the bridge's certificate once over a trusted local path, verify its
+# fingerprint against the bridge, then install it root-owned:
+sudo install -d -o root -g root -m 0755 /etc/panel-hue
+sudo install -o root -g root -m 0644 bridge.pem /etc/panel-hue/bridge.pem
+sudo systemctl edit panel-hue-aircraft-label  # HUE_BRIDGE, HUE_USERNAME, HUE_AIRCRAFT_BUTTON_ID, HUE_CERTIFICATE
 sudo systemctl daemon-reload
 sudo systemctl enable --now panel-hue-aircraft-label
 ```
@@ -551,7 +555,7 @@ ssh "$PI_HOST" 'systemctl is-enabled panel-hue-aircraft-label && systemctl is-ac
 
 ```sh
 sudo systemctl disable --now panel-kiosk emay-live panel-http panel-adsb-status panel-fr24-poll panel-hue-aircraft-label
-sudo rm /etc/systemd/system/{panel-kiosk,emay-live,panel-http,panel-adsb-status,panel-fr24-poll}.service
+sudo rm /etc/systemd/system/{panel-kiosk,emay-live,panel-http,panel-adsb-status,panel-fr24-poll,panel-hue-aircraft-label}.service
 sudo rm -rf /etc/systemd/system/panel-kiosk.service.d
 sudo systemctl daemon-reload
 sudo systemctl enable --now lightdm        # put the desktop back

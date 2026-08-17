@@ -73,13 +73,18 @@ INSUFFICIENT = "INSUFFICIENT"
 CANDIDATE = "CANDIDATE"
 
 
-def mark_heard(at=None, note=None, suspected=None, path=None):
-    """Record that the owner heard something. Durable before returning."""
+def mark_heard(at=None, note=None, suspected=None, path=None, event_id=None):
+    """Record one heard event durably; an event ID makes retries idempotent."""
     target = Path(path) if path is not None else MARKS_PATH
+    if event_id is not None:
+        for existing in read_marks(target):
+            if existing.get("event_id") == event_id:
+                return existing
     record = {
         "at": time.time() if at is None else at,
         "note": note,
         "suspected": suspected,
+        "event_id": event_id,
     }
     target.parent.mkdir(parents=True, exist_ok=True)
     with target.open("a") as stream:

@@ -21,6 +21,7 @@ from pathlib import Path
 BRIDGE = os.environ.get("HUE_BRIDGE")
 USERNAME = os.environ.get("HUE_USERNAME")
 BUTTON_ID = os.environ.get("HUE_AIRCRAFT_BUTTON_ID")
+CERTIFICATE = os.environ.get("HUE_CERTIFICATE")
 STATUS = Path(os.environ.get("ADSB_STATUS_JSON", "/opt/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical/adsb_status.json"))
 PASS_LOG = Path(os.environ.get("PANEL_NOISE_LOG", "/var/lib/panel-noise/loud-aircraft.jsonl"))
 LABELS = Path(os.environ.get("PANEL_AIRCRAFT_LABELS", "/var/lib/panel-noise/aircraft-labels.jsonl"))
@@ -64,6 +65,22 @@ def append_fsync(path, value):
         stream.write(encoded)
         stream.flush()
         os.fsync(stream.fileno())
+
+
+def contains_event(path, event_id):
+    """Return whether an append-only JSONL file already contains an event."""
+    try:
+        with path.open() as stream:
+            for line in stream:
+                try:
+                    row = json.loads(line)
+                except ValueError:
+                    continue
+                if isinstance(row, dict) and row.get("event_id") == event_id:
+                    return True
+    except OSError:
+        return False
+    return False
 
 
 def read_json(path):
@@ -137,9 +154,10 @@ def record_label(first_press, presses):
     recorded = time.time()
     priority = "cat_scared_top_priority" if presses >= 2 else "human_heard"
     snapshot = read_json(STATUS)
+    event_id = f"hue-{int(first_press * 1000)}-{presses}"
     row = {
         "schema": 1,
-        "event_id": f"hue-{int(first_press * 1000)}-{presses}",
+        "event_id": event_id,
         "observed_at": first_press,
         "recorded_at": recorded,
         "press_count": presses,
@@ -156,10 +174,10 @@ def record_label(first_press, presses):
         "live_candidates": current_candidates(snapshot),
         "recent_completed_passes": recent_passes(first_press),
     }
-    append_fsync(LABELS, row)
-    # The evidence is durable now. Clear recovery state before slow secondary
-    # analysis so a crash cannot append this label and mark it heard twice.
-    merge_state({}, remove=("pending_gesture",))
+    if not contains_event(LABELS, event_id):
+        append_fsync(LABELS, row)
+    # The append and correlator are independently idempotent by event_id. Keep
+    # pending recovery state until both have completed so a crash loses neither.
     # Feed only real observations into the existing contrast-based correlator.
     # Synthetic events prove the plumbing; treating them as heard aircraft would
     # poison the very threshold model they are intended to test.
@@ -170,13 +188,13 @@ def record_label(first_press, presses):
         suspected = "CAT_SCARED" if presses >= 2 else "AIRCRAFT_HEARD"
         try:
             result = subprocess.run(["/usr/local/bin/panel-heard", "--ago", str(max(0.0, recorded - first_press)),
-                                     "--suspected", suspected, "--note", note],
+                                     "--event-id", event_id, "--suspected", suspected, "--note", note],
                                     check=False, capture_output=True, text=True, timeout=15)
             correlator = {"returncode": result.returncode, "stdout": result.stdout[-1000:], "stderr": result.stderr[-1000:]}
         except (OSError, subprocess.SubprocessError) as exc:
             correlator = {"error": str(exc)}
     merge_state({"last_label": priority, "press_count": presses, "observed_at": first_press,
-                 "recorded_at": recorded, "correlator": correlator})
+                 "recorded_at": recorded, "correlator": correlator}, remove=("pending_gesture",))
     print(f"panel-hue-aircraft-label: recorded {priority} ({presses} press{'es' if presses != 1 else ''}, "
           f"provenance={'synthetic' if SYNTHETIC else 'hue_button'})", flush=True)
 
@@ -211,9 +229,17 @@ def events_from_payload(payload):
 
 def validate_configuration():
     missing = [name for name, value in (("HUE_BRIDGE", BRIDGE), ("HUE_USERNAME", USERNAME),
-                                        ("HUE_AIRCRAFT_BUTTON_ID", BUTTON_ID)) if not value]
+                                        ("HUE_AIRCRAFT_BUTTON_ID", BUTTON_ID),
+                                        ("HUE_CERTIFICATE", CERTIFICATE)) if not value]
     if missing:
         raise SystemExit(f"Hue stream blocked: {', '.join(missing)} not configured")
+
+
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Never forward the Hue application key to a redirected host."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise urllib.error.HTTPError(req.full_url, code, "Hue redirect blocked", headers, fp)
 
 
 def stream_once(on_press, on_tick):
@@ -222,8 +248,17 @@ def stream_once(on_press, on_tick):
     if previous.get("last_event_id"):
         headers["Last-Event-ID"] = previous["last_event_id"]
     request = urllib.request.Request(f"https://{BRIDGE}/eventstream/clip/v2", headers=headers)
-    context = ssl._create_unverified_context()
-    with urllib.request.urlopen(request, context=context, timeout=90) as response:
+    # Hue bridges use a device certificate whose name does not match their LAN
+    # address. Trust only the root-owned pinned certificate; do not disable
+    # certificate-chain verification merely to bypass hostname matching.
+    context = ssl.create_default_context(cafile=CERTIFICATE)
+    context.check_hostname = False
+    # The bridge serves only its device certificate, signed by Hue's private
+    # root. Treat the explicitly pinned leaf as the trust anchor.
+    if hasattr(ssl, "VERIFY_X509_PARTIAL_CHAIN"):
+        context.verify_flags |= ssl.VERIFY_X509_PARTIAL_CHAIN
+    opener = urllib.request.build_opener(NoRedirect(), urllib.request.HTTPSHandler(context=context))
+    with opener.open(request, timeout=90) as response:
         write_health("connected")
         data = []
         event_id = None
@@ -258,7 +293,8 @@ class GestureTracker:
         pending = state.get("pending_gesture")
         self.pending_at = pending.get("at") if isinstance(pending, dict) else None
         self.pending_count = pending.get("count", 0) if isinstance(pending, dict) else 0
-        self.seen_tokens = []
+        tokens = state.get("processed_tokens")
+        self.seen_tokens = tokens[-32:] if isinstance(tokens, list) else []
         if self.pending_at is not None:
             self._schedule()
 
@@ -284,7 +320,8 @@ class GestureTracker:
             else:
                 self.flush()
                 self.pending_at, self.pending_count = now, 1
-            merge_state({"pending_gesture": {"at": self.pending_at, "count": self.pending_count}})
+            merge_state({"pending_gesture": {"at": self.pending_at, "count": self.pending_count},
+                         "processed_tokens": self.seen_tokens})
             self._schedule()
 
     def flush(self):

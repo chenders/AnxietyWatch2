@@ -109,6 +109,15 @@ class Gestures(unittest.TestCase):
         recovered.tick()
         self.assertEqual(self.emitted, [(1000.0, 1)])
 
+    def test_replayed_press_after_restart_cannot_become_false_double(self):
+        self.tracker().press("one")
+        recovered = self.tracker()
+        self.now += 0.5
+        recovered.press("one")
+        self.now += label.DOUBLE_SECONDS + 0.01
+        recovered.tick()
+        self.assertEqual(self.emitted, [(1000.0, 1)])
+
 
 class DurableLabels(unittest.TestCase):
     def setUp(self):
@@ -170,6 +179,14 @@ class DurableLabels(unittest.TestCase):
         self.assertEqual(row["priority"], 2)
         self.assertEqual(row["press_count"], 2)
         self.assertIn("TOP PRIORITY", run.call_args.args[0][-1])
+
+    def test_retry_after_label_append_does_not_duplicate_evidence(self):
+        event_id = "hue-1000000-1"
+        self.paths["LABELS"].write_text(json.dumps({"event_id": event_id}) + "\n")
+        with mock.patch.object(label, "SYNTHETIC", True):
+            label.record_label(1000.0, 1)
+        rows = self.paths["LABELS"].read_text().splitlines()
+        self.assertEqual(len(rows), 1)
 
     @mock.patch.object(label.time, "time", return_value=1002.0)
     @mock.patch.object(label.subprocess, "run")

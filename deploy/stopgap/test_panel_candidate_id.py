@@ -124,6 +124,15 @@ class Marks(unittest.TestCase):
             self.assertEqual([m["at"] for m in marks], [1000.0, 2000.0])
             self.assertEqual(marks[0]["suspected"], "POLICE")
 
+    def test_retry_with_same_event_id_is_idempotent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = pathlib.Path(tmp) / "marks.jsonl"
+            cid.mark_heard(at=1000.0, event_id="hue-1", path=path)
+            cid.mark_heard(at=1001.0, event_id="hue-1", path=path)
+            marks = cid.read_marks(path)
+            self.assertEqual(len(marks), 1)
+            self.assertEqual(marks[0]["at"], 1000.0)
+
     def test_marks_come_back_in_time_order(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = pathlib.Path(tmp) / "marks.jsonl"

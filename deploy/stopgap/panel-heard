@@ -110,6 +110,7 @@ def main():
                         help="seconds ago you heard it (default: now)")
     parser.add_argument("--suspected", default="POLICE",
                         help="who you think it was (default: POLICE)")
+    parser.add_argument("--event-id", help="stable event id; retries do not add another mark")
     parser.add_argument("--report", action="store_true",
                         help="rank candidates instead of adding a mark")
     parser.add_argument("--marks", default=None, help="override the marks file")
@@ -122,7 +123,8 @@ def main():
         return report(args)
 
     record = cid.mark_heard(at=time.time() - args.ago, note=args.note,
-                            suspected=args.suspected, path=args.marks)
+                            suspected=args.suspected, path=args.marks,
+                            event_id=args.event_id)
     total = len(cid.read_marks(args.marks))
     remaining = max(0, cid.MIN_MARKS - total)
     stamp = time.strftime("%H:%M:%S", time.localtime(record["at"]))
