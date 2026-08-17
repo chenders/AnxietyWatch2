@@ -18,7 +18,7 @@ class Classification(unittest.TestCase):
             "B38M": "jet",
             "C172": "light",
             "PC12": "turboprop",   # reclassified 2026-08-13; see TurbopropsAreNotLightAircraft
-            "B407": "rotorcraft", # the Life Flight fleet
+            "B407": "rotorcraft",  # the Life Flight fleet
             "A119": "rotorcraft",
             "EC35": "rotorcraft",
             "EC45": "rotorcraft",
