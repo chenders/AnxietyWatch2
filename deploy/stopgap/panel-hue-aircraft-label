@@ -295,21 +295,46 @@ class GestureTracker:
         self.timer = None
         self.lock = threading.RLock()
         state = read_json(STATE) or {}
-        pending = state.get("pending_gesture")
-        self.pending_at = pending.get("at") if isinstance(pending, dict) else None
-        self.pending_count = pending.get("count", 0) if isinstance(pending, dict) else 0
+        queued = state.get("pending_gestures")
+        if isinstance(queued, list):
+            self.pending = [item for item in queued
+                            if isinstance(item, dict) and isinstance(item.get("at"), (int, float))
+                            and isinstance(item.get("count"), int) and item["count"] > 0]
+        else:
+            legacy = state.get("pending_gesture")
+            self.pending = [legacy] if (isinstance(legacy, dict)
+                                        and isinstance(legacy.get("at"), (int, float))
+                                        and isinstance(legacy.get("count"), int)
+                                        and legacy["count"] > 0) else []
         tokens = state.get("processed_tokens")
         self.seen_tokens = tokens[-32:] if isinstance(tokens, list) else []
-        if self.pending_at is not None:
+        if self.pending:
+            self._persist()
             self._schedule()
 
+    @property
+    def pending_at(self):
+        return self.pending[0]["at"] if self.pending else None
+
+    @property
+    def pending_count(self):
+        return self.pending[0]["count"] if self.pending else 0
+
+    def _persist(self):
+        values = {"processed_tokens": self.seen_tokens}
+        if self.pending:
+            values["pending_gestures"] = self.pending
+            merge_state(values, remove=("pending_gesture",))
+        else:
+            merge_state(values, remove=("pending_gesture", "pending_gestures"))
+
     def _schedule(self, retry_seconds=None):
-        if self.scheduler is None:
+        if self.scheduler is None or not self.pending:
             return
         if self.timer is not None:
             self.timer.cancel()
         remaining = (retry_seconds if retry_seconds is not None else
-                     max(0.0, DOUBLE_SECONDS - (self.clock() - self.pending_at)))
+                     max(0.0, DOUBLE_SECONDS - (self.clock() - self.pending[0]["at"])))
         self.timer = self.scheduler(remaining, self.flush)
         self.timer.daemon = True
         self.timer.start()
@@ -321,32 +346,39 @@ class GestureTracker:
             self.seen_tokens.append(token)
             del self.seen_tokens[:-32]
             now = self.clock()
-            if self.pending_at is not None and now - self.pending_at <= DOUBLE_SECONDS:
-                self.pending_count += 1
+            if self.pending and now - self.pending[-1]["at"] <= DOUBLE_SECONDS:
+                self.pending[-1]["count"] += 1
             else:
+                self.pending.append({"at": now, "count": 1})
+            # Persist the new physical evidence before attempting older work.
+            # A failed finalization can therefore never overwrite this press.
+            self._persist()
+            if now - self.pending[0]["at"] >= DOUBLE_SECONDS:
                 self.flush()
-                self.pending_at, self.pending_count = now, 1
-            merge_state({"pending_gesture": {"at": self.pending_at, "count": self.pending_count},
-                         "processed_tokens": self.seen_tokens})
-            self._schedule()
+            else:
+                self._schedule()
 
     def flush(self):
         with self.lock:
-            if self.pending_at is not None:
-                at, count = self.pending_at, self.pending_count
-                self.pending_at, self.pending_count = None, 0
-                self.timer = None
+            self.timer = None
+            while self.pending and self.clock() - self.pending[0]["at"] >= DOUBLE_SECONDS:
+                item = self.pending[0]
                 try:
-                    self.emit(at, count)
+                    self.emit(item["at"], item["count"])
                 except Exception as exc:  # keep durable evidence retryable
-                    self.pending_at, self.pending_count = at, count
                     print(f"panel-hue-aircraft-label: gesture finalization retry: {exc}",
                           file=sys.stderr, flush=True)
                     self._schedule(retry_seconds=3.0)
+                    return False
+                self.pending.pop(0)
+                self._persist()
+            if self.pending:
+                self._schedule()
+            return True
 
     def tick(self):
         with self.lock:
-            if self.pending_at is not None and self.clock() - self.pending_at >= DOUBLE_SECONDS:
+            if self.pending and self.clock() - self.pending[0]["at"] >= DOUBLE_SECONDS:
                 self.flush()
 
 

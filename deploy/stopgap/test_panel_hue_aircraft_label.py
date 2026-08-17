@@ -126,6 +126,35 @@ class Gestures(unittest.TestCase):
         self.assertEqual(attempts, [(1000.0, 1), (1000.0, 1)])
         self.assertEqual(tracker.pending_count, 0)
 
+    def test_later_press_is_queued_while_older_finalization_retries(self):
+        attempts = []
+        unavailable = [True]
+
+        def emit(at, count):
+            attempts.append((at, count))
+            if at == 1000.0 and unavailable[0]:
+                raise RuntimeError("correlator unavailable")
+
+        tracker = label.GestureTracker(emit=emit, clock=lambda: self.now, scheduler=None)
+        tracker.press("old")
+        self.now += label.DOUBLE_SECONDS + 0.01
+        tracker.tick()
+        self.now += 10.0
+        tracker.press("new")
+        self.assertEqual(tracker.pending, [{"at": 1000.0, "count": 1},
+                                           {"at": self.now, "count": 1}])
+        persisted = json.loads(self.state.read_text())
+        self.assertEqual(persisted["pending_gestures"], tracker.pending)
+
+        unavailable[0] = False
+        tracker.tick()
+        self.assertEqual(tracker.pending, [{"at": self.now, "count": 1}])
+        self.now += label.DOUBLE_SECONDS + 0.01
+        tracker.tick()
+        self.assertEqual(attempts, [(1000.0, 1), (1000.0, 1),
+                                    (1000.0, 1), (1011.36, 1)])
+        self.assertEqual(tracker.pending, [])
+
     def test_replayed_press_after_restart_cannot_become_false_double(self):
         self.tracker().press("one")
         recovered = self.tracker()
