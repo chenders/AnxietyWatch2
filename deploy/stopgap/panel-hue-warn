@@ -725,6 +725,17 @@ def choose(status, now, require_armed=True):
     return None
 
 
+def unlocated_suppression_reason(is_armed, quiet, cooldown_blocked):
+    """Name the first guard that prevents an unlocated warning from firing."""
+    if not is_armed:
+        return "disarmed"
+    if quiet:
+        return "quiet_hours"
+    if cooldown_blocked:
+        return "cooldown"
+    return None
+
+
 def choose_unlocated(status, require_armed=True):
     """A rostered airframe the receiver hears but has never located, or None.
 
@@ -1083,24 +1094,29 @@ def main():
                         log_warning(warning_record(report, band, left, fired=False,
                                                    suppressed_by="cooldown",
                                                    testing=testing, now=now))
-            elif not quiet:
+            else:
                 # Nothing located is worth a warning. Fall back to anything the
                 # receiver is hearing but cannot place -- the case that produced
-                # silence for N826LF on 2026-08-13.
+                # silence for N826LF on 2026-08-13. Run this during every guard:
+                # an unlocated decision suppressed by disarm, quiet hours, or
+                # cooldown is still durable evidence and must not disappear.
                 heard = choose_unlocated(status, require_armed=False)
                 if heard is not None:
                     heard_hex = heard.get("hex")
-                    if not is_armed:
-                        # Disarmed: log what WOULD have fired, then stop.
-                        key = (heard_hex, "disarmed")
+                    blocker = unlocated_suppression_reason(
+                        is_armed, quiet,
+                        heard_hex in warned_unlocated
+                        or now - last_warned < cooldown_seconds())
+
+                    if blocker is not None:
+                        key = (heard_hex, blocker)
                         if now - suppressed_logged.get(key, 0.0) >= SUPPRESS_LOG_WINDOW_S:
                             suppressed_logged[key] = now
                             log_warning(warning_record(heard, "UNLOCATED", None,
                                                        fired=False,
-                                                       suppressed_by="disarmed",
+                                                       suppressed_by=blocker,
                                                        now=now))
-                    elif (heard_hex not in warned_unlocated
-                            and now - last_warned >= cooldown_seconds()):
+                    else:
                         last_warned = now
                         warned_unlocated[heard_hex] = now
                         subject = heard.get("reg") or heard_hex

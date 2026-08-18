@@ -963,6 +963,17 @@ class TheMasterSwitch(unittest.TestCase):
             finally:
                 hue.WARNING_LOG = real_log
 
+    def test_unlocated_suppression_reason_names_every_guard(self):
+        reason = hue.unlocated_suppression_reason
+        self.assertEqual(reason(False, False, False), "disarmed")
+        self.assertEqual(reason(True, True, False), "quiet_hours")
+        self.assertEqual(reason(True, False, True), "cooldown")
+        self.assertIsNone(reason(True, False, False))
+
+    def test_disarm_takes_precedence_when_multiple_guards_apply(self):
+        self.assertEqual(
+            hue.unlocated_suppression_reason(False, True, True), "disarmed")
+
     def test_the_unlocated_path_still_works_when_armed(self):
         self.arm(True)
         self.assertIsNotNone(
