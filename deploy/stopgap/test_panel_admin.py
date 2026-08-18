@@ -258,6 +258,11 @@ class AdminPageSeparationAndAccessibility(unittest.TestCase):
         self.assertIn('@media(max-width:430px)', self.status)
         self.assertNotIn('<table', self.status)
 
+    def test_dynamic_evidence_fields_are_html_escaped(self):
+        self.assertIn('esc(r.suppressed_by||"reason unavailable")', self.status)
+        self.assertIn('esc(e.candidate_count??"—")', self.status)
+        self.assertIn('esc(e.margin??"—")', self.status)
+
     def test_contextual_help_is_accessible(self):
         self.assertIn('id="help-dialog"', self.status)
         self.assertIn('data-help="warning_review"', self.status)
