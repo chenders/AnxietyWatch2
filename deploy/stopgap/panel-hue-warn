@@ -1006,13 +1006,14 @@ def main():
             was_quiet = quiet
 
         if status:
+            is_armed = armed()
             # choose() runs regardless of armed state and quiet hours: a
             # suppressed warning is still a warning DECISION, and the review
             # log must hold it. require_armed=False so the outer loop is the
             # single gate, not the inner function. Lights are never touched
             # from the disarmed or quiet branches.
             picked = choose(status, now, require_armed=False)
-            if picked and not armed():
+            if picked and not is_armed:
                 # Disarmed: log what WOULD have fired, then stop.
                 report, band, left = picked
                 key = (report.get("hex"), "disarmed")
@@ -1086,10 +1087,19 @@ def main():
                 # Nothing located is worth a warning. Fall back to anything the
                 # receiver is hearing but cannot place -- the case that produced
                 # silence for N826LF on 2026-08-13.
-                heard = choose_unlocated(status)
+                heard = choose_unlocated(status, require_armed=False)
                 if heard is not None:
                     heard_hex = heard.get("hex")
-                    if (heard_hex not in warned_unlocated
+                    if not is_armed:
+                        # Disarmed: log what WOULD have fired, then stop.
+                        key = (heard_hex, "disarmed")
+                        if now - suppressed_logged.get(key, 0.0) >= SUPPRESS_LOG_WINDOW_S:
+                            suppressed_logged[key] = now
+                            log_warning(warning_record(heard, "UNLOCATED", None,
+                                                       fired=False,
+                                                       suppressed_by="disarmed",
+                                                       now=now))
+                    elif (heard_hex not in warned_unlocated
                             and now - last_warned >= cooldown_seconds()):
                         last_warned = now
                         warned_unlocated[heard_hex] = now
