@@ -44,28 +44,48 @@ except ImportError:  # pragma: no cover - exercised only on a host without the d
     psycopg2 = None
 
 SPOOL = Path(os.environ.get("PANEL_NOISE_LOG", "/var/lib/panel-noise/loud-aircraft.jsonl"))
+LABELS = Path(os.environ.get("PANEL_AIRCRAFT_LABELS", "/var/lib/panel-noise/aircraft-labels.jsonl"))
+ATTRIBUTIONS = Path(os.environ.get("PANEL_AIRCRAFT_ATTRIBUTIONS",
+                                   "/var/lib/panel-noise/aircraft-attributions.json"))
+WARNINGS = Path(os.environ.get("HUE_WARNING_LOG",
+                               "/var/lib/panel-noise/hue-warnings.jsonl"))
+WARNING_REVIEWS = Path(os.environ.get(
+    "PANEL_WARNING_REVIEWS", "/var/lib/panel-noise/hue-warning-reviews.jsonl"))
 STATE = Path(os.environ.get("PANEL_NOISE_DRAIN_STATE", "/var/lib/panel-noise/drain.json"))
 DSN = os.environ.get("PANEL_NOISE_DSN", "host=/var/run/postgresql dbname=vitals user=vitals")
 
 BANDS = {"VERY LOUD", "LOUD", "AUDIBLE", "FAINT", "UNKNOWN"}
 PHASES = {"CLIMB", "LEVEL", "DESCENT"}
+REAL_PROVENANCES = ("hue_button", "operator_report")
+HEX_RE_CHARS = set("0123456789ABCDEF")
+# The owner's documented FR24 retention decision (panel_noise_log.py): 182
+# days, superseding the vendor's 30. Confined to one constant there and
+# mirrored here for candidate rows built from FR24 observations.
+FR24_RETENTION_SECONDS = 182 * 24 * 60 * 60
 
 
-def read_offset():
+def read_state():
     try:
         with STATE.open() as stream:
             state = json.load(stream)
-        offset = state.get("offset_bytes")
-        return offset if isinstance(offset, int) and offset >= 0 else 0
+        return state if isinstance(state, dict) else {}
     except (OSError, ValueError):
-        return 0
+        return {}
 
 
-def write_offset(offset):
+def read_offset(key="offset_bytes"):
+    offset = read_state().get(key)
+    return offset if isinstance(offset, int) and offset >= 0 else 0
+
+
+def write_offset(offset, key="offset_bytes"):
     STATE.parent.mkdir(parents=True, exist_ok=True)
+    state = read_state()
+    state[key] = offset
+    state["advanced_at"] = time.time()
     tmp = STATE.with_name(f".{STATE.name}.tmp")
     with tmp.open("w") as stream:
-        json.dump({"offset_bytes": offset, "advanced_at": time.time()}, stream)
+        json.dump(state, stream)
         stream.flush()
         os.fsync(stream.fileno())
     os.replace(tmp, STATE)
@@ -184,6 +204,88 @@ def normalise(row):
     }
 
 
+WARNING_BANDS = BANDS | {"UNLOCATED"}
+WARNING_SUPPRESSORS = {"quiet_hours", "cooldown", "disarmed"}
+WARNING_VERDICTS = {"accurate", "inaccurate", "unknown"}
+WARNING_REVIEW_WINDOW_SECONDS = 3 * 60 * 60
+
+
+def normalise_warning(row):
+    if not isinstance(row, dict) or not isinstance(row.get("warning_id"), str):
+        return None
+    at, fired, band = row.get("at"), row.get("fired"), row.get("band")
+    suppressed = row.get("suppressed_by")
+    if (not isinstance(at, (int, float)) or not isinstance(fired, bool)
+            or band not in WARNING_BANDS):
+        return None
+    if (fired and suppressed is not None) or (not fired and suppressed not in WARNING_SUPPRESSORS):
+        return None
+    hex_code = row.get("hex")
+    if isinstance(hex_code, str):
+        hex_code = hex_code.upper()
+        if len(hex_code) != 6 or any(c not in HEX_RE_CHARS for c in hex_code):
+            hex_code = None
+    return {"warning_id": row["warning_id"], "at": at, "fired": fired,
+            "suppressed_by": suppressed, "test": row.get("test") is True,
+            "icao_hex": hex_code, "registration": row.get("registration"),
+            "callsign": row.get("callsign"), "aircraft_type": row.get("aircraft_type"),
+            "operator_kind": row.get("operator_kind"), "band": band,
+            "notice_s": number(row.get("notice_s")), "late": row.get("late") is True,
+            "hold_s": number(row.get("hold_s")), "prediction": row.get("prediction"),
+            "matched_pass": row.get("matched_pass"),
+            "recovered_from": row.get("recovered_from"), "raw": row}
+
+
+def normalise_warning_review(row):
+    if not isinstance(row, dict) or not isinstance(row.get("warning_id"), str):
+        return None
+    at, verdict = row.get("reviewed_at"), row.get("verdict")
+    if not isinstance(at, (int, float)) or verdict not in WARNING_VERDICTS:
+        return None
+    note = row.get("note")
+    return {"warning_id": row["warning_id"], "reviewed_at": at,
+            "verdict": verdict, "note": note if isinstance(note, str) else None}
+
+
+INSERT_WARNING = """
+INSERT INTO aircraft_warning
+    (warning_id, decided_at, fired, suppressed_by, test, icao_hex, registration,
+     callsign, aircraft_type, operator_kind, loudness_band, notice_seconds,
+     late, hold_seconds, prediction, matched_pass, recovered_from, raw)
+VALUES (%(warning_id)s, to_timestamp(%(at)s), %(fired)s, %(suppressed_by)s,
+        %(test)s, %(icao_hex)s, %(registration)s, %(callsign)s,
+        %(aircraft_type)s, %(operator_kind)s, %(band)s, %(notice_s)s,
+        %(late)s, %(hold_s)s, %(prediction)s, %(matched_pass)s,
+        %(recovered_from)s, %(raw)s)
+ON CONFLICT (warning_id) DO NOTHING
+"""
+
+INSERT_WARNING_REVIEW = """
+INSERT INTO aircraft_warning_review
+    (warning_id, reviewed_at, verdict, note, provenance)
+SELECT %(warning_id)s, to_timestamp(%(reviewed_at)s), %(verdict)s, %(note)s,
+       'admin_operator'
+WHERE EXISTS (SELECT 1 FROM aircraft_warning WHERE warning_id = %(warning_id)s)
+ON CONFLICT DO NOTHING
+"""
+
+EXPIRE_UNREVIEWED_WARNINGS = """
+INSERT INTO aircraft_warning_review
+    (warning_id, reviewed_at, verdict, note, provenance)
+SELECT warning.warning_id,
+       warning.decided_at + make_interval(secs => %s),
+       'expired_unreviewed',
+       'Three-hour review window elapsed without an operator verdict',
+       'system_expiry'
+FROM aircraft_warning warning
+WHERE warning.test = false
+  AND warning.decided_at <= now() - make_interval(secs => %s)
+  AND NOT EXISTS (
+      SELECT 1 FROM aircraft_warning_review review
+      WHERE review.warning_id = warning.warning_id)
+ON CONFLICT DO NOTHING
+"""
+
 INSERT = """
 INSERT INTO aircraft_pass
     (at, provenance, icao_hex, callsign, registration, icao_type, fr24_id,
@@ -220,33 +322,285 @@ ON CONFLICT (icao_hex) DO UPDATE SET
 """
 
 
-def drain():
-    if psycopg2 is None:
-        print("panel-noise-drain: psycopg2 is not installed", file=sys.stderr)
-        return 1
-    if not SPOOL.exists():
-        return 0
+# ---------------------------------------------------------------------------
+# Noise events, corroborations, candidates, attribution verdicts, and track
+# points. Same rules as the pass drain: the JSONL is the write-ahead record,
+# every insert is idempotent, and a bad row is skipped with its reason counted
+# rather than blocking the spool behind it forever.
+# ---------------------------------------------------------------------------
 
-    size = SPOOL.stat().st_size
-    offset = read_offset()
+def outcomes_of(row):
+    """(human_heard, cat_scared). A double press has always meant BOTH."""
+    outcomes = row.get("outcomes")
+    if isinstance(outcomes, list) and outcomes:
+        return "human_heard" in outcomes, "cat_scared_top_priority" in outcomes
+    if row.get("press_count", 0) >= 2 or row.get("label") == "cat_scared_top_priority":
+        return True, True
+    return True, False
+
+
+def hex_of(identity):
+    if isinstance(identity, str):
+        text = identity.strip().upper()
+        if len(text) == 6 and all(c in HEX_RE_CHARS for c in text):
+            return text
+    return None
+
+
+def normalise_label(row):
+    """One label spool row -> ('event'|'corroboration'|'synthetic'|None, payload).
+
+    Synthetic is refused HERE, by provenance, before the database ever sees
+    it -- and the schema CHECK refuses it again if this filter regresses.
+    """
+    if not isinstance(row, dict):
+        return None, None
+    provenance = row.get("provenance")
+    if provenance == "synthetic":
+        return "synthetic", None
+    if provenance not in REAL_PROVENANCES:
+        return None, None
+    observed = row.get("observed_at")
+    event_id = row.get("event_id")
+    if not isinstance(observed, (int, float)) or not isinstance(event_id, str) or not event_id:
+        return None, None
+    if row.get("corroborates"):
+        report = row.get("operator_report") or {}
+        return "corroboration", {
+            "event_id": str(row["corroborates"]),
+            "reported_at": observed,
+            "source": report.get("source"),
+            "note": report.get("note") or row.get("meaning"),
+        }
+    if row.get("eligible_for_training") is not True:
+        return None, None
+    human, cat = outcomes_of(row)
+    report = row.get("operator_report") or {}
+    return "event", {
+        "event_id": event_id,
+        "observed_at": observed,
+        "recorded_at": row.get("recorded_at") if isinstance(row.get("recorded_at"), (int, float)) else None,
+        "human_heard": human,
+        "cat_scared": cat,
+        "press_count": integer(row.get("press_count")),
+        "provenance": provenance,
+        # A hold (warning_unheard) drains with BOTH outcome booleans false;
+        # the note carries why, so a (false, false) row is never mistaken for
+        # a row that lost its outcomes. The full label rides in evidence.
+        "note": report.get("note") or (
+            "warning_unheard: a light warning fired but nothing was heard"
+            if "warning_unheard" in (row.get("outcomes") or []) else None),
+        "evidence": row,
+        "weather": row.get("weather") if isinstance(row.get("weather"), dict) else None,
+    }
+
+
+def candidate_db_row(event_id, observed_at, candidate):
+    """One attributor candidate -> one noise_event_candidate row, or None.
+
+    retain_until applies only to candidates known EXCLUSIVELY through FR24:
+    anything the local receiver also saw is our own data and keeps forever.
+    """
+    if not isinstance(candidate, dict) or not isinstance(candidate.get("identity"), str):
+        return None
+    feeds = [f for f in candidate.get("feeds") or [] if isinstance(f, str)]
+    raw = candidate.get("raw") if isinstance(candidate.get("raw"), dict) else {}
+    prediction = raw.get("prediction") if isinstance(raw.get("prediction"), dict) else {}
+    distance = number(prediction.get("ground_distance_m"))
+    if distance is not None:
+        distance /= 1000.0
+    if distance is None:
+        metres = number(raw.get("dist"))
+        distance = metres / 1000.0 if metres is not None else number(raw.get("distance_km"))
+    noise = number(prediction.get("noise_index"))
+    if noise is None:
+        noise = number(raw.get("noise_index"))
+    phase = prediction.get("phase") or raw.get("phase")
+    klass = candidate.get("airframe_class")
+    fr24_only = bool(feeds) and all(f == "fr24" for f in feeds)
+    return {
+        "event_id": event_id,
+        "identity": candidate["identity"],
+        "icao_hex": hex_of(candidate["identity"]) or hex_of(raw.get("hex")),
+        "callsign": candidate.get("callsign"),
+        "registration": candidate.get("registration"),
+        "icao_type": candidate.get("aircraft_type"),
+        "airframe_class": klass if klass in AIRFRAME_CLASSES else None,
+        "fr24_id": raw.get("fr24_id"),
+        "feeds": feeds or ["unknown"],
+        "score": number(candidate.get("score")),
+        "reasons": candidate.get("reasons") or [],
+        "distance_km": distance if distance is None or distance >= 0 else None,
+        "altitude_ft": integer(prediction.get("altitude_ft")) or integer(raw.get("alt_ft")),
+        "noise_index": noise,
+        "phase": phase if phase in PHASES else None,
+        "raw": raw,
+        "retain_until": (observed_at + FR24_RETENTION_SECONDS) if fr24_only else None,
+    }
+
+
+def attribution_db_row(event, generated_at):
+    if not isinstance(event, dict) or not isinstance(event.get("event_id"), str):
+        return None
+    verdict = event.get("verdict")
+    if verdict not in ("CONFIRMED", "AMBIGUOUS", "UNATTRIBUTED"):
+        return None
+    confirmed = event.get("confirmed_candidate") or {}
+    return {
+        "event_id": event["event_id"],
+        "generated_at": generated_at,
+        "verdict": verdict,
+        "verdict_reason": str(event.get("verdict_reason") or "unstated"),
+        "margin": number(event.get("margin")),
+        "candidate_count": integer(event.get("candidate_count")),
+        "confirmed_hex": hex_of(confirmed.get("identity")),
+        "confirmed_identity": confirmed.get("identity"),
+        "confirmed_registration": confirmed.get("registration"),
+        "confirmed_type": confirmed.get("aircraft_type"),
+        "flight_key": event.get("flight_key"),
+        "method": str(event.get("method") or "unstated"),
+    }
+
+
+def attribution_signature(row):
+    """What must change for a new history row to be worth writing. Re-runs
+    that reach the same verdict are cron noise, not decisions."""
+    return (row["verdict"], row["confirmed_identity"], row["margin"],
+            row["verdict_reason"], row["method"])
+
+
+def normalise_track(row):
+    if not isinstance(row, dict):
+        return None
+    at = number(row.get("at"))
+    lat, lon = number(row.get("lat")), number(row.get("lon"))
+    provenance = row.get("provenance")
+    if (at is None or lat is None or lon is None or provenance not in ("adsb", "fr24")
+            or not -90 <= lat <= 90 or not -180 <= lon <= 180):
+        return None
+    retain = number(row.get("retain_until"))
+    if provenance == "fr24" and retain is None:
+        return None            # undeletable vendor data is not admitted
+    if provenance == "adsb":
+        retain = None
+    distance = number(row.get("distance_km"))
+    return {
+        "at": at, "provenance": provenance,
+        "icao_hex": hex_of(row.get("hex")),
+        "fr24_id": row.get("fr24_id"),
+        "callsign": row.get("callsign"),
+        "registration": row.get("registration"),
+        "lat": lat, "lon": lon,
+        "alt_ft": integer(row.get("alt_ft")),
+        "speed_kt": integer(row.get("speed_kt")),
+        "track_deg": number(row.get("track_deg")),
+        "vertical_rate_fpm": integer(row.get("vertical_rate_fpm")),
+        "rssi_dbm": number(row.get("rssi_dbm")),
+        "distance_km": distance if distance is None or distance >= 0 else None,
+        "bearing_deg": number(row.get("bearing_deg")),
+        "retain_until": retain,
+    }
+
+
+INSERT_EVENT = """
+INSERT INTO noise_event
+    (event_id, observed_at, recorded_at, human_heard, cat_scared, press_count,
+     provenance, note, evidence, weather)
+VALUES (%(event_id)s, to_timestamp(%(observed_at)s), to_timestamp(%(recorded_at)s),
+        %(human_heard)s, %(cat_scared)s, %(press_count)s, %(provenance)s,
+        %(note)s, %(evidence)s, %(weather)s)
+ON CONFLICT (event_id) DO NOTHING
+"""
+
+# WHERE EXISTS rather than a bare FK failure: a corroboration or candidate for
+# an event that has not drained yet must not abort the whole batch. It is
+# re-presented on the next run because the offset only advances on commit.
+INSERT_CORROBORATION = """
+INSERT INTO noise_event_corroboration (event_id, reported_at, source, note)
+SELECT %(event_id)s, to_timestamp(%(reported_at)s), %(source)s, %(note)s
+WHERE EXISTS (SELECT 1 FROM noise_event WHERE event_id = %(event_id)s)
+ON CONFLICT DO NOTHING
+"""
+
+INSERT_CANDIDATE = """
+INSERT INTO noise_event_candidate
+    (event_id, identity, icao_hex, callsign, registration, icao_type,
+     airframe_class, fr24_id, feeds, score, reasons, distance_km, altitude_ft,
+     noise_index, phase, raw, retain_until)
+SELECT %(event_id)s, %(identity)s, %(icao_hex)s, %(callsign)s, %(registration)s,
+       %(icao_type)s, %(airframe_class)s, %(fr24_id)s, %(feeds)s, %(score)s,
+       %(reasons)s, %(distance_km)s, %(altitude_ft)s, %(noise_index)s,
+       %(phase)s, %(raw)s, to_timestamp(%(retain_until)s)
+WHERE EXISTS (SELECT 1 FROM noise_event WHERE event_id = %(event_id)s)
+ON CONFLICT (event_id, identity) DO NOTHING
+"""
+
+INSERT_ATTRIBUTION = """
+INSERT INTO noise_attribution
+    (event_id, generated_at, verdict, verdict_reason, margin, candidate_count,
+     confirmed_hex, confirmed_identity, confirmed_registration, confirmed_type,
+     flight_key, method)
+SELECT %(event_id)s, to_timestamp(%(generated_at)s), %(verdict)s,
+       %(verdict_reason)s, %(margin)s, %(candidate_count)s, %(confirmed_hex)s,
+       %(confirmed_identity)s, %(confirmed_registration)s, %(confirmed_type)s,
+       %(flight_key)s, %(method)s
+WHERE EXISTS (SELECT 1 FROM noise_event WHERE event_id = %(event_id)s)
+ON CONFLICT (event_id, generated_at) DO NOTHING
+"""
+
+LATEST_ATTRIBUTION = """
+SELECT verdict, confirmed_identity, margin, verdict_reason, method
+FROM noise_attribution WHERE event_id = %s
+ORDER BY generated_at DESC LIMIT 1
+"""
+
+INSERT_TRACK = """
+INSERT INTO aircraft_track_point
+    (at, provenance, icao_hex, fr24_id, callsign, registration, lat, lon,
+     alt_ft, speed_kt, track_deg, vertical_rate_fpm, rssi_dbm, distance_km,
+     bearing_deg, retain_until)
+VALUES (to_timestamp(%(at)s), %(provenance)s, %(icao_hex)s, %(fr24_id)s,
+        %(callsign)s, %(registration)s, %(lat)s, %(lon)s, %(alt_ft)s,
+        %(speed_kt)s, %(track_deg)s, %(vertical_rate_fpm)s, %(rssi_dbm)s,
+        %(distance_km)s, %(bearing_deg)s, to_timestamp(%(retain_until)s))
+ON CONFLICT DO NOTHING
+"""
+
+TRACK_SPOOL = Path(os.environ.get("PANEL_TRACK_LOG", "/var/lib/panel-noise/track-points.jsonl"))
+# When the fully-drained track spool exceeds this, it is rotated to one kept
+# generation. The database is the archive; the file is the write-ahead record,
+# and an unbounded 1 Hz position log would eventually fill the card that also
+# holds the clinical panel.
+TRACK_ROTATE_BYTES = int(os.environ.get("PANEL_TRACK_ROTATE_BYTES", str(64 * 1024 * 1024)))
+
+
+def pending_range(path, key):
+    """(offset, size) with the shrink guard, or None when nothing is pending."""
+    try:
+        size = path.stat().st_size
+    except OSError:
+        return None
+    offset = read_offset(key)
     if offset > size:
-        # Rotated or truncated. Starting from the stale offset would skip real
-        # rows; replaying is safe because every insert is ON CONFLICT DO NOTHING.
-        print(f"panel-noise-drain: spool shrank ({size} < {offset}); replaying from 0",
+        print(f"panel-noise-drain: {path.name} shrank ({size} < {offset}); replaying from 0",
               flush=True)
         offset = 0
     if offset == size:
-        return 0
+        return None
+    return offset, size
 
+
+def parse_pending(path, offset, parser):
+    """(parsed rows, skipped count, end offset)."""
     rows, skipped = [], 0
-    with SPOOL.open() as stream:
+    with path.open() as stream:
         stream.seek(offset)
         for line in stream:
             line = line.strip()
             if not line:
                 continue
             try:
-                parsed = normalise(json.loads(line))
+                parsed = parser(json.loads(line))
             except ValueError:
                 parsed = None
             if parsed is None:
@@ -254,29 +608,231 @@ def drain():
                 continue
             rows.append(parsed)
         end = stream.tell()
+    return rows, skipped, end
 
-    if not rows and not skipped:
-        return 0
 
+def drain_warnings(cur):
+    pending = pending_range(WARNINGS, "warnings_offset_bytes")
+    if pending is None:
+        return None
+    offset, _ = pending
+    rows, skipped, end = parse_pending(WARNINGS, offset, normalise_warning)
+    stored = 0
+    for row in rows:
+        row = dict(row,
+                   prediction=(psycopg2.extras.Json(row["prediction"])
+                               if row["prediction"] is not None else None),
+                   matched_pass=(psycopg2.extras.Json(row["matched_pass"])
+                                 if row["matched_pass"] is not None else None),
+                   raw=psycopg2.extras.Json(row["raw"]))
+        cur.execute(INSERT_WARNING, row)
+        stored += cur.rowcount
+    return {"key": "warnings_offset_bytes", "end": end, "drained": stored,
+            "skipped": skipped, "name": "warnings"}
+
+
+def drain_warning_reviews(cur):
+    pending = pending_range(WARNING_REVIEWS, "warning_reviews_offset_bytes")
+    if pending is None:
+        return None
+    offset, _ = pending
+    rows, skipped, end = parse_pending(WARNING_REVIEWS, offset,
+                                       normalise_warning_review)
+    stored = 0
+    for row in rows:
+        cur.execute(INSERT_WARNING_REVIEW, row)
+        stored += cur.rowcount
+    return {"key": "warning_reviews_offset_bytes", "end": end,
+            "drained": stored, "skipped": skipped,
+            "name": "warning reviews"}
+
+
+def expire_unreviewed_warnings(cur):
+    """Close stale review opportunities without deleting warning evidence."""
+    cur.execute(EXPIRE_UNREVIEWED_WARNINGS,
+                (WARNING_REVIEW_WINDOW_SECONDS, WARNING_REVIEW_WINDOW_SECONDS))
+    return {"drained": cur.rowcount, "skipped": 0,
+            "name": "expired warning reviews"}
+
+
+def drain_passes(cur):
+    pending = pending_range(SPOOL, "offset_bytes")
+    if pending is None:
+        return None
+    offset, _ = pending
+    rows, skipped, end = parse_pending(SPOOL, offset, normalise)
+    for row in rows:
+        # Bound by name; see the INSERT comment above.
+        cur.execute(INSERT, row)
+        hex_code = row["icao_hex"]
+        if hex_code:
+            # Provenance is the row's own, not a constant: a hardcoded 'fr24'
+            # labelled receiver-learned identities as vendor data.
+            cur.execute(UPSERT_AIRCRAFT,
+                        (hex_code, row["registration"], row["icao_type"],
+                         row["provenance"], row["at"], row["at"]))
+    return {"key": "offset_bytes", "end": end, "drained": len(rows), "skipped": skipped,
+            "name": "passes"}
+
+
+def drain_labels(cur):
+    pending = pending_range(LABELS, "labels_offset_bytes")
+    if pending is None:
+        return None
+    offset, _ = pending
+    rows, skipped, end = parse_pending(LABELS, offset, normalise_label)
+    events = corroborations = synthetic = deferred = 0
+    for kind, payload in rows:
+        if kind == "event":
+            payload = dict(payload,
+                           evidence=psycopg2.extras.Json(payload["evidence"]),
+                           weather=(psycopg2.extras.Json(payload["weather"])
+                                    if payload["weather"] is not None else None))
+            cur.execute(INSERT_EVENT, payload)
+            events += 1
+        elif kind == "corroboration":
+            cur.execute(INSERT_CORROBORATION, payload)
+            if cur.rowcount == 0:
+                # Named, not silent: either already stored, or its event has
+                # not drained yet and the next run re-presents it.
+                print(f"panel-noise-drain: corroboration for {payload['event_id']} "
+                      f"not stored this run (duplicate or event not yet drained)",
+                      flush=True)
+                deferred += 1
+            else:
+                corroborations += 1
+        elif kind == "synthetic":
+            synthetic += 1
+    return {"key": "labels_offset_bytes", "end": end, "drained": events,
+            "skipped": skipped, "name": "events",
+            "detail": f"{corroborations} corroborations, {synthetic} synthetic refused, "
+                      f"{deferred} deferred"}
+
+
+def sync_attributions(cur):
+    """Verdict history and full candidate sets, from the attributor's document.
+
+    Appends a history row only when the verdict CONTENT changed, so re-runs
+    read as decisions rather than cron noise. Candidates are inserted for
+    every event each time; (event_id, identity) conflicts make that free.
+    """
+    try:
+        with ATTRIBUTIONS.open() as stream:
+            doc = json.load(stream)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(doc, dict):
+        return None
+    generated_at = doc.get("generated_at")
+    if not isinstance(generated_at, (int, float)):
+        return None
+    if read_state().get("attributions_generated_at") == generated_at:
+        return None
+    verdicts = candidates = 0
+    for event in doc.get("events") or []:
+        row = attribution_db_row(event, generated_at)
+        if row is None:
+            continue
+        cur.execute(LATEST_ATTRIBUTION, (row["event_id"],))
+        latest = cur.fetchone()
+        if latest is None or tuple(latest) != attribution_signature(row):
+            cur.execute(INSERT_ATTRIBUTION, row)
+            verdicts += cur.rowcount
+        observed_at = event.get("observed_at")
+        if not isinstance(observed_at, (int, float)):
+            continue
+        for candidate in event.get("candidates") or []:
+            db_row = candidate_db_row(event["event_id"], observed_at, candidate)
+            if db_row is None:
+                continue
+            db_row["reasons"] = psycopg2.extras.Json(db_row["reasons"])
+            db_row["raw"] = psycopg2.extras.Json(db_row["raw"])
+            cur.execute(INSERT_CANDIDATE, db_row)
+            candidates += cur.rowcount
+    return {"state": {"attributions_generated_at": generated_at},
+            "drained": verdicts, "name": "verdict changes",
+            "detail": f"{candidates} new candidate rows"}
+
+
+def drain_track(cur):
+    pending = pending_range(TRACK_SPOOL, "track_offset_bytes")
+    if pending is None:
+        return None
+    offset, _ = pending
+    rows, skipped, end = parse_pending(TRACK_SPOOL, offset, normalise_track)
+    if rows:
+        psycopg2.extras.execute_batch(cur, INSERT_TRACK, rows, page_size=500)
+    return {"key": "track_offset_bytes", "end": end, "drained": len(rows),
+            "skipped": skipped, "name": "track points"}
+
+
+def rotate_track_spool():
+    """Bound the fully-drained track spool. One generation is kept beside the
+    live file; the database holds everything. Runs only when the offset has
+    reached the end, so nothing undrained is ever rotated away."""
+    try:
+        size = TRACK_SPOOL.stat().st_size
+    except OSError:
+        return
+    if size <= TRACK_ROTATE_BYTES or read_offset("track_offset_bytes") != size:
+        return
+    kept = TRACK_SPOOL.with_name(TRACK_SPOOL.name + ".1")
+    os.replace(TRACK_SPOOL, kept)
+    write_offset(0, "track_offset_bytes")
+    print(f"panel-noise-drain: rotated track spool ({size} bytes) to {kept.name}", flush=True)
+
+
+def disk_note():
+    try:
+        import shutil
+        usage = shutil.disk_usage(str(STATE.parent))
+        return f"{usage.free / 1e9:.1f} GB free"
+    except OSError:
+        return "disk free unknown"
+
+
+def drain():
+    if psycopg2 is None:
+        print("panel-noise-drain: psycopg2 is not installed", file=sys.stderr)
+        return 1
+
+    results = []
     with psycopg2.connect(DSN) as conn:
         with conn.cursor() as cur:
-            for row in rows:
-                # Bound by name. The CASE that used to wrap retain_until is
-                # gone with it: to_timestamp(NULL) is already NULL, so the
-                # branch only existed to serve the positional binding.
-                cur.execute(INSERT, row)
-                hex_code = row["icao_hex"]
-                if hex_code:
-                    # Provenance is the row's own, not a constant: a hardcoded
-                    # 'fr24' labelled receiver-learned identities as vendor data.
-                    cur.execute(UPSERT_AIRCRAFT,
-                                (hex_code, row["registration"], row["icao_type"],
-                                 row["provenance"], row["at"], row["at"]))
-    # Offset advances only after the transaction commits, so a failure replays
-    # rather than silently dropping the batch.
-    write_offset(end)
-    print(f"panel-noise-drain: {len(rows)} passes drained, {skipped} skipped, "
-          f"offset {offset} -> {end}", flush=True)
+            # Labels first so events exist before their attribution verdicts
+            # and candidate sets arrive; both are WHERE EXISTS-guarded anyway.
+            for step in (drain_labels, sync_attributions, drain_warnings,
+                         drain_warning_reviews, expire_unreviewed_warnings,
+                         drain_passes, drain_track):
+                result = step(cur)
+                if result:
+                    results.append(result)
+    # Offsets and markers advance only after the one transaction above
+    # commits, so a failure replays rather than silently dropping a batch.
+    for result in results:
+        if "key" in result:
+            write_offset(result["end"], result["key"])
+    markers = {}
+    for result in results:
+        markers.update(result.get("state") or {})
+    if markers:
+        state = read_state()
+        state.update(markers)
+        STATE.parent.mkdir(parents=True, exist_ok=True)
+        tmp = STATE.with_name(f".{STATE.name}.tmp")
+        with tmp.open("w") as stream:
+            json.dump(state, stream)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(tmp, STATE)
+    rotate_track_spool()
+    if results:
+        summary = "; ".join(
+            f"{r['drained']} {r['name']}"
+            + (f" ({r['detail']})" if r.get("detail") else "")
+            + (f", {r['skipped']} skipped" if r.get("skipped") else "")
+            for r in results)
+        print(f"panel-noise-drain: {summary}; {disk_note()}", flush=True)
     return 0
 
 

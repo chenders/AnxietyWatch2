@@ -6,6 +6,7 @@ so most of this file is about capture fidelity and about not firing too often.
 """
 
 import importlib.machinery
+import json
 import pathlib
 import time
 import unittest
@@ -118,14 +119,95 @@ class WhenItFires(unittest.TestCase):
         self.assertIsNone(hue.choose({}, 1000.0))
         self.assertIsNone(hue.choose({"adsb_predictions": []}, 1000.0))
 
+    def test_the_countdown_targets_the_sound_not_the_airframe(self):
+        # CPA in 22 s at a 5,145 m slant: the sound needs 15 more seconds, so
+        # the projected hearing time (37 s) is outside the 30 s lead window
+        # and must not fire yet.
+        status = self._status("LOUD", 22)
+        status["adsb_predictions"][0]["prediction"]["slant_distance_m"] = 5145.0
+        self.assertIsNone(hue.choose(status, 1000.0))
+
+    def test_sound_still_travelling_after_closest_approach_fires(self):
+        # The airframe passed 5 s ago, but its noise from a 5,145 m slant is
+        # still ~10 s out. Warning for the geometry instead of the noise would
+        # go silent exactly when the light is most useful.
+        status = self._status("LOUD", -5)
+        status["adsb_predictions"][0]["prediction"]["slant_distance_m"] = 5145.0
+        picked = hue.choose(status, 1000.0)
+        self.assertIsNotNone(picked)
+        self.assertAlmostEqual(picked[2], 10.0, delta=0.1)
+
+
+class AudibilityOnset(unittest.TestCase):
+    """The countdown targets when you FIRST hear it, not the loudest moment.
+
+    N170US, 2026-08-17: warned 28 s before its closest approach's sound
+    arrived, audible ~12 s after the flash -- 16 s of perceived notice from a
+    warning that was on time against the wrong target."""
+
+    def prediction(self, level=60.0, slant=2000.0, at=1240.0):
+        return {"at_epoch": at, "slant_distance_m": slant, "noise_index": level}
+
+    def test_a_loud_aircraft_is_heard_before_its_closest_approach(self):
+        pr = self.prediction()
+        peak = pr["at_epoch"] + pr["slant_distance_m"] / hue.SPEED_OF_SOUND_M_S
+        heard = hue.sound_arrival_epoch(pr, {"speed_kt": 140})
+        self.assertLess(heard, peak)
+
+    def test_a_louder_aircraft_is_heard_even_earlier(self):
+        quiet = hue.sound_arrival_epoch(self.prediction(level=50.0), {"speed_kt": 140})
+        loud = hue.sound_arrival_epoch(self.prediction(level=65.0), {"speed_kt": 140})
+        self.assertLess(loud, quiet)
+
+    def test_the_audible_radius_is_capped(self):
+        # Spherical spreading ignores air absorption; an absurd CPA level
+        # must not promise minutes of warning the air will not deliver.
+        a = hue.sound_arrival_epoch(self.prediction(level=100.0), {"speed_kt": 140})
+        b = hue.sound_arrival_epoch(self.prediction(level=140.0), {"speed_kt": 140})
+        self.assertAlmostEqual(a, b, delta=1e-6)
+
+    def test_a_barely_audible_aircraft_keeps_the_peak_target(self):
+        pr = self.prediction(level=44.0)   # under the 45 dBA floor
+        peak = pr["at_epoch"] + pr["slant_distance_m"] / hue.SPEED_OF_SOUND_M_S
+        self.assertAlmostEqual(hue.sound_arrival_epoch(pr, {"speed_kt": 140}),
+                               peak, delta=1e-6)
+
+    def test_no_speed_falls_back_to_the_peak_target(self):
+        pr = self.prediction()
+        peak = pr["at_epoch"] + pr["slant_distance_m"] / hue.SPEED_OF_SOUND_M_S
+        self.assertAlmostEqual(hue.sound_arrival_epoch(pr, {}), peak, delta=1e-6)
+
+    def test_an_already_audible_aircraft_fires_immediately(self):
+        # Onset in the past, closest approach still ahead: it is loud NOW.
+        status = {"adsb_predictions": [{
+            "hex": "AA8051", "speed_kt": 140,
+            "prediction": {"at_epoch": 1060.0, "slant_distance_m": 2000.0,
+                           "noise_index": 60.0, "loudness_band": "LOUD"}}]}
+        picked = hue.choose(status, 1000.0)
+        self.assertIsNotNone(picked)
+        self.assertEqual(picked[2], 0.0, "an audible aircraft has no seconds left")
+
+    def test_a_pass_whose_peak_sound_has_arrived_is_over(self):
+        status = {"adsb_predictions": [{
+            "hex": "AA8051", "speed_kt": 140,
+            "prediction": {"at_epoch": 990.0, "slant_distance_m": 2000.0,
+                           "noise_index": 60.0, "loudness_band": "LOUD"}}]}
+        # peak arrival = 990 + 5.8 = 995.8 < now: nothing to warn about.
+        self.assertIsNone(hue.choose(status, 1000.0))
+
 
 class Colour(unittest.TestCase):
-    def test_red_is_never_used(self):
-        # Klaxon red belongs to the medical alarm and appears nowhere else. A
-        # bedroom turning red for an aeroplane teaches the household to
-        # distrust the colour that matters.
+    def test_red_appears_only_in_the_police_signature(self):
+        # Klaxon red belongs to the medical alarm. The one aircraft exception,
+        # by explicit owner decision 2026-08-17, is the POLICE palette -- and
+        # only as red-AND-blue alternation, a shape the steady medical red
+        # never has. Normal and air-ambulance palettes stay clear of red.
         for xy in (hue.XY_CYAN, hue.XY_AMBER):
             self.assertLess(xy[0], 0.6, f"{xy} is in the red corner of CIE xy")
+        for palette in (hue.DEFAULT_PALETTE, hue.KIND_PALETTES["AIR_AMBULANCE"]):
+            self.assertNotIn(hue.XY_RED, palette)
+        self.assertIn(hue.XY_RED, hue.KIND_PALETTES["POLICE"])
+        self.assertIn(hue.XY_BLUE, hue.KIND_PALETTES["POLICE"])
 
     def test_the_cooldown_outlasts_its_own_flash(self):
         # Reduced from 10 minutes to 30 s at the owner's request. The old test
@@ -143,16 +225,107 @@ class Colour(unittest.TestCase):
         self.assertLessEqual(hue.LEAD_SECONDS, 90)
 
 
-if __name__ == "__main__":
-    unittest.main()
+
+
+class WarningLog(unittest.TestCase):
+    """Every warning decision is durable. N170US 2026-08-17: predicted LOUD,
+    warned, accurately loud -- and reviewable nowhere, because the warning
+    lived only in the journal."""
+
+    def test_a_fired_record_is_self_contained(self):
+        report = {"hex": "A4C3EB", "registration": "N170US", "callsign": "SWA100",
+                  "operator_kind": None,
+                  "prediction": {"loudness_band": "LOUD", "noise_index": 58.0}}
+        rec = hue.warning_record(report, "LOUD", 28.4, fired=True, now=1000.0)
+        self.assertTrue(rec["fired"])
+        self.assertIsNone(rec["suppressed_by"])
+        self.assertEqual(rec["registration"], "N170US")
+        self.assertEqual(rec["notice_s"], 28.4)
+        self.assertEqual(rec["prediction"]["noise_index"], 58.0)
+        self.assertEqual(rec["warning_id"], "warn-1000000-A4C3EB")
+
+    def test_a_suppressed_record_names_its_blocker(self):
+        rec = hue.warning_record({"hex": "AA1"}, "LOUD", 20.0, fired=False,
+                                 suppressed_by="quiet_hours", now=1000.0)
+        self.assertFalse(rec["fired"])
+        self.assertEqual(rec["suppressed_by"], "quiet_hours")
+
+    def test_log_appends_one_json_line_durably(self):
+        import tempfile, pathlib
+        with tempfile.TemporaryDirectory() as tmp:
+            path = pathlib.Path(tmp) / "warnings.jsonl"
+            real = hue.WARNING_LOG
+            hue.WARNING_LOG = path
+            try:
+                hue.log_warning({"warning_id": "w1"})
+                hue.log_warning({"warning_id": "w2"})
+            finally:
+                hue.WARNING_LOG = real
+            lines = path.read_text().splitlines()
+            self.assertEqual([json.loads(l)["warning_id"] for l in lines],
+                             ["w1", "w2"])
+
+    def test_an_unwritable_log_does_not_raise(self):
+        real = hue.WARNING_LOG
+        hue.WARNING_LOG = type(real)("/proc/definitely/not/writable.jsonl")
+        try:
+            hue.log_warning({"warning_id": "w1"})   # must not raise
+        finally:
+            hue.WARNING_LOG = real
+
+
+class QuietHours(unittest.TestCase):
+    """Midnight to 09:00 Pacific: no light warnings, no matter what.
+
+    Fixed reference epochs, DST on both sides of the year, so a DST bug
+    cannot pass in summer and wake the bedroom in winter.
+    """
+
+    def test_3am_pacific_daylight_time_is_quiet(self):
+        # 2026-08-17 03:00 PDT == 10:00 UTC
+        self.assertTrue(hue.in_quiet_hours(1786960800))
+
+    def test_3am_pacific_standard_time_is_quiet(self):
+        # 2026-01-15 03:00 PST == 11:00 UTC
+        self.assertTrue(hue.in_quiet_hours(1768474800))
+
+    def test_midnight_exactly_is_quiet(self):
+        # 2026-08-17 00:00 PDT == 07:00 UTC
+        self.assertTrue(hue.in_quiet_hours(1786950000))
+
+    def test_9am_exactly_is_not_quiet(self):
+        # 2026-08-17 09:00 PDT == 16:00 UTC. The window is [0, 9): at 9 sharp
+        # the warnings are back.
+        self.assertFalse(hue.in_quiet_hours(1786982400))
+
+    def test_just_before_midnight_is_not_quiet(self):
+        # 2026-08-16 23:59 PDT == 06:59 UTC on the 17th
+        self.assertFalse(hue.in_quiet_hours(1786949940))
+
+    def test_the_window_is_midnight_to_nine_pacific(self):
+        self.assertEqual(hue.quiet_hours_range(), (0.0, 9.0))
+        self.assertEqual(hue.QUIET_TZ.key, "America/Los_Angeles")
+
+    def test_a_wrapping_window_works(self):
+        # 22 -> 7 wraps midnight: 23:00 quiet, 12:00 not.
+        real = hue.quiet_hours_range
+        hue.quiet_hours_range = lambda: (22.0, 7.0)
+        try:
+            self.assertTrue(hue.in_quiet_hours(1786946400))    # 23:00 PDT Aug 16
+            self.assertFalse(hue.in_quiet_hours(1786993200))   # 12:00 PDT Aug 17
+        finally:
+            hue.quiet_hours_range = real
+
+    def test_a_zero_length_window_disables_quiet_hours(self):
+        real = hue.quiet_hours_range
+        hue.quiet_hours_range = lambda: (9.0, 9.0)
+        try:
+            self.assertFalse(hue.in_quiet_hours(1786960800))   # 3am, but disabled
+        finally:
+            hue.quiet_hours_range = real
 
 
 class FlashDuration(unittest.TestCase):
-    def test_the_alert_is_refreshed_before_the_bridge_drops_it(self):
-        # `lselect` stops after roughly 15 s. If the refresh cadence were not
-        # shorter than that, a long flash would sit solid for its tail.
-        self.assertLess(hue.ALERT_REFRESH_SECONDS, 15.0)
-
     def test_the_flash_is_shorter_than_the_lead_time(self):
         # Otherwise the light would still be pulsing after the aircraft has
         # already passed, which reads as a stuck warning rather than a warning.
@@ -160,14 +333,65 @@ class FlashDuration(unittest.TestCase):
 
 
 class FlashBrightness(unittest.TestCase):
-    def test_the_flash_is_bright_enough_to_notice_but_within_range(self):
-        self.assertGreaterEqual(hue.FLASH_BRIGHTNESS, 190)
-        self.assertLessEqual(hue.FLASH_BRIGHTNESS, 254)
+    """Perceived-light-relative brightness, owner decisions 2026-08-17:
+    noticeably brighter than the room IS -- in lumens, not in Hue's bri
+    numbers, which saturated colours turn into far less light."""
 
-    def test_brightness_is_clamped_to_the_hue_scale(self):
-        # Hue rejects anything outside 1-254; an out-of-range env value should
-        # be clamped rather than sent and rejected mid-warning.
-        self.assertGreaterEqual(hue.FLASH_BRIGHTNESS, 1)
+    OFF = {"on": False, "bri": 200, "ct": 300}
+    WARM_WHITE = {"on": True, "bri": 133, "ct": 370}
+
+    def test_an_off_light_flashes_at_the_gentle_floor_in_white_terms(self):
+        # A white warning from darkness lands at the ~30% floor.
+        self.assertEqual(hue.flash_brightness(self.OFF, hue.XY_WHITE), 77)
+
+    def test_a_dim_colour_gets_more_drive_for_the_same_perceived_floor(self):
+        # Purple emits less light per bri step than white, so the same
+        # perceived floor needs a higher commanded bri.
+        white = hue.flash_brightness(self.OFF, hue.XY_WHITE)
+        purple = hue.flash_brightness(self.OFF, hue.XY_PURPLE)
+        self.assertGreater(purple, white)
+
+    def test_orange_against_a_warm_white_room_is_driven_to_the_cap(self):
+        # The observed failure: warm white at 133 vs orange at 197 read as no
+        # change, because orange's efficacy is ~1/3 of white's. The model
+        # drives orange as hard as the hardware allows.
+        self.assertEqual(hue.flash_brightness(self.WARM_WHITE, hue.XY_ORANGE), 254)
+
+    def test_a_brighter_room_never_gets_a_dimmer_warning(self):
+        for target in (hue.XY_WHITE, hue.XY_ORANGE, hue.XY_PURPLE, hue.XY_RED):
+            dim = hue.flash_brightness({"on": True, "bri": 40, "ct": 300}, target)
+            bright = hue.flash_brightness({"on": True, "bri": 200, "ct": 300}, target)
+            self.assertGreaterEqual(bright, dim, target)
+
+    def test_the_command_stays_on_the_hue_scale(self):
+        for state in (self.OFF, self.WARM_WHITE, {"on": True, "bri": 254, "ct": 200}):
+            for target in (hue.XY_WHITE, hue.XY_BLUE, hue.XY_RED, hue.XY_ORANGE):
+                bri = hue.flash_brightness(state, target)
+                self.assertGreaterEqual(bri, 1)
+                self.assertLessEqual(bri, 254)
+
+    def test_a_saturated_room_colour_counts_as_the_light_it_emits(self):
+        # A room lit deep red at bri 200 emits little light; the warning
+        # should step up from that reality, not from the number 200.
+        red_room = {"on": True, "bri": 200, "xy": hue.XY_RED}
+        white_room = {"on": True, "bri": 200, "ct": 300}
+        self.assertLess(hue.flash_brightness(red_room, hue.XY_WHITE),
+                        hue.flash_brightness(white_room, hue.XY_WHITE))
+
+    def test_a_light_with_no_brightness_gets_the_fixed_fallback(self):
+        # On/off plugs cannot dim; relativity is meaningless for them.
+        self.assertEqual(hue.flash_brightness({"on": True}, hue.XY_WHITE),
+                         hue.ALERT_BRIGHTNESS)
+
+    def test_white_is_the_most_efficient_palette_colour(self):
+        # Sanity of the physical model itself.
+        for xy in (hue.XY_PURPLE, hue.XY_ORANGE, hue.XY_RED, hue.XY_BLUE):
+            self.assertLess(hue.luminance_factor(xy), hue.WHITE_FACTOR, xy)
+
+    def test_deep_blue_is_the_dimmest(self):
+        for xy in (hue.XY_PURPLE, hue.XY_ORANGE, hue.XY_RED, hue.XY_WHITE):
+            self.assertLess(hue.luminance_factor(hue.XY_BLUE),
+                            hue.luminance_factor(xy))
 
 
 class SecondZone(unittest.TestCase):
@@ -180,30 +404,61 @@ class SecondZone(unittest.TestCase):
     def tearDown(self):
         hue.LIGHTS, hue.ALERT_LIGHTS = self._lights, self._alert
 
-    def test_both_zones_flash_in_their_own_colours(self):
-        plan = hue.zones("LOUD")
+    def test_normal_aircraft_show_a_single_steady_purple_everywhere(self):
+        # Owner decisions 2026-08-17: no orange ("horrible"), then no
+        # alternation at all -- normal aircraft are a calm, steady purple.
+        plan = hue.zones(None)
         self.assertEqual(len(plan), 2)
-        (bed_ids, bed_palette, bed_bri), (kit_ids, kit_palette, kit_bri) = plan
+        (bed_ids, bed_palette, _), (kit_ids, kit_palette, _) = plan
         self.assertEqual(bed_ids, ["2", "8"])
-        # Same signature everywhere, by owner decision.
-        self.assertEqual(bed_palette, [hue.XY_PURPLE, hue.XY_RED])
+        self.assertEqual(bed_palette, [hue.XY_PURPLE])
         self.assertEqual(kit_ids, ["10"])
-        self.assertEqual(kit_palette, [hue.XY_PURPLE, hue.XY_RED])
+        self.assertEqual(kit_palette, [hue.XY_PURPLE])
 
-    def test_every_zone_flashes_the_same_signature(self):
-        # One pattern everywhere is easier to recognise half asleep than a
-        # colour that must be decoded per room. Red now appears in the bedroom
-        # by explicit owner decision, overriding the handoff §6 guidance.
-        palettes = [z[1] for z in hue.zones("LOUD")]
-        self.assertEqual(len(set(map(tuple, map(lambda p: tuple(map(tuple, p)), palettes)))), 1)
+    def test_no_flash_palette_contains_orange(self):
+        # Orange means exactly one thing now: "arriving sooner than the usual
+        # notice". A palette that flashes it would dilute that.
+        for kind in (None, "POLICE", "AIR_AMBULANCE"):
+            self.assertNotIn(hue.XY_ORANGE, hue.zones(kind)[0][1], kind)
 
-    def test_the_bedroom_alternates_two_distinct_colours(self):
-        palette = hue.zones("LOUD")[0][1]
-        self.assertEqual(len(palette), 2)
-        self.assertNotEqual(palette[0], palette[1])
+    def test_air_ambulance_flashes_calming_white_blue(self):
+        for _, palette, _ in hue.zones("AIR_AMBULANCE"):
+            self.assertEqual(palette, [hue.XY_WHITE, hue.XY_BLUE])
 
-    def test_the_signature_does_not_track_the_band(self):
-        self.assertEqual(hue.zones("LOUD")[1][1], hue.zones("VERY LOUD")[1][1])
+    def test_police_flashes_patrol_red_blue(self):
+        for _, palette, _ in hue.zones("POLICE"):
+            self.assertEqual(palette, [hue.XY_RED, hue.XY_BLUE])
+
+    def test_the_signature_is_uniform_across_rooms(self):
+        # The colour says WHAT is coming, never which room you are in.
+        for kind in (None, "POLICE", "AIR_AMBULANCE", "unknown-kind"):
+            palettes = {tuple(map(tuple, z[1])) for z in hue.zones(kind)}
+            self.assertEqual(len(palettes), 1, kind)
+
+    def test_an_unknown_kind_falls_back_to_the_normal_signature(self):
+        self.assertEqual(hue.zones("CROP_DUSTER")[0][1], hue.DEFAULT_PALETTE)
+        self.assertEqual(hue.zones("police")[0][1], hue.KIND_PALETTES["POLICE"],
+                         "kind match is case-insensitive")
+
+    def test_police_alternate_twice_as_fast(self):
+        # The urgency of a light bar is its tempo as much as its colours.
+        self.assertAlmostEqual(hue.alternate_seconds_for("POLICE"),
+                               hue.ALTERNATE_SECONDS / 2.0, delta=1e-9)
+        self.assertAlmostEqual(hue.alternate_seconds_for("police"),
+                               hue.ALTERNATE_SECONDS / 2.0, delta=1e-9)
+
+    def test_everyone_else_alternates_at_the_normal_rate(self):
+        for kind in (None, "AIR_AMBULANCE", "CROP_DUSTER"):
+            self.assertAlmostEqual(hue.alternate_seconds_for(kind),
+                                   hue.ALTERNATE_SECONDS, delta=1e-9, msg=kind)
+
+    def test_emergency_palettes_alternate_two_distinct_colours(self):
+        # Alternation belongs to the emergency kinds alone; normal is steady.
+        for kind in ("POLICE", "AIR_AMBULANCE"):
+            palette = hue.zones(kind)[0][1]
+            self.assertEqual(len(palette), 2)
+            self.assertNotEqual(palette[0], palette[1])
+        self.assertEqual(len(hue.zones(None)[0][1]), 1)
 
     def test_every_zone_is_at_90_percent(self):
         self.assertEqual(hue.ALERT_BRIGHTNESS, 229)
@@ -211,7 +466,7 @@ class SecondZone(unittest.TestCase):
 
     def test_with_no_alert_lights_configured_there_is_only_one_zone(self):
         hue.ALERT_LIGHTS = []
-        self.assertEqual(len(hue.zones("LOUD")), 1)
+        self.assertEqual(len(hue.zones(None)), 1)
 
 
 class WhatWarnActuallyApplies(unittest.TestCase):
@@ -227,6 +482,8 @@ class WhatWarnActuallyApplies(unittest.TestCase):
         self._c, self._a, self._l, self._al = (
             hue.call, hue.apply_state, hue.LIGHTS, hue.ALERT_LIGHTS)
         self._flash = hue.FLASH_SECONDS
+        self._settle = hue.RESTORE_SETTLE_SECONDS
+        hue.RESTORE_SETTLE_SECONDS = 0.0
         hue.LIGHTS, hue.ALERT_LIGHTS = ["2", "8"], ["10"]
         hue.FLASH_SECONDS = 0.0
         self.applied = []
@@ -242,6 +499,7 @@ class WhatWarnActuallyApplies(unittest.TestCase):
         hue.call, hue.apply_state = self._c, self._a
         hue.LIGHTS, hue.ALERT_LIGHTS = self._l, self._al
         hue.FLASH_SECONDS = self._flash
+        hue.RESTORE_SETTLE_SECONDS = self._settle
 
     def _flashes(self):
         """The opening flash state per light.
@@ -262,28 +520,54 @@ class WhatWarnActuallyApplies(unittest.TestCase):
         for lid in ("2", "8", "10"):
             self.assertEqual(f[lid]["xy"], hue.XY_PURPLE, lid)
 
-    def test_lights_actually_alternate_during_the_flash(self):
-        # The palette being right proves nothing if the flash loop never uses
-        # the second colour.
-        hue.FLASH_SECONDS = 0.6
-        hue.ALTERNATE_SECONDS = 0.01
-        self.applied.clear()
-        hue.warn("LOUD", "test")
-        seen = [tuple(st["xy"]) for lid, st in self.applied
-                if lid == "2" and "xy" in st and st.get("alert") != "none"]
-        self.assertIn(tuple(hue.XY_PURPLE), seen)
-        self.assertIn(tuple(hue.XY_RED), seen)
-
-    def test_the_kitchen_alternates_too(self):
+    def test_a_normal_aircraft_stays_steady_purple_for_the_whole_flash(self):
+        # No alternation, no second colour, no breathe -- steady means steady.
         hue.FLASH_SECONDS = 0.6
         hue.ALTERNATE_SECONDS = 0.01
         self.applied.clear()
         hue.warn("LOUD", "test")
         seen = {tuple(st["xy"]) for lid, st in self.applied
-                if lid == "10" and "xy" in st and st.get("alert") != "none"}
-        self.assertEqual(seen, {tuple(hue.XY_PURPLE), tuple(hue.XY_RED)})
+                if lid in ("2", "10") and "xy" in st and st.get("alert") != "none"}
+        self.assertEqual(seen, {tuple(hue.XY_PURPLE)})
+        self.assertFalse(any(st.get("alert") == "lselect"
+                             for _, st in self.applied), "nothing may breathe")
 
-    def test_the_bedroom_is_never_sent_red(self):
+    def test_a_steady_colour_is_reasserted_throughout_the_flash(self):
+        # Zigbee drops frames: one of two bedroom bulbs missed its single
+        # opening write on 2026-08-17 and sat unchanged through the whole
+        # warning. A steady signal must self-heal like an alternating one.
+        hue.FLASH_SECONDS = 0.6
+        hue.ALTERNATE_SECONDS = 0.01
+        self.applied.clear()
+        hue.warn("LOUD", "test")
+        purple_writes = [st for lid, st in self.applied
+                         if lid == "2" and st.get("xy") == hue.XY_PURPLE]
+        self.assertGreater(len(purple_writes), 1,
+                           "steady purple was written only once; a dropped "
+                           "frame would go uncorrected")
+
+    def test_the_orange_hold_is_reasserted_while_it_holds(self):
+        self.applied.clear()
+        hue.warn("LOUD", "test", hold_orange_seconds=0.05)
+        orange_writes = [st for lid, st in self.applied
+                         if lid == "2" and st.get("xy") == hue.XY_ORANGE]
+        self.assertGreater(len(orange_writes), 1,
+                           "the hold was written only once; a dropped frame "
+                           "would go uncorrected for its whole duration")
+
+    def test_emergency_lights_actually_alternate_during_the_flash(self):
+        # The palette being right proves nothing if the flash loop never uses
+        # the second colour -- checked on the bedroom AND the second zone.
+        hue.FLASH_SECONDS = 0.6
+        hue.ALTERNATE_SECONDS = 0.01
+        self.applied.clear()
+        hue.warn("LOUD", "test", kind="AIR_AMBULANCE")
+        for lid in ("2", "10"):
+            seen = {tuple(st["xy"]) for l, st in self.applied
+                    if l == lid and "xy" in st and st.get("alert") != "none"}
+            self.assertEqual(seen, {tuple(hue.XY_WHITE), tuple(hue.XY_BLUE)}, lid)
+
+    def test_the_bedroom_is_never_sent_red_for_a_normal_aircraft(self):
         for band in ("LOUD", "VERY LOUD", "UNKNOWN"):
             self.applied.clear()
             hue.warn(band, "test")
@@ -292,16 +576,159 @@ class WhatWarnActuallyApplies(unittest.TestCase):
                     self.assertNotEqual(st["xy"], hue.XY_RED,
                                         f"bedroom light {lid} sent red on {band}")
 
-    def test_every_zone_shares_one_brightness(self):
+    def test_a_police_aircraft_does_send_red_and_blue(self):
+        hue.FLASH_SECONDS = 0.6
+        hue.ALTERNATE_SECONDS = 0.01
+        self.applied.clear()
+        hue.warn("LOUD", "test", kind="POLICE")
+        seen = {tuple(st["xy"]) for lid, st in self.applied
+                if lid == "2" and "xy" in st and st.get("alert") != "none"}
+        self.assertEqual(seen, {tuple(hue.XY_RED), tuple(hue.XY_BLUE)})
+
+    def test_a_late_warning_opens_with_constant_orange_before_the_flash(self):
+        # Owner decision 2026-08-17: orange FIRST -- "sooner than usual" opens
+        # the warning, and the flash lands as the sound arrives.
+        self.applied.clear()
+        hue.warn("LOUD", "test", hold_orange_seconds=0.05)
+        writes_for_2 = [st for lid, st in self.applied if lid == "2" and "xy" in st]
+        orange = [i for i, st in enumerate(writes_for_2)
+                  if st.get("xy") == hue.XY_ORANGE and st.get("alert") == "none"
+                  and st.get("on") is True]
+        flash = [i for i, st in enumerate(writes_for_2)
+                 if st.get("xy") == hue.XY_PURPLE]
+        self.assertTrue(orange, "no constant-orange hold was applied")
+        self.assertTrue(flash, "no flash followed the hold")
+        self.assertLess(orange[0], flash[0],
+                        "the orange hold must come BEFORE the flash")
+
+    def test_a_hold_cleared_early_skips_the_flash(self):
+        # The aircraft went away during the hold: flashing after that would be
+        # a warning about nothing. All-clear instead.
+        self.applied.clear()
+        hue.warn("LOUD", "test", still_inbound=lambda: False,
+                 hold_orange_seconds=2.0)
+        flash = [st for lid, st in self.applied
+                 if lid == "2" and st.get("xy") == hue.XY_PURPLE]
+        greens = [st for _, st in self.applied if st.get("xy") == hue.XY_GREEN]
+        self.assertEqual(flash, [], "flash fired after the aircraft had gone")
+        self.assertTrue(greens, "no all-clear after the hold cleared early")
+
+    def test_the_orange_hold_is_luminance_compensated(self):
+        # The observed failure: orange at "room + boost" bri read as no change
+        # against a warm-white room. Compensated for orange's efficacy, the
+        # commanded drive must far exceed a naive room+boost number.
+        hue.call = lambda m, p, b=None: (
+            {"state": {"on": True, "bri": 100, "colormode": "ct", "ct": 300}}, None)
+        self.applied.clear()
+        hue.warn("LOUD", "test", hold_orange_seconds=0.05)
+        oranges = [st for lid, st in self.applied
+                   if lid == "2" and st.get("xy") == hue.XY_ORANGE]
+        self.assertTrue(oranges)
+        self.assertEqual(oranges[0]["bri"],
+                         hue.flash_brightness({"on": True, "bri": 100, "ct": 300},
+                                              hue.XY_ORANGE))
+        self.assertGreater(oranges[0]["bri"], 100 + hue.FLASH_BOOST_BRI)
+
+    def test_no_orange_hold_when_the_warning_was_on_time(self):
+        self.applied.clear()
+        hue.warn("LOUD", "test", hold_orange_seconds=0.0)
+        held = [st for lid, st in self.applied
+                if st.get("xy") == hue.XY_ORANGE and st.get("alert") == "none"]
+        self.assertEqual(held, [])
+
+    def test_the_orange_hold_clears_early_when_the_aircraft_goes(self):
+        self.applied.clear()
+        hue.warn("LOUD", "test", still_inbound=lambda: False,
+                 hold_orange_seconds=5.0)
+        greens = [st for _, st in self.applied if st.get("xy") == hue.XY_GREEN]
+        self.assertTrue(greens, "no all-clear after the hold cleared early")
+
+    def test_brightness_is_relative_to_the_captured_state(self):
+        # The stubbed lights are ON at 254, so the flash caps at 254 -- the
+        # colour alternation carries the signal when there is no headroom.
         f = self._flashes()
-        self.assertEqual(f["2"]["bri"], hue.ALERT_BRIGHTNESS)
-        self.assertEqual(f["10"]["bri"], hue.ALERT_BRIGHTNESS)
+        self.assertEqual(f["2"]["bri"], 254)
+        self.assertEqual(f["10"]["bri"], 254)
 
     def test_every_light_touched_is_also_restored(self):
         hue.warn("LOUD", "test")
         touched = {lid for lid, _ in self.applied}
         restored = {lid for lid, st in self.applied if st.get("alert") == "none"}
         self.assertEqual(touched, restored)
+
+
+class VerifiedRestore(unittest.TestCase):
+    """A bridge OK is not evidence the bulb heard it. On 2026-08-17 a bedroom
+    bulb dropped its restore write and sat purple after the warning ended."""
+
+    def setUp(self):
+        self._c, self._a, self._settle = hue.call, hue.apply_state, hue.RESTORE_SETTLE_SECONDS
+        hue.RESTORE_SETTLE_SECONDS = 0.0
+        self.writes = []
+
+    def tearDown(self):
+        hue.call, hue.apply_state = self._c, self._a
+        hue.RESTORE_SETTLE_SECONDS = self._settle
+
+    def test_a_dropped_restore_write_is_retried_until_confirmed(self):
+        expected = {"on": True, "bri": 133, "ct": 346}
+        # First read-back shows the bulb still stuck purple; later ones show
+        # the restore landed.
+        readbacks = [{"on": True, "bri": 254, "colormode": "xy", "xy": [0.2919, 0.1327]},
+                     {"on": True, "bri": 133, "colormode": "ct", "ct": 346},
+                     {"on": True, "bri": 133, "colormode": "ct", "ct": 346}]
+
+        def fake_call(method, path, body=None):
+            if method == "PUT":
+                self.writes.append(body)
+                return ({}, None)
+            return ({"state": readbacks.pop(0)}, None)
+
+        hue.call = fake_call
+        self.assertIsNone(hue.restore_verified("2", expected))
+        self.assertGreaterEqual(len(self.writes), 2, "the dropped write was not retried")
+
+    def test_even_a_confirmed_restore_is_written_at_least_twice(self):
+        # The bridge cache can confirm a command the bulb never heard: it
+        # reported stable warm white for 24+ s while the physical bulb sat
+        # purple (2026-08-17). Repetition is what actually delivers.
+        expected = {"on": True, "bri": 133, "ct": 346}
+        good = {"on": True, "bri": 133, "colormode": "ct", "ct": 346}
+
+        def fake_call(method, path, body=None):
+            if method == "PUT":
+                self.writes.append(body)
+                return ({}, None)
+            return ({"state": good}, None)
+
+        hue.call = fake_call
+        self.assertIsNone(hue.restore_verified("2", expected))
+        self.assertGreaterEqual(len(self.writes), hue.RESTORE_MIN_WRITES)
+
+    def test_an_unconfirmable_restore_is_reported_not_swallowed(self):
+        expected = {"on": True, "bri": 133, "ct": 346}
+        stuck = {"on": True, "bri": 254, "colormode": "xy", "xy": [0.2919, 0.1327]}
+        hue.call = lambda m, p, b=None: (
+            ({}, None) if m == "PUT" else ({"state": stuck}, None))
+        error = hue.restore_verified("2", expected)
+        self.assertIsNotNone(error)
+        self.assertIn(str(hue.RESTORE_ATTEMPTS), error)
+
+    def test_an_unreadable_light_counts_as_unconfirmed(self):
+        # Unknown is not restored.
+        hue.call = lambda m, p, b=None: (
+            ({}, None) if m == "PUT" else (None, "bridge unreachable"))
+        error = hue.restore_verified("2", {"on": False, "bri": 10, "ct": 300})
+        self.assertIsNotNone(error)
+        self.assertIn("unverifiable", error)
+
+    def test_matching_tolerates_bridge_rounding_but_not_the_wrong_colour(self):
+        expected = {"on": True, "bri": 133, "xy": [0.445, 0.4067]}
+        self.assertTrue(hue.state_matches(
+            expected, {"on": True, "bri": 134, "xy": [0.4449, 0.407]}))
+        self.assertFalse(hue.state_matches(
+            expected, {"on": True, "bri": 133, "xy": [0.2919, 0.1327]}))
+        self.assertFalse(hue.state_matches(expected, {"on": False, "bri": 133}))
 
 
 class TestsMustNotBlindTheSystem(unittest.TestCase):
@@ -332,8 +759,6 @@ class TestsMustNotBlindTheSystem(unittest.TestCase):
         self.assertGreater(hue.COOLDOWN_SECONDS, hue.FLASH_SECONDS)
 
 
-if __name__ == "__main__":
-    unittest.main()
 
 
 class WarningEndsWhenTheAircraftDoes(unittest.TestCase):
@@ -507,3 +932,7 @@ class TheMasterSwitch(unittest.TestCase):
         # the admin page could not turn off a trigger that fires the light.
         self.assertIn("hue_warn_unscored", hue.panel_settings.SCHEMA)
         self.assertIn("hue_enabled", hue.panel_settings.SCHEMA)
+
+
+if __name__ == "__main__":
+    unittest.main()

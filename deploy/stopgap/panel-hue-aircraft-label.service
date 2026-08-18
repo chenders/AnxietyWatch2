@@ -1,7 +1,7 @@
 [Unit]
 Description=Capture aircraft-noise labels from the bedroom-door Hue button
-After=network-online.target time-sync.target panel-adsb-status.service
-Wants=network-online.target time-sync.target panel-adsb-status.service
+After=network-online.target time-sync.target panel-adsb-status.service panel-fr24-poll.service
+Wants=network-online.target time-sync.target panel-adsb-status.service panel-fr24-poll.service
 
 [Service]
 Type=simple
@@ -16,9 +16,14 @@ Group=anxietywatch
 #   Environment=HUE_AIRCRAFT_BUTTON_ID=...
 #   Environment=HUE_CERTIFICATE=/etc/panel-hue/bridge.pem
 Environment=ADSB_STATUS_JSON=/opt/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical/adsb_status.json
+Environment=FR24_CACHE_JSON=/opt/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical/fr24_aircraft.json
 Environment=PANEL_NOISE_LOG=/var/lib/panel-noise/loud-aircraft.jsonl
 Environment=PANEL_AIRCRAFT_LABELS=/var/lib/panel-noise/aircraft-labels.jsonl
+Environment=PANEL_AIRCRAFT_ATTRIBUTIONS=/var/lib/panel-noise/aircraft-attributions.json
 Environment=PANEL_AIRCRAFT_BUTTON_STATE=/var/lib/panel-noise/hue-button-state.json
+# Acoustic weather at event time, read from panel-weather-poll's cache only;
+# the press path never touches the network.
+Environment=PANEL_WEATHER_CACHE=/var/lib/panel-noise/weather.json
 Environment=HUE_BUTTON_DOUBLE_SECONDS=1.35
 ExecStart=/usr/local/bin/panel-hue-aircraft-label
 Restart=always

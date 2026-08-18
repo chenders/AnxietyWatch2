@@ -147,6 +147,19 @@ class Words(unittest.TestCase):
                                  frozenset(("VERY LOUD",))), frozenset())
 
 
+class DisplayUnits(unittest.TestCase):
+    def test_the_units_setting_exists_and_defaults_imperial(self):
+        # Owner decision 2026-08-17: miles unless the toggle says otherwise.
+        spec = load().SCHEMA["display_metric"]
+        self.assertEqual(spec["kind"], "flag")
+        self.assertFalse(spec["default"])
+
+    def test_the_lead_schema_default_matches_the_warn_daemon(self):
+        # The admin page renders the schema default; the daemon uses its call
+        # site default. They drifted once (45 vs 30) -- this pins them.
+        self.assertEqual(load().SCHEMA["hue_lead_seconds"]["default"], 30.0)
+
+
 class Snapshot(unittest.TestCase):
     def test_snapshot_reports_what_is_overridden_and_from_where(self):
         s = load()

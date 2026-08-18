@@ -44,13 +44,16 @@ us, three field writes.
 """
 
 import json
+import math
 import os
 import signal
 import sys
 import time
 import urllib.error
 import urllib.request
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 # Installed alongside this script in /usr/local/bin, which is not on the
 # import path for a script invoked by absolute path.
@@ -79,6 +82,18 @@ OUTPUT = Path(os.environ.get(
     "/opt/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical/hue_status.json"))
 
 POLL_SECONDS = float(os.environ.get("HUE_POLL_SECONDS", "1"))
+
+# Every warning DECISION is appended here durably -- fired or suppressed,
+# with the prediction that drove it. Until 2026-08-17 a warning existed only
+# as a journal line and a light that had already gone dark: N170US was
+# predicted LOUD, warned, WAS loud -- and appeared nowhere the owner could
+# review. The admin page reads this log and lets the owner mark each warning
+# accurate or not after the fact, which becomes training evidence.
+WARNING_LOG = Path(os.environ.get("HUE_WARNING_LOG",
+                                  "/var/lib/panel-noise/hue-warnings.jsonl"))
+# One suppressed-warning row per aircraft per this window, not one per poll:
+# choose() re-picks the same aircraft every second for its whole approach.
+SUPPRESS_LOG_WINDOW_S = 300.0
 
 # Only these bands warrant lighting a room. FAINT and a distant AUDIBLE do not:
 # a warning that fires for everything is noise itself.
@@ -117,6 +132,45 @@ def armed():
     """
     return panel_settings.flag("hue_enabled", "HUE_ENABLED", True)
 
+
+# Quiet hours: NO light warning of any kind between midnight and 09:00
+# Pacific, by owner decision 2026-08-17. "No matter what" -- scored bands,
+# unscored-overhead, unlocated air ambulances, and injected tests are all
+# behind this one gate, for the same reason the master switch is one gate:
+# a quiet-hours rule that silences only the obvious path still lights the
+# bedroom at 3am.
+#
+# The household's clock is Pacific wall time, DST included -- "midnight" means
+# midnight on the bedside clock, so this is computed in America/Los_Angeles
+# and nowhere else. Storage and logs stay UTC as always; this is presentation
+# of a local policy, not a stored timestamp.
+QUIET_TZ = ZoneInfo(os.environ.get("HUE_QUIET_TZ", "America/Los_Angeles"))
+
+
+def quiet_hours_range():
+    """(start_hour, end_hour) in local wall time. Equal values disable it."""
+    start = panel_settings.number("hue_quiet_start_hour", "HUE_QUIET_START_HOUR",
+                                  0.0, minimum=0.0, maximum=24.0)
+    end = panel_settings.number("hue_quiet_end_hour", "HUE_QUIET_END_HOUR",
+                                9.0, minimum=0.0, maximum=24.0)
+    return start, end
+
+
+def in_quiet_hours(now):
+    """True when the wall clock in QUIET_TZ is inside the quiet window.
+
+    Handles a window that wraps midnight (e.g. 22 -> 7) as well as the
+    default 0 -> 9. A zero-length window means quiet hours are disabled.
+    """
+    start, end = quiet_hours_range()
+    if start == end:
+        return False
+    local = datetime.fromtimestamp(now, QUIET_TZ)
+    hour = local.hour + local.minute / 60.0 + local.second / 3600.0
+    if start < end:
+        return start <= hour < end
+    return hour >= start or hour < end
+
 # Operator kinds that warrant a warning when the receiver hears them but never
 # decodes a position. There is no geometry at all in this case -- no range, no
 # countdown, no score -- so this trades a precise warning for an early vague
@@ -153,13 +207,28 @@ def cooldown_seconds():
 
 COOLDOWN_SECONDS = cooldown_seconds()
 
-# How long the warning lasts before the previous state is restored.
-FLASH_SECONDS = float(os.environ.get("HUE_FLASH_SECONDS", "17"))
+# How long the warning lasts before the previous state is restored. 5 s at
+# the owner's request (down from 17): the flash is a tap on the shoulder, not
+# a siren, and the late-notice orange hold below carries any remaining urgency.
+FLASH_SECONDS = float(os.environ.get("HUE_FLASH_SECONDS", "5"))
 
-# The bridge's own `lselect` breathe stops after roughly 15 seconds. Any flash
-# longer than that would sit solid for the remainder, so the alert is re-issued
-# on this cadence to keep it pulsing for the whole duration.
-ALERT_REFRESH_SECONDS = 14.0
+# When the warning could NOT be given ~30 s ahead of the sound (late detection,
+# short-budget departure), the flash is followed by a CONSTANT orange hold --
+# "this is arriving sooner than the usual notice" -- until the projected
+# hearing time, bounded below. Steady, not flashing: a different shape of
+# signal for a different message.
+LATE_NOTICE_SECONDS = float(os.environ.get("HUE_LATE_NOTICE_SECONDS", "25"))
+LATE_HOLD_CAP_SECONDS = float(os.environ.get("HUE_LATE_HOLD_CAP_SECONDS", "45"))
+
+# The trigger targets the moment the SOUND reaches the house, not the moment
+# of closest approach: at a 5 km slant the sound arrives ~15 s after the
+# airframe, and warning for the geometry rather than the noise misses the
+# point of the light.
+SPEED_OF_SOUND_M_S = 343.0
+
+# The bridge's `lselect` breathe is deliberately NOT used any more: the owner
+# chose a steady light for normal aircraft (2026-08-17), and the alternating
+# emergency signatures drive their own colour writes. Nothing pulses.
 
 # How often an alternating zone swaps colour. Slow enough to read as two
 # distinct colours rather than a blur, fast enough to be obviously deliberate.
@@ -175,13 +244,14 @@ ALL_CLEAR_BRIGHTNESS = max(1, min(254, int(os.environ.get("HUE_ALL_CLEAR_BRIGHTN
 
 # The measured warning budget for a Providence departure is ~34 s, so a warning
 # is only useful inside roughly that window. Firing 3 minutes ahead trains the
-# household to ignore it.
+# household to ignore it. 30 s at the owner's request, measured to the
+# projected HEARING time at the house.
 def lead_seconds():
     # Capped at 300: the entire warning budget for a Life Flight departure off
     # the Providence pad is 34 seconds, so a lead of an hour is a typo, not a
     # preference.
     return panel_settings.number("hue_lead_seconds", "HUE_LEAD_SECONDS",
-                                 45.0, minimum=1.0, maximum=300.0)
+                                 30.0, minimum=1.0, maximum=300.0)
 
 
 LEAD_SECONDS = lead_seconds()
@@ -202,21 +272,113 @@ XY_ORANGE = [0.5820, 0.3901]
 XY_CYAN = [0.17, 0.33]
 XY_AMBER = [0.53, 0.42]
 XY_RED = [0.675, 0.322]
+# Medical (air ambulance) signature: calm white/blue. D65-ish white and a
+# deep Hue blue, far enough apart to read as alternation.
+XY_WHITE = [0.3227, 0.3290]
+XY_BLUE = [0.1691, 0.0441]
+# The normal-aircraft palette history, so nobody reinvents it: purple/orange
+# was rejected by the owner 2026-08-17 ("the orange is horrible"); its
+# purple/soft-blue replacement lasted hours before the owner chose a single
+# STEADY purple with no alternation at all. Orange now belongs exclusively to
+# the late-notice hold; alternation belongs to the emergency kinds.
+XY_SOFT_BLUE = [0.19, 0.15]   # retained for reference; no palette uses it
 # All-clear. Shown briefly when the warning ends, so the lights stopping is a
 # statement rather than an absence -- "it has gone" reads differently from "the
 # timer ran out", and only one of those is information.
 XY_GREEN = [0.2100, 0.6800]
 
-# Brightness of the warning itself, on Hue's 1-254 scale. Raised from 160 to
-# 200 (+25%) at the owner's request after watching a live flash: the point is to
-# be noticed from across a room without being the brightest thing in it. This
-# does not affect what is restored afterwards -- the light's own brightness is
-# captured before the flash and put back regardless.
-FLASH_BRIGHTNESS = max(1, min(254, int(os.environ.get("HUE_FLASH_BRIGHTNESS", "200"))))
+# The fixed HUE_FLASH_BRIGHTNESS knob (160, then 200) is gone as of
+# 2026-08-17: brightness is now RELATIVE to each light's captured state via
+# flash_brightness() below. Restoration is unaffected -- the light's own
+# state is captured before the flash and put back regardless.
 
 # Hue's brightness scale is 1-254 (0 is not valid; off is a separate state), so
-# 90% is 229. Used by every zone now that they share one signature.
+# 90% is 229. Since 2026-08-17 this is only the FALLBACK, used when a light
+# reports no brightness of its own (on/off plugs, which cannot dim anyway).
+# Every dimmable light gets a RELATIVE brightness from flash_brightness().
 ALERT_BRIGHTNESS = max(1, min(254, int(os.environ.get("HUE_ALERT_BRIGHTNESS", "229"))))
+
+# Relative flash brightness, owner decision 2026-08-17: the warning should be
+# noticeably brighter than the room IS, not absolutely bright. A dark bedroom
+# does not need 90% to notice a light coming on at all; a bright one needs
+# more than 90% would add.
+#   off (or dimmer than the floor)  -> FLASH_FLOOR_BRI   (~30%)
+#   on at brightness B              -> B + FLASH_BOOST_BRI, capped at 254
+# At 254 the colour alternation still carries the signal.
+FLASH_FLOOR_BRI = max(1, min(254, int(os.environ.get("HUE_FLASH_FLOOR_BRI", "77"))))
+FLASH_BOOST_BRI = max(0, min(253, int(os.environ.get("HUE_FLASH_BOOST_BRI", "64"))))
+
+
+def luminance_factor(xy):
+    """Roughly how much LIGHT a colour point emits per bri step, relative to
+    the LED mixer's peak. Hue's `bri` is a drive level, not lumens: a deep
+    saturated colour uses only part of the mix, so orange at 197 can emit
+    less actual light than white at 133 -- which the owner observed on
+    2026-08-17 when a "brighter" orange hold read as no change at all.
+
+    xy -> XYZ (Y=1) -> linear sRGB-ish channels, peak-normalised the way an
+    LED mixer is, then photometric weighting. An approximation, but the
+    error is a few percent where a naive bri comparison was off by 3x.
+    """
+    x, y = xy
+    if y <= 0:
+        return 1.0
+    big_x, big_z = x / y, (1.0 - x - y) / y
+    r = 3.2406 * big_x - 1.5372 - 0.4986 * big_z
+    g = -0.9689 * big_x + 1.8758 + 0.0415 * big_z
+    b = 0.0557 * big_x - 0.2040 + 1.0570 * big_z
+    peak = max(r, g, b)
+    if peak <= 0:
+        return 1.0
+    r, g, b = (max(0.0, c / peak) for c in (r, g, b))
+    return max(0.05, 0.2126 * r + 0.7152 * g + 0.0722 * b)
+
+
+# The reference: what a bri step is worth in WHITE, the unit the floor and
+# boost are expressed in.
+WHITE_FACTOR = luminance_factor(XY_WHITE)
+
+
+def state_luminance_factor(captured_state):
+    """The efficacy of whatever the light was showing BEFORE the warning.
+
+    Colour-temperature whites all sit near peak efficacy; an xy colour is
+    computed properly; hue/sat is approximated by its saturation, which is
+    the dimension that costs light.
+    """
+    if "xy" in captured_state:
+        return luminance_factor(captured_state["xy"])
+    if "ct" in captured_state:
+        return WHITE_FACTOR
+    sat = captured_state.get("sat")
+    if isinstance(sat, (int, float)):
+        return max(0.05, WHITE_FACTOR * (1.0 - 0.7 * min(254, max(0, sat)) / 254.0))
+    return WHITE_FACTOR
+
+
+def flash_brightness(captured_state, target_xy=None):
+    """The bri to command for ONE light showing ONE warning colour, so the
+    warning is noticeably brighter in PERCEIVED light than the room was.
+
+    Everything is computed in white-equivalent luminance: the room's current
+    perceived output (its bri times its colour's efficacy), plus the boost,
+    with the floor for a dark room -- then converted back through the WARNING
+    colour's own efficacy, because a dim colour needs more drive to deliver
+    the same light. Capped at 254: a deep colour at full drive may still be
+    dimmer than a bright white room, and then the COLOUR is the signal.
+
+    A light that reports no brightness gets the fixed fallback -- it cannot
+    dim, so relativity is meaningless for it.
+    """
+    bri = captured_state.get("bri")
+    if not isinstance(bri, (int, float)):
+        return ALERT_BRIGHTNESS
+    baseline = bri if captured_state.get("on") else 0
+    current_light = baseline * state_luminance_factor(captured_state)
+    target_light = max(FLASH_FLOOR_BRI * WHITE_FACTOR,
+                       current_light + FLASH_BOOST_BRI * WHITE_FACTOR)
+    factor = luminance_factor(target_xy) if target_xy is not None else WHITE_FACTOR
+    return int(max(1, min(254, round(target_light / factor))))
 
 TIMEOUT = float(os.environ.get("HUE_TIMEOUT_SECONDS", "4"))
 
@@ -308,6 +470,94 @@ def apply_state(light_id, state):
     return call("PUT", f"/lights/{light_id}/state", state)
 
 
+# The restore is verified by reading the light back, because a bridge "OK" is
+# only an acknowledgement that the COMMAND was accepted -- Zigbee delivery is
+# best-effort, and on 2026-08-17 a bedroom bulb dropped its restore write and
+# sat purple after the warning ended: the exact outcome this file exists to
+# prevent. Writes during the warning self-heal by repetition; the restore is
+# the last write, so it must be confirmed instead.
+#
+# AND the confirmation itself is weak: the bridge's reported state is largely
+# its own cache of the last accepted command, not ground truth from the bulb.
+# Seen live the same evening: the bridge reported warm-white ct/133 as stable
+# for 24+ seconds while the physical bulb sat purple. So a matching read-back
+# upgrades confidence but never ends the effort early: the restore state is
+# ALWAYS written at least twice, spaced, because on a marginal Zigbee link
+# repetition is the only mechanism that demonstrably delivers.
+RESTORE_ATTEMPTS = 3
+RESTORE_MIN_WRITES = 2
+RESTORE_SETTLE_SECONDS = 0.6   # transitiontime 4 == 400 ms, plus margin
+
+
+def state_matches(expected, actual):
+    """Does the light's reported state match what the restore asked for?
+
+    Tolerances absorb the bridge's own rounding, not real differences.
+    """
+    if bool(actual.get("on")) != bool(expected.get("on")):
+        return False
+    if "bri" in expected:
+        if not isinstance(actual.get("bri"), (int, float)):
+            return False
+        if abs(actual["bri"] - expected["bri"]) > 3:
+            return False
+    if "xy" in expected:
+        got = actual.get("xy")
+        if (not isinstance(got, (list, tuple)) or len(got) != 2
+                or any(abs(a - b) > 0.01 for a, b in zip(got, expected["xy"]))):
+            return False
+    if "ct" in expected:
+        if (not isinstance(actual.get("ct"), (int, float))
+                or abs(actual["ct"] - expected["ct"]) > 3):
+            return False
+    if "hue" in expected:
+        if (not isinstance(actual.get("hue"), (int, float))
+                or abs(actual["hue"] - expected["hue"]) > 200):
+            return False
+    if "sat" in expected:
+        if (not isinstance(actual.get("sat"), (int, float))
+                or abs(actual["sat"] - expected["sat"]) > 3):
+            return False
+    return True
+
+
+def restore_verified(light_id, expected):
+    """Write the restore state, read the light back, retry until it matches.
+
+    Returns None on confirmed success, else a message naming what could not
+    be confirmed. An unreadable light is treated as unconfirmed -- unknown is
+    not restored.
+    """
+    last = None
+    confirmed = False
+    target = dict(expected, alert="none", transitiontime=4)
+    for attempt in range(RESTORE_ATTEMPTS):
+        _, error = apply_state(light_id, target)
+        if error is not None:
+            last = error
+            continue
+        time.sleep(RESTORE_SETTLE_SECONDS)
+        payload, error = call("GET", f"/lights/{light_id}")
+        if error is not None:
+            last = f"unverifiable: {error}"
+            continue
+        actual = (payload or {}).get("state") or {}
+        if state_matches(expected, actual):
+            confirmed = True
+            # The bridge cache can confirm a command the bulb never heard, so
+            # success does not end the effort until the minimum write count is
+            # met -- repetition is what actually delivers on a weak link.
+            if attempt + 1 >= RESTORE_MIN_WRITES:
+                return None
+            continue
+        confirmed = False
+        last = (f"light reports {actual.get('colormode')} bri={actual.get('bri')} "
+                f"on={actual.get('on')}, wanted {target}")
+    if confirmed:
+        return None
+    return f"not confirmed after {RESTORE_ATTEMPTS} attempts: {last}"
+
+
 def publish(document):
     try:
         OUTPUT.parent.mkdir(parents=True, exist_ok=True)
@@ -323,6 +573,46 @@ def publish(document):
         print(f"panel-hue-warn: cannot write {OUTPUT}: {exc}", flush=True)
 
 
+def warning_record(report, band, left, fired, suppressed_by=None,
+                   hold_s=0.0, testing=False, now=None):
+    """One warning decision, self-contained enough to review months later."""
+    now = time.time() if now is None else now
+    prediction = report.get("prediction") or {}
+    return {
+        "schema": 1,
+        "warning_id": f"warn-{int(now * 1000)}-{report.get('hex') or 'unknown'}",
+        "at": now,
+        "fired": bool(fired),
+        # Named, never silent: a warning that did not flash says exactly why.
+        "suppressed_by": suppressed_by,
+        "test": bool(testing),
+        "hex": report.get("hex"),
+        "registration": report.get("registration"),
+        "callsign": report.get("callsign"),
+        "operator_kind": report.get("operator_kind"),
+        "band": band,
+        "notice_s": round(left, 1) if isinstance(left, (int, float)) else None,
+        "late": bool(hold_s),
+        "hold_s": round(hold_s, 1) if hold_s else 0.0,
+        # Verbatim, so the review page can show what the model believed.
+        "prediction": prediction or None,
+    }
+
+
+def log_warning(record):
+    """Append one decision durably. Never raises: a full disk must not stop
+    the next warning, but it must be said out loud."""
+    try:
+        WARNING_LOG.parent.mkdir(parents=True, exist_ok=True)
+        with WARNING_LOG.open("a") as stream:
+            stream.write(json.dumps(record, separators=(",", ":"),
+                                    allow_nan=False) + "\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+    except (OSError, ValueError) as exc:
+        print(f"panel-hue-warn: cannot append to {WARNING_LOG}: {exc}", flush=True)
+
+
 def is_test(report):
     """A synthetic aircraft injected to exercise the chain.
 
@@ -335,20 +625,91 @@ def is_test(report):
     return bool(report.get("test") or (report.get("prediction") or {}).get("test"))
 
 
+# The audibility floor: the panel's model calls an aircraft audible at 5 dBA
+# over the ambient. Ambient comes from settings (the same number the scorer
+# uses), so the light and the panel agree about what "hearable" means.
+def audible_floor_dba():
+    return panel_settings.number("ambient_dba", "ADSB_AMBIENT_DBA",
+                                 40.0, minimum=25.0, maximum=70.0) + 5.0
+
+
+# How far out the onset model may claim audibility. Spherical spreading alone
+# (20 log r) overstates range at distance because it ignores air absorption,
+# and a cap keeps one hot CPA estimate from promising minutes of warning the
+# air will not deliver.
+AUDIBLE_RANGE_CAP_M = 20000.0
+KNOTS_TO_M_S = 0.514444
+
+
+def sound_arrival_epoch(prediction, report=None):
+    """When the aircraft's noise is projected to FIRST BE HEARD at the house.
+
+    Not the loudest moment: N170US on 2026-08-17 was warned 28 s before its
+    closest approach's sound arrived -- and was audible ~12 s after the flash
+    anyway, because a LOUD aircraft crosses the audibility floor well before
+    closest approach. The owner heard "16 seconds of notice" from a warning
+    that was, against its own wrong target, on time.
+
+    Model: from the CPA level, spherical spreading (20 log r) gives the
+    radius where the level first reaches the audible floor; the aircraft's
+    own speed says when it enters that radius; the sound then needs its
+    travel time from there. Falls back to CPA + travel when speed or level
+    is missing, and never returns later than the CPA sound arrival.
+    """
+    at = prediction.get("at_epoch")
+    if not isinstance(at, (int, float)):
+        return None
+    slant = prediction.get("slant_distance_m")
+    if not (isinstance(slant, (int, float)) and slant > 0):
+        return at
+    peak_arrival = at + slant / SPEED_OF_SOUND_M_S
+
+    level = prediction.get("noise_index")
+    speed_kt = (report or {}).get("speed_kt")
+    floor = audible_floor_dba()
+    if (not isinstance(level, (int, float)) or level <= floor
+            or not isinstance(speed_kt, (int, float)) or speed_kt <= 0):
+        # Barely audible at its loudest, or no kinematics to project with:
+        # onset and peak are the same moment for our purposes.
+        return peak_arrival
+
+    audible_radius = min(AUDIBLE_RANGE_CAP_M,
+                         slant * 10.0 ** ((level - floor) / 20.0))
+    if audible_radius <= slant:
+        return peak_arrival
+    # The run-in: distance along track between entering the audible sphere
+    # and closest approach, at the aircraft's own speed.
+    lateral = math.sqrt(audible_radius ** 2 - slant ** 2)
+    onset = at - lateral / (speed_kt * KNOTS_TO_M_S)
+    heard = onset + audible_radius / SPEED_OF_SOUND_M_S
+    return min(heard, peak_arrival)
+
+
 def choose(status, now):
     """The aircraft worth lighting a room for, or None.
 
-    Returns (report, band, seconds_away).
+    Returns (report, band, seconds_until_heard).
     """
     if not armed():
         return None
     for report in (status.get("adsb_predictions") or []):
         prediction = report.get("prediction") or {}
-        at = prediction.get("at_epoch")
-        if not isinstance(at, (int, float)):
+        heard_at = sound_arrival_epoch(prediction, report)
+        if heard_at is None:
             continue
-        left = at - now
-        if left < 0 or left > lead_seconds():
+        # The loudest sound this pass will deliver: closest approach plus its
+        # travel time. Once THAT is behind us the pass is over; but an
+        # aircraft that is merely already audible (onset in the past, peak
+        # still coming) fires immediately -- it is loud NOW, and skipping it
+        # would silence exactly the late-detection case.
+        at = prediction.get("at_epoch")
+        slant = prediction.get("slant_distance_m")
+        peak_at = (at + slant / SPEED_OF_SOUND_M_S
+                   if isinstance(slant, (int, float)) and slant > 0 else at)
+        if now > peak_at:
+            continue
+        left = max(0.0, heard_at - now)
+        if left > lead_seconds():
             continue
         band = prediction.get("loudness_band")
         if band in warn_bands():
@@ -378,36 +739,53 @@ def choose_unlocated(status):
     return None
 
 
-def zones(band):
+# One signature per OPERATOR KIND, the same in every room, by owner decision
+# (2026-08-17). The colour now says WHAT is coming, not which room you are in:
+#
+#   normal aircraft    steady purple       (calm; no alternation, owner 2026-08-17)
+#   air ambulance      white / blue        (calm, medical)
+#   police             red / blue          (patrol light bar, double tempo)
+#
+# This puts red in the bedroom for police aircraft, which handoff §6 avoided
+# so an aircraft warning could not be confused with the medical alarm. The
+# owner ordered this palette knowing that, and the police signature is
+# red-AND-blue alternation -- a shape the steady medical red never has.
+# Recorded here so a later reader does not quietly revert it.
+KIND_PALETTES = {
+    "AIR_AMBULANCE": [XY_WHITE, XY_BLUE],
+    "POLICE": [XY_RED, XY_BLUE],
+}
+DEFAULT_PALETTE = [XY_PURPLE]
+
+
+def alternate_seconds_for(kind):
+    """How fast this kind's colours swap. Police alternate at twice the
+    normal rate (owner decision 2026-08-17) -- the urgency of a light bar is
+    its tempo as much as its colours. Still well inside the bridge's write
+    tolerance: two lights at 0.6 s is ~3.3 writes/second against the roughly
+    ten per second where it starts dropping commands."""
+    if str(kind or "").upper() == "POLICE":
+        return ALTERNATE_SECONDS / 2.0
+    return ALTERNATE_SECONDS
+
+
+def zones(kind=None):
     """Which lights flash, in which colours, at what brightness.
 
     Each zone carries a LIST of colours. One colour is a steady flash; more than
     one alternates between them for the duration, which is far harder to mistake
-    for a lamp someone left on than any single colour is.
-
-    The bedroom alternates purple and orange. Neither is red -- that belongs to
-    medical alarm, and a bedroom turning red for an aeroplane erodes the colour
-    that means something is wrong with a person. The kitchen is red, because it
-    is a different room in a different context and needs to carry across a house.
+    for a lamp someone left on than any single colour is. Every zone gets the
+    SAME palette -- uniform across rooms -- chosen by the aircraft's operator
+    kind, never by the room.
     """
-    # Every zone now flashes the SAME pattern, at the owner's explicit request:
-    # purple alternating with red, at 90%. The earlier per-room split (purple in
-    # the bedroom, red in the kitchen) is gone -- one unmistakable signature
-    # everywhere is easier to recognise half asleep than a colour that has to be
-    # decoded per room.
-    #
-    # This does put red in the bedroom, which the original design in handoff §6
-    # avoided so an aircraft warning could not be confused with a medical alarm.
-    # The owner decided otherwise, knowing that. Recorded here so it is not
-    # quietly reverted by a later reader who only finds the §6 note.
-    palette = [XY_PURPLE, XY_RED]
+    palette = KIND_PALETTES.get(str(kind or "").upper(), DEFAULT_PALETTE)
     out = [(LIGHTS, palette, ALERT_BRIGHTNESS)]
     if ALERT_LIGHTS:
         out.append((ALERT_LIGHTS, palette, ALERT_BRIGHTNESS))
     return out
 
 
-def warn(band, reason, still_inbound=None):
+def warn(band, reason, still_inbound=None, kind=None, hold_orange_seconds=0.0):
     """Flash every zone, then put every light back exactly as it was.
 
     Restoration runs in a finally: a failure partway through must not leave a
@@ -418,70 +796,124 @@ def warn(band, reason, still_inbound=None):
     duration regardless of what the aircraft actually did -- which the owner
     saw: the panel cleared while the lights kept going. A warning that outlives
     the thing it is warning about teaches people to ignore it.
+
+    `hold_orange_seconds` > 0 means the warning fired LATE -- with less than
+    the normal notice before the sound arrives. The constant orange comes
+    FIRST (owner decision 2026-08-17): "sooner than usual" opens the warning,
+    and the flash lands at the end of the hold, right as the sound arrives.
     """
-    plan = zones(band)
+    plan = zones(kind)
+    alternate = alternate_seconds_for(kind)
     captured, colours, errors = {}, {}, []
 
-    for light_ids, palette, brightness in plan:
+    for light_ids, palette, _fallback in plan:
         for light_id in light_ids:
             state, error = capture(light_id)
             if error is not None:
                 errors.append(f"{light_id}: {error}")
                 continue
             captured[light_id] = state
-            colours[light_id] = (palette, brightness)
+            # Brightness is RELATIVE to what this light was just doing, and
+            # PER COLOUR: each palette colour gets its own drive level so the
+            # perceived light steps up equally whether the colour is an
+            # efficient white or a dim saturated blue.
+            colours[light_id] = (palette,
+                                 [flash_brightness(state, c) for c in palette])
 
     if not captured:
         return errors or ["no lights could be read"]
 
     try:
-        for light_id in captured:
-            # Per-light colour and brightness, from whichever zone claimed this
-            # light. Reusing the loop variables left over from the capture pass
-            # applies the LAST zone's settings to every light -- which is exactly
-            # what happened: the bedroom went red at the kitchen's colour. The
-            # bedroom must never go red; that belongs to medical alarm.
-            palette, brightness = colours[light_id]
-            state = {"on": True, "bri": brightness, "xy": palette[0],
-                     "transitiontime": 2}
-            # A single-colour zone leans on the bridge's own ~15 s breathe. An
-            # alternating zone drives itself, and asking for `lselect` as well
-            # would fight the colour writes.
-            if len(palette) == 1:
-                state["alert"] = "lselect"
-            _, error = apply_state(light_id, state)
-            if error is not None:
-                errors.append(f"{light_id}: {error}")
         print(f"panel-hue-warn: warned — {reason}", flush=True)
-        # Sleep in slices, re-arming the breathe as it expires. A single long
-        # sleep would leave the light solid for the tail of a long flash.
-        elapsed, step, since_refresh, cleared = 0.0, 0, 0.0, False
-        while elapsed < FLASH_SECONDS:
-            tick = min(ALTERNATE_SECONDS, FLASH_SECONDS - elapsed)
-            time.sleep(tick)
-            elapsed += tick
-            since_refresh += tick
-            if elapsed >= FLASH_SECONDS:
-                break
-            # Ended early because the aircraft is no longer inbound, not because
-            # the timer expired. Say so with the all-clear rather than just
-            # stopping.
-            if still_inbound is not None and not still_inbound():
-                cleared = True
-                break
-            step += 1
+        cleared = False
+        # Late-notice hold: constant orange FIRST, opening the warning with
+        # "sooner than usual", so the flash lands at the end of the hold,
+        # right as the sound arrives. Steady on purpose -- and it ends early
+        # with the all-clear if the aircraft stops being inbound.
+        if hold_orange_seconds > 0:
             for light_id in captured:
-                palette, brightness = colours[light_id]
-                if len(palette) > 1:
-                    # transitiontime 0: snap between colours. A fade reads as
-                    # one drifting colour rather than two alternating ones.
-                    apply_state(light_id, {"xy": palette[step % len(palette)],
-                                           "bri": brightness, "transitiontime": 0})
-            if since_refresh >= ALERT_REFRESH_SECONDS:
-                since_refresh = 0.0
+                # The hold's brightness is computed against ORANGE's own
+                # efficacy: saturated orange emits far fewer lumens per bri
+                # step than white, and at a naive "room + boost" drive it read
+                # as no change against a 2700 K room (owner observation,
+                # 2026-08-17). luminance-compensated it lands visibly above.
+                apply_state(light_id, {"on": True,
+                                       "bri": flash_brightness(
+                                           captured[light_id], XY_ORANGE),
+                                       "xy": XY_ORANGE, "alert": "none",
+                                       "transitiontime": 2})
+            print(f"panel-hue-warn: late notice — opening with constant orange "
+                  f"{hold_orange_seconds:.0f}s, flash to follow as the sound "
+                  f"arrives", flush=True)
+            held = 0.0
+            while held < hold_orange_seconds:
+                tick = min(1.0, hold_orange_seconds - held)
+                time.sleep(tick)
+                held += tick
+                if still_inbound is not None and not still_inbound():
+                    cleared = True
+                    break
+                # Re-assert the steady orange every tick. Zigbee drops frames:
+                # on 2026-08-17 one of two bedroom bulbs missed its single
+                # write and silently sat unchanged through a whole warning.
+                # A steady signal must self-heal exactly like an alternating
+                # one does by construction.
                 for light_id in captured:
-                    if len(colours[light_id][0]) == 1:
-                        apply_state(light_id, {"alert": "lselect"})
+                    apply_state(light_id, {"on": True,
+                                           "bri": flash_brightness(
+                                               captured[light_id], XY_ORANGE),
+                                           "xy": XY_ORANGE,
+                                           "transitiontime": 0})
+        if not cleared:
+            for light_id in captured:
+                # Per-light colour and brightness, from whichever zone claimed
+                # this light. Reusing the loop variables left over from the
+                # capture pass applies the LAST zone's settings to every light --
+                # which is exactly what happened: the bedroom went red at the
+                # kitchen's colour.
+                palette, brightnesses = colours[light_id]
+                state = {"on": True, "bri": brightnesses[0], "xy": palette[0],
+                         "transitiontime": 2}
+                # A single-colour zone is STEADY -- on at the relative
+                # brightness, no breathe, no alternation. An alternating zone
+                # drives its own colour writes below.
+                _, error = apply_state(light_id, state)
+                if error is not None:
+                    errors.append(f"{light_id}: {error}")
+            # Sleep in slices, re-arming the breathe as it expires. A single
+            # long sleep would leave the light solid for the tail of a flash.
+            elapsed, step = 0.0, 0
+            while elapsed < FLASH_SECONDS:
+                tick = min(alternate, FLASH_SECONDS - elapsed)
+                time.sleep(tick)
+                elapsed += tick
+                if elapsed >= FLASH_SECONDS:
+                    break
+                # Ended early because the aircraft is no longer inbound, not
+                # because the timer expired. Say so with the all-clear rather
+                # than just stopping.
+                if still_inbound is not None and not still_inbound():
+                    cleared = True
+                    break
+                step += 1
+                for light_id in captured:
+                    palette, brightnesses = colours[light_id]
+                    if len(palette) > 1:
+                        # transitiontime 0: snap between colours. A fade reads
+                        # as one drifting colour rather than two alternating
+                        # ones. Brightness follows the colour so the perceived
+                        # level stays constant across the alternation.
+                        apply_state(light_id, {"xy": palette[step % len(palette)],
+                                               "bri": brightnesses[step % len(palette)],
+                                               "transitiontime": 0})
+                    else:
+                        # Re-assert the steady colour every tick: Zigbee drops
+                        # frames, and a bulb that missed the one opening write
+                        # would otherwise sit unchanged through the whole
+                        # warning -- which happened live on 2026-08-17.
+                        apply_state(light_id, {"on": True, "xy": palette[0],
+                                               "bri": brightnesses[0],
+                                               "transitiontime": 0})
         if cleared:
             for light_id in captured:
                 apply_state(light_id, {"on": True, "bri": ALL_CLEAR_BRIGHTNESS,
@@ -491,9 +923,9 @@ def warn(band, reason, still_inbound=None):
             time.sleep(ALL_CLEAR_SECONDS)
     finally:
         for light_id, state in captured.items():
-            # Cancel the alert explicitly: it outlives a plain state write.
-            _, error = apply_state(light_id, dict(state, alert="none",
-                                                  transitiontime=4))
+            # Verified restore: written, read back, retried. A bridge "OK"
+            # is not evidence the bulb heard it.
+            error = restore_verified(light_id, state)
             if error is not None:
                 errors.append(f"{light_id}: NOT RESTORED: {error}")
                 print(f"panel-hue-warn: light {light_id} may have been left on: "
@@ -527,11 +959,16 @@ def main():
     # say so -- silence here is indistinguishable from a broken bridge, and
     # this file exists because that distinction matters.
     was_armed = None
+    # Announced on change, like arming: a suppressed warning must say why.
+    was_quiet = None
     # Hexes already flashed for while unlocated. An unlocated contact stays in
     # the feed for up to 90 s after its last message, so without this it would
     # re-fire every cooldown for the whole contact. Entries are dropped when the
     # airframe leaves the feed, so a genuine second arrival flashes again.
     warned_unlocated = {}
+    # (hex, reason) -> last time a suppressed decision was logged, so a 30 s
+    # approach yields one row, not thirty.
+    suppressed_logged = {}
     while True:
         now = time.time()
         errors, subject = [], None
@@ -548,9 +985,33 @@ def main():
                   "including air ambulances and unscored aircraft overhead"),
                   flush=True)
 
+        quiet = in_quiet_hours(now)
+        if quiet != was_quiet:
+            start, end = quiet_hours_range()
+            if quiet:
+                print(f"panel-hue-warn: QUIET HOURS — suppressed: quiet_hours "
+                      f"({start:02.0f}:00–{end:02.0f}:00 {QUIET_TZ.key}); no light "
+                      f"warnings of any kind, including tests, until they end",
+                      flush=True)
+            elif was_quiet:   # only announce an ending that actually happened
+                print("panel-hue-warn: quiet hours ended — warnings active again",
+                      flush=True)
+            was_quiet = quiet
+
         if status:
+            # choose() runs even during quiet hours: a suppressed warning is
+            # still a warning DECISION, and the review log must hold it. Only
+            # the lights are gated.
             picked = choose(status, now)
-            if picked:
+            if picked and quiet:
+                report, band, left = picked
+                key = (report.get("hex"), "quiet_hours")
+                if now - suppressed_logged.get(key, 0.0) >= SUPPRESS_LOG_WINDOW_S:
+                    suppressed_logged[key] = now
+                    log_warning(warning_record(report, band, left, fired=False,
+                                               suppressed_by="quiet_hours",
+                                               testing=is_test(report), now=now))
+            elif picked:
                 report, band, left = picked
                 testing = is_test(report)
                 # A test bypasses the cooldown so it always demonstrates, and
@@ -579,12 +1040,31 @@ def main():
                         return any((r.get("hex") == _hex)
                                    for r in (current.get("adsb_predictions") or []))
 
-                    errors += warn(band, f"{subject} {band} in {left:.0f}s"
+                    # Fired later than the intended notice? Hold orange after
+                    # the flash until the sound is projected to arrive.
+                    hold = 0.0
+                    if left < LATE_NOTICE_SECONDS:
+                        hold = max(0.0, min(left - FLASH_SECONDS,
+                                            LATE_HOLD_CAP_SECONDS))
+                    log_warning(warning_record(report, band, left, fired=True,
+                                               hold_s=hold, testing=testing,
+                                               now=now))
+                    errors += warn(band, f"{subject} {band} heard in {left:.0f}s"
+                                         + (f" [LATE — under {LATE_NOTICE_SECONDS:.0f}s notice]" if hold else "")
                                          + (" [TEST — cooldown untouched]" if testing else ""),
-                                   still_inbound=still_inbound)
+                                   still_inbound=still_inbound,
+                                   kind=report.get("operator_kind"),
+                                   hold_orange_seconds=hold)
                     if testing:
                         last_test = now
-            else:
+                else:
+                    key = (report.get("hex"), "cooldown")
+                    if now - suppressed_logged.get(key, 0.0) >= SUPPRESS_LOG_WINDOW_S:
+                        suppressed_logged[key] = now
+                        log_warning(warning_record(report, band, left, fired=False,
+                                                   suppressed_by="cooldown",
+                                                   testing=testing, now=now))
+            elif not quiet:
                 # Nothing located is worth a warning. Fall back to anything the
                 # receiver is hearing but cannot place -- the case that produced
                 # silence for N826LF on 2026-08-13.
@@ -612,10 +1092,16 @@ def main():
                             return any(e.get("hex") == _hex for e in
                                        (current.get("adsb_heard_unlocated") or []))
 
+                        log_warning(warning_record(
+                            {"hex": heard_hex, "registration": heard.get("reg"),
+                             "callsign": heard.get("callsign"),
+                             "operator_kind": heard.get("operator_kind")},
+                            "UNLOCATED", None, fired=True, now=now))
                         errors += warn(
                             "UNLOCATED",
                             f"{subject} heard, position unknown — no countdown possible",
-                            still_inbound=still_heard)
+                            still_inbound=still_heard,
+                            kind=heard.get("operator_kind"))
 
             # Forget contacts that have left the feed, so a later arrival fires
             # again. Only when the feed actually read: an unreadable status is
@@ -630,6 +1116,10 @@ def main():
             # advisory and not an alarm system. This one says whether any
             # trigger can fire at all.
             "warnings_enabled": armed(),
+            # Named guard: when true, this — not a fault — is why nothing fires.
+            "quiet_hours": in_quiet_hours(time.time()),
+            "quiet_hours_window": "%02.0f:00–%02.0f:00 %s" % (
+                *quiet_hours_range(), QUIET_TZ.key),
             "bridge": BRIDGE,
             "lights": LIGHTS,
             "alert_lights": ALERT_LIGHTS,

@@ -1,0 +1,291 @@
+#!/usr/bin/env python3
+"""Archive the definitive FR24 track for every CONFIRMED noise flight.
+
+When attribution confirms a flight with an FR24 flight id, this fetches the
+complete track once -- every position FR24 holds for that flight, at 40
+credits (~$0.012) -- and appends it to the track spool, from which
+panel-noise-drain lands it in the aircraft_track_point hypertable. Together
+with the receiver's own points that makes the pass replayable locally, and the
+stored fr24_id keeps the FR24 playback deep link constructible.
+
+Mechanics learned from the sibling project (phx-helicopter-tracker), which ran
+this exact endpoint in production for months: the response is a list whose
+first element carries {fr24_id, tracks: [{timestamp ISO-Z, lat, lon, alt,
+gspeed, track, vspeed, callsign}]}; requests need a spacing floor or the edge
+returns 429 (it landed on 10 s after real pain); and vendor flight ids are
+rebuild-fragile, so identity is stored alongside, never instead of, the
+registration.
+
+Spend is bounded four ways: a fetched-set so no flight is ever paid for
+twice; ATTEMPT bookkeeping copied from the sibling project's
+FlightDiscovery.track_download_attempted_at pattern -- the attempt is recorded
+before the network call and a flight that keeps failing (or has no track) is
+retried at most MAX_ATTEMPTS times, then skipped with its stored error named,
+rather than re-charging ~40 credits every timer tick forever; the shared
+per-cycle credit ledger (same file and schema as panel-fr24-poll -- an
+estimate that over-counts, with a hard ceiling); and a per-run fetch cap.
+With no new confirmed flights this makes zero requests, so its timer is free.
+
+To retry an exhausted flight deliberately, delete its entry from
+`attempts` in the state file -- an explicit operator action, mirroring the
+sibling project's reset-and-redownload endpoint.
+"""
+import json
+import os
+import time
+import urllib.error
+import urllib.request
+from datetime import datetime, timezone
+from pathlib import Path
+
+API_BASE = os.environ.get("FR24_API_BASE", "https://fr24api.flightradar24.com")
+TOKEN = os.environ.get("FR24_API_KEY")
+ATTRIBUTIONS = Path(os.environ.get("PANEL_AIRCRAFT_ATTRIBUTIONS",
+                                   "/var/lib/panel-noise/aircraft-attributions.json"))
+TRACK_SPOOL = Path(os.environ.get("PANEL_TRACK_LOG", "/var/lib/panel-noise/track-points.jsonl"))
+STATE = Path(os.environ.get("PANEL_TRACK_FETCH_STATE",
+                            "/var/lib/panel-noise/track-fetch-state.json"))
+LEDGER = Path(os.environ.get("FR24_CREDIT_LEDGER", "/var/lib/panel-fr24/credits.json"))
+CREDIT_CEILING = int(os.environ.get("FR24_CREDIT_CEILING", "600000"))
+BILLING_DAY = int(os.environ.get("FR24_BILLING_DAY", "6"))
+CREDITS_PER_TRACK = 40
+# The sibling project's hard-won request floor for this API family.
+REQUEST_SPACING_SECONDS = float(os.environ.get("FR24_TRACK_SPACING_SECONDS", "10"))
+MAX_FETCHES_PER_RUN = int(os.environ.get("FR24_TRACK_MAX_PER_RUN", "5"))
+# A flight whose fetch fails this many times stays skipped until an operator
+# clears its attempts entry. Bounds worst-case waste per bad flight id to
+# MAX_ATTEMPTS * CREDITS_PER_TRACK estimated credits.
+MAX_ATTEMPTS = int(os.environ.get("FR24_TRACK_MAX_ATTEMPTS", "3"))
+# Owner's documented 182-day FR24 retention decision; see panel_noise_log.py.
+FR24_RETENTION_SECONDS = 182 * 24 * 60 * 60
+USER_AGENT = os.environ.get(
+    "FR24_USER_AGENT", "anxietywatch-panel-fr24-poll/1.0 (+aircraft noise forecast)")
+
+
+def read_json(path):
+    try:
+        with path.open() as stream:
+            doc = json.load(stream)
+        return doc if isinstance(doc, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def write_json(path, doc):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.tmp")
+    with tmp.open("w") as stream:
+        json.dump(doc, stream, separators=(",", ":"), sort_keys=True)
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(tmp, path)
+
+
+def cycle_key(now, billing_day):
+    """Same cycle arithmetic as panel-fr24-poll's ledger: the cycle resets on
+    the billing day, not the 1st."""
+    moment = datetime.fromtimestamp(now, timezone.utc)
+    year, month = moment.year, moment.month
+    if moment.day < billing_day:
+        month -= 1
+        if month == 0:
+            year, month = year - 1, 12
+    return f"{year:04d}-{month:02d}"
+
+
+def ledger_blocked_or_charge(now, credits):
+    """Charge the SHARED estimate ledger, honouring the shared ceiling.
+
+    Same file and schema as panel-fr24-poll ({cycle, spent}); a concurrent
+    poll write can lose this update, which under-counts by at most one track
+    fetch against a 600k ceiling -- the ledger is a bug-bound, not a bill.
+    Returns a named blocker, or None after charging.
+    """
+    state = read_json(LEDGER)
+    current = cycle_key(now, BILLING_DAY)
+    spent = state.get("spent") if state.get("cycle") == current else 0
+    spent = spent if isinstance(spent, int) and spent >= 0 else 0
+    if spent + credits > CREDIT_CEILING:
+        return (f"credit ceiling would be exceeded: {spent}+{credits} of "
+                f"{CREDIT_CEILING} in cycle {current}")
+    write_json(LEDGER, {"cycle": current, "spent": spent + credits})
+    return None
+
+
+def confirmed_fr24_flights(document):
+    """[{fr24_id, event_id, hex, registration, callsign}] from the attribution
+    document, one entry per distinct fr24_id."""
+    out, seen = [], set()
+    for event in document.get("events") or []:
+        if event.get("verdict") != "CONFIRMED":
+            continue
+        confirmed = event.get("confirmed_candidate") or {}
+        raw = confirmed.get("raw") if isinstance(confirmed.get("raw"), dict) else {}
+        fr24_id = raw.get("fr24_id")
+        if not fr24_id:
+            for wrapper in confirmed.get("evidence") or []:
+                aircraft = wrapper.get("aircraft") if isinstance(wrapper, dict) else None
+                if isinstance(aircraft, dict) and aircraft.get("fr24_id"):
+                    fr24_id = aircraft["fr24_id"]
+                    break
+        if not fr24_id or fr24_id in seen:
+            continue
+        seen.add(fr24_id)
+        identity = str(confirmed.get("identity") or "")
+        out.append({"fr24_id": str(fr24_id), "event_id": event.get("event_id"),
+                    "hex": identity if len(identity) == 6 else None,
+                    "registration": confirmed.get("registration"),
+                    "callsign": confirmed.get("callsign")})
+    return out
+
+
+def parse_point_time(value):
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str) and value:
+        try:
+            return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
+        except ValueError:
+            return None
+    return None
+
+
+def track_rows(payload, flight):
+    """FR24 flight-tracks payload -> track spool rows. Junk points are skipped
+    and counted, never repaired.
+
+    NOTE: parallels panel-adsb-status's live-point shape; both are normalised
+    a second time by panel-noise-drain before the database sees them.
+    """
+    rows, skipped = [], 0
+    entries = payload if isinstance(payload, list) else []
+    for entry in entries:
+        if not isinstance(entry, dict) or str(entry.get("fr24_id")) != flight["fr24_id"]:
+            continue
+        for point in entry.get("tracks") or []:
+            if not isinstance(point, dict):
+                skipped += 1
+                continue
+            at = parse_point_time(point.get("timestamp"))
+            lat, lon = point.get("lat"), point.get("lon")
+            if at is None or not isinstance(lat, (int, float)) or not isinstance(lon, (int, float)):
+                skipped += 1
+                continue
+            rows.append({
+                "at": at, "provenance": "fr24",
+                "fr24_id": flight["fr24_id"],
+                "hex": flight.get("hex"),
+                "callsign": point.get("callsign") or flight.get("callsign"),
+                "registration": flight.get("registration"),
+                "lat": lat, "lon": lon,
+                "alt_ft": point.get("alt"),
+                "speed_kt": point.get("gspeed"),
+                "track_deg": point.get("track"),
+                "vertical_rate_fpm": point.get("vspeed"),
+                "retain_until": at + FR24_RETENTION_SECONDS,
+            })
+    return rows, skipped
+
+
+def fetch_track(fr24_id):
+    request = urllib.request.Request(
+        f"{API_BASE}/api/flight-tracks?flight_id={urllib.parse.quote(fr24_id)}",
+        headers={"Accept": "application/json", "Accept-Version": "v1",
+                 "Authorization": f"Bearer {TOKEN}", "User-Agent": USER_AGENT})
+    with urllib.request.urlopen(request, timeout=30) as response:
+        return json.load(response)
+
+
+def append_rows(rows):
+    if not rows:
+        return
+    TRACK_SPOOL.parent.mkdir(parents=True, exist_ok=True)
+    with TRACK_SPOOL.open("a") as stream:
+        for row in rows:
+            stream.write(json.dumps(row, separators=(",", ":"), allow_nan=False))
+            stream.write("\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+
+
+def main():
+    document = read_json(ATTRIBUTIONS)
+    state = read_json(STATE)
+    fetched = state.get("fetched") if isinstance(state.get("fetched"), dict) else {}
+    attempts = state.get("attempts") if isinstance(state.get("attempts"), dict) else {}
+
+    def persist():
+        write_json(STATE, dict(state, fetched=fetched, attempts=attempts))
+
+    candidates_list = [f for f in confirmed_fr24_flights(document)
+                       if f["fr24_id"] not in fetched]
+    pending, exhausted = [], []
+    for flight in candidates_list:
+        record = attempts.get(flight["fr24_id"]) or {}
+        if record.get("count", 0) >= MAX_ATTEMPTS:
+            exhausted.append((flight["fr24_id"], record))
+        else:
+            pending.append(flight)
+    for fr24_id, record in exhausted:
+        # Named, every run, so a permanently-missing track is visible in the
+        # journal rather than silently absent from the archive.
+        print(f"panel-fr24-track-fetch: skipping {fr24_id}: "
+              f"attempts={record.get('count')} of {MAX_ATTEMPTS} exhausted, "
+              f"last error: {record.get('error') or 'unrecorded'} "
+              f"(clear its attempts entry in {STATE} to retry)", flush=True)
+    if not pending:
+        return 0
+    if not TOKEN:
+        # Only a failure when there is work to pay for.
+        print(f"panel-fr24-track-fetch: blocked: {len(pending)} confirmed flights "
+              f"pending but FR24_API_KEY is not configured", flush=True)
+        return 1
+    done = 0
+    for flight in pending[:MAX_FETCHES_PER_RUN]:
+        now = time.time()
+        blocker = ledger_blocked_or_charge(now, CREDITS_PER_TRACK)
+        if blocker:
+            print(f"panel-fr24-track-fetch: blocked: {blocker}", flush=True)
+            break
+        if done:
+            time.sleep(REQUEST_SPACING_SECONDS)
+        # Attempt is durable BEFORE the network call, so a crash mid-fetch
+        # still counts against the bound and the estimate stays conservative.
+        record = attempts.setdefault(flight["fr24_id"], {"count": 0})
+        record["count"] = record.get("count", 0) + 1
+        record["last_at"] = now
+        persist()
+        try:
+            payload = fetch_track(flight["fr24_id"])
+        except (OSError, ValueError, urllib.error.URLError) as exc:
+            record["error"] = str(exc)[:500]
+            persist()
+            print(f"panel-fr24-track-fetch: fetch failed for {flight['fr24_id']} "
+                  f"(attempt {record['count']} of {MAX_ATTEMPTS}): {exc}", flush=True)
+            continue
+        rows, skipped = track_rows(payload, flight)
+        if not rows:
+            # Their FlightDiscovery pattern: "no track data" is an outcome to
+            # record, not to retry forever -- FR24 genuinely lacks some tracks.
+            record["error"] = f"no track data returned ({skipped} unusable points)"
+            persist()
+            print(f"panel-fr24-track-fetch: no track data for {flight['fr24_id']} "
+                  f"(attempt {record['count']} of {MAX_ATTEMPTS})", flush=True)
+            done += 1
+            continue
+        append_rows(rows)
+        fetched[flight["fr24_id"]] = {"at": now, "points": len(rows), "skipped": skipped,
+                                      "event_id": flight.get("event_id"),
+                                      "registration": flight.get("registration")}
+        attempts.pop(flight["fr24_id"], None)
+        persist()
+        print(f"panel-fr24-track-fetch: {flight['fr24_id']} "
+              f"({flight.get('registration') or flight.get('hex') or 'unidentified'}): "
+              f"{len(rows)} points archived, {skipped} skipped, "
+              f"{CREDITS_PER_TRACK} credits estimated", flush=True)
+        done += 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

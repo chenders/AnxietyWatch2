@@ -260,6 +260,33 @@ NOTABLE_KM = float(os.environ.get("ADSB_NOTABLE_KM", "4.0"))
 PRUNE_EVERY_SECONDS = 3600.0
 last_prune = 0.0
 
+# Dense track points, so a flight path can be REPLAYED from our own record
+# rather than hoping FR24 still has the flight in its playback window. The
+# spool is drained into the aircraft_track_point hypertable by
+# panel-noise-drain; position data is the canonical "difficult to
+# retroactively get" record, so capture errs generous by owner direction.
+TRACK_SPOOL = Path(os.environ.get("PANEL_TRACK_LOG", "/var/lib/panel-noise/track-points.jsonl"))
+TRACK_RADIUS_KM = float(os.environ.get("ADSB_TRACK_RADIUS_KM", "15.0"))
+# Inside this range every second matters -- it is where the noise happens.
+TRACK_NEAR_KM = float(os.environ.get("ADSB_TRACK_NEAR_KM", "4.0"))
+TRACK_INTERVAL_SECONDS = float(os.environ.get("ADSB_TRACK_INTERVAL_SECONDS", "5.0"))
+# FR24's cache is read for track points too: it is the only source of position
+# for the low rotorcraft the receiver misses, and its points carry the owner's
+# 182-day FR24 retention deadline (see panel_noise_log.py).
+FR24_CACHE_JSON = Path(os.environ.get(
+    "FR24_CACHE_JSON",
+    "/opt/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical/fr24_aircraft.json"))
+_track_last_logged = {}
+_fr24_track_written_at = None
+
+# Confirmed noise-event history, attached to every published aircraft so the
+# panel and kiosk can mark an airframe that has caused a marked noise event
+# before -- even when it is quiet right now. Read from a FILE the attributor
+# publishes, never from PostgreSQL: this loop must not block on a database.
+ATTRIBUTIONS_JSON = Path(os.environ.get(
+    "PANEL_AIRCRAFT_ATTRIBUTIONS", "/var/lib/panel-noise/aircraft-attributions.json"))
+_attributions_cache = {"mtime": None, "doc": {}}
+
 
 def geometry(lat, lon, altitude_ft):
     """Slant range and bearing from the station. Pure geometry, no acoustics."""
@@ -870,7 +897,10 @@ def make_report(item, source_now):
         # must stay distinguishable rather than being merged into one string.
         "operator_source": ("ROSTER" if airframe else
                             "LOOKUP" if learned.get("operator") else None),
-        "operator_kind": panel_loud_operators.operator_kind(airframe) if airframe else None,
+        # From the roster OR the callsign pattern: Life Flight is confirmed
+        # by registration pattern with no roster entry, and its kind was lost
+        # here until 2026-08-17. Never from learned lookup data.
+        "operator_kind": panel_loud_operators.kind_for(hex_code, callsign),
         "operator_state": operator_state,
         "operator_reason": operator_reason,
         # Roster first, then whatever the airframe database supplied. A
@@ -1026,6 +1056,157 @@ def log_finished_passes(reports, now):
             print(f"panel-adsb-status: cannot prune noise log: {exc}", flush=True)
 
 
+def noise_history_doc():
+    """The attributor's document, reloaded only when the file changes.
+
+    Missing or unreadable is {} -- no events confirmed yet, or the attributor
+    has never run. Nothing is marked in that case; absence of history must
+    never invent one, and stale history keeps its own generated_at visible.
+    """
+    try:
+        mtime = ATTRIBUTIONS_JSON.stat().st_mtime
+    except OSError:
+        return {}
+    if _attributions_cache["mtime"] != mtime:
+        try:
+            with ATTRIBUTIONS_JSON.open() as stream:
+                doc = json.load(stream)
+            _attributions_cache["doc"] = doc if isinstance(doc, dict) else {}
+            _attributions_cache["mtime"] = mtime
+        except (OSError, ValueError):
+            return _attributions_cache["doc"]
+    return _attributions_cache["doc"]
+
+
+def noise_history_summary(frame):
+    """The per-airframe marking the panels render: distinct human and cat
+    counts with first/last timestamps. Distinct on purpose -- the cat outcome
+    is top priority and must never be collapsed into 'heard'."""
+    return {"human_heard_count": frame.get("human_heard_count", 0),
+            "cat_scared_count": frame.get("cat_scared_count", 0),
+            "first_heard_at": frame.get("first_heard_at"),
+            "last_heard_at": frame.get("last_heard_at"),
+            "event_ids": frame.get("event_ids") or []}
+
+
+def attach_noise_history(rows, airframes):
+    """Mark every published aircraft that has ever caused a confirmed event.
+
+    Mutates the report rows (adsb_predictions holds the same dicts, so both
+    lists carry the mark). An aircraft with no history gets no key at all --
+    absent, not false, so older readers ignore it.
+    """
+    marked = 0
+    for row in rows:
+        frame = airframes.get(str(row.get("hex") or "").upper())
+        if frame:
+            row["noise_history"] = noise_history_summary(frame)
+            marked += 1
+    return marked
+
+
+def track_rows_from_reports(reports, now, last_logged):
+    """Points worth writing this cycle: 1 s cadence near, 5 s out to the
+    track radius. Pure given the throttle dict, which it advances."""
+    rows = []
+    for report in reports:
+        km = report.get("distance_km")
+        lat, lon = report.get("lat"), report.get("lon")
+        if not isinstance(km, (int, float)) or km > TRACK_RADIUS_KM:
+            continue
+        if not isinstance(lat, (int, float)) or not isinstance(lon, (int, float)):
+            continue
+        key = ("adsb", report.get("hex") or report.get("callsign"))
+        interval = 1.0 if km <= TRACK_NEAR_KM else TRACK_INTERVAL_SECONDS
+        last = last_logged.get(key)
+        if last is not None and now - last < interval:
+            continue
+        last_logged[key] = now
+        rows.append({
+            "at": now, "provenance": "adsb",
+            "hex": report.get("hex") or None,
+            "callsign": report.get("callsign"),
+            "registration": report.get("registration"),
+            "lat": lat, "lon": lon,
+            "alt_ft": report.get("alt_ft"),
+            "speed_kt": report.get("speed_kt"),
+            "track_deg": report.get("track_deg"),
+            "vertical_rate_fpm": report.get("vertical_rate_fpm"),
+            "rssi_dbm": report.get("rssi"),
+            "distance_km": km,
+            "bearing_deg": report.get("bearing"),
+            "retain_until": None,
+        })
+    return rows
+
+
+def track_rows_from_fr24(doc, previous_written_at):
+    """(rows, written_at). One batch per distinct FR24 cache write; replaying
+    the same cache twice must not duplicate points, so the caller passes the
+    last written_at it consumed."""
+    if not isinstance(doc, dict) or doc.get("feed_state") != "FRESH":
+        return [], previous_written_at
+    written_at = doc.get("written_at")
+    if not isinstance(written_at, (int, float)) or written_at == previous_written_at:
+        return [], previous_written_at
+    rows = []
+    for aircraft in doc.get("aircraft") or []:
+        if not isinstance(aircraft, dict):
+            continue
+        lat, lon = aircraft.get("lat"), aircraft.get("lon")
+        km = aircraft.get("distance_km")
+        if not isinstance(lat, (int, float)) or not isinstance(lon, (int, float)):
+            continue
+        if isinstance(km, (int, float)) and km > TRACK_RADIUS_KM:
+            continue
+        rows.append({
+            "at": written_at, "provenance": "fr24",
+            "hex": aircraft.get("hex") or None,
+            "fr24_id": aircraft.get("fr24_id"),
+            "callsign": aircraft.get("callsign"),
+            "registration": aircraft.get("reg"),
+            "lat": lat, "lon": lon,
+            "alt_ft": aircraft.get("alt_ft"),
+            "speed_kt": aircraft.get("speed_kt"),
+            "track_deg": aircraft.get("track_deg"),
+            "vertical_rate_fpm": aircraft.get("vertical_rate_fpm"),
+            "distance_km": km if isinstance(km, (int, float)) else None,
+            "bearing_deg": aircraft.get("bearing"),
+            "retain_until": written_at + panel_noise_log.FR24_RETENTION_SECONDS,
+        })
+    return rows, written_at
+
+
+def append_track_points(rows):
+    if not rows:
+        return
+    TRACK_SPOOL.parent.mkdir(parents=True, exist_ok=True)
+    with TRACK_SPOOL.open("a") as stream:
+        for row in rows:
+            stream.write(json.dumps(row, separators=(",", ":"), allow_nan=False))
+            stream.write("\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+
+
+def log_track_points(reports, now):
+    """Never raises into the publish loop; a full disk must not kill the panel."""
+    global _fr24_track_written_at
+    try:
+        rows = track_rows_from_reports(reports, now, _track_last_logged)
+        fr24_doc = None
+        try:
+            with FR24_CACHE_JSON.open() as stream:
+                fr24_doc = json.load(stream)
+        except (OSError, ValueError):
+            fr24_doc = None
+        fr24_rows, _fr24_track_written_at = track_rows_from_fr24(
+            fr24_doc, _fr24_track_written_at)
+        append_track_points(rows + fr24_rows)
+    except OSError as exc:
+        print(f"panel-adsb-status: cannot append track points: {exc}", flush=True)
+
+
 def publish():
     global history
     source = read_source()
@@ -1087,9 +1268,22 @@ def publish():
                if report["prediction"]["risk"] == "UNKNOWN"
                and report["prediction"].get("proximity") != "OVERHEAD"]
 
+    # Historical noise markings: an airframe confirmed as the cause of a past
+    # marked event carries its history on every appearance, loud or quiet.
+    history_doc = noise_history_doc()
+    marked_airframes = history_doc.get("airframes") or {}
+    attach_noise_history(reports, marked_airframes)
+    attach_noise_history(unlocated, marked_airframes)
+
     out = {
         "schema": 3,
         "written_at": now,
+        # Presentation preference, read live from settings so the kiosk
+        # follows the admin toggle without a restart. Every numeric field in
+        # this document stays metric/aviation regardless -- conversion is the
+        # DISPLAY's job, exactly once, at render.
+        "display_units": ("metric" if panel_settings.flag(
+            "display_metric", "PANEL_DISPLAY_METRIC", False) else "imperial"),
         "source_age_s": max(0.0, now - source_now),
         "messages": source.get("messages"),
         "station_alt_ft": STATION_ALT_FT,
@@ -1105,6 +1299,10 @@ def publish():
         # Separate from adsb_planes because these have no geometry. Anything
         # that plots, ranges or scores an aircraft must not read this array.
         "adsb_heard_unlocated": unlocated,
+        # Present even when empty, so a reader can distinguish "no airframe
+        # has ever been marked" from "the attributor has never run".
+        "noise_history": {"generated_at": history_doc.get("generated_at"),
+                          "marked_airframes": len(marked_airframes)},
         "adsb_advisory": {
             "armed": False,
             "status": "NOT ARMED",
@@ -1118,6 +1316,7 @@ def publish():
         },
     }
     log_finished_passes(reports, now)
+    log_track_points(reports, now)
 
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
     with TMP.open("w") as stream:

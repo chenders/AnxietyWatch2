@@ -1,0 +1,11 @@
+[Unit]
+Description=Archive FR24 tracks for newly confirmed noise flights
+
+[Timer]
+# Costs nothing when no new flight has been confirmed since the last run.
+OnBootSec=5m
+OnUnitActiveSec=15m
+Unit=panel-fr24-track-fetch.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,419 @@
+#!/usr/bin/env python3
+"""Attribute each real noise event to the most physically likely aircraft.
+
+Attribution is PER EVENT and needs no repeated sightings of a tail: one press,
+one verbal report, one verdict. For every real label it ranks every aircraft
+either feed could see -- local ADS-B geometry and predictions, FR24's
+complementary picture, and completed passes from the durable pass log -- on
+general physical features only: modelled closest-approach loudness, geometry,
+trajectory timing corrected for sound propagation, airframe class, and flight
+phase. There is no tail-specific reward and no requirement that an address
+recur; the point is general warning heuristics, with exact identity kept as
+supporting history.
+
+A verdict is CONFIRMED only when one candidate both clears a physical-evidence
+floor and outscores the runner-up by a margin. Anything else stays AMBIGUOUS or
+UNATTRIBUTED, with the blocking values named -- a false assignment would poison
+the history this feeds. Synthetic rows never enter. Output never edits a
+roster or a warning threshold.
+"""
+import argparse
+import json
+import math
+import os
+import sys
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import panel_airframe_types  # noqa: E402
+import panel_loud_operators  # noqa: E402
+
+LABELS = Path(os.environ.get("PANEL_AIRCRAFT_LABELS", "/var/lib/panel-noise/aircraft-labels.jsonl"))
+PASSES = Path(os.environ.get("PANEL_NOISE_LOG", "/var/lib/panel-noise/loud-aircraft.jsonl"))
+OUTPUT = Path(os.environ.get("PANEL_AIRCRAFT_ATTRIBUTIONS", "/var/lib/panel-noise/aircraft-attributions.json"))
+
+# Real evidence arrives from the Hue button (bridge-stamped) and from operator
+# reports with their own timestamp metadata. Synthetic is excluded everywhere,
+# structurally: it is not in this set and is also ineligible_for_training.
+REAL_PROVENANCES = frozenset({"hue_button", "operator_report"})
+
+# A completed pass can explain a press this far either side of it. Sound
+# outlives the closest approach and a pass row is stamped at close-out, so the
+# window is deliberately wider than human reaction time.
+PASS_WINDOW_SECONDS = 180.0
+SPEED_OF_SOUND_M_S = 343.0
+CONFIRM_MARGIN = 10.0
+CONFIRM_FLOOR = 40.0
+FEET_TO_METERS = 0.3048
+
+
+def read_jsonl(path):
+    rows = []
+    try:
+        with Path(path).open() as stream:
+            for line in stream:
+                try:
+                    row = json.loads(line)
+                except ValueError:
+                    continue
+                if isinstance(row, dict):
+                    rows.append(row)
+    except OSError:
+        pass
+    return rows
+
+
+def is_real_label(row):
+    """Only real, training-eligible evidence enters attribution.
+
+    Corroboration rows (operator messages restating an existing bridge event)
+    carry eligible_for_training=False plus a `corroborates` pointer, so they are
+    kept as evidence detail but never become a second event.
+    """
+    return (isinstance(row, dict)
+            and row.get("provenance") in REAL_PROVENANCES
+            and row.get("eligible_for_training") is True
+            and not row.get("corroborates")
+            and isinstance(row.get("event_id"), str) and row["event_id"]
+            and finite(row.get("observed_at")) is not None)
+
+
+def finite(value):
+    return float(value) if isinstance(value, (int, float)) and math.isfinite(value) else None
+
+
+def ident(aircraft):
+    return (aircraft.get("hex") or aircraft.get("registration") or aircraft.get("reg") or
+            aircraft.get("callsign") or aircraft.get("fr24_id"))
+
+
+def airframe_class_of(aircraft):
+    """Class from the audited ICAO-type table first, then the feed's own field.
+
+    panel_airframe_types refuses unknown designators rather than guessing, so
+    an unclassifiable aircraft contributes no class feature at all.
+    """
+    from_type = panel_airframe_types.classify(aircraft.get("icao_type") or aircraft.get("type"))
+    if from_type is not None:
+        return from_type
+    declared = aircraft.get("airframe_class")
+    return declared if isinstance(declared, str) else None
+
+
+def distance_km_of(aircraft, prediction):
+    closest = finite(prediction.get("ground_distance_m"))
+    if closest is not None:
+        return closest / 1000.0
+    live = finite(aircraft.get("dist"))          # adsb_planes: metres
+    if live is not None:
+        return live / 1000.0
+    return finite(aircraft.get("distance_km"))   # fr24 and pass rows: km
+
+
+def acoustic_delay_s(ground_km, altitude_ft):
+    """Seconds for sound to travel the slant path, or None without geometry."""
+    if ground_km is None:
+        return None
+    ground_m = ground_km * 1000.0
+    alt_m = (altitude_ft or 0.0) * FEET_TO_METERS
+    return math.hypot(ground_m, alt_m) / SPEED_OF_SOUND_M_S
+
+
+def score_candidate(aircraft, feed, observed_at=None):
+    """(score, reasons, has_physical_evidence) from general features only."""
+    prediction = aircraft.get("prediction") if isinstance(aircraft.get("prediction"), dict) else {}
+    noise = finite(prediction.get("noise_index"))
+    if noise is None:
+        noise = finite(aircraft.get("noise_index"))
+    distance = distance_km_of(aircraft, prediction)
+    altitude = finite(prediction.get("altitude_ft"))
+    if altitude is None:
+        altitude = finite(aircraft.get("alt_ft")) or finite(aircraft.get("altitude_ft"))
+
+    # Modelled acoustic level leads when available; FR24 geometry fills local
+    # receiver blind spots without inventing a dBA value for them.
+    score = noise if noise is not None else 25.0
+    reasons = []
+    if noise is not None:
+        reasons.append(f"modelled closest-approach level={noise:.1f} dBA")
+    else:
+        reasons.append("acoustic level unknown; scored on geometry only")
+    if distance is not None:
+        score += max(0.0, 18.0 - 3.0 * distance)
+        reasons.append(f"closest/current ground distance={distance:.2f} km")
+
+    # Timing against the press instant, corrected for sound propagation: the
+    # press should land near closest approach plus the slant-path delay.
+    timing_offset = None
+    at_epoch = finite(prediction.get("at_epoch"))
+    delay = acoustic_delay_s(distance, altitude)
+    if observed_at is not None and at_epoch is not None:
+        timing_offset = (at_epoch + (delay or 0.0)) - observed_at
+        reasons.append(f"closest approach {timing_offset:+.0f}s from press"
+                       + (f" (incl. {delay:.1f}s sound travel)" if delay else ""))
+    else:
+        eta = finite(prediction.get("eta_seconds"))
+        if eta is not None:
+            timing_offset = eta
+            reasons.append(f"predicted closest approach in {eta:.0f}s")
+    if timing_offset is not None:
+        score += max(0.0, 12.0 - abs(timing_offset) / 15.0)
+
+    frame_class = airframe_class_of(aircraft)
+    if frame_class == "rotorcraft":
+        score += 5.0
+        reasons.append("rotorcraft class (low, slow, blade slap on approach)")
+    elif frame_class is not None:
+        reasons.append(f"airframe class {frame_class}")
+    phase = str(prediction.get("phase") or aircraft.get("phase") or "").upper()
+    if phase == "CLIMB":
+        score += 3.0
+        reasons.append("climbing at takeoff thrust")
+    if feed == "fr24":
+        reasons.append("FR24 complementary observation")
+    has_evidence = noise is not None or distance is not None
+    return round(score, 3), reasons, has_evidence
+
+
+def candidates(label, passes):
+    observed_at = finite(label.get("observed_at"))
+    merged = {}
+
+    def admit(aircraft, feed, extra_reason=None):
+        key = ident(aircraft)
+        if not key:
+            return
+        key = str(key).upper()
+        score, reasons, has_evidence = score_candidate(aircraft, feed, observed_at)
+        if extra_reason:
+            reasons.append(extra_reason)
+        row = {"identity": key, "callsign": aircraft.get("callsign"),
+               "registration": aircraft.get("registration") or aircraft.get("reg"),
+               "aircraft_type": aircraft.get("icao_type") or aircraft.get("type"),
+               "airframe_class": airframe_class_of(aircraft),
+               # Stamped from stable identifiers at attribution time, not
+               # copied from the snapshot: feed rows recorded before
+               # 2026-08-17 carry kind None for the callsign-matched medical
+               # fleet, and a rebuild retroactively repairs that history.
+               "operator_kind": panel_loud_operators.kind_for(
+                   aircraft.get("hex"),
+                   aircraft.get("callsign") or aircraft.get("registration")
+                   or aircraft.get("reg")),
+               "score": score, "reasons": reasons, "feeds": [feed],
+               "has_physical_evidence": has_evidence,
+               # Verbatim, so downstream storage keeps everything the feed
+               # carried, not just this ranking's projection of it.
+               "raw": aircraft}
+        previous = merged.get(key)
+        if previous is None:
+            merged[key] = row
+        else:
+            feeds = sorted(set(previous["feeds"] + [feed]))
+            if score > previous["score"]:
+                row["feeds"] = feeds
+                merged[key] = row
+            else:
+                previous["feeds"] = feeds
+
+    for wrapper in label.get("live_candidates", []):
+        if isinstance(wrapper, dict) and isinstance(wrapper.get("aircraft"), dict):
+            admit(wrapper["aircraft"], str(wrapper.get("feed") or "unknown"))
+
+    if observed_at is not None:
+        for event in passes:
+            when = finite(event.get("at"))
+            if when is None or abs(when - observed_at) > PASS_WINDOW_SECONDS:
+                continue
+            identity = event.get("identity") if isinstance(event.get("identity"), dict) else {}
+            key = identity.get("hex") or identity.get("reg") or identity.get("fr24_id")
+            if not key:
+                continue
+            detail = event.get("detail") if isinstance(event.get("detail"), dict) else {}
+            admit({"hex": key, "registration": identity.get("reg"),
+                   "callsign": identity.get("callsign"), "icao_type": identity.get("type"),
+                   "fr24_id": identity.get("fr24_id"),
+                   "airframe_class": detail.get("airframe_class"),
+                   "distance_km": finite(event.get("distance_km")),
+                   "altitude_ft": finite(event.get("altitude_ft")),
+                   "phase": event.get("phase"),
+                   "noise_index": finite(event.get("noise_index"))},
+                  str(event.get("provenance") or "pass_log"),
+                  extra_reason=f"completed-pass record {when - observed_at:+.1f}s from press")
+    return sorted(merged.values(), key=lambda row: (-row["score"], row["identity"]))
+
+
+def outcomes_for(label):
+    outcomes = label.get("outcomes")
+    if isinstance(outcomes, list) and outcomes:
+        return outcomes
+    # Legacy rows predate the explicit multi-outcome schema. A double press has
+    # always meant BOTH: the human heard it, and the cat was frightened (top
+    # priority). The first press is not erased by the second.
+    if label.get("press_count", 0) >= 2 or label.get("label") == "cat_scared_top_priority":
+        return ["human_heard", "cat_scared_top_priority"]
+    return ["human_heard"]
+
+
+def source_evidence(label, identity):
+    evidence = []
+    for wrapper in label.get("live_candidates", []):
+        aircraft = wrapper.get("aircraft") if isinstance(wrapper, dict) else None
+        if isinstance(aircraft, dict) and ident(aircraft) and str(ident(aircraft)).upper() == identity:
+            evidence.append({"feed": wrapper.get("feed"), "aircraft": aircraft})
+    return evidence
+
+
+def attribute(label, passes, corroborations=()):
+    ranked = candidates(label, passes)
+    margin = None
+    if not ranked:
+        verdict = "UNATTRIBUTED"
+        reason = "no aircraft observed by any feed near the event time"
+    else:
+        top = ranked[0]
+        if len(ranked) > 1:
+            margin = round(top["score"] - ranked[1]["score"], 3)
+        if not top["has_physical_evidence"]:
+            verdict = "AMBIGUOUS"
+            reason = (f"top candidate {top['identity']} carries no acoustic estimate and no "
+                      f"geometry; score={top['score']} is priors only")
+        elif top["score"] < CONFIRM_FLOOR:
+            verdict = "AMBIGUOUS"
+            reason = (f"top candidate {top['identity']} score={top['score']} "
+                      f"below confirmation floor {CONFIRM_FLOOR}")
+        elif margin is not None and margin < CONFIRM_MARGIN:
+            verdict = "AMBIGUOUS"
+            reason = (f"margin {margin} between {top['identity']} and "
+                      f"{ranked[1]['identity']} below {CONFIRM_MARGIN}; left unassigned "
+                      f"rather than guessed")
+        else:
+            verdict = "CONFIRMED"
+            reason = (f"{top['identity']} score={top['score']}"
+                      + (f", margin {margin} over runner-up" if margin is not None
+                         else ", sole physically plausible candidate"))
+    result = {"schema": 2, "event_id": label.get("event_id"),
+              "observed_at": finite(label.get("observed_at")),
+              "provenance": label.get("provenance"),
+              "outcomes": outcomes_for(label),
+              "verdict": verdict, "verdict_reason": reason, "margin": margin,
+              # Every candidate, deliberately uncapped: the archive drain
+              # stores them all, and "what else was up there" must stay
+              # answerable six months later.
+              "candidate_count": len(ranked), "candidates": ranked,
+              "method": ("per-event physical ranking over local ADS-B, FR24 and the pass log: "
+                         "modelled dBA, geometry, propagation-corrected timing, airframe class, "
+                         "phase; no recurring-tail requirement")}
+    notes = [c for c in corroborations if c.get("corroborates") == label.get("event_id")]
+    if notes:
+        result["corroborated_by"] = [
+            {"reported_at": finite(c.get("observed_at")) or finite(c.get("recorded_at")),
+             "note": (c.get("operator_report") or {}).get("note") or c.get("meaning"),
+             "source": (c.get("operator_report") or {}).get("source")}
+            for c in notes]
+    if verdict == "CONFIRMED":
+        result["confirmed_candidate"] = dict(
+            ranked[0], evidence=source_evidence(label, ranked[0]["identity"]))
+        result["flight_key"] = flight_key(result["confirmed_candidate"],
+                                          result["observed_at"] or 0.0)
+    return result
+
+
+def flight_key(candidate, observed_at):
+    for row in candidate.get("evidence") or []:
+        flight_id = (row.get("aircraft") or {}).get("fr24_id")
+        if flight_id:
+            return f"fr24:{flight_id}"
+    day = datetime.fromtimestamp(observed_at, timezone.utc).strftime("%Y-%m-%d")
+    callsign = candidate.get("callsign")
+    return f"callsign:{callsign}:{day}" if callsign else f"airframe:{candidate['identity']}:{day}"
+
+
+def build_document(labels, passes, generated_at=None):
+    corroborations = [row for row in labels
+                      if isinstance(row, dict) and row.get("corroborates")
+                      and row.get("provenance") in REAL_PROVENANCES]
+    events = [attribute(label, passes, corroborations)
+              for label in labels if is_real_label(label)]
+    events.sort(key=lambda event: event["observed_at"] or 0.0)
+    airframes, flights = {}, {}
+    for event in events:
+        candidate = event.get("confirmed_candidate")
+        if not candidate:
+            continue
+        identity = candidate["identity"]
+        frame = airframes.setdefault(identity, {
+            "identity": identity, "registration": candidate.get("registration"),
+            "aircraft_type": candidate.get("aircraft_type"),
+            "airframe_class": candidate.get("airframe_class"),
+            "first_heard_at": event["observed_at"], "last_heard_at": event["observed_at"],
+            "event_ids": [], "human_heard_count": 0, "cat_scared_count": 0})
+        for field in ("registration", "aircraft_type", "airframe_class"):
+            if frame.get(field) is None and candidate.get(field) is not None:
+                frame[field] = candidate[field]
+        frame["first_heard_at"] = min(frame["first_heard_at"], event["observed_at"])
+        frame["last_heard_at"] = max(frame["last_heard_at"], event["observed_at"])
+        frame["event_ids"].append(event["event_id"])
+        frame["human_heard_count"] += int("human_heard" in event["outcomes"])
+        frame["cat_scared_count"] += int("cat_scared_top_priority" in event["outcomes"])
+        key = flight_key(candidate, event["observed_at"])
+        flight = flights.setdefault(key, {
+            "flight_key": key, "identity": identity,
+            "callsign": candidate.get("callsign"), "registration": candidate.get("registration"),
+            "aircraft_type": candidate.get("aircraft_type"),
+            "first_heard_at": event["observed_at"], "last_heard_at": event["observed_at"],
+            "event_ids": [], "human_heard_count": 0, "cat_scared_count": 0})
+        flight["first_heard_at"] = min(flight["first_heard_at"], event["observed_at"])
+        flight["last_heard_at"] = max(flight["last_heard_at"], event["observed_at"])
+        flight["event_ids"].append(event["event_id"])
+        flight["human_heard_count"] += int("human_heard" in event["outcomes"])
+        flight["cat_scared_count"] += int("cat_scared_top_priority" in event["outcomes"])
+    return {"schema": 2, "generated_at": time.time() if generated_at is None else generated_at,
+            "events": events, "airframes": airframes, "flights": flights,
+            "policy": {"confirmed_margin": CONFIRM_MARGIN, "confirmed_floor": CONFIRM_FLOOR,
+                       "synthetic_excluded": True, "automatic_roster_changes": False,
+                       "ambiguous_events_remain_unassigned": True}}
+
+
+def publish(path, document):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.tmp")
+    with temporary.open("w") as stream:
+        json.dump(document, stream, separators=(",", ":"), sort_keys=True, allow_nan=False)
+        stream.write("\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.chmod(temporary, 0o644)
+    os.replace(temporary, path)
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--labels", type=Path, default=LABELS)
+    parser.add_argument("--passes", type=Path, default=PASSES)
+    parser.add_argument("--event-id")
+    parser.add_argument("--output", type=Path)
+    args = parser.parse_args(argv)
+    labels = read_jsonl(args.labels)
+    passes = read_jsonl(args.passes)
+    if args.output:
+        document = build_document(labels, passes)
+        publish(args.output, document)
+        print(json.dumps({"events": len(document["events"]),
+                          "confirmed": sum(e["verdict"] == "CONFIRMED" for e in document["events"]),
+                          "ambiguous": sum(e["verdict"] == "AMBIGUOUS" for e in document["events"]),
+                          "unattributed": sum(e["verdict"] == "UNATTRIBUTED"
+                                              for e in document["events"]),
+                          "output": str(args.output)}, sort_keys=True))
+        return 0
+    real = [row for row in labels if is_real_label(row)]
+    if args.event_id:
+        real = [row for row in real if row.get("event_id") == args.event_id]
+    for label in real:
+        print(json.dumps(attribute(label, passes), sort_keys=True))
+    return 0 if real else 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

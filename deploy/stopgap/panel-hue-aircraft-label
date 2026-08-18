@@ -23,11 +23,34 @@ USERNAME = os.environ.get("HUE_USERNAME")
 BUTTON_ID = os.environ.get("HUE_AIRCRAFT_BUTTON_ID")
 CERTIFICATE = os.environ.get("HUE_CERTIFICATE")
 STATUS = Path(os.environ.get("ADSB_STATUS_JSON", "/opt/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical/adsb_status.json"))
+FR24_STATUS = Path(os.environ.get("FR24_CACHE_JSON", "/opt/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical/fr24_aircraft.json"))
 PASS_LOG = Path(os.environ.get("PANEL_NOISE_LOG", "/var/lib/panel-noise/loud-aircraft.jsonl"))
 LABELS = Path(os.environ.get("PANEL_AIRCRAFT_LABELS", "/var/lib/panel-noise/aircraft-labels.jsonl"))
 STATE = Path(os.environ.get("PANEL_AIRCRAFT_BUTTON_STATE", "/var/lib/panel-noise/hue-button-state.json"))
+ATTRIBUTIONS = os.environ.get("PANEL_AIRCRAFT_ATTRIBUTIONS",
+                              "/var/lib/panel-noise/aircraft-attributions.json")
+WEATHER_CACHE = Path(os.environ.get("PANEL_WEATHER_CACHE", "/var/lib/panel-noise/weather.json"))
 DOUBLE_SECONDS = float(os.environ.get("HUE_BUTTON_DOUBLE_SECONDS", "1.35"))
+# A press HELD this long or longer is the third gesture: "a light warning
+# fired and I heard nothing". Chosen as 2 s because the bridge starts emitting
+# `repeat` at ~0.8 s, so a deliberate hold is unmistakable by the time it
+# qualifies, while a slow ordinary press is not. Owner decision 2026-08-17;
+# before that a hold degenerated into a single press.
+HOLD_SECONDS = float(os.environ.get("HUE_BUTTON_HOLD_SECONDS", "2.0"))
+# The warn daemon's published status, captured verbatim onto every label so a
+# hold can be joined to the warning it disputes.
+WARN_STATUS = Path(os.environ.get(
+    "HUE_STATUS_JSON",
+    "/opt/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical/hue_status.json"))
 CONTEXT_BEFORE_SECONDS = 240.0
+# The bridge sends keepalive traffic on an open stream. Persisting the last
+# time ANY bytes arrived is what lets the admin console tell a live stream
+# from a wedged one that still says "connected". Throttled, because the state
+# file lives on an SD card and a heartbeat is not worth a write per line.
+ACTIVITY_PERSIST_SECONDS = 30.0
+# Battery is health telemetry, not an ingestion gate; refreshing it is two
+# bridge round-trips and must not run on every reconnect of a flapping link.
+BATTERY_REFRESH_SECONDS = float(os.environ.get("HUE_BATTERY_REFRESH_SECONDS", "21600"))
 # The durable row is a point-in-time snapshot. Passes that finish later are
 # joined by the offline analyzer from PASS_LOG; admitting future rows here
 # would make capture timing nondeterministic.
@@ -130,81 +153,180 @@ def recent_passes(at):
     return rows[-250:]
 
 
-def current_candidates(snapshot):
-    if not isinstance(snapshot, dict):
-        return []
+def current_candidates(snapshot, fr24_snapshot=None):
     out = []
     seen = set()
-    for key in ("adsb_planes", "adsb_predictions", "adsb_heard_unlocated"):
-        aircraft_rows = snapshot.get(key)
-        if not isinstance(aircraft_rows, list):
-            continue
-        for aircraft in aircraft_rows:
-            if not isinstance(aircraft, dict):
+    if isinstance(snapshot, dict):
+        for key in ("adsb_planes", "adsb_predictions", "adsb_heard_unlocated"):
+            aircraft_rows = snapshot.get(key)
+            if not isinstance(aircraft_rows, list):
                 continue
-            ident = aircraft.get("hex") or aircraft.get("registration") or aircraft.get("callsign")
-            marker = (key, ident)
-            if marker not in seen:
-                seen.add(marker)
-                out.append({"feed": key, "aircraft": aircraft})
+            for aircraft in aircraft_rows:
+                if not isinstance(aircraft, dict):
+                    continue
+                ident = aircraft.get("hex") or aircraft.get("registration") or aircraft.get("callsign")
+                marker = (key, ident)
+                if marker not in seen:
+                    seen.add(marker)
+                    out.append({"feed": key, "aircraft": aircraft})
+    # FR24 is complementary rather than a replacement: it can place low-level
+    # rotorcraft and uncategorised aircraft that the local receiver only hears
+    # without decoding. Preserve its independent observation even when ADS-B
+    # sees the same Mode-S address so attribution can compare feed timing.
+    if isinstance(fr24_snapshot, dict) and fr24_snapshot.get("feed_state") == "FRESH":
+        aircraft_rows = fr24_snapshot.get("aircraft")
+        if isinstance(aircraft_rows, list):
+            for aircraft in aircraft_rows:
+                if isinstance(aircraft, dict):
+                    ident = aircraft.get("hex") or aircraft.get("reg") or aircraft.get("callsign") or aircraft.get("fr24_id")
+                    marker = ("fr24", ident)
+                    if marker not in seen:
+                        seen.add(marker)
+                        out.append({"feed": "fr24", "aircraft": aircraft})
     return out
 
 
-def record_label(first_press, presses):
+def weather_context(now):
+    """The cached METAR with its age, or an explicit not-measured reason.
+
+    Read from the poller's cache file only -- the press path never touches the
+    network. Age is recorded rather than judged here; the analysis decides
+    what stale means for its question.
+    """
+    cache = read_json(WEATHER_CACHE)
+    if not isinstance(cache, dict) or not isinstance(cache.get("observation"), dict):
+        return {"state": "not_measured",
+                "reason": f"no weather cache at {WEATHER_CACHE} (is panel-weather-poll running?)"}
+    fetched = cache.get("fetched_at")
+    return {"state": "measured",
+            "observation": cache["observation"],
+            "fetched_at": fetched,
+            "age_s": round(now - fetched, 1) if isinstance(fetched, (int, float)) else None,
+            "source": cache.get("source")}
+
+
+def warning_context(now):
+    """The warn daemon's own account of its recent behaviour, verbatim.
+
+    Attached to every label (a hold DISPUTES a warning, so it needs one; the
+    others are context that costs nothing). Absence is explicit, never
+    silent.
+    """
+    doc = read_json(WARN_STATUS)
+    if not isinstance(doc, dict):
+        return {"available": False,
+                "reason": f"no hue warn status at {WARN_STATUS} (is panel-hue-warn running?)"}
+    written = doc.get("written_at")
+    return {"available": True, "status": doc,
+            "age_s": round(now - written, 1) if isinstance(written, (int, float)) else None}
+
+
+def record_label(first_press, presses, hold=False):
     recorded = time.time()
-    priority = "cat_scared_top_priority" if presses >= 2 else "human_heard"
+    if hold:
+        # The third gesture. NOT a heard event: outcomes carry only
+        # warning_unheard, so no consumer can mistake silence for noise.
+        priority_label = "warning_unheard"
+        outcomes = ["warning_unheard"]
+        priority = 0
+        meaning = ("resident held the button for ~2 s or longer: a light warning "
+                   "fired but no aircraft was heard in the seconds after; "
+                   "false-positive evidence for calibrating the warning trigger, "
+                   "never a heard event")
+    elif presses >= 2:
+        priority_label = "cat_scared_top_priority"
+        outcomes = ["human_heard", "cat_scared_top_priority"]
+        priority = 2
+        meaning = ("resident heard the aircraft, and the cat also heard it and was frightened; "
+                   "human-heard plus top-priority cat false-negative evidence")
+    else:
+        priority_label = "human_heard"
+        outcomes = ["human_heard"]
+        priority = 1
+        meaning = "resident heard and noticed an aircraft; false-negative/threshold-training evidence"
     snapshot = read_json(STATUS)
-    event_id = f"hue-{int(first_press * 1000)}-{presses}"
+    fr24_snapshot = read_json(FR24_STATUS)
+    event_id = f"hue-{int(first_press * 1000)}-{'hold' if hold else presses}"
     row = {
-        "schema": 1,
+        "schema": 2,
         "event_id": event_id,
         "observed_at": first_press,
         "recorded_at": recorded,
         "press_count": presses,
-        "label": priority,
-        "priority": 2 if presses >= 2 else 1,
+        "label": priority_label,
+        "outcomes": outcomes,
+        "priority": priority,
         "provenance": "synthetic" if SYNTHETIC else "hue_button",
         "eligible_for_training": not SYNTHETIC,
-        "meaning": ("cat heard the aircraft and was frightened; top-priority false-negative evidence"
-                    if presses >= 2 else
-                    "resident heard and noticed an aircraft; false-negative/threshold-training evidence"),
-        "button": {"resource_id": BUTTON_ID, "double_window_seconds": DOUBLE_SECONDS},
+        "meaning": meaning,
+        # What the warn daemon says it last did -- the warning a hold disputes.
+        "warning_context": warning_context(recorded),
+        "button": {"resource_id": BUTTON_ID, "double_window_seconds": DOUBLE_SECONDS,
+                    "hold_seconds": HOLD_SECONDS},
         "clock": {"source": "system UTC epoch", "ntp_required_by_service": True},
         "live_feed_written_at": snapshot.get("written_at") if isinstance(snapshot, dict) else None,
-        "live_candidates": current_candidates(snapshot),
+        "fr24_feed": {"written_at": fr24_snapshot.get("written_at"),
+                       "feed_state": fr24_snapshot.get("feed_state"),
+                       "error": fr24_snapshot.get("error")}
+                      if isinstance(fr24_snapshot, dict) else None,
+        "live_candidates": current_candidates(snapshot, fr24_snapshot),
         "recent_completed_passes": recent_passes(first_press),
+        # Everything else both feeds knew at this instant, verbatim. Position
+        # data and feed internals are the canonical "difficult to get back
+        # later" record, and events are rare enough that generosity is cheap.
+        "feed_snapshots": {"adsb_status": snapshot if isinstance(snapshot, dict) else None,
+                            "fr24": fr24_snapshot if isinstance(fr24_snapshot, dict) else None},
+        # Acoustic weather: temperature, wind, gusts, cloud, pressure. From
+        # the METAR cache only; absent stays explicitly not-measured.
+        "weather": weather_context(recorded),
     }
     if not contains_event(LABELS, event_id):
-        append_fsync(LABELS, row)
-    # The append and correlator are independently idempotent by event_id. Keep
-    # pending recovery state until both have completed so a crash loses neither.
-    # Feed only real observations into the existing contrast-based correlator.
-    # Synthetic events prove the plumbing; treating them as heard aircraft would
-    # poison the very threshold model they are intended to test.
-    if SYNTHETIC:
-        correlator = {"skipped": "synthetic labels are ineligible for training"}
-    else:
-        note = "Hue button: cat heard and scared (TOP PRIORITY)" if presses >= 2 else "Hue button: human heard aircraft"
-        suspected = "CAT_SCARED" if presses >= 2 else "AIRCRAFT_HEARD"
         try:
-            result = subprocess.run(["/usr/local/bin/panel-heard", "--ago", str(max(0.0, recorded - first_press)),
-                                     "--event-id", event_id, "--suspected", suspected, "--note", note],
-                                    check=False, capture_output=True, text=True, timeout=15)
-            correlator = {"returncode": result.returncode, "stdout": result.stdout[-1000:], "stderr": result.stderr[-1000:]}
+            append_fsync(LABELS, row)
+        except OSError as exc:
+            try:
+                merge_state({"write_error": str(exc), "write_error_at": time.time()})
+            except OSError:
+                pass
+            raise
+    merge_state({"last_successful_write_at": recorded}, remove=("write_error", "write_error_at"))
+    # The label append and attribution rebuild are independently idempotent.
+    # Keep recovery state until both complete so a crash loses neither. Synthetic
+    # events prove plumbing but never enter attribution or model evidence.
+    if SYNTHETIC:
+        correlator = {"skipped": "synthetic labels are ineligible for attribution and training"}
+    else:
+        try:
+            result = subprocess.run(
+                ["/usr/local/bin/panel-aircraft-attribute", "--labels", str(LABELS),
+                 "--passes", str(PASS_LOG), "--output", ATTRIBUTIONS],
+                check=False, capture_output=True, text=True, timeout=30)
+            correlator = {"returncode": result.returncode,
+                          "stdout": result.stdout[-1000:], "stderr": result.stderr[-1000:]}
         except (OSError, subprocess.SubprocessError) as exc:
             correlator = {"error": str(exc)}
     complete = SYNTHETIC or correlator.get("returncode") == 0
     if complete:
-        merge_state({"last_label": priority, "press_count": presses, "observed_at": first_press,
+        merge_state({"last_label": priority_label, "press_count": presses, "observed_at": first_press,
                      "recorded_at": recorded, "correlator": correlator}, remove=("pending_gesture",))
     else:
         merge_state({"correlator": correlator})
         raise RuntimeError(f"label correlation incomplete: {correlator}")
-    print(f"panel-hue-aircraft-label: recorded {priority} ({presses} press{'es' if presses != 1 else ''}, "
+    print(f"panel-hue-aircraft-label: recorded {priority_label} "
+          f"({'held button' if hold else str(presses) + ' press' + ('es' if presses != 1 else '')}, "
           f"provenance={'synthetic' if SYNTHETIC else 'hue_button'})", flush=True)
 
 
-def events_from_payload(payload):
+def button_reports_from_payload(payload):
+    """Every button_report for the configured button, in arrival order.
+
+    ALL event kinds are returned, not only initial_press: on 2026-08-17 a real
+    press was lost because this bridge sends no keepalives, the stream times
+    out and reconnects every ~90 s, the press's initial_press fell inside that
+    blind window, and the surviving short_release was silently discarded. The
+    PressExtractor below decides what counts as a press; this function's job
+    is to hand it everything and hide nothing.
+    """
     try:
         batches = json.loads(payload)
     except ValueError:
@@ -225,11 +347,107 @@ def events_from_payload(payload):
             if not isinstance(button, dict):
                 continue
             report = button.get("button_report")
-            if not isinstance(report, dict):
+            if not isinstance(report, dict) or not report.get("event"):
                 continue
-            if report.get("event") == "initial_press":
-                found.append(report.get("updated") or batch.get("creationtime") or str(time.time()))
+            found.append({"event": str(report["event"]),
+                          "updated": report.get("updated") or batch.get("creationtime")
+                          or str(time.time())})
     return found
+
+
+def bridge_epoch(value, fallback):
+    """The bridge's own ISO timestamp as epoch seconds, or the fallback."""
+    if isinstance(value, str) and value:
+        try:
+            from datetime import datetime
+            return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
+        except ValueError:
+            pass
+    return fallback
+
+
+class PressExtractor:
+    """Decide which button_reports are presses, recovering lost initial_press.
+
+    A press normally arrives as initial_press followed ~0.1-1 s later by
+    short_release (or repeat/long_release for a held button). initial_press is
+    the press. But when initial_press was lost in a reconnect blind window, a
+    release/repeat arriving with NO paired initial_press inside PAIR_WINDOW
+    (judged by the bridge's own timestamps, not arrival time) is the only
+    surviving evidence of a real physical press -- so it counts as one,
+    loudly, rather than being discarded.
+
+    Every report is logged regardless of outcome. The next capture loss must
+    be diagnosable from the journal, not reconstructed from absence.
+    """
+
+    PAIR_WINDOW_SECONDS = 3.0
+    SECONDARY = frozenset({"short_release", "long_release", "long_press",
+                           "repeat", "double_short_release"})
+
+    RELEASES = frozenset({"short_release", "long_release", "double_short_release"})
+
+    def __init__(self, clock=time.time, log=print):
+        self.clock = clock
+        self.log = log
+        self.last_initial_epoch = None
+        # The FIRST initial_press of the current physical press. The pairing
+        # anchor above slides with each repeat; this does not, because it is
+        # what the hold duration is measured from.
+        self.press_start_epoch = None
+
+    def feed(self, report):
+        """-> (kind, dedupe-token) or None.
+
+        kind is "press" (a press was made), "extend" (the same physical press
+        is still in progress -- do not finalise the gesture yet), or "hold"
+        (the press was held >= HOLD_SECONDS: the warning-unheard gesture).
+        """
+        event = report.get("event")
+        updated = report.get("updated")
+        epoch = bridge_epoch(updated, self.clock())
+        self.log(f"panel-hue-aircraft-label: button_report {event} at {updated}",
+                 flush=True)
+        if event == "initial_press":
+            self.last_initial_epoch = epoch
+            self.press_start_epoch = epoch
+            return ("press", updated)
+        if event in self.SECONDARY:
+            paired = (self.last_initial_epoch is not None
+                      and 0 <= epoch - self.last_initial_epoch <= self.PAIR_WINDOW_SECONDS)
+            if paired:
+                # Slide the anchor: a held button emits repeats every ~0.8 s
+                # and its long_release can land beyond the window measured
+                # from the ORIGINAL initial_press. Each paired secondary
+                # proves the same physical press is still in progress, so the
+                # release pairs against the last of them. Found live
+                # 2026-08-17: a 3.07 s hold minted a false second press.
+                self.last_initial_epoch = epoch
+                if event in self.RELEASES:
+                    start = self.press_start_epoch
+                    if start is not None and epoch - start >= HOLD_SECONDS:
+                        self.log(f"panel-hue-aircraft-label: button held "
+                                 f"{epoch - start:.2f}s — warning-unheard gesture",
+                                 flush=True)
+                        return ("hold", updated)
+                    return None
+                # repeat / long_press: the finger is still down. Tell the
+                # tracker to wait, or a >=2 s hold would be finalised as an
+                # ordinary press at the double-press deadline (1.35 s), before
+                # its release could ever arrive.
+                return ("extend", updated)
+            else:
+                # Anchor follow-up repeats/releases of this same physical
+                # press so one lost initial_press recovers exactly one press.
+                # A recovered press has no measurable start, so it can never
+                # be a hold: human_heard is the conservative reading.
+                self.last_initial_epoch = epoch
+                self.press_start_epoch = epoch
+                self.log(f"panel-hue-aircraft-label: recovered press from unpaired "
+                         f"{event} at {updated} (initial_press lost, likely in a "
+                         f"reconnect blind window)", flush=True)
+                return ("press", updated)
+        return None
 
 
 def validate_configuration():
@@ -238,6 +456,14 @@ def validate_configuration():
                                         ("HUE_CERTIFICATE", CERTIFICATE)) if not value]
     if missing:
         raise SystemExit(f"Hue stream blocked: {', '.join(missing)} not configured")
+    if not SYNTHETIC:
+        try:
+            result = subprocess.run(["/usr/local/bin/panel-aircraft-attribute", "--help"], check=False,
+                                    capture_output=True, text=True, timeout=5)
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise SystemExit(f"Hue stream blocked: panel-aircraft-attribute unavailable: {exc}") from exc
+        if result.returncode != 0 or "--output" not in result.stdout:
+            raise SystemExit("Hue stream blocked: panel-aircraft-attribute lacks required --output support")
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -247,12 +473,7 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         raise urllib.error.HTTPError(req.full_url, code, "Hue redirect blocked", headers, fp)
 
 
-def stream_once(on_press, on_tick):
-    headers = {"hue-application-key": USERNAME, "Accept": "text/event-stream"}
-    previous = read_json(STATE) or {}
-    if previous.get("last_event_id"):
-        headers["Last-Event-ID"] = previous["last_event_id"]
-    request = urllib.request.Request(f"https://{BRIDGE}/eventstream/clip/v2", headers=headers)
+def hue_opener():
     # Hue bridges use a device certificate whose name does not match their LAN
     # address. Trust only the root-owned pinned certificate; do not disable
     # certificate-chain verification merely to bypass hostname matching.
@@ -262,12 +483,108 @@ def stream_once(on_press, on_tick):
     # root. Treat the explicitly pinned leaf as the trust anchor.
     if hasattr(ssl, "VERIFY_X509_PARTIAL_CHAIN"):
         context.verify_flags |= ssl.VERIFY_X509_PARTIAL_CHAIN
-    opener = urllib.request.build_opener(NoRedirect(), urllib.request.HTTPSHandler(context=context))
+    return urllib.request.build_opener(NoRedirect(), urllib.request.HTTPSHandler(context=context))
+
+
+def refresh_battery(opener):
+    """Publish button battery health; absence stays explicitly unmeasured.
+
+    A fresh measurement is never overwritten by a fetch FAILURE: the failure
+    is recorded beside it under battery_refresh_error, with its own time.
+    """
+    headers = {"hue-application-key": USERNAME}
+    button_request = urllib.request.Request(
+        f"https://{BRIDGE}/clip/v2/resource/button/{BUTTON_ID}", headers=headers)
+    with opener.open(button_request, timeout=10) as response:
+        button_doc = json.load(response)
+    data = button_doc.get("data") if isinstance(button_doc, dict) else None
+    owner = data[0].get("owner") if isinstance(data, list) and data and isinstance(data[0], dict) else None
+    owner_id = owner.get("rid") if isinstance(owner, dict) else None
+    if not owner_id:
+        merge_state({"battery": {"state": "not_measured", "reason": "button owner absent"}})
+        return
+    power_request = urllib.request.Request(
+        f"https://{BRIDGE}/clip/v2/resource/device_power", headers=headers)
+    with opener.open(power_request, timeout=10) as response:
+        power_doc = json.load(response)
+    powers = power_doc.get("data") if isinstance(power_doc, dict) else None
+    match = next((row for row in powers if isinstance(row, dict) and
+                  isinstance(row.get("owner"), dict) and row["owner"].get("rid") == owner_id), None) \
+            if isinstance(powers, list) else None
+    battery = match.get("power_state") if isinstance(match, dict) else None
+    if isinstance(battery, dict) and battery.get("battery_state") is not None:
+        merge_state({"battery": dict(battery, measured_at=time.time())})
+    elif isinstance(battery, dict):
+        # A just-paired device has an EMPTY power_state until its first
+        # battery report. That is "not measured", never a measurement -- and
+        # it must not carry a measured_at, or the refresh throttle would pin
+        # the absence as if it were fresh data.
+        merge_state({"battery": {"state": "not_measured",
+                                  "reason": f"device_power empty for owner={owner_id} "
+                                            "(no battery report from the device yet)"}})
+    else:
+        merge_state({"battery": {"state": "not_measured", "reason": f"device_power absent for owner={owner_id}"}})
+
+
+def maybe_refresh_battery(opener, now=None):
+    """Refresh at most every BATTERY_REFRESH_SECONDS; failure keeps the last
+    good measurement and names itself beside it."""
+    now = time.time() if now is None else now
+    current = (read_json(STATE) or {}).get("battery")
+    measured_at = current.get("measured_at") if isinstance(current, dict) else None
+    if isinstance(measured_at, (int, float)) and now - measured_at < BATTERY_REFRESH_SECONDS:
+        return
+    try:
+        refresh_battery(opener)
+        merge_state({}, remove=("battery_refresh_error",))
+    except (OSError, ValueError, urllib.error.URLError) as exc:
+        if isinstance(current, dict) and current.get("battery_state"):
+            merge_state({"battery_refresh_error": {"at": now, "error": str(exc)}})
+        else:
+            merge_state({"battery": {"state": "not_measured", "reason": str(exc)}})
+
+
+class ActivityMonitor:
+    """Persist "the stream carried bytes at T", throttled for the SD card.
+
+    stream_state says what we BELIEVE; stream_last_activity_at is the
+    evidence. The admin console degrades a 'connected' stream whose last
+    activity is old, because a half-open TCP session looks connected forever.
+    """
+
+    def __init__(self, clock=time.time):
+        self.clock = clock
+        self.last_persisted = 0.0
+
+    def note(self, force=False):
+        now = self.clock()
+        if force or now - self.last_persisted >= ACTIVITY_PERSIST_SECONDS:
+            self.last_persisted = now
+            merge_state({"stream_last_activity_at": now})
+
+
+def stream_once(on_press, on_tick, activity=None, extractor=None):
+    headers = {"hue-application-key": USERNAME, "Accept": "text/event-stream"}
+    previous = read_json(STATE) or {}
+    if previous.get("last_event_id"):
+        headers["Last-Event-ID"] = previous["last_event_id"]
+    request = urllib.request.Request(f"https://{BRIDGE}/eventstream/clip/v2", headers=headers)
+    opener = hue_opener()
+    maybe_refresh_battery(opener)
+    activity = activity or ActivityMonitor()
+    # The extractor outlives reconnects on purpose: its pairing memory is what
+    # tells a post-reconnect short_release apart from a fresh press.
+    extractor = extractor or PressExtractor()
     with opener.open(request, timeout=90) as response:
         write_health("connected")
+        activity.note(force=True)
         data = []
         event_id = None
         for raw in response:
+            # ANY received line -- data, id, or the bridge's keepalive
+            # comments -- is proof of life. The 90 s socket timeout above is
+            # the transport bound; this is the observable one.
+            activity.note()
             line = raw.decode("utf-8", "replace").rstrip("\r\n")
             if line.startswith("data:"):
                 data.append(line[5:].lstrip())
@@ -277,8 +594,10 @@ def stream_once(on_press, on_tick):
                 if data:
                     payload = "\n".join(data)
                     data = []
-                    for token in events_from_payload(payload):
-                        on_press(token)
+                    for report in button_reports_from_payload(payload):
+                        verdict = extractor.feed(report)
+                        if verdict is not None:
+                            on_press(*verdict)
                     if event_id:
                         merge_state({"last_event_id": event_id})
                 on_tick()
@@ -328,16 +647,46 @@ class GestureTracker:
         else:
             merge_state(values, remove=("pending_gesture", "pending_gestures"))
 
+    def _ready(self, item):
+        """May this gesture be finalised NOW?
+
+        A hold is complete the moment its release arrived. Anything else
+        waits out the double-press window AND any deferral placed by an
+        in-progress hold (`extend`), or a >=2 s hold would be finalised as an
+        ordinary press at 1.35 s, before its release existed.
+        """
+        if item.get("hold"):
+            return True
+        now = self.clock()
+        return (now - item["at"] >= DOUBLE_SECONDS
+                and now >= item.get("defer_until", 0.0))
+
     def _schedule(self, retry_seconds=None):
         if self.scheduler is None or not self.pending:
             return
         if self.timer is not None:
             self.timer.cancel()
-        remaining = (retry_seconds if retry_seconds is not None else
-                     max(0.0, DOUBLE_SECONDS - (self.clock() - self.pending[0]["at"])))
+        first = self.pending[0]
+        now = self.clock()
+        if retry_seconds is not None:
+            remaining = retry_seconds
+        elif first.get("hold"):
+            remaining = 0.0
+        else:
+            remaining = max(0.0, DOUBLE_SECONDS - (now - first["at"]),
+                            first.get("defer_until", 0.0) - now)
         self.timer = self.scheduler(remaining, self.flush)
         self.timer.daemon = True
         self.timer.start()
+
+    def signal(self, kind, token):
+        """One entry point for the extractor's three verdicts."""
+        if kind == "press":
+            self.press(token)
+        elif kind == "extend":
+            self.extend()
+        elif kind == "hold":
+            self.hold(token)
 
     def press(self, token):
         with self.lock:
@@ -353,18 +702,50 @@ class GestureTracker:
             # Persist the new physical evidence before attempting older work.
             # A failed finalization can therefore never overwrite this press.
             self._persist()
-            if now - self.pending[0]["at"] >= DOUBLE_SECONDS:
+            if self._ready(self.pending[0]):
                 self.flush()
             else:
                 self._schedule()
 
+    def extend(self):
+        """The physical press is still in progress (a paired repeat arrived):
+        push this gesture's deadline out so its release decides its kind."""
+        with self.lock:
+            if not self.pending:
+                return
+            self.pending[-1]["defer_until"] = self.clock() + DOUBLE_SECONDS
+            self._persist()
+            self._schedule()
+
+    def hold(self, token):
+        """The release proved a >=2 s hold: this gesture is warning_unheard."""
+        with self.lock:
+            if token in self.seen_tokens:
+                return
+            self.seen_tokens.append(token)
+            del self.seen_tokens[:-32]
+            if self.pending:
+                self.pending[-1]["hold"] = True
+                self.pending[-1].pop("defer_until", None)
+            else:
+                # The opening press was already finalised -- its repeats were
+                # lost, so nothing deferred the flush. The hold is still real
+                # evidence; record it as its own gesture, loudly, rather than
+                # discarding the one thing the stream managed to deliver.
+                print("panel-hue-aircraft-label: hold release arrived after its "
+                      "press was finalised (repeats lost); recording "
+                      "warning_unheard as its own gesture", flush=True)
+                self.pending.append({"at": self.clock(), "count": 1, "hold": True})
+            self._persist()
+            self.flush()
+
     def flush(self):
         with self.lock:
             self.timer = None
-            while self.pending and self.clock() - self.pending[0]["at"] >= DOUBLE_SECONDS:
+            while self.pending and self._ready(self.pending[0]):
                 item = self.pending[0]
                 try:
-                    self.emit(item["at"], item["count"])
+                    self.emit(item["at"], item["count"], item.get("hold", False))
                 except Exception as exc:  # keep durable evidence retryable
                     print(f"panel-hue-aircraft-label: gesture finalization retry: {exc}",
                           file=sys.stderr, flush=True)
@@ -378,24 +759,32 @@ class GestureTracker:
 
     def tick(self):
         with self.lock:
-            if self.pending and self.clock() - self.pending[0]["at"] >= DOUBLE_SECONDS:
+            if self.pending and self._ready(self.pending[0]):
                 self.flush()
 
 
 def main():
     validate_configuration()
     tracker = GestureTracker()
+    activity = ActivityMonitor()
+    extractor = PressExtractor()
     retry_seconds = 1.0
     while True:
         tracker.tick()
         try:
-            stream_once(tracker.press, tracker.tick)
+            stream_once(tracker.signal, tracker.tick, activity, extractor)
         except (OSError, urllib.error.URLError, TimeoutError, RuntimeError) as exc:
             write_health("disconnected", str(exc))
             print(f"panel-hue-aircraft-label: event stream disconnected: {exc}; "
                   f"retry in {retry_seconds:.0f}s", file=sys.stderr, flush=True)
             tracker.tick()
             time.sleep(retry_seconds)
+            # Exponential backoff, capped: a dead bridge must not be hammered
+            # once a second all night. Reset after any successful connection
+            # (stream_once writes 'connected' before it blocks on the body).
+            retry_seconds = min(retry_seconds * 2, 60.0)
+            if (read_json(STATE) or {}).get("stream_state") == "connected":
+                retry_seconds = 1.0
 
 
 if __name__ == "__main__":

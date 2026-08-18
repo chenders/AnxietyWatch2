@@ -1,0 +1,11 @@
+[Unit]
+Description=Generate aircraft warning proposals nightly
+
+[Timer]
+OnCalendar=*-*-* 04:20:00
+Persistent=true
+RandomizedDelaySec=10m
+Unit=panel-aircraft-learn.service
+
+[Install]
+WantedBy=timers.target

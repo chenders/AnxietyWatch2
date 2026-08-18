@@ -1,0 +1,19 @@
+[Unit]
+Description=Cache the nearest METAR for noise-event context
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=anxietywatch
+Group=anxietywatch
+# Station is public data; override per deployment if another field is nearer:
+#   sudo systemctl edit panel-weather-poll   # Environment=WEATHER_METAR_STATION=...
+Environment=PANEL_WEATHER_CACHE=/var/lib/panel-noise/weather.json
+ExecStart=/usr/local/bin/panel-weather-poll
+StateDirectory=panel-noise
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6

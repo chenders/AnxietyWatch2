@@ -442,6 +442,18 @@ class RosterRescuesUnscorableAircraft(unittest.TestCase):
         self.assertEqual(report["operator_kind"], "AIR_AMBULANCE")
         self.assertEqual(report["operator_state"], "CONFIRMED")
 
+    def test_a_callsign_matched_life_flight_carries_its_kind(self):
+        """A Life Flight tail the roster has never seen is CONFIRMED by its
+        registration pattern -- a path with no roster entry, which until
+        2026-08-17 lost the operator kind: the admin page showed police rows
+        with their kind and the medical fleet with none."""
+        item = {"hex": "abc123", "flight": "N999LF",
+                "lat": adsb.STATION_LAT + 0.004,
+                "lon": adsb.STATION_LON, "altitude": 700, "seen": 1.0}
+        report = adsb.make_report(item, 0.0)
+        self.assertEqual(report["operator_state"], "CONFIRMED")
+        self.assertEqual(report["operator_kind"], "AIR_AMBULANCE")
+
     def test_make_report_leaves_an_unknown_aircraft_unlabelled(self):
         item = {"hex": "abcdef", "lat": adsb.STATION_LAT + 0.004,
                 "lon": adsb.STATION_LON, "altitude": 700, "seen": 1.0}
@@ -926,3 +938,85 @@ class OperatorNameReachesThePanel(unittest.TestCase):
         start firing a bedroom light."""
         self._learned({self.ALASKA: {"type": "B738", "operator": "Life Flight Network"}})
         self.assertIsNone(self._report(self.ALASKA)["operator_kind"])
+
+
+class NoiseHistoryOnPublishedAircraft(unittest.TestCase):
+    """Confirmed past noise events ride on every published aircraft, so the
+    panel can mark an airframe that is quiet right now."""
+
+    FRAME = {"identity": "A50E9F", "registration": "N425EJ",
+             "human_heard_count": 3, "cat_scared_count": 1,
+             "first_heard_at": 1786935446.0, "last_heard_at": 1786938466.0,
+             "event_ids": ["hue-1", "hue-2", "hue-3"]}
+
+    def test_summary_keeps_distinct_human_and_cat_counts(self):
+        summary = adsb.noise_history_summary(self.FRAME)
+        self.assertEqual(summary["human_heard_count"], 3)
+        self.assertEqual(summary["cat_scared_count"], 1)
+        self.assertEqual(summary["last_heard_at"], 1786938466.0)
+
+    def test_attach_marks_by_hex_and_leaves_others_untouched(self):
+        rows = [{"hex": "A50E9F"}, {"hex": "ABC123"}, {"hex": None}]
+        marked = adsb.attach_noise_history(rows, {"A50E9F": self.FRAME})
+        self.assertEqual(marked, 1)
+        self.assertEqual(rows[0]["noise_history"]["cat_scared_count"], 1)
+        self.assertNotIn("noise_history", rows[1])
+        self.assertNotIn("noise_history", rows[2])
+
+    def test_prediction_rows_share_the_marked_dicts(self):
+        # adsb_predictions holds the same dict objects as adsb_planes, so one
+        # attach covers both lists. This test pins that assumption.
+        row = {"hex": "A50E9F"}
+        planes, predictions = [row], [row]
+        adsb.attach_noise_history(planes, {"A50E9F": self.FRAME})
+        self.assertIn("noise_history", predictions[0])
+
+
+class TrackPointCapture(unittest.TestCase):
+    """Dense positions for local replay: every second where the noise happens,
+    every five seconds out to the track radius, never a duplicate FR24 batch."""
+
+    @staticmethod
+    def report(hex_code, km, lat=45.5, lon=-122.6):
+        return {"hex": hex_code, "callsign": None, "registration": None,
+                "lat": lat, "lon": lon, "alt_ft": 1200, "speed_kt": 90,
+                "track_deg": 300.0, "vertical_rate_fpm": -500, "rssi": -18.0,
+                "distance_km": km, "bearing": 270.0}
+
+    def test_near_aircraft_log_every_second_far_every_five(self):
+        last = {}
+        near, far = self.report("NEAR11", 2.0), self.report("FAR111", 10.0)
+        first = adsb.track_rows_from_reports([near, far], 1000.0, last)
+        self.assertEqual({r["hex"] for r in first}, {"NEAR11", "FAR111"})
+        second = adsb.track_rows_from_reports([near, far], 1001.5, last)
+        self.assertEqual({r["hex"] for r in second}, {"NEAR11"})
+        third = adsb.track_rows_from_reports([near, far], 1006.0, last)
+        self.assertEqual({r["hex"] for r in third}, {"NEAR11", "FAR111"})
+
+    def test_outside_the_radius_or_without_position_nothing_is_logged(self):
+        rows = adsb.track_rows_from_reports(
+            [self.report("FARAWAY", 40.0), dict(self.report("NOPOS", 2.0), lat=None)],
+            1000.0, {})
+        self.assertEqual(rows, [])
+
+    def test_receiver_points_carry_no_retention_deadline(self):
+        rows = adsb.track_rows_from_reports([self.report("NEAR11", 2.0)], 1000.0, {})
+        self.assertIsNone(rows[0]["retain_until"])
+
+    def test_fr24_batches_are_deduped_by_written_at(self):
+        doc = {"feed_state": "FRESH", "written_at": 500.0,
+               "aircraft": [{"hex": "AB4825", "fr24_id": "41f", "lat": 45.52,
+                              "lon": -122.63, "alt_ft": 800, "distance_km": 1.9}]}
+        rows, seen = adsb.track_rows_from_fr24(doc, None)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(seen, 500.0)
+        self.assertAlmostEqual(rows[0]["retain_until"] - 500.0,
+                               adsb.panel_noise_log.FR24_RETENTION_SECONDS)
+        again, seen = adsb.track_rows_from_fr24(doc, seen)
+        self.assertEqual(again, [])
+
+    def test_stale_fr24_feed_contributes_nothing(self):
+        doc = {"feed_state": "UNAVAILABLE", "written_at": 500.0, "aircraft": []}
+        rows, seen = adsb.track_rows_from_fr24(doc, None)
+        self.assertEqual(rows, [])
+        self.assertIsNone(seen)

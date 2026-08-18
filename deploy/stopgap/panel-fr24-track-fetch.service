@@ -1,0 +1,22 @@
+[Unit]
+Description=Archive definitive FR24 tracks for confirmed noise flights
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=anxietywatch
+Group=anxietywatch
+# FR24_API_KEY is a secret and lives in a root-readable drop-in, never in git:
+#   sudo systemctl edit panel-fr24-track-fetch
+Environment=PANEL_AIRCRAFT_ATTRIBUTIONS=/var/lib/panel-noise/aircraft-attributions.json
+Environment=PANEL_TRACK_LOG=/var/lib/panel-noise/track-points.jsonl
+Environment=PANEL_TRACK_FETCH_STATE=/var/lib/panel-noise/track-fetch-state.json
+Environment=FR24_CREDIT_LEDGER=/var/lib/panel-fr24/credits.json
+ExecStart=/usr/local/bin/panel-fr24-track-fetch
+StateDirectory=panel-noise panel-fr24
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6

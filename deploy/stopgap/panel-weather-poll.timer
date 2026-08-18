@@ -1,0 +1,12 @@
+[Unit]
+Description=Refresh the METAR cache for noise-event context
+
+[Timer]
+# METARs update hourly plus SPECIs; 10 minutes keeps the press-path cache
+# fresh without hammering a free public service.
+OnBootSec=2m
+OnUnitActiveSec=10m
+Unit=panel-weather-poll.service
+
+[Install]
+WantedBy=timers.target

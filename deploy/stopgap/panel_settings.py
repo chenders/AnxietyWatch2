@@ -86,11 +86,21 @@ SCHEMA = {
                 "near-continuous flashing.",
     },
     "hue_lead_seconds": {
-        "kind": "number", "default": 45.0, "min": 1.0, "max": 300.0,
+        "kind": "number", "default": 30.0, "min": 1.0, "max": 300.0,
         "label": "Warn this many seconds ahead",
-        "note": "The entire warning budget for a Life Flight departure off "
-                "the Providence pad is 34 seconds, set by geometry. A lead "
-                "longer than that cannot be met for those.",
+        "note": "Measured to the PROJECTED HEARING TIME at the house (closest "
+                "approach plus the sound's own travel time), 30 s by owner "
+                "decision 2026-08-17. The entire warning budget for a Life "
+                "Flight departure off the Providence pad is 34 seconds, set "
+                "by geometry; a longer lead cannot be met for those.",
+    },
+    "display_metric": {
+        "kind": "flag", "default": False,
+        "label": "Show distances in metric",
+        "note": "Off (the default) shows miles on the kiosk and panels; on "
+                "shows kilometres. Display only -- storage and computation "
+                "stay metric regardless. Aviation conventions are kept "
+                "either way: altitudes in feet, speeds in knots.",
     },
     "hue_warn_unscored": {
         "kind": "flag", "default": True,

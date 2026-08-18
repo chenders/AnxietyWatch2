@@ -1,0 +1,21 @@
+[Unit]
+Description=Generate review-only aircraft warning model proposals
+After=panel-noise-drain.service
+
+[Service]
+Type=oneshot
+User=anxietywatch
+Group=anxietywatch
+Environment=PANEL_AIRCRAFT_LABELS=/var/lib/panel-noise/aircraft-labels.jsonl
+Environment=PANEL_NOISE_LOG=/var/lib/panel-noise/loud-aircraft.jsonl
+Environment=PANEL_AIRCRAFT_PROPOSALS=/var/lib/panel-noise/aircraft-model-proposals.jsonl
+ExecStart=/usr/local/bin/panel-aircraft-learn
+StateDirectory=panel-noise
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+RestrictAddressFamilies=AF_UNIX
+
+[Install]
+WantedBy=multi-user.target

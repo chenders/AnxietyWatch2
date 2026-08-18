@@ -14,3 +14,7 @@ aircraft_enrichment [aircraft] 2026-08-12T19:35:00Z Chris Henderson <chenders@us
 aircraft_source_adsb [aircraft] 2026-08-13T21:20:00Z Chris Henderson <chenders@users.noreply.github.com> # allow 'adsb' as an identity source; the drain was dying on every receiver-learned row
 flight_route [aircraft] 2026-08-14T03:55:00Z Chris Henderson <chenders@users.noreply.github.com> # origin and destination per airline callsign, from adsbdb
 aircraft_pass_detail [aircraft] 2026-08-14T05:20:00Z Chris Henderson <chenders@users.noreply.github.com> # record what the panel showed: geometry, class, and the ambient a score was computed against
+noise_event [aircraft] 2026-08-17T05:00:00Z Chris Henderson <chenders@users.noreply.github.com> # noise events, every candidate aircraft, and attribution verdict history
+aircraft_track [aircraft] 2026-08-17T05:10:00Z Chris Henderson <chenders@users.noreply.github.com> # dense track points from both feeds, so a flight path can be replayed locally
+noise_analysis_helpers [noise_event aircraft_track] 2026-08-17T05:20:00Z Chris Henderson <chenders@users.noreply.github.com> # audibility-dwell and track-gap analysis views over the noise archive
+aircraft_warning [aircraft noise_event] 2026-08-17T23:30:00Z Chris Henderson <chenders@users.noreply.github.com> # fired/suppressed aircraft warning decisions and append-only operator review history

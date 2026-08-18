@@ -259,6 +259,33 @@ def operator_kind(entry):
     return record["kind"] if record else None
 
 
+def kind_for(hex_code=None, callsign=None):
+    """AIR_AMBULANCE, POLICE, or None -- from EITHER identifier.
+
+    Exists because a Life Flight airframe is CONFIRMED by its registration
+    pattern, a path that carries no roster entry, so operator_kind() alone
+    reported the entire medical fleet as kind None (seen on the admin page
+    2026-08-17: police rows carried their kind, medical rows did not).
+
+    Sources are the hand-curated roster and callsign patterns ONLY -- never
+    learned lookup data, which must not be able to promote an airframe to a
+    kind that fires a bedroom light. Retired airframes yield None.
+    """
+    key = normalise_hex(hex_code)
+    if key and key in RETIRED_HEXES:
+        return None
+    entry = lookup_hex(hex_code)
+    if entry is not None and entry["reg"].upper() not in RETIRED_REGISTRATIONS:
+        return operator_kind(entry)
+    call = str(callsign or "").strip()
+    if call and call.upper() not in RETIRED_REGISTRATIONS:
+        for record in OPERATORS.values():
+            pattern = record["callsign_pattern"]
+            if pattern is not None and pattern.match(call):
+                return record["kind"]
+    return None
+
+
 def identify(hex_code=None, callsign=None, aircraft_type=None):
     """Three states, never two.
 

@@ -18,6 +18,13 @@ Environment=ADSB_STATUS_JSON=/opt/anxietywatch-panel/docs/design/pi-panel/direct
 # different provenance. Receiver rows never expire -- that data came off an
 # antenna on this roof, so no vendor licence governs how long it is kept.
 Environment=PANEL_NOISE_LOG=/var/lib/panel-noise/loud-aircraft.jsonl
+# Dense track points for local flight-path replay; drained into PostgreSQL by
+# panel-noise-drain. FR24 cache is read for the positions the dongle misses.
+Environment=PANEL_TRACK_LOG=/var/lib/panel-noise/track-points.jsonl
+Environment=FR24_CACHE_JSON=/opt/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical/fr24_aircraft.json
+# Confirmed noise-event history, attached to every published aircraft so the
+# panel can mark past causes even while they are quiet.
+Environment=PANEL_AIRCRAFT_ATTRIBUTIONS=/var/lib/panel-noise/aircraft-attributions.json
 ExecStart=/usr/local/bin/panel-adsb-status
 Restart=always
 RestartSec=3

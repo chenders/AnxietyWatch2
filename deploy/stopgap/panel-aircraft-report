@@ -1,0 +1,204 @@
+#!/usr/bin/env python3
+"""Record a REAL operator-reported noise event, or corroborate a bridge one.
+
+The Hue button is not the only source of truth: the operator also reports
+events in words, with timestamp metadata of their own ("I heard it about 90
+seconds ago", or a chat message whose transport stamped it). This tool turns
+those into first-class evidence rows in the same durable store the button
+uses, with provenance `operator_report` — real, attribution- and
+training-eligible. Synthetic plumbing tests use panel-aircraft-inject, which
+cannot produce real evidence; this tool cannot produce synthetic.
+
+Two modes, and the distinction is load-bearing:
+
+  new event      --ago/--at/--iso: an independent event the button did not
+                 capture. Gets its own event_id and full context capture
+                 (feeds, weather) when the report is near-live; a late report
+                 says explicitly that live context was gone, and attribution
+                 falls back to the pass log and the track archive.
+
+  --corroborates EVENT_ID: the operator restating an event the bridge already
+                 recorded. NEVER a second event — the bridge timestamp stays
+                 authoritative, the report's own time and words are preserved
+                 beside it, and the row is marked ineligible for training so
+                 no correlation is double-counted.
+
+Timezone provenance: --at is UTC epoch seconds; --iso accepts ISO-8601 with
+an explicit offset or Z (a naive ISO string is refused, not guessed). The
+store holds UTC epoch seconds only.
+"""
+import argparse
+import importlib.machinery
+import importlib.util
+import json
+import sys
+import time
+import uuid
+from datetime import datetime
+from pathlib import Path
+
+# Shares capture code and env-configured paths with the button daemon, which
+# is installed beside this tool. One implementation of context capture, not
+# two drifting ones.
+_LABEL_PATH = Path(__file__).resolve().parent / "panel-hue-aircraft-label"
+_loader = importlib.machinery.SourceFileLoader("panel_hue_aircraft_label", str(_LABEL_PATH))
+_spec = importlib.util.spec_from_loader(_loader.name, _loader)
+label = importlib.util.module_from_spec(_spec)
+_loader.exec_module(label)
+
+# Live feed snapshots describe NOW. Beyond this, attaching them to an older
+# event would be evidence about the wrong sky.
+LIVE_CONTEXT_WINDOW_SECONDS = 120.0
+
+
+def parse_when(args, now):
+    """(observed_at, provenance-note). Exactly one time source, explicit."""
+    given = sum(value is not None for value in (args.at, args.iso)) + (args.ago is not None)
+    if given > 1:
+        raise SystemExit("blocked: give exactly one of --ago, --at, --iso")
+    if args.at is not None:
+        return float(args.at), "operator-supplied UTC epoch seconds"
+    if args.iso is not None:
+        try:
+            moment = datetime.fromisoformat(args.iso.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise SystemExit(f"blocked: unparseable --iso {args.iso!r}: {exc}") from exc
+        if moment.tzinfo is None:
+            raise SystemExit(f"blocked: --iso {args.iso!r} carries no timezone; "
+                             "a naive timestamp would be a wall-clock guess")
+        return moment.timestamp(), f"ISO-8601 with explicit offset ({args.iso})"
+    ago = args.ago if args.ago is not None else 0.0
+    if ago < 0:
+        raise SystemExit(f"blocked: --ago {ago} is in the future")
+    return now - ago, f"now minus {ago:.0f}s"
+
+
+def build_event(observed_at, now, args, time_note):
+    outcomes = ["human_heard", "cat_scared_top_priority"] if args.cat else ["human_heard"]
+    age = now - observed_at
+    live = age <= LIVE_CONTEXT_WINDOW_SECONDS
+    snapshot = label.read_json(label.STATUS) if live else None
+    fr24_snapshot = label.read_json(label.FR24_STATUS) if live else None
+    row = {
+        "schema": 2,
+        "event_id": f"report-{int(observed_at * 1000)}-{uuid.uuid4().hex[:8]}",
+        "observed_at": observed_at,
+        "recorded_at": now,
+        "label": outcomes[-1],
+        "outcomes": outcomes,
+        "priority": 2 if args.cat else 1,
+        "provenance": "operator_report",
+        "eligible_for_training": True,
+        "meaning": ("operator reported the event in words; cat frightened (top priority)"
+                    if args.cat else "operator reported hearing an aircraft"),
+        "operator_report": {"note": args.note, "source": args.source,
+                            "time_provenance": time_note,
+                            "reported_at": now},
+        "clock": {"source": "system UTC epoch", "ntp_required_by_service": True},
+        "recent_completed_passes": label.recent_passes(observed_at),
+        "weather": label.weather_context(now) if live else {
+            "state": "not_measured",
+            "reason": f"report arrived {age:.0f}s after the event; "
+                      "live weather would describe the wrong moment"},
+    }
+    if live:
+        row["live_feed_written_at"] = snapshot.get("written_at") if isinstance(snapshot, dict) else None
+        row["fr24_feed"] = ({"written_at": fr24_snapshot.get("written_at"),
+                             "feed_state": fr24_snapshot.get("feed_state"),
+                             "error": fr24_snapshot.get("error")}
+                            if isinstance(fr24_snapshot, dict) else None)
+        row["live_candidates"] = label.current_candidates(snapshot, fr24_snapshot)
+        row["feed_snapshots"] = {"adsb_status": snapshot if isinstance(snapshot, dict) else None,
+                                 "fr24": fr24_snapshot if isinstance(fr24_snapshot, dict) else None}
+    else:
+        row["live_candidates"] = []
+        row["live_context"] = {"state": "unavailable",
+                               "reason": f"report arrived {age:.0f}s after the event "
+                                         f"(window {LIVE_CONTEXT_WINDOW_SECONDS:.0f}s); "
+                                         "attribution uses the pass log and track archive"}
+    return row
+
+
+def build_corroboration(target_event_id, observed_at, now, args, time_note):
+    """Preserved words and timing for an existing event. Not a new event, and
+    structurally unable to be trained on."""
+    return {
+        "schema": 2,
+        "event_id": f"corroboration-{uuid.uuid4().hex[:12]}",
+        "corroborates": target_event_id,
+        "observed_at": observed_at,
+        "recorded_at": now,
+        "provenance": "operator_report",
+        "eligible_for_training": False,
+        "meaning": f"operator corroboration of {target_event_id}; the bridge "
+                   "timestamp remains authoritative",
+        "operator_report": {"note": args.note, "source": args.source,
+                            "time_provenance": time_note, "reported_at": now},
+    }
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--note", required=True,
+                        help="the operator's words: what it sounded like, where")
+    parser.add_argument("--cat", action="store_true",
+                        help="the cat heard it and was frightened (top priority; implies human heard)")
+    parser.add_argument("--ago", type=float, default=None, help="seconds before now")
+    parser.add_argument("--at", type=float, default=None, help="UTC epoch seconds")
+    parser.add_argument("--iso", default=None,
+                        help="ISO-8601 with explicit offset or Z, e.g. 2026-08-17T02:58:03.813Z")
+    parser.add_argument("--source", default="operator_report",
+                        help="where the report came from, e.g. 'chat transcript 01a00d19'")
+    parser.add_argument("--corroborates", metavar="EVENT_ID",
+                        help="attach to an existing event instead of creating one")
+    parser.add_argument("--labels", type=Path, default=None, help="override the labels file")
+    parser.add_argument("--dry-run", action="store_true")
+    args = parser.parse_args(argv)
+
+    labels_path = args.labels if args.labels is not None else label.LABELS
+    now = time.time()
+    observed_at, time_note = parse_when(args, now)
+
+    if args.corroborates:
+        if not label.contains_event(labels_path, args.corroborates):
+            raise SystemExit(f"blocked: --corroborates {args.corroborates} not found in "
+                             f"{labels_path}; a corroboration must attach to a real event")
+        row = build_corroboration(args.corroborates, observed_at, now, args, time_note)
+    else:
+        row = build_event(observed_at, now, args, time_note)
+
+    print(json.dumps({key: row[key] for key in sorted(row) if key not in
+                      ("feed_snapshots", "recent_completed_passes", "live_candidates")},
+                     indent=2, sort_keys=True))
+    if args.dry_run:
+        return 0
+    if label.contains_event(labels_path, row["event_id"]):
+        print(f"panel-aircraft-report: {row['event_id']} already recorded", file=sys.stderr)
+        return 0
+    label.append_fsync(labels_path, row)
+
+    # Rebuild attribution either way: a corroboration changes what the
+    # consoles display for its event even though it adds no new event.
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["/usr/local/bin/panel-aircraft-attribute", "--labels", str(labels_path),
+             "--passes", str(label.PASS_LOG), "--output", label.ATTRIBUTIONS],
+            check=False, capture_output=True, text=True, timeout=30)
+        if result.returncode != 0:
+            print(f"panel-aircraft-report: recorded durably, but attribution rebuild "
+                  f"failed (rc={result.returncode}): {result.stderr[-300:]}",
+                  file=sys.stderr)
+            return 1
+    except (OSError, subprocess.SubprocessError) as exc:
+        print(f"panel-aircraft-report: recorded durably, but attribution rebuild "
+              f"failed: {exc}", file=sys.stderr)
+        return 1
+    print(f"panel-aircraft-report: recorded {row['event_id']}"
+          + (f" corroborating {args.corroborates}" if args.corroborates else ""))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

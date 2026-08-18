@@ -1,0 +1,331 @@
+#!/usr/bin/env python3
+"""Build review-only aircraft warning proposals from Hue labels and pass history.
+
+This command never edits runtime settings. It treats eligible Hue labels as
+positives and completed passes with no nearby label as deterministic weak
+negative controls, then evaluates candidate score thresholds in chronological
+train/validation/test partitions. Human-heard and cat-scared outcomes remain
+separate; absence of enough evidence is reported as INSUFFICIENT, never as a
+safe threshold.
+"""
+import argparse
+import hashlib
+import json
+import math
+import os
+import time
+from pathlib import Path
+
+LABELS = Path(os.environ.get("PANEL_AIRCRAFT_LABELS", "/var/lib/panel-noise/aircraft-labels.jsonl"))
+PASSES = Path(os.environ.get("PANEL_NOISE_LOG", "/var/lib/panel-noise/loud-aircraft.jsonl"))
+PROPOSALS = Path(os.environ.get("PANEL_AIRCRAFT_PROPOSALS", "/var/lib/panel-noise/aircraft-model-proposals.jsonl"))
+WARNINGS = Path(os.environ.get("HUE_WARNING_LOG", "/var/lib/panel-noise/hue-warnings.jsonl"))
+WARNING_REVIEWS = Path(os.environ.get(
+    "PANEL_WARNING_REVIEWS", "/var/lib/panel-noise/hue-warning-reviews.jsonl"))
+# Real evidence: bridge presses and operator reports alike. Synthetic never.
+REAL_PROVENANCES = frozenset({"hue_button", "operator_report"})
+WINDOW_BEFORE = 180.0
+WINDOW_AFTER = 60.0
+CONTROL_EXCLUSION = 300.0
+MIN_POSITIVES = 12
+MIN_CONTROLS = 30
+MIN_TEST_POSITIVES = 2
+THRESHOLDS = tuple(float(v) for v in range(25, 81))
+
+
+def read_jsonl(path):
+    rows = []
+    try:
+        with Path(path).open() as stream:
+            for number, line in enumerate(stream, 1):
+                try:
+                    row = json.loads(line)
+                except ValueError:
+                    continue
+                if isinstance(row, dict):
+                    row = dict(row)
+                    row["_line"] = number
+                    rows.append(row)
+    except OSError:
+        pass
+    return rows
+
+
+def stamp(row):
+    value = row.get("observed_at", row.get("at"))
+    return float(value) if isinstance(value, (int, float)) and math.isfinite(value) else None
+
+
+def pass_score(row):
+    value = row.get("noise_index")
+    if not isinstance(value, (int, float)):
+        value = (row.get("detail") or {}).get("noise_index")
+    return float(value) if isinstance(value, (int, float)) and math.isfinite(value) else None
+
+
+def identity(row):
+    ident = row.get("identity") or {}
+    return ident.get("hex") or row.get("hex") or ident.get("reg") or "unknown"
+
+
+def candidate_for(at, passes):
+    candidates = [p for p in passes if stamp(p) is not None and
+                  at - WINDOW_BEFORE <= stamp(p) <= at + WINDOW_AFTER and
+                  pass_score(p) is not None]
+    if not candidates:
+        return None
+    # Highest modelled level is the candidate that could explain perception.
+    return max(candidates, key=lambda p: (pass_score(p), -abs(stamp(p) - at), identity(p)))
+
+
+def outcomes_of(row):
+    """Explicit outcomes list, or the legacy reading: a double press has
+    always meant BOTH human-heard and cat-scared, never only the latter."""
+    outcomes = row.get("outcomes")
+    if isinstance(outcomes, list) and outcomes:
+        return outcomes
+    if row.get("press_count", 0) >= 2 or row.get("label") == "cat_scared_top_priority":
+        return ["human_heard", "cat_scared_top_priority"]
+    return [row.get("label")] if row.get("label") else []
+
+
+def is_real_label(row):
+    return (isinstance(row, dict)
+            and row.get("eligible_for_training") is True
+            and row.get("provenance") in REAL_PROVENANCES
+            and not row.get("corroborates")
+            and isinstance(row.get("event_id"), str) and row["event_id"]
+            and stamp(row) is not None)
+
+
+def real_label_times(rows):
+    """Every eligible real label instant, ACROSS ALL OUTCOMES. Quiet controls
+    must clear all of them: a moment when the human marked an aircraft is not
+    quiet for the cat model either -- an aircraft was audibly there, and
+    scoring it as a cat negative would teach the cat model that audible
+    aircraft are safe."""
+    return sorted({stamp(row) for row in rows if is_real_label(row)})
+
+
+def eligible_labels(rows, outcome):
+    expected = "cat_scared_top_priority" if outcome == "cat" else "human_heard"
+    out = []
+    seen = set()
+    for row in rows:
+        if not is_real_label(row) or expected not in outcomes_of(row):
+            continue
+        event_id = row["event_id"]
+        if event_id in seen:
+            continue
+        seen.add(event_id)
+        out.append(row)
+    return sorted(out, key=lambda r: (stamp(r), r["event_id"]))
+
+
+def reviewed_warning_examples(warnings, reviews):
+    """Exact-score human examples from reviewed warnings.
+
+    Historical journal recovery has prediction=None. Its nearest completed
+    pass is useful context for a person, but is NOT substituted as the model's
+    original score: training on an approximation would manufacture evidence.
+    """
+    latest = {}
+    for review in reviews:
+        warning_id, reviewed_at = review.get("warning_id"), review.get("reviewed_at")
+        if (isinstance(warning_id, str) and isinstance(reviewed_at, (int, float))
+                and (warning_id not in latest
+                     or reviewed_at > latest[warning_id].get("reviewed_at", 0))):
+            latest[warning_id] = review
+    out = []
+    for warning in warnings:
+        warning_id, at = warning.get("warning_id"), warning.get("at")
+        review, prediction = latest.get(warning_id), warning.get("prediction")
+        score = prediction.get("noise_index") if isinstance(prediction, dict) else None
+        if (review is None or review.get("verdict") not in ("accurate", "inaccurate")
+                or not isinstance(at, (int, float))
+                or isinstance(score, bool) or not isinstance(score, (int, float))
+                or not math.isfinite(score)):
+            continue
+        out.append({"at": float(at), "positive": review["verdict"] == "accurate",
+                    "score": float(score),
+                    "aircraft": warning.get("hex") or warning.get("registration") or "unknown",
+                    "warning_id": warning_id, "source": "warning_review"})
+    return sorted(out, key=lambda row: (row["at"], row["warning_id"]))
+
+
+def examples(labels, passes, excluded_times=None, explicit=None):
+    """Positives from labels plus exact reviewed-warning examples; weak
+    controls stay clear of every real observation time across outcomes."""
+    positives = []
+    for label in labels:
+        candidate = candidate_for(stamp(label), passes)
+        if candidate is not None:
+            positives.append({"at": stamp(label), "positive": True,
+                              "score": pass_score(candidate), "aircraft": identity(candidate),
+                              "event_id": label["event_id"]})
+    explicit = list(explicit or [])
+    label_times = (sorted(excluded_times) if excluded_times is not None
+                   else [stamp(row) for row in labels])
+    label_times.extend(row["at"] for row in explicit)
+    controls = []
+    used = set()
+    for row in sorted(passes, key=lambda r: (stamp(r) if stamp(r) is not None else math.inf,
+                                              identity(r))):
+        at, score = stamp(row), pass_score(row)
+        if at is None or score is None or any(abs(at - marked) <= CONTROL_EXCLUSION for marked in label_times):
+            continue
+        # One deterministic control per ten-minute bucket prevents a circling
+        # aircraft from manufacturing hundreds of near-identical negatives.
+        bucket = int(at // 600)
+        if bucket in used:
+            continue
+        used.add(bucket)
+        controls.append({"at": at, "positive": False, "score": score,
+                         "aircraft": identity(row), "control_bucket": bucket})
+    return sorted(positives + explicit + controls,
+                  key=lambda r: (r["at"], not r["positive"]))
+
+
+def split_time(rows):
+    count = len(rows)
+    a, b = int(count * 0.6), int(count * 0.8)
+    return rows[:a], rows[a:b], rows[b:]
+
+
+def metrics(rows, threshold):
+    tp = fp = tn = fn = 0
+    for row in rows:
+        predicted = row["score"] >= threshold
+        if row["positive"] and predicted:
+            tp += 1
+        elif row["positive"]:
+            fn += 1
+        elif predicted:
+            fp += 1
+        else:
+            tn += 1
+    recall = tp / (tp + fn) if tp + fn else None
+    fpr = fp / (fp + tn) if fp + tn else None
+    precision = tp / (tp + fp) if tp + fp else None
+    return {"tp": tp, "fp": fp, "tn": tn, "fn": fn,
+            "recall": recall, "false_positive_rate": fpr, "precision": precision}
+
+
+def choose_threshold(train, outcome):
+    # Cat evidence prioritises avoiding false negatives. Human labels still
+    # favour recall, but charge more for nuisance warnings.
+    recall_weight = 8.0 if outcome == "cat" else 4.0
+    ranked = []
+    for threshold in THRESHOLDS:
+        result = metrics(train, threshold)
+        if result["recall"] is None or result["false_positive_rate"] is None:
+            continue
+        utility = recall_weight * result["recall"] - result["false_positive_rate"]
+        ranked.append((utility, result["recall"], -result["false_positive_rate"], threshold))
+    return max(ranked)[-1] if ranked else None
+
+
+def blockers_for(rows, parts):
+    positives = sum(row["positive"] for row in rows)
+    controls = len(rows) - positives
+    blockers = []
+    if positives < MIN_POSITIVES:
+        blockers.append(f"positive labels={positives}, require {MIN_POSITIVES}")
+    if controls < MIN_CONTROLS:
+        blockers.append(f"quiet controls={controls}, require {MIN_CONTROLS}")
+    for name, part in zip(("train", "validation", "test"), parts):
+        p = sum(row["positive"] for row in part)
+        n = len(part) - p
+        if p < (MIN_TEST_POSITIVES if name != "train" else 3):
+            blockers.append(f"{name} positives={p}, require {MIN_TEST_POSITIVES if name != 'train' else 3}")
+        if n < 3:
+            blockers.append(f"{name} quiet controls={n}, require 3")
+    return blockers
+
+
+def analyze(outcome, labels, passes, warning_examples=None):
+    selected = eligible_labels(labels, outcome)
+    explicit = warning_examples if outcome == "human" else []
+    rows = examples(selected, passes, excluded_times=real_label_times(labels),
+                    explicit=explicit)
+    parts = split_time(rows)
+    blockers = blockers_for(rows, parts)
+    threshold = choose_threshold(parts[0], outcome) if not blockers else None
+    validation = metrics(parts[1], threshold) if threshold is not None else None
+    test = metrics(parts[2], threshold) if threshold is not None else None
+    if threshold is not None:
+        minimum_recall = 0.90 if outcome == "cat" else 0.70
+        maximum_fpr = 0.35
+        if validation["recall"] is None or validation["recall"] < minimum_recall:
+            blockers.append(f"validation recall={validation['recall']}, require {minimum_recall}")
+        if validation["false_positive_rate"] is None or validation["false_positive_rate"] > maximum_fpr:
+            blockers.append(f"validation false_positive_rate={validation['false_positive_rate']}, require <= {maximum_fpr}")
+        if test["recall"] is None or test["recall"] < minimum_recall:
+            blockers.append(f"test recall={test['recall']}, require {minimum_recall}")
+        if test["false_positive_rate"] is None or test["false_positive_rate"] > maximum_fpr:
+            blockers.append(f"test false_positive_rate={test['false_positive_rate']}, require <= {maximum_fpr}")
+    return {"outcome": outcome, "verdict": "PROPOSAL" if not blockers else "INSUFFICIENT",
+            "blockers": blockers, "candidate_threshold_dba": threshold,
+            "counts": {"eligible_labels": len(selected),
+                       "reviewed_warning_examples": len(explicit),
+                       "matched_positives": sum(r["positive"] for r in rows),
+                       "negative_examples": sum(not r["positive"] for r in rows),
+                       "quiet_controls": sum("control_bucket" in r for r in rows)},
+            "partition": {name: {"start": part[0]["at"] if part else None,
+                                  "end": part[-1]["at"] if part else None,
+                                  "rows": len(part), "metrics": metrics(part, threshold) if threshold is not None else None}
+                          for name, part in zip(("train", "validation", "test"), parts)},
+            "validation": validation, "test": test}
+
+
+def build(labels, passes, generated_at, warnings=None, warning_reviews=None):
+    label_digest = hashlib.sha256("\n".join(sorted(str(r.get("event_id")) for r in labels)).encode()).hexdigest()
+    pass_digest = hashlib.sha256("\n".join(f"{stamp(r)}:{identity(r)}:{pass_score(r)}" for r in passes).encode()).hexdigest()
+    reviewed = reviewed_warning_examples(warnings or [], warning_reviews or [])
+    analyses = [analyze(outcome, labels, passes, reviewed) for outcome in ("human", "cat")]
+    return {"schema": 1, "proposal_id": f"aircraft-{int(generated_at)}-{label_digest[:10]}",
+            "generated_at": generated_at, "status": "review_required",
+            "automatic_promotion": False,
+            "inputs": {"label_sha256": label_digest, "pass_sha256": pass_digest,
+                       "labels": len(labels), "passes": len(passes),
+                       "reviewed_warning_examples": len(reviewed)},
+            "method": {"controls": "one completed pass per UTC ten-minute bucket, excluding "
+                                   "+/-300 s around EVERY eligible real label across outcomes",
+                       "split": "chronological 60/20/20", "window_seconds": [-WINDOW_BEFORE, WINDOW_AFTER],
+                       "synthetic_excluded": True,
+                       "warning_reviews": "exact saved prediction scores only; recovered journal rows without the original score are excluded"},
+            "outcomes": analyses,
+            "promotion": {"requires_manual_review": True, "settings_changed": False,
+                          "rollback": "retain prior settings.json and proposal_id in operator change record"}}
+
+
+def append_proposal(path, proposal):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    encoded = json.dumps(proposal, sort_keys=True, separators=(",", ":")) + "\n"
+    with path.open("a") as stream:
+        stream.write(encoded)
+        stream.flush()
+        os.fsync(stream.fileno())
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--labels", type=Path, default=LABELS)
+    parser.add_argument("--passes", type=Path, default=PASSES)
+    parser.add_argument("--output", type=Path, default=PROPOSALS)
+    parser.add_argument("--warnings", type=Path, default=WARNINGS)
+    parser.add_argument("--warning-reviews", type=Path, default=WARNING_REVIEWS)
+    parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--generated-at", type=float, default=None, help=argparse.SUPPRESS)
+    args = parser.parse_args(argv)
+    generated = time.time() if args.generated_at is None else args.generated_at
+    proposal = build(read_jsonl(args.labels), read_jsonl(args.passes), generated,
+                     read_jsonl(args.warnings), read_jsonl(args.warning_reviews))
+    if not args.dry_run:
+        append_proposal(args.output, proposal)
+    print(json.dumps(proposal, indent=2, sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

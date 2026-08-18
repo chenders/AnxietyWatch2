@@ -12,6 +12,18 @@ Type=simple
 Environment=PANEL_ADMIN_PORT=8976
 Environment=PANEL_SETTINGS_JSON=/var/lib/panel-noise/settings.json
 Environment=PANEL_ADMIN_PAGE=/usr/local/share/panel-admin/admin.html
+Environment=PANEL_ADMIN_SETTINGS_PAGE=/usr/local/share/panel-admin/admin-settings.html
+Environment=PANEL_AIRCRAFT_BUTTON_STATE=/var/lib/panel-noise/hue-button-state.json
+Environment=PANEL_AIRCRAFT_PROPOSALS=/var/lib/panel-noise/aircraft-model-proposals.jsonl
+Environment=PANEL_AIRCRAFT_ATTRIBUTIONS=/var/lib/panel-noise/aircraft-attributions.json
+Environment=PANEL_WEATHER_CACHE=/var/lib/panel-noise/weather.json
+# The live feed documents. Omitting these once left every feed card reading
+# "no data" from the daemon's fallback paths while the feeds were healthy
+# (2026-08-17). On installs where the panel checkout lives elsewhere, point
+# these at the served directory with a drop-in.
+Environment=ADSB_STATUS_JSON=/opt/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical/adsb_status.json
+Environment=FR24_CACHE_JSON=/opt/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical/fr24_aircraft.json
+Environment=HUE_STATUS_JSON=/opt/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical/hue_status.json
 ExecStart=/usr/local/bin/panel-admin
 Restart=always
 RestartSec=5
