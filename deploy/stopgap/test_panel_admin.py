@@ -263,6 +263,13 @@ class AdminPageSeparationAndAccessibility(unittest.TestCase):
         self.assertIn('esc(e.candidate_count??"—")', self.status)
         self.assertIn('esc(e.margin??"—")', self.status)
 
+    def test_unlocated_count_is_html_escaped(self):
+        self.assertIn('esc(a.unlocated)', self.status)
+
+    def test_global_toggle_guards_against_null_state(self):
+        self.assertIn('if(!STATE){say("global alarm change blocked: state not loaded',
+                      self.settings)
+
     def test_contextual_help_is_accessible(self):
         self.assertIn('id="help-dialog"', self.status)
         self.assertIn('data-help="warning_review"', self.status)
