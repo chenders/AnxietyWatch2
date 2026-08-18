@@ -1,0 +1,154 @@
+#!/usr/bin/env python3
+"""Recover historical Hue aircraft warnings from journald into JSONL.
+
+Input is `journalctl -u panel-hue-warn -o json`. The old daemon journaled each
+fired warning but did not preserve it anywhere reviewable. This recovers every
+actual `warned —` line and enriches identity from the closest matching row in
+the completed-pass spool. IDs derive from journal time and subject, making a
+rerun idempotent in both the JSONL spool and PostgreSQL.
+"""
+import argparse
+import json
+import os
+import re
+import sys
+from pathlib import Path
+
+WARN_RE = re.compile(
+    r"panel-hue-warn: warned — (?P<subject>\S+) "
+    r"(?:(?P<band>VERY LOUD|LOUD|AUDIBLE|FAINT)(?: heard)? in (?P<notice>-?\d+)s"
+    r"|heard, position unknown — no countdown possible)")
+
+
+def parse_journal(stream):
+    for line in stream:
+        try:
+            raw = json.loads(line)
+            micros = int(raw.get("__REALTIME_TIMESTAMP"))
+            message = raw.get("MESSAGE")
+        except (TypeError, ValueError, json.JSONDecodeError):
+            continue
+        match = WARN_RE.search(message) if isinstance(message, str) else None
+        if not match:
+            continue
+        at = micros / 1_000_000
+        subject = match.group("subject")
+        band = match.group("band") or "UNLOCATED"
+        notice = float(match.group("notice")) if match.group("notice") else None
+        yield {"schema": 1, "warning_id": f"journal-{micros}-{subject}",
+               "at": at, "fired": True, "suppressed_by": None, "test": False,
+               "subject": subject, "hex": None, "registration": None,
+               "callsign": None, "operator_kind": None, "band": band,
+               "notice_s": notice, "late": "[LATE" in message,
+               "hold_s": None, "prediction": None,
+               "recovered_from": "systemd journal"}
+
+
+def load_passes(path):
+    rows = []
+    try:
+        with path.open() as stream:
+            for line in stream:
+                try:
+                    row = json.loads(line)
+                except (ValueError, json.JSONDecodeError):
+                    continue
+                ident = row.get("identity") if isinstance(row, dict) else None
+                at = row.get("at") if isinstance(row, dict) else None
+                if isinstance(ident, dict) and isinstance(at, (int, float)):
+                    rows.append(row)
+    except OSError:
+        pass
+    return rows
+
+
+def enrich(warning, passes, window=1800):
+    subject = warning["subject"].upper()
+    candidates = []
+    for row in passes:
+        ident = row["identity"]
+        names = {str(ident.get(k) or "").strip().upper()
+                 for k in ("hex", "reg", "callsign")}
+        delta = abs(float(row["at"]) - warning["at"])
+        if subject in names and delta <= window:
+            candidates.append((delta, row))
+    if not candidates:
+        # A registration warning can still resolve from another pass outside
+        # the time window; identity is stable, prediction is not inferred.
+        for row in passes:
+            ident = row["identity"]
+            names = {str(ident.get(k) or "").strip().upper()
+                     for k in ("hex", "reg", "callsign")}
+            if subject in names:
+                candidates.append((abs(float(row["at"]) - warning["at"]), row))
+    if not candidates:
+        if subject.startswith("N"):
+            warning["registration"] = warning["subject"]
+        else:
+            warning["callsign"] = warning["subject"]
+        return warning
+    row = min(candidates, key=lambda pair: pair[0])[1]
+    ident = row["identity"]
+    warning.update({"hex": ident.get("hex"), "registration": ident.get("reg"),
+                    "callsign": ident.get("callsign"),
+                    "aircraft_type": ident.get("type")})
+    # Historical journal preserves band/countdown, but not the full forecast.
+    # Pass geometry is kept separately and explicitly identified as such.
+    warning["matched_pass"] = {k: row.get(k) for k in
+                               ("at", "provenance", "noise_index",
+                                "loudness_band", "phase", "distance_km",
+                                "altitude_ft", "detail")}
+    return warning
+
+
+def append_new(path, rows):
+    known = set()
+    try:
+        with path.open() as stream:
+            for line in stream:
+                try:
+                    known.add(json.loads(line).get("warning_id"))
+                except (ValueError, json.JSONDecodeError):
+                    pass
+    except OSError:
+        pass
+    fresh = [row for row in rows if row["warning_id"] not in known]
+    if not fresh:
+        return 0
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a") as stream:
+        for row in fresh:
+            stream.write(json.dumps(row, separators=(",", ":"), allow_nan=False) + "\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+    return len(fresh)
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--journal", type=Path, help="saved journal JSON; default stdin")
+    parser.add_argument("--passes", type=Path,
+                        default=Path("/var/lib/panel-noise/loud-aircraft.jsonl"))
+    parser.add_argument("--output", type=Path,
+                        default=Path("/var/lib/panel-noise/hue-warnings.jsonl"))
+    parser.add_argument("--dry-run", action="store_true")
+    args = parser.parse_args(argv)
+    passes = load_passes(args.passes)
+    stream = args.journal.open() if args.journal else sys.stdin
+    try:
+        rows = [enrich(row, passes) for row in parse_journal(stream)]
+    finally:
+        if args.journal:
+            stream.close()
+    if args.dry_run:
+        for row in rows:
+            print(json.dumps(row, sort_keys=True))
+        return 0
+    added = append_new(args.output, rows)
+    print(f"panel-warning-backfill: found {len(rows)} historical warnings; "
+          f"appended {added}; already present {len(rows) - added}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

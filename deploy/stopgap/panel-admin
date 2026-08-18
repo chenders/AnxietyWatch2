@@ -45,6 +45,8 @@ import panel_settings  # noqa: E402
 PORT = int(os.environ.get("PANEL_ADMIN_PORT", "8976"))
 BIND = os.environ.get("PANEL_ADMIN_BIND", "0.0.0.0")
 PAGE = Path(os.environ.get("PANEL_ADMIN_PAGE", "/usr/local/share/panel-admin/admin.html"))
+SETTINGS_PAGE = Path(os.environ.get(
+    "PANEL_ADMIN_SETTINGS_PAGE", "/usr/local/share/panel-admin/admin-settings.html"))
 STATUS_JSON = Path(os.environ.get(
     "ADSB_STATUS_JSON",
     "/opt/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical/adsb_status.json"))
@@ -54,10 +56,34 @@ FR24_JSON = Path(os.environ.get(
 HUE_JSON = Path(os.environ.get(
     "HUE_STATUS_JSON",
     "/opt/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical/hue_status.json"))
+BUTTON_JSON = Path(os.environ.get(
+    "PANEL_AIRCRAFT_BUTTON_STATE", "/var/lib/panel-noise/hue-button-state.json"))
+PROPOSALS_JSONL = Path(os.environ.get(
+    "PANEL_AIRCRAFT_PROPOSALS", "/var/lib/panel-noise/aircraft-model-proposals.jsonl"))
+ATTRIBUTIONS_JSON = Path(os.environ.get(
+    "PANEL_AIRCRAFT_ATTRIBUTIONS", "/var/lib/panel-noise/aircraft-attributions.json"))
+WEATHER_JSON = Path(os.environ.get(
+    "PANEL_WEATHER_CACHE", "/var/lib/panel-noise/weather.json"))
+WARNINGS_JSONL = Path(os.environ.get(
+    "HUE_WARNING_LOG", "/var/lib/panel-noise/hue-warnings.jsonl"))
+WARNING_REVIEWS_JSONL = Path(os.environ.get(
+    "PANEL_WARNING_REVIEWS", "/var/lib/panel-noise/hue-warning-reviews.jsonl"))
+BUTTON_STALE_SECONDS = 180.0
+# A 'connected' stream with no received bytes for this long is a half-open
+# socket, not a healthy stream. Generous: the capture daemon's own transport
+# timeout is 90 s, so anything beyond two timeouts means its writes stopped.
+STREAM_ACTIVITY_STALE_SECONDS = float(os.environ.get(
+    "PANEL_BUTTON_ACTIVITY_STALE_SECONDS", "240"))
+# The console is polled every few seconds; shipping every event ever recorded
+# in every poll would grow without bound. History summaries stay complete.
+MAX_EVENTS_IN_STATE = 100
+MAX_WARNINGS_IN_STATE = 100
+WARNING_REVIEW_WINDOW_SECONDS = 3 * 60 * 60
 
 # Reported as up/down only. The console shows what is running; it does not
 # offer to start or stop anything, because a web page that can stop the
 # collector is a way to lose a night of data by misclick.
+                 "panel-hue-aircraft-label", "panel-aircraft-learn.timer",
                  "panel-noise-drain.timer", "panel-aircraft-enrich.timer",
                  "panel-http", "vitals-bp", "vitals-bp-connect", "emay-live")
 
@@ -90,10 +116,142 @@ def disk_free():
         return None
 
 
+def read_last_jsonl(path):
+    last = None
+    try:
+        with path.open() as stream:
+            for line in stream:
+                try:
+                    row = json.loads(line)
+                except ValueError:
+                    continue
+                if isinstance(row, dict):
+                    last = row
+    except OSError:
+        pass
+    return last
+
+
+def read_jsonl(path):
+    rows = []
+    try:
+        with path.open() as stream:
+            for line in stream:
+                try:
+                    row = json.loads(line)
+                except ValueError:
+                    continue
+                if isinstance(row, dict):
+                    rows.append(row)
+    except OSError:
+        pass
+    return rows
+
+
+def warning_history(now=None):
+    now = time.time() if now is None else now
+    warnings = [row for row in read_jsonl(WARNINGS_JSONL)
+                if isinstance(row.get("warning_id"), str)
+                and isinstance(row.get("at"), (int, float))]
+    reviews = {}
+    for row in read_jsonl(WARNING_REVIEWS_JSONL):
+        warning_id, reviewed_at = row.get("warning_id"), row.get("reviewed_at")
+        if (isinstance(warning_id, str) and isinstance(reviewed_at, (int, float))
+                and (warning_id not in reviews
+                     or reviewed_at > reviews[warning_id].get("reviewed_at", 0))):
+            reviews[warning_id] = row
+    warnings.sort(key=lambda row: (row["at"], row["warning_id"]), reverse=True)
+    reviewable = [row for row in warnings
+                  if now - row["at"] <= WARNING_REVIEW_WINDOW_SECONDS]
+    visible = []
+    for row in reviewable[:MAX_WARNINGS_IN_STATE]:
+        joined = dict(row)
+        joined["review"] = reviews.get(row["warning_id"])
+        visible.append(joined)
+    return {"rows": visible, "total": len(reviewable),
+            "archived_total": len(warnings) - len(reviewable),
+            "review_window_seconds": WARNING_REVIEW_WINDOW_SECONDS}
+
+
+def review_warning(payload, now=None):
+    if not isinstance(payload, dict):
+        return False, "body must be a JSON object"
+    warning_id, verdict = payload.get("warning_id"), payload.get("verdict")
+    if not isinstance(warning_id, str) or not warning_id:
+        return False, f"warning_id={warning_id!r} is invalid"
+    if verdict not in ("accurate", "inaccurate", "unknown"):
+        return False, (f"verdict={verdict!r}; expected accurate, inaccurate, "
+                       "or unknown")
+    known = {row.get("warning_id") for row in read_jsonl(WARNINGS_JSONL)}
+    if warning_id not in known:
+        return False, f"warning_id={warning_id!r} was not found"
+    note = payload.get("note")
+    if note is not None and not isinstance(note, str):
+        return False, f"note={note!r} must be text"
+    row = {"schema": 1, "warning_id": warning_id,
+           "reviewed_at": time.time() if now is None else now,
+           "verdict": verdict, "note": note or None,
+           "provenance": "admin_operator"}
+    try:
+        WARNING_REVIEWS_JSONL.parent.mkdir(parents=True, exist_ok=True)
+        with WARNING_REVIEWS_JSONL.open("a") as stream:
+            stream.write(json.dumps(row, separators=(",", ":"), allow_nan=False) + "\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+    except (OSError, ValueError) as exc:
+        return False, f"review not stored: {exc}"
+    return True, row
+
+
+def button_health(doc, now):
+    changed = doc.get("stream_changed_at")
+    age = round(now - changed, 1) if isinstance(changed, (int, float)) else None
+    activity = doc.get("stream_last_activity_at")
+    activity_age = round(now - activity, 1) if isinstance(activity, (int, float)) else None
+    pending = doc.get("pending_gestures")
+    if not isinstance(pending, list):
+        pending = [doc["pending_gesture"]] if isinstance(doc.get("pending_gesture"), dict) else []
+    blockers = []
+    if doc.get("stream_state") != "connected":
+        blockers.append(f"stream_state={doc.get('stream_state')!r}")
+        if age is not None and age > BUTTON_STALE_SECONDS:
+            blockers.append(f"disconnected for {age}s")
+    else:
+        # 'connected' is a claim; received bytes are the evidence. A half-open
+        # TCP session looks connected forever without this check.
+        if activity_age is None:
+            blockers.append("stream reports connected but no activity was ever recorded "
+                            "(capture daemon predates the heartbeat, or is wedged)")
+        elif activity_age > STREAM_ACTIVITY_STALE_SECONDS:
+            blockers.append(f"stream reports connected but no bridge traffic for "
+                            f"{activity_age}s (limit {STREAM_ACTIVITY_STALE_SECONDS:.0f}s)")
+    if age is None:
+        blockers.append("stream_changed_at is absent")
+    if doc.get("stream_error"):
+        blockers.append(f"stream_error={doc['stream_error']}")
+    if pending:
+        blockers.append(f"pending_gestures={len(pending)}")
+    if doc.get("write_error"):
+        blockers.append(f"write_error={doc['write_error']}")
+    battery = doc.get("battery") if isinstance(doc.get("battery"), dict) else {}
+    if battery.get("battery_state") in ("low", "critical"):
+        blockers.append(f"battery_state={battery['battery_state']}")
+    return {"state": "healthy" if not blockers else "degraded", "blockers": blockers,
+            "stream_state": doc.get("stream_state"), "stream_age_s": age,
+            "stream_activity_age_s": activity_age,
+            "stream_error": doc.get("stream_error"), "pending_gestures": len(pending),
+            "last_label": doc.get("last_label"), "observed_at": doc.get("observed_at"),
+            "battery": battery or None}
+
+
 def state():
     now = time.time()
     adsb = read_json(STATUS_JSON) or {}
     hue = read_json(HUE_JSON) or {}
+    button = read_json(BUTTON_JSON) or {}
+    proposal = read_last_jsonl(PROPOSALS_JSONL) or {}
+    attributions = read_json(ATTRIBUTIONS_JSON) or {}
+    weather = read_json(WEATHER_JSON) or {}
 
     def age(doc):
         written = doc.get("written_at")
@@ -120,15 +278,40 @@ def state():
                     "cooldown_s": hue.get("cooldown_s"),
                     "last_warned_at": hue.get("last_warned_at"),
                     "errors": hue.get("errors")},
+            "aircraft_button": button_health(button, now),
+            "weather": {"age_s": (round(now - weather["fetched_at"], 1)
+                                  if isinstance(weather.get("fetched_at"), (int, float)) else None),
+                        "observation": weather.get("observation"),
+                        "last_error": weather.get("last_error")},
+            "aircraft_learning": {"proposal_id": proposal.get("proposal_id"),
+                                  "generated_at": proposal.get("generated_at"),
+                                  "status": proposal.get("status"),
+                                  "outcomes": proposal.get("outcomes"),
+                                  "automatic_promotion": proposal.get("automatic_promotion")},
         },
         "watching": [
             {"hex": r.get("hex"), "reg": r.get("registration"),
              "operator": r.get("operator_name"), "type": r.get("icao_type"),
              "route": r.get("route"),
+             # Real receiver geometry for Map Lens. Missing geometry remains
+             # absent; the client never invents a map position.
+             "bearing": r.get("bearing"), "distance_km": r.get("distance_km"),
+             "alt_ft": r.get("alt_ft"),
              "band": (r.get("prediction") or {}).get("loudness_band"),
-             "eta_s": (r.get("prediction") or {}).get("eta_seconds")}
+             "eta_s": (r.get("prediction") or {}).get("eta_seconds"),
+             "noise_history": (attributions.get("airframes") or {}).get(str(r.get("hex") or "").upper())}
             for r in (adsb.get("adsb_predictions") or [])[:8]
         ],
+        "warnings": warning_history(),
+        "noise_attribution": {
+            "generated_at": attributions.get("generated_at"),
+            # Newest last; capped so the poll payload stays bounded. The full
+            # record lives in the attributions file and in PostgreSQL.
+            "events": (attributions.get("events") or [])[-MAX_EVENTS_IN_STATE:],
+            "events_total": len(attributions.get("events") or []),
+            "airframes": attributions.get("airframes") or {},
+            "flights": attributions.get("flights") or {},
+        },
     }
 
 
@@ -184,11 +367,13 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(raw)
 
     def do_GET(self):
-        if self.path.split("?")[0] in ("/", "/index.html", "/admin.html"):
+        page_path = self.path.split("?")[0]
+        if page_path in ("/", "/index.html", "/admin.html", "/settings"):
+            page = SETTINGS_PAGE if page_path == "/settings" else PAGE
             try:
-                self._send(200, PAGE.read_bytes(), "text/html; charset=utf-8")
+                self._send(200, page.read_bytes(), "text/html; charset=utf-8")
             except OSError as exc:
-                self._send(500, f"admin page missing: {exc}", "text/plain")
+                self._send(500, f"admin page missing: {page}: {exc}", "text/plain")
             return
         if self.path.split("?")[0] == "/api/state":
             self._send(200, json.dumps(state(), default=str))
@@ -196,7 +381,8 @@ class Handler(BaseHTTPRequestHandler):
         self._send(404, json.dumps({"error": "not found"}))
 
     def do_POST(self):
-        if self.path.split("?")[0] != "/api/settings":
+        endpoint = self.path.split("?")[0]
+        if endpoint not in ("/api/settings", "/api/warning-review"):
             self._send(404, json.dumps({"error": "not found"}))
             return
         try:
@@ -211,6 +397,14 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError as exc:
             self._send(400, json.dumps({"error": f"invalid JSON: {exc}"}))
             return
+        if endpoint == "/api/warning-review":
+            ok, result = review_warning(payload)
+            if not ok:
+                code = 404 if "was not found" in result else 400
+                self._send(code, json.dumps({"error": result}))
+                return
+            self._send(200, json.dumps({"saved": True, "review": result}))
+            return
         ok, reasons = save(payload)
         if not ok:
             # Named, every one of them. "Rejected" without the value that was
@@ -222,8 +416,9 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
-    if not PAGE.exists():
-        print(f"panel-admin: warning, page not found at {PAGE}", flush=True)
+    for page in (PAGE, SETTINGS_PAGE):
+        if not page.exists():
+            print(f"panel-admin: warning, page not found at {page}", flush=True)
     server = ThreadingHTTPServer((BIND, PORT), Handler)
     server.daemon_threads = True
     host = socket.gethostname()

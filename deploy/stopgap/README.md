@@ -76,8 +76,22 @@ END $$;
 GRANT CONNECT ON DATABASE vitals TO anxietywatch;
 GRANT USAGE ON SCHEMA public TO anxietywatch;
 GRANT SELECT, INSERT, UPDATE ON aircraft, aircraft_pass, flight_route TO anxietywatch;
+-- Noise archive (sqitch changes noise_event, aircraft_track,
+-- noise_analysis_helpers must be deployed first). No UPDATE: events,
+-- candidates, verdicts and track points are written once, never edited.
+GRANT SELECT, INSERT ON noise_event, noise_event_corroboration,
+                        noise_event_candidate, noise_attribution,
+                        aircraft_track_point TO anxietywatch;
+GRANT SELECT ON aircraft_noise_history, noise_event_audibility,
+                aircraft_track_gaps TO anxietywatch;
 SQL
 sudo -u anxietywatch psql -d vitals -c 'SELECT 1 FROM aircraft_pass LIMIT 0'
+# Schema drift blocked all ingest for two weeks in a sibling project while a
+# check command sat unused; these fail loudly if `sqitch deploy` was missed.
+sudo -u anxietywatch psql -d vitals -c 'SELECT 1 FROM noise_event LIMIT 0'
+sudo -u anxietywatch psql -d vitals -c 'SELECT 1 FROM noise_event_candidate LIMIT 0'
+sudo -u anxietywatch psql -d vitals -c 'SELECT 1 FROM noise_attribution LIMIT 0'
+sudo -u anxietywatch psql -d vitals -c 'SELECT 1 FROM aircraft_track_point LIMIT 0'
 
 sudo systemctl daemon-reload
 

@@ -1,258 +1,46 @@
 <!doctype html>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Noise Watch · Admin</title>
-<!--
-  Admin console for the aircraft noise watch.
-
-  DELIBERATELY THE SAME LANGUAGE AS THE PANEL
-  -------------------------------------------
-  Same palette, same monospace, same rule that an unknown is rendered as an
-  unknown. This is the configuration surface for the screen next to it, not a
-  separate product, and a console that looked like a different application
-  would make the operator translate between two visual systems to answer one
-  question.
-
-  WHERE IT DIFFERS
-  ----------------
-  This is read at a desk, deliberately, so it can afford density and does not
-  need the black-field discipline.
-
-  SCOPE: aircraft noise only. Nothing medical is reachable from here.
--->
 <style>
-:root{
-  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
-}
-*{margin:0;padding:0;box-sizing:border-box}
-body{background:var(--bg);color:var(--text);font-family:var(--mono);font-size:13px;
-     line-height:1.5;padding:22px 20px 60px;max-width:1180px;margin:0 auto}
-h1{font-size:15px;letter-spacing:.26em;font-weight:400;color:var(--air)}
-h2{font-size:9px;letter-spacing:.28em;color:var(--label);font-weight:400;
-   margin:26px 0 9px;padding-bottom:5px;border-bottom:1px solid var(--rule-quiet)}
-.sub{color:var(--unknown);font-size:11px;margin-top:5px}
-.warn{margin-top:12px;padding:8px 11px;border:1px solid var(--watch);
-      color:var(--watch);font-size:11px;letter-spacing:.04em}
-
-.grid{display:grid;gap:9px;grid-template-columns:repeat(auto-fill,minmax(196px,1fr))}
-.card{background:var(--field);border:1px solid var(--rule-quiet);padding:9px 11px}
-.card .k{font-size:9px;letter-spacing:.22em;color:var(--label)}
-.card .v{font-size:17px;margin-top:3px;font-variant-numeric:tabular-nums}
-.card .n{font-size:10px;color:var(--unknown);margin-top:2px}
-.ok{color:var(--ok)} .bad{color:var(--bad)} .idk{color:var(--unknown)}
-
-table{width:100%;border-collapse:collapse;font-size:12px}
-th{text-align:left;font-size:9px;letter-spacing:.2em;color:var(--label);
-   font-weight:400;padding:5px 9px 5px 0;border-bottom:1px solid var(--rule-quiet)}
-td{padding:5px 9px 5px 0;border-bottom:1px solid var(--rule-quiet);white-space:nowrap}
-td.dim{color:var(--unknown)}
-
-.set{background:var(--field);border:1px solid var(--rule-quiet);padding:13px;margin-bottom:9px}
-.set label{display:block;font-size:12px;color:var(--text);margin-bottom:3px}
-.set .note{font-size:11px;color:var(--unknown);margin:4px 0 9px;max-width:74ch}
-input[type=number]{font-family:var(--mono);font-size:14px;background:var(--raised);
-  color:var(--text);border:1px solid var(--rule);padding:5px 8px;width:130px}
-input[type=number]:focus,button:focus-visible,input[type=checkbox]:focus-visible{
-  outline:2px solid var(--air);outline-offset:2px}
-.choices{display:flex;flex-wrap:wrap;gap:14px}
-.choices label{display:flex;align-items:center;gap:6px;font-size:12px;margin:0}
-.bar{position:sticky;bottom:0;background:var(--bg);padding:13px 0 0;margin-top:16px;
-     border-top:1px solid var(--rule);display:flex;align-items:center;gap:14px}
-button{font-family:var(--mono);font-size:12px;letter-spacing:.14em;padding:8px 18px;
-  background:transparent;color:var(--air);border:1px solid var(--air);cursor:pointer}
-button:hover{background:var(--air);color:var(--bg)}
-button.quiet{color:var(--unknown);border-color:var(--rule)}
-button.quiet:hover{background:var(--rule);color:var(--text)}
-#msg{font-size:11px}
-#msg.good{color:var(--ok)} #msg.err{color:var(--bad)}
-#msg ul{margin:4px 0 0 16px}
-.foot{margin-top:30px;font-size:10px;color:var(--label);line-height:1.7}
+/* Daily Briefing */
+body[data-view=briefing]{background:#080c0e;font-family:var(--serif)}body[data-view=briefing] .shell{max-width:1180px}body[data-view=briefing] .top{border-bottom:3px solid #d7e0e2;padding-bottom:18px}body[data-view=briefing] .top h1{font:36px/1 var(--serif)}body[data-view=briefing] .dashboard{grid-template-columns:1fr 340px;grid-template-areas:"watch health" "warnings warnings" "events events" "airframes airframes"}body[data-view=briefing] .panel{border-radius:0;background:#11191d;padding:22px}body[data-view=briefing] .health-grid{grid-template-columns:1fr}body[data-view=briefing] .health-card{border:0;border-bottom:1px solid var(--line);border-radius:0;display:grid;grid-template-columns:1fr auto;gap:8px}body[data-view=briefing] .health-card strong{margin:0}body[data-view=briefing] .health-card small{grid-column:1/-1}body[data-view=briefing] .warnings .warning-list{grid-template-columns:repeat(3,1fr);gap:16px}body[data-view=briefing] .warning-row{border:1px solid var(--line);padding:16px}body[data-view=briefing] .events .event-list{position:relative;padding-left:12px}body[data-view=briefing] .event-row{grid-template-columns:75px 1fr auto;padding:17px;border-color:var(--line)}body[data-view=briefing] .airframe-grid{grid-template-columns:repeat(4,1fr)}body[data-view=briefing] .panel h2{font:700 23px var(--serif)}body[data-view=briefing] .identity{font-family:var(--serif)}
+/* Map Lens */
+@media(max-width:1000px){.health-grid{grid-template-columns:repeat(3,minmax(0,1fr))}body[data-view=briefing] .warnings .warning-list,body[data-view=map] .warnings .warning-list{grid-template-columns:1fr}.tech-grid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:700px){.shell{padding:20px 14px 60px}.top{align-items:flex-start;flex-direction:column}.tools{justify-content:flex-start}.dashboard,body[data-view=briefing] .dashboard{grid-template-columns:1fr;grid-template-areas:"health" "watch" "warnings" "events" "airframes"}.health-grid{grid-template-columns:repeat(2,1fr)}body[data-view=briefing] .warnings .warning-list,body[data-view=map] .warnings .warning-list{grid-template-columns:1fr}body[data-view=briefing] .airframe-grid,body[data-view=map] .airframe-grid{grid-template-columns:repeat(2,1fr)}body[data-view=map] .watch{grid-template-columns:1fr}body[data-view=map] .map-wrap{border-right:0;border-bottom:1px solid var(--line);min-height:390px}.tech-grid{grid-template-columns:1fr}}
+@media(max-width:430px){.health-grid{grid-template-columns:1fr 1fr}.panel{padding:14px}.watch-lead{grid-template-columns:1fr}.countdown{text-align:left}.event-row{grid-template-columns:55px 1fr}.event-row .verdict{grid-column:2}.airframe-grid,body[data-view=briefing] .airframe-grid,body[data-view=map] .airframe-grid{grid-template-columns:1fr}.warning-actions{grid-template-columns:1fr}.warning-actions button,.tools a,.view-picker select{min-height:44px}.tools{width:100%}.view-picker{width:100%;justify-content:space-between}.view-picker select{flex:1}.radar{width:88%}}
+@media print{@page{size:landscape;margin:9mm}html,body,*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}.shell{max-width:none;padding:0}.tools,.warning,.pager,.view-only,.info,dialog{display:none!important}.panel{break-inside:avoid}.dashboard{display:block}.panel{margin-bottom:10px}}
 </style>
-
-<h1>NOISE WATCH · ADMIN</h1>
-<div class="sub">Aircraft noise only. Nothing medical is reachable from this page.</div>
-<div class="warn">No authentication. Anyone on this network can change when the light fires.</div>
-
-<div id="disarmed" style="display:none;margin-top:12px;padding:9px 12px;
-     border:1px solid var(--bad);color:var(--bad);font-size:12px;letter-spacing:.06em">
+<div class="shell">
+<header class="top"><div><div class="eyebrow">NOISE WATCH · ADMIN</div><h1 id="view-title">Aircraft status &amp; history</h1></div><div class="tools"><a id="settings-link" href="/settings">SETTINGS</a><label class="view-picker">DESIGN <select id="view-select" aria-label="Admin design"><option value="operations">OPERATIONS DECK</option><option value="briefing">DAILY BRIEFING</option><option value="map">MAP LENS</option></select></label></div></header>
+<div class="status-hidden" id="health-note">Status cards hidden. <button id="health-show">SHOW STATUS CARDS</button></div>
+<main class="dashboard">
+<section class="panel health" id="health-panel"><div class="panel-head"><div><div class="kicker">Live system state</div><h2>System health</h2></div><button class="quiet view-only" id="health-toggle">HIDE STATUS CARDS</button></div><div class="health-grid" id="feeds"></div></section>
+<section class="panel watch"><div class="panel-head"><div><div class="kicker">Live receiver forecast</div><h2>Aircraft being watched</h2></div><button class="quiet map-only" id="map-close">CLOSE MAP</button></div><div class="map-wrap" id="map-wrap"><div class="radar" id="radar"><span class="house" title="House"></span><span class="map-legend">10 MI RADIUS · OUTSIDE AIRCRAFT NOT PLOTTED</span></div></div><div class="watch-body"><div id="watching"></div></div></section>
+<section class="panel warnings"><div class="panel-head"><div><div class="kicker">Action required · three-hour window</div><h2>Warnings to review <button class="info" data-help="warning_review" aria-label="Explain warning reviews">?</button></h2></div></div><div id="warnings"></div></section>
+<section class="panel events"><div class="panel-head"><div><div class="kicker">Confirmed evidence, never guesses</div><h2>Recent noise evidence <button class="info" data-help="event_verdict" aria-label="Explain evidence verdicts">?</button></h2></div></div><div id="noise-events"></div></section>
+<section class="panel airframes"><div class="panel-head"><div><div class="kicker">Exact aircraft, not aircraft models</div><h2>Known noise-causing airframes</h2></div></div><div id="noise-airframes"></div></section>
+</main>
+<section class="panel technical" id="technical"><div class="panel-head"><div><div class="kicker">Actual service state</div><h2>Technical details</h2></div><button class="quiet" id="tech-toggle">HIDE DETAILS</button></div><div class="tech-grid" id="units"></div><div class="foot" id="foot"></div><a class="alarm-control" id="alarm-control-link" href="/settings#danger">DISABLE ALARMS GLOBALLY…</a></section>
 </div>
-
-<h2>FEEDS</h2>
-<div class="grid" id="feeds"></div>
-
-<h2>SERVICES</h2>
-<div class="grid" id="units"></div>
-
-<h2>WATCHING</h2>
-<div id="watching"></div>
-
-<h2>SETTINGS</h2>
-<div id="settings"></div>
-<div class="bar">
-  <button id="save">SAVE</button>
-  <button id="revert" class="quiet">REVERT TO DEFAULTS</button>
-  <span id="msg"></span>
-</div>
-
-<div class="foot" id="foot"></div>
-
+<dialog id="help-dialog"><button class="dialog-close">CLOSE</button><h2 id="help-title"></h2><div id="help-body"></div></dialog>
 <script>
-(() => {
-  "use strict";
-  const el = id => document.getElementById(id);
-  const esc = s => String(s ?? "").replace(/[&<>"]/g, c =>
-    ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-  let STATE = null, dirty = false;
-
-  /* An age, never a bare "fresh". A number can be argued with; a word cannot.
-     Unknown renders as unknown and is never shown as healthy. */
-  function age(seconds, limit) {
-    if (seconds == null) return '<span class="idk">no data</span>';
-    const cls = seconds <= limit ? "ok" : "bad";
-    return `<span class="${cls}">${seconds.toFixed(1)}s</span>`;
-  }
-
-  function card(k, v, n) {
-    return `<div class="card"><div class="k">${esc(k)}</div>` +
-           `<div class="v">${v}</div>` + (n ? `<div class="n">${esc(n)}</div>` : "") + "</div>";
-  }
-
-  function renderFeeds(f) {
-    el("feeds").innerHTML =
-      card("DONGLE", age(a.age_s, 5), `${a.aircraft} aircraft · ${a.identified} named · ${a.with_route} routed`) +
-      card("HEARD, NO POSITION", a.unlocated > 0
-            ? `<span class="bad">${a.unlocated}</span>` : `<span class="idk">0</span>`,
-           "roster airframes heard but not located") +
-           (r.state || "unknown") + (r.credits ? ` · ${r.credits.estimated_spent} credits` : "")) +
-      card("HUE", age(h.age_s, 10),
-           `${(h.lights || []).length + (h.alert_lights || []).length} lights · cooldown ${h.cooldown_s ?? "?"}s`);
-  }
-
-  function renderUnits(units) {
-    el("units").innerHTML = Object.entries(units).map(([name, st]) => {
-      const cls = st === "active" ? "ok" : st === "unknown" ? "idk" : "bad";
-      return card(name, `<span class="${cls}">${esc(st)}</span>`);
-    }).join("");
-  }
-
-  function renderWatching(rows) {
-    if (!rows.length) {
-      el("watching").innerHTML = '<div class="card"><div class="n">nothing forecast to pass</div></div>';
-      return;
-    }
-    el("watching").innerHTML = "<table><thead><tr><th>ID</th><th>OPERATOR</th>" +
-      "<th>TYPE</th><th>ROUTE</th><th>BAND</th><th>ETA</th></tr></thead><tbody>" +
-      rows.map(r => {
-        const route = r.route ? `${r.route.from || "?"} → ${r.route.to || "?"}` : "";
-        return "<tr>" +
-          `<td>${esc(r.reg || r.hex || "—")}</td>` +
-          `<td class="${r.operator ? "" : "dim"}">${esc(r.operator || "not identified")}</td>` +
-          `<td>${esc(r.type || "—")}</td>` +
-          `<td class="dim">${esc(route || "—")}</td>` +
-          `<td>${esc(r.band || "UNKNOWN")}</td>` +
-          `<td>${r.eta_s == null ? "—" : esc(r.eta_s) + "s"}</td></tr>`;
-      }).join("") + "</tbody></table>";
-  }
-
-  /* The form is generated from the schema the daemons themselves use, so a
-     bound shown here cannot drift from the bound actually enforced. */
-  function renderSettings(schema, current) {
-    el("settings").innerHTML = Object.entries(schema).map(([name, spec]) => {
-      const value = current[name];
-      let control;
-      if (spec.kind === "flag") {
-        const on = value == null ? spec.default : value;
-        control = `<label style="display:flex;align-items:center;gap:8px;margin:0">` +
-          `<input type="checkbox" id="f_${name}"${on ? " checked" : ""}>` +
-          `<span>${on ? "on" : "off"}</span></label>`;
-      } else if (spec.kind === "number") {
-        const v = value ?? spec.default;
-        control = `<input type="number" id="f_${name}" value="${esc(v)}" ` +
-          `min="${spec.min}" max="${spec.max}" step="0.5">` +
-          `<span class="note" style="display:inline;margin-left:9px">` +
-          `${spec.min}–${spec.max}${value == null ? " · unset, using " + spec.default : ""}</span>`;
-      } else {
-        const chosen = new Set(value ?? spec.default);
-        control = '<div class="choices">' + spec.choices.map(c =>
-          `<label><input type="checkbox" name="${name}" value="${esc(c)}"` +
-          `${chosen.has(c) ? " checked" : ""}> ${esc(c)}</label>`).join("") + "</div>";
-      }
-      return `<div class="set"><label for="f_${name}">${esc(spec.label)}</label>` +
-             `<div class="note">${esc(spec.note)}</div>${control}</div>`;
-    }).join("");
-    el("settings").addEventListener("input", () => { dirty = true; }, {once: true});
-  }
-
-  function collect() {
-    const out = {};
-    for (const [name, spec] of Object.entries(STATE.schema)) {
-      if (spec.kind === "flag") {
-        out[name] = el("f_" + name).checked;
-      } else if (spec.kind === "number") {
-        const raw = el("f_" + name).value.trim();
-        out[name] = raw === "" ? null : Number(raw);
-      } else {
-        out[name] = [...document.querySelectorAll(`input[name="${name}"]:checked`)]
-          .map(i => i.value);
-      }
-    }
-    return out;
-  }
-
-  function say(text, cls, reasons) {
-    const m = el("msg");
-    m.className = cls || "";
-    m.innerHTML = esc(text) +
-      (reasons && reasons.length
-        ? "<ul>" + reasons.map(r => `<li>${esc(r)}</li>`).join("") + "</ul>" : "");
-  }
-
-  async function load() {
-    try {
-      const r = await fetch("/api/state", {cache: "no-store"});
-      STATE = await r.json();
-    } catch (e) { say("cannot reach the admin service", "err"); return; }
-    el("disarmed").style.display =
-      STATE.feeds.hue.warnings_enabled === false ? "block" : "none";
-    renderFeeds(STATE.feeds);
-    renderUnits(STATE.units);
-    renderWatching(STATE.watching || []);
-    if (!dirty) renderSettings(STATE.schema, STATE.settings.settings || {});
-    const s = STATE.settings;
-    el("foot").innerHTML =
-      `settings file: ${esc(s.path)} · ${s.present ? "present" : "absent, using defaults"}` +
-      (s.error ? `<br><span class="bad">${esc(s.error)}</span>` : "") +
-      `<br>model: ${esc(STATE.feeds.adsb.model || "—")}` +
-      (STATE.disk ? `<br>disk: ${STATE.disk.free_gb} GB free · ${STATE.disk.used_pct}% used` : "");
-  }
-
-  el("save").addEventListener("click", async () => {
-    say("saving…");
-    try {
-      const r = await fetch("/api/settings", {
-        method: "POST", headers: {"Content-Type": "application/json"},
-        body: JSON.stringify(collect())});
-      const body = await r.json();
-      if (!r.ok) { say("rejected — nothing was changed:", "err", body.reasons); return; }
-      dirty = false;
-      say("saved · the daemons pick this up within a second, no restart", "good");
-      load();
-    } catch (e) { say("save failed: " + e, "err"); }
-  });
-
-  el("revert").addEventListener("click", async () => {
-    say("clearing…");
-    try {
-      await fetch("/api/settings", {
-        method: "POST", headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({})});
-      dirty = false;
-      say("cleared · every value falls back to its built-in default", "good");
-      load();
-    } catch (e) { say("clear failed: " + e, "err"); }
-  });
-
-  load();
-  setInterval(load, 4000);
+(()=>{"use strict";
+const VIEWS=new Set(["operations","briefing","map"]),STORE="noiseWatchAdminDesign";const $=id=>document.getElementById(id);const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));let STATE=null;
+const HELP={warning_review:["Warning reviews","Choose ACCURATE if the prediction matched what you heard, INACCURATE if it did not, or UNKNOWN when you cannot reliably determine either. Unknown contributes nothing to training."],event_verdict:["Evidence verdicts","CONFIRMED means one aircraft clearly ranked above alternatives. AMBIGUOUS and UNATTRIBUTED remain unassigned rather than becoming guesses."]};
+function chosenView(){const q=new URL(location.href).searchParams.get("view");if(VIEWS.has(q))return q;try{const s=localStorage.getItem(STORE);if(VIEWS.has(s))return s}catch(e){}return"operations"}
+function syncMapVisibility(){let hidden=false;try{hidden=localStorage.getItem("noiseWatchHideMap")==="1"}catch(e){}$("map-wrap").hidden=hidden;$("map-close").textContent=hidden?"SHOW MAP":"CLOSE MAP"}
+function applyView(view,push=false){if(!VIEWS.has(view))view="operations";document.body.dataset.view=view;$("view-select").value=view;$("view-title").textContent={operations:"Aircraft status & history",briefing:"Status, warnings and evidence",map:"Airspace status & evidence"}[view];try{localStorage.setItem(STORE,view)}catch(e){}const u=new URL(location.href);u.searchParams.set("view",view);history[push?"pushState":"replaceState"](null,"",u);$("settings-link").href="/settings?view="+view;$("reenable-link").href="/settings?view="+view+"#danger";$("alarm-control-link").href="/settings?view="+view+"#danger";syncMapVisibility();drawMap();}
+function pageSlice(key,rows){const u=new URL(location.href),allowed = [10, 25, 100],rq=Number(u.searchParams.get(key+"_size")),size=allowed.includes(rq)?rq:10,pages=Math.max(1,Math.ceil(rows.length/size)),rp=Number(u.searchParams.get(key+"_page")),page=Math.min(pages,Math.max(1,Number.isInteger(rp)?rp:1));return{rows:rows.slice((page-1)*size,page*size),controls:`<div class="pager"><button data-page-key="${key}" data-page="${page-1}"${page<=1?" disabled":""}>PREVIOUS</button><span>Page ${page} of ${pages} · ${rows.length}</span><button data-page-key="${key}" data-page="${page+1}"${page>=pages?" disabled":""}>NEXT</button><label>Rows <select data-size-key="${key}">${allowed.map(n=>`<option${n===size?" selected":""}>${n}</option>`).join("")}</select></label></div>`}}
+function updatePage(key,page,size){const u=new URL(location.href);if(size!=null)u.searchParams.set(key+"_size",size);u.searchParams.set(key+"_page",page);history.pushState(null,"",u);renderLists()}
+const when=x=>Number.isFinite(x)?new Date(x*1000).toLocaleString(undefined,{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"}):"—";const age=(x,n)=>x==null?'<span class="idk">not measured</span>':`<span class="${x<=n?"ok":"bad"}">${Number(x).toFixed(1)}s</span>`;
+function healthCard(k,v,n){return`<div class="health-card"><b>${esc(k)}</b><strong>${v}</strong><small>${esc(n||"")}</small></div>`}
+function renderWarnings(){const h=STATE.warnings||{},all=h.rows||[],box=$("warnings");if(!all.length){box.innerHTML=`<div class="empty">No warnings remain in the three-hour review window${h.archived_total?` · ${h.archived_total} older warnings retained`:""}.</div>`;return}const v=pageSlice("warnings",all);box.innerHTML=(h.archived_total?`<div class="minor">${h.archived_total} older warnings retained outside this queue</div>`:"")+`<div class="warning-list">${v.rows.map(r=>{const id=r.registration||r.callsign||r.hex||r.subject||"not identified",ver=r.review&&r.review.verdict;return`<article class="warning-row"><div class="warning-top"><div><b>${esc(id)}</b><small>${esc(r.band||"UNKNOWN")} · ${r.notice_s==null?"no countdown":esc(r.notice_s)+"s notice"} · ${r.fired?"lights fired":"suppressed: "+esc(r.suppressed_by||"reason unavailable")}</small></div><time>${esc(when(r.at))}</time></div><div class="warning-actions">${["accurate","inaccurate","unknown"].map(x=>`<button data-review-id="${esc(r.warning_id)}" data-verdict="${x}" aria-pressed="${ver===x}" class="${ver===x&&x==="unknown"?"unknown-selected":""}">${x.toUpperCase()}</button>`).join("")}</div></article>`}).join("")}</div>${v.controls}`}
+function renderUnits(){$("units").innerHTML=Object.entries(STATE.units||{}).map(([n,s])=>`<div class="tech"><b>${esc(n)}</b><span class="${s==="active"?"ok":s==="unknown"?"idk":"bad"}">● ${esc(s)}</span></div>`).join("");const s=STATE.settings;$("foot").innerHTML=`Settings file: ${esc(s.path)} · ${s.present?"present":"absent, using defaults"}${s.error?`<br><span class="bad">${esc(s.error)}</span>`:""}${STATE.disk?`<br>Storage: ${STATE.disk.free_gb} GB free · ${STATE.disk.used_pct}% used`:""}`}
+function renderLists(){if(!STATE)return;renderWatching();renderWarnings();renderEvents();renderAirframes()}
+async function load(){try{const r=await fetch("/api/state",{cache:"no-store"});if(!r.ok)throw new Error(`HTTP ${r.status}`);STATE=await r.json()}catch(e){$("foot").innerHTML=`<span class="bad">Cannot reach admin service: ${esc(e)}</span>`;return}const off=STATE.feeds.hue.warnings_enabled===false;$("disarmed").style.display=off?"block":"none";$("alarm-control-link").textContent=off?"ENABLE ALARMS GLOBALLY…":"DISABLE ALARMS GLOBALLY…";renderFeeds();renderLists();renderUnits()}
+async function review(id,verdict,button){button.disabled=true;try{const r=await fetch("/api/warning-review",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({warning_id:id,verdict})}),body=await r.json();if(!r.ok)throw new Error(body.error||`HTTP ${r.status}`);await load()}catch(e){button.disabled=false;alert("Review was not saved: "+e)}}
+$("view-select").addEventListener("change",e=>applyView(e.target.value,true));$("health-toggle").addEventListener("click",()=>{try{localStorage.setItem("noiseWatchHideHealth","1")}catch(e){}$("health-panel").hidden=true;$("health-note").style.display="block"});$("health-show").addEventListener("click",()=>{try{localStorage.removeItem("noiseWatchHideHealth")}catch(e){}$("health-panel").hidden=false;$("health-note").style.display="none"});$("map-close").addEventListener("click",()=>{const hidden=!$("map-wrap").hidden;try{localStorage.setItem("noiseWatchHideMap",hidden?"1":"0")}catch(e){}syncMapVisibility()});$("tech-toggle").addEventListener("click",()=>{const g=$("units"),hidden=g.hidden;g.hidden=!hidden;$("foot").hidden=!hidden;$("tech-toggle").textContent=hidden?"HIDE DETAILS":"SHOW DETAILS"});
+document.addEventListener("click",e=>{const r=e.target.closest("[data-review-id]");if(r){review(r.dataset.reviewId,r.dataset.verdict,r);return}const p=e.target.closest("[data-page-key]");if(p&&!p.disabled){updatePage(p.dataset.pageKey,Number(p.dataset.page));return}const h=e.target.closest("[data-help]");if(h){const x=HELP[h.dataset.help];$("help-title").textContent=x[0];$("help-body").textContent=x[1];$("help-dialog").showModal()}});document.addEventListener("change",e=>{const s=e.target.closest("[data-size-key]");if(s)updatePage(s.dataset.sizeKey,1,Number(s.value))});$("help-dialog").querySelector(".dialog-close").onclick=()=>$("help-dialog").close();addEventListener("popstate",()=>{applyView(chosenView());renderLists()});applyView(chosenView());try{if(localStorage.getItem("noiseWatchHideHealth")==="1"){$("health-panel").hidden=true;$("health-note").style.display="block"}}catch(e){}load();setInterval(load,4000)
 })();
 </script>
