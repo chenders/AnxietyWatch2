@@ -76,8 +76,22 @@ END $$;
 GRANT CONNECT ON DATABASE vitals TO anxietywatch;
 GRANT USAGE ON SCHEMA public TO anxietywatch;
 GRANT SELECT, INSERT, UPDATE ON aircraft, aircraft_pass, flight_route TO anxietywatch;
+-- Noise archive (sqitch changes noise_event, aircraft_track,
+-- noise_analysis_helpers must be deployed first). No UPDATE: events,
+-- candidates, verdicts and track points are written once, never edited.
+GRANT SELECT, INSERT ON noise_event, noise_event_corroboration,
+                        noise_event_candidate, noise_attribution,
+                        aircraft_track_point TO anxietywatch;
+GRANT SELECT ON aircraft_noise_history, noise_event_audibility,
+                aircraft_track_gaps TO anxietywatch;
 SQL
 sudo -u anxietywatch psql -d vitals -c 'SELECT 1 FROM aircraft_pass LIMIT 0'
+# Schema drift blocked all ingest for two weeks in a sibling project while a
+# check command sat unused; these fail loudly if `sqitch deploy` was missed.
+sudo -u anxietywatch psql -d vitals -c 'SELECT 1 FROM noise_event LIMIT 0'
+sudo -u anxietywatch psql -d vitals -c 'SELECT 1 FROM noise_event_candidate LIMIT 0'
+sudo -u anxietywatch psql -d vitals -c 'SELECT 1 FROM noise_attribution LIMIT 0'
+sudo -u anxietywatch psql -d vitals -c 'SELECT 1 FROM aircraft_track_point LIMIT 0'
 
 sudo systemctl daemon-reload
 
@@ -514,64 +528,204 @@ jq '{feed_state, error, credits, n: (.aircraft|length?)}' /run/panel-fr24/fr24_a
 - There is **no balance endpoint**. `/api/balance`, `/credits`, `/subscription`,
   `/account` and `/me` all 404. Balance is visible only in the web dashboard.
 
-## Aircraft ground-truth button
+## Aircraft noise events — capture, attribution, history
 
-The Hue device named **bedroom door button** is deliberately unbound from Hue
-room/scene behavior and consumed directly from the bridge's local v2 event
-stream by `panel-hue-aircraft-label`:
+The question this answers: **which aircraft caused the noise the resident (or
+the cat) just marked**, per event, from physics — not from repeated sightings
+of a tail. Exact identity is supporting history; the goal stays general
+warning heuristics.
+
+### Real evidence has two entry paths
+
+**The bedroom-door Hue button** (`panel-hue-aircraft-label`), deliberately
+unbound from Hue room/scene behavior and consumed from the bridge's local v2
+event stream:
 
 - one press = the resident heard and noticed an aircraft;
-- two presses within 1.35 seconds = the cat heard it and was frightened, stored
-  as a separate top-priority outcome rather than a heavier copy of "heard".
+- two presses within 1.35 s = the cat heard it and was frightened — recorded
+  as BOTH outcomes (`human_heard` + `cat_scared_top_priority`), because a
+  double press encompasses a human-heard episode. Cat is top priority.
 
-Every gesture is fsynced to
-`/var/lib/panel-noise/aircraft-labels.jsonl` with the NTP-synchronized event
-time, complete current ADS-B prediction context, and recently completed passes.
-Real labels also enter `panel-heard`'s contrast-based candidate analysis. No
-label directly edits a threshold or roster: enough positive and quiet evidence
-must accumulate, and proposed identities still require verification. This
-prevents one coincidence or one busy flight path from teaching the warning the
-wrong rule.
+The parser accepts every button_report and logs each one: a press whose
+`initial_press` is lost in a stream-reconnect blind window (this bridge sends
+no keepalives, so the stream times out every ~90 s; one press was really lost
+this way on 2026-08-17) is **recovered from its unpaired release** rather
+than silently discarded. The state file carries `stream_last_activity_at`, so
+the admin console can tell a live stream from a half-open socket that still
+claims "connected". **A replacement button gets a new resource id** — update
+`HUE_AIRCRAFT_BUTTON_ID` in the drop-in or every press is silently filtered.
 
-Install it after deleting the button's old Hue behavior in the Hue app or API:
+**Operator reports** (`panel-aircraft-report`): the owner also reports events
+in words, with timestamp metadata of their own. `--ago/--at/--iso` record a
+REAL, attribution- and training-eligible event (a naive ISO timestamp is
+refused, never guessed); `--corroborates EVENT_ID` preserves the words and
+timing against an existing bridge event **without ever creating a second
+event**. See `recovered-operator-reports-2026-08-17.md` for the backfill of
+this session's chat reports.
+
+Every real event is fsynced to `/var/lib/panel-noise/aircraft-labels.jsonl`
+with the event time, FULL feed snapshots (entire ADS-B status and FR24 cache
+documents — position data is the canonical hard-to-recover-later record),
+recent completed passes, and the cached METAR (`panel-weather-poll`:
+temperature, wind, gusts — the acoustic weather; the press path only ever
+reads the cache, and a dead poller means "weather: not measured", never a
+blocked press).
+
+### Per-event attribution — `panel-aircraft-attribute`
+
+Runs after every real event (and via the report tool). For each event it
+ranks every aircraft either feed could see — live candidates, FR24's
+complementary picture, pass-log rows within ±180 s — on general physical
+features only: modelled closest-approach dBA, ground distance, timing
+corrected for slant-path sound propagation, airframe class from the audited
+type table, and thrust phase. **CONFIRMED needs a physical-evidence floor and
+a margin over the runner-up; anything less stays AMBIGUOUS or UNATTRIBUTED
+with the blocking values named.** A false assignment would poison the
+history, so ambiguity is a first-class verdict, not a failure. Synthetic
+never enters. Output (`aircraft-attributions.json`) carries every candidate
+verbatim plus per-airframe and per-flight history — and never edits a roster
+or threshold.
+
+The old `panel-heard` five-mark recurring-tail survey is **not part of this
+pipeline and is not authoritative for it**; it remains only as a standalone
+legacy tool for the police-tail identification problem it was built for.
+
+### The archive is PostgreSQL; files are the write-ahead record
+
+`sqitch deploy` (changes `noise_event`, `aircraft_track`,
+`noise_analysis_helpers`) creates: `noise_event` (+corroborations) with full
+JSONB evidence and weather; `noise_event_candidate` — every aircraft
+considered, all data, FR24-only rows carrying the owner's 182-day retention
+deadline; `noise_attribution` — verdict HISTORY, one row per changed verdict
+per event, each naming its method; the `aircraft_noise_history` view; and the
+`aircraft_track_point` hypertable — dense positions from both feeds (1 s
+inside 4 km, 5 s to 15 km) so a pass can be REPLAYED locally without vendor
+playback. `panel-noise-drain` moves all spools into Postgres idempotently and
+names remaining disk space every run. Raw FR24 poll responses are **not**
+retained anywhere — the pass log, candidate rows and track archive are the
+retention mechanism, by design.
+
+`panel-fr24-track-fetch` (timer) archives the definitive FR24 track for every
+CONFIRMED flight with an fr24_id — once, at ~40 credits — with
+attempt-bookkeeping so a broken flight id is retried at most 3 times, then
+skipped with its stored error named. Free when nothing new is confirmed.
+
+### History is visible everywhere
+
+`panel-adsb-status` attaches `noise_history` (distinct human/cat counts,
+first/last timestamps, event ids) to every published aircraft. The
+noise-watch (browser and kiosk) draws distinct marks — cat head in amber (top
+priority), human figure in cyan — on map markers, the hero, the queue and
+the detail table, **including for aircraft that are currently quiet**: the
+mark means "this airframe has woken this house before". The admin console
+adds paginated recent-evidence and known-airframe lists, plus a WARNINGS queue
+where each fired or explicitly suppressed prediction can be marked accurate,
+inaccurate, or unknown. Known airframes retain FR24 deep links. Unknown means the operator cannot reliably determine either outcome
+and contributes nothing to training. Unreviewed warnings leave the queue after
+three hours and receive an append-only `expired_unreviewed` database lifecycle
+row; the warning evidence itself is never deleted.
+Every list defaults to 10 rows (10/25/100 choices); page and size live in the
+URL without a reload. Contextual help opens a full explanation. `/` is
+read-only status/history; settings and all save controls live separately at
+`/settings`. Both routes provide three live presentations over the same state
+and action layer: Operations Deck, Daily Briefing and Map Lens. The `view`
+query parameter permits a direct link; otherwise `noiseWatchAdminDesign` in
+browser local storage restores the last selected design, with Operations Deck
+as the fallback. Changing designs never changes or duplicates evidence. Map
+Lens plots only measured receiver bearing/distance inside its labelled radius;
+missing or out-of-range geometry is not invented or clamped. Both pages
+preserve their dark palette and status colors in Print / Save as PDF.
+
+The bottom of Settings contains the persistent global Hue alarm control. A
+disable requires typing `DISABLE ALARMS`; re-enabling is available in the same
+location. The operation writes only the existing persisted overrides plus
+`hue_enabled`, so it cannot reset unrelated choices. Unsaved form edits block
+the global action by name rather than being discarded. While disabled, both
+admin routes show a red alert banner and the kiosk shows a compact crossed
+alarm icon with `ALARMS OFF`. The kiosk retains the last explicit disabled
+state through a transient `hue_status.json` read failure instead of falsely
+looking armed.
+
+### Install
+
+Install after deleting the button's old Hue behavior in the Hue app or API,
+and after `sqitch deploy` + the grants above:
 
 ```sh
-sudo install -m 0755 panel-hue-aircraft-label /usr/local/bin/
-sudo install -m 0644 panel-hue-aircraft-label.service /etc/systemd/system/
+sudo install -m 0755 panel-hue-aircraft-label panel-aircraft-attribute \
+  panel-aircraft-report panel-aircraft-learn panel-aircraft-inject \
+  panel-warning-backfill panel-weather-poll panel-fr24-track-fetch panel-heard \
+  /usr/local/bin/
+sudo install -m 0644 panel_candidate_id.py /usr/local/bin/
+sudo install -m 0644 panel-hue-aircraft-label.service \
+  panel-aircraft-learn.service panel-aircraft-learn.timer \
+  panel-weather-poll.service panel-weather-poll.timer \
+  panel-fr24-track-fetch.service panel-fr24-track-fetch.timer /etc/systemd/system/
 # Export the bridge's certificate once over a trusted local path, verify its
 # fingerprint against the bridge, then install it root-owned:
 sudo install -d -o root -g root -m 0755 /etc/panel-hue
 sudo install -o root -g root -m 0644 bridge.pem /etc/panel-hue/bridge.pem
 sudo systemctl edit panel-hue-aircraft-label  # HUE_BRIDGE, HUE_USERNAME, HUE_AIRCRAFT_BUTTON_ID, HUE_CERTIFICATE
+sudo systemctl edit panel-fr24-track-fetch    # FR24_API_KEY
 sudo systemctl daemon-reload
-sudo systemctl enable --now panel-hue-aircraft-label
+sudo systemctl enable --now panel-hue-aircraft-label panel-aircraft-learn.timer \
+  panel-weather-poll.timer panel-fr24-track-fetch.timer
+sudo systemctl restart panel-adsb-status panel-admin   # pick up history + track capture
 ```
 
-A synthetic plumbing test must be marked at its source so it cannot contaminate
-training data:
+Use the explicit injector for plumbing tests. It has no option capable of
+creating real or training-eligible evidence:
 
 ```sh
-sudo systemctl edit panel-hue-aircraft-label
-# Temporarily add Environment=PANEL_AIRCRAFT_LABEL_SYNTHETIC=true, then simulate.
-# Synthetic rows say provenance=synthetic and eligible_for_training=false.
+panel-aircraft-inject --presses 1 --note "operator test of single-press path"
+panel-aircraft-inject --presses 2 --note "operator test of cat-label path"
+```
+
+### The nightly learner
+
+`panel-aircraft-learn` joins eligible real labels (button AND operator
+reports) to completed passes, builds one deterministic quiet control per
+ten-minute bucket **outside ±300 s of EVERY eligible real label across
+outcomes** — a moment the human marked is not "quiet" for the cat model,
+an aircraft was audibly there — and uses chronological 60/20/20 partitions.
+Human and cat outcomes keep separate evidence and performance gates (a cat
+event implies the human heard it; never the reverse). Output is append-only
+`aircraft-model-proposals.jsonl`; every row says `review_required`, and the
+tool never edits `settings.json`. Reviewed warnings with their exact saved
+prediction score become explicit positive (`accurate`) or negative
+(`inaccurate`) examples for the human model. Journal-recovered warnings lack
+the original exact score; their reviews remain durable and visible but are
+excluded from training rather than substituting an approximate pass score.
+
+```sh
+panel-aircraft-learn --dry-run       # inspect without appending
+panel-aircraft-learn                 # append one reviewable proposal
 ```
 
 The button's battery state is health information, not an ingestion gate. A
 connected button at a reported low battery continues to produce real labels;
 monitor it and replace the battery, but do not silently discard its events.
 
-Verify code and the live deployment:
+### Verify
 
 ```sh
-cd deploy/stopgap && python3 -m unittest test_panel_hue_aircraft_label
-ssh "$PI_HOST" 'systemctl is-enabled panel-hue-aircraft-label && systemctl is-active panel-hue-aircraft-label && python3 -m py_compile /usr/local/bin/panel-hue-aircraft-label'
+cd deploy/stopgap && python3 -m unittest \
+  test_panel_hue_aircraft_label test_panel_aircraft_attribute \
+  test_panel_aircraft_learn test_panel_aircraft_inject \
+  test_panel_aircraft_report test_panel_weather_poll \
+  test_panel_fr24_track_fetch test_panel_noise_drain \
+  test_panel_adsb_status test_panel_admin test_panel_warning_backfill
+ssh "$PI_HOST" 'systemctl is-enabled panel-hue-aircraft-label panel-aircraft-learn.timer panel-weather-poll.timer panel-fr24-track-fetch.timer && systemctl is-active panel-hue-aircraft-label && python3 -m py_compile /usr/local/bin/panel-hue-aircraft-label /usr/local/bin/panel-aircraft-attribute /usr/local/bin/panel-aircraft-report /usr/local/bin/panel-aircraft-learn /usr/local/bin/panel-aircraft-inject /usr/local/bin/panel-weather-poll /usr/local/bin/panel-fr24-track-fetch'
+# The archive accepts writes and the views exist (fails loudly if sqitch was missed):
+ssh "$PI_HOST" 'sudo -u anxietywatch psql -d vitals -c "SELECT 1 FROM noise_event LIMIT 0" -c "SELECT 1 FROM aircraft_track_point LIMIT 0" -c "SELECT 1 FROM noise_event_audibility LIMIT 0"'
 ```
 
 ## Removing it
 
 ```sh
-sudo systemctl disable --now panel-kiosk emay-live panel-http panel-adsb-status panel-fr24-poll panel-hue-aircraft-label
-sudo rm /etc/systemd/system/{panel-kiosk,emay-live,panel-http,panel-adsb-status,panel-fr24-poll,panel-hue-aircraft-label}.service
+sudo systemctl disable --now panel-kiosk emay-live panel-http panel-adsb-status panel-fr24-poll panel-hue-aircraft-label panel-aircraft-learn.timer panel-weather-poll.timer panel-fr24-track-fetch.timer
+sudo rm /etc/systemd/system/{panel-kiosk,emay-live,panel-http,panel-adsb-status,panel-fr24-poll,panel-hue-aircraft-label,panel-aircraft-learn,panel-weather-poll,panel-fr24-track-fetch}.service
+sudo rm /etc/systemd/system/{panel-aircraft-learn,panel-weather-poll,panel-fr24-track-fetch}.timer
 sudo rm -rf /etc/systemd/system/panel-kiosk.service.d \
   /etc/systemd/system/panel-hue-aircraft-label.service.d
 # Remove the pinned certificate only after confirming no other Hue client uses it.

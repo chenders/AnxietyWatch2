@@ -56,6 +56,7 @@
   --rule:#5E6670; --rule-quiet:#3A4048;
   --air:#3FC8D8;        /* 10.46:1 — the aircraft channel */
   --watch:#E0A227;      /*  9.37:1 — top band only */
+  --marked:#F3C95B;     /* 12.47:1 — past confirmed noise cause on the map */
   --nibp:#DCE1E6;       /* 15.96:1 — primary readout */
   --unknown:#8B97A3;    /*  7.05:1 — indeterminate, hue-free by design */
   --unknown-hi:#B9C0C7; /* 11.43:1 — indeterminate that must out-read a live value */
@@ -118,6 +119,17 @@ body{
 .facts .sep{color:var(--rule-quiet);padding:0 7px}
 .band{margin-top:11px;font-size:17px;letter-spacing:.22em}
 .band .est{font-size:10px;letter-spacing:.14em;color:var(--label);margin-left:9px}
+/* Historical noise marks. Confirmed past events, not a current prediction:
+   the mark says "this airframe has woken this house before", so it stays
+   visible when the aircraft is quiet. Cat events are amber -- the owner's
+   top priority -- and human-only events are the aircraft channel's cyan.
+   Never the klaxon red: history is not a physiological alarm. */
+.hist{margin-top:9px;display:flex;align-items:center;gap:8px;font-size:12px;
+      letter-spacing:.08em;color:var(--air)}
+.hist.cat{color:var(--watch)}
+.hist .hwhen{color:var(--label);font-size:10px;letter-spacing:.1em}
+.hbadge{display:inline-flex;align-items:center;gap:2px;flex:none;vertical-align:-2px;margin-left:6px}
+.hcount{font-size:10px;font-weight:700;letter-spacing:0}
 .hlinks{margin-top:12px;display:flex;gap:14px;font-size:11px;letter-spacing:.12em}
 .hlinks a{color:var(--air);text-decoration:none;border-bottom:1px solid var(--rule-quiet);padding-bottom:2px}
 .hlinks a:focus-visible{outline:2px solid var(--air);outline-offset:3px}
@@ -232,9 +244,17 @@ body{
 .lvl3 .count,.lvl3 .band{color:var(--watch)}
 .lvl3 .closing i{background:var(--watch)}
 
+/* Compact but persistent: explicit false is held through transient feed errors
+   so a failed status read can never make a known-disabled alarm look armed. */
+.alarm-off{display:none;position:fixed;z-index:20;top:7px;left:14px;align-items:center;gap:6px;
+  padding:4px 7px;background:#0f0b03;border:1px solid var(--watch);color:var(--watch);
+  font-size:9px;font-weight:700;letter-spacing:.12em}
+.alarm-off.on{display:flex}.alarm-off svg{width:15px;height:15px;fill:none;stroke:currentColor;
+  stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 @media (prefers-reduced-motion:reduce){.closing i{transition:none}}
 </style>
 
+<div class="alarm-off" id="alarm-off" role="status" aria-live="assertive" title="All Noise Watch Hue alarms are disabled"><svg viewBox="0 0 24 24" role="img" aria-label="alarm crossed out"><path d="M6 9a6 6 0 0 1 10-4M18 9v5l2 3H8M10 21h4M3 3l18 18"/></svg><span>ALARMS OFF</span></div>
 <div class="hero" id="hero"></div>
 <div class="unloc" id="unlocated"></div>
 <div class="queue" id="queue"></div>
@@ -278,6 +298,62 @@ body{
   };
   const glyphFor = p => (p && p.operator_kind && PATHS[p.operator_kind]) ||
                         (p && p.airframe_class && PATHS[p.airframe_class]) || PATHS.unknown;
+
+  /* ---- historical noise marks ------------------------------------------
+     noise_history rides on each aircraft the daemon publishes, built from
+     CONFIRMED per-event attributions only. Two DISTINCT drawn marks, per the
+     owner's requirement: the cat (ears + head, amber) outranks the human
+     (head + shoulders, cyan). Drawn, not typed -- same rule as the aircraft
+     glyphs: a Unicode cat depends on the appliance's font surviving it. */
+  const hist = p => {
+    const h = p && p.noise_history;
+    return h && ((h.human_heard_count|0) > 0 || (h.cat_scared_count|0) > 0) ? h : null;
+  };
+  const histIsCat = h => (h.cat_scared_count|0) > 0;
+  const HIST_PATHS = {
+    /* Wide eyes plus outward startle marks: this means the cat WAS SCARED,
+       never that the cat reported an event. */
+    cat: '<path d="M5 10 L7 4 L10 8 M19 10 L17 4 L14 8" stroke-width="2.2"/>' +
+         '<circle cx="12" cy="13" r="6.5" stroke-width="2.2"/>' +
+         '<circle cx="9.5" cy="12.5" r="1" fill="currentColor" stroke="none"/>' +
+         '<circle cx="14.5" cy="12.5" r="1" fill="currentColor" stroke="none"/>' +
+         '<path d="M3 7 L1 5 M21 7 L23 5 M12 3 V0.5" stroke-width="2"/>',
+    human: '<circle cx="12" cy="8" r="4" stroke-width="2.2"/>' +
+           '<path d="M4 20c1.5-5 14.5-5 16 0" stroke-width="2.2"/>',
+  };
+  const histWhen = h => {
+    if (!Number.isFinite(h.last_heard_at)) return "";
+    const d = new Date(h.last_heard_at * 1000), n = new Date();
+    const t = String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+    return d.toDateString() === n.toDateString() ? t
+      : d.toLocaleDateString(undefined, {month: "short", day: "numeric"}) + " " + t;
+  };
+  const histText = h => {
+    const bits = [];
+    if ((h.human_heard_count|0) > 0) bits.push("you heard " + h.human_heard_count + "\u00d7");
+    if ((h.cat_scared_count|0) > 0) bits.push("cat was scared " + h.cat_scared_count + "\u00d7");
+    return bits.join(" \u00b7 ");
+  };
+  const histTitle = h => {
+    const parts = ["caused marked noise before: " + histText(h)];
+    if (Number.isFinite(h.first_heard_at))
+      parts.push("first " + new Date(h.first_heard_at * 1000).toLocaleString());
+    if (Number.isFinite(h.last_heard_at))
+      parts.push("last " + new Date(h.last_heard_at * 1000).toLocaleString());
+    return parts.join("\n");
+  };
+  const histBadge = (h, size) => {
+    const outcomes = [];
+    if ((h.human_heard_count|0) > 0) outcomes.push({kind:"human", color:"var(--air)",
+      count:h.human_heard_count, label:"you heard this aircraft " + h.human_heard_count + " times"});
+    if ((h.cat_scared_count|0) > 0) outcomes.push({kind:"cat", color:"var(--watch)",
+      count:h.cat_scared_count, label:"the cat was scared by this aircraft " + h.cat_scared_count + " times"});
+    return outcomes.map(o => '<span class="hbadge" style="color:' + o.color + '" title="' +
+      esc(o.label) + '"><svg width="' + size + '" height="' + size + '" viewBox="0 0 24 24" ' +
+      'fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" ' +
+      'role="img" aria-label="' + esc(o.label) + '"><title>' + esc(o.label) + '</title>' +
+      HIST_PATHS[o.kind] + '</svg><span class="hcount">×' + o.count + '</span></span>').join("");
+  };
   const known = p => !!(p && (p.operator_kind || p.airframe_class));
   const svgGlyph = (p, size) => {
     const g = glyphFor(p);
@@ -289,7 +365,7 @@ body{
   const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g,
     c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
   const el = id => document.getElementById(id);
-  const S = { adsb:null, fr24:null, sel:null };
+  const S = { adsb:null, fr24:null, hue:null, sel:null };
 
   /* Map size is the reader's choice, not ours: the 7-inch panel wants it small
      enough to leave the countdown dominant, while someone studying an approach
@@ -376,9 +452,22 @@ body{
   async function poll(){
     try { S.adsb = await pull("adsb_status.json"); } catch(e){ S.adsb = null; }
     try { S.fr24 = await pull("fr24_aircraft.json"); } catch(e){ S.fr24 = null; }
+    /* Retain the last explicit state on a transient read failure. Hiding a
+       known-disabled warning because one poll failed would be false reassurance. */
+    try { S.hue = await pull("hue_status.json"); } catch(e){ /* hold state */ }
   }
 
   const secondsTo = pr => pr && Number.isFinite(pr.at_epoch) ? pr.at_epoch - Date.now()/1000 : null;
+  // Distances follow the display_units setting from the daemon (imperial by
+  // default, owner decision 2026-08-17). ONE converter, applied at render:
+  // every number in the feed stays metric. Altitudes stay feet and speeds
+  // stay knots either way -- aviation convention, deliberately kept.
+  const metric = () => (S.adsb && S.adsb.display_units) === "metric";
+  function fmtKm(km, compact) {
+    if (!Number.isFinite(km)) return null;
+    if (metric()) return km.toFixed(1) + (compact ? "km" : " km");
+    return (km * 0.621371).toFixed(1) + (compact ? "mi" : " mi");
+  }
   function fmt(left){
     if (left == null) return "--";
     if (left <= 0) return "NOW";
@@ -399,10 +488,13 @@ body{
                   airframe class — so the map says what kind of thing it is.
        ENCLOSURE  a ring around police aircraft (their signature is loitering),
                   a cross badge on air ambulances.
-       COLOUR     amber for the top band, cyan for identified, slate for not.
+       COLOUR     pale yellow for a previously marked noise cause, amber for
+                  the top band, cyan for identified, slate for not.
 
-     Colour alone would fail a colour-blind reader and fail again in daylight on
-     this panel, which is why shape and enclosure carry the same information.
+     Colour alone would fail for aircraft TYPE and operator KIND, which is why
+     shape and enclosure carry those meanings too. The marked-airframe color is
+     additionally explained in the lead readout and repeated as a history badge
+     in the watch row; it is not the only evidence of history.
 
      Aeroplanes rotate to their track; helicopters do too, so the tail points
      the way it is going. A <title> gives the browser's native hover tooltip
@@ -434,11 +526,13 @@ body{
     const pr = p.prediction || {};
     const facts = [];
     if (Number.isFinite(p.alt_ft)) facts.push(p.alt_ft.toLocaleString() + " ft");
-    if (Number.isFinite(p.dist)) facts.push((p.dist/1000).toFixed(1) + " km");
+    if (Number.isFinite(p.dist)) facts.push(fmtKm(p.dist/1000));
     if (Number.isFinite(p.bearing)) facts.push("brg " + Math.round(p.bearing) + "°");
     if (p.phase) facts.push(p.phase.toLowerCase());
     if (facts.length) bits.push(facts.join(" · "));
     if (pr.loudness_band) bits.push(pr.loudness_band);
+    const hh = hist(p);
+    if (hh) bits.push(histTitle(hh));
     /* Say why it is unidentified rather than leaving a silent gap. */
     if (!p.operator_name && p.operator_reason) bits.push(p.operator_reason);
     return bits.join("\n");
@@ -446,7 +540,13 @@ body{
 
   function marker(p, x, y) {
     const band = (p.prediction || {}).loudness_band;
-    const col = band === "VERY LOUD" ? "var(--watch)"
+    const h = hist(p);
+    /* A marked airframe owns this color for its entire map silhouette. The old
+       tiny lower-left diamond was too subtle, especially when both it and an
+       ordinary identified aircraft were cyan. Pale yellow is distinct from
+       the darker amber countdown while remaining visible on black. */
+    const col = h ? "var(--marked)"
+              : band === "VERY LOUD" ? "var(--watch)"
               : known(p) ? "var(--air)" : "var(--unknown)";
     const rot = Number.isFinite(p.track_deg) ? p.track_deg : 0;
     const kind = p.operator_kind;
@@ -571,7 +671,7 @@ body{
     const op = lead.operator_name ? lead.operator_name.toUpperCase()
              : lead.operator_kind ? glyphFor(lead).t.toUpperCase() : "OPERATOR NOT IDENTIFIED";
     const km = Number.isFinite(pr.ground_distance_m)
-      ? (pr.ground_distance_m/1000).toFixed(1) + " km" : "range unknown";
+      ? fmtKm(pr.ground_distance_m/1000) : "range unknown";
     const alt = Number.isFinite(pr.altitude_ft)
       ? Math.round(pr.altitude_ft).toLocaleString() + " ft" : "altitude unknown";
     const phase = pr.phase ? pr.phase.toLowerCase() : "flight phase unknown";
@@ -604,6 +704,13 @@ body{
            guards against cannot arise here. Do not reinstate it from the spec
            without asking; the exception was made knowingly. */
         '<div class="band">' + esc(band) + '</div>' +
+        (function () {
+          const h = hist(lead);
+          if (!h) return "";
+          return '<div class="hist' + (histIsCat(h) ? ' cat' : '') + '" title="' +
+            esc(histTitle(h)) + '"><span>PREVIOUS NOISE EVENTS</span>' + histBadge(h, 15) +
+            '<span class="hwhen">last ' + esc(histWhen(h)) + '</span></div>';
+        })() +
         links +
       '</div>' +
       '<div class="clockwrap">' +
@@ -633,13 +740,15 @@ body{
       rows.slice(0, isKiosk() ? 5 : 12).map(r => {
         const pr = r.prediction || {}, left = secondsTo(pr);
         const km = Number.isFinite(pr.ground_distance_m)
-          ? (pr.ground_distance_m/1000).toFixed(1) + "km" : "--";
+          ? fmtKm(pr.ground_distance_m/1000, true) : "--";
         const m = isKiosk() ? null : mapLink(r);
         const k = keyOf(r);
+        const rh = hist(r);
         return '<div class="row' + (k && k === S.sel ? ' sel' : '') + '"' +
           (k ? ' data-key="' + esc(k) + '"' : '') + '>' +
           '<span class="g' + (known(r) ? ' known' : '') + '">' + svgGlyph(r, 15) + '</span>' +
-          '<span class="id">' + esc(r.registration || r.callsign || r.hex || "—") + '</span>' +
+          '<span class="id">' + esc(r.registration || r.callsign || r.hex || "—") +
+            (rh ? histBadge(rh, 12) : '') + '</span>' +
           '<span class="op2' + (r.operator_name ? '' : ' dim') + '">' +
             esc(r.operator_name || (r.icao_type ? r.icao_type : "not identified")) + '</span>' +
           '<span class="eta' + (left != null && left <= 45 ? ' soon' : '') + '">' + esc(fmt(left)) + '</span>' +
@@ -714,29 +823,37 @@ body{
     const body = rows.length ? rows.map(p => {
       const m = mapLink(p), a = acLink(p);
       const k = keyOf(p);
+      const h = hist(p);
+      const heard = h
+        ? '<span style="color:' + (histIsCat(h) ? 'var(--watch)' : 'var(--air)') + '" title="' +
+          esc(histTitle(h)) + '">' + esc(histText(h)) + ' · ' + esc(histWhen(h)) + '</span>'
+        : '—';
       return '<tr' + (k ? ' data-key="' + esc(k) + '"' : '') +
         (k && k === S.sel ? ' class="sel"' : '') + '>' +
         '<td class="gc' + (known(p) ? '' : ' dim') + '">' + svgGlyph(p, 14) + '</td>' +
-        '<td class="id">' + esc(p.registration || p.callsign || p.hex || "—") + '</td>' +
+        '<td class="id">' + esc(p.registration || p.callsign || p.hex || "—") +
+          (h ? histBadge(h, 12) : '') + '</td>' +
         '<td class="op">' + esc(p.operator_name || "") + '</td>' +
         '<td>' + esc(p.icao_type || p.category || "—") + '</td>' +
         '<td class="rt">' + esc(routeText(p) || "—") + '</td>' +
-        '<td>' + (Number.isFinite(p.dist) ? (p.dist/1000).toFixed(1) + " km" : "—") + '</td>' +
+        '<td>' + (Number.isFinite(p.dist) ? fmtKm(p.dist/1000) : "—") + '</td>' +
         '<td>' + (Number.isFinite(p.alt_ft) ? p.alt_ft.toLocaleString() + " ft" : "—") + '</td>' +
         '<td>' + (Number.isFinite(p.bearing) ? Math.round(p.bearing) + "°" : "—") + '</td>' +
         '<td>' + esc(p.phase || "—") + '</td>' +
+        '<td>' + heard + '</td>' +
         '<td>' + (m ? '<a href="' + esc(m) + '" target="_blank" rel="noopener">map</a>' : "") +
           (a ? ' · <a href="' + esc(a) + '" target="_blank" rel="noopener">history</a>' : "") + '</td>' +
         '</tr>';
-    }).join("") : '<tr><td colspan="10" class="none">no aircraft received</td></tr>';
+    }).join("") : '<tr><td colspan="11" class="none">no aircraft received</td></tr>';
 
     el("more").innerHTML = '<h2>ALL AIRCRAFT RECEIVED · nearest first</h2>' +
       '<table class="tbl"><thead><tr><th></th><th>ID</th><th>OPERATOR</th><th>TYPE</th><th>ROUTE</th>' +
-      '<th>RANGE</th><th>ALT</th><th>BRG</th><th>PHASE</th><th>FLIGHTRADAR24</th></tr></thead>' +
+      '<th>RANGE</th><th>ALT</th><th>BRG</th><th>PHASE</th><th>NOISE MARKS</th><th>FLIGHTRADAR24</th></tr></thead>' +
       '<tbody>' + body + '</tbody></table>';
   }
 
   function draw() {
+    el("alarm-off").classList.toggle("on", !!S.hue && S.hue.warnings_enabled === false);
     const now = Date.now()/1000, d = S.adsb;
     const fresh = d && (now - (d.written_at || 0)) < ADSB_STALE_S;
     const planes = (d && d.adsb_planes) || [];

@@ -120,6 +120,248 @@ class Validation(unittest.TestCase):
                                  minimum=25.0, maximum=70.0), 33.0)
 
 
+class AircraftButtonHealth(unittest.TestCase):
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.dir.cleanup)
+        self.admin, _ = load(pathlib.Path(self.dir.name) / "s.json", self)
+
+    def test_missing_health_is_degraded_and_names_absence(self):
+        health = self.admin.button_health({}, 1000.0)
+        self.assertEqual(health["state"], "degraded")
+        self.assertIn("stream_state=None", health["blockers"])
+        self.assertIn("stream_changed_at is absent", health["blockers"])
+
+    def test_connected_stream_with_fresh_activity_is_healthy(self):
+        health = self.admin.button_health({"stream_state": "connected",
+                                           "stream_changed_at": 900.0,
+                                           "stream_last_activity_at": 980.0}, 1000.0)
+        self.assertEqual(health["state"], "healthy")
+        self.assertEqual(health["pending_gestures"], 0)
+        self.assertEqual(health["stream_activity_age_s"], 20.0)
+
+    def test_connected_claim_without_received_bytes_is_degraded(self):
+        """'connected' is a claim; received bytes are the evidence. A half-open
+        TCP session looks connected forever without this check."""
+        health = self.admin.button_health({"stream_state": "connected",
+                                           "stream_changed_at": 900.0}, 1000.0)
+        self.assertEqual(health["state"], "degraded")
+        self.assertTrue(any("no activity was ever recorded" in b
+                            for b in health["blockers"]), health["blockers"])
+
+    def test_connected_with_stale_activity_names_the_age_and_limit(self):
+        stale = 1000.0 - self.admin.STREAM_ACTIVITY_STALE_SECONDS - 60
+        health = self.admin.button_health({"stream_state": "connected",
+                                           "stream_changed_at": 900.0,
+                                           "stream_last_activity_at": stale}, 1000.0)
+        self.assertEqual(health["state"], "degraded")
+        self.assertTrue(any("no bridge traffic for" in b and "limit" in b
+                            for b in health["blockers"]), health["blockers"])
+
+    def test_pending_retry_and_critical_battery_are_visible(self):
+        health = self.admin.button_health({
+            "stream_state": "connected", "stream_changed_at": 900.0,
+            "stream_last_activity_at": 990.0,
+            "pending_gestures": [{"at": 950.0, "count": 1}],
+            "battery": {"battery_state": "critical", "battery_level": 1},
+        }, 1000.0)
+        self.assertEqual(health["state"], "degraded")
+        self.assertIn("pending_gestures=1", health["blockers"])
+        self.assertIn("battery_state=critical", health["blockers"])
+
+    def test_disconnect_names_state_error_and_duration(self):
+        health = self.admin.button_health({"stream_state": "disconnected",
+                                           "stream_changed_at": 600.0,
+                                           "stream_error": "authorization failed"}, 1000.0)
+        self.assertIn("stream_state='disconnected'", health["blockers"])
+        self.assertIn("disconnected for 400.0s", health["blockers"])
+        self.assertIn("stream_error=authorization failed", health["blockers"])
+
+
+class WarningReview(unittest.TestCase):
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.dir.cleanup)
+        self.admin, _ = load(pathlib.Path(self.dir.name) / "s.json", self)
+        self.admin.WARNINGS_JSONL = pathlib.Path(self.dir.name) / "warnings.jsonl"
+        self.admin.WARNING_REVIEWS_JSONL = pathlib.Path(self.dir.name) / "reviews.jsonl"
+        self.admin.WARNINGS_JSONL.write_text(
+            json.dumps({"warning_id": "w1", "at": 1000.0, "registration": "N170US"}) + "\n")
+
+    def test_review_is_durable_and_joined_to_warning(self):
+        ok, row = self.admin.review_warning(
+            {"warning_id": "w1", "verdict": "accurate"}, now=1100.0)
+        self.assertTrue(ok, row)
+        state = self.admin.warning_history(now=1300.0)
+        self.assertEqual(state["total"], 1)
+        self.assertEqual(state["rows"][0]["review"]["verdict"], "accurate")
+
+    def test_review_can_be_revised_and_latest_wins(self):
+        self.admin.review_warning({"warning_id": "w1", "verdict": "accurate"}, now=1100.0)
+        self.admin.review_warning({"warning_id": "w1", "verdict": "inaccurate"}, now=1200.0)
+        review = self.admin.warning_history(now=1300.0)["rows"][0]["review"]
+        self.assertEqual(review["verdict"], "inaccurate")
+        self.assertEqual(len(self.admin.WARNING_REVIEWS_JSONL.read_text().splitlines()), 2)
+
+    def test_warning_drops_from_queue_after_three_hours(self):
+        before = self.admin.warning_history(now=1000.0 + 3 * 60 * 60)
+        after = self.admin.warning_history(now=1000.0 + 3 * 60 * 60 + 0.1)
+        self.assertEqual(before["total"], 1)
+        self.assertEqual(after["total"], 0)
+        self.assertEqual(after["archived_total"], 1)
+
+    def test_unknown_warning_is_refused_by_name(self):
+        ok, reason = self.admin.review_warning(
+            {"warning_id": "missing", "verdict": "accurate"}, now=1100.0)
+        self.assertFalse(ok)
+        self.assertIn("missing", reason)
+
+    def test_unknown_verdict_is_durable_but_explicit(self):
+        ok, row = self.admin.review_warning(
+            {"warning_id": "w1", "verdict": "unknown"}, now=1100.0)
+        self.assertTrue(ok, row)
+        self.assertEqual(
+            self.admin.warning_history(now=1300.0)["rows"][0]["review"]["verdict"],
+            "unknown")
+
+    def test_invalid_verdict_is_refused_by_value(self):
+        ok, reason = self.admin.review_warning(
+            {"warning_id": "w1", "verdict": "maybe"}, now=1100.0)
+        self.assertFalse(ok)
+        self.assertIn("maybe", reason)
+
+
+class AdminPageSeparationAndAccessibility(unittest.TestCase):
+    def setUp(self):
+        root = pathlib.Path(__file__).parent
+        self.status = (root / "admin.html").read_text()
+        self.settings = (root / "admin-settings.html").read_text()
+
+    def test_status_page_has_no_settings_form_or_save_button(self):
+        self.assertNotIn('id="settings"', self.status)
+        self.assertNotIn('id="save"', self.status)
+        self.assertIn('href="/settings"', self.status)
+
+    def test_settings_are_on_their_own_page(self):
+        self.assertIn('id="settings"', self.settings)
+        self.assertIn('id="save"', self.settings)
+        self.assertIn('href="/"', self.settings)
+
+    def test_tables_default_to_ten_and_url_state_uses_history_api(self):
+        self.assertIn("allowed = [10, 25, 100]", self.status)
+        self.assertIn("history.pushState", self.status)
+        self.assertIn('addEventListener("popstate"', self.status)
+
+    def test_live_designs_use_responsive_cards_not_wide_tables(self):
+        self.assertIn('class="dashboard"', self.status)
+        self.assertIn('@media(max-width:700px)', self.status)
+        self.assertIn('@media(max-width:430px)', self.status)
+        self.assertNotIn('<table', self.status)
+
+    def test_contextual_help_is_accessible(self):
+        self.assertIn('id="help-dialog"', self.status)
+        self.assertIn('data-help="warning_review"', self.status)
+        self.assertIn('data-help="event_verdict"', self.status)
+        self.assertIn('aria-label="Explain warning reviews"', self.status)
+
+    def test_operator_selected_compact_text_scale(self):
+        self.assertIn("font:13px/1.5", self.status)
+        self.assertIn("font-size:12px", self.status)
+        self.assertIn("font:13px/1.55", self.settings)
+
+    def test_all_three_live_designs_share_a_persistent_picker(self):
+        for page in (self.status, self.settings):
+            self.assertIn('id="view-select"', page)
+            self.assertIn('value="operations"', page)
+            self.assertIn('value="briefing"', page)
+            self.assertIn('value="map"', page)
+            self.assertIn('noiseWatchAdminDesign', page)
+            self.assertIn('localStorage.setItem(STORE', page)
+        self.assertIn('return"operations"', self.status)
+        self.assertIn('return"operations"', self.settings)
+
+    def test_direct_view_links_are_preserved_between_pages(self):
+        self.assertIn('u.searchParams.set("view",view)', self.status)
+        self.assertIn('"/settings?view="+view', self.status)
+        self.assertIn('u.searchParams.set("view",v)', self.settings)
+        self.assertIn('"/?view="+v', self.settings)
+
+    def test_map_visibility_preference_is_persistent(self):
+        self.assertIn('noiseWatchHideMap', self.status)
+        self.assertIn('syncMapVisibility()', self.status)
+
+    def test_map_never_invents_an_aircraft_position(self):
+        self.assertIn('!Number.isFinite(r.bearing)||!Number.isFinite(r.distance_km)',
+                      self.status)
+        self.assertIn('r.distance_km<0||r.distance_km>16.1', self.status)
+        self.assertIn('OUTSIDE AIRCRAFT NOT PLOTTED', self.status)
+        self.assertIn('No watched aircraft with a measured position', self.status)
+
+    def test_global_alarm_control_requires_typed_confirmation(self):
+        self.assertIn('id="danger"', self.settings)
+        self.assertIn('id="disable-dialog"', self.settings)
+        self.assertIn('e.target.value!=="DISABLE ALARMS"', self.settings)
+        self.assertIn('DISABLE ALARMS GLOBALLY', self.settings)
+        self.assertIn('ENABLE ALARMS GLOBALLY', self.settings)
+
+    def test_global_alarm_change_preserves_other_persisted_overrides(self):
+        self.assertIn('payload={...(STATE.settings.settings||{}),hue_enabled:enabled}',
+                      self.settings)
+        self.assertIn('global alarm change blocked: unsaved settings are present',
+                      self.settings)
+
+    def test_disabled_state_is_unmissable_on_both_admin_pages(self):
+        for page in (self.status, self.settings):
+            self.assertIn('ALL NOISE WATCH HUE ALARMS ARE DISABLED', page)
+            self.assertIn('id="disarmed"', page)
+        self.assertIn('id="alarm-control-link"', self.status)
+        self.assertIn('role="alert"', self.status)
+        self.assertIn('role="alert"', self.settings)
+
+    def test_both_pages_preserve_colors_when_printed(self):
+        for page in (self.status, self.settings):
+            self.assertIn("print-color-adjust:exact", page)
+            self.assertIn("@media print", page)
+
+
+class LiveMapGeometry(unittest.TestCase):
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.dir.cleanup)
+        root = pathlib.Path(self.dir.name)
+        self.admin, _ = load(root / "settings.json", self)
+        for name in ("STATUS_JSON", "FR24_JSON", "HUE_JSON", "BUTTON_JSON",
+                     "ATTRIBUTIONS_JSON", "WEATHER_JSON"):
+            path = root / (name.lower() + ".json")
+            path.write_text("{}")
+            setattr(self.admin, name, path)
+        for name in ("PROPOSALS_JSONL", "WARNINGS_JSONL", "WARNING_REVIEWS_JSONL"):
+            path = root / (name.lower() + ".jsonl")
+            path.write_text("")
+            setattr(self.admin, name, path)
+        self.admin.unit_state = lambda _name: "active"
+        self.admin.disk_free = lambda: {"free_gb": 10, "used_pct": 1}
+
+    def test_state_exposes_real_receiver_geometry_for_map_lens(self):
+        self.admin.STATUS_JSON.write_text(json.dumps({"adsb_predictions": [{
+            "hex": "A11B00", "registration": "N170US", "bearing": 271.5,
+            "distance_km": 4.25, "alt_ft": 6800,
+            "prediction": {"loudness_band": "LOUD", "eta_seconds": 28},
+        }]}))
+        row = self.admin.state()["watching"][0]
+        self.assertEqual(row["bearing"], 271.5)
+        self.assertEqual(row["distance_km"], 4.25)
+        self.assertEqual(row["alt_ft"], 6800)
+
+    def test_missing_geometry_stays_absent(self):
+        self.admin.STATUS_JSON.write_text(json.dumps({"adsb_predictions": [{
+            "hex": "ABC123", "prediction": {"loudness_band": "UNKNOWN"},
+        }]}))
+        row = self.admin.state()["watching"][0]
+        self.assertIsNone(row["bearing"])
+        self.assertIsNone(row["distance_km"])
+
+
 class SchemaIsTheOnlySourceOfBounds(unittest.TestCase):
     def setUp(self):
         self.dir = tempfile.TemporaryDirectory()
