@@ -250,6 +250,12 @@ class WarningLog(unittest.TestCase):
         self.assertFalse(rec["fired"])
         self.assertEqual(rec["suppressed_by"], "quiet_hours")
 
+    def test_disarmed_suppressed_record_names_its_blocker(self):
+        rec = hue.warning_record({"hex": "AA1"}, "LOUD", 20.0, fired=False,
+                                 suppressed_by="disarmed", now=1000.0)
+        self.assertFalse(rec["fired"])
+        self.assertEqual(rec["suppressed_by"], "disarmed")
+
     def test_log_appends_one_json_line_durably(self):
         import tempfile, pathlib
         with tempfile.TemporaryDirectory() as tmp:
@@ -921,6 +927,41 @@ class TheMasterSwitch(unittest.TestCase):
         not read hue_bands at all."""
         self.arm(False)
         self.assertIsNone(hue.choose_unlocated({"adsb_heard_unlocated": [self.HEARD]}))
+
+    def test_require_armed_false_bypasses_the_armed_gate(self):
+        """The outer polling loop calls choose(…, require_armed=False) so it can
+        see what would have fired and write a suppressed_by='disarmed' record.
+        The default (require_armed=True) must still return None when disarmed."""
+        self.arm(False)
+        self.assertIsNone(
+            hue.choose({"adsb_predictions": [self.LOUD]}, 970.0))
+        self.assertIsNotNone(
+            hue.choose({"adsb_predictions": [self.LOUD]}, 970.0,
+                       require_armed=False))
+
+    def test_disarmed_warning_is_logged_suppressed_not_silently_dropped(self):
+        """A warning suppressed because the system is globally disabled is still
+        a warning DECISION. The review log must hold it with suppressed_by='disarmed'
+        so the operator can see what would have warned them overnight."""
+        import tempfile, pathlib
+        self.arm(False)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = pathlib.Path(tmp) / "warnings.jsonl"
+            real_log = hue.WARNING_LOG
+            hue.WARNING_LOG = path
+            try:
+                picked = hue.choose({"adsb_predictions": [self.LOUD]}, 970.0,
+                                    require_armed=False)
+                self.assertIsNotNone(picked)
+                report, band, left = picked
+                rec = hue.warning_record(report, band, left, fired=False,
+                                         suppressed_by="disarmed", now=970.0)
+                hue.log_warning(rec)
+                line = json.loads(path.read_text().splitlines()[0])
+                self.assertFalse(line["fired"])
+                self.assertEqual(line["suppressed_by"], "disarmed")
+            finally:
+                hue.WARNING_LOG = real_log
 
     def test_the_unlocated_path_still_works_when_armed(self):
         self.arm(True)

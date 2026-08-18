@@ -685,12 +685,16 @@ def sound_arrival_epoch(prediction, report=None):
     return min(heard, peak_arrival)
 
 
-def choose(status, now):
+def choose(status, now, require_armed=True):
     """The aircraft worth lighting a room for, or None.
 
     Returns (report, band, seconds_until_heard).
+
+    When require_armed=False the armed() gate is skipped so the caller can
+    discover what WOULD HAVE fired and log it as a suppressed decision. The
+    lights are never touched from that path; only the outer loop logs.
     """
-    if not armed():
+    if require_armed and not armed():
         return None
     for report in (status.get("adsb_predictions") or []):
         prediction = report.get("prediction") or {}
@@ -721,7 +725,7 @@ def choose(status, now):
     return None
 
 
-def choose_unlocated(status):
+def choose_unlocated(status, require_armed=True):
     """A rostered airframe the receiver hears but has never located, or None.
 
     Deliberately checked only when `choose` found nothing. A located aircraft
@@ -730,8 +734,11 @@ def choose_unlocated(status):
     for noise. This fires only in the case where the alternative is silence.
 
     There is no `left` to return. The caller must not invent one.
+
+    When require_armed=False the armed() gate is skipped so the caller can
+    discover what WOULD HAVE fired and log it as a suppressed decision.
     """
-    if not armed():
+    if require_armed and not armed():
         return None
     for entry in (status.get("adsb_heard_unlocated") or []):
         if str(entry.get("operator_kind") or "").upper() in warn_unlocated_kinds():
@@ -999,11 +1006,22 @@ def main():
             was_quiet = quiet
 
         if status:
-            # choose() runs even during quiet hours: a suppressed warning is
-            # still a warning DECISION, and the review log must hold it. Only
-            # the lights are gated.
-            picked = choose(status, now)
-            if picked and quiet:
+            # choose() runs regardless of armed state and quiet hours: a
+            # suppressed warning is still a warning DECISION, and the review
+            # log must hold it. require_armed=False so the outer loop is the
+            # single gate, not the inner function. Lights are never touched
+            # from the disarmed or quiet branches.
+            picked = choose(status, now, require_armed=False)
+            if picked and not armed():
+                # Disarmed: log what WOULD have fired, then stop.
+                report, band, left = picked
+                key = (report.get("hex"), "disarmed")
+                if now - suppressed_logged.get(key, 0.0) >= SUPPRESS_LOG_WINDOW_S:
+                    suppressed_logged[key] = now
+                    log_warning(warning_record(report, band, left, fired=False,
+                                               suppressed_by="disarmed",
+                                               testing=is_test(report), now=now))
+            elif picked and quiet:
                 report, band, left = picked
                 key = (report.get("hex"), "quiet_hours")
                 if now - suppressed_logged.get(key, 0.0) >= SUPPRESS_LOG_WINDOW_S:
