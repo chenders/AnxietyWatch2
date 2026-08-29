@@ -95,7 +95,7 @@
       ],
       "service": "0x180D",
       "cadence": {
-        "expected_cadence_s": 60
+        "expected_cadence_s": 1
       }
     },
     "healthkit": {
@@ -142,7 +142,7 @@
         "rr_interval"
       ],
       "cadence": {
-        "expected_cadence_s": 60
+        "expected_cadence_s": 1
       }
     }
   }

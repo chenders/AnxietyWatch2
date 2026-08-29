@@ -18,11 +18,15 @@ mod linux {
     use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
     use tokio::net::UnixStream;
     use vitals_collectors::h10_build as build;
+    use vitals_collectors::h10_reconnect::{
+        LinkLoss, ReconnectBackoff, assess_link, notification_idle_timeout,
+    };
     use vitals_core::SessionMinter;
     use vitals_decode::hr::decode_2a37;
     use vitals_proto::{
         Request, Response, WireSample, check_frame_len, decode_payload, encode_frame,
     };
+    use vitals_registry::VitalsSource;
 
     const HR_SERVICE: bluer::Uuid =
         bluer::Uuid::from_u128(0x0000_180d_0000_1000_8000_0080_5f9b_34fb);
@@ -31,6 +35,15 @@ mod linux {
     /// A wedged daemon must be loud, not a silent stall (amendment 06 §2.2's
     /// visibility rule applies to the streaming path too).
     const APPEND_TIMEOUT: Duration = Duration::from_secs(30);
+    /// `BlueZ` can leave a connect operation pending indefinitely. A deadline
+    /// plus `Device1.Disconnect` cancellation prevents the stale
+    /// `Operation already in progress` loop observed on 2026-08-28.
+    const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
+    const CONNECTION_CHECK_INTERVAL: Duration = Duration::from_secs(1);
+    const CONNECTION_CHECK_TIMEOUT: Duration = Duration::from_secs(2);
+    const GATT_DISCOVERY_TIMEOUT: Duration = Duration::from_secs(15);
+    const SUBSCRIBE_TIMEOUT: Duration = Duration::from_secs(10);
+    const CANCEL_CONNECTION_TIMEOUT: Duration = Duration::from_secs(5);
 
     pub(super) struct Config {
         target: Address,
@@ -107,67 +120,221 @@ mod linux {
             })?
     }
 
-    pub async fn run(config: Config) -> Result<(), String> {
-        let mut minter = SessionMinter::open(&config.state_dir).map_err(|e| e.to_string())?;
-        loop {
-            let session = bluer::Session::new().await.map_err(|e| e.to_string())?;
-            let adapter = session.default_adapter().await.map_err(|e| e.to_string())?;
-            adapter.set_powered(true).await.map_err(|e| e.to_string())?;
-            let device = adapter.device(config.target).map_err(|e| e.to_string())?;
-            if !device.is_connected().await.unwrap_or(false) {
-                device.connect().await.map_err(|e| e.to_string())?;
-            }
-            tokio::time::timeout(Duration::from_secs(10), async {
-                while !device.is_services_resolved().await.unwrap_or(false) {
-                    tokio::time::sleep(Duration::from_millis(200)).await;
-                }
-            })
+    fn source_for(config: &Config) -> VitalsSource {
+        if config.emulator {
+            VitalsSource::PolarH10Emulator
+        } else {
+            VitalsSource::PolarH10
+        }
+    }
+
+    fn jitter_seed() -> u64 {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs() ^ u64::from(d.subsec_nanos()))
+    }
+
+    async fn cancel_connection(device: &bluer::Device) {
+        match tokio::time::timeout(CANCEL_CONNECTION_TIMEOUT, device.disconnect()).await {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => eprintln!(
+                "h10-collector: BlueZ connection cleanup returned kind={:?}, message={:?}; \
+                 next attempt will still retry",
+                e.kind, e.message
+            ),
+            Err(_) => eprintln!(
+                "h10-collector: BlueZ connection cancellation timed out after {}s",
+                CANCEL_CONNECTION_TIMEOUT.as_secs()
+            ),
+        }
+    }
+
+    async fn connect_and_find(
+        device: &bluer::Device,
+    ) -> Result<bluer::gatt::remote::Characteristic, String> {
+        let connected = tokio::time::timeout(CONNECTION_CHECK_TIMEOUT, device.is_connected())
             .await
-            .map_err(|_| "ServicesResolved timeout".to_owned())?;
-            let mut found = None;
+            .map_err(|_| {
+                format!(
+                    "initial BlueZ Connected status check timed out after {}s",
+                    CONNECTION_CHECK_TIMEOUT.as_secs()
+                )
+            })?
+            .map_err(|e| format!("initial BlueZ Connected status check failed: {e}"))?;
+        if !connected {
+            match tokio::time::timeout(CONNECT_TIMEOUT, device.connect()).await {
+                Ok(Ok(())) => {}
+                Ok(Err(e)) => return Err(format!("BlueZ connect failed: {e}")),
+                Err(_) => {
+                    return Err(format!(
+                        "BlueZ connect timed out after {}s",
+                        CONNECT_TIMEOUT.as_secs()
+                    ));
+                }
+            }
+        }
+        tokio::time::timeout(Duration::from_secs(10), async {
+            while !device.is_services_resolved().await.unwrap_or(false) {
+                tokio::time::sleep(Duration::from_millis(200)).await;
+            }
+        })
+        .await
+        .map_err(|_| "ServicesResolved timeout after 10s".to_owned())?;
+
+        tokio::time::timeout(GATT_DISCOVERY_TIMEOUT, async {
             for service in device.services().await.map_err(|e| e.to_string())? {
                 if service.uuid().await.map_err(|e| e.to_string())? != HR_SERVICE {
                     continue;
                 }
-                for c in service.characteristics().await.map_err(|e| e.to_string())? {
-                    if c.uuid().await.map_err(|e| e.to_string())? == HR_MEASUREMENT {
-                        found = Some(c);
-                        break;
+                for characteristic in service.characteristics().await.map_err(|e| e.to_string())? {
+                    if characteristic.uuid().await.map_err(|e| e.to_string())? == HR_MEASUREMENT {
+                        return Ok(characteristic);
                     }
                 }
             }
-            let characteristic = found.ok_or_else(|| "H10 has no 0x2A37".to_owned())?;
-            let id = minter.mint().map_err(|e| e.to_string())?;
-            let mut hr_seq = 0_i64;
-            let mut rr_seq = 0_i64;
-            let mut notifications =
-                Box::pin(characteristic.notify().await.map_err(|e| e.to_string())?);
+            Err("H10 has no 0x2A37".to_owned())
+        })
+        .await
+        .map_err(|_| {
+            format!(
+                "GATT discovery timed out after {}s",
+                GATT_DISCOVERY_TIMEOUT.as_secs()
+            )
+        })?
+    }
+
+    async fn consume_notifications(
+        config: &Config,
+        minter: &mut SessionMinter,
+        backoff: &mut ReconnectBackoff,
+        device: &bluer::Device,
+        characteristic: &bluer::gatt::remote::Characteristic,
+    ) -> Result<LinkLoss, String> {
+        let id = minter.mint().map_err(|e| e.to_string())?;
+        let mut hr_seq = 0_i64;
+        let mut rr_seq = 0_i64;
+        let notification_stream = tokio::time::timeout(SUBSCRIBE_TIMEOUT, characteristic.notify())
+            .await
+            .map_err(|_| {
+                format!(
+                    "GATT notification subscribe timed out after {}s",
+                    SUBSCRIBE_TIMEOUT.as_secs()
+                )
+            })?
+            .map_err(|e| e.to_string())?;
+        let mut notifications = Box::pin(notification_stream);
+        let idle_timeout = notification_idle_timeout(source_for(config));
+        let mut last_notification = tokio::time::Instant::now();
+        let mut received_notification = false;
+        let mut connection_check = tokio::time::interval(CONNECTION_CHECK_INTERVAL);
+        connection_check.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        eprintln!(
+            "h10-collector: subscribed, session {id}, emulator={}, notification watchdog={}s",
+            config.emulator,
+            idle_timeout.as_secs()
+        );
+
+        loop {
+            tokio::select! {
+                next = notifications.next() => {
+                    let Some(raw) = next else {
+                        return Ok(LinkLoss::StreamEnded);
+                    };
+                    // Any notification proves the complete BLE subscription path is live,
+                    // even if its physiological payload is malformed or rejected.
+                    last_notification = tokio::time::Instant::now();
+                    backoff.reset();
+                    if !received_notification {
+                        received_notification = true;
+                        eprintln!("h10-collector: first notification received, session {id}");
+                    }
+                    if let Some(h) = decode_2a37(&raw) {
+                        let built = build::samples(
+                            &h,
+                            id,
+                            &mut hr_seq,
+                            &mut rr_seq,
+                            now_micros()?,
+                            config.emulator,
+                        );
+                        for reason in &built.rejected {
+                            eprintln!("h10-collector: {reason}");
+                        }
+                        if !built.samples.is_empty() {
+                            append(&config.socket, built.samples).await?;
+                        }
+                    } else {
+                        eprintln!("h10-collector: malformed frame {raw:02x?}");
+                    }
+                }
+                _ = connection_check.tick() => {
+                    let connected = tokio::time::timeout(
+                        CONNECTION_CHECK_TIMEOUT,
+                        device.is_connected(),
+                    )
+                    .await
+                    .map_err(|_| {
+                        format!(
+                            "BlueZ Connected status check timed out after {}s",
+                            CONNECTION_CHECK_TIMEOUT.as_secs()
+                        )
+                    })?
+                    .map_err(|e| format!("BlueZ Connected status check failed: {e}"))?;
+                    if let Some(loss) = assess_link(
+                        connected,
+                        last_notification.elapsed(),
+                        idle_timeout,
+                    ) {
+                        return Ok(loss);
+                    }
+                }
+            }
+        }
+    }
+
+    async fn collect_once(
+        config: &Config,
+        minter: &mut SessionMinter,
+        backoff: &mut ReconnectBackoff,
+    ) -> Result<LinkLoss, String> {
+        let session = bluer::Session::new().await.map_err(|e| e.to_string())?;
+        let adapter = session.default_adapter().await.map_err(|e| e.to_string())?;
+        adapter.set_powered(true).await.map_err(|e| e.to_string())?;
+        let device = adapter.device(config.target).map_err(|e| e.to_string())?;
+        let result = async {
+            let characteristic = connect_and_find(&device).await?;
+            consume_notifications(config, minter, backoff, &device, &characteristic).await
+        }
+        .await;
+
+        // Device1.Disconnect cancels an outstanding Connect as well as closing
+        // a live link. This cleanup is what prevents a failed attempt from
+        // poisoning every later retry with `Operation already in progress`.
+        cancel_connection(&device).await;
+        result
+    }
+
+    pub async fn run(config: Config) -> Result<(), String> {
+        let mut minter = SessionMinter::open(&config.state_dir).map_err(|e| e.to_string())?;
+        let mut backoff = ReconnectBackoff::default();
+        loop {
+            let reason = match collect_once(&config, &mut minter, &mut backoff).await {
+                Ok(LinkLoss::StreamEnded) => "notification stream ended".to_owned(),
+                Ok(LinkLoss::Disconnected) => {
+                    "BlueZ Connected=false while notification stream remained open".to_owned()
+                }
+                Ok(LinkLoss::NotificationIdle { idle_for }) => format!(
+                    "no notification for {:.1}s while BlueZ remained connected",
+                    idle_for.as_secs_f64()
+                ),
+                Err(e) => e,
+            };
+            let delay = backoff.next_delay(jitter_seed());
             eprintln!(
-                "h10-collector: subscribed, session {id}, emulator={}",
-                config.emulator
+                "h10-collector: reconnect required: {reason}; retrying in {:.1}s",
+                delay.as_secs_f64()
             );
-            while let Some(raw) = notifications.next().await {
-                if let Some(h) = decode_2a37(&raw) {
-                    let built = build::samples(
-                        &h,
-                        id,
-                        &mut hr_seq,
-                        &mut rr_seq,
-                        now_micros()?,
-                        config.emulator,
-                    );
-                    for reason in &built.rejected {
-                        eprintln!("h10-collector: {reason}");
-                    }
-                    if !built.samples.is_empty() {
-                        append(&config.socket, built.samples).await?;
-                    }
-                } else {
-                    eprintln!("h10-collector: malformed frame {raw:02x?}");
-                }
-            }
-            eprintln!("h10-collector: disconnected; retrying");
-            tokio::time::sleep(Duration::from_secs(2)).await;
+            tokio::time::sleep(delay).await;
         }
     }
 }
