@@ -130,7 +130,7 @@ mod tests {
     }
 
     #[test]
-    fn h10_watchdog_comes_from_registry_cadence() {
+    fn notification_watchdogs_cover_periodic_and_on_demand_sources() {
         assert_eq!(
             notification_idle_timeout(VitalsSource::PolarH10),
             Duration::from_secs(15)
