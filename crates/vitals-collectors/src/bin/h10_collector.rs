@@ -471,6 +471,95 @@ mod linux {
             tokio::time::sleep(delay).await;
         }
     }
+
+    #[cfg(test)]
+    #[expect(
+        clippy::expect_used,
+        reason = "these tests use fixed local fixtures and should fail loudly"
+    )]
+    mod tests {
+        use super::*;
+        use tempfile::tempdir;
+        use vitals_decode::hr::{HeartRate, decode_2a37};
+
+        fn test_config(root: &Path) -> Config {
+            Config {
+                target: "00:00:00:00:00:00".parse().expect("valid test address"),
+                socket: root.join("vitalsd.sock"),
+                state_dir: root.join("state"),
+                live_status: Some(root.join("status/status.json")),
+                live_history: Some(root.join("history/status.jsonl")),
+                emulator: false,
+            }
+        }
+
+        fn decoded(frame: &[u8]) -> HeartRate {
+            decode_2a37(frame).expect("test frame decodes")
+        }
+
+        #[test]
+        fn live_status_writer_serializes_queue_updates() {
+            let temp = tempdir().expect("tempdir");
+            let config = test_config(temp.path());
+            let status_path = config.live_status.clone().expect("status path");
+            let history_path = config.live_history.clone().expect("history path");
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("runtime builds");
+
+            let (status, history) = runtime.block_on(async {
+                let sender = start_live_status_writer(&config).expect("writer enabled");
+                let first = decoded(&[0x00, 60]);
+                let second = decoded(&[0x00, 61]);
+
+                queue_live_status(Some(&sender), &config, &first, 7, 9)
+                    .expect("first update queues");
+                queue_live_status(Some(&sender), &config, &second, 7, 10)
+                    .expect("second update queues");
+                drop(sender);
+
+                tokio::time::timeout(Duration::from_secs(1), async {
+                    loop {
+                        let status_path = status_path.clone();
+                        let history_path = history_path.clone();
+                        let read = tokio::task::spawn_blocking(move || {
+                            (
+                                std::fs::read_to_string(status_path),
+                                std::fs::read_to_string(history_path),
+                            )
+                        })
+                        .await
+                        .expect("read task joins");
+                        if let (Ok(status), Ok(history)) = read
+                            && status.contains("\"seq\":10")
+                            && status.contains("\"hr\":61")
+                            && history.lines().count() == 2
+                        {
+                            return (status, history);
+                        }
+                        tokio::time::sleep(Duration::from_millis(10)).await;
+                    }
+                })
+                .await
+                .expect("writer drains within timeout")
+            });
+
+            let mut entries = history.lines();
+            assert!(
+                entries
+                    .next()
+                    .is_some_and(|entry| entry.contains("\"seq\":9"))
+            );
+            assert!(
+                entries
+                    .next()
+                    .is_some_and(|entry| entry.contains("\"seq\":10"))
+            );
+            assert!(status.contains("\"seq\":10"));
+            assert!(status.contains("\"hr\":61"));
+        }
+    }
 }
 
 #[cfg(target_os = "linux")]
