@@ -24,6 +24,46 @@ fn micros(seconds: f64) -> i64 {
     (seconds * 1_000_000.0).round() as i64
 }
 
+/// Build the stopgap panel's live document without changing canonical units.
+///
+/// RR points remain in registry-canonical seconds. Explicit unit and origin
+/// metadata make an older millisecond consumer fail closed instead of silently
+/// plotting values that are three orders of magnitude wrong.
+#[must_use]
+pub fn live_status_json(
+    h: &HeartRate,
+    session_id: i64,
+    hr_seq: i64,
+    emulator: bool,
+    sample_at: f64,
+    written_at: f64,
+) -> String {
+    let origin = if emulator {
+        "polar_h10_emulator"
+    } else {
+        "physical_device"
+    };
+    let (rr_lo, rr_hi) = VitalsType::RrInterval.range();
+    let mut beat = sample_at;
+    let mut rr_points = Vec::with_capacity(h.rr().len());
+    for rr in h.rr().iter().rev() {
+        beat -= *rr;
+        if *rr >= rr_lo && *rr <= rr_hi {
+            rr_points.push(format!("{{\"t\":{beat:.6},\"v\":{rr:.9}}}"));
+        }
+    }
+    rr_points.reverse();
+    format!(
+        "{{\"schema\":2,\"units\":{{\"hr\":\"bpm\",\"rr\":\"seconds\"}},\
+         \"history_origin\":\"{origin}\",\"sample_at\":{sample_at},\
+         \"session_id\":{session_id},\"seq\":{hr_seq},\"hr\":{},\"rr_count\":{},\
+         \"rr_points\":[{}],\"test_origin\":\"{origin}\",\"written_at\":{written_at}}}\n",
+        h.bpm,
+        rr_points.len(),
+        rr_points.join(","),
+    )
+}
+
 /// Builds store rows from one notification, enforcing the registry gates.
 ///
 /// * `contact == Some(false)` discards the whole notification: the sensor
@@ -143,6 +183,35 @@ mod tests {
 
     fn decoded(frame: &[u8]) -> HeartRate {
         decode_2a37(frame).expect("test frame decodes")
+    }
+
+    #[test]
+    fn live_status_keeps_rr_in_canonical_seconds_and_declares_provenance() {
+        let h = decoded(&[0x10, 60, 0x00, 0x04]);
+        let json = live_status_json(&h, 7, 9, false, 1_700_000_001.0, 1_700_000_002.0);
+        assert!(json.contains("\"rr\":\"seconds\""));
+        assert!(json.contains("\"history_origin\":\"physical_device\""));
+        assert!(json.contains("\"v\":1.000000000"));
+        assert!(!json.contains("\"v\":1000"));
+        assert!(json.contains("\"t\":1700000000.000000"));
+        assert!(json.contains("\"rr_count\":1"));
+    }
+
+    #[test]
+    fn live_status_stamps_emulator_origin() {
+        let h = decoded(&[0x00, 60]);
+        let json = live_status_json(&h, 7, 9, true, 100.0, 101.0);
+        assert!(json.contains("\"history_origin\":\"polar_h10_emulator\""));
+        assert!(json.contains("\"test_origin\":\"polar_h10_emulator\""));
+    }
+
+    #[test]
+    fn live_status_rejects_out_of_range_rr_without_clamping() {
+        let h = decoded(&[0x10, 60, 0x00, 0x10, 0x00, 0x04]);
+        let json = live_status_json(&h, 7, 9, false, 100.0, 101.0);
+        assert!(json.contains("\"rr_count\":1"));
+        assert!(json.contains("\"v\":1.000000000"));
+        assert!(!json.contains("\"v\":4.000000000"));
     }
 
     #[test]

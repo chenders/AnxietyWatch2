@@ -49,6 +49,8 @@ mod linux {
         target: Address,
         socket: PathBuf,
         state_dir: PathBuf,
+        live_status: Option<PathBuf>,
+        live_history: Option<PathBuf>,
         emulator: bool,
     }
 
@@ -66,6 +68,8 @@ mod linux {
                     .map_or_else(|| "/run/vitals/vitalsd.sock".into(), PathBuf::from),
                 state_dir: std::env::var_os("H10_STATE_DIR")
                     .map_or_else(|| "/var/lib/vitals/h10".into(), PathBuf::from),
+                live_status: std::env::var_os("H10_LIVE_STATUS_JSON").map(PathBuf::from),
+                live_history: std::env::var_os("H10_LIVE_HISTORY_JSONL").map(PathBuf::from),
                 emulator: std::env::var("H10_EMULATOR").is_ok_and(|v| v == "1"),
             })
         }
@@ -76,6 +80,66 @@ mod linux {
             .duration_since(UNIX_EPOCH)
             .map_err(|e| e.to_string())?;
         i64::try_from(d.as_micros()).map_err(|_| "timestamp overflow".to_owned())
+    }
+
+    fn now_secs() -> Result<f64, String> {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_secs_f64())
+            .map_err(|e| e.to_string())
+    }
+
+    fn publish_live_status(
+        config: &Config,
+        h: &vitals_decode::hr::HeartRate,
+        session_id: i64,
+        hr_seq: i64,
+    ) -> Result<(), String> {
+        use std::io::Write as _;
+
+        let Some(path) = &config.live_status else {
+            return Ok(());
+        };
+        let parent = path
+            .parent()
+            .ok_or_else(|| format!("live status path has no parent: {}", path.display()))?;
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        let temporary = parent.join(format!(
+            ".{}.tmp",
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("h10-status")
+        ));
+        let sample_at = now_secs()?;
+        let document = build::live_status_json(
+            h,
+            session_id,
+            hr_seq,
+            config.emulator,
+            sample_at,
+            now_secs()?,
+        );
+        let mut file = std::fs::File::create(&temporary).map_err(|e| e.to_string())?;
+        file.write_all(document.as_bytes())
+            .map_err(|e| e.to_string())?;
+        file.sync_all().map_err(|e| e.to_string())?;
+        std::fs::rename(&temporary, path).map_err(|e| e.to_string())?;
+
+        if let Some(history_path) = &config.live_history {
+            if let Some(history_parent) = history_path.parent() {
+                std::fs::create_dir_all(history_parent).map_err(|e| e.to_string())?;
+            }
+            let mut history = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(history_path)
+                .map_err(|e| e.to_string())?;
+            history
+                .write_all(document.as_bytes())
+                .map_err(|e| e.to_string())?;
+            history.flush().map_err(|e| e.to_string())?;
+        }
+        Ok(())
     }
 
     async fn append(socket: &Path, samples: Vec<WireSample>) -> Result<(), String> {
@@ -261,7 +325,21 @@ mod linux {
                             eprintln!("h10-collector: {reason}");
                         }
                         if !built.samples.is_empty() {
+                            let has_hr = built
+                                .samples
+                                .iter()
+                                .any(|sample| sample.r#type == vitals_registry::VitalsType::Hr.id());
                             append(&config.socket, built.samples).await?;
+                            if has_hr
+                                && let Err(e) = publish_live_status(
+                                    config,
+                                    &h,
+                                    id,
+                                    hr_seq.saturating_sub(1),
+                                )
+                            {
+                                eprintln!("h10-collector: live status publish failed: {e}");
+                            }
                         }
                     } else {
                         eprintln!("h10-collector: malformed frame {raw:02x?}");
