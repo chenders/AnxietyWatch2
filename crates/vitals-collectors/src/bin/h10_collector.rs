@@ -44,11 +44,16 @@ mod linux {
     const GATT_DISCOVERY_TIMEOUT: Duration = Duration::from_secs(15);
     const SUBSCRIBE_TIMEOUT: Duration = Duration::from_secs(10);
     const CANCEL_CONNECTION_TIMEOUT: Duration = Duration::from_secs(5);
+    /// Auxiliary writes are bounded; saturation drops and names an update instead of
+    /// blocking BLE ingestion or growing memory without limit.
+    const LIVE_STATUS_QUEUE_CAPACITY: usize = 4;
 
     pub(super) struct Config {
         target: Address,
         socket: PathBuf,
         state_dir: PathBuf,
+        live_status: Option<PathBuf>,
+        live_history: Option<PathBuf>,
         emulator: bool,
     }
 
@@ -66,6 +71,8 @@ mod linux {
                     .map_or_else(|| "/run/vitals/vitalsd.sock".into(), PathBuf::from),
                 state_dir: std::env::var_os("H10_STATE_DIR")
                     .map_or_else(|| "/var/lib/vitals/h10".into(), PathBuf::from),
+                live_status: std::env::var_os("H10_LIVE_STATUS_JSON").map(PathBuf::from),
+                live_history: std::env::var_os("H10_LIVE_HISTORY_JSONL").map(PathBuf::from),
                 emulator: std::env::var("H10_EMULATOR").is_ok_and(|v| v == "1"),
             })
         }
@@ -76,6 +83,102 @@ mod linux {
             .duration_since(UNIX_EPOCH)
             .map_err(|e| e.to_string())?;
         i64::try_from(d.as_micros()).map_err(|_| "timestamp overflow".to_owned())
+    }
+
+    fn now_secs() -> Result<f64, String> {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_secs_f64())
+            .map_err(|e| e.to_string())
+    }
+
+    fn write_live_status(
+        path: &Path,
+        history_path: Option<&Path>,
+        document: &str,
+    ) -> Result<(), String> {
+        use std::io::Write as _;
+
+        let parent = path
+            .parent()
+            .ok_or_else(|| format!("live status path has no parent: {}", path.display()))?;
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        let temporary = parent.join(format!(
+            ".{}.tmp",
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("h10-status")
+        ));
+        let mut file = std::fs::File::create(&temporary).map_err(|e| e.to_string())?;
+        file.write_all(document.as_bytes())
+            .map_err(|e| e.to_string())?;
+        file.sync_all().map_err(|e| e.to_string())?;
+        std::fs::rename(&temporary, path).map_err(|e| e.to_string())?;
+
+        if let Some(history_path) = history_path {
+            if let Some(history_parent) = history_path.parent() {
+                std::fs::create_dir_all(history_parent).map_err(|e| e.to_string())?;
+            }
+            let mut history = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(history_path)
+                .map_err(|e| e.to_string())?;
+            history
+                .write_all(document.as_bytes())
+                .map_err(|e| e.to_string())?;
+            history.flush().map_err(|e| e.to_string())?;
+        }
+        Ok(())
+    }
+
+    fn start_live_status_writer(config: &Config) -> Option<tokio::sync::mpsc::Sender<String>> {
+        let path = config.live_status.clone()?;
+        let history_path = config.live_history.clone();
+        let (sender, mut receiver) =
+            tokio::sync::mpsc::channel::<String>(LIVE_STATUS_QUEUE_CAPACITY);
+        tokio::spawn(async move {
+            while let Some(document) = receiver.recv().await {
+                let status = path.clone();
+                let history = history_path.clone();
+                let result = tokio::task::spawn_blocking(move || {
+                    write_live_status(&status, history.as_deref(), &document)
+                })
+                .await;
+                match result {
+                    Ok(Ok(())) => {}
+                    Ok(Err(e)) => eprintln!("h10-collector: live status publish failed: {e}"),
+                    Err(e) => eprintln!("h10-collector: live status writer task failed: {e}"),
+                }
+            }
+        });
+        Some(sender)
+    }
+
+    fn queue_live_status(
+        sender: Option<&tokio::sync::mpsc::Sender<String>>,
+        config: &Config,
+        h: &vitals_decode::hr::HeartRate,
+        session_id: i64,
+        hr_seq: i64,
+    ) -> Result<(), String> {
+        let Some(sender) = sender else {
+            return Ok(());
+        };
+        let sample_at = now_secs()?;
+        let document = build::live_status_json(
+            h,
+            session_id,
+            hr_seq,
+            config.emulator,
+            sample_at,
+            now_secs()?,
+        );
+        sender.try_send(document).map_err(|e| {
+            format!(
+                "live status queue blocked update for session_id={session_id}, seq={hr_seq}: {e}"
+            )
+        })
     }
 
     async fn append(socket: &Path, samples: Vec<WireSample>) -> Result<(), String> {
@@ -207,6 +310,7 @@ mod linux {
         config: &Config,
         minter: &mut SessionMinter,
         backoff: &mut ReconnectBackoff,
+        live_status_sender: Option<&tokio::sync::mpsc::Sender<String>>,
         device: &bluer::Device,
         characteristic: &bluer::gatt::remote::Characteristic,
     ) -> Result<LinkLoss, String> {
@@ -261,7 +365,22 @@ mod linux {
                             eprintln!("h10-collector: {reason}");
                         }
                         if !built.samples.is_empty() {
+                            let has_hr = built
+                                .samples
+                                .iter()
+                                .any(|sample| sample.r#type == vitals_registry::VitalsType::Hr.id());
                             append(&config.socket, built.samples).await?;
+                            if has_hr
+                                && let Err(e) = queue_live_status(
+                                    live_status_sender,
+                                    config,
+                                    &h,
+                                    id,
+                                    hr_seq.saturating_sub(1),
+                                )
+                            {
+                                eprintln!("h10-collector: {e}");
+                            }
                         }
                     } else {
                         eprintln!("h10-collector: malformed frame {raw:02x?}");
@@ -296,6 +415,7 @@ mod linux {
         config: &Config,
         minter: &mut SessionMinter,
         backoff: &mut ReconnectBackoff,
+        live_status_sender: Option<&tokio::sync::mpsc::Sender<String>>,
     ) -> Result<LinkLoss, String> {
         let session = bluer::Session::new().await.map_err(|e| e.to_string())?;
         let adapter = session.default_adapter().await.map_err(|e| e.to_string())?;
@@ -303,7 +423,15 @@ mod linux {
         let device = adapter.device(config.target).map_err(|e| e.to_string())?;
         let result = async {
             let characteristic = connect_and_find(&device).await?;
-            consume_notifications(config, minter, backoff, &device, &characteristic).await
+            consume_notifications(
+                config,
+                minter,
+                backoff,
+                live_status_sender,
+                &device,
+                &characteristic,
+            )
+            .await
         }
         .await;
 
@@ -317,8 +445,16 @@ mod linux {
     pub async fn run(config: Config) -> Result<(), String> {
         let mut minter = SessionMinter::open(&config.state_dir).map_err(|e| e.to_string())?;
         let mut backoff = ReconnectBackoff::default();
+        let live_status_sender = start_live_status_writer(&config);
         loop {
-            let reason = match collect_once(&config, &mut minter, &mut backoff).await {
+            let reason = match collect_once(
+                &config,
+                &mut minter,
+                &mut backoff,
+                live_status_sender.as_ref(),
+            )
+            .await
+            {
                 Ok(LinkLoss::StreamEnded) => "notification stream ended".to_owned(),
                 Ok(LinkLoss::Disconnected) => {
                     "BlueZ Connected=false while notification stream remained open".to_owned()
@@ -335,6 +471,95 @@ mod linux {
                 delay.as_secs_f64()
             );
             tokio::time::sleep(delay).await;
+        }
+    }
+
+    #[cfg(test)]
+    #[expect(
+        clippy::expect_used,
+        reason = "these tests use fixed local fixtures and should fail loudly"
+    )]
+    mod tests {
+        use super::*;
+        use tempfile::tempdir;
+        use vitals_decode::hr::{HeartRate, decode_2a37};
+
+        fn test_config(root: &Path) -> Config {
+            Config {
+                target: "AA:BB:CC:DD:EE:FF".parse().expect("valid test address"),
+                socket: root.join("vitalsd.sock"),
+                state_dir: root.join("state"),
+                live_status: Some(root.join("status/status.json")),
+                live_history: Some(root.join("history/status.jsonl")),
+                emulator: false,
+            }
+        }
+
+        fn decoded(frame: &[u8]) -> HeartRate {
+            decode_2a37(frame).expect("test frame decodes")
+        }
+
+        #[test]
+        fn live_status_writer_serializes_queue_updates() {
+            let temp = tempdir().expect("tempdir");
+            let config = test_config(temp.path());
+            let status_path = config.live_status.clone().expect("status path");
+            let history_path = config.live_history.clone().expect("history path");
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("runtime builds");
+
+            let (status, history) = runtime.block_on(async {
+                let sender = start_live_status_writer(&config).expect("writer enabled");
+                let first = decoded(&[0x00, 60]);
+                let second = decoded(&[0x00, 61]);
+
+                queue_live_status(Some(&sender), &config, &first, 7, 9)
+                    .expect("first update queues");
+                queue_live_status(Some(&sender), &config, &second, 7, 10)
+                    .expect("second update queues");
+                drop(sender);
+
+                tokio::time::timeout(Duration::from_secs(1), async {
+                    loop {
+                        let status_path = status_path.clone();
+                        let history_path = history_path.clone();
+                        let read = tokio::task::spawn_blocking(move || {
+                            (
+                                std::fs::read_to_string(status_path),
+                                std::fs::read_to_string(history_path),
+                            )
+                        })
+                        .await
+                        .expect("read task joins");
+                        if let (Ok(status), Ok(history)) = read
+                            && status.contains("\"seq\":10")
+                            && status.contains("\"hr\":61")
+                            && history.lines().count() == 2
+                        {
+                            return (status, history);
+                        }
+                        tokio::time::sleep(Duration::from_millis(10)).await;
+                    }
+                })
+                .await
+                .expect("writer drains within timeout")
+            });
+
+            let mut entries = history.lines();
+            assert!(
+                entries
+                    .next()
+                    .is_some_and(|entry| entry.contains("\"seq\":9"))
+            );
+            assert!(
+                entries
+                    .next()
+                    .is_some_and(|entry| entry.contains("\"seq\":10"))
+            );
+            assert!(status.contains("\"seq\":10"));
+            assert!(status.contains("\"hr\":61"));
         }
     }
 }
