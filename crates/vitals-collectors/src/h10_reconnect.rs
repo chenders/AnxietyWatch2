@@ -10,6 +10,7 @@ use vitals_registry::{Cadence, VitalsSource};
 /// many registry-declared cadences means the notification stream is wedged,
 /// even if `BlueZ` has not closed it and still reports the process as healthy.
 const MISSED_CADENCES_BEFORE_RECONNECT: u32 = 15;
+const ON_DEMAND_IDLE_TIMEOUT_SECONDS: u64 = 30;
 
 /// The collector retries quickly for a bedside dropout, then stops hammering
 /// `BlueZ`. The small jitter prevents several collectors from synchronizing after
@@ -43,7 +44,7 @@ pub fn notification_idle_timeout(source: VitalsSource) -> Duration {
         )),
         // The H10 variants are periodic, so this branch is defensive for a
         // future caller and deliberately fails on a short, visible deadline.
-        Cadence::OnDemand => Duration::from_secs(30),
+        Cadence::OnDemand => Duration::from_secs(ON_DEMAND_IDLE_TIMEOUT_SECONDS),
     }
 }
 
@@ -138,9 +139,10 @@ mod tests {
             notification_idle_timeout(VitalsSource::PolarH10Emulator),
             Duration::from_secs(15)
         );
+        assert_eq!(VitalsSource::Derived.expected_cadence(), Cadence::OnDemand);
         assert_eq!(
             notification_idle_timeout(VitalsSource::Derived),
-            Duration::from_secs(30),
+            Duration::from_secs(ON_DEMAND_IDLE_TIMEOUT_SECONDS),
             "a future accidental on-demand caller must retain a finite watchdog"
         );
     }
