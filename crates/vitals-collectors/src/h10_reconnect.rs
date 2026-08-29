@@ -138,6 +138,11 @@ mod tests {
             notification_idle_timeout(VitalsSource::PolarH10Emulator),
             Duration::from_secs(15)
         );
+        assert_eq!(
+            notification_idle_timeout(VitalsSource::Derived),
+            Duration::from_secs(30),
+            "a future accidental on-demand caller must retain a finite watchdog"
+        );
     }
 
     #[test]
