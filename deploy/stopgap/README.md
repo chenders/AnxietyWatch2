@@ -189,6 +189,20 @@ model per data/range revision. Rendering retains first/minimum/maximum/last valu
 pixel while preserving every measured gap; it never creates one SVG node per sample. Hover lookup
 uses the cached model and binary search, throttled to one animation frame.
 
+### 2026-08-28/29 incident evidence
+
+The original page recomputed the rolling 60-second HRV window quadratically and called that function
+10 times per redraw and 24 times per pointer move. Selecting all history created about 70,900 SVG
+`stop` elements; two recorded pointer handlers each occupied the main thread for about 10.6 seconds.
+It also downloaded and parsed the complete ~1.23 MB history every second. On the Pi the corresponding
+publisher accumulated more than eight CPU-hours in 23 hours.
+
+After the collector was corrected to retain registry-canonical RR seconds, the old page still labelled
+the values as milliseconds and applied a `200..3000` check. A valid recent RR median of 1.036 seconds
+therefore rendered as approximately 1 ms and unusable even while the radio, collector, status file,
+and panel feed were all fresh. Unit metadata now fails closed, and this page consumes seconds without
+a presentation-layer conversion.
+
 The split is a stopgap transport optimization, not the eventual query API. Runtime JSON remains
 untracked and is still served only on the local panel HTTP service.
 
