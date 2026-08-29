@@ -7,7 +7,7 @@ import json
 import math
 import sys
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 
 import pytest
 
@@ -124,6 +124,38 @@ def test_atomic_documents_carry_timestamp_and_reject_nan(
 
     with pytest.raises(ValueError, match="JSON compliant"):
         publisher.publish_json(output, {"bad": math.nan})
+
+
+def test_psql_variables_use_the_long_option_form_that_psql_expands(
+    publisher: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured: list[str] = []
+
+    def fake_run(command: list[str], **kwargs: object) -> SimpleNamespace:
+        captured.extend(command)
+        assert kwargs["check"] is False
+        assert kwargs["input"] == "SELECT :'cursor'"
+        return SimpleNamespace(returncode=0, stdout='{"ok":true}', stderr="")
+
+    monkeypatch.setattr(publisher.subprocess, "run", fake_run)
+    assert publisher.run_query("SELECT :'cursor'", {"cursor": 12.5}) == {"ok": True}
+    assert "--set=cursor=12.500000" in captured
+    assert "--set" not in captured
+    assert "-c" not in captured
+
+
+def test_psql_failure_names_the_database_diagnostic(
+    publisher: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        publisher.subprocess,
+        "run",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            returncode=1, stdout="", stderr='ERROR: relation "samples" does not exist\n'
+        ),
+    )
+    with pytest.raises(RuntimeError, match='relation "samples" does not exist'):
+        publisher.run_query("SELECT 1")
 
 
 def test_revision_is_strictly_monotonic(publisher: ModuleType) -> None:

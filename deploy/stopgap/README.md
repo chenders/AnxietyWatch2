@@ -203,6 +203,11 @@ therefore rendered as approximately 1 ms and unusable even while the radio, coll
 and panel feed were all fresh. Unit metadata now fails closed, and this page consumes seconds without
 a presentation-layer conversion.
 
+Deployment also caught a cursor-query integration defect: `psql` does not expand `:variables` in a
+`-c` SQL argument. The publisher now passes SQL on stdin (where psql performs substitution), tests
+the exact argument shape, and includes stderr in a named query failure instead of logging only a
+multi-page command string.
+
 The split is a stopgap transport optimization, not the eventual query API. Runtime JSON remains
 untracked and is still served only on the local panel HTTP service.
 

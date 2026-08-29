@@ -203,9 +203,20 @@ class HistoryState:
 def run_query(sql: str, variables: dict[str, float] | None = None) -> dict[str, Any]:
     command = ["psql", "-X", "-qAt", "-U", "vitals", "-d", DATABASE]
     for name, value in (variables or {}).items():
-        command.extend(["--set", f"{name}={value:.6f}"])
-    command.extend(["-c", sql])
-    process = subprocess.run(command, text=True, capture_output=True, check=True)
+        command.append(f"--set={name}={value:.6f}")
+    # psql does not expand :variables in a `-c` string; stdin is processed as
+    # a psql script and does. Values above are formatted finite floats, never
+    # user-provided SQL fragments.
+    process = subprocess.run(
+        command,
+        input=sql,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if process.returncode != 0:
+        detail = process.stderr.strip() or process.stdout.strip() or "no psql diagnostic"
+        raise RuntimeError(f"psql query failed: returncode={process.returncode}, detail={detail}")
     return json.loads(process.stdout.strip())
 
 
