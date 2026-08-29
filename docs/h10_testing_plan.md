@@ -42,6 +42,14 @@ foundation figure.
    not two: *device not found* (pairing fault), *out of range* (normal), and *bonded but
    `ServicesResolved` never fired within 10 s* — encryption could not resume, which looks exactly
    like a quiet night and is not one. `hr-spike` times that third state out explicitly.
+6. **Reconnect liveness.** BlueZ can set `Device1.Connected=false` without ending an existing GATT
+   notification stream. The production collector therefore checks `Connected` independently and
+   treats 15 missing 1 Hz notification cadences as a wedged subscription. Connection attempts have
+   a 30-second deadline, cancel their BlueZ operation before retrying, and use jittered exponential
+   backoff capped at 30 seconds. Receiving a notification—not merely reaching `Connected`—resets
+   that backoff. This rule was added after the 2026-08-28 incident in which the collector remained
+   alive and silent for nine hours, then hit a persistent `Operation already in progress` loop until
+   `bluetoothd` was restarted.
 
 ## Why the H10 specifically
 
