@@ -44,6 +44,8 @@ mod linux {
     const GATT_DISCOVERY_TIMEOUT: Duration = Duration::from_secs(15);
     const SUBSCRIBE_TIMEOUT: Duration = Duration::from_secs(10);
     const CANCEL_CONNECTION_TIMEOUT: Duration = Duration::from_secs(5);
+    /// Auxiliary writes are bounded; saturation drops and names an update instead of
+    /// blocking BLE ingestion or growing memory without limit.
     const LIVE_STATUS_QUEUE_CAPACITY: usize = 4;
 
     pub(super) struct Config {
