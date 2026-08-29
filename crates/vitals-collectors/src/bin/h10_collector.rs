@@ -486,7 +486,7 @@ mod linux {
 
         fn test_config(root: &Path) -> Config {
             Config {
-                target: "00:00:00:00:00:00".parse().expect("valid test address"),
+                target: "AA:BB:CC:DD:EE:FF".parse().expect("valid test address"),
                 socket: root.join("vitalsd.sock"),
                 state_dir: root.join("state"),
                 live_status: Some(root.join("status/status.json")),
