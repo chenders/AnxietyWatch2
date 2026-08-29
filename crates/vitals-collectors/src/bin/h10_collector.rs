@@ -14,6 +14,7 @@ mod linux {
     use bluer::Address;
     use futures::StreamExt as _;
     use std::path::{Path, PathBuf};
+    use std::sync::mpsc;
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
     use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
     use tokio::net::UnixStream;
@@ -89,17 +90,88 @@ mod linux {
             .map_err(|e| e.to_string())
     }
 
+    #[derive(Clone)]
+    struct LiveStatusUpdate {
+        heart_rate: vitals_decode::hr::HeartRate,
+        session_id: i64,
+        hr_seq: i64,
+    }
+
+    struct LiveStatusPublisher {
+        tx: Option<mpsc::Sender<LiveStatusUpdate>>,
+        worker: Option<std::thread::JoinHandle<()>>,
+    }
+
+    impl LiveStatusPublisher {
+        fn start(config: &Config) -> Result<Option<Self>, String> {
+            let Some(live_status) = config.live_status.clone() else {
+                return Ok(None);
+            };
+            let live_history = config.live_history.clone();
+            let emulator = config.emulator;
+            let (tx, rx) = mpsc::channel::<LiveStatusUpdate>();
+            let worker = std::thread::Builder::new()
+                .name("h10-live-status".to_owned())
+                .spawn(move || {
+                    while let Ok(update) = rx.recv() {
+                        if let Err(e) = publish_live_status(
+                            &live_status,
+                            live_history.as_deref(),
+                            emulator,
+                            &update.heart_rate,
+                            update.session_id,
+                            update.hr_seq,
+                        ) {
+                            eprintln!("h10-collector: live status publish failed: {e}");
+                        }
+                    }
+                })
+                .map_err(|e| format!("could not start live status publisher: {e}"))?;
+            Ok(Some(Self {
+                tx: Some(tx),
+                worker: Some(worker),
+            }))
+        }
+
+        fn publish(
+            &self,
+            heart_rate: &vitals_decode::hr::HeartRate,
+            session_id: i64,
+            hr_seq: i64,
+        ) -> Result<(), String> {
+            self.tx
+                .as_ref()
+                .ok_or_else(|| "live status publisher is closed".to_owned())?
+                .send(LiveStatusUpdate {
+                    heart_rate: heart_rate.clone(),
+                    session_id,
+                    hr_seq,
+                })
+                .map_err(|_| "live status publisher stopped".to_owned())
+        }
+    }
+
+    impl Drop for LiveStatusPublisher {
+        fn drop(&mut self) {
+            self.tx.take();
+            if let Some(worker) = self.worker.take()
+                && let Err(_) = worker.join()
+            {
+                eprintln!("h10-collector: live status publisher thread panicked");
+            }
+        }
+    }
+
     fn publish_live_status(
-        config: &Config,
+        path: &Path,
+        live_history: Option<&Path>,
+        emulator: bool,
         h: &vitals_decode::hr::HeartRate,
         session_id: i64,
         hr_seq: i64,
     ) -> Result<(), String> {
         use std::io::Write as _;
 
-        let Some(path) = &config.live_status else {
-            return Ok(());
-        };
         let parent = path
             .parent()
             .ok_or_else(|| format!("live status path has no parent: {}", path.display()))?;
@@ -111,21 +183,15 @@ mod linux {
                 .unwrap_or("h10-status")
         ));
         let sample_at = now_secs()?;
-        let document = build::live_status_json(
-            h,
-            session_id,
-            hr_seq,
-            config.emulator,
-            sample_at,
-            now_secs()?,
-        );
+        let document =
+            build::live_status_json(h, session_id, hr_seq, emulator, sample_at, now_secs()?);
         let mut file = std::fs::File::create(&temporary).map_err(|e| e.to_string())?;
         file.write_all(document.as_bytes())
             .map_err(|e| e.to_string())?;
         file.sync_all().map_err(|e| e.to_string())?;
         std::fs::rename(&temporary, path).map_err(|e| e.to_string())?;
 
-        if let Some(history_path) = &config.live_history {
+        if let Some(history_path) = live_history {
             if let Some(history_parent) = history_path.parent() {
                 std::fs::create_dir_all(history_parent).map_err(|e| e.to_string())?;
             }
@@ -269,6 +335,7 @@ mod linux {
 
     async fn consume_notifications(
         config: &Config,
+        live_status: Option<&LiveStatusPublisher>,
         minter: &mut SessionMinter,
         backoff: &mut ReconnectBackoff,
         device: &bluer::Device,
@@ -331,12 +398,8 @@ mod linux {
                                 .any(|sample| sample.r#type == vitals_registry::VitalsType::Hr.id());
                             append(&config.socket, built.samples).await?;
                             if has_hr
-                                && let Err(e) = publish_live_status(
-                                    config,
-                                    &h,
-                                    id,
-                                    hr_seq.saturating_sub(1),
-                                )
+                                && let Some(publisher) = live_status
+                                && let Err(e) = publisher.publish(&h, id, hr_seq.saturating_sub(1))
                             {
                                 eprintln!("h10-collector: live status publish failed: {e}");
                             }
@@ -372,6 +435,7 @@ mod linux {
 
     async fn collect_once(
         config: &Config,
+        live_status: Option<&LiveStatusPublisher>,
         minter: &mut SessionMinter,
         backoff: &mut ReconnectBackoff,
     ) -> Result<LinkLoss, String> {
@@ -381,7 +445,15 @@ mod linux {
         let device = adapter.device(config.target).map_err(|e| e.to_string())?;
         let result = async {
             let characteristic = connect_and_find(&device).await?;
-            consume_notifications(config, minter, backoff, &device, &characteristic).await
+            consume_notifications(
+                config,
+                live_status,
+                minter,
+                backoff,
+                &device,
+                &characteristic,
+            )
+            .await
         }
         .await;
 
@@ -393,10 +465,18 @@ mod linux {
     }
 
     pub async fn run(config: Config) -> Result<(), String> {
+        let live_status = LiveStatusPublisher::start(&config)?;
         let mut minter = SessionMinter::open(&config.state_dir).map_err(|e| e.to_string())?;
         let mut backoff = ReconnectBackoff::default();
         loop {
-            let reason = match collect_once(&config, &mut minter, &mut backoff).await {
+            let reason = match collect_once(
+                &config,
+                live_status.as_ref(),
+                &mut minter,
+                &mut backoff,
+            )
+            .await
+            {
                 Ok(LinkLoss::StreamEnded) => "notification stream ended".to_owned(),
                 Ok(LinkLoss::Disconnected) => {
                     "BlueZ Connected=false while notification stream remained open".to_owned()
@@ -413,6 +493,67 @@ mod linux {
                 delay.as_secs_f64()
             );
             tokio::time::sleep(delay).await;
+        }
+    }
+
+    #[cfg(test)]
+    #[expect(
+        clippy::expect_used,
+        reason = "these tests use fixed local fixtures and should fail loudly"
+    )]
+    mod tests {
+        use super::*;
+        use tempfile::tempdir;
+        use vitals_decode::hr::decode_2a37;
+
+        fn test_config(root: &Path) -> Config {
+            Config {
+                target: "00:00:00:00:00:00".parse().expect("valid test address"),
+                socket: root.join("vitalsd.sock"),
+                state_dir: root.join("state"),
+                live_status: Some(root.join("status/status.json")),
+                live_history: Some(root.join("history/status.jsonl")),
+                emulator: false,
+            }
+        }
+
+        #[test]
+        fn live_status_publisher_serializes_updates() {
+            let temp = tempdir().expect("tempdir");
+            let config = test_config(temp.path());
+            let status_path = config.live_status.clone().expect("status path");
+            let history_path = config.live_history.clone().expect("history path");
+            let publisher = LiveStatusPublisher::start(&config)
+                .expect("publisher setup succeeds")
+                .expect("publisher enabled");
+            let first = decode_2a37(&[0x00, 60]).expect("first frame decodes");
+            let second = decode_2a37(&[0x00, 61]).expect("second frame decodes");
+
+            publisher
+                .publish(&first, 7, 9)
+                .expect("first send succeeds");
+            publisher
+                .publish(&second, 7, 10)
+                .expect("second send succeeds");
+            drop(publisher);
+
+            let status = std::fs::read_to_string(status_path).expect("status file readable");
+            assert!(status.contains("\"seq\":10"));
+            assert!(status.contains("\"hr\":61"));
+
+            let history = std::fs::read_to_string(history_path).expect("history file readable");
+            let entries: Vec<_> = history.lines().collect();
+            assert_eq!(entries.len(), 2);
+            assert!(
+                entries
+                    .first()
+                    .is_some_and(|entry| entry.contains("\"seq\":9"))
+            );
+            assert!(
+                entries
+                    .get(1)
+                    .is_some_and(|entry| entry.contains("\"seq\":10"))
+            );
         }
     }
 }
