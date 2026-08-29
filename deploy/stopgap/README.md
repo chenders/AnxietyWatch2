@@ -173,6 +173,32 @@ Still open:
   `unclutter` would hide it.
 - `XDG_RUNTIME_DIR` must match the UID assigned to the dedicated `anxietywatch` service account.
 
+## Polar H10 graph data
+
+`polar-h10.html` is the detailed local H10 view. Its publisher deliberately splits the feed:
+
+- `vitals_status.json` is the small one-second status poll. It contains current BP/H10 state and
+  only `h10_delta` points added since `history_revision`.
+- Both documents declare `units.rr=seconds`, matching the registry's canonical RR unit. Missing or
+  different unit metadata blocks RR display rather than guessing or silently converting it.
+- `vitals_h10_history.json` is the full baseline. The publisher refreshes it at most every five
+  minutes, and the page refetches it only when its revision advances.
+
+The page computes RMSSD and SDNN together in one linear rolling-window pass and caches one graph
+model per data/range revision. Rendering retains first/minimum/maximum/last values per horizontal
+pixel while preserving every measured gap; it never creates one SVG node per sample. Hover lookup
+uses the cached model and binary search, throttled to one animation frame.
+
+The split is a stopgap transport optimization, not the eventual query API. Runtime JSON remains
+untracked and is still served only on the local panel HTTP service.
+
+Verify the browser-side performance invariants with:
+
+```sh
+node docs/design/pi-panel/direction-a-clinical/polar-h10-performance-check.mjs
+uv run pytest -q vitals/tools/tests/test_panel_vitals_status.py
+```
+
 ## Query string
 
 The kiosk unit loads `?kiosk=1&live`.
