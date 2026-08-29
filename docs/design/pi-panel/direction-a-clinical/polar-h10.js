@@ -226,6 +226,9 @@ let historyRevision = null;
 let historyRequest = null;
 let rrUnitBlocker = null;
 let chartRects = new WeakMap();
+// Registry-canonical RR valid range; overridden by every payload that carries
+// ranges.rr so the browser never holds its own registry copy indefinitely.
+let rrValidRange = [0.2, 3.0];
 
 function currentSignature(nowSeconds) {
   const seconds = RANGE_SECONDS[selectedRange];
@@ -327,7 +330,7 @@ function drawGraphs() {
     value >= 60 && value <= 100 ? "good" : "caution"
   ), "hrTicks", model.bounds);
   drawSeries("rrWave", model.series.rr, (value) => (
-    value >= 0.2 && value <= 3.0 ? "timing" : "invalid"
+    value >= rrValidRange[0] && value <= rrValidRange[1] ? "timing" : "invalid"
   ), "rrTicks", model.bounds);
   drawSeries("rmssdWave", model.series.rmssd, () => "neutral", "rmssdTicks", model.bounds);
   drawSeries("sdnnWave", model.series.sdnn, () => "neutral", "sdnnTicks", model.bounds);
@@ -430,6 +433,9 @@ function mergePayload(data) {
     if (rrUnitBlocker !== blocker) console.warn(`RR data blocked: units.rr=${blocker}`);
     rrUnitBlocker = blocker;
   }
+  if (Array.isArray(data.ranges && data.ranges.rr) && data.ranges.rr.length >= 2) {
+    rrValidRange = [Number(data.ranges.rr[0]), Number(data.ranges.rr[1])];
+  }
   const h10 = data.h10;
   if (h10 && h10.sample_at != null && h10.hr != null) {
     changed = stores.hr.merge([{ t: h10.sample_at, v: h10.hr }]) || changed;
@@ -495,9 +501,9 @@ function renderStatus(data, error = null) {
     ? Number(h10.rr_points[h10.rr_points.length - 1].v)
     : latestRrPoint ? latestRrPoint.v : NaN;
   const rrMeaning = document.querySelector("#rrMeaning");
-  rrMeaning.className = `meaning ${Number.isFinite(latestRr) && latestRr >= 0.2 && latestRr <= 3.0 ? "good" : "unusable"}`;
+  rrMeaning.className = `meaning ${Number.isFinite(latestRr) && latestRr >= rrValidRange[0] && latestRr <= rrValidRange[1] ? "good" : "unusable"}`;
   rrMeaning.innerHTML = Number.isFinite(latestRr)
-    ? `<strong>Signal quality:</strong> ${latestRr >= 0.2 && latestRr <= 3.0 ? "accepted by the system’s 0.2–3.0 s filter." : "outside the system’s accepted filter."} <span class="meta">Not a clinical normal range.</span>`
+    ? `<strong>Signal quality:</strong> ${latestRr >= rrValidRange[0] && latestRr <= rrValidRange[1] ? `accepted by the system's ${rrValidRange[0]}–${rrValidRange[1]} s filter.` : "outside the system's accepted filter."} <span class="meta">Not a clinical normal range.</span>`
     : "No interval to interpret.";
 
   setText("session", h10 ? h10.session_id : "—");

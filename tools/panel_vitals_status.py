@@ -42,6 +42,9 @@ LIVE_H10_MAX_AGE = float(os.environ.get("H10_LIVE_STATUS_MAX_AGE_SECONDS", "10")
 LIVE_H10_HISTORY_MAX_AGE = float(
     os.environ.get("H10_LIVE_HISTORY_MAX_AGE_SECONDS", "86400")
 )
+# Mirrors registry.toml type.rr_interval.range.  Embedded in every published
+# document so the browser page never needs its own copy of the registry bounds.
+VALID_RANGES: dict[str, list[float]] = {"rr": [0.2, 3.0]}
 
 STATUS_SQL = r"""
 WITH bp_latest AS (
@@ -313,6 +316,7 @@ def publish_history(history: HistoryState, revision: int) -> None:
             "schema": 2,
             "revision": revision,
             "units": {"hr": "bpm", "rr": "seconds"},
+            "ranges": VALID_RANGES,
             "history_origin": "physical_device",
             "h10_history": history.payload(),
         },
@@ -328,6 +332,7 @@ def main() -> None:
     last_good: dict[str, Any] = {
         "schema": 2,
         "units": {"hr": "bpm", "rr": "seconds"},
+        "ranges": VALID_RANGES,
         "history_origin": "physical_device",
         "bp": None,
         "h10": None,
@@ -362,6 +367,7 @@ def main() -> None:
 
             status["h10_delta"] = pending.payload()
             status["history_revision"] = history_revision
+            status["ranges"] = VALID_RANGES
             status.pop("error", None)
             last_good = status
             publish_json(OUTPUT, status)

@@ -161,3 +161,16 @@ def test_psql_failure_names_the_database_diagnostic(
 def test_revision_is_strictly_monotonic(publisher: ModuleType) -> None:
     first = publisher.next_revision()
     assert publisher.next_revision(first) > first
+
+
+def test_valid_ranges_mirrors_registry_and_appears_in_history(
+    publisher: ModuleType, tmp_path: Path
+) -> None:
+    # VALID_RANGES is the single Python location for the registry bounds.
+    assert publisher.VALID_RANGES == {"rr": [0.2, 3.0]}
+    state = publisher.HistoryState()
+    revision = publisher.next_revision()
+    publisher.HISTORY_OUTPUT = tmp_path / "vitals_h10_history.json"
+    publisher.publish_history(state, revision)
+    document = json.loads((tmp_path / "vitals_h10_history.json").read_text(encoding="utf-8"))
+    assert document["ranges"] == {"rr": [0.2, 3.0]}
