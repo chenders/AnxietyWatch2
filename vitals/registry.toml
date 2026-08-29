@@ -60,7 +60,9 @@ id = 1
 transport = "ble"
 service = "0x180D"
 provides = ["hr", "rr_interval"]
-expected_cadence_s = 60
+# The H10 emits Heart Rate Measurement notifications at approximately 1 Hz,
+# including when a packet contains HR but no RR interval.
+expected_cadence_s = 1
 
 [source.healthkit]
 id = 2
@@ -90,4 +92,4 @@ on_demand = true
 id = 7
 transport = "internal"
 provides = ["hr", "rr_interval"]
-expected_cadence_s = 60
+expected_cadence_s = 1

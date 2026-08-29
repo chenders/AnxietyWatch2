@@ -76,7 +76,7 @@ mod tests {
         );
         assert_eq!(
             VitalsSource::PolarH10.expected_cadence(),
-            Cadence::EverySeconds(60)
+            Cadence::EverySeconds(1)
         );
         assert_eq!(
             VitalsSource::Healthkit.expected_cadence(),
@@ -90,7 +90,7 @@ mod tests {
         // The emulator mirrors the physical strap it simulates.
         assert_eq!(
             VitalsSource::PolarH10Emulator.expected_cadence(),
-            Cadence::EverySeconds(60)
+            Cadence::EverySeconds(1)
         );
     }
 
