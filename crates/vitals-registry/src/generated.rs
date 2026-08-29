@@ -158,11 +158,11 @@ impl VitalsSource {
     pub const fn expected_cadence(self) -> Cadence {
         match self {
             Self::Emay => Cadence::EverySeconds(60),
-            Self::PolarH10 => Cadence::EverySeconds(60),
+            Self::PolarH10 => Cadence::EverySeconds(1),
             Self::Healthkit => Cadence::EverySeconds(21600),
             Self::Derived => Cadence::OnDemand,
             Self::AdUa651ble => Cadence::OnDemand,
-            Self::PolarH10Emulator => Cadence::EverySeconds(60),
+            Self::PolarH10Emulator => Cadence::EverySeconds(1),
         }
     }
 }

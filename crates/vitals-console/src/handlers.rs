@@ -759,7 +759,7 @@ mod tests {
         let polar = sources.iter().find(|s| s["name"] == "PolarH10").unwrap();
         assert_eq!(polar["state"], "Unknown"); // never FAILING
         assert_eq!(polar["observation_age_s"], 1000);
-        assert_eq!(polar["reason"], "no attempt for 1000s, expect <= 60s"); // (e)
+        assert_eq!(polar["reason"], "no attempt for 1000s, expect <= 1s"); // (e)
 
         // Find Healthkit (b)
         let hk = sources.iter().find(|s| s["name"] == "Healthkit").unwrap();
