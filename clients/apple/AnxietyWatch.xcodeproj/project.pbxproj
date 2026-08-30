@@ -1,0 +1,715 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 46;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		2F2538F65F2314E9A1AFE992 /* QuickLogSkeletonView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 131E761126435BB18A310BC0 /* QuickLogSkeletonView.swift */; };
+		462ED94B7C334773E74B4412 /* AWDomain in Frameworks */ = {isa = PBXBuildFile; productRef = B7AFEB623EB96756ABF94321 /* AWDomain */; };
+		5AC65148BA497492051BAC11 /* AWDomain in Frameworks */ = {isa = PBXBuildFile; productRef = 0C53F675FB8F978DA3A1EDCC /* AWDomain */; };
+		5EA96E17D0240E470B8835FC /* SkeletonTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 348E3D27EF79C0CF0DAF810D /* SkeletonTests.swift */; };
+		5F566A3ADF1B4F7C5756C122 /* ClientRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33DE46CA1DE61090CD8688BE /* ClientRootView.swift */; };
+		64192BE6EE67DA893D33F60E /* AWClientCore in Frameworks */ = {isa = PBXBuildFile; productRef = D3A84ED73B6A8C57CC99BED5 /* AWClientCore */; };
+		7F4095D9B6297CA40607C256 /* AnxietyWatchWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6837A9FDF4B8906D2C3641B /* AnxietyWatchWatchApp.swift */; };
+		8B8B9CD2955B686FCC32137D /* AWDomain in Frameworks */ = {isa = PBXBuildFile; productRef = 9ECB4BC25B7F007D0E0734DE /* AWDomain */; };
+		9521BA01F1BAE3C3FBA1B98E /* AnxietyWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB5CBD8F80136A268D7D6A6F /* AnxietyWatchApp.swift */; };
+		A712C1222B2F6FB9FD118D28 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AA88D4AA8FF909846CEEBC00 /* Foundation.framework */; };
+		AB8519620812712E6BA30005 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = EFD1A6E84CC434864FA2B031 /* PrivacyInfo.xcprivacy */; };
+		C4D2C8B6A4E68FCD9E96583A /* AWClientCore in Frameworks */ = {isa = PBXBuildFile; productRef = 2E5DE88DFBFE6B9FDC78BF0E /* AWClientCore */; };
+		CE61281103D769C88BEBD8B0 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = F0854BAA8EB3A60E08D30D7B /* PrivacyInfo.xcprivacy */; };
+		D97E9B52E9C40F88A787FBA4 /* AWTransport in Frameworks */ = {isa = PBXBuildFile; productRef = FDB44C8D9DF6786EE86CBA3C /* AWTransport */; };
+		DC57DD849E40925602D989BE /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F8284FD2C9EEDC34006BF82C /* Foundation.framework */; };
+		EE2AA8B3A459700F27E50B41 /* AnxietyWatchWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = A5868297EEC548A56EF776F4 /* AnxietyWatchWatch.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		FBB38370F53372E9E4482BC9 /* AWOutbox in Frameworks */ = {isa = PBXBuildFile; productRef = 8C04D7FF6FFAE7EB51FBADF8 /* AWOutbox */; };
+		FC5F2ECF534A8859EC2C0622 /* AWHealthKit in Frameworks */ = {isa = PBXBuildFile; productRef = 423E5871A23F026702B2743F /* AWHealthKit */; };
+		FEE5FD4DB9FB66ACE85D2CE1 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F8284FD2C9EEDC34006BF82C /* Foundation.framework */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		7FB3A6D9A9EBAD7D0110AA8C /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A5F81ED4EC90A9FB4BD4705E /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 05C2BBF3E73847DACCC227D0;
+			remoteInfo = AnxietyWatchWatch;
+		};
+		8082304BA13BDC0CCDE0C5BC /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A5F81ED4EC90A9FB4BD4705E /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 06A5D7D58A73CC7C54584700;
+			remoteInfo = AnxietyWatchApp;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		56A3C921F7D5CE01106EADF2 /* Embed Watch Content */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
+			dstSubfolderSpec = 16;
+			files = (
+				EE2AA8B3A459700F27E50B41 /* AnxietyWatchWatch.app in Embed Watch Content */,
+			);
+			name = "Embed Watch Content";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		131E761126435BB18A310BC0 /* QuickLogSkeletonView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = QuickLogSkeletonView.swift; sourceTree = "<group>"; };
+		33DE46CA1DE61090CD8688BE /* ClientRootView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ClientRootView.swift; sourceTree = "<group>"; };
+		348E3D27EF79C0CF0DAF810D /* SkeletonTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SkeletonTests.swift; sourceTree = "<group>"; };
+		4243100C5315413CB10ADE43 /* iOS.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; path = iOS.xcconfig; sourceTree = "<group>"; };
+		496B8032647E4D6BCA90A1D3 /* AnxietyWatchApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AnxietyWatchApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		4BC3614DF23E18D95CCA39D2 /* AnxietyWatchApp.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = AnxietyWatchApp.entitlements; sourceTree = "<group>"; };
+		4E7C404B080FC19AA8EC2266 /* AnxietyWatchWatch.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = AnxietyWatchWatch.entitlements; sourceTree = "<group>"; };
+		7CF8F8B525B086E939EE2887 /* AnxietyWatchAppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AnxietyWatchAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		86A9FC29554F0F2B1D112C82 /* Shared.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; path = Shared.xcconfig; sourceTree = "<group>"; };
+		8A3FA330BD6D8FF7AC0891C0 /* watchOS.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; path = watchOS.xcconfig; sourceTree = "<group>"; };
+		A5868297EEC548A56EF776F4 /* AnxietyWatchWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AnxietyWatchWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA88D4AA8FF909846CEEBC00 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/WatchOS.platform/Developer/SDKs/WatchOS26.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
+		CB5CBD8F80136A268D7D6A6F /* AnxietyWatchApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AnxietyWatchApp.swift; sourceTree = "<group>"; };
+		D6837A9FDF4B8906D2C3641B /* AnxietyWatchWatchApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AnxietyWatchWatchApp.swift; sourceTree = "<group>"; };
+		EFD1A6E84CC434864FA2B031 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		F0854BAA8EB3A60E08D30D7B /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		F8284FD2C9EEDC34006BF82C /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		106C8DE6DFFC355DDC467150 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				DC57DD849E40925602D989BE /* Foundation.framework in Frameworks */,
+				8B8B9CD2955B686FCC32137D /* AWDomain in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B51F1A485A2A4F40416C8172 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A712C1222B2F6FB9FD118D28 /* Foundation.framework in Frameworks */,
+				C4D2C8B6A4E68FCD9E96583A /* AWClientCore in Frameworks */,
+				5AC65148BA497492051BAC11 /* AWDomain in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E00216F7E6BBC3FC64B9AAE4 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				FEE5FD4DB9FB66ACE85D2CE1 /* Foundation.framework in Frameworks */,
+				64192BE6EE67DA893D33F60E /* AWClientCore in Frameworks */,
+				D97E9B52E9C40F88A787FBA4 /* AWTransport in Frameworks */,
+				FBB38370F53372E9E4482BC9 /* AWOutbox in Frameworks */,
+				FC5F2ECF534A8859EC2C0622 /* AWHealthKit in Frameworks */,
+				462ED94B7C334773E74B4412 /* AWDomain in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		0C8D487DC38AAC482F10D1FD /* Config */ = {
+			isa = PBXGroup;
+			children = (
+				86A9FC29554F0F2B1D112C82 /* Shared.xcconfig */,
+				4243100C5315413CB10ADE43 /* iOS.xcconfig */,
+				8A3FA330BD6D8FF7AC0891C0 /* watchOS.xcconfig */,
+			);
+			name = Config;
+			path = Config;
+			sourceTree = "<group>";
+		};
+		1C7A49A586CBFA02F0E741A4 = {
+			isa = PBXGroup;
+			children = (
+				3DDEB68931F68689CA5F51B0 /* Products */,
+				79DA5D6F6316762A4AF1EEDE /* Frameworks */,
+				0C8D487DC38AAC482F10D1FD /* Config */,
+				D46484BCC2A75F1B3905E6A4 /* AnxietyWatchApp */,
+				25BB4A96C099E5C2D354B027 /* AnxietyWatchWatch */,
+				4C5EF3A0FB5BE95ACCBBE08D /* Tests */,
+			);
+			sourceTree = "<group>";
+		};
+		25BB4A96C099E5C2D354B027 /* AnxietyWatchWatch */ = {
+			isa = PBXGroup;
+			children = (
+				D6837A9FDF4B8906D2C3641B /* AnxietyWatchWatchApp.swift */,
+				131E761126435BB18A310BC0 /* QuickLogSkeletonView.swift */,
+				F0854BAA8EB3A60E08D30D7B /* PrivacyInfo.xcprivacy */,
+				4E7C404B080FC19AA8EC2266 /* AnxietyWatchWatch.entitlements */,
+			);
+			name = AnxietyWatchWatch;
+			path = AnxietyWatchWatch;
+			sourceTree = "<group>";
+		};
+		3DDEB68931F68689CA5F51B0 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				496B8032647E4D6BCA90A1D3 /* AnxietyWatchApp.app */,
+				A5868297EEC548A56EF776F4 /* AnxietyWatchWatch.app */,
+				7CF8F8B525B086E939EE2887 /* AnxietyWatchAppTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		4C5EF3A0FB5BE95ACCBBE08D /* Tests */ = {
+			isa = PBXGroup;
+			children = (
+				E323DBB3C40FA3CC2CC2088D /* AnxietyWatchAppTests */,
+			);
+			name = Tests;
+			path = Tests;
+			sourceTree = "<group>";
+		};
+		79DA5D6F6316762A4AF1EEDE /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				C0FE69A02B240436F2560612 /* iOS */,
+				D833B7B70DF7AC3F6ABE27D4 /* watchOS */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		C0FE69A02B240436F2560612 /* iOS */ = {
+			isa = PBXGroup;
+			children = (
+				F8284FD2C9EEDC34006BF82C /* Foundation.framework */,
+			);
+			name = iOS;
+			sourceTree = "<group>";
+		};
+		D46484BCC2A75F1B3905E6A4 /* AnxietyWatchApp */ = {
+			isa = PBXGroup;
+			children = (
+				CB5CBD8F80136A268D7D6A6F /* AnxietyWatchApp.swift */,
+				33DE46CA1DE61090CD8688BE /* ClientRootView.swift */,
+				EFD1A6E84CC434864FA2B031 /* PrivacyInfo.xcprivacy */,
+				4BC3614DF23E18D95CCA39D2 /* AnxietyWatchApp.entitlements */,
+			);
+			name = AnxietyWatchApp;
+			path = AnxietyWatchApp;
+			sourceTree = "<group>";
+		};
+		D833B7B70DF7AC3F6ABE27D4 /* watchOS */ = {
+			isa = PBXGroup;
+			children = (
+				AA88D4AA8FF909846CEEBC00 /* Foundation.framework */,
+			);
+			name = watchOS;
+			sourceTree = "<group>";
+		};
+		E323DBB3C40FA3CC2CC2088D /* AnxietyWatchAppTests */ = {
+			isa = PBXGroup;
+			children = (
+				348E3D27EF79C0CF0DAF810D /* SkeletonTests.swift */,
+			);
+			name = AnxietyWatchAppTests;
+			path = AnxietyWatchAppTests;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		05C2BBF3E73847DACCC227D0 /* AnxietyWatchWatch */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 554F9C51D506916974703ED5 /* Build configuration list for PBXNativeTarget "AnxietyWatchWatch" */;
+			buildPhases = (
+				3C0E7A9F2F1852BDCF42DCE6 /* Sources */,
+				B51F1A485A2A4F40416C8172 /* Frameworks */,
+				0B61E0A49127E6C65FDE6BCC /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = AnxietyWatchWatch;
+			packageProductDependencies = (
+				2E5DE88DFBFE6B9FDC78BF0E /* AWClientCore */,
+				0C53F675FB8F978DA3A1EDCC /* AWDomain */,
+			);
+			productName = AnxietyWatchWatch;
+			productReference = A5868297EEC548A56EF776F4 /* AnxietyWatchWatch.app */;
+			productType = "com.apple.product-type.application";
+		};
+		06A5D7D58A73CC7C54584700 /* AnxietyWatchApp */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 9E5A71D7000BE9774C41E855 /* Build configuration list for PBXNativeTarget "AnxietyWatchApp" */;
+			buildPhases = (
+				C96755008C674102BB608EC7 /* Sources */,
+				E00216F7E6BBC3FC64B9AAE4 /* Frameworks */,
+				7A2AD8C5E09A31B74E31AE55 /* Resources */,
+				56A3C921F7D5CE01106EADF2 /* Embed Watch Content */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				1FBFA377AD4ABCA1A0FF9124 /* PBXTargetDependency */,
+			);
+			name = AnxietyWatchApp;
+			packageProductDependencies = (
+				D3A84ED73B6A8C57CC99BED5 /* AWClientCore */,
+				FDB44C8D9DF6786EE86CBA3C /* AWTransport */,
+				8C04D7FF6FFAE7EB51FBADF8 /* AWOutbox */,
+				423E5871A23F026702B2743F /* AWHealthKit */,
+				B7AFEB623EB96756ABF94321 /* AWDomain */,
+			);
+			productName = AnxietyWatchApp;
+			productReference = 496B8032647E4D6BCA90A1D3 /* AnxietyWatchApp.app */;
+			productType = "com.apple.product-type.application";
+		};
+		D499996135CF022B6D05FC68 /* AnxietyWatchAppTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AD82E745F606F075D8D38690 /* Build configuration list for PBXNativeTarget "AnxietyWatchAppTests" */;
+			buildPhases = (
+				C807F617A4D8F0A320EC6FDE /* Sources */,
+				106C8DE6DFFC355DDC467150 /* Frameworks */,
+				30BAA0AA3857908B4881CF07 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				D7A4A2B73591175270775CCC /* PBXTargetDependency */,
+			);
+			name = AnxietyWatchAppTests;
+			packageProductDependencies = (
+				9ECB4BC25B7F007D0E0734DE /* AWDomain */,
+			);
+			productName = AnxietyWatchAppTests;
+			productReference = 7CF8F8B525B086E939EE2887 /* AnxietyWatchAppTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		A5F81ED4EC90A9FB4BD4705E /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastSwiftUpdateCheck = 2630;
+				LastUpgradeCheck = 2630;
+			};
+			buildConfigurationList = C341EA5E4842379C650D74FD /* Build configuration list for PBXProject "AnxietyWatch" */;
+			compatibilityVersion = "Xcode 3.2";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 1C7A49A586CBFA02F0E741A4;
+			minimizedProjectReferenceProxies = 0;
+			packageReferences = (
+				7D965F34377280739881893A /* XCLocalSwiftPackageReference "AWClientCore" */,
+				D7D71AE88D06BB6BBA3790EE /* XCLocalSwiftPackageReference "AWTransport" */,
+				2E8E3645EB70C0D6F2749350 /* XCLocalSwiftPackageReference "AWOutbox" */,
+				A412C223EC53CE03B5030E1D /* XCLocalSwiftPackageReference "AWHealthKit" */,
+				C961D69181D64A155EFB5339 /* XCLocalSwiftPackageReference "AWDomain" */,
+			);
+			preferredProjectObjectVersion = 100;
+			productRefGroup = 3DDEB68931F68689CA5F51B0 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				06A5D7D58A73CC7C54584700 /* AnxietyWatchApp */,
+				05C2BBF3E73847DACCC227D0 /* AnxietyWatchWatch */,
+				D499996135CF022B6D05FC68 /* AnxietyWatchAppTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		0B61E0A49127E6C65FDE6BCC /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				CE61281103D769C88BEBD8B0 /* PrivacyInfo.xcprivacy in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		30BAA0AA3857908B4881CF07 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7A2AD8C5E09A31B74E31AE55 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AB8519620812712E6BA30005 /* PrivacyInfo.xcprivacy in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		3C0E7A9F2F1852BDCF42DCE6 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7F4095D9B6297CA40607C256 /* AnxietyWatchWatchApp.swift in Sources */,
+				2F2538F65F2314E9A1AFE992 /* QuickLogSkeletonView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C807F617A4D8F0A320EC6FDE /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				5EA96E17D0240E470B8835FC /* SkeletonTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C96755008C674102BB608EC7 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				9521BA01F1BAE3C3FBA1B98E /* AnxietyWatchApp.swift in Sources */,
+				5F566A3ADF1B4F7C5756C122 /* ClientRootView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		1FBFA377AD4ABCA1A0FF9124 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = AnxietyWatchWatch;
+			target = 05C2BBF3E73847DACCC227D0 /* AnxietyWatchWatch */;
+			targetProxy = 7FB3A6D9A9EBAD7D0110AA8C /* PBXContainerItemProxy */;
+		};
+		D7A4A2B73591175270775CCC /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = AnxietyWatchApp;
+			target = 06A5D7D58A73CC7C54584700 /* AnxietyWatchApp */;
+			targetProxy = 8082304BA13BDC0CCDE0C5BC /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		3F21B7AD8E389CF6473E1D78 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 8A3FA330BD6D8FF7AC0891C0 /* watchOS.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = 4;
+				VALIDATE_PRODUCT = YES;
+				WATCHOS_DEPLOYMENT_TARGET = 11.0;
+			};
+			name = Release;
+		};
+		5674E3077052D203A5B3E232 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 4243100C5315413CB10ADE43 /* iOS.xcconfig */;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.groundeffectsoftware.AnxietyWatch.Stage7Tests;
+				SDKROOT = iphoneos;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/AnxietyWatchApp.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/AnxietyWatchApp";
+			};
+			name = Debug;
+		};
+		5A8B2D0872834E978B44C707 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 4243100C5315413CB10ADE43 /* iOS.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		8402C8145EB1D3F203EBDEC0 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 8A3FA330BD6D8FF7AC0891C0 /* watchOS.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 11.0;
+			};
+			name = Debug;
+		};
+		93270D6F4DAA17EC71925384 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 86A9FC29554F0F2B1D112C82 /* Shared.xcconfig */;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		B067463934C53E65F29E0A04 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 4243100C5315413CB10ADE43 /* iOS.xcconfig */;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.groundeffectsoftware.AnxietyWatch.Stage7Tests;
+				SDKROOT = iphoneos;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/AnxietyWatchApp.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/AnxietyWatchApp";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		CCA081F2A7A3BAAD39814733 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 86A9FC29554F0F2B1D112C82 /* Shared.xcconfig */;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		E87861F27FDA8EC4EAE56522 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 4243100C5315413CB10ADE43 /* iOS.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = 1;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		554F9C51D506916974703ED5 /* Build configuration list for PBXNativeTarget "AnxietyWatchWatch" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				3F21B7AD8E389CF6473E1D78 /* Release */,
+				8402C8145EB1D3F203EBDEC0 /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		9E5A71D7000BE9774C41E855 /* Build configuration list for PBXNativeTarget "AnxietyWatchApp" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E87861F27FDA8EC4EAE56522 /* Release */,
+				5A8B2D0872834E978B44C707 /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AD82E745F606F075D8D38690 /* Build configuration list for PBXNativeTarget "AnxietyWatchAppTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B067463934C53E65F29E0A04 /* Release */,
+				5674E3077052D203A5B3E232 /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		C341EA5E4842379C650D74FD /* Build configuration list for PBXProject "AnxietyWatch" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				CCA081F2A7A3BAAD39814733 /* Debug */,
+				93270D6F4DAA17EC71925384 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		2E8E3645EB70C0D6F2749350 /* XCLocalSwiftPackageReference "AWOutbox" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/AWOutbox;
+		};
+		7D965F34377280739881893A /* XCLocalSwiftPackageReference "AWClientCore" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/AWClientCore;
+		};
+		A412C223EC53CE03B5030E1D /* XCLocalSwiftPackageReference "AWHealthKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/AWHealthKit;
+		};
+		C961D69181D64A155EFB5339 /* XCLocalSwiftPackageReference "AWDomain" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/AWDomain;
+		};
+		D7D71AE88D06BB6BBA3790EE /* XCLocalSwiftPackageReference "AWTransport" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/AWTransport;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		0C53F675FB8F978DA3A1EDCC /* AWDomain */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C961D69181D64A155EFB5339 /* XCLocalSwiftPackageReference "AWDomain" */;
+			productName = AWDomain;
+		};
+		2E5DE88DFBFE6B9FDC78BF0E /* AWClientCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 7D965F34377280739881893A /* XCLocalSwiftPackageReference "AWClientCore" */;
+			productName = AWClientCore;
+		};
+		423E5871A23F026702B2743F /* AWHealthKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A412C223EC53CE03B5030E1D /* XCLocalSwiftPackageReference "AWHealthKit" */;
+			productName = AWHealthKit;
+		};
+		8C04D7FF6FFAE7EB51FBADF8 /* AWOutbox */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 2E8E3645EB70C0D6F2749350 /* XCLocalSwiftPackageReference "AWOutbox" */;
+			productName = AWOutbox;
+		};
+		9ECB4BC25B7F007D0E0734DE /* AWDomain */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C961D69181D64A155EFB5339 /* XCLocalSwiftPackageReference "AWDomain" */;
+			productName = AWDomain;
+		};
+		B7AFEB623EB96756ABF94321 /* AWDomain */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C961D69181D64A155EFB5339 /* XCLocalSwiftPackageReference "AWDomain" */;
+			productName = AWDomain;
+		};
+		D3A84ED73B6A8C57CC99BED5 /* AWClientCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 7D965F34377280739881893A /* XCLocalSwiftPackageReference "AWClientCore" */;
+			productName = AWClientCore;
+		};
+		FDB44C8D9DF6786EE86CBA3C /* AWTransport */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D7D71AE88D06BB6BBA3790EE /* XCLocalSwiftPackageReference "AWTransport" */;
+			productName = AWTransport;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = A5F81ED4EC90A9FB4BD4705E /* Project object */;
+}

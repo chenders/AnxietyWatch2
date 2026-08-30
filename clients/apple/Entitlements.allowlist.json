@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "targets": {
+    "AnxietyWatchApp": [],
+    "AnxietyWatchWatch": []
+  },
+  "reason": "The skeleton requests no capabilities. HealthKit and other entitlements are added only by their owning reviewed tasks."
+}
