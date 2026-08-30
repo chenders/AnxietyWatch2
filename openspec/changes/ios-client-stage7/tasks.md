@@ -9,7 +9,7 @@ dispatched before their named gate.
 
 ### Contracts and foundation
 
-- [ ] T-I0 — Generation-one capability and HealthKit parity ledger · review
+- [x] T-I0 — Generation-one capability and HealthKit parity ledger · review
 - [ ] T-I1 — Production mobile enrollment/authentication threat model and amendment · architecture-decision
 - [ ] T-I2 — Versioned client API, OpenAPI, and shared contract fixtures · implement-complex
 - [ ] T-I3 — Apple project and pure-package skeleton · implement-standard
