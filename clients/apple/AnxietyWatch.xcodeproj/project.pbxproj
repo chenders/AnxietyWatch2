@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 46;
+	objectVersion = 77;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -71,12 +71,12 @@
 		86A9FC29554F0F2B1D112C82 /* Shared.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; path = Shared.xcconfig; sourceTree = "<group>"; };
 		8A3FA330BD6D8FF7AC0891C0 /* watchOS.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; path = watchOS.xcconfig; sourceTree = "<group>"; };
 		A5868297EEC548A56EF776F4 /* AnxietyWatchWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AnxietyWatchWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		AA88D4AA8FF909846CEEBC00 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/WatchOS.platform/Developer/SDKs/WatchOS26.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
+		AA88D4AA8FF909846CEEBC00 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = System/Library/Frameworks/Foundation.framework; sourceTree = SDKROOT; };
 		CB5CBD8F80136A268D7D6A6F /* AnxietyWatchApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AnxietyWatchApp.swift; sourceTree = "<group>"; };
 		D6837A9FDF4B8906D2C3641B /* AnxietyWatchWatchApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AnxietyWatchWatchApp.swift; sourceTree = "<group>"; };
 		EFD1A6E84CC434864FA2B031 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		F0854BAA8EB3A60E08D30D7B /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
-		F8284FD2C9EEDC34006BF82C /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
+		F8284FD2C9EEDC34006BF82C /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = System/Library/Frameworks/Foundation.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -297,7 +297,6 @@
 				LastUpgradeCheck = 2630;
 			};
 			buildConfigurationList = C341EA5E4842379C650D74FD /* Build configuration list for PBXProject "AnxietyWatch" */;
-			compatibilityVersion = "Xcode 3.2";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -305,7 +304,7 @@
 				Base,
 			);
 			mainGroup = 1C7A49A586CBFA02F0E741A4;
-			minimizedProjectReferenceProxies = 0;
+			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				7D965F34377280739881893A /* XCLocalSwiftPackageReference "AWClientCore" */,
 				D7D71AE88D06BB6BBA3790EE /* XCLocalSwiftPackageReference "AWTransport" */,
@@ -313,7 +312,7 @@
 				A412C223EC53CE03B5030E1D /* XCLocalSwiftPackageReference "AWHealthKit" */,
 				C961D69181D64A155EFB5339 /* XCLocalSwiftPackageReference "AWDomain" */,
 			);
-			preferredProjectObjectVersion = 100;
+			preferredProjectObjectVersion = 77;
 			productRefGroup = 3DDEB68931F68689CA5F51B0 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";

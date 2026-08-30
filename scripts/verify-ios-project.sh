@@ -41,6 +41,19 @@ for target in AnxietyWatchApp AnxietyWatchWatch AnxietyWatchAppTests; do
     exit 1
   fi
 done
+if ! grep -q $'^\tobjectVersion = 77;$' "$project" ||
+  ! grep -q $'^\t\t\tpreferredProjectObjectVersion = 77;$' "$project"; then
+  echo "ios-project: FAIL — project and preferred object versions must both be 77" >&2
+  exit 1
+fi
+if rg -n 'Platforms/.+SDKs/.+\.sdk|sourceTree = DEVELOPER_DIR' "$project"; then
+  echo "ios-project: FAIL — system frameworks must resolve relative to the active SDK" >&2
+  exit 1
+fi
+if [[ $(grep -c 'path = System/Library/Frameworks/Foundation.framework; sourceTree = SDKROOT;' "$project") -ne 2 ]]; then
+  echo "ios-project: FAIL — iOS and watchOS Foundation references must use SDKROOT" >&2
+  exit 1
+fi
 
 packages=(AWClientCore AWTransport AWOutbox AWHealthKit AWDomain)
 for package in "${packages[@]}"; do
