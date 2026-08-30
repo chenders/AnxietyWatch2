@@ -294,21 +294,26 @@ All production communication uses the versioned Rust `axum` API required by Amen
 publishes OpenAPI and representative fixtures; generated Swift transport types may consume that API
 schema, but physiological registry types still come from `registry.json`.
 
-### 6.1 Enrollment gate
+### 6.1 Enrollment contract
 
-The currently shipped `/api/envelope/register` is documented as localhost-only and is **not** a
-remote enrollment design. LAN or tunnel use is blocked until the authentication/TLS decision task
-specifies:
+[Amendment 09](../specs/2026-08-30-amendment-09-mobile-enrollment-and-tls.md) resolves the production
+authentication/TLS decision. The currently shipped `/api/envelope/register` remains localhost-test
+only and is **not** a remote enrollment or compatibility flow.
 
-- a single-use, short-lived enrollment artifact created by an authenticated console action;
-- endpoint and server identity presented to the user before trust;
-- per-device credential minting, expiry/revocation, and last-used evidence;
-- replay-resistant authenticated requests;
-- credential rotation without losing queued records;
-- a recovery flow that does not expose existing secret material.
+Production uses a ten-minute single-use artifact created after recent operator authentication. The
+phone presents the normalized HTTPS origin and server identity before trust, generates a
+non-exportable Secure Enclave P-256 key, and receives a scoped 180-day per-device public-key
+credential. Requests use RFC 9421 signatures, content digests, bounded creation/expiry times, and a
+durable replay ID. Rotation signs a new key with the current key and never rewrites credential-neutral
+queued payloads; revocation/recovery preserves every unacknowledged item.
 
-The app never embeds a production endpoint, bearer token, symmetric key, or certificate exception in
-source or configuration committed to git.
+The public Caddy origin exposes only `/api/v1/client/*` over system-trusted TLS while axum remains on
+loopback and the admin origin remains WireGuard-only. ATS hostname validation is unchanged and
+certificate pinning is deliberately not used for the initial release; Amendment 09 records the
+rotation/availability rationale and revisit triggers.
+
+The app never embeds a production endpoint, bearer token, symmetric key, private key, or certificate
+exception in source or configuration committed to git.
 
 ### 6.2 Versioning and errors
 
