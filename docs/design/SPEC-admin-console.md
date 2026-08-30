@@ -900,7 +900,7 @@ resolve them early, and do not let them hold up M0.
 
 | Decision | Needed by | Why it can wait |
 |---|---|---|
-| **Bind and auth posture** — LAN-only, tunnel-only, or TLS with a pinned cert | The M0 HTTP service | The rest of M0 — attempt schema, cadence, evaluator, and their tests — is pure backend and needs no network posture at all. Decide when the service is about to listen |
+| **Bind and auth posture** — **DECIDED by [Amendment 09](../specs/2026-08-30-amendment-09-mobile-enrollment-and-tls.md)** | T-M2a | Axum remains loopback; Caddy exposes only `/api/v1/client/*` over public system-trusted TLS, while the operator console is WireGuard-only. Pinning is not used initially. T-M2a implements the decision and security middleware before public routing is enabled |
 | **Watch: peer node or thin sender with a durable outbox** | Stage 7 ("thin the phone") | Nothing in M0–M3 touches the watch. The existing behaviour keeps working meanwhile. Note that the watch is *already* a durable peer for sensor data — quick-log is the anomaly, not the norm — so the smaller change may simply be making quick-log consistent with what the watch already does |
 | **Whether to model the collector layer on Home Assistant's integration/coordinator shape** | Stage 4 (the BLE fleet) | The research landed with a recommendation: borrow the behaviours (§8b), not the machinery — see [`HOMEASSISTANT-ARCHITECTURE.md`](HOMEASSISTANT-ARCHITECTURE.md) §3. What remains at Stage 4 is confirming that against the real collector code, not an open design question |
 

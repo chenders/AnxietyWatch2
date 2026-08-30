@@ -116,15 +116,16 @@ view model and data seams. Update docs and tests to the recorded direction. Do n
 
 ### T-M2a — Bind/auth posture and security middleware (S1–S5)
 
-**Amends:** 07.
+**Amends:** 07 and 09.
 
-**Reads:** `docs/design/SPEC-admin-console.md` §4.9, §7 S1–S5/S7, §9c bind/auth decision · `docs/design/PROMPT-admin.md` pattern A · `crates/vitals-console/src/handlers.rs`, `main.rs`, `models.rs` · `deploy/vitals-console.service`.
+**Reads:** Amendment 09 in full · `docs/design/SPEC-admin-console.md` §4.9, §7 S1–S5/S7, §9c bind/auth decision · `docs/design/PROMPT-admin.md` pattern A · `crates/vitals-console/src/handlers.rs`, `main.rs`, `models.rs` · `deploy/vitals-console.service`.
 
-**Do:** At point of use, record the operator's LAN/tunnel/TLS decision in a new amendment. Implement
-single-operator authentication, per-source throttling that cannot globally lock out the operator,
-bounded sessions, visible transport state, CSRF protection on every state-changing request, and
-request-body caps applied before buffering or disk writes. Secrets are never logged. Add one named
-test for each S1–S5 and retain private bind by default unless the decision explicitly changes it.
+**Do:** Implement Amendment 09's loopback axum bind, WireGuard-only admin origin, Caddy route
+separation, single-operator Argon2id authentication, per-source throttling that cannot globally lock
+out the operator, bounded sessions, visible transport state, recent-auth evidence, CSRF protection on
+every state-changing browser request, and request-body caps applied before buffering or disk writes.
+Secrets are never logged. Add one named test for each S1–S5 plus public-route/admin separation; do not
+make the public client origin available until those tests pass.
 
 **Verify:** `cd "$(git rev-parse --show-toplevel)" && cargo test -p vitals-console security_ && cargo clippy -p vitals-console --all-targets -- -D warnings && cargo fmt --all -- --check`
 
@@ -218,15 +219,18 @@ Audit all mutations.
 
 ### T-M2h — Credentials, audit/config UI, and one-time key reveal
 
-**Amends:** 07, 08 until T-M1e lands.
+**Amends:** 07, 08 until T-M1e lands, and 09.
 
-**Reads:** `docs/design/SPEC-admin-console.md` §4.9, §5, §7 · `docs/design/PROMPT-admin.md` pattern A and forms/accessibility · `legacy-admin-reference.md` API keys/ResMed/settings rows · gen-1 `server/admin.py` key/settings routes and `server/templates/keys.html`, `resmed_settings.html`, `app_settings.html` · T-M2a/T-M2g APIs · envelope-client schema.
+**Reads:** Amendment 09 enrollment/device lifecycle · `docs/design/SPEC-admin-console.md` §4.9, §5, §7 · `docs/design/PROMPT-admin.md` pattern A and forms/accessibility · `legacy-admin-reference.md` API keys/ResMed/settings rows · gen-1 `server/admin.py` key/settings routes and `server/templates/keys.html`, `resmed_settings.html`, `app_settings.html` · T-M2a/T-M2g APIs · envelope-client schema.
 
-**Do:** Add credential lifecycle with plaintext reveal exactly once, fingerprints/last-4 thereafter,
-expiry and revocation; audit reader; validated timezone/cadence/config forms with dirty-state
-save/discard; transport-security state. Apply proportionate confirmations and semantic accessible
-controls. Never return stored credential plaintext. Every response that contains newly minted
-plaintext uses `Cache-Control: no-store, max-age=0` and `Pragma: no-cache`; test the headers.
+**Do:** Add credential lifecycle with plaintext enrollment-artifact reveal exactly once,
+fingerprints/last-4 thereafter where applicable, and mobile device/key public-key fingerprints,
+scopes, expiry, last-used, rotation, revocation, and audit evidence. Add the audit reader and validated
+timezone/cadence/config forms with dirty-state save/discard plus transport-security state. Enrollment,
+recovery, and revocation require Amendment 09 recent-auth evidence. Apply proportionate confirmations
+and semantic accessible controls. Never return a stored token, private key, or credential plaintext.
+Every response that contains newly minted plaintext uses `Cache-Control: no-store, max-age=0` and
+`Pragma: no-cache`; test the headers.
 
 **Verify:** `cd "$(git rev-parse --show-toplevel)" && cargo test -p vitals-console credential_ && node crates/vitals-console/assets/accessibility-check.mjs && cargo clippy -p vitals-console --all-targets -- -D warnings && cargo fmt --all -- --check`
 
