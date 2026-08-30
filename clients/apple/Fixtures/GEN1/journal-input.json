@@ -1,0 +1,16 @@
+{
+  "fixture": true,
+  "record_id": "00000000-0000-7000-8000-000000000003",
+  "record_type": "journal_entry",
+  "subject_at": "2025-01-15T08:05:00Z",
+  "recorded_at": "2025-01-15T08:06:00Z",
+  "anxiety_rating": 6,
+  "note": "Synthetic fixture: noticed tension while preparing breakfast.",
+  "tags": ["fixture-morning", "fixture-at-home"],
+  "song": {
+    "kind": "offline_stub",
+    "title": "Fixture Song",
+    "artist": "Fixture Artist"
+  },
+  "express_mode": false
+}
