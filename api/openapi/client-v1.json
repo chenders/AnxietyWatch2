@@ -1,0 +1,1266 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "AnxietyWatch Client API",
+    "description": "Versioned contract for the thin Apple client; registry identifiers remain in registry.json",
+    "license": {
+      "name": ""
+    },
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/api/v1/client/enroll": {
+      "post": {
+        "tags": [
+          "apple-client"
+        ],
+        "summary": "Enrollment contract placeholder. It never advertises a successful response.",
+        "description": "# Errors\n\nReturns an incompatible-version error or the named T-I4/T-M2a capability gate.",
+        "operationId": "client_enroll_handler",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnrollmentClaimRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "426": {
+            "description": "Incompatible enrollment major",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Enrollment is gated on T-I4/T-M2a",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/client/items": {
+      "post": {
+        "tags": [
+          "apple-client"
+        ],
+        "summary": "Item-write placeholder with item-level response schemas but no success advertisement.",
+        "description": "# Errors\n\nReturns a version error or the named domain/platform contract gate.",
+        "operationId": "client_write_handler",
+        "parameters": [
+          {
+            "name": "X-AnxietyWatch-API-Version",
+            "in": "header",
+            "description": "Supported API major",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-AnxietyWatch-Client-ID",
+            "in": "header",
+            "description": "Enrolled client UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-AnxietyWatch-Key-ID",
+            "in": "header",
+            "description": "Active P-256 key UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-AnxietyWatch-Request-ID",
+            "in": "header",
+            "description": "Fresh replay-protection UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Content-Digest",
+            "in": "header",
+            "description": "RFC 9530 body digest",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Signature-Input",
+            "in": "header",
+            "description": "RFC 9421 covered components and times",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Signature",
+            "in": "header",
+            "description": "RFC 9421 ecdsa-p256-sha256 signature",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClientWriteBatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "400": {
+            "description": "Missing or malformed API version",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid request signature",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Credential scope does not permit this operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Durable request id was already admitted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Incompatible API major",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Writes are gated on domain/platform contracts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/client/openapi.json": {
+      "get": {
+        "tags": [
+          "apple-client"
+        ],
+        "summary": "Return the generated `OpenAPI` document.",
+        "operationId": "client_openapi_handler",
+        "responses": {
+          "200": {
+            "description": "Generated OpenAPI",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/client/projections": {
+      "get": {
+        "tags": [
+          "apple-client"
+        ],
+        "summary": "Projection placeholder. Its success schema is present but no 2xx response is advertised.",
+        "description": "# Errors\n\nReturns a version error or the named M3/M4 capability gate.",
+        "operationId": "client_projections_handler",
+        "parameters": [
+          {
+            "name": "metric",
+            "in": "query",
+            "description": "Registry-owned metric name.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "window_start",
+            "in": "query",
+            "description": "Inclusive UTC window start.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "window_end",
+            "in": "query",
+            "description": "Exclusive UTC window end.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Opaque server-issued pagination cursor.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-AnxietyWatch-API-Version",
+            "in": "header",
+            "description": "Supported API major",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-AnxietyWatch-Client-ID",
+            "in": "header",
+            "description": "Enrolled client UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-AnxietyWatch-Key-ID",
+            "in": "header",
+            "description": "Active P-256 key UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-AnxietyWatch-Request-ID",
+            "in": "header",
+            "description": "Fresh replay-protection UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Signature-Input",
+            "in": "header",
+            "description": "RFC 9421 covered components and times",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Signature",
+            "in": "header",
+            "description": "RFC 9421 ecdsa-p256-sha256 signature",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "400": {
+            "description": "Missing or malformed API version",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid request signature",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Credential scope does not permit this operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Durable request id was already admitted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Incompatible API major",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Projections are gated on M3/M4",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/client/registry": {
+      "get": {
+        "tags": [
+          "apple-client"
+        ],
+        "summary": "Return registry JSON exactly as generated, wrapped with its digest.",
+        "description": "# Errors\n\nReturns a stable error for a missing/malformed/incompatible API version or malformed generated\nregistry JSON.",
+        "operationId": "client_registry_handler",
+        "parameters": [
+          {
+            "name": "X-AnxietyWatch-API-Version",
+            "in": "header",
+            "description": "Supported API major",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Generated registry discovery",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegistryDiscoveryResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing or malformed API version",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Incompatible API major",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Generated registry is malformed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/client/status": {
+      "post": {
+        "tags": [
+          "apple-client"
+        ],
+        "summary": "Status-beacon placeholder. A valid request still returns a named gate.",
+        "description": "# Errors\n\nReturns a version error or the named T-X2 capability gate.",
+        "operationId": "client_beacon_handler",
+        "parameters": [
+          {
+            "name": "X-AnxietyWatch-API-Version",
+            "in": "header",
+            "description": "Supported API major",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-AnxietyWatch-Client-ID",
+            "in": "header",
+            "description": "Enrolled client UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-AnxietyWatch-Key-ID",
+            "in": "header",
+            "description": "Active P-256 key UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-AnxietyWatch-Request-ID",
+            "in": "header",
+            "description": "Fresh replay-protection UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Content-Digest",
+            "in": "header",
+            "description": "RFC 9530 body digest",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Signature-Input",
+            "in": "header",
+            "description": "RFC 9421 covered components and times",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Signature",
+            "in": "header",
+            "description": "RFC 9421 ecdsa-p256-sha256 signature",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HealthBeaconRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "400": {
+            "description": "Missing or malformed API version",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid request signature",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Credential scope does not permit this operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Durable request id was already admitted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Incompatible API major",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Status beacon is gated on T-X2",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/client/version": {
+      "get": {
+        "tags": [
+          "apple-client"
+        ],
+        "summary": "Discover API compatibility before enrollment.",
+        "operationId": "client_version_handler",
+        "responses": {
+          "200": {
+            "description": "API compatibility facts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientVersionResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ClientAuthHeaders": {
+        "type": "object",
+        "description": "RFC 9421 request-authentication fields fixed by Amendment 09.",
+        "required": [
+          "api_version",
+          "client_id",
+          "key_id",
+          "request_id",
+          "signature_input",
+          "signature"
+        ],
+        "properties": {
+          "api_version": {
+            "type": "string",
+            "description": "API major sent as `X-AnxietyWatch-API-Version`."
+          },
+          "client_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Per-device client id."
+          },
+          "content_digest": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "RFC 9530 digest of the request body."
+          },
+          "key_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Active P-256 key id."
+          },
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Fresh UUID for durable replay rejection."
+          },
+          "signature": {
+            "type": "string",
+            "description": "RFC 9421 P-256 signature."
+          },
+          "signature_input": {
+            "type": "string",
+            "description": "RFC 9421 signature input."
+          }
+        }
+      },
+      "ClientErrorResponse": {
+        "type": "object",
+        "description": "Stable client API error envelope.",
+        "required": [
+          "api_version",
+          "code",
+          "message",
+          "retryable",
+          "blocker",
+          "supported_major",
+          "server_time"
+        ],
+        "properties": {
+          "api_version": {
+            "type": "string",
+            "description": "API version of this error envelope."
+          },
+          "blocker": {
+            "type": "string",
+            "description": "Named capability, task, version, or value that blocked the operation."
+          },
+          "code": {
+            "type": "string",
+            "description": "Stable machine-readable error code."
+          },
+          "message": {
+            "type": "string",
+            "description": "Human-readable error summary without sensitive payload content."
+          },
+          "requested_major": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Client-requested major when one was supplied.",
+            "minimum": 0
+          },
+          "retryable": {
+            "type": "boolean",
+            "description": "Whether retrying later without user action may progress."
+          },
+          "server_time": {
+            "type": "string",
+            "description": "Server response instant in UTC."
+          },
+          "supported_major": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Server-supported major.",
+            "minimum": 0
+          }
+        }
+      },
+      "ClientVersionResponse": {
+        "type": "object",
+        "description": "API compatibility response. This endpoint is safe before enrollment.",
+        "required": [
+          "api_version",
+          "supported_major",
+          "supported_minor",
+          "minimum_client_major",
+          "authentication_profile",
+          "server_time"
+        ],
+        "properties": {
+          "api_version": {
+            "type": "string",
+            "description": "Contract version implemented by this server."
+          },
+          "authentication_profile": {
+            "type": "string",
+            "description": "Authentication profile required once implemented."
+          },
+          "minimum_client_major": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Oldest client major accepted for writes.",
+            "minimum": 0
+          },
+          "server_time": {
+            "type": "string",
+            "description": "Server observation time in UTC."
+          },
+          "supported_major": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Supported path major.",
+            "minimum": 0
+          },
+          "supported_minor": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Current additive minor version.",
+            "minimum": 0
+          }
+        }
+      },
+      "ClientWriteBatch": {
+        "type": "object",
+        "description": "A bounded batch of credential-neutral outbox items.",
+        "required": [
+          "batch_id",
+          "recorded_at",
+          "items"
+        ],
+        "properties": {
+          "batch_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Client-minted transport batch identifier."
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ClientWriteItem"
+            },
+            "description": "Credential-neutral immutable outbox items."
+          },
+          "recorded_at": {
+            "type": "string",
+            "description": "Instant the client formed the batch, distinct from item subject time."
+          }
+        }
+      },
+      "ClientWriteItem": {
+        "type": "object",
+        "description": "One immutable outbox item. Class remains a string so unknown future classes survive decoding.",
+        "required": [
+          "id",
+          "class",
+          "schema_version",
+          "content"
+        ],
+        "properties": {
+          "class": {
+            "type": "string",
+            "description": "Open item class owned by the server contracts."
+          },
+          "content": {
+            "type": "object",
+            "description": "Class-specific payload; never a precomputed request signature."
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Stable client-minted idempotency identifier."
+          },
+          "schema_version": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Item payload schema version.",
+            "minimum": 0
+          }
+        }
+      },
+      "ClientWriteResponse": {
+        "type": "object",
+        "description": "Future item-level write result. HTTP success alone never deletes outbox payloads.",
+        "required": [
+          "api_version",
+          "batch_id",
+          "acknowledgements",
+          "server_time"
+        ],
+        "properties": {
+          "acknowledgements": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ItemAcknowledgement"
+            },
+            "description": "One terminal or retryable outcome per submitted item."
+          },
+          "api_version": {
+            "type": "string",
+            "description": "API contract version that processed the batch."
+          },
+          "batch_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Batch identifier copied from the request."
+          },
+          "server_time": {
+            "type": "string",
+            "description": "Server response instant in UTC."
+          }
+        }
+      },
+      "EnrollmentClaimRequest": {
+        "type": "object",
+        "description": "Future one-time enrollment claim. Unknown JSON fields are intentionally ignored.",
+        "required": [
+          "api_major",
+          "enrollment_id",
+          "token",
+          "server_instance_id",
+          "device_label",
+          "public_key_spki_der_b64",
+          "algorithm",
+          "app_version"
+        ],
+        "properties": {
+          "algorithm": {
+            "type": "string",
+            "description": "Must be `ecdsa-p256-sha256` in Amendment 09."
+          },
+          "api_major": {
+            "type": "integer",
+            "format": "int32",
+            "description": "API major from the enrollment artifact.",
+            "minimum": 0
+          },
+          "app_version": {
+            "type": "string",
+            "description": "Client build string for compatibility evidence."
+          },
+          "device_label": {
+            "type": "string",
+            "description": "User-visible device label."
+          },
+          "enrollment_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Single-use enrollment row id."
+          },
+          "public_key_spki_der_b64": {
+            "type": "string",
+            "description": "P-256 public key encoded as SPKI DER and then base64."
+          },
+          "server_instance_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Stable server instance expected by the artifact."
+          },
+          "token": {
+            "type": "string",
+            "description": "Opaque 256-bit token, base64url encoded."
+          }
+        }
+      },
+      "EnrollmentCredentialResponse": {
+        "type": "object",
+        "description": "Future successful enrollment result, included as a shared schema but not advertised as success.",
+        "required": [
+          "api_version",
+          "client_id",
+          "key_id",
+          "scopes",
+          "issued_at",
+          "expires_at",
+          "server_time"
+        ],
+        "properties": {
+          "api_version": {
+            "type": "string",
+            "description": "API contract version that issued the credential."
+          },
+          "client_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Stable per-device client identifier."
+          },
+          "expires_at": {
+            "type": "string",
+            "description": "Credential expiry instant in UTC."
+          },
+          "issued_at": {
+            "type": "string",
+            "description": "Credential issue instant in UTC."
+          },
+          "key_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Identifier of the enrolled public key."
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Server-enforced least-privilege scopes."
+          },
+          "server_time": {
+            "type": "string",
+            "description": "Server response instant in UTC."
+          }
+        }
+      },
+      "HealthBeaconRequest": {
+        "type": "object",
+        "description": "Operational phone evidence; it carries no measurement value.",
+        "required": [
+          "beacon_id",
+          "asserted_at",
+          "app_version",
+          "registry_sha256",
+          "outbox_count",
+          "types"
+        ],
+        "properties": {
+          "app_version": {
+            "type": "string",
+            "description": "App build/version supplying the evidence."
+          },
+          "asserted_at": {
+            "type": "string",
+            "description": "Instant at which the phone made the assertion."
+          },
+          "beacon_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Client-minted idempotency identifier for this assertion."
+          },
+          "last_server_ack_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Most recent item-level server acknowledgement instant."
+          },
+          "oldest_outbox_age_s": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Age of the oldest unacknowledged item, when one exists.",
+            "minimum": 0
+          },
+          "outbox_count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Number of unacknowledged outbox items.",
+            "minimum": 0
+          },
+          "registry_sha256": {
+            "type": "string",
+            "description": "Digest of the registry used by the client."
+          },
+          "types": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HealthTypeFact"
+            },
+            "description": "Per-HealthKit-type operational facts without measurements."
+          }
+        }
+      },
+      "HealthTypeFact": {
+        "type": "object",
+        "description": "Independent facts for one `HealthKit` identifier; no field claims read access was granted.",
+        "required": [
+          "healthkit_type",
+          "configured"
+        ],
+        "properties": {
+          "authorization_request_outcome": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Outcome of requesting authorization; never a claim that read access is granted."
+          },
+          "background_delivery_outcome": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Outcome of requesting iOS background delivery."
+          },
+          "configured": {
+            "type": "boolean",
+            "description": "Whether this type is enabled in client settings."
+          },
+          "healthkit_type": {
+            "type": "string",
+            "description": "Original `HealthKit` type identifier, not a generated physiological enum."
+          },
+          "last_matching_sample_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Last matching `HealthKit` sample instant, when observed."
+          },
+          "last_pi_ack_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Last Pi item acknowledgement for this type."
+          },
+          "last_query_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Last query attempt instant."
+          },
+          "last_query_outcome": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Last anchored-query outcome."
+          },
+          "observer_registration_outcome": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Outcome of registering the observer."
+          }
+        }
+      },
+      "ItemAcknowledgement": {
+        "type": "object",
+        "description": "One item outcome. `status` is open for forward-compatible unknown values.",
+        "required": [
+          "item_id",
+          "status",
+          "message",
+          "retryable"
+        ],
+        "properties": {
+          "code": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Stable machine-readable reason when status needs detail."
+          },
+          "item_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Submitted item identifier."
+          },
+          "message": {
+            "type": "string",
+            "description": "Human-readable outcome or named blocker."
+          },
+          "retryable": {
+            "type": "boolean",
+            "description": "Whether a later transport attempt may make progress."
+          },
+          "status": {
+            "type": "string",
+            "description": "Open status; current values include created, replayed, rejected, conflict, and retryable."
+          }
+        }
+      },
+      "ProjectionPage": {
+        "type": "object",
+        "description": "Future server projection page, included for fixture compatibility only.",
+        "required": [
+          "api_version",
+          "metric",
+          "generated_at",
+          "points",
+          "missing_intervals"
+        ],
+        "properties": {
+          "api_version": {
+            "type": "string",
+            "description": "API contract version carrying the projection."
+          },
+          "generated_at": {
+            "type": "string",
+            "description": "Instant at which the Pi generated this projection."
+          },
+          "metric": {
+            "type": "string",
+            "description": "Registry-owned metric name."
+          },
+          "missing_intervals": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "description": "UTC start/end pairs naming missing coverage."
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Opaque cursor for the next page."
+          },
+          "observed_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Most recent source observation represented, when one exists."
+          },
+          "points": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProjectionPoint"
+            },
+            "description": "Projection points with explicit null values for gaps."
+          }
+        }
+      },
+      "ProjectionPoint": {
+        "type": "object",
+        "description": "Missing physiological data is represented by `null`, never zero or interpolation.",
+        "required": [
+          "timestamp"
+        ],
+        "properties": {
+          "timestamp": {
+            "type": "string",
+            "description": "Point timestamp in UTC."
+          },
+          "value": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "Server-projected value, or null when not measured."
+          }
+        }
+      },
+      "ProjectionQuery": {
+        "type": "object",
+        "description": "Projection query uses UTC windows and an opaque server cursor.",
+        "properties": {
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Opaque server-issued pagination cursor."
+          },
+          "metric": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Registry-owned metric name."
+          },
+          "window_end": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Exclusive UTC window end."
+          },
+          "window_start": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Inclusive UTC window start."
+          }
+        }
+      },
+      "RegistryDiscoveryResponse": {
+        "type": "object",
+        "description": "Registry discovery wraps the generated JSON without restating its enums in `OpenAPI`.",
+        "required": [
+          "api_version",
+          "registry_sha256",
+          "document",
+          "server_time"
+        ],
+        "properties": {
+          "api_version": {
+            "type": "string",
+            "description": "API contract version carrying this registry."
+          },
+          "document": {
+            "type": "object",
+            "description": "Registry JSON decoded as an open object; identifiers remain registry-owned."
+          },
+          "registry_sha256": {
+            "type": "string",
+            "description": "SHA-256 of the exact generated registry JSON."
+          },
+          "server_time": {
+            "type": "string",
+            "description": "Server observation time in UTC."
+          }
+        }
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "apple-client",
+      "description": "Versioned thin Apple-client contract"
+    }
+  ]
+}

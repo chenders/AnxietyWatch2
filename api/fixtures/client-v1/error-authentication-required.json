@@ -1,0 +1,10 @@
+{
+  "api_version": "1.0",
+  "code": "request_signature_missing",
+  "message": "required RFC 9421 request signature fields are absent",
+  "retryable": false,
+  "blocker": "signature-input=missing; signature=missing; client_id=00000000-0000-7000-8000-000000000330",
+  "requested_major": 1,
+  "supported_major": 1,
+  "server_time": "2025-01-15T08:10:01.000Z"
+}

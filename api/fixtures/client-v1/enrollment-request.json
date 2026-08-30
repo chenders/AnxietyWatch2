@@ -1,0 +1,10 @@
+{
+  "api_major": 1,
+  "enrollment_id": "00000000-0000-7000-8000-000000000301",
+  "token": "Zml4dHVyZS1vbmx5LW5vdC1hLXJlYWwtdG9rZW4",
+  "server_instance_id": "00000000-0000-7000-8000-000000000302",
+  "device_label": "Fixture iPhone",
+  "public_key_spki_der_b64": "Zml4dHVyZS1zcGtpLWRlci1ub3QtYS1rZXk=",
+  "algorithm": "ecdsa-p256-sha256",
+  "app_version": "0.1.0-fixture"
+}

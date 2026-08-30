@@ -1,0 +1,10 @@
+{
+  "api_version": "1.0",
+  "code": "capability_unavailable",
+  "message": "operation is gated and has not been implemented",
+  "retryable": false,
+  "blocker": "capability=status_beacon; blocked_on=T-X2",
+  "requested_major": 1,
+  "supported_major": 1,
+  "server_time": "2025-01-15T08:10:01.000Z"
+}
