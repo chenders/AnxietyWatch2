@@ -120,15 +120,16 @@ recovery UI with named blockers.
 
 ### T-I5 — Temporary durable outbox and terminal-ack deletion
 
-**Amends:** 02 local-data handling and 09.
+**Amends:** 02 local-data handling and 09 credential rotation/recovery.
 **Context budget:** 12 files / 20k tokens.
-**Reads:** `SPEC-ios-client.md` §4.1, §5.1, §7.1, §10 · `design.md` §3–§4 · domain envelope idempotency tests/schema · project persistence seams.
+**Reads:** Amendment 09 credential/rotation profile · `SPEC-ios-client.md` §4.1, §5.1, §7.1, §10 · `design.md` §3–§4 · domain envelope idempotency tests/schema · project persistence seams.
 **Do:** Implement one local transaction for capture+enqueue, one drain owner, immutable payloads,
-item IDs, classified outcomes, and atomic payload deletion on terminal acknowledgement. Retained
-receipts may contain only the allowed non-content fields and expire. Unacknowledged/rejected/conflict
-items are never age-evicted. Add Data Protection, backup exclusion, explicit reset/logout loss guards,
-crash-point tests, and storage-pressure behavior that preserves writes. Expose no history query over
-the outbox.
+item IDs, classified outcomes, and atomic payload deletion on terminal acknowledgement. Outbox
+payloads and item IDs are credential-neutral and receive the active key/signature only at send time;
+rotation, revocation, and recovery never rewrite or drop them. Retained receipts may contain only the
+allowed non-content fields and expire. Unacknowledged/rejected/conflict items are never age-evicted.
+Add Data Protection, backup exclusion, explicit reset/logout loss guards, crash-point tests, and
+storage-pressure behavior that preserves writes. Expose no history query over the outbox.
 **Verify:** `cd "$(git rev-parse --show-toplevel)" && scripts/verify-ios-tests.sh AWOutboxTests && scripts/verify-ios-storage-security.sh && scripts/verify-ios-no-local-archive.sh`
 
 ### T-I6 — Registry-driven platform payload and sub-provenance client mapper
@@ -286,15 +287,17 @@ security theater without a separate threat decision.
 
 ### T-I18 — Physical-device background delivery, locked-state, energy, and panic-path acceptance
 
-**Amends:** 09.
+**Amends:** 09 physical-device authentication/network acceptance.
 **Context budget:** 12 files / 16k tokens plus device evidence.
-**Reads:** `SPEC-ios-client.md` §5, §8, §12.2 · T-I8/T-I9/T-I13/T-I16 acceptance tests · owner device/OS matrix from T-I3.
+**Reads:** Amendment 09 acceptance mapping · `SPEC-ios-client.md` §5, §8, §12.2 · T-I8/T-I9/T-I13/T-I16 acceptance tests · owner device/OS matrix from T-I3.
 **Do:** On the owner's iPhone and Watch, measure HealthKit observer delivery, BG task drains,
-force-quit behavior, locked-after-first-unlock Data Protection access, notification outcomes,
-WatchConnectivity outage/recovery, launch/Express/Quick Log timing, and overnight battery impact.
-Record OS/build, evidence timestamps, expected limitations, and status-beacon observations without
-committing personal measurements. Reject permanent socket/audio/location/BLE workarounds. Set a
-measured energy budget and retry/batch limits; failures name the device state and value.
+force-quit behavior, locked-after-first-unlock Data Protection and Secure Enclave signing access,
+notification outcomes, WatchConnectivity outage/recovery, launch/Express/Quick Log timing, and
+overnight battery impact. Prove wrong-host/expired/untrusted certificate rejection, replay rejection,
+revocation, clock failure, key-rotation overlap, and queued-record preservation. Record OS/build,
+evidence timestamps, expected limitations, and status-beacon observations without committing personal
+measurements. Reject permanent socket/audio/location/BLE workarounds. Set a measured energy budget and
+retry/batch limits; failures name the device state and value.
 **Verify:** `cd "$(git rev-parse --show-toplevel)" && scripts/verify-ios-device-evidence.sh artifacts/ios-stage7-device-acceptance.json`
 
 ### T-I19 — Verified generation-one data migration
