@@ -1,0 +1,11 @@
+{
+  "api_version": "1.0",
+  "code": "api_version_incompatible",
+  "message": "client API major is incompatible; queued writes must be preserved",
+  "retryable": false,
+  "blocker": "requested_major=2; supported_major=1",
+  "requested_major": 2,
+  "supported_major": 1,
+  "server_time": "2025-01-15T08:10:01.000Z",
+  "future_error_field": "ignored by v1"
+}

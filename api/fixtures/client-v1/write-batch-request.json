@@ -1,0 +1,19 @@
+{
+  "batch_id": "00000000-0000-7000-8000-000000000310",
+  "recorded_at": "2025-01-15T08:06:00.000Z",
+  "items": [
+    {
+      "id": "00000000-0000-7000-8000-000000000311",
+      "class": "domain_record",
+      "schema_version": 1,
+      "content": {
+        "kind": "journal_entry",
+        "subject_at": "2025-01-15T08:05:00.000Z",
+        "anxiety_rating": 6,
+        "note": "Synthetic fixture only"
+      },
+      "future_item_field": "ignored by v1"
+    }
+  ],
+  "future_batch_field": "ignored by v1"
+}

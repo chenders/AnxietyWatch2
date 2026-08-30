@@ -28,6 +28,14 @@ async fn main() {
     let socket_path =
         env::var("VITALSD_SOCKET").unwrap_or_else(|_| "/run/vitals/vitalsd.sock".to_string());
     let test_routes_enabled = env::var("VITALS_CONSOLE_TEST_ROUTES").is_ok_and(|v| v == "1");
+    if test_routes_enabled
+        && !(bind_addr.starts_with("127.0.0.1:") || bind_addr.starts_with("[::1]:"))
+    {
+        eprintln!(
+            "vitals-console: test routes require loopback bind; VITALS_CONSOLE_BIND={bind_addr}"
+        );
+        std::process::exit(64);
+    }
     let assets_path = env::var("VITALS_CONSOLE_ASSETS").map_or_else(
         |_| PathBuf::from("crates/vitals-console/assets"),
         PathBuf::from,
@@ -70,6 +78,7 @@ async fn main() {
     }
 
     let app = Router::new()
+        .merge(vitals_console::client_api::router::<AppState>())
         .route("/dashboard", get(dashboard_handler))
         .route("/dashboard/", get(dashboard_handler))
         .route("/api/health", get(health_handler))
@@ -82,11 +91,21 @@ async fn main() {
         .route("/api/display", get(display_handler))
         .route("/api/recovery", get(recovery_handler))
         .route("/api/clock", get(clock_handler))
-        .route("/api/envelope/register", post(register_handler))
         .route("/api/envelope", post(envelope_handler))
-        .route("/api/attempts", get(attempts_handler))
-        .route("/test", get(test_page_handler))
-        .route("/api/envelope/plaintext-test", post(plaintext_test_handler))
+        .route("/api/attempts", get(attempts_handler));
+
+    // Amendment 09 retires caller-chosen secret registration and plaintext
+    // helpers from production. They exist only on an explicitly enabled
+    // loopback test listener and never form a mobile compatibility path.
+    let app = if test_routes_enabled {
+        app.route("/api/envelope/register", post(register_handler))
+            .route("/test", get(test_page_handler))
+            .route("/api/envelope/plaintext-test", post(plaintext_test_handler))
+    } else {
+        app
+    };
+
+    let app = app
         .nest_service(
             "/console",
             ServeDir::new(&assets_path)
