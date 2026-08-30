@@ -594,12 +594,15 @@ independent enough and update T-M2e/T-M2f or remote-push tasks. Do not infer thi
 
 **Amends:** relevant Stage 7 phone relationship decision.
 
-**Reads:** design §4.4 and §6 phone health-access item · GEN1 reassessment HealthKit auth verdict · envelope API · registry/source health contracts.
+**Reads:** design §4.4 and §6 phone health-access item · GEN1 reassessment HealthKit auth verdict · `docs/design/SPEC-ios-client.md` §3.5 and §4.3 · envelope API · registry/source health contracts.
 
-**Do:** Define idempotent phone status payload with HealthKit authorization/access state,
-last-successful observation, app build, and reported/changed times. Send through authenticated
-envelope; store separately from physiological samples; surface on Ingest using core health policy.
-Never coerce lost authorization or missing beacon to healthy.
+**Do:** Define an idempotent phone status payload with per-type configured state, authorization-request
+outcome, observer/background-delivery outcome, last query outcome, last matching sample,
+last-successful Pi acknowledgement, outbox count/oldest age, app/registry build, and
+reported/changed times. HealthKit read permission is not introspectable, so the payload must not
+claim “granted.” Send through the authenticated envelope; store separately from physiological
+samples; surface on Ingest using core health policy. Never coerce denial, no matching sample, query
+failure, or missing beacon to healthy.
 
 **Verify:** `cd "$(git rev-parse --show-toplevel)" && cargo test --workspace phone_status_ && cargo clippy --workspace --all-targets -- -D warnings && cargo fmt --all -- --check`
 
@@ -607,11 +610,13 @@ Never coerce lost authorization or missing beacon to healthy.
 
 **Amends:** 01/02/05/06 as needed.
 
-**Reads:** design §8b webhook envelope · GEN1 reassessment §2.7 in full · sample identity/provenance amendments · registry.
+**Reads:** design §8b webhook envelope · GEN1 reassessment §2.7 in full · `docs/design/SPEC-ios-client.md` §4.2 · `clients/apple/GEN1-PARITY.yaml` when T-I0 lands · sample identity/provenance amendments · registry.
 
 **Do:** Decide and document sub-provenance representation for platform store samples, canonical
 sleep-stage mapping with unmappable behavior, stable session/seq identity, duplicate relationship to
-direct sensors, and pure mapper boundary. Update schema/registry/amendments before receiver code.
+direct sensors, and pure mapper boundary. Define how the generation-one HealthKit parity families
+receive canonical registry entries or named exclusions; parity is source-sample coverage, not phone
+snapshot/analysis parity. Update schema/registry/amendments before receiver code.
 
 **Verify:** `cd "$(git rev-parse --show-toplevel)" && scripts/verify-amendment-index.sh && rg -n 'platform sample sub-provenance|sleep-stage mapping' docs/specs/*.md`
 
@@ -622,8 +627,11 @@ direct sensors, and pure mapper boundary. Update schema/registry/amendments befo
 **Reads:** accepted T-X3 contract · envelope API · registry generated types/ranges · decoder purity/testing rules.
 
 **Do:** Add sample payload class, pure mapper to canonical generated types/units, strict finite/range
-rejection, raw provenance, durable ingest identity, and quarantine. No HealthKit-required derived
-value. Add fuzz target for byte/payload parsing and fixtures for stages/subsources/replays.
+rejection, raw provenance, durable ingest identity, and quarantine. Cover every accepted
+`proxy_sample`/`proxy_category` row from the generation-one parity ledger; every remainder has a named
+registry blocker or exclusion. No HealthKit-required derived value and no ingestion of phone-computed
+snapshots as measurements. Add fuzz target for byte/payload parsing and fixtures for
+stages/subsources/replays.
 
 **Verify:** `cd "$(git rev-parse --show-toplevel)" && cargo test --workspace healthkit_ && cargo clippy --workspace --all-targets -- -D warnings && cargo fmt --all -- --check && cargo fuzz run healthkit_payload -- -max_total_time=30`
 
