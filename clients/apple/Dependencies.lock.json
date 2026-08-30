@@ -1,0 +1,5 @@
+{
+  "schema_version": 1,
+  "third_party_dependencies": [],
+  "policy": "Native Apple frameworks and local AW packages only; any future third-party dependency requires license, privacy, maintenance, and necessity review."
+}

@@ -47,6 +47,9 @@ night*.log
 uv.lock
 .pytest_cache/
 
+# SwiftPM build products are local and contain absolute developer paths.
+clients/apple/Packages/*/.build/
+
 # Runtime status file for the pi-panel live stopgap. Written by
 # emay-spike on the Pi; a local copy is only ever a test fixture.
 docs/design/pi-panel/direction-a-clinical/status.json
