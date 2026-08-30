@@ -1,0 +1,24 @@
+{
+  "fixture": true,
+  "record_id": "00000000-0000-7000-8000-000000000001",
+  "healthkit_sample_uuid": "00000000-0000-4000-8000-000000000101",
+  "healthkit_type": "HKQuantityTypeIdentifierHeartRate",
+  "start_at": "2025-01-15T08:00:00Z",
+  "end_at": "2025-01-15T08:00:05Z",
+  "original_value": 72.0,
+  "original_unit": "count/min",
+  "source_revision": {
+    "bundle_identifier": "com.example.fixture.watch",
+    "source_name": "Fixture Watch",
+    "product_type": "Fixture1,1",
+    "version": "1.0"
+  },
+  "device": {
+    "manufacturer": "Fixture Manufacturer",
+    "model": "Fixture Model",
+    "hardware_version": "fixture"
+  },
+  "metadata": {},
+  "query_batch_id": "00000000-0000-7000-8000-000000000201",
+  "recorded_at": "2025-01-15T08:01:00Z"
+}
