@@ -291,7 +291,10 @@ def verify_healthkit_types(data: dict[str, object]) -> None:
     source_sets = data["source_sets"]
     discovered = set().union(*(set(values) for values in source_sets.values()))
     if discovered != actual:
-        fail(f"source-set union differs from type ledger; missing entries={sorted(discovered - actual)}")
+        fail(
+            f"source-set union differs from type ledger; "
+            f"not_in_union={sorted(actual - discovered)}, not_in_ledger={sorted(discovered - actual)}"
+        )
 
 
 def verify_capabilities(data: dict[str, object]) -> None:
