@@ -115,6 +115,9 @@ The target radio-packet-to-tier-evaluation latency is p99 under two seconds. The
 - [Theory of operation](docs/design/theory-of-operation/theory-of-operation.html) — the completed design, end to end.
 - [Current task contracts](openspec/changes/pi5-vitals-core/tasks.md) — acceptance is each command's exit code.
 - [Accepted amendments](docs/specs/AMENDMENTS.md) — current decisions; these override older prose.
+- [Stage 7 Apple-client specification](docs/design/SPEC-ios-client.md) — the thin iPhone/watchOS
+  HealthKit proxy, subjective-input client, Pi-backed viewer, and its
+  [execution plan](openspec/changes/ios-client-stage7/tasks.md).
 - [Contributor and agent rules](AGENTS.md) — safety invariants, scope, tests, and workflow.
 
 ## Licence
