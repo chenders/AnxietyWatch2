@@ -80,7 +80,10 @@ lost:
 
 - BLE recovery ladder, slot accounting, classified backoff, and learned intervals remain in the
   pi5-vitals-core collector-supervisor plan; M2 consumes their evidence.
-- Watch peer/thin-sender topology remains a Stage 7 decision as required by §9c.
+- Watch Quick Log relays through the phone for Stage 7; the client implementation and evidence live
+  in `openspec/changes/ios-client-stage7/` T-I16. Direct watch-to-Pi remains deferred.
+- The phone-side HealthKit proxy, temporary outbox, viewer, and subjective inputs are owned by
+  `openspec/changes/ios-client-stage7/`; this roadmap's T-X1–T-X6 own their Pi-side dependencies.
 - Android Health Connect follows the platform contract established by T-X3; it is a later platform
   task rather than a blocker for HealthKit.
 - myAir and SD-card parser internals remain out-of-process batch tooling under Amendment 07; M3e and
