@@ -79,7 +79,9 @@ def check_tasks() -> None:
         if "`" not in verify_line or "cd \"$(git rev-parse --show-toplevel)\"" not in verify_line:
             fail(f"{task_id} Verify must be a root-relative shell command in backticks")
 
-    queue_ids = set(re.findall(r"^- \[ \] (T-I\d+) —", text, flags=re.MULTILINE))
+    # Completed tasks remain part of the queue after the conductor changes
+    # `- [ ]` to `- [x]`; validate both workflow states.
+    queue_ids = set(re.findall(r"^- \[[ x]\] (T-I\d+) —", text, flags=re.MULTILINE))
     if queue_ids != EXPECTED_IDS:
         fail(
             "queue IDs differ from briefs: "
