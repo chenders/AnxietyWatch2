@@ -10,7 +10,7 @@ dispatched before their named gate.
 ### Contracts and foundation
 
 - [x] T-I0 — Generation-one capability and HealthKit parity ledger · review
-- [ ] T-I1 — Production mobile enrollment/authentication threat model and amendment · architecture-decision
+- [x] T-I1 — Production mobile enrollment/authentication threat model and amendment · architecture-decision
 - [ ] T-I2 — Versioned client API, OpenAPI, and shared contract fixtures · implement-complex
 - [x] T-I3 — Apple project and pure-package skeleton · implement-standard
 
@@ -68,7 +68,7 @@ personal data.
 
 ### T-I1 — Production mobile enrollment/authentication threat model and amendment
 
-**Amends:** 02 and 07; resolves G-IOS-AUTH with admin T-M2a.
+**Amends:** 02 and 07 through accepted Amendment 09; resolves G-IOS-AUTH with admin T-M2a.
 **Context budget:** 12 files / 20k tokens.
 **Reads:** Amendment 02 threat model/key custody and Amendment 07 in full · `SPEC-ios-client.md` §6–§7 · `SPEC-admin-console.md` §7 and §9c · existing envelope registration/encryption handlers/schema · T-M2a brief.
 **Do:** With operator approval, add an accepted amendment defining production bind/TLS topology,
@@ -81,9 +81,9 @@ MASVS-NETWORK-1/2. Update amendment index and both task plans without implementi
 
 ### T-I2 — Versioned client API, OpenAPI, and shared contract fixtures
 
-**Amends:** 07.
+**Amends:** 07 and 09.
 **Context budget:** 15 files / 22k tokens.
-**Reads:** Amendment 07 in full · `SPEC-ios-client.md` §4 and §6 · `crates/vitals-console/src/main.rs`, `models.rs`, relevant handlers, and Cargo manifest · admin roadmap T-X2–T-X4 and M5 read/write contracts.
+**Reads:** Amendments 07 and 09 in full · `SPEC-ios-client.md` §4 and §6 · `crates/vitals-console/src/main.rs`, `models.rs`, relevant handlers, and Cargo manifest · admin roadmap T-X2–T-X4 and M5 read/write contracts.
 **Do:** Add explicit `/api/v1/client/*` routing and generated OpenAPI for enrollment placeholders,
 registry discovery, item-level write acknowledgements, health beacon, projections, and API/version
 errors. Only implemented operations advertise success; gated operations return stable named
@@ -107,9 +107,9 @@ analysis, local report, or legacy sync target may compile.
 
 ### T-I4 — Secure enrollment, Keychain credential lifecycle, and endpoint trust UI
 
-**Amends:** T-I1's accepted amendment.
+**Amends:** 09.
 **Context budget:** 14 files / 20k tokens.
-**Reads:** accepted enrollment amendment · `SPEC-ios-client.md` §6–§7 · T-I2 OpenAPI/fixtures · project Keychain/transport seams · console credential APIs.
+**Reads:** Amendment 09 in full · `SPEC-ios-client.md` §6–§7 · T-I2 OpenAPI/fixtures · project Keychain/transport seams · console credential APIs.
 **Do:** Implement one-time enrollment and endpoint confirmation, per-device Keychain storage with the
 accepted `ThisDeviceOnly` accessibility, credential status/rotation/revocation, and explicit TLS
 state. Separate optional foreground privacy lock from the background credential. Reject embedded
@@ -120,15 +120,16 @@ recovery UI with named blockers.
 
 ### T-I5 — Temporary durable outbox and terminal-ack deletion
 
-**Amends:** 02 local-data handling.
+**Amends:** 02 local-data handling and 09 credential rotation/recovery.
 **Context budget:** 12 files / 20k tokens.
-**Reads:** `SPEC-ios-client.md` §4.1, §5.1, §7.1, §10 · `design.md` §3–§4 · domain envelope idempotency tests/schema · project persistence seams.
+**Reads:** Amendment 09 credential/rotation profile · `SPEC-ios-client.md` §4.1, §5.1, §7.1, §10 · `design.md` §3–§4 · domain envelope idempotency tests/schema · project persistence seams.
 **Do:** Implement one local transaction for capture+enqueue, one drain owner, immutable payloads,
-item IDs, classified outcomes, and atomic payload deletion on terminal acknowledgement. Retained
-receipts may contain only the allowed non-content fields and expire. Unacknowledged/rejected/conflict
-items are never age-evicted. Add Data Protection, backup exclusion, explicit reset/logout loss guards,
-crash-point tests, and storage-pressure behavior that preserves writes. Expose no history query over
-the outbox.
+item IDs, classified outcomes, and atomic payload deletion on terminal acknowledgement. Outbox
+payloads and item IDs are credential-neutral and receive the active key/signature only at send time;
+rotation, revocation, and recovery never rewrite or drop them. Retained receipts may contain only the
+allowed non-content fields and expire. Unacknowledged/rejected/conflict items are never age-evicted.
+Add Data Protection, backup exclusion, explicit reset/logout loss guards, crash-point tests, and
+storage-pressure behavior that preserves writes. Expose no history query over the outbox.
 **Verify:** `cd "$(git rev-parse --show-toplevel)" && scripts/verify-ios-tests.sh AWOutboxTests && scripts/verify-ios-storage-security.sh && scripts/verify-ios-no-local-archive.sh`
 
 ### T-I6 — Registry-driven platform payload and sub-provenance client mapper
@@ -146,9 +147,9 @@ mapping fixtures shared with the server.
 
 ### T-I7 — Immediate drain engine, retry taxonomy, rotation, and sync diagnostics
 
-**Amends:** T-I1's transport decision.
+**Amends:** 09.
 **Context budget:** 14 files / 22k tokens.
-**Reads:** `SPEC-ios-client.md` §5–§6 and §10 · T-I2 API fixtures · T-I4 credential interface · T-I5 outbox interface · core reconnect/backoff tests for jitter precedent.
+**Reads:** Amendment 09 request/rotation profile · `SPEC-ios-client.md` §5–§6 and §10 · T-I2 API fixtures · T-I4 credential interface · T-I5 outbox interface · core reconnect/backoff tests for jitter precedent.
 **Do:** Drain immediately on enqueue when execution/network permits; also trigger on foreground,
 network recovery, app activation, and explicit Sync Now. Send bounded batches with item-level ACKs.
 Implement cancellation-safe single-owner draining, retryable/nonretryable taxonomy, bounded jittered
@@ -272,9 +273,9 @@ second physical-device capture.
 
 ### T-I17 — Mobile security, privacy, accessibility, and release checks
 
-**Amends:** 02 and T-I1's accepted mobile-auth decision.
+**Amends:** 02 and 09.
 **Context budget:** 20 files / 28k tokens.
-**Reads:** `SPEC-ios-client.md` §7–§8 and §12 · all Apple entitlements/Info.plist/privacy manifests · dependency lock/SBOM · transport/storage/logging/UI security tests.
+**Reads:** Amendments 02 and 09 · `SPEC-ios-client.md` §7–§8 and §12 · all Apple entitlements/Info.plist/privacy manifests · dependency lock/SBOM · transport/storage/logging/UI security tests.
 **Do:** Add conductor-runnable MASVS checks for STORAGE-1/2, CRYPTO-1/2 where applicable, AUTH-1/2/3,
 NETWORK-1/2, PLATFORM-1/2/3, CODE-3/4, and PRIVACY-1–4. Prove ATS has no production bypass, credentials
 use accepted Keychain protection, outbox/cache backup exclusion, app-switcher obscuring, minimal
@@ -286,15 +287,17 @@ security theater without a separate threat decision.
 
 ### T-I18 — Physical-device background delivery, locked-state, energy, and panic-path acceptance
 
-**Amends:** none.
+**Amends:** 09 physical-device authentication/network acceptance.
 **Context budget:** 12 files / 16k tokens plus device evidence.
-**Reads:** `SPEC-ios-client.md` §5, §8, §12.2 · T-I8/T-I9/T-I13/T-I16 acceptance tests · owner device/OS matrix from T-I3.
+**Reads:** Amendment 09 acceptance mapping · `SPEC-ios-client.md` §5, §8, §12.2 · T-I8/T-I9/T-I13/T-I16 acceptance tests · owner device/OS matrix from T-I3.
 **Do:** On the owner's iPhone and Watch, measure HealthKit observer delivery, BG task drains,
-force-quit behavior, locked-after-first-unlock Data Protection access, notification outcomes,
-WatchConnectivity outage/recovery, launch/Express/Quick Log timing, and overnight battery impact.
-Record OS/build, evidence timestamps, expected limitations, and status-beacon observations without
-committing personal measurements. Reject permanent socket/audio/location/BLE workarounds. Set a
-measured energy budget and retry/batch limits; failures name the device state and value.
+force-quit behavior, locked-after-first-unlock Data Protection and Secure Enclave signing access,
+notification outcomes, WatchConnectivity outage/recovery, launch/Express/Quick Log timing, and
+overnight battery impact. Prove wrong-host/expired/untrusted certificate rejection, replay rejection,
+revocation, clock failure, key-rotation overlap, and queued-record preservation. Record OS/build,
+evidence timestamps, expected limitations, and status-beacon observations without committing personal
+measurements. Reject permanent socket/audio/location/BLE workarounds. Set a measured energy budget and
+retry/batch limits; failures name the device state and value.
 **Verify:** `cd "$(git rev-parse --show-toplevel)" && scripts/verify-ios-device-evidence.sh artifacts/ios-stage7-device-acceptance.json`
 
 ### T-I19 — Verified generation-one data migration
