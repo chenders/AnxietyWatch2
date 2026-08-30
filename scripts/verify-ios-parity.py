@@ -194,6 +194,58 @@ EXPECTED_CAPABILITIES = {
     "imports.device_csv_and_local_clinical_records",
 }
 
+EXPECTED_AGGREGATE_FIELDS = {
+    "activeCalories",
+    "atrialFibrillationBurden",
+    "barometricPressureAvgKPa",
+    "barometricPressureChangeKPa",
+    "bloodGlucoseAvg",
+    "bpDiastolic",
+    "bpSystolic",
+    "breathingRateAvg",
+    "cpapAHI",
+    "cpapUsageMinutes",
+    "dataQuality",
+    "environmentalSoundAvg",
+    "exerciseMinutes",
+    "fidgetIndexAvg",
+    "glucoseCV",
+    "glucoseMax",
+    "glucoseMin",
+    "glucoseStdDev",
+    "headphoneAudioExposure",
+    "hrvAvg",
+    "hrvMin",
+    "nocturnalHRDip",
+    "physicalEffortAvg",
+    "respiratoryRate",
+    "restingHR",
+    "skinTempDeviation",
+    "skinTempWrist",
+    "sleepAwakeMin",
+    "sleepCoreMin",
+    "sleepDeepMin",
+    "sleepDurationMin",
+    "sleepREMMin",
+    "spo2AggregateSource",
+    "spo2Avg",
+    "spo2BurdenSource",
+    "spo2DesatsCount",
+    "spo2NadirOpportunistic",
+    "spo2NadirOvernight",
+    "spo2TimeBelow90Min",
+    "steps",
+    "timeInDaylightMin",
+    "tremorBandPowerAvg",
+    "vo2Max",
+    "walkingAsymmetryPct",
+    "walkingDoubleSupportPct",
+    "walkingHeartRateAvg",
+    "walkingSpeed",
+    "walkingSteadiness",
+    "walkingStepLength",
+}
+
 TYPE_CLASSIFICATIONS = {
     "proxy_sample",
     "proxy_category",
@@ -333,8 +385,16 @@ def verify_aggregates(data: dict[str, object]) -> None:
         fail("generation_one_aggregates must be an object")
     require_record_fields(aggregates, {"decision", "owner", "reason", "evidence", "fields"}, "generation_one_aggregates")
     fields = aggregates["fields"]
-    if not isinstance(fields, list) or len(fields) < 40 or len(fields) != len(set(fields)):
-        fail("generation_one_aggregates.fields must retain the reviewed unique snapshot field inventory")
+    if not isinstance(fields, list) or not all(isinstance(field, str) for field in fields):
+        fail("generation_one_aggregates.fields must be a string list")
+    if len(fields) != len(set(fields)):
+        fail("generation_one_aggregates.fields contains duplicates")
+    actual = set(fields)
+    if actual != EXPECTED_AGGREGATE_FIELDS:
+        fail(
+            f"aggregate inventory mismatch; missing={sorted(EXPECTED_AGGREGATE_FIELDS - actual)}, "
+            f"unexpected={sorted(actual - EXPECTED_AGGREGATE_FIELDS)}"
+        )
     if aggregates["decision"] != "exclude_from_phone_transport_and_replace_with_pi_projections":
         fail("generation-one aggregates must remain separate from source-sample transport")
 
