@@ -19,6 +19,7 @@ wins**. If you find a contradiction, report it rather than implementing either v
 | **06** | [BP identity and durability](2026-08-03-amendment-06-bp-identity-and-durability.md) | **amendment 05 §5 (T-D6 row) — the hardware disproved it**, and **§1.1's identity rule, which it narrows**; extends §4.3; restates A01 §5's durability rule | T-B1, T-D3, T-D4, T-D6 |
 | **07** | [The HTTP API and admin console are Rust, not Python](2026-08-05-amendment-07-api-in-rust.md) | **`language-choices.md` §1 row "HTTP API, admin, analysis → Python 3.12 + FastAPI", and §3 in full** | admin console M0–M2, web dashboard backend, client write API |
 | **08** | [Layout selection by live evaluation, not upfront choice](2026-08-06-amendment-08-layout-evaluation.md) | the implicit "pick a design direction before M1" in `SPEC-admin-console.md` §3.1 | admin console M1 (all three directions behind a runtime switcher), web dashboard (gains a plan home: port B/C onto the `model()` seam + switcher, gated on the vitalsd query path) |
+| **09** | [Production mobile enrollment, request authentication, and TLS topology](2026-08-30-amendment-09-mobile-enrollment-and-tls.md) | Amendment 02 mobile key custody; Amendment 07 client API; admin §9c bind/auth deferral; iOS §6.1 enrollment gate | T-I1, T-I2, T-I4, T-I7, T-I17, T-M2a, T-M2h |
 | — | [C vs Rust evaluation](2026-08-03-c-vs-rust-evaluation.md) | the C11 decision | all code tasks |
 | — | [Review synthesis and fix tracker](../reviews/SYNTHESIS.md) | — | status of every finding |
 
@@ -120,6 +121,16 @@ a recent tier evaluation, and drain progress — because a healthy `klaxond` pul
 collector is dead is the worst false negative available. A shutdown inhibit keeps deliberate reboots
 silent, and it fails safe (armed by default). Its test injects upstream faults; stopping the
 heartbeat only tests the 555. See amendment 05 §2.
+
+### Mobile enrollment and network trust
+
+**The public phone API is HTTPS-only and the admin console remains private** (amendment 09).
+`vitals-console` binds loopback behind Caddy: only `/api/v1/client/*` is public, while operator pages
+are WireGuard-only. Enrollment uses a ten-minute single-use console artifact and a non-exportable
+Secure Enclave P-256 key. Requests use RFC 9421 signatures plus durable replay IDs. ATS system trust
+and hostname validation apply; certificate pinning is deliberately rejected for the initial release
+because safe ACME rotation and backup-pin recovery are not operationally proven. The old plaintext
+`/api/envelope/register` route is test-only and never a production mobile flow.
 
 ### UI direction
 
