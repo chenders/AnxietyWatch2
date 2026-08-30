@@ -9,7 +9,7 @@
 **Amends:** Amendment 02 key custody for Apple clients; Amendment 07 client-facing HTTP API;
 `SPEC-admin-console.md` §9c bind/auth decision; `SPEC-ios-client.md` §6.1
 
-**Affects:** T-I1, T-I2, T-I4, T-I7, T-I17, T-M2a, T-M2h, and every `/api/v1/client/*`
+**Affects:** T-I1, T-I2, T-I4, T-I5, T-I7, T-I17, T-I18, T-M2a, T-M2h, and every `/api/v1/client/*`
 operation
 
 This amendment resolves `G-IOS-AUTH`. It defines how an iPhone that may be away from home reaches the

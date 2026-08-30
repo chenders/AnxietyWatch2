@@ -120,7 +120,7 @@ recovery UI with named blockers.
 
 ### T-I5 — Temporary durable outbox and terminal-ack deletion
 
-**Amends:** 02 local-data handling.
+**Amends:** 02 local-data handling and 09.
 **Context budget:** 12 files / 20k tokens.
 **Reads:** `SPEC-ios-client.md` §4.1, §5.1, §7.1, §10 · `design.md` §3–§4 · domain envelope idempotency tests/schema · project persistence seams.
 **Do:** Implement one local transaction for capture+enqueue, one drain owner, immutable payloads,
@@ -286,7 +286,7 @@ security theater without a separate threat decision.
 
 ### T-I18 — Physical-device background delivery, locked-state, energy, and panic-path acceptance
 
-**Amends:** none.
+**Amends:** 09.
 **Context budget:** 12 files / 16k tokens plus device evidence.
 **Reads:** `SPEC-ios-client.md` §5, §8, §12.2 · T-I8/T-I9/T-I13/T-I16 acceptance tests · owner device/OS matrix from T-I3.
 **Do:** On the owner's iPhone and Watch, measure HealthKit observer delivery, BG task drains,
