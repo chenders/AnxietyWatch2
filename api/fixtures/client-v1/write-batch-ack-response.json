@@ -1,0 +1,16 @@
+{
+  "api_version": "1.0",
+  "batch_id": "00000000-0000-7000-8000-000000000310",
+  "acknowledgements": [
+    {
+      "item_id": "00000000-0000-7000-8000-000000000311",
+      "status": "created",
+      "code": null,
+      "message": "fixture item created",
+      "retryable": false,
+      "future_ack_field": "ignored by v1"
+    }
+  ],
+  "server_time": "2025-01-15T08:06:01.000Z",
+  "future_response_field": "ignored by v1"
+}

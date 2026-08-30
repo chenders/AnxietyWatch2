@@ -1,0 +1,15 @@
+{
+  "api_version": "1.0",
+  "metric": "fixture_metric_from_registry",
+  "observed_at": "2025-01-15T08:00:00.000Z",
+  "generated_at": "2025-01-15T08:10:00.000Z",
+  "points": [
+    {"timestamp": "2025-01-15T07:58:00.000Z", "value": 71.0},
+    {"timestamp": "2025-01-15T07:59:00.000Z", "value": null},
+    {"timestamp": "2025-01-15T08:00:00.000Z", "value": 72.0}
+  ],
+  "missing_intervals": [
+    ["2025-01-15T07:59:00.000Z", "2025-01-15T08:00:00.000Z"]
+  ],
+  "next_cursor": "fixture-opaque-cursor"
+}

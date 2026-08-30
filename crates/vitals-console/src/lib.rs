@@ -11,7 +11,9 @@
 pub mod api;
 /// Client for the `vitalsd` Unix-socket protocol.
 pub mod client;
-/// Secretbox envelope encryption for the client write API.
+/// Versioned Apple-client routes and generated OpenAPI contract.
+pub mod client_api;
+/// Secretbox envelope encryption for the legacy loopback test API.
 pub mod crypto;
 /// `PostgreSQL` access for attempts and domain records.
 pub mod db;

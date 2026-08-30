@@ -11,7 +11,7 @@ dispatched before their named gate.
 
 - [x] T-I0 — Generation-one capability and HealthKit parity ledger · review
 - [x] T-I1 — Production mobile enrollment/authentication threat model and amendment · architecture-decision
-- [ ] T-I2 — Versioned client API, OpenAPI, and shared contract fixtures · implement-complex
+- [x] T-I2 — Versioned client API, OpenAPI, and shared contract fixtures · implement-complex
 - [x] T-I3 — Apple project and pure-package skeleton · implement-standard
 
 ### Reliable temporary delivery
