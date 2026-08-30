@@ -1,0 +1,10 @@
+{
+  "api_version": "1.0",
+  "code": "request_replayed",
+  "message": "request id was already admitted; retry with a fresh request id and unchanged item ids",
+  "retryable": false,
+  "blocker": "client_id=00000000-0000-7000-8000-000000000330; request_id=00000000-0000-7000-8000-000000000331",
+  "requested_major": 1,
+  "supported_major": 1,
+  "server_time": "2025-01-15T08:10:01.000Z"
+}
