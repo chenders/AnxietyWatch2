@@ -11,6 +11,17 @@ private func fixture(named name: String) throws -> Data {
   return try Data(contentsOf: root.appending(path: "api/fixtures/client-v1/\(name)"))
 }
 
+@Test("shared enrollment fixture preserves algorithm and server identity")
+func enrollmentFixtureDecodes() throws {
+  let request = try JSONDecoder().decode(
+    EnrollmentClaimRequest.self,
+    from: fixture(named: "enrollment-request.json")
+  )
+  #expect(request.apiMajor == 1)
+  #expect(request.algorithm == "ecdsa-p256-sha256")
+  #expect(request.deviceLabel == "Fixture iPhone")
+}
+
 @Test("shared item acknowledgement fixture preserves terminal wire status")
 func acknowledgementFixtureDecodes() throws {
   let response = try JSONDecoder().decode(

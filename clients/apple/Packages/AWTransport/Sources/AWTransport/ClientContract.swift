@@ -1,5 +1,27 @@
 import Foundation
 
+public struct EnrollmentClaimRequest: Codable, Equatable, Sendable {
+  public let apiMajor: UInt
+  public let enrollmentID: UUID
+  public let token: String
+  public let serverInstanceID: UUID
+  public let deviceLabel: String
+  public let publicKeySPKIDERBase64: String
+  public let algorithm: String
+  public let appVersion: String
+
+  enum CodingKeys: String, CodingKey {
+    case apiMajor = "api_major"
+    case enrollmentID = "enrollment_id"
+    case token
+    case serverInstanceID = "server_instance_id"
+    case deviceLabel = "device_label"
+    case publicKeySPKIDERBase64 = "public_key_spki_der_b64"
+    case algorithm
+    case appVersion = "app_version"
+  }
+}
+
 /// Open wire values remain strings so a newer server value is preserved instead of defaulted.
 public struct ClientErrorResponse: Codable, Equatable, Sendable {
   public let apiVersion: String

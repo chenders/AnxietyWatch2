@@ -436,6 +436,7 @@ fn unavailable(capability: &str, owner: &str) -> ClientApiError {
         (status = 200, description = "API compatibility facts", body = ClientVersionResponse)
     )
 )]
+#[allow(clippy::unused_async, reason = "axum handlers must be async")]
 pub async fn client_version_handler() -> Json<ClientVersionResponse> {
     Json(ClientVersionResponse {
         api_version: format!("{API_MAJOR}.{API_MINOR}"),
@@ -454,6 +455,7 @@ pub async fn client_version_handler() -> Json<ClientVersionResponse> {
     tag = "apple-client",
     responses((status = 200, description = "Generated OpenAPI", body = Object))
 )]
+#[allow(clippy::unused_async, reason = "axum handlers must be async")]
 pub async fn client_openapi_handler() -> Json<utoipa::openapi::OpenApi> {
     Json(ClientApiDoc::openapi())
 }
@@ -476,6 +478,7 @@ pub async fn client_openapi_handler() -> Json<utoipa::openapi::OpenApi> {
         (status = 500, description = "Generated registry is malformed", body = ClientErrorResponse)
     )
 )]
+#[allow(clippy::unused_async, reason = "axum handlers must be async")]
 pub async fn client_registry_handler(
     headers: HeaderMap,
 ) -> Result<Json<RegistryDiscoveryResponse>, ClientApiError> {
@@ -514,6 +517,7 @@ pub async fn client_registry_handler(
         (status = 503, description = "Enrollment is gated on T-I4/T-M2a", body = ClientErrorResponse)
     )
 )]
+#[allow(clippy::unused_async, reason = "axum handlers must be async")]
 pub async fn client_enroll_handler(
     Json(request): Json<EnrollmentClaimRequest>,
 ) -> Result<Json<EnrollmentCredentialResponse>, ClientApiError> {
@@ -561,6 +565,7 @@ pub async fn client_enroll_handler(
         (status = 503, description = "Writes are gated on domain/platform contracts", body = ClientErrorResponse)
     )
 )]
+#[allow(clippy::unused_async, reason = "axum handlers must be async")]
 pub async fn client_write_handler(
     headers: HeaderMap,
     Json(_request): Json<ClientWriteBatch>,
@@ -597,6 +602,7 @@ pub async fn client_write_handler(
         (status = 503, description = "Status beacon is gated on T-X2", body = ClientErrorResponse)
     )
 )]
+#[allow(clippy::unused_async, reason = "axum handlers must be async")]
 pub async fn client_beacon_handler(
     headers: HeaderMap,
     Json(_request): Json<HealthBeaconRequest>,
@@ -632,6 +638,7 @@ pub async fn client_beacon_handler(
         (status = 503, description = "Projections are gated on M3/M4", body = ClientErrorResponse)
     )
 )]
+#[allow(clippy::unused_async, reason = "axum handlers must be async")]
 pub async fn client_projections_handler(
     headers: HeaderMap,
     Query(_query): Query<ProjectionQuery>,
@@ -640,6 +647,7 @@ pub async fn client_projections_handler(
     Err(unavailable("projections", "admin_M3_M4"))
 }
 
+#[allow(clippy::unused_async, reason = "axum handlers must be async")]
 async fn client_not_found_handler() -> impl IntoResponse {
     error(
         StatusCode::NOT_FOUND,
@@ -698,6 +706,45 @@ mod tests {
         let (registry_status, registry) = json_response(registry_request).await;
         assert_eq!(registry_status, StatusCode::OK);
         assert!(registry["document"]["type"].is_object());
+    }
+
+    #[tokio::test]
+    async fn client_contract_enrollment_fixture_covers_gate_and_incompatible_major() {
+        let fixture = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../api/fixtures/client-v1/enrollment-request.json"
+        ));
+        let claim: EnrollmentClaimRequest =
+            serde_json::from_str(fixture).expect("enrollment fixture decodes");
+        assert_eq!(claim.api_major, API_MAJOR);
+        assert_eq!(claim.algorithm, "ecdsa-p256-sha256");
+
+        let gated_request = Request::builder()
+            .method("POST")
+            .uri("/api/v1/client/enroll")
+            .header("content-type", "application/json")
+            .body(Body::from(fixture))
+            .expect("request builds");
+        let (gated_status, gated_body) = json_response(gated_request).await;
+        assert_eq!(gated_status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(gated_body["code"], "capability_unavailable");
+        assert!(
+            gated_body["blocker"]
+                .as_str()
+                .is_some_and(|value| value.contains("T-I4"))
+        );
+
+        let incompatible_fixture = fixture.replacen("\"api_major\": 1", "\"api_major\": 2", 1);
+        let incompatible_request = Request::builder()
+            .method("POST")
+            .uri("/api/v1/client/enroll")
+            .header("content-type", "application/json")
+            .body(Body::from(incompatible_fixture))
+            .expect("request builds");
+        let (incompatible_status, incompatible_body) = json_response(incompatible_request).await;
+        assert_eq!(incompatible_status, StatusCode::UPGRADE_REQUIRED);
+        assert_eq!(incompatible_body["code"], "api_version_incompatible");
+        assert_eq!(incompatible_body["requested_major"], 2);
     }
 
     #[tokio::test]
