@@ -226,13 +226,17 @@ def check_once(status_url: str, page_url: str, health_path: pathlib.Path) -> boo
     }
     database, database_detail = database_state()
     components["database"] = {"state": database, "detail": database_detail}
+    source_ok = h10[0] == "WORKING" and wellue[0] == "WORKING" and bp[0] == "RECORDED"
+    components["sources"] = {
+        "state": "OK" if source_ok else "DEGRADED",
+        "detail": f"H10={h10[0]} Wellue={wellue[0]} BP={bp[0]}",
+    }
     kiosk_state = "OK" if page_state == "OK" and service_states["kiosk"] == "active" else "DEGRADED"
     components["kiosk"] = {
         "state": kiosk_state,
         "detail": f"page={page_state} panel-kiosk.service={service_states['kiosk']}",
     }
 
-    source_ok = h10[0] == "WORKING" and wellue[0] == "WORKING" and bp[0] == "RECORDED"
     infrastructure_ok = all(value["state"] == "OK" for value in components.values())
     overall = "OK" if source_ok and infrastructure_ok else "DEGRADED"
     document = {

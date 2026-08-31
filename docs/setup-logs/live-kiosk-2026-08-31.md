@@ -23,9 +23,9 @@ bedside view remains fixed when used on the panel.
 A Pi-side `live-vitals-watch` process checks the page, merged status document,
 source states, database query path, and service states every 60 seconds for
 approximately ten hours. It logs `OK` or `DEGRADED` and atomically publishes
-`health.json` beside the page. The kiosk renders the core, spool drainer,
-database, and page/kiosk results in a bottom **SYSTEM HEALTH** section. The
-watcher does not restart sensors or invent readings.
+`health.json` beside the page. The kiosk renders sensor-source state plus the
+core, spool drainer, database, and page/kiosk results in a bottom **SYSTEM
+HEALTH** section. The watcher does not restart sensors or invent readings.
 
 ## What looked like a drain problem
 

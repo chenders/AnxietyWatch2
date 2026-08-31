@@ -142,7 +142,7 @@ body.kiosk #app {
 .health-overall.degraded, .health-state.degraded { color: var(--watch); }
 .health-overall.down, .health-state.down { color: var(--bad); }
 .health-overall.unknown, .health-state.unknown { color: var(--unknown); }
-.health-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.health-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
 .health-item { min-width: 0; border-top: 1px solid var(--rule); padding-top: 4px; display: grid; grid-template-columns: 1fr auto; gap: 2px 7px; }
 .health-name { min-width: 0; color: var(--quiet); font-size: 9px; letter-spacing: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .health-state { font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 10px; font-weight: 700; }
@@ -259,7 +259,7 @@ body.kiosk #app {
   </section>
   <footer class="footer" aria-label="System health">
     <div class="health-head">
-      <div class="health-title">SYSTEM HEALTH · INFRASTRUCTURE AND CHECKER</div>
+      <div class="health-title">SYSTEM HEALTH · SOURCES, INFRASTRUCTURE, CHECKER</div>
       <div id="health-overall" class="health-overall unknown">CHECKING</div>
     </div>
     <div id="health-grid" class="health-grid">
@@ -430,6 +430,7 @@ function renderHealth() {
   overallElement.className = `health-overall ${fresh ? healthClass(snapshot.overall) : "unknown"}`;
 
   const labels = [
+    ["sources", "SENSOR SOURCES"],
     ["core", "VITALS CORE"],
     ["drain", "SPOOL DRAIN"],
     ["database", "DATABASE"],

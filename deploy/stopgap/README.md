@@ -218,10 +218,10 @@ sudo systemd-run --unit=live-vitals-watch --property=User=pi-user \
 It logs `OK` or `DEGRADED` with named source states, page availability, and
 service states; it does not restart sensors or invent values. Each check also
 atomically publishes `health.json` beside the page. The kiosk's bottom
-**SYSTEM HEALTH** section reads that document and shows the vitals core, spool
-drainer, database query path, and page/kiosk state separately from the sensor
-cards. A stale checker document is rendered as `WATCHER STALE` rather than
-being treated as healthy.
+**SYSTEM HEALTH** section reads that document and shows sensor-source state,
+the vitals core, spool drainer, database query path, and page/kiosk state. A
+stale checker document is rendered as `WATCHER STALE` rather than being treated
+as healthy.
 
 ## Removing it
 
