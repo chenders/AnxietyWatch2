@@ -220,7 +220,7 @@ body.kiosk #app {
     </div>
     <div class="header-right">
       <div id="clock" class="clock mono">--:--:--</div>
-      <div id="feed" class="feed">READING DATA FEED</div>
+      <div id="feed" class="feed">STATUS FEED</div>
     </div>
   </header>
   <section class="primary" aria-label="Sensor status">
@@ -324,7 +324,7 @@ function renderH10(s, now, feedOkay) {
     setBadge("h10-badge", "unknown", "NO DATA");
     byId("h10-reason").textContent = "No H10 value has been published.";
     setValue("h10-hr", null); setValue("h10-rr", null); setValue("h10-origin", null);
-    byId("h10-age").innerHTML = "LAST VALUE <strong>—</strong>";
+    byId("h10-age").innerHTML = "LAST VALID SAMPLE <strong>—</strong>";
     return;
   }
   const age = ageSeconds(s.sample_at, now);
@@ -340,7 +340,7 @@ function renderH10(s, now, feedOkay) {
   setValue("h10-hr", finite(s.hr) ? Math.round(s.hr) : null);
   setValue("h10-rr", finite(s.rr_count) ? Math.round(s.rr_count) : null);
   setValue("h10-origin", physical ? "DEVICE" : text(s.test_origin));
-  byId("h10-age").innerHTML = `LAST VALUE <strong>${ageText(age)}</strong>`;
+  byId("h10-age").innerHTML = `LAST VALID SAMPLE <strong>${ageText(age)}</strong>`;
 }
 
 function renderWellue(s, now, feedOkay) {
@@ -350,7 +350,7 @@ function renderWellue(s, now, feedOkay) {
     setBadge("wellue-badge", "unknown", "NO DATA");
     byId("wellue-reason").textContent = "No Wellue value has been published.";
     setValue("wellue-spo2", null); setValue("wellue-pulse", null); setValue("wellue-pi", null);
-    byId("wellue-age").innerHTML = "LAST VALUE <strong>—</strong>";
+    byId("wellue-age").innerHTML = "LAST VALID SAMPLE <strong>—</strong>";
     return;
   }
   const age = ageSeconds(s.sample_at, now);
@@ -366,13 +366,15 @@ function renderWellue(s, now, feedOkay) {
   if (liveNow) byId("wellue-reason").textContent = "Live physical-device values are arriving.";
   else if (noFinger) byId("wellue-reason").textContent = "Link is up; the sensor reports no finger.";
   else if (!physical) byId("wellue-reason").textContent = "This value is marked synthetic and is not treated as live.";
-  else if (!feedOkay) byId("wellue-reason").textContent = "Cannot verify Wellue while the data feed is unavailable.";
+  else if (!feedOkay) byId("wellue-reason").textContent = "Cannot verify Wellue while the status feed is unavailable.";
   else if (s.link !== "up") byId("wellue-reason").textContent = `Link is ${text(s.link)}; no current value is claimed.`;
+  else if (writerAge != null && writerAge <= WELLUE_FRESH_SECONDS)
+    byId("wellue-reason").textContent = `Transport heartbeat is fresh; last valid sample ${ageText(age)}.`;
   else byId("wellue-reason").textContent = `No fresh Wellue value for ${ageText(age)}.`;
   setValue("wellue-spo2", finite(s.spo2) ? Math.round(s.spo2) : null);
   setValue("wellue-pulse", finite(s.pulse_bpm) ? Math.round(s.pulse_bpm) : null);
   setValue("wellue-pi", finite(s.perfusion_index) ? Number(s.perfusion_index).toFixed(1) : null);
-  byId("wellue-age").innerHTML = `LAST VALUE <strong>${ageText(age)}</strong>`;
+  byId("wellue-age").innerHTML = `LAST VALID SAMPLE <strong>${ageText(age)}</strong>`;
 }
 
 function renderBp(bp, now) {
@@ -404,7 +406,7 @@ function render() {
   const feedOkay = !live.error && live.snapshot && fetchAge <= 5;
   const feed = byId("feed");
   feed.className = feedOkay ? "feed" : "feed bad";
-  feed.textContent = feedOkay ? "READING DATA FEED" : live.error ? "FEED UNAVAILABLE" : "WAITING FOR FEED";
+  feed.textContent = feedOkay ? "STATUS FEED LIVE" : live.error ? "FEED UNAVAILABLE" : "WAITING FOR FEED";
   const s = live.snapshot;
   renderH10(s && s.h10, now, feedOkay);
   renderWellue(s && s.wellue, now, feedOkay);
