@@ -1,0 +1,367 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=800, height=480, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>AnxietyWatch — Live Vitals</title>
+<style>
+:root {
+  --panel: #0d1114;
+  --panel-hi: #12191d;
+  --text: #e7edf0;
+  --muted: #91a0a8;
+  --good: #54d38a;
+  --good-bg: #10271c;
+  --watch: #e3b34d;
+  --watch-bg: #2b2110;
+  --bad: #e07a70;
+  --bad-bg: #2b1514;
+  --unknown: #aab4ba;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --sans: "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+* { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  width: 100%;
+  min-height: 100%;
+  background: #1a1d20;
+  color: var(--text);
+  font-family: var(--sans);
+  touch-action: none;
+  overscroll-behavior: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+body.kiosk { background: var(--bg); overflow: hidden; }
+body.kiosk, body.kiosk * { cursor: none; }
+#app {
+  width: 800px;
+  height: 480px;
+  margin: 0 auto;
+  padding: 16px 20px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--bg);
+  overflow: hidden;
+}
+.mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.header {
+  height: 40px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: 8px;
+}
+.kicker { color: var(--muted); font-size: 11px; letter-spacing: 2.4px; font-weight: 700; }
+.title { margin-top: 2px; color: var(--text); font-size: 22px; letter-spacing: 1.2px; font-weight: 600; }
+.header-right { display: flex; align-items: flex-end; flex-direction: column; gap: 3px; }
+.clock { color: var(--text); font-size: 18px; }
+.feed { color: var(--good); font-size: 10px; letter-spacing: 1.4px; font-weight: 700; }
+.feed.bad { color: var(--watch); }
+.primary { height: 174px; flex: 0 0 auto; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.card {
+  min-width: 0;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  background: var(--panel);
+  padding: 12px 14px 11px;
+  display: flex;
+  flex-direction: column;
+}
+.card.good { border-color: #2d7350; background: linear-gradient(135deg, var(--good-bg), var(--panel)); }
+.card.watch { border-color: #75602d; background: linear-gradient(135deg, var(--watch-bg), var(--panel)); }
+.card.bad { border-color: #70403c; background: linear-gradient(135deg, var(--bad-bg), var(--panel)); }
+.card.unknown { border-style: dashed; }
+.card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+.device { color: var(--text); font-size: 14px; letter-spacing: 1.8px; font-weight: 700; }
+.device-sub { margin-top: 3px; color: var(--muted); font-size: 10px; letter-spacing: 1px; }
+.badge {
+  flex: 0 0 auto;
+  padding: 4px 7px 3px;
+  border: 1px solid var(--good);
+  color: var(--good);
+  background: rgba(84, 211, 138, .08);
+  font-size: 10px;
+  letter-spacing: 1px;
+  font-weight: 700;
+}
+.badge.watch { border-color: var(--watch); color: var(--watch); background: rgba(227, 179, 77, .08); }
+.badge.bad { border-color: var(--bad); color: var(--bad); background: rgba(224, 122, 112, .08); }
+.badge.unknown { border-color: var(--unknown); color: var(--unknown); background: transparent; }
+.reason { min-height: 17px; margin-top: 7px; color: var(--muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.device-stats { margin-top: auto; display: flex; align-items: flex-end; gap: 18px; }
+.big-stat { color: var(--text); font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 43px; line-height: .9; letter-spacing: -2px; }
+.big-stat.missing { color: var(--unknown); }
+.big-unit { margin-left: 5px; color: var(--muted); font-size: 13px; letter-spacing: .6px; }
+.small-stat { display: flex; flex-direction: column; gap: 3px; padding-bottom: 2px; }
+.small-label { color: var(--quiet); font-size: 10px; letter-spacing: 1.3px; }
+.small-value { color: var(--text); font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 20px; }
+.age-line { margin-top: 12px; color: var(--muted); font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 12px; }
+.age-line strong { color: var(--text); font-weight: 500; }
+.bp {
+  height: 144px;
+  flex: 0 0 auto;
+  border: 1px solid #53606a;
+  background: var(--panel-hi);
+  padding: 12px 14px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+.bp-head { display: flex; align-items: baseline; gap: 10px; }
+.bp-title { color: var(--text); font-size: 14px; letter-spacing: 1.8px; font-weight: 700; }
+.bp-kind { color: var(--muted); font-size: 10px; letter-spacing: 1px; }
+.bp-reading { margin-top: 10px; display: flex; align-items: baseline; gap: 8px; }
+.bp-number { color: var(--text); font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 46px; line-height: .9; letter-spacing: -2px; }
+.bp-unit { color: var(--muted); font-size: 13px; }
+.bp-meta { display: flex; flex-direction: column; justify-content: flex-end; gap: 7px; padding-bottom: 1px; }
+.meta-label { color: var(--quiet); font-size: 10px; letter-spacing: 1.2px; }
+.meta-value { color: var(--text); font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 14px; }
+.meta-value.missing { color: var(--unknown); }
+.footer {
+  min-height: 36px;
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  color: var(--quiet);
+  font-size: 10px;
+  letter-spacing: 1.1px;
+}
+.footer .notice { color: var(--muted); }
+.footer .updated { text-align: right; }
+@media (max-width: 820px) {
+  #app { margin: 0; }
+  html, body { background: var(--bg); }
+}
+</style>
+</head>
+<body>
+<main id="app" aria-live="polite">
+  <header class="header">
+    <div>
+      <div class="kicker">ANXIETYWATCH · OVERNIGHT RECORD</div>
+      <div class="title">LIVE VITALS</div>
+    </div>
+    <div class="header-right">
+      <div id="clock" class="clock mono">--:--:--</div>
+      <div id="feed" class="feed">READING DATA FEED</div>
+    </div>
+  </header>
+  <section class="primary" aria-label="Sensor status">
+    <article id="h10-card" class="card unknown">
+      <div class="card-head">
+        <div><div class="device">POLAR H10</div><div class="device-sub">HEART RATE · RR</div></div>
+        <div id="h10-badge" class="badge unknown">CHECKING</div>
+      </div>
+      <div id="h10-reason" class="reason">Waiting for a status snapshot.</div>
+      <div class="device-stats">
+        <div><span id="h10-hr" class="big-stat missing">—</span><span class="big-unit">bpm</span></div>
+        <div class="small-stat"><span class="small-label">RR BEATS</span><span id="h10-rr" class="small-value">—</span></div>
+        <div class="small-stat"><span class="small-label">ORIGIN</span><span id="h10-origin" class="small-value">—</span></div>
+      </div>
+      <div id="h10-age" class="age-line">LAST VALUE <strong>—</strong></div>
+    </article>
+    <article id="wellue-card" class="card unknown">
+      <div class="card-head">
+        <div><div class="device">WELLUE</div><div class="device-sub">SPO₂ · PULSE · PERFUSION</div></div>
+        <div id="wellue-badge" class="badge unknown">CHECKING</div>
+      </div>
+      <div id="wellue-reason" class="reason">Waiting for a status snapshot.</div>
+      <div class="device-stats">
+        <div><span id="wellue-spo2" class="big-stat missing">—</span><span class="big-unit">%</span></div>
+        <div class="small-stat"><span class="small-label">PULSE</span><span id="wellue-pulse" class="small-value">—</span></div>
+        <div class="small-stat"><span class="small-label">PI</span><span id="wellue-pi" class="small-value">—</span></div>
+      </div>
+      <div id="wellue-age" class="age-line">LAST VALUE <strong>—</strong></div>
+    </article>
+  </section>
+  <section class="bp" aria-label="Last blood pressure reading">
+    <div>
+      <div class="bp-head"><div class="bp-title">A&D UA-651BLE</div><div class="bp-kind">LAST RECORDED BP</div></div>
+      <div class="bp-reading"><span id="bp-reading" class="bp-number">— / —</span><span class="bp-unit">mmHg</span></div>
+      <div id="bp-age" class="age-line">TAKEN <strong>—</strong></div>
+    </div>
+    <div class="bp-meta">
+      <div class="meta-row"><span class="meta-label">MAP</span><span id="bp-map" class="meta-value missing">—</span></div>
+      <div class="meta-row"><span class="meta-label">PULSE</span><span id="bp-pulse" class="meta-value missing">— bpm</span></div>
+      <div class="meta-row"><span class="meta-label">EVENT TIME</span><span id="bp-event" class="meta-value">—</span></div>
+      <div class="meta-row"><span class="meta-label">FLAGS</span><span id="bp-flags" class="meta-value">—</span></div>
+    </div>
+  </section>
+  <footer class="footer">
+    <div class="notice">DISPLAY ONLY · NO ALARM EVALUATION · GAPS ARE SHOWN, NOT FILLED</div>
+    <div id="updated" class="updated mono">FEED AGE —</div>
+  </footer>
+</main>
+<script>
+"use strict";
+
+const qs = new URLSearchParams(location.search);
+if (qs.get("kiosk") === "1") document.body.classList.add("kiosk");
+const statusUrl = qs.get("status") || "status.json";
+const H10_FRESH_SECONDS = 15;
+const WELLUE_FRESH_SECONDS = 15;
+const live = { snapshot: null, error: null, fetchedAt: 0 };
+
+const byId = id => document.getElementById(id);
+const finite = value => typeof value === "number" && Number.isFinite(value);
+const text = value => value == null ? "—" : String(value);
+
+function ageSeconds(value, now) {
+  if (!finite(value)) return null;
+  const age = now - value;
+  return Number.isFinite(age) ? age : null;
+}
+
+function ageText(age) {
+  if (!finite(age)) return "—";
+  if (age < 1) return "just now";
+  if (age < 60) return `${Math.floor(age)} s ago`;
+  const minutes = Math.floor(age / 60);
+  if (minutes < 60) return `${minutes} m ago`;
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  return remainder ? `${hours} h ${String(remainder).padStart(2, "0")} m ago` : `${hours} h ago`;
+}
+
+function setClass(id, state) {
+  const el = byId(id);
+  el.className = state === "working" ? "card good" : state === "watching" ? "card watch" : state === "error" ? "card bad" : "card unknown";
+}
+
+function setBadge(id, state, label) {
+  const el = byId(id);
+  el.className = `badge ${state === "working" ? "" : state === "watching" ? "watch" : state === "error" ? "bad" : "unknown"}`;
+  el.textContent = label;
+}
+
+function setValue(id, value, missing = value == null) {
+  const el = byId(id);
+  el.textContent = missing ? "—" : String(value);
+  el.classList.toggle("missing", missing);
+}
+
+function renderH10(s, now, feedOkay) {
+  const card = "h10-card";
+  if (!s || typeof s !== "object") {
+    setClass(card, "unknown");
+    setBadge("h10-badge", "unknown", "NO DATA");
+    byId("h10-reason").textContent = "No H10 value has been published.";
+    setValue("h10-hr", null); setValue("h10-rr", null); setValue("h10-origin", null);
+    byId("h10-age").innerHTML = "LAST VALUE <strong>—</strong>";
+    return;
+  }
+  const age = ageSeconds(s.sample_at, now);
+  const physical = s.test_origin === "physical_device";
+  const liveNow = feedOkay && physical && s.live === true && age != null && age <= H10_FRESH_SECONDS;
+  const state = liveNow ? "working" : feedOkay && physical ? "watching" : "error";
+  const label = liveNow ? "WORKING" : !physical ? "NON-PHYSICAL" : feedOkay ? "STALE" : "FEED ERROR";
+  setClass(card, state); setBadge("h10-badge", state, label);
+  if (liveNow) byId("h10-reason").textContent = "Live physical-device values are arriving.";
+  else if (!physical) byId("h10-reason").textContent = "This value is not from the physical H10.";
+  else if (!feedOkay) byId("h10-reason").textContent = "Cannot verify the H10 while the data feed is unavailable.";
+  else byId("h10-reason").textContent = `No live H10 value for ${ageText(age)}.`;
+  setValue("h10-hr", finite(s.hr) ? Math.round(s.hr) : null);
+  setValue("h10-rr", finite(s.rr_count) ? Math.round(s.rr_count) : null);
+  setValue("h10-origin", physical ? "DEVICE" : text(s.test_origin));
+  byId("h10-age").innerHTML = `LAST VALUE <strong>${ageText(age)}</strong>`;
+}
+
+function renderWellue(s, now, feedOkay) {
+  const card = "wellue-card";
+  if (!s || typeof s !== "object") {
+    setClass(card, "unknown");
+    setBadge("wellue-badge", "unknown", "NO DATA");
+    byId("wellue-reason").textContent = "No Wellue value has been published.";
+    setValue("wellue-spo2", null); setValue("wellue-pulse", null); setValue("wellue-pi", null);
+    byId("wellue-age").innerHTML = "LAST VALUE <strong>—</strong>";
+    return;
+  }
+  const age = ageSeconds(s.sample_at, now);
+  const writerAge = ageSeconds(s.written_at, now);
+  const physical = s.synthetic !== true;
+  const liveNow = feedOkay && physical && s.link === "up" && s.finger === true
+    && age != null && age <= WELLUE_FRESH_SECONDS
+    && writerAge != null && writerAge <= WELLUE_FRESH_SECONDS;
+  const noFinger = feedOkay && physical && s.link === "up" && s.finger === false;
+  const state = liveNow ? "working" : noFinger ? "watching" : feedOkay && physical ? "watching" : "error";
+  const label = liveNow ? "WORKING" : noFinger ? "NO FINGER" : !physical ? "SYNTHETIC" : feedOkay ? "STALE" : "FEED ERROR";
+  setClass(card, state); setBadge("wellue-badge", state, label);
+  if (liveNow) byId("wellue-reason").textContent = "Live physical-device values are arriving.";
+  else if (noFinger) byId("wellue-reason").textContent = "Link is up; the sensor reports no finger.";
+  else if (!physical) byId("wellue-reason").textContent = "This value is marked synthetic and is not treated as live.";
+  else if (!feedOkay) byId("wellue-reason").textContent = "Cannot verify Wellue while the data feed is unavailable.";
+  else if (s.link !== "up") byId("wellue-reason").textContent = `Link is ${text(s.link)}; no current value is claimed.`;
+  else byId("wellue-reason").textContent = `No fresh Wellue value for ${ageText(age)}.`;
+  setValue("wellue-spo2", finite(s.spo2) ? Math.round(s.spo2) : null);
+  setValue("wellue-pulse", finite(s.pulse_bpm) ? Math.round(s.pulse_bpm) : null);
+  setValue("wellue-pi", finite(s.perfusion_index) ? Number(s.perfusion_index).toFixed(1) : null);
+  byId("wellue-age").innerHTML = `LAST VALUE <strong>${ageText(age)}</strong>`;
+}
+
+function renderBp(bp, now) {
+  const present = bp && typeof bp === "object" && finite(bp.sample_at);
+  if (!present) {
+    byId("bp-reading").textContent = "— / —";
+    setValue("bp-map", null); setValue("bp-pulse", null);
+    byId("bp-event").textContent = "—";
+    byId("bp-flags").textContent = "—";
+    byId("bp-age").innerHTML = "TAKEN <strong>—</strong>";
+    return;
+  }
+  byId("bp-reading").textContent = `${finite(bp.systolic) ? Math.round(bp.systolic) : "—"} / ${finite(bp.diastolic) ? Math.round(bp.diastolic) : "—"}`;
+  setValue("bp-map", finite(bp.map) ? Math.round(bp.map) : null);
+  setValue("bp-pulse", finite(bp.pulse_bpm) ? `${Math.round(bp.pulse_bpm)} bpm` : null);
+  byId("bp-event").textContent = text(bp.event_time);
+  const flags = [];
+  if (bp.irregular_pulse === true) flags.push("IRREGULAR");
+  if (bp.body_movement === true) flags.push("MOVEMENT");
+  if (bp.cuff_too_loose === true) flags.push("LOOSE");
+  byId("bp-flags").textContent = flags.length ? flags.join(" · ") : "none";
+  byId("bp-age").innerHTML = `TAKEN <strong>${ageText(ageSeconds(bp.sample_at, now))}</strong>`;
+}
+
+function render() {
+  const now = Date.now() / 1000;
+  byId("clock").textContent = new Date().toLocaleTimeString([], { hour12: false });
+  const fetchAge = live.fetchedAt ? (Date.now() - live.fetchedAt * 1000) / 1000 : Infinity;
+  const feedOkay = !live.error && live.snapshot && fetchAge <= 5;
+  const feed = byId("feed");
+  feed.className = feedOkay ? "feed" : "feed bad";
+  feed.textContent = feedOkay ? "READING DATA FEED" : live.error ? "FEED UNAVAILABLE" : "WAITING FOR FEED";
+  const s = live.snapshot;
+  renderH10(s && s.h10, now, feedOkay);
+  renderWellue(s && s.wellue, now, feedOkay);
+  renderBp(s && s.bp, now);
+  byId("updated").textContent = `FEED AGE ${feedOkay ? ageText(fetchAge) : "—"}`;
+}
+
+async function poll() {
+  try {
+    const separator = statusUrl.includes("?") ? "&" : "?";
+    const response = await fetch(`${statusUrl}${separator}_=${Date.now()}`, { cache: "no-store" });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const value = await response.json();
+    if (!value || value.schema !== 1) throw new Error("unexpected status schema");
+    live.snapshot = value;
+    live.error = null;
+  } catch (error) {
+    live.error = error && error.message ? error.message : String(error);
+  }
+  live.fetchedAt = Date.now() / 1000;
+  render();
+}
+
+render();
+poll();
+setInterval(poll, 1000);
+setInterval(render, 1000);
+</script>
+</body>
+</html>

@@ -186,6 +186,38 @@ picture of what this stopgap actually knows.
 SpO₂ and HR are never simulated under either flag. If the ring stops reporting
 they go to `- -` and the tier drops to `CAN'T ASSESS`.
 
+## Live vitals kiosk
+
+`live-vitals.html` is the no-demo bedside view for an overnight record. It keeps
+Polar H10 and Wellue as separate primary cards, then shows the latest durable
+A&D UA-651BLE reading below them. Every card shows the source state, its last
+value, and the age of that value. Missing or stale data is shown as such; the
+page never fills a gap or treats a process heartbeat as a physiological sample.
+
+On the Pi it is available at:
+
+```text
+http://pi-host:8975/live-vitals.html?kiosk=1
+```
+
+The page polls the merged `status.json` once per second. H10 is marked
+`WORKING` only for a fresh physical-device status with `live: true`; Wellue is
+marked `WORKING` only when its physical link, finger state, writer, and sample
+are fresh. BP is displayed as the latest durable reading and retains its
+`arrival_estimate` provenance.
+
+`live-vitals-watch` is a display check, not an alarm. To run the ten-hour
+check on the Pi:
+
+```sh
+sudo systemd-run --unit=live-vitals-watch --property=User=pi-user \
+  --property=RuntimeMaxSec=10h --collect \
+  /usr/local/libexec/live-vitals-watch --duration=36000 --interval=60
+```
+
+It logs `OK` or `DEGRADED` with named source states, page availability, and
+service states; it does not restart sensors or invent values.
+
 ## Removing it
 
 ```sh

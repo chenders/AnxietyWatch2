@@ -1,0 +1,171 @@
+#!/usr/bin/env python3
+"""Watch the overnight live-vitals page and its three data sources.
+
+This is a display/recording check, not an alarm. A degraded source is logged and
+checked again; no value is replaced, smoothed, or declared healthy because a
+process happens to be running.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import math
+import subprocess
+import sys
+import time
+from typing import Any
+from urllib.error import URLError
+from urllib.request import Request, urlopen
+
+DEFAULT_STATUS_URL = "http://127.0.0.1:8975/status.json"
+DEFAULT_PAGE_URL = "http://127.0.0.1:8975/live-vitals.html?kiosk=1"
+DEFAULT_DURATION_SECONDS = 10 * 60 * 60
+DEFAULT_INTERVAL_SECONDS = 60
+FRESH_SECONDS = 15
+
+
+def finite(value: Any) -> bool:
+    return isinstance(value, (int, float)) and math.isfinite(float(value))
+
+
+def age(value: Any, now: float) -> float | None:
+    if not finite(value):
+        return None
+    result = now - float(value)
+    return result if math.isfinite(result) else None
+
+
+def age_text(value: float | None) -> str:
+    if value is None:
+        return "unknown"
+    if value < 1:
+        return "<1s"
+    if value < 60:
+        return f"{int(value)}s"
+    minutes = int(value // 60)
+    if minutes < 60:
+        return f"{minutes}m"
+    return f"{int(minutes // 60)}h{minutes % 60:02d}m"
+
+
+def read_json(url: str) -> dict[str, Any]:
+    request = Request(url, headers={"Cache-Control": "no-cache"})
+    with urlopen(request, timeout=8) as response:
+        value = json.load(response)
+    if not isinstance(value, dict) or value.get("schema") != 1:
+        raise ValueError("unexpected status schema")
+    return value
+
+
+def page_ok(url: str) -> str:
+    request = Request(url, headers={"Cache-Control": "no-cache"})
+    with urlopen(request, timeout=8) as response:
+        if response.status != 200:
+            raise ValueError(f"HTTP {response.status}")
+        return response.headers.get("Content-Type", "unknown")
+
+
+def service_state(name: str) -> str:
+    result = subprocess.run(
+        ["systemctl", "is-active", name],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    state = result.stdout.strip()
+    return state or f"exit-{result.returncode}"
+
+
+def h10_state(value: Any, now: float) -> tuple[str, str]:
+    if not isinstance(value, dict):
+        return "NO_DATA", "no published H10 value"
+    sample_age = age(value.get("sample_at"), now)
+    if value.get("test_origin") != "physical_device":
+        return "NON_PHYSICAL", f"origin={value.get('test_origin', 'missing')}"
+    if value.get("live") is True and sample_age is not None and sample_age <= FRESH_SECONDS:
+        return "WORKING", f"hr={value.get('hr', '—')} age={age_text(sample_age)}"
+    return "STALE", f"hr={value.get('hr', '—')} age={age_text(sample_age)} live={value.get('live', False)}"
+
+
+def wellue_state(value: Any, now: float) -> tuple[str, str]:
+    if not isinstance(value, dict):
+        return "NO_DATA", "no published Wellue value"
+    sample_age = age(value.get("sample_at"), now)
+    writer_age = age(value.get("written_at"), now)
+    if value.get("synthetic") is True:
+        return "SYNTHETIC", "synthetic=true"
+    if value.get("link") != "up":
+        return "LINK_DOWN", f"link={value.get('link', 'missing')}"
+    if value.get("finger") is not True:
+        return "NO_FINGER", "link=up finger=false"
+    if sample_age is not None and writer_age is not None and sample_age <= FRESH_SECONDS and writer_age <= FRESH_SECONDS:
+        return "WORKING", f"spo2={value.get('spo2', '—')} pulse={value.get('pulse_bpm', '—')} age={age_text(sample_age)}"
+    return "STALE", f"spo2={value.get('spo2', '—')} age={age_text(sample_age)}"
+
+
+def bp_state(value: Any, now: float) -> tuple[str, str]:
+    if not isinstance(value, dict) or not finite(value.get("sample_at")):
+        return "NO_READING", "no durable cuff reading"
+    sample_age = age(value.get("sample_at"), now)
+    return "RECORDED", (
+        f"bp={value.get('systolic', '—')}/{value.get('diastolic', '—')} "
+        f"map={value.get('map', '—')} pulse={value.get('pulse_bpm', '—')} "
+        f"age={age_text(sample_age)}"
+    )
+
+
+def check_once(status_url: str, page_url: str) -> bool:
+    now = time.time()
+    try:
+        status = read_json(status_url)
+        page_type = page_ok(page_url)
+        h10, h10_detail = h10_state(status.get("h10"), now)
+        wellue, wellue_detail = wellue_state(status.get("wellue"), now)
+        bp, bp_detail = bp_state(status.get("bp"), now)
+        services = ",".join(
+            f"{name}={service_state(name)}"
+            for name in ("vitals-h10.service", "wellue-collector.service", "panel-status-merge.service")
+        )
+        feed_age = age(status.get("merged_at"), now)
+        ok = h10 == "WORKING" and wellue == "WORKING" and bp == "RECORDED" and page_type.startswith("text/html")
+        level = "OK" if ok else "DEGRADED"
+        print(
+            f"LIVE_VITALS_CHECK {level} feed_age={age_text(feed_age)} "
+            f"h10={h10}({h10_detail}) wellue={wellue}({wellue_detail}) "
+            f"bp={bp}({bp_detail}) page=OK services={services}",
+            flush=True,
+        )
+        return ok
+    except (OSError, ValueError, URLError, json.JSONDecodeError) as error:
+        print(f"LIVE_VITALS_CHECK DEGRADED feed_error={error}", flush=True)
+        return False
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--status-url", default=DEFAULT_STATUS_URL)
+    parser.add_argument("--page-url", default=DEFAULT_PAGE_URL)
+    parser.add_argument("--duration", type=float, default=DEFAULT_DURATION_SECONDS)
+    parser.add_argument("--interval", type=float, default=DEFAULT_INTERVAL_SECONDS)
+    args = parser.parse_args()
+    if not math.isfinite(args.duration) or args.duration <= 0:
+        print(f"invalid duration={args.duration}", file=sys.stderr)
+        return 2
+    if not math.isfinite(args.interval) or args.interval <= 0:
+        print(f"invalid interval={args.interval}", file=sys.stderr)
+        return 2
+
+    deadline = time.monotonic() + args.duration
+    print(f"LIVE_VITALS_CHECK START duration={args.duration:.0f}s interval={args.interval:.0f}s", flush=True)
+    while True:
+        check_once(args.status_url, args.page_url)
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            print("LIVE_VITALS_CHECK END reason=duration_elapsed", flush=True)
+            return 0
+        time.sleep(min(args.interval, remaining))
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
