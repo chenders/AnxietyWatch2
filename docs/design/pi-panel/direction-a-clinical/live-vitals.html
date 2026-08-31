@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=800, height=480, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>AnxietyWatch — Live Vitals</title>
 <style>
 :root {
@@ -28,16 +28,20 @@ html, body {
   background: #1a1d20;
   color: var(--text);
   font-family: var(--sans);
+}
+body.kiosk {
+  background: var(--bg);
+  overflow: hidden;
   touch-action: none;
   overscroll-behavior: none;
   user-select: none;
   -webkit-user-select: none;
 }
-body.kiosk { background: var(--bg); overflow: hidden; }
 body.kiosk, body.kiosk * { cursor: none; }
 #app {
-  width: 800px;
-  height: 480px;
+  width: min(800px, 100%);
+  min-height: min(480px, 100vh);
+  height: auto;
   margin: 0 auto;
   padding: 16px 20px 14px;
   display: flex;
@@ -45,6 +49,12 @@ body.kiosk, body.kiosk * { cursor: none; }
   gap: 10px;
   background: var(--bg);
   overflow: hidden;
+}
+body.kiosk #app {
+  width: 800px;
+  height: 480px;
+  min-height: 0;
+  margin: 0;
 }
 .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 .header {
@@ -136,8 +146,68 @@ body.kiosk, body.kiosk * { cursor: none; }
 .footer .notice { color: var(--muted); }
 .footer .updated { text-align: right; }
 @media (max-width: 820px) {
-  #app { margin: 0; }
   html, body { background: var(--bg); }
+  body:not(.kiosk) #app { margin: 0; }
+}
+
+/* A phone uses the same URL as the bedside kiosk, but gets a readable,
+   scrollable single-column layout instead of a clipped 800px appliance frame.
+   The physical 800x480 kiosk remains fixed above this breakpoint. */
+@media (max-width: 600px) {
+  body.kiosk {
+    overflow: auto;
+    touch-action: auto;
+    overscroll-behavior: auto;
+    user-select: text;
+    -webkit-user-select: text;
+  }
+  body.kiosk, body.kiosk * { cursor: auto; }
+  #app, body.kiosk #app {
+    width: 100%;
+    min-height: 100vh;
+    height: auto;
+    margin: 0;
+    padding: 14px 12px 20px;
+    overflow: visible;
+  }
+  .header {
+    height: auto;
+    min-height: 54px;
+    padding-bottom: 10px;
+  }
+  .kicker { font-size: 10px; letter-spacing: 1.8px; }
+  .title { font-size: 20px; }
+  .clock { font-size: 16px; }
+  .feed { font-size: 9px; letter-spacing: 1px; text-align: right; }
+  .primary {
+    height: auto;
+    grid-template-columns: 1fr;
+  }
+  .card { min-height: 174px; }
+  .bp {
+    height: auto;
+    min-height: 190px;
+    grid-template-columns: 1fr;
+    gap: 13px;
+  }
+  .bp-meta { padding-bottom: 0; }
+  .footer {
+    min-height: 52px;
+    flex: 0 0 auto;
+    align-items: flex-start;
+    flex-direction: column;
+    justify-content: center;
+    gap: 6px;
+  }
+  .footer .updated { text-align: left; }
+}
+
+@media (max-width: 360px) {
+  .device-stats { gap: 11px; }
+  .big-stat { font-size: 38px; }
+  .small-value { font-size: 18px; }
+  .small-label { letter-spacing: .9px; }
+  .bp-number { font-size: 40px; }
 }
 </style>
 </head>
