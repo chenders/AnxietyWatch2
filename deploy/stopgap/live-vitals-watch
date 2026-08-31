@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Watch the overnight live-vitals page and its three data sources.
+"""Watch and publish the overnight live-vitals page health.
 
-This is a display/recording check, not an alarm. A degraded source is logged and
-checked again; no value is replaced, smoothed, or declared healthy because a
-process happens to be running.
+This is a display/recording check, not an alarm. A degraded source is logged
+and checked again; no value is replaced, smoothed, or declared healthy because
+a process happens to be running. The small health document is published next
+to the kiosk page so the page can show infrastructure state without asking the
+browser to run privileged commands.
 """
 
 from __future__ import annotations
@@ -11,8 +13,11 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
+import pathlib
 import subprocess
 import sys
+import tempfile
 import time
 from typing import Any
 from urllib.error import URLError
@@ -20,9 +25,22 @@ from urllib.request import Request, urlopen
 
 DEFAULT_STATUS_URL = "http://127.0.0.1:8975/status.json"
 DEFAULT_PAGE_URL = "http://127.0.0.1:8975/live-vitals.html?kiosk=1"
+DEFAULT_HEALTH_PATH = pathlib.Path(
+    "$HOME/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical/health.json"
+)
 DEFAULT_DURATION_SECONDS = 10 * 60 * 60
 DEFAULT_INTERVAL_SECONDS = 60
 FRESH_SECONDS = 15
+
+SERVICES = {
+    "core": "vitalsd.service",
+    "drain": "vitals-spool-drain.service",
+    "h10": "vitals-h10.service",
+    "wellue": "wellue-collector.service",
+    "merger": "panel-status-merge.service",
+    "http": "panel-http.service",
+    "kiosk": "panel-kiosk.service",
+}
 
 
 def finite(value: Any) -> bool:
@@ -67,14 +85,36 @@ def page_ok(url: str) -> str:
 
 
 def service_state(name: str) -> str:
-    result = subprocess.run(
-        ["systemctl", "is-active", name],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    try:
+        result = subprocess.run(
+            ["systemctl", "is-active", name],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return "unknown"
     state = result.stdout.strip()
     return state or f"exit-{result.returncode}"
+
+
+def database_state() -> tuple[str, str]:
+    """Verify that the local PostgreSQL query path responds, not just its unit."""
+    try:
+        result = subprocess.run(
+            ["psql", "-X", "-qAt", "-U", "vitals", "-d", "vitals", "-c", "SELECT 1"],
+            capture_output=True,
+            text=True,
+            timeout=8,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        return "DOWN", f"query failed: {error}"
+    if result.returncode == 0 and result.stdout.strip() == "1":
+        return "OK", "query responded"
+    detail = result.stderr.strip() or result.stdout.strip() or f"exit-{result.returncode}"
+    return "DOWN", f"query failed: {detail[:160]}"
 
 
 def h10_state(value: Any, now: float) -> tuple[str, str]:
@@ -83,7 +123,7 @@ def h10_state(value: Any, now: float) -> tuple[str, str]:
     sample_age = age(value.get("sample_at"), now)
     if value.get("test_origin") != "physical_device":
         return "NON_PHYSICAL", f"origin={value.get('test_origin', 'missing')}"
-    if value.get("live") is True and sample_age is not None and sample_age <= FRESH_SECONDS:
+    if value.get("live") is True and sample_age is not None and 0 <= sample_age <= FRESH_SECONDS:
         return "WORKING", f"hr={value.get('hr', '—')} age={age_text(sample_age)}"
     return "STALE", f"hr={value.get('hr', '—')} age={age_text(sample_age)} live={value.get('live', False)}"
 
@@ -99,8 +139,16 @@ def wellue_state(value: Any, now: float) -> tuple[str, str]:
         return "LINK_DOWN", f"link={value.get('link', 'missing')}"
     if value.get("finger") is not True:
         return "NO_FINGER", "link=up finger=false"
-    if sample_age is not None and writer_age is not None and sample_age <= FRESH_SECONDS and writer_age <= FRESH_SECONDS:
-        return "WORKING", f"spo2={value.get('spo2', '—')} pulse={value.get('pulse_bpm', '—')} age={age_text(sample_age)}"
+    if (
+        sample_age is not None
+        and writer_age is not None
+        and 0 <= sample_age <= FRESH_SECONDS
+        and 0 <= writer_age <= FRESH_SECONDS
+    ):
+        return "WORKING", (
+            f"spo2={value.get('spo2', '—')} pulse={value.get('pulse_bpm', '—')} "
+            f"age={age_text(sample_age)}"
+        )
     return "STALE", f"spo2={value.get('spo2', '—')} age={age_text(sample_age)}"
 
 
@@ -115,37 +163,105 @@ def bp_state(value: Any, now: float) -> tuple[str, str]:
     )
 
 
-def check_once(status_url: str, page_url: str) -> bool:
+def publish_health(path: pathlib.Path, document: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    temporary_path = pathlib.Path(temporary)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            json.dump(document, stream, separators=(",", ":"), allow_nan=False)
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        temporary_path.chmod(0o644)
+        temporary_path.replace(path)
+    finally:
+        try:
+            temporary_path.unlink()
+        except FileNotFoundError:
+            pass
+
+
+def check_once(status_url: str, page_url: str, health_path: pathlib.Path) -> bool:
     now = time.time()
+    service_states = {key: service_state(unit) for key, unit in SERVICES.items()}
+    components: dict[str, dict[str, str]] = {}
+    status: dict[str, Any] | None = None
+    h10 = ("NO_DATA", "status unavailable")
+    wellue = ("NO_DATA", "status unavailable")
+    bp = ("NO_READING", "status unavailable")
+    page_detail = "not checked"
+    status_detail = "not checked"
+
     try:
         status = read_json(status_url)
-        page_type = page_ok(page_url)
-        h10, h10_detail = h10_state(status.get("h10"), now)
-        wellue, wellue_detail = wellue_state(status.get("wellue"), now)
-        bp, bp_detail = bp_state(status.get("bp"), now)
-        services = ",".join(
-            f"{name}={service_state(name)}"
-            for name in ("vitals-h10.service", "wellue-collector.service", "panel-status-merge.service")
-        )
-        feed_age = age(status.get("merged_at"), now)
-        ok = h10 == "WORKING" and wellue == "WORKING" and bp == "RECORDED" and page_type.startswith("text/html")
-        level = "OK" if ok else "DEGRADED"
-        print(
-            f"LIVE_VITALS_CHECK {level} feed_age={age_text(feed_age)} "
-            f"h10={h10}({h10_detail}) wellue={wellue}({wellue_detail}) "
-            f"bp={bp}({bp_detail}) page=OK services={services}",
-            flush=True,
-        )
-        return ok
+        status_detail = "status JSON responded"
+        h10 = h10_state(status.get("h10"), now)
+        wellue = wellue_state(status.get("wellue"), now)
+        bp = bp_state(status.get("bp"), now)
     except (OSError, ValueError, URLError, json.JSONDecodeError) as error:
-        print(f"LIVE_VITALS_CHECK DEGRADED feed_error={error}", flush=True)
-        return False
+        status_detail = f"status failed: {error}"
+
+    try:
+        page_type = page_ok(page_url)
+        page_detail = f"{page_type}; HTML responded"
+        page_state = "OK" if page_type.startswith("text/html") else "DEGRADED"
+    except (OSError, ValueError, URLError) as error:
+        page_state = "DOWN"
+        page_detail = f"page failed: {error}"
+
+    status_state = "OK" if status is not None else "DOWN"
+    components["status_feed"] = {"state": status_state, "detail": status_detail}
+    components["page"] = {"state": page_state, "detail": page_detail}
+
+    core_state = "OK" if service_states["core"] == "active" else "DOWN"
+    components["core"] = {
+        "state": core_state,
+        "detail": f"vitalsd.service={service_states['core']}",
+    }
+    drain_state = "OK" if service_states["drain"] == "active" else "DOWN"
+    components["drain"] = {
+        "state": drain_state,
+        "detail": f"vitals-spool-drain.service={service_states['drain']}",
+    }
+    database, database_detail = database_state()
+    components["database"] = {"state": database, "detail": database_detail}
+    kiosk_state = "OK" if page_state == "OK" and service_states["kiosk"] == "active" else "DEGRADED"
+    components["kiosk"] = {
+        "state": kiosk_state,
+        "detail": f"page={page_state} panel-kiosk.service={service_states['kiosk']}",
+    }
+
+    source_ok = h10[0] == "WORKING" and wellue[0] == "WORKING" and bp[0] == "RECORDED"
+    infrastructure_ok = all(value["state"] == "OK" for value in components.values())
+    overall = "OK" if source_ok and infrastructure_ok else "DEGRADED"
+    document = {
+        "schema": 1,
+        "checked_at": now,
+        "overall": overall,
+        "components": components,
+        "services": service_states,
+    }
+    try:
+        publish_health(health_path, document)
+    except OSError as error:
+        print(f"LIVE_VITALS_CHECK DEGRADED health_publish_error={error}", flush=True)
+
+    print(
+        f"LIVE_VITALS_CHECK {overall} feed_age=<1s "
+        f"h10={h10[0]}({h10[1]}) wellue={wellue[0]}({wellue[1]}) "
+        f"bp={bp[0]}({bp[1]}) page={page_state} "
+        f"services=" + ",".join(f"{key}={value}" for key, value in service_states.items()),
+        flush=True,
+    )
+    return overall == "OK"
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--status-url", default=DEFAULT_STATUS_URL)
     parser.add_argument("--page-url", default=DEFAULT_PAGE_URL)
+    parser.add_argument("--health-path", type=pathlib.Path, default=DEFAULT_HEALTH_PATH)
     parser.add_argument("--duration", type=float, default=DEFAULT_DURATION_SECONDS)
     parser.add_argument("--interval", type=float, default=DEFAULT_INTERVAL_SECONDS)
     args = parser.parse_args()
@@ -157,9 +273,12 @@ def main() -> int:
         return 2
 
     deadline = time.monotonic() + args.duration
-    print(f"LIVE_VITALS_CHECK START duration={args.duration:.0f}s interval={args.interval:.0f}s", flush=True)
+    print(
+        f"LIVE_VITALS_CHECK START duration={args.duration:.0f}s interval={args.interval:.0f}s",
+        flush=True,
+    )
     while True:
-        check_once(args.status_url, args.page_url)
+        check_once(args.status_url, args.page_url, args.health_path)
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             print("LIVE_VITALS_CHECK END reason=duration_elapsed", flush=True)
