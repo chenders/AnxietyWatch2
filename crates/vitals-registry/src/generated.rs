@@ -25,6 +25,8 @@ pub enum VitalsType {
     BpDiastolic = 7,
     /// `bp_map` — `mmHg`, valid 40.0..200.0
     BpMap = 8,
+    /// `respiratory_rate` — `breaths_per_minute`, valid 1.0..120.0
+    RespiratoryRate = 9,
 }
 
 /// Where a sample came from. Provenance, and it must survive aggregation.
@@ -39,6 +41,8 @@ pub enum VitalsSource {
     Healthkit = 2,
     /// `derived` — `internal`
     Derived = 3,
+    /// `acconeer_xe125` — `usb_serial`
+    AcconeerXe125 = 4,
     /// `ad_ua651ble` — `ble`, service `0x1810` (indication)
     AdUa651ble = 6,
 }
@@ -62,6 +66,7 @@ impl VitalsType {
             Self::BpSystolic => (50.0, 260.0),
             Self::BpDiastolic => (30.0, 160.0),
             Self::BpMap => (40.0, 200.0),
+            Self::RespiratoryRate => (1.0, 120.0),
         }
     }
 
@@ -82,6 +87,7 @@ impl VitalsType {
             Self::BpSystolic => "mmHg",
             Self::BpDiastolic => "mmHg",
             Self::BpMap => "mmHg",
+            Self::RespiratoryRate => "breaths_per_minute",
         }
     }
 
@@ -98,6 +104,7 @@ impl VitalsType {
             6 => Some(Self::BpSystolic),
             7 => Some(Self::BpDiastolic),
             8 => Some(Self::BpMap),
+            9 => Some(Self::RespiratoryRate),
             _ => None,
         }
     }
@@ -118,6 +125,7 @@ impl VitalsSource {
             1 => Some(Self::PolarH10),
             2 => Some(Self::Healthkit),
             3 => Some(Self::Derived),
+            4 => Some(Self::AcconeerXe125),
             6 => Some(Self::AdUa651ble),
             _ => None,
         }
@@ -131,7 +139,7 @@ impl VitalsSource {
 }
 
 /// Every type, for exhaustive iteration in tests and admin views.
-pub const ALL_TYPES: [VitalsType; 8] = [
+pub const ALL_TYPES: [VitalsType; 9] = [
     VitalsType::Hr,
     VitalsType::Spo2,
     VitalsType::Accel,
@@ -140,13 +148,15 @@ pub const ALL_TYPES: [VitalsType; 8] = [
     VitalsType::BpSystolic,
     VitalsType::BpDiastolic,
     VitalsType::BpMap,
+    VitalsType::RespiratoryRate,
 ];
 
 /// Every source.
-pub const ALL_SOURCES: [VitalsSource; 5] = [
+pub const ALL_SOURCES: [VitalsSource; 6] = [
     VitalsSource::Emay,
     VitalsSource::PolarH10,
     VitalsSource::Healthkit,
     VitalsSource::Derived,
+    VitalsSource::AcconeerXe125,
     VitalsSource::AdUa651ble,
 ];

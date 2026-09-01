@@ -44,6 +44,11 @@ VALUES (8, 'bp_map', 'mmHg', 40.0, 200.0, 1.0)
 ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, unit = EXCLUDED.unit,
     range_lo = EXCLUDED.range_lo, range_hi = EXCLUDED.range_hi,
     precision = EXCLUDED.precision;
+INSERT INTO vitals_type (id, name, unit, range_lo, range_hi, precision)
+VALUES (9, 'respiratory_rate', 'breaths_per_minute', 1.0, 120.0, 0.1)
+ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, unit = EXCLUDED.unit,
+    range_lo = EXCLUDED.range_lo, range_hi = EXCLUDED.range_hi,
+    precision = EXCLUDED.precision;
 
 INSERT INTO vitals_source (id, name, transport)
 VALUES (0, 'emay', 'ble')
@@ -59,6 +64,10 @@ ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name,
     transport = EXCLUDED.transport;
 INSERT INTO vitals_source (id, name, transport)
 VALUES (3, 'derived', 'internal')
+ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name,
+    transport = EXCLUDED.transport;
+INSERT INTO vitals_source (id, name, transport)
+VALUES (4, 'acconeer_xe125', 'usb_serial')
 ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name,
     transport = EXCLUDED.transport;
 INSERT INTO vitals_source (id, name, transport)

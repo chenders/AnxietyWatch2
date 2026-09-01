@@ -49,6 +49,12 @@ unit = "mmHg"
 range = [40.0, 200.0]
 precision = 1.0
 
+[type.respiratory_rate]
+id = 9
+unit = "breaths_per_minute"
+range = [1.0, 120.0]
+precision = 0.1
+
 [source.emay]
 id = 0
 transport = "ble"
@@ -69,6 +75,11 @@ provides = ["hr", "hrv_rmssd"]
 id = 3
 transport = "internal"
 provides = ["hrv_rmssd"]
+
+[source.acconeer_xe125]
+id = 4
+transport = "usb_serial"
+provides = ["respiratory_rate"]
 
 [source.ad_ua651ble]
 id = 6

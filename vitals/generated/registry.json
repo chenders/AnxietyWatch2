@@ -72,6 +72,15 @@
         200.0
       ],
       "precision": 1.0
+    },
+    "respiratory_rate": {
+      "id": 9,
+      "unit": "breaths_per_minute",
+      "range": [
+        1.0,
+        120.0
+      ],
+      "precision": 0.1
     }
   },
   "source": {
@@ -105,6 +114,13 @@
       "transport": "internal",
       "provides": [
         "hrv_rmssd"
+      ]
+    },
+    "acconeer_xe125": {
+      "id": 4,
+      "transport": "usb_serial",
+      "provides": [
+        "respiratory_rate"
       ]
     },
     "ad_ua651ble": {
