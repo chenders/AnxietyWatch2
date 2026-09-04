@@ -1,6 +1,6 @@
 # Design — durable EMAY SleepO2 ingestion
 
-**Status:** Stored-session identity established; production collector implementation pending.
+**Status:** Stored-session identity, durable collector, PostgreSQL-backed panel history, and T-E4 activation verification complete.
 
 ## Existing path
 
@@ -11,9 +11,8 @@ wire time into `SystemTime`, appends PostgreSQL binary-COPY rows to its spool, a
 `(source, type, session_id, seq)`. The panel's existing `panel-vitals-status` publisher reads
 PostgreSQL and emits the `vitals_status.json`/`vitals_h10_history.json` projections.
 
-The missing producer is now the remaining implementation: the official device-storage mode provides
-the source identity needed for safe durable rows, while the anonymous live stream remains
-presentation/journal-only.
+The official device-storage mode provides the source identity needed for safe durable rows, while
+the anonymous live stream remains presentation/journal-only.
 
 ## Identity finding
 
@@ -87,10 +86,10 @@ sequence identity. They must not be bulk-inserted into `samples` by assigning a 
 that would make their identity appear stronger than the source can support. They can remain in the
 journal until an approved replay identity is defined.
 
-## Safe state while implementation is pending
+## Safe deployed state
 
-Keep `emay-live.service` as the display-only collector until the storage-mode collector has passed
-its local and Pi verification. It continues to publish current status and journal evidence. Do not
-deploy the withheld host-counter draft. H10, the database, the spool drainer, the kiosk, and the
-Pi-local watcher remain unchanged. The graph must continue to label EMAY's history as unavailable /
-not yet PostgreSQL-backed rather than claim durability before T-E2 and T-E3 ship.
+`vitals-emay.service` is the enabled durable collector and `emay-live.service` is disabled and
+inactive, so anonymous live frames remain display-only while stored-session rows use the approved
+device identity. The graph labels persisted EMAY points as physical-device stored history. H10,
+the database, the spool drainer, the kiosk, and the Pi-local watcher remain unchanged by the
+EMAY activation.
