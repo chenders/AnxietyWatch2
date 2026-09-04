@@ -89,7 +89,7 @@ body.kiosk #app {
 .trend-legend { min-height: 18px; margin-top: 8px; display: flex; flex-wrap: wrap; gap: 10px; color: var(--muted); font-family: var(--mono); font-size: 10px; }
 .legend-item { display: inline-flex; align-items: center; gap: 5px; }
 .legend-swatch { width: 18px; height: 3px; display: inline-block; border-radius: 2px; }
-.trend-chart { width: 100%; height: 250px; margin-top: 2px; overflow: visible; }
+.trend-chart { width: 100%; height: auto; aspect-ratio: 420 / 300; margin-top: 2px; overflow: visible; }
 .chart-axis { stroke: var(--muted); stroke-width: 1; vector-effect: non-scaling-stroke; }
 .chart-path { fill: none; stroke-width: 2.2; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
 .chart-label { fill: var(--muted); font-family: var(--mono); font-size: 12px; }
@@ -288,7 +288,7 @@ body.kiosk #app {
         <span class="legend-item"><span class="legend-swatch" style="background:#54d38a"></span>HR · bpm</span>
         <span class="legend-item"><span class="legend-swatch" style="background:#e3b34d"></span>RR · seconds</span>
       </div>
-      <svg id="h10-trend" class="trend-chart" viewBox="0 0 720 300" role="img" aria-label="Polar H10 heart rate and RR interval over time"></svg>
+      <svg id="h10-trend" class="trend-chart" viewBox="0 0 420 300" role="img" aria-label="Polar H10 heart rate and RR interval over time"></svg>
     </article>
     <article class="trend-card" aria-label="EMAY SleepO2 trend graph">
       <div class="trend-head">
@@ -302,7 +302,7 @@ body.kiosk #app {
         <span class="legend-item"><span class="legend-swatch" style="background:#54d38a"></span>SPO₂ · %</span>
         <span class="legend-item"><span class="legend-swatch" style="background:#e3b34d"></span>PULSE · bpm</span>
       </div>
-      <svg id="emay-trend" class="trend-chart" viewBox="0 0 720 300" role="img" aria-label="EMAY oxygen saturation and pulse over time"></svg>
+      <svg id="emay-trend" class="trend-chart" viewBox="0 0 420 300" role="img" aria-label="EMAY oxygen saturation and pulse over time"></svg>
     </article>
   </section>
   <section class="bp" aria-label="Last blood pressure reading">
@@ -350,6 +350,7 @@ const HEALTH_FRESH_SECONDS = 120;
 const TREND_SECONDS = 10 * 60;
 const TREND_MAX_GAP_SECONDS = 15;
 const SVG_NS = "http://www.w3.org/2000/svg";
+const CHART_WIDTH = 420;
 const live = {
   snapshot: null,
   error: null,
@@ -591,12 +592,12 @@ function niceScale(values, fallback) {
   return { min: low, max: high, step, ticks };
 }
 
-function trendPath(points, x, y, xMin, xMax, scale) {
+function trendPath(points, x, y, plotRight, xMin, xMax, scale) {
   let path = "";
   let previous = null;
   for (const point of points) {
     if (!finite(point.t) || !finite(point.v) || point.t < xMin || point.t > xMax) continue;
-    const px = x + ((point.t - xMin) / (xMax - xMin)) * (720 - x - 58);
+    const px = x + ((point.t - xMin) / (xMax - xMin)) * (plotRight - x);
     const py = y + (1 - (point.v - scale.min) / (scale.max - scale.min)) * 210;
     const gap = previous == null ? 0 : point.t - previous.t;
     path += previous == null || gap > TREND_MAX_GAP_SECONDS ? `M ${px.toFixed(2)} ${py.toFixed(2)}` : ` L ${px.toFixed(2)} ${py.toFixed(2)}`;
@@ -611,7 +612,7 @@ function renderTrend(svgId, latestId, now, config) {
   const left = 62;
   const right = 58;
   const top = 30;
-  const plotRight = 720 - right;
+  const plotRight = CHART_WIDTH - right;
   const plotBottom = top + 210;
   const xMax = now;
   const xMin = xMax - TREND_SECONDS;
@@ -642,7 +643,8 @@ function renderTrend(svgId, latestId, now, config) {
   svg.append(svgElement("line", { x1: plotRight, x2: plotRight, y1: top, y2: plotBottom, class: "chart-axis" }));
   svg.append(svgElement("line", { x1: left, x2: plotRight, y1: plotBottom, y2: plotBottom, class: "chart-axis" }));
   svgText(svg, 16, top + 105, config.leftUnit, "chart-axis-label", "middle").setAttribute("transform", `rotate(-90 16 ${top + 105})`);
-  svgText(svg, 704, top + 105, config.rightUnit, "chart-axis-label", "middle").setAttribute("transform", `rotate(90 704 ${top + 105})`);
+  const rightAxisX = CHART_WIDTH - 16;
+  svgText(svg, rightAxisX, top + 105, config.rightUnit, "chart-axis-label", "middle").setAttribute("transform", `rotate(90 ${rightAxisX} ${top + 105})`);
 
   const tickSeconds = TREND_SECONDS / 5;
   for (let value = Math.ceil(xMin / tickSeconds) * tickSeconds; value <= xMax; value += tickSeconds) {
@@ -657,7 +659,7 @@ function renderTrend(svgId, latestId, now, config) {
     if (!item.values.length) continue;
     hasData = true;
     const scale = item.axis === "right" ? rightScale : leftScale;
-    const path = trendPath(item.bucket.points, left, top, xMin, xMax, scale);
+    const path = trendPath(item.bucket.points, left, top, plotRight, xMin, xMax, scale);
     if (path) svg.append(svgElement("path", { d: path, class: "chart-path", stroke: item.color }));
   }
   if (!hasData) svgText(svg, (left + plotRight) / 2, top + 105, `WAITING FOR ${config.name} HISTORY`, "chart-empty");
