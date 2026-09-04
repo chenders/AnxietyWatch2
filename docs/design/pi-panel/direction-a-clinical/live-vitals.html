@@ -74,7 +74,7 @@ body.kiosk #app {
 }
 .trend-card {
   min-width: 0;
-  min-height: 310px;
+  min-height: 360px;
   border: 1px solid var(--rule);
   border-radius: 3px;
   background: var(--panel);
@@ -83,18 +83,18 @@ body.kiosk #app {
   flex-direction: column;
 }
 .trend-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
-.trend-title { color: var(--text); font-size: 13px; letter-spacing: 1.5px; font-weight: 700; }
-.trend-sub { margin-top: 3px; color: var(--muted); font-size: 9px; letter-spacing: 1px; }
-.trend-latest { flex: 0 0 auto; color: var(--text); font-family: var(--mono); font-size: 12px; text-align: right; white-space: nowrap; }
-.trend-legend { min-height: 18px; margin-top: 8px; display: flex; flex-wrap: wrap; gap: 10px; color: var(--muted); font-family: var(--mono); font-size: 10px; }
-.legend-item { display: inline-flex; align-items: center; gap: 5px; }
-.legend-swatch { width: 18px; height: 3px; display: inline-block; border-radius: 2px; }
-.trend-chart { width: 100%; height: auto; aspect-ratio: 420 / 300; margin-top: 2px; overflow: visible; }
+.trend-title { color: var(--text); font-size: 19px; letter-spacing: 1.8px; font-weight: 700; }
+.trend-sub { margin-top: 4px; color: var(--muted); font-size: 13px; letter-spacing: 1px; }
+.trend-latest { flex: 0 0 auto; color: var(--text); font-family: var(--mono); font-size: 18px; text-align: right; white-space: nowrap; }
+.trend-legend { min-height: 24px; margin-top: 10px; display: flex; flex-wrap: wrap; gap: 12px; color: var(--muted); font-family: var(--mono); font-size: 15px; }
+.legend-item { display: inline-flex; align-items: center; gap: 7px; }
+.legend-swatch { width: 22px; height: 4px; display: inline-block; border-radius: 2px; }
+.trend-chart { width: 100%; height: auto; aspect-ratio: 420 / 300; margin-top: 3px; overflow: visible; }
 .chart-axis { stroke: var(--muted); stroke-width: 1; vector-effect: non-scaling-stroke; }
 .chart-path { fill: none; stroke-width: 2.2; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
-.chart-label { fill: var(--muted); font-family: var(--mono); font-size: 12px; }
-.chart-axis-label { fill: var(--text); font-family: var(--mono); font-size: 11px; letter-spacing: .5px; }
-.chart-empty { fill: var(--unknown); font-family: var(--mono); font-size: 12px; letter-spacing: .5px; }
+.chart-label { fill: var(--muted); font-family: var(--mono); font-size: 18px; }
+.chart-axis-label { fill: var(--text); font-family: var(--mono); font-size: 16px; letter-spacing: .5px; }
+.chart-empty { fill: var(--unknown); font-family: var(--mono); font-size: 18px; letter-spacing: .5px; }
 .card {
   min-width: 0;
   border: 1px solid var(--rule);
@@ -208,7 +208,7 @@ body.kiosk #app {
     grid-template-columns: 1fr;
   }
   .trends { grid-template-columns: 1fr; }
-  .trend-card { min-height: 310px; }
+  .trend-card { min-height: 360px; }
   .card { min-height: 174px; }
   .bp {
     height: auto;
@@ -279,30 +279,28 @@ body.kiosk #app {
     <article class="trend-card" aria-label="Polar H10 trend graph">
       <div class="trend-head">
         <div>
-          <div class="trend-title">POLAR H10 · HR / RR</div>
-          <div class="trend-sub">PERSISTED HISTORY + LIVE OVERLAY · LAST 10 MINUTES</div>
+          <div class="trend-title">POLAR H10 · HEART RATE</div>
+          <div class="trend-sub">PERSISTED + LIVE · LAST 10 MINUTES</div>
         </div>
         <div id="h10-trend-latest" class="trend-latest">—</div>
       </div>
       <div class="trend-legend" aria-label="Polar H10 graph legend">
-        <span class="legend-item"><span class="legend-swatch" style="background:#54d38a"></span>HR · bpm</span>
-        <span class="legend-item"><span class="legend-swatch" style="background:#e3b34d"></span>RR · seconds</span>
+        <span class="legend-item"><span class="legend-swatch" style="background:#54d38a"></span>HEART RATE · bpm</span>
       </div>
-      <svg id="h10-trend" class="trend-chart" viewBox="0 0 420 300" role="img" aria-label="Polar H10 heart rate and RR interval over time"></svg>
+      <svg id="h10-trend" class="trend-chart" viewBox="0 0 420 300" role="img" aria-label="Polar H10 heart rate over time"></svg>
     </article>
     <article class="trend-card" aria-label="EMAY SleepO2 trend graph">
       <div class="trend-head">
         <div>
-          <div class="trend-title">EMAY SLEEPO2 · SPO₂ / PULSE</div>
-          <div class="trend-sub">LIVE DISPLAY BUFFER · LAST 10 MINUTES · GAPS PRESERVED</div>
+          <div class="trend-title">EMAY SLEEPO2 · SPO₂</div>
+          <div class="trend-sub">LIVE BUFFER · LAST 10 MIN · GAPS PRESERVED</div>
         </div>
         <div id="emay-trend-latest" class="trend-latest">—</div>
       </div>
       <div class="trend-legend" aria-label="EMAY graph legend">
         <span class="legend-item"><span class="legend-swatch" style="background:#54d38a"></span>SPO₂ · %</span>
-        <span class="legend-item"><span class="legend-swatch" style="background:#e3b34d"></span>PULSE · bpm</span>
       </div>
-      <svg id="emay-trend" class="trend-chart" viewBox="0 0 420 300" role="img" aria-label="EMAY oxygen saturation and pulse over time"></svg>
+      <svg id="emay-trend" class="trend-chart" viewBox="0 0 420 300" role="img" aria-label="EMAY oxygen saturation over time"></svg>
     </article>
   </section>
   <section class="bp" aria-label="Last blood pressure reading">
@@ -361,11 +359,9 @@ const live = {
 const trends = {
   h10: {
     hr: { points: [], keys: new Set() },
-    rr: { points: [], keys: new Set() },
   },
   emay: {
     spo2: { points: [], keys: new Set() },
-    pulse: { points: [], keys: new Set() },
   },
 };
 
@@ -487,20 +483,11 @@ function pruneTrend(bucket, cutoff) {
 
 function recordTrends(snapshot) {
   const h10 = snapshot && snapshot.h10;
-  if (h10 && typeof h10 === "object") {
-    if (finite(h10.sample_at) && finite(h10.hr))
-      addTrendPoint(trends.h10.hr, { t: h10.sample_at, v: h10.hr });
-    if (Array.isArray(h10.rr_points)) {
-      for (const point of h10.rr_points) {
-        if (point && finite(point.t) && finite(point.v)) addTrendPoint(trends.h10.rr, { t: point.t, v: point.v });
-      }
-    }
-  }
+  if (h10 && typeof h10 === "object" && finite(h10.sample_at) && finite(h10.hr))
+    addTrendPoint(trends.h10.hr, { t: h10.sample_at, v: h10.hr });
   const emay = snapshot && snapshot.emay;
-  if (emay && typeof emay === "object" && emay.synthetic !== true && finite(emay.sample_at)) {
-    if (finite(emay.spo2)) addTrendPoint(trends.emay.spo2, { t: emay.sample_at, v: emay.spo2 });
-    if (finite(emay.pulse_bpm)) addTrendPoint(trends.emay.pulse, { t: emay.sample_at, v: emay.pulse_bpm });
-  }
+  if (emay && typeof emay === "object" && emay.synthetic !== true && finite(emay.sample_at) && finite(emay.spo2))
+    addTrendPoint(trends.emay.spo2, { t: emay.sample_at, v: emay.spo2 });
   const cutoff = Date.now() / 1000 - TREND_SECONDS - TREND_MAX_GAP_SECONDS;
   for (const device of Object.values(trends)) {
     for (const metric of Object.values(device)) pruneTrend(metric, cutoff);
@@ -523,9 +510,7 @@ function mergeStoredH10History(data) {
   if (!history || typeof history !== "object") throw new Error("H10 history is missing");
   const cutoff = Date.now() / 1000 - TREND_SECONDS - TREND_MAX_GAP_SECONDS;
   mergeH10Series(trends.h10.hr, history.hr, cutoff);
-  mergeH10Series(trends.h10.rr, history.rr, cutoff);
   pruneTrend(trends.h10.hr, cutoff);
-  pruneTrend(trends.h10.rr, cutoff);
 }
 
 function mergeH10StatusHistory(data) {
@@ -534,9 +519,7 @@ function mergeH10StatusHistory(data) {
   if (!delta || typeof delta !== "object") return;
   const cutoff = Date.now() / 1000 - TREND_SECONDS - TREND_MAX_GAP_SECONDS;
   mergeH10Series(trends.h10.hr, delta.hr, cutoff);
-  mergeH10Series(trends.h10.rr, delta.rr, cutoff);
   pruneTrend(trends.h10.hr, cutoff);
-  pruneTrend(trends.h10.rr, cutoff);
 }
 
 async function loadStoredH10History() {
@@ -620,31 +603,22 @@ function renderTrend(svgId, latestId, now, config) {
     ...seriesConfig,
     values: seriesConfig.bucket.points.filter(point => point.t >= xMin && point.t <= xMax),
   }));
-  const leftValues = series.filter(item => item.axis === "left").flatMap(item => item.values.map(point => point.v));
-  const rightValues = series.filter(item => item.axis === "right").flatMap(item => item.values.map(point => point.v));
-  const leftScale = niceScale(leftValues, config.leftFallback);
-  const rightScale = niceScale(rightValues, config.rightFallback);
+  const values = series.flatMap(item => item.values.map(point => point.v));
+  const scale = niceScale(values, config.fallback);
   const x = value => left + ((value - xMin) / (xMax - xMin)) * (plotRight - left);
-  const y = (value, scale) => top + (1 - (value - scale.min) / (scale.max - scale.min)) * 210;
+  const y = value => top + (1 - (value - scale.min) / (scale.max - scale.min)) * 210;
 
   const title = svgElement("title");
   title.textContent = config.title;
   svg.append(title);
-  for (const tick of leftScale.ticks) {
-    const py = y(tick, leftScale);
+  for (const tick of scale.ticks) {
+    const py = y(tick);
     svg.append(svgElement("line", { x1: left, x2: plotRight, y1: py, y2: py, class: "chart-grid" }));
-    svgText(svg, left - 8, py + 4, formatTick(tick, leftScale.step), "chart-label", "end");
-  }
-  for (const tick of rightScale.ticks) {
-    const py = y(tick, rightScale);
-    svgText(svg, plotRight + 8, py + 4, formatTick(tick, rightScale.step), "chart-label", "start");
+    svgText(svg, left - 8, py + 4, formatTick(tick, scale.step), "chart-label", "end");
   }
   svg.append(svgElement("line", { x1: left, x2: left, y1: top, y2: plotBottom, class: "chart-axis" }));
-  svg.append(svgElement("line", { x1: plotRight, x2: plotRight, y1: top, y2: plotBottom, class: "chart-axis" }));
   svg.append(svgElement("line", { x1: left, x2: plotRight, y1: plotBottom, y2: plotBottom, class: "chart-axis" }));
-  svgText(svg, 16, top + 105, config.leftUnit, "chart-axis-label", "middle").setAttribute("transform", `rotate(-90 16 ${top + 105})`);
-  const rightAxisX = CHART_WIDTH - 16;
-  svgText(svg, rightAxisX, top + 105, config.rightUnit, "chart-axis-label", "middle").setAttribute("transform", `rotate(90 ${rightAxisX} ${top + 105})`);
+  svgText(svg, 16, top + 105, config.unit, "chart-axis-label", "middle").setAttribute("transform", `rotate(-90 16 ${top + 105})`);
 
   const tickSeconds = TREND_SECONDS / 5;
   for (let value = Math.ceil(xMin / tickSeconds) * tickSeconds; value <= xMax; value += tickSeconds) {
@@ -658,7 +632,6 @@ function renderTrend(svgId, latestId, now, config) {
   for (const item of series) {
     if (!item.values.length) continue;
     hasData = true;
-    const scale = item.axis === "right" ? rightScale : leftScale;
     const path = trendPath(item.bucket.points, left, top, plotRight, xMin, xMax, scale);
     if (path) svg.append(svgElement("path", { d: path, class: "chart-path", stroke: item.color }));
   }
@@ -671,39 +644,20 @@ function renderTrends(snapshot, now) {
   const h10 = snapshot && snapshot.h10;
   const emay = snapshot && snapshot.emay;
   renderTrend("h10-trend", "h10-trend-latest", now, {
-    title: "Polar H10 heart rate and RR interval over time",
+    title: "Polar H10 heart rate over time",
     name: "H10",
-    leftUnit: "bpm",
-    rightUnit: "s",
-    leftFallback: [60, 100],
-    rightFallback: [0.5, 1.5],
-    series: [
-      { bucket: trends.h10.hr, axis: "left", color: "#54d38a" },
-      { bucket: trends.h10.rr, axis: "right", color: "#e3b34d" },
-    ],
-    latest: () => {
-      const hr = h10 && finite(h10.hr) ? `HR ${Math.round(h10.hr)} bpm` : "HR —";
-      const rr = h10 && Array.isArray(h10.rr_points) && h10.rr_points.length && finite(h10.rr_points[h10.rr_points.length - 1].v)
-        ? ` · RR ${Number(h10.rr_points[h10.rr_points.length - 1].v).toFixed(3)} s` : " · RR —";
-      return hr + rr;
-    },
+    unit: "bpm",
+    fallback: [60, 100],
+    series: [{ bucket: trends.h10.hr, color: "#54d38a" }],
+    latest: () => h10 && finite(h10.hr) ? `HR ${Math.round(h10.hr)} bpm` : "HR —",
   });
   renderTrend("emay-trend", "emay-trend-latest", now, {
-    title: "EMAY SleepO2 oxygen saturation and pulse over time",
+    title: "EMAY SleepO2 oxygen saturation over time",
     name: "EMAY",
-    leftUnit: "%",
-    rightUnit: "bpm",
-    leftFallback: [94, 100],
-    rightFallback: [60, 100],
-    series: [
-      { bucket: trends.emay.spo2, axis: "left", color: "#54d38a" },
-      { bucket: trends.emay.pulse, axis: "right", color: "#e3b34d" },
-    ],
-    latest: () => {
-      const spo2 = emay && finite(emay.spo2) ? `SpO₂ ${Math.round(emay.spo2)}%` : "SpO₂ —";
-      const pulse = emay && finite(emay.pulse_bpm) ? ` · PULSE ${Math.round(emay.pulse_bpm)} bpm` : " · PULSE —";
-      return spo2 + pulse;
-    },
+    unit: "%",
+    fallback: [94, 100],
+    series: [{ bucket: trends.emay.spo2, color: "#54d38a" }],
+    latest: () => emay && finite(emay.spo2) ? `SpO₂ ${Math.round(emay.spo2)}%` : "SpO₂ —",
   });
 }
 
