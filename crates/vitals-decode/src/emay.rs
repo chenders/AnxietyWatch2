@@ -400,7 +400,6 @@ pub fn decode_session_descriptor(frame: &[u8]) -> Option<SessionDescriptor> {
 ///
 /// The record checksum uses the same `sum & 0x7f` algorithm as the live
 /// protocol. `0x00`, `0x7f`, and `0xff` are absent values; `0x7f` is the
-/// storage-mode sentinel observed in the official-app transfer.
 #[must_use]
 pub fn decode_stored_record(frame: &[u8]) -> Option<StoredRecord> {
     if frame.len() != STORED_RECORD_LEN {
@@ -553,6 +552,8 @@ mod tests {
 
     /// Captured from the device during a no-reading transition.
     const NO_READING_TRANSITION: [u8; 8] = [0xEB, 0x01, 0x07, 0x7F, 0x7F, 0x7F, 0x00, 0x70];
+    /// A transition-shaped frame carrying a value must not become a reading.
+    const INVALID_TRANSITION_VALUE: [u8; 8] = [0xEB, 0x01, 0x07, 0x01, 0x7F, 0x7F, 0x00, 0x72];
 
     /// One `EC` descriptor in the official app's storage-download layout; date substituted.
     /// The stream's trailing zero terminator is intentionally not included.
@@ -719,6 +720,7 @@ mod tests {
         let (scanned, used) = scan_frame(&NO_READING_TRANSITION).expect("scanned transition");
         assert_eq!(scanned, r);
         assert_eq!(used, FRAME_LEN);
+        assert!(decode_data(&INVALID_TRANSITION_VALUE).is_none());
     }
 
     /// The gotcha this decoder exists to get right. With a 0xFF mask the
