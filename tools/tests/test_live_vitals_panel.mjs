@@ -22,6 +22,9 @@ for (const selector of [".reason", ".health-name", ".health-detail"]) {
 assert.match(html, /min-height:\s*174px/);
 assert.match(html, /Place the sensor on a finger\./);
 assert.match(html, /the last frame reported no finger/);
+assert.match(html, /PERSISTED \+ LIVE · LAST 10 MIN · GAPS PRESERVED/);
+assert.match(html, /emay_history/);
+assert.match(html, /emay_delta/);
 
 const script = html.split("<script>\n", 2)[1].split("\n</script>", 1)[0];
 const beforeStartup = script.slice(0, script.lastIndexOf("\nrender();"));
@@ -71,4 +74,15 @@ context.renderEmay({ ...base, sample_at: now - 1 }, now, false);
 assert.match(elements.get("emay-reason").textContent, /Cannot verify EMAY currently/);
 assert.match(elements.get("emay-reason").textContent, /last frame reported no finger/);
 
-console.log("PASS live-vitals responsive/no-finger checks");
+context.renderEmay({
+  stored: true, synthetic: false, spo2: 97, pulse_bpm: 70,
+  sample_at: now - 2, session_id: 123, seq: 4,
+}, now, true);
+assert.equal(elements.get("emay-badge").textContent, "HISTORY");
+assert.equal(
+  elements.get("emay-reason").textContent,
+  "Latest persisted EMAY value; live sensor state is not claimed.",
+);
+assert.match(elements.get("emay-age").innerHTML, /^LAST PERSISTED SAMPLE/);
+
+console.log("PASS live-vitals responsive/no-finger/history checks");

@@ -338,7 +338,7 @@ body.kiosk #app {
       <div class="trend-head">
         <div>
           <div class="trend-title">EMAY SLEEPO2 · SPO₂</div>
-          <div class="trend-sub">LIVE BUFFER · LAST 10 MIN · GAPS PRESERVED</div>
+          <div class="trend-sub">PERSISTED + LIVE · LAST 10 MIN · GAPS PRESERVED</div>
         </div>
         <div id="emay-trend-latest" class="trend-latest">—</div>
       </div>
@@ -487,19 +487,22 @@ function renderEmay(s, now, feedOkay) {
   const age = ageSeconds(s.sample_at, now);
   const writerAge = ageSeconds(s.written_at, now);
   const physical = s.synthetic !== true;
+  const stored = s.stored === true;
   const linkUp = s.link === "up";
   const sampleFresh = age != null && age >= 0 && age <= EMAY_FRESH_SECONDS;
   const writerFresh = writerAge != null && writerAge >= 0 && writerAge <= EMAY_FRESH_SECONDS;
-  const liveNow = feedOkay && physical && linkUp && s.finger === true && sampleFresh && writerFresh;
-  // `finger === false` is evidence only when a frame actually arrived. The
-  // initial status snapshot also uses false, but has no sample_at yet.
-  const noFingerEvidence = physical && s.finger === false && finite(s.sample_at);
+  const liveNow = !stored && feedOkay && physical && linkUp && s.finger === true && sampleFresh && writerFresh;
+  // `finger === false` is evidence only when an actual live frame arrived.
+  // Stored PostgreSQL history has no contact-state claim.
+  const noFingerEvidence = !stored && physical && s.finger === false && finite(s.sample_at);
   const noFingerNow = feedOkay && linkUp && noFingerEvidence && sampleFresh && writerFresh;
-  const state = liveNow ? "working" : noFingerNow ? "watching" : feedOkay && physical ? "watching" : "error";
-  const label = liveNow ? "WORKING" : noFingerNow ? "NO FINGER" : !physical ? "SYNTHETIC"
+  const state = stored ? (feedOkay ? "watching" : "error")
+    : liveNow ? "working" : noFingerNow ? "watching" : feedOkay && physical ? "watching" : "error";
+  const label = stored ? "HISTORY" : liveNow ? "WORKING" : noFingerNow ? "NO FINGER" : !physical ? "SYNTHETIC"
     : !feedOkay ? "FEED ERROR" : !linkUp ? "LINK DOWN" : "STALE";
   setClass(card, state); setBadge("emay-badge", state, label);
-  if (liveNow) byId("emay-reason").textContent = "Live physical-device values are arriving.";
+  if (stored) byId("emay-reason").textContent = "Latest persisted EMAY value; live sensor state is not claimed.";
+  else if (liveNow) byId("emay-reason").textContent = "Live physical-device values are arriving.";
   else if (noFingerNow) byId("emay-reason").textContent = "The sensor reports no finger. Place the sensor on a finger.";
   else if (!feedOkay && noFingerEvidence)
     byId("emay-reason").textContent = "Cannot verify EMAY currently; the last frame reported no finger. Place the sensor on a finger.";
@@ -518,7 +521,7 @@ function renderEmay(s, now, feedOkay) {
   setValue("emay-spo2", finite(s.spo2) ? Math.round(s.spo2) : null);
   setValue("emay-pulse", finite(s.pulse_bpm) ? Math.round(s.pulse_bpm) : null);
   setValue("emay-frames", finite(s.frames) ? Math.round(s.frames) : null);
-  const ageLabel = noFingerEvidence ? "LAST SENSOR FRAME" : "LAST VALID SAMPLE";
+  const ageLabel = stored ? "LAST PERSISTED SAMPLE" : noFingerEvidence ? "LAST SENSOR FRAME" : "LAST VALID SAMPLE";
   byId("emay-age").innerHTML = `${ageLabel} <strong>${ageText(age)}</strong>`;
 }
 
@@ -568,6 +571,11 @@ function mergeStoredH10History(data) {
   const cutoff = Date.now() / 1000 - TREND_SECONDS - TREND_MAX_GAP_SECONDS;
   mergeH10Series(trends.h10.hr, history.hr, cutoff);
   pruneTrend(trends.h10.hr, cutoff);
+  const emayHistory = data.emay_history;
+  if (emayHistory && typeof emayHistory === "object") {
+    mergeH10Series(trends.emay.spo2, emayHistory.spo2, cutoff);
+    pruneTrend(trends.emay.spo2, cutoff);
+  }
 }
 
 function mergeH10StatusHistory(data) {
@@ -579,6 +587,15 @@ function mergeH10StatusHistory(data) {
   pruneTrend(trends.h10.hr, cutoff);
 }
 
+function mergeEmayStatusHistory(data) {
+  if (!data || data.schema !== 2) return;
+  const delta = data.emay_delta;
+  if (!delta || typeof delta !== "object") return;
+  const cutoff = Date.now() / 1000 - TREND_SECONDS - TREND_MAX_GAP_SECONDS;
+  mergeH10Series(trends.emay.spo2, delta.spo2, cutoff);
+  pruneTrend(trends.emay.spo2, cutoff);
+}
+
 async function loadStoredH10History() {
   try {
     const data = await fetchJson(h10HistoryUrl, 2);
@@ -588,7 +605,7 @@ async function loadStoredH10History() {
   } catch (error) {
     // The live status and bounded overlay remain usable if the optional
     // historical document is unavailable; do not turn that into fake data.
-    console.warn(`H10 history unavailable: ${error.message}`);
+    console.warn(`H10/EMAY history unavailable: ${error.message}`);
   }
 }
 
@@ -834,7 +851,10 @@ async function poll() {
     const error = healthResult.reason;
     live.healthError = error && error.message ? error.message : String(error);
   }
-  if (h10StatusResult.status === "fulfilled") mergeH10StatusHistory(h10StatusResult.value);
+  if (h10StatusResult.status === "fulfilled") {
+    mergeH10StatusHistory(h10StatusResult.value);
+    mergeEmayStatusHistory(h10StatusResult.value);
+  }
   live.fetchedAt = Date.now() / 1000;
   render();
 }
