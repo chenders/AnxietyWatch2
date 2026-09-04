@@ -139,10 +139,21 @@ def emay_state(value: Any, now: float) -> tuple[str, str]:
     writer_age = age(value.get("written_at"), now)
     if value.get("synthetic") is True:
         return "SYNTHETIC", "synthetic=true"
+    # `finger=false` is actionable only after a frame has arrived. The
+    # initial status snapshot also uses false, while sample_at is still null.
+    last_frame_no_finger = value.get("finger") is False and sample_age is not None
+    no_finger_detail = (
+        "last frame reported no finger; place the sensor on a finger"
+    )
     if value.get("link") != "up":
-        return "LINK_DOWN", f"link={value.get('link', 'missing')}"
+        detail = f"link={value.get('link', 'missing')}"
+        if last_frame_no_finger:
+            detail += f"; {no_finger_detail}"
+        return "LINK_DOWN", detail
+    if last_frame_no_finger:
+        return "NO_FINGER", f"link=up; {no_finger_detail}; age={age_text(sample_age)}"
     if value.get("finger") is not True:
-        return "NO_FINGER", "link=up finger=false"
+        return "STALE", "finger state unavailable; no current EMAY value"
     if (
         sample_age is not None
         and writer_age is not None

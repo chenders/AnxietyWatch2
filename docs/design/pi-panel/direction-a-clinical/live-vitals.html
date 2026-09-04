@@ -65,7 +65,7 @@ body.kiosk #app {
 .clock { color: var(--text); font-size: 18px; }
 .feed { color: var(--good); font-size: 10px; letter-spacing: 1.4px; font-weight: 700; }
 .feed.bad { color: var(--watch); }
-.primary { height: 174px; flex: 0 0 auto; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.primary { min-height: 174px; height: auto; flex: 0 0 auto; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .trends {
   flex: 0 0 auto;
   display: grid;
@@ -124,7 +124,17 @@ body.kiosk #app {
 .badge.watch { border-color: var(--watch); color: var(--watch); background: rgba(227, 179, 77, .08); }
 .badge.bad { border-color: var(--bad); color: var(--bad); background: rgba(224, 122, 112, .08); }
 .badge.unknown { border-color: var(--unknown); color: var(--unknown); background: transparent; }
-.reason { min-height: 17px; margin-top: 7px; color: var(--muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.reason {
+  min-height: 17px;
+  margin-top: 7px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
+}
 .device-stats { margin-top: auto; display: flex; align-items: flex-end; gap: 18px; }
 .big-stat { color: var(--text); font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 43px; line-height: .9; letter-spacing: -2px; }
 .big-stat.missing { color: var(--unknown); }
@@ -171,11 +181,46 @@ body.kiosk #app {
 .health-overall.degraded, .health-state.degraded { color: var(--watch); }
 .health-overall.down, .health-state.down { color: var(--bad); }
 .health-overall.unknown, .health-state.unknown { color: var(--unknown); }
-.health-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
-.health-item { min-width: 0; border-top: 1px solid var(--rule); padding-top: 4px; display: grid; grid-template-columns: 1fr auto; gap: 2px 7px; }
-.health-name { min-width: 0; color: var(--quiet); font-size: 9px; letter-spacing: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.health-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  align-items: start;
+}
+.health-item {
+  min-width: 0;
+  border-top: 1px solid var(--rule);
+  padding-top: 4px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 7px;
+  align-content: start;
+}
+.health-name {
+  min-width: 0;
+  color: var(--quiet);
+  font-size: 9px;
+  letter-spacing: 1px;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
+  line-height: 1.25;
+}
 .health-state { font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 10px; font-weight: 700; }
-.health-detail { grid-column: 1 / -1; min-width: 0; color: var(--muted); font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 9px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.health-detail {
+  grid-column: 1 / -1;
+  min-width: 0;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 9px;
+  line-height: 1.35;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
+}
 .footer-bottom { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
 .footer .notice { color: var(--muted); }
 .footer .updated { text-align: right; }
@@ -443,26 +488,38 @@ function renderEmay(s, now, feedOkay) {
   const writerAge = ageSeconds(s.written_at, now);
   const physical = s.synthetic !== true;
   const linkUp = s.link === "up";
-  const liveNow = feedOkay && physical && linkUp && s.finger === true
-    && age != null && age >= 0 && age <= EMAY_FRESH_SECONDS
-    && writerAge != null && writerAge >= 0 && writerAge <= EMAY_FRESH_SECONDS;
-  const noFinger = feedOkay && physical && linkUp && s.finger === false;
-  const state = liveNow ? "working" : noFinger ? "watching" : feedOkay && physical ? "watching" : "error";
-  const label = liveNow ? "WORKING" : noFinger ? "NO FINGER" : !physical ? "SYNTHETIC"
+  const sampleFresh = age != null && age >= 0 && age <= EMAY_FRESH_SECONDS;
+  const writerFresh = writerAge != null && writerAge >= 0 && writerAge <= EMAY_FRESH_SECONDS;
+  const liveNow = feedOkay && physical && linkUp && s.finger === true && sampleFresh && writerFresh;
+  // `finger === false` is evidence only when a frame actually arrived. The
+  // initial status snapshot also uses false, but has no sample_at yet.
+  const noFingerEvidence = physical && s.finger === false && finite(s.sample_at);
+  const noFingerNow = feedOkay && linkUp && noFingerEvidence && sampleFresh && writerFresh;
+  const state = liveNow ? "working" : noFingerNow ? "watching" : feedOkay && physical ? "watching" : "error";
+  const label = liveNow ? "WORKING" : noFingerNow ? "NO FINGER" : !physical ? "SYNTHETIC"
     : !feedOkay ? "FEED ERROR" : !linkUp ? "LINK DOWN" : "STALE";
   setClass(card, state); setBadge("emay-badge", state, label);
   if (liveNow) byId("emay-reason").textContent = "Live physical-device values are arriving.";
-  else if (noFinger) byId("emay-reason").textContent = "Link is up; the sensor reports no finger.";
+  else if (noFingerNow) byId("emay-reason").textContent = "The sensor reports no finger. Place the sensor on a finger.";
+  else if (!feedOkay && noFingerEvidence)
+    byId("emay-reason").textContent = "Cannot verify EMAY currently; the last frame reported no finger. Place the sensor on a finger.";
+  else if (noFingerEvidence && linkUp)
+    byId("emay-reason").textContent = `No fresh EMAY value for ${ageText(age)}; the last frame reported no finger. Place the sensor on a finger.`;
+  else if (noFingerEvidence)
+    byId("emay-reason").textContent = `Link is ${text(s.link)}; the last frame reported no finger. Place the sensor on a finger.`;
   else if (!physical) byId("emay-reason").textContent = "This value is marked synthetic and is not treated as live.";
   else if (!feedOkay) byId("emay-reason").textContent = "Cannot verify EMAY while the status feed is unavailable.";
   else if (!linkUp) byId("emay-reason").textContent = `Link is ${text(s.link)}; no current value is claimed.`;
-  else if (writerAge != null && writerAge >= 0 && writerAge <= EMAY_FRESH_SECONDS)
+  else if (writerFresh && age == null)
+    byId("emay-reason").textContent = "Transport heartbeat is fresh; no sensor frame has arrived yet.";
+  else if (writerFresh)
     byId("emay-reason").textContent = `Transport heartbeat is fresh; last valid sample ${ageText(age)}.`;
   else byId("emay-reason").textContent = `No fresh EMAY value for ${ageText(age)}.`;
   setValue("emay-spo2", finite(s.spo2) ? Math.round(s.spo2) : null);
   setValue("emay-pulse", finite(s.pulse_bpm) ? Math.round(s.pulse_bpm) : null);
   setValue("emay-frames", finite(s.frames) ? Math.round(s.frames) : null);
-  byId("emay-age").innerHTML = `LAST VALID SAMPLE <strong>${ageText(age)}</strong>`;
+  const ageLabel = noFingerEvidence ? "LAST SENSOR FRAME" : "LAST VALID SAMPLE";
+  byId("emay-age").innerHTML = `${ageLabel} <strong>${ageText(age)}</strong>`;
 }
 
 function addTrendPoint(bucket, point) {
