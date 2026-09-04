@@ -66,6 +66,35 @@ body.kiosk #app {
 .feed { color: var(--good); font-size: 10px; letter-spacing: 1.4px; font-weight: 700; }
 .feed.bad { color: var(--watch); }
 .primary { height: 174px; flex: 0 0 auto; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.trends {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.trend-card {
+  min-width: 0;
+  min-height: 310px;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  background: var(--panel);
+  padding: 12px 14px 10px;
+  display: flex;
+  flex-direction: column;
+}
+.trend-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.trend-title { color: var(--text); font-size: 13px; letter-spacing: 1.5px; font-weight: 700; }
+.trend-sub { margin-top: 3px; color: var(--muted); font-size: 9px; letter-spacing: 1px; }
+.trend-latest { flex: 0 0 auto; color: var(--text); font-family: var(--mono); font-size: 12px; text-align: right; white-space: nowrap; }
+.trend-legend { min-height: 18px; margin-top: 8px; display: flex; flex-wrap: wrap; gap: 10px; color: var(--muted); font-family: var(--mono); font-size: 10px; }
+.legend-item { display: inline-flex; align-items: center; gap: 5px; }
+.legend-swatch { width: 18px; height: 3px; display: inline-block; border-radius: 2px; }
+.trend-chart { width: 100%; height: 250px; margin-top: 2px; overflow: visible; }
+.chart-axis { stroke: var(--muted); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.chart-path { fill: none; stroke-width: 2.2; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.chart-label { fill: var(--muted); font-family: var(--mono); font-size: 12px; }
+.chart-axis-label { fill: var(--text); font-family: var(--mono); font-size: 11px; letter-spacing: .5px; }
+.chart-empty { fill: var(--unknown); font-family: var(--mono); font-size: 12px; letter-spacing: .5px; }
 .card {
   min-width: 0;
   border: 1px solid var(--rule);
@@ -178,6 +207,8 @@ body.kiosk #app {
     height: auto;
     grid-template-columns: 1fr;
   }
+  .trends { grid-template-columns: 1fr; }
+  .trend-card { min-height: 310px; }
   .card { min-height: 174px; }
   .bp {
     height: auto;
@@ -244,6 +275,36 @@ body.kiosk #app {
       <div id="emay-age" class="age-line">LAST VALID SAMPLE <strong>—</strong></div>
     </article>
   </section>
+  <section class="trends" aria-label="Live vital trends">
+    <article class="trend-card" aria-label="Polar H10 trend graph">
+      <div class="trend-head">
+        <div>
+          <div class="trend-title">POLAR H10 · HR / RR</div>
+          <div class="trend-sub">PERSISTED HISTORY + LIVE OVERLAY · LAST 10 MINUTES</div>
+        </div>
+        <div id="h10-trend-latest" class="trend-latest">—</div>
+      </div>
+      <div class="trend-legend" aria-label="Polar H10 graph legend">
+        <span class="legend-item"><span class="legend-swatch" style="background:#54d38a"></span>HR · bpm</span>
+        <span class="legend-item"><span class="legend-swatch" style="background:#e3b34d"></span>RR · seconds</span>
+      </div>
+      <svg id="h10-trend" class="trend-chart" viewBox="0 0 720 300" role="img" aria-label="Polar H10 heart rate and RR interval over time"></svg>
+    </article>
+    <article class="trend-card" aria-label="EMAY SleepO2 trend graph">
+      <div class="trend-head">
+        <div>
+          <div class="trend-title">EMAY SLEEPO2 · SPO₂ / PULSE</div>
+          <div class="trend-sub">LIVE DISPLAY BUFFER · LAST 10 MINUTES · GAPS PRESERVED</div>
+        </div>
+        <div id="emay-trend-latest" class="trend-latest">—</div>
+      </div>
+      <div class="trend-legend" aria-label="EMAY graph legend">
+        <span class="legend-item"><span class="legend-swatch" style="background:#54d38a"></span>SPO₂ · %</span>
+        <span class="legend-item"><span class="legend-swatch" style="background:#e3b34d"></span>PULSE · bpm</span>
+      </div>
+      <svg id="emay-trend" class="trend-chart" viewBox="0 0 720 300" role="img" aria-label="EMAY oxygen saturation and pulse over time"></svg>
+    </article>
+  </section>
   <section class="bp" aria-label="Last blood pressure reading">
     <div>
       <div class="bp-head"><div class="bp-title">A&D UA-651BLE</div><div class="bp-kind">LAST RECORDED BP</div></div>
@@ -281,15 +342,30 @@ const qs = new URLSearchParams(location.search);
 if (qs.get("kiosk") === "1") document.body.classList.add("kiosk");
 const statusUrl = qs.get("status") || "status.json";
 const healthUrl = qs.get("health") || "health.json";
+const h10HistoryUrl = qs.get("history") || "vitals_h10_history.json";
+const h10StatusUrl = qs.get("history-status") || "vitals_status.json";
 const H10_FRESH_SECONDS = 15;
 const EMAY_FRESH_SECONDS = 15;
 const HEALTH_FRESH_SECONDS = 120;
+const TREND_SECONDS = 10 * 60;
+const TREND_MAX_GAP_SECONDS = 15;
+const SVG_NS = "http://www.w3.org/2000/svg";
 const live = {
   snapshot: null,
   error: null,
   fetchedAt: 0,
   health: null,
   healthError: null,
+};
+const trends = {
+  h10: {
+    hr: { points: [], keys: new Set() },
+    rr: { points: [], keys: new Set() },
+  },
+  emay: {
+    spo2: { points: [], keys: new Set() },
+    pulse: { points: [], keys: new Set() },
+  },
 };
 
 const byId = id => document.getElementById(id);
@@ -392,6 +468,243 @@ function renderEmay(s, now, feedOkay) {
   byId("emay-age").innerHTML = `LAST VALID SAMPLE <strong>${ageText(age)}</strong>`;
 }
 
+function addTrendPoint(bucket, point) {
+  if (!finite(point.t) || !finite(point.v)) return;
+  const key = `${point.t}:${point.v}`;
+  if (bucket.keys.has(key)) return;
+  bucket.keys.add(key);
+  const previous = bucket.points[bucket.points.length - 1];
+  bucket.points.push(point);
+  if (previous && point.t < previous.t)
+    bucket.points.sort((a, b) => a.t - b.t || a.v - b.v);
+}
+
+function pruneTrend(bucket, cutoff) {
+  bucket.points = bucket.points.filter(point => point.t >= cutoff);
+  bucket.keys = new Set(bucket.points.map(point => `${point.t}:${point.v}`));
+}
+
+function recordTrends(snapshot) {
+  const h10 = snapshot && snapshot.h10;
+  if (h10 && typeof h10 === "object") {
+    if (finite(h10.sample_at) && finite(h10.hr))
+      addTrendPoint(trends.h10.hr, { t: h10.sample_at, v: h10.hr });
+    if (Array.isArray(h10.rr_points)) {
+      for (const point of h10.rr_points) {
+        if (point && finite(point.t) && finite(point.v)) addTrendPoint(trends.h10.rr, { t: point.t, v: point.v });
+      }
+    }
+  }
+  const emay = snapshot && snapshot.emay;
+  if (emay && typeof emay === "object" && emay.synthetic !== true && finite(emay.sample_at)) {
+    if (finite(emay.spo2)) addTrendPoint(trends.emay.spo2, { t: emay.sample_at, v: emay.spo2 });
+    if (finite(emay.pulse_bpm)) addTrendPoint(trends.emay.pulse, { t: emay.sample_at, v: emay.pulse_bpm });
+  }
+  const cutoff = Date.now() / 1000 - TREND_SECONDS - TREND_MAX_GAP_SECONDS;
+  for (const device of Object.values(trends)) {
+    for (const metric of Object.values(device)) pruneTrend(metric, cutoff);
+  }
+}
+
+function mergeH10Series(bucket, points, cutoff) {
+  if (!Array.isArray(points)) return;
+  for (const raw of points) {
+    if (!raw || !finite(Number(raw.t)) || !finite(Number(raw.v))) continue;
+    const point = { t: Number(raw.t), v: Number(raw.v) };
+    if (point.t >= cutoff) addTrendPoint(bucket, point);
+  }
+}
+
+function mergeStoredH10History(data) {
+  if (!data || data.schema !== 2 || data.history_origin !== "physical_device")
+    throw new Error("unexpected H10 history schema");
+  const history = data.h10_history;
+  if (!history || typeof history !== "object") throw new Error("H10 history is missing");
+  const cutoff = Date.now() / 1000 - TREND_SECONDS - TREND_MAX_GAP_SECONDS;
+  mergeH10Series(trends.h10.hr, history.hr, cutoff);
+  mergeH10Series(trends.h10.rr, history.rr, cutoff);
+  pruneTrend(trends.h10.hr, cutoff);
+  pruneTrend(trends.h10.rr, cutoff);
+}
+
+function mergeH10StatusHistory(data) {
+  if (!data || data.schema !== 2) return;
+  const delta = data.h10_delta;
+  if (!delta || typeof delta !== "object") return;
+  const cutoff = Date.now() / 1000 - TREND_SECONDS - TREND_MAX_GAP_SECONDS;
+  mergeH10Series(trends.h10.hr, delta.hr, cutoff);
+  mergeH10Series(trends.h10.rr, delta.rr, cutoff);
+  pruneTrend(trends.h10.hr, cutoff);
+  pruneTrend(trends.h10.rr, cutoff);
+}
+
+async function loadStoredH10History() {
+  try {
+    const data = await fetchJson(h10HistoryUrl, 2);
+    mergeStoredH10History(data);
+    if (live.snapshot) recordTrends(live.snapshot);
+    render();
+  } catch (error) {
+    // The live status and bounded overlay remain usable if the optional
+    // historical document is unavailable; do not turn that into fake data.
+    console.warn(`H10 history unavailable: ${error.message}`);
+  }
+}
+
+function svgElement(tag, attributes = {}) {
+  const element = document.createElementNS(SVG_NS, tag);
+  for (const [name, value] of Object.entries(attributes)) element.setAttribute(name, String(value));
+  return element;
+}
+
+function svgText(svg, x, y, value, className, anchor = "middle") {
+  const element = svgElement("text", { x, y, class: className, "text-anchor": anchor });
+  element.textContent = value;
+  svg.append(element);
+  return element;
+}
+
+function formatTick(value, step) {
+  if (step >= 1) return String(Math.round(value));
+  if (step >= 0.1) return value.toFixed(1);
+  return value.toFixed(2);
+}
+
+function niceScale(values, fallback) {
+  if (!values.length) return niceScale([fallback[0], fallback[1]], fallback);
+  let min = Math.min(...values);
+  let max = Math.max(...values);
+  if (min === max) {
+    const padding = Math.max(Math.abs(min) * 0.05, 1);
+    min -= padding;
+    max += padding;
+  }
+  const raw = (max - min) / 4;
+  const power = 10 ** Math.floor(Math.log10(raw || 1));
+  const normalized = raw / power;
+  const factor = normalized >= 5 ? 5 : normalized >= 2 ? 2 : 1;
+  const step = factor * power;
+  const low = Math.floor(min / step) * step;
+  const high = Math.ceil(max / step) * step;
+  const ticks = [];
+  for (let value = low; value <= high + step * 0.5; value += step) ticks.push(value);
+  return { min: low, max: high, step, ticks };
+}
+
+function trendPath(points, x, y, xMin, xMax, scale) {
+  let path = "";
+  let previous = null;
+  for (const point of points) {
+    if (!finite(point.t) || !finite(point.v) || point.t < xMin || point.t > xMax) continue;
+    const px = x + ((point.t - xMin) / (xMax - xMin)) * (720 - x - 58);
+    const py = y + (1 - (point.v - scale.min) / (scale.max - scale.min)) * 210;
+    const gap = previous == null ? 0 : point.t - previous.t;
+    path += previous == null || gap > TREND_MAX_GAP_SECONDS ? `M ${px.toFixed(2)} ${py.toFixed(2)}` : ` L ${px.toFixed(2)} ${py.toFixed(2)}`;
+    previous = point;
+  }
+  return path;
+}
+
+function renderTrend(svgId, latestId, now, config) {
+  const svg = byId(svgId);
+  svg.replaceChildren();
+  const left = 62;
+  const right = 58;
+  const top = 30;
+  const plotRight = 720 - right;
+  const plotBottom = top + 210;
+  const xMax = now;
+  const xMin = xMax - TREND_SECONDS;
+  const series = config.series.map(seriesConfig => ({
+    ...seriesConfig,
+    values: seriesConfig.bucket.points.filter(point => point.t >= xMin && point.t <= xMax),
+  }));
+  const leftValues = series.filter(item => item.axis === "left").flatMap(item => item.values.map(point => point.v));
+  const rightValues = series.filter(item => item.axis === "right").flatMap(item => item.values.map(point => point.v));
+  const leftScale = niceScale(leftValues, config.leftFallback);
+  const rightScale = niceScale(rightValues, config.rightFallback);
+  const x = value => left + ((value - xMin) / (xMax - xMin)) * (plotRight - left);
+  const y = (value, scale) => top + (1 - (value - scale.min) / (scale.max - scale.min)) * 210;
+
+  const title = svgElement("title");
+  title.textContent = config.title;
+  svg.append(title);
+  for (const tick of leftScale.ticks) {
+    const py = y(tick, leftScale);
+    svg.append(svgElement("line", { x1: left, x2: plotRight, y1: py, y2: py, class: "chart-grid" }));
+    svgText(svg, left - 8, py + 4, formatTick(tick, leftScale.step), "chart-label", "end");
+  }
+  for (const tick of rightScale.ticks) {
+    const py = y(tick, rightScale);
+    svgText(svg, plotRight + 8, py + 4, formatTick(tick, rightScale.step), "chart-label", "start");
+  }
+  svg.append(svgElement("line", { x1: left, x2: left, y1: top, y2: plotBottom, class: "chart-axis" }));
+  svg.append(svgElement("line", { x1: plotRight, x2: plotRight, y1: top, y2: plotBottom, class: "chart-axis" }));
+  svg.append(svgElement("line", { x1: left, x2: plotRight, y1: plotBottom, y2: plotBottom, class: "chart-axis" }));
+  svgText(svg, 16, top + 105, config.leftUnit, "chart-axis-label", "middle").setAttribute("transform", `rotate(-90 16 ${top + 105})`);
+  svgText(svg, 704, top + 105, config.rightUnit, "chart-axis-label", "middle").setAttribute("transform", `rotate(90 704 ${top + 105})`);
+
+  const tickSeconds = TREND_SECONDS / 5;
+  for (let value = Math.ceil(xMin / tickSeconds) * tickSeconds; value <= xMax; value += tickSeconds) {
+    const px = x(value);
+    svg.append(svgElement("line", { x1: px, x2: px, y1: plotBottom, y2: plotBottom + 6, class: "chart-axis" }));
+    svgText(svg, px, plotBottom + 24, new Date(value * 1000).toLocaleTimeString([], { hour12: false, hour: "2-digit", minute: "2-digit" }), "chart-label");
+  }
+  svgText(svg, (left + plotRight) / 2, 294, "TIME", "chart-axis-label");
+
+  let hasData = false;
+  for (const item of series) {
+    if (!item.values.length) continue;
+    hasData = true;
+    const scale = item.axis === "right" ? rightScale : leftScale;
+    const path = trendPath(item.bucket.points, left, top, xMin, xMax, scale);
+    if (path) svg.append(svgElement("path", { d: path, class: "chart-path", stroke: item.color }));
+  }
+  if (!hasData) svgText(svg, (left + plotRight) / 2, top + 105, `WAITING FOR ${config.name} HISTORY`, "chart-empty");
+  svg.setAttribute("aria-label", `${config.title}; ${hasData ? "fresh points plotted" : "waiting for fresh points"}`);
+  byId(latestId).textContent = config.latest(now);
+}
+
+function renderTrends(snapshot, now) {
+  const h10 = snapshot && snapshot.h10;
+  const emay = snapshot && snapshot.emay;
+  renderTrend("h10-trend", "h10-trend-latest", now, {
+    title: "Polar H10 heart rate and RR interval over time",
+    name: "H10",
+    leftUnit: "bpm",
+    rightUnit: "s",
+    leftFallback: [60, 100],
+    rightFallback: [0.5, 1.5],
+    series: [
+      { bucket: trends.h10.hr, axis: "left", color: "#54d38a" },
+      { bucket: trends.h10.rr, axis: "right", color: "#e3b34d" },
+    ],
+    latest: () => {
+      const hr = h10 && finite(h10.hr) ? `HR ${Math.round(h10.hr)} bpm` : "HR —";
+      const rr = h10 && Array.isArray(h10.rr_points) && h10.rr_points.length && finite(h10.rr_points[h10.rr_points.length - 1].v)
+        ? ` · RR ${Number(h10.rr_points[h10.rr_points.length - 1].v).toFixed(3)} s` : " · RR —";
+      return hr + rr;
+    },
+  });
+  renderTrend("emay-trend", "emay-trend-latest", now, {
+    title: "EMAY SleepO2 oxygen saturation and pulse over time",
+    name: "EMAY",
+    leftUnit: "%",
+    rightUnit: "bpm",
+    leftFallback: [94, 100],
+    rightFallback: [60, 100],
+    series: [
+      { bucket: trends.emay.spo2, axis: "left", color: "#54d38a" },
+      { bucket: trends.emay.pulse, axis: "right", color: "#e3b34d" },
+    ],
+    latest: () => {
+      const spo2 = emay && finite(emay.spo2) ? `SpO₂ ${Math.round(emay.spo2)}%` : "SpO₂ —";
+      const pulse = emay && finite(emay.pulse_bpm) ? ` · PULSE ${Math.round(emay.pulse_bpm)} bpm` : " · PULSE —";
+      return spo2 + pulse;
+    },
+  });
+}
+
 function renderBp(bp, now) {
   const present = bp && typeof bp === "object" && finite(bp.sample_at);
   if (!present) {
@@ -472,27 +785,30 @@ function render() {
   const s = live.snapshot;
   renderH10(s && s.h10, now, feedOkay);
   renderEmay(s && s.emay, now, feedOkay);
+  renderTrends(s, now);
   renderBp(s && s.bp, now);
   renderHealth();
   byId("updated").textContent = `FEED AGE ${feedOkay ? ageText(fetchAge) : "—"}`;
 }
 
-async function fetchJson(url) {
+async function fetchJson(url, expectedSchema = 1) {
   const separator = url.includes("?") ? "&" : "?";
   const response = await fetch(`${url}${separator}_=${Date.now()}`, { cache: "no-store" });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   const value = await response.json();
-  if (!value || value.schema !== 1) throw new Error("unexpected status schema");
+  if (!value || value.schema !== expectedSchema) throw new Error(`unexpected schema: ${value && value.schema}`);
   return value;
 }
 
 async function poll() {
-  const [statusResult, healthResult] = await Promise.allSettled([
+  const [statusResult, healthResult, h10StatusResult] = await Promise.allSettled([
     fetchJson(statusUrl),
     fetchJson(healthUrl),
+    fetchJson(h10StatusUrl, 2),
   ]);
   if (statusResult.status === "fulfilled") {
     live.snapshot = statusResult.value;
+    recordTrends(live.snapshot);
     live.error = null;
   } else {
     const error = statusResult.reason;
@@ -505,11 +821,13 @@ async function poll() {
     const error = healthResult.reason;
     live.healthError = error && error.message ? error.message : String(error);
   }
+  if (h10StatusResult.status === "fulfilled") mergeH10StatusHistory(h10StatusResult.value);
   live.fetchedAt = Date.now() / 1000;
   render();
 }
 
 render();
+loadStoredH10History();
 poll();
 setInterval(poll, 1000);
 setInterval(render, 1000);
