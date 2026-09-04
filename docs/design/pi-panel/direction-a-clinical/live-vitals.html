@@ -230,18 +230,18 @@ body.kiosk #app {
       </div>
       <div id="h10-age" class="age-line">LAST VALID SAMPLE <strong>—</strong></div>
     </article>
-    <article id="wellue-card" class="card unknown">
+    <article id="emay-card" class="card unknown">
       <div class="card-head">
-        <div><div class="device">WELLUE</div><div class="device-sub">SPO₂ · PULSE · PERFUSION</div></div>
-        <div id="wellue-badge" class="badge unknown">CHECKING</div>
+        <div><div class="device">EMAY SLEEPO2</div><div class="device-sub">SPO₂ · PULSE</div></div>
+        <div id="emay-badge" class="badge unknown">CHECKING</div>
       </div>
-      <div id="wellue-reason" class="reason">Waiting for a status snapshot.</div>
+      <div id="emay-reason" class="reason">Waiting for a status snapshot.</div>
       <div class="device-stats">
-        <div><span id="wellue-spo2" class="big-stat missing">—</span><span class="big-unit">%</span></div>
-        <div class="small-stat"><span class="small-label">PULSE</span><span id="wellue-pulse" class="small-value">—</span></div>
-        <div class="small-stat"><span class="small-label">PI</span><span id="wellue-pi" class="small-value">—</span></div>
+        <div><span id="emay-spo2" class="big-stat missing">—</span><span class="big-unit">%</span></div>
+        <div class="small-stat"><span class="small-label">PULSE</span><span id="emay-pulse" class="small-value">—</span></div>
+        <div class="small-stat"><span class="small-label">FRAMES</span><span id="emay-frames" class="small-value">—</span></div>
       </div>
-      <div id="wellue-age" class="age-line">LAST VALID SAMPLE <strong>—</strong></div>
+      <div id="emay-age" class="age-line">LAST VALID SAMPLE <strong>—</strong></div>
     </article>
   </section>
   <section class="bp" aria-label="Last blood pressure reading">
@@ -282,7 +282,7 @@ if (qs.get("kiosk") === "1") document.body.classList.add("kiosk");
 const statusUrl = qs.get("status") || "status.json";
 const healthUrl = qs.get("health") || "health.json";
 const H10_FRESH_SECONDS = 15;
-const WELLUE_FRESH_SECONDS = 15;
+const EMAY_FRESH_SECONDS = 15;
 const HEALTH_FRESH_SECONDS = 120;
 const live = {
   snapshot: null,
@@ -356,38 +356,40 @@ function renderH10(s, now, feedOkay) {
   byId("h10-age").innerHTML = `LAST VALID SAMPLE <strong>${ageText(age)}</strong>`;
 }
 
-function renderWellue(s, now, feedOkay) {
-  const card = "wellue-card";
+function renderEmay(s, now, feedOkay) {
+  const card = "emay-card";
   if (!s || typeof s !== "object") {
     setClass(card, "unknown");
-    setBadge("wellue-badge", "unknown", "NO DATA");
-    byId("wellue-reason").textContent = "No Wellue value has been published.";
-    setValue("wellue-spo2", null); setValue("wellue-pulse", null); setValue("wellue-pi", null);
-    byId("wellue-age").innerHTML = "LAST VALID SAMPLE <strong>—</strong>";
+    setBadge("emay-badge", "unknown", "NO DATA");
+    byId("emay-reason").textContent = "No EMAY SleepO2 value has been published.";
+    setValue("emay-spo2", null); setValue("emay-pulse", null); setValue("emay-frames", null);
+    byId("emay-age").innerHTML = "LAST VALID SAMPLE <strong>—</strong>";
     return;
   }
   const age = ageSeconds(s.sample_at, now);
   const writerAge = ageSeconds(s.written_at, now);
   const physical = s.synthetic !== true;
-  const liveNow = feedOkay && physical && s.link === "up" && s.finger === true
-    && age != null && age <= WELLUE_FRESH_SECONDS
-    && writerAge != null && writerAge <= WELLUE_FRESH_SECONDS;
-  const noFinger = feedOkay && physical && s.link === "up" && s.finger === false;
+  const linkUp = s.link === "up";
+  const liveNow = feedOkay && physical && linkUp && s.finger === true
+    && age != null && age >= 0 && age <= EMAY_FRESH_SECONDS
+    && writerAge != null && writerAge >= 0 && writerAge <= EMAY_FRESH_SECONDS;
+  const noFinger = feedOkay && physical && linkUp && s.finger === false;
   const state = liveNow ? "working" : noFinger ? "watching" : feedOkay && physical ? "watching" : "error";
-  const label = liveNow ? "WORKING" : noFinger ? "NO FINGER" : !physical ? "SYNTHETIC" : feedOkay ? "STALE" : "FEED ERROR";
-  setClass(card, state); setBadge("wellue-badge", state, label);
-  if (liveNow) byId("wellue-reason").textContent = "Live physical-device values are arriving.";
-  else if (noFinger) byId("wellue-reason").textContent = "Link is up; the sensor reports no finger.";
-  else if (!physical) byId("wellue-reason").textContent = "This value is marked synthetic and is not treated as live.";
-  else if (!feedOkay) byId("wellue-reason").textContent = "Cannot verify Wellue while the status feed is unavailable.";
-  else if (s.link !== "up") byId("wellue-reason").textContent = `Link is ${text(s.link)}; no current value is claimed.`;
-  else if (writerAge != null && writerAge <= WELLUE_FRESH_SECONDS)
-    byId("wellue-reason").textContent = `Transport heartbeat is fresh; last valid sample ${ageText(age)}.`;
-  else byId("wellue-reason").textContent = `No fresh Wellue value for ${ageText(age)}.`;
-  setValue("wellue-spo2", finite(s.spo2) ? Math.round(s.spo2) : null);
-  setValue("wellue-pulse", finite(s.pulse_bpm) ? Math.round(s.pulse_bpm) : null);
-  setValue("wellue-pi", finite(s.perfusion_index) ? Number(s.perfusion_index).toFixed(1) : null);
-  byId("wellue-age").innerHTML = `LAST VALID SAMPLE <strong>${ageText(age)}</strong>`;
+  const label = liveNow ? "WORKING" : noFinger ? "NO FINGER" : !physical ? "SYNTHETIC"
+    : !feedOkay ? "FEED ERROR" : !linkUp ? "LINK DOWN" : "STALE";
+  setClass(card, state); setBadge("emay-badge", state, label);
+  if (liveNow) byId("emay-reason").textContent = "Live physical-device values are arriving.";
+  else if (noFinger) byId("emay-reason").textContent = "Link is up; the sensor reports no finger.";
+  else if (!physical) byId("emay-reason").textContent = "This value is marked synthetic and is not treated as live.";
+  else if (!feedOkay) byId("emay-reason").textContent = "Cannot verify EMAY while the status feed is unavailable.";
+  else if (!linkUp) byId("emay-reason").textContent = `Link is ${text(s.link)}; no current value is claimed.`;
+  else if (writerAge != null && writerAge >= 0 && writerAge <= EMAY_FRESH_SECONDS)
+    byId("emay-reason").textContent = `Transport heartbeat is fresh; last valid sample ${ageText(age)}.`;
+  else byId("emay-reason").textContent = `No fresh EMAY value for ${ageText(age)}.`;
+  setValue("emay-spo2", finite(s.spo2) ? Math.round(s.spo2) : null);
+  setValue("emay-pulse", finite(s.pulse_bpm) ? Math.round(s.pulse_bpm) : null);
+  setValue("emay-frames", finite(s.frames) ? Math.round(s.frames) : null);
+  byId("emay-age").innerHTML = `LAST VALID SAMPLE <strong>${ageText(age)}</strong>`;
 }
 
 function renderBp(bp, now) {
@@ -469,7 +471,7 @@ function render() {
   feed.textContent = feedOkay ? "STATUS FEED LIVE" : live.error ? "FEED UNAVAILABLE" : "WAITING FOR FEED";
   const s = live.snapshot;
   renderH10(s && s.h10, now, feedOkay);
-  renderWellue(s && s.wellue, now, feedOkay);
+  renderEmay(s && s.emay, now, feedOkay);
   renderBp(s && s.bp, now);
   renderHealth();
   byId("updated").textContent = `FEED AGE ${feedOkay ? ageText(fetchAge) : "—"}`;

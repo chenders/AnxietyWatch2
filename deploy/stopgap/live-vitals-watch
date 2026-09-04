@@ -11,6 +11,7 @@ browser to run privileged commands.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import math
 import os
@@ -36,7 +37,7 @@ SERVICES = {
     "core": "vitalsd.service",
     "drain": "vitals-spool-drain.service",
     "h10": "vitals-h10.service",
-    "wellue": "wellue-collector.service",
+    "emay": "emay-live.service",
     "merger": "panel-status-merge.service",
     "http": "panel-http.service",
     "kiosk": "panel-kiosk.service",
@@ -125,12 +126,15 @@ def h10_state(value: Any, now: float) -> tuple[str, str]:
         return "NON_PHYSICAL", f"origin={value.get('test_origin', 'missing')}"
     if value.get("live") is True and sample_age is not None and 0 <= sample_age <= FRESH_SECONDS:
         return "WORKING", f"hr={value.get('hr', '—')} age={age_text(sample_age)}"
-    return "STALE", f"hr={value.get('hr', '—')} age={age_text(sample_age)} live={value.get('live', False)}"
+    return "STALE", (
+        f"hr={value.get('hr', '—')} age={age_text(sample_age)} "
+        f"live={value.get('live', False)}"
+    )
 
 
-def wellue_state(value: Any, now: float) -> tuple[str, str]:
+def emay_state(value: Any, now: float) -> tuple[str, str]:
     if not isinstance(value, dict):
-        return "NO_DATA", "no published Wellue value"
+        return "NO_DATA", "no published EMAY SleepO2 value"
     sample_age = age(value.get("sample_at"), now)
     writer_age = age(value.get("written_at"), now)
     if value.get("synthetic") is True:
@@ -176,10 +180,8 @@ def publish_health(path: pathlib.Path, document: dict[str, Any]) -> None:
         temporary_path.chmod(0o644)
         temporary_path.replace(path)
     finally:
-        try:
+        with contextlib.suppress(FileNotFoundError):
             temporary_path.unlink()
-        except FileNotFoundError:
-            pass
 
 
 def check_once(status_url: str, page_url: str, health_path: pathlib.Path) -> bool:
@@ -188,7 +190,7 @@ def check_once(status_url: str, page_url: str, health_path: pathlib.Path) -> boo
     components: dict[str, dict[str, str]] = {}
     status: dict[str, Any] | None = None
     h10 = ("NO_DATA", "status unavailable")
-    wellue = ("NO_DATA", "status unavailable")
+    emay = ("NO_DATA", "status unavailable")
     bp = ("NO_READING", "status unavailable")
     page_detail = "not checked"
     status_detail = "not checked"
@@ -197,7 +199,7 @@ def check_once(status_url: str, page_url: str, health_path: pathlib.Path) -> boo
         status = read_json(status_url)
         status_detail = "status JSON responded"
         h10 = h10_state(status.get("h10"), now)
-        wellue = wellue_state(status.get("wellue"), now)
+        emay = emay_state(status.get("emay"), now)
         bp = bp_state(status.get("bp"), now)
     except (OSError, ValueError, URLError, json.JSONDecodeError) as error:
         status_detail = f"status failed: {error}"
@@ -226,10 +228,10 @@ def check_once(status_url: str, page_url: str, health_path: pathlib.Path) -> boo
     }
     database, database_detail = database_state()
     components["database"] = {"state": database, "detail": database_detail}
-    source_ok = h10[0] == "WORKING" and wellue[0] == "WORKING" and bp[0] == "RECORDED"
+    source_ok = h10[0] == "WORKING" and emay[0] == "WORKING" and bp[0] == "RECORDED"
     components["sources"] = {
         "state": "OK" if source_ok else "DEGRADED",
-        "detail": f"H10={h10[0]} Wellue={wellue[0]} BP={bp[0]}",
+        "detail": f"H10={h10[0]} EMAY={emay[0]} BP={bp[0]}",
     }
     kiosk_state = "OK" if page_state == "OK" and service_states["kiosk"] == "active" else "DEGRADED"
     components["kiosk"] = {
@@ -253,7 +255,7 @@ def check_once(status_url: str, page_url: str, health_path: pathlib.Path) -> boo
 
     print(
         f"LIVE_VITALS_CHECK {overall} feed_age=<1s "
-        f"h10={h10[0]}({h10[1]}) wellue={wellue[0]}({wellue[1]}) "
+        f"h10={h10[0]}({h10[1]}) emay={emay[0]}({emay[1]}) "
         f"bp={bp[0]}({bp[1]}) page={page_state} "
         f"services=" + ",".join(f"{key}={value}" for key, value in service_states.items()),
         flush=True,

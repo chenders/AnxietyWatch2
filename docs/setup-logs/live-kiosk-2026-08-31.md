@@ -105,3 +105,17 @@ values look plausible would violate the reject-and-quarantine rule.
   known `0xC0` form.
 - **BP:** latest cuff measurement is durable and displayed independently.
 - **Kiosk:** served and running at the URL above.
+
+## Follow-up — 2026-09-04
+
+The H10 was put back on with wet electrodes and correct placement, but it was
+still sending `HR=0` notifications while BlueZ reported it connected. A
+controlled Raspberry Pi reboot cleared the stale Bluetooth/GATT state. After
+boot, the bonded H10 was connected again and the live status feed was advancing
+with valid HR and RR samples.
+
+The EMAY SleepO2 was also present and reporting: its status showed `link=up`,
+`finger=true`, fresh SpO₂/pulse values, and an increasing frame count. The live
+vitals kiosk now uses that EMAY stream instead of the stale Wellue stream for its
+second primary card; the Wellue feed remains available separately but is not
+required by this kiosk view.
