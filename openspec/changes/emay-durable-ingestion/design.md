@@ -17,11 +17,16 @@ presentation/journal-only.
 
 ## Identity finding
 
-The verified live data notification is exactly:
+The verified live measurement notification is:
 
 ```
 EB 01 05 <pulse> <SpO2> 7F 00 <checksum>
 ```
+
+The device also emits the valid, same-sized no-reading transition frame
+`EB 01 07 7F 7F 7F 00 70`. The decoder accepts only that exact transition payload as link/no-finger
+evidence; it is not a numeric measurement and never produces a durable row. Other `0x07` payloads
+are rejected.
 
 The live payload has no counter, device timestamp, or stable record identifier. The connected BlueZ
 characteristic `0xFF02` reports `read`, `notify`; it is not an indication. A notification is not an
@@ -29,6 +34,7 @@ ATT-confirmed store-and-forward delivery. Repeated live readings are byte-identi
 retransmission, and a reconnect starts with no sensor-provided continuity marker. The live path
 therefore remains display/journal-only until a different accepted identity is available.
 
+The official app's device-storage mode supplies that identity. Its `EC` session descriptor contains
 the storage slot and device recording start (`YY MM DD hh mm ss`). Its `ED` records are 24-byte
 checksummed records with this layout:
 

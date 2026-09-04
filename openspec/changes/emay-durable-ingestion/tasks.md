@@ -10,7 +10,7 @@ unblocked for the stored-session collector. The anonymous live stream remains no
 - [x] 1.1 Establish a stable EMAY record identity
 - [x] 1.2 Implement the durable collector after identity approval
 - [x] 1.3 Add PostgreSQL-backed panel history after durable ingestion
-- [ ] 1.4 Activate and verify on pi-host
+- [x] 1.4 Activate and verify on pi-host
 
 ### T-E1 — Establish a stable EMAY record identity
 
