@@ -1,13 +1,13 @@
 # Tasks — durable EMAY SleepO2 ingestion
 
-**Status:** Blocked pending a stable EMAY source identity or an explicitly accepted exception to the
-identity rule.
+**Status:** T-E1 established a source-provided identity for device-storage records; T-E2 is now
+unblocked for the stored-session collector. The anonymous live stream remains non-durable.
 
 **Amends:** `docs/specs/AMENDMENTS.md` (mandatory); no accepted amendment is changed.
 
 ## Task index
 
-- [ ] 1.1 Establish a stable EMAY record identity
+- [x] 1.1 Establish a stable EMAY record identity
 - [ ] 1.2 Implement the durable collector after identity approval
 - [ ] 1.3 Add PostgreSQL-backed panel history after durable ingestion
 - [ ] 1.4 Activate and verify on pi-host
@@ -31,12 +31,13 @@ already-connected device is allowed; active scans, unverified writes, and overni
 
 **Verify:** `! rg -n "delivery sequence|delivery index|Session::next_seq" openspec/changes/emay-durable-ingestion/design.md`
 
-**Expect:** exit 0 only while the design correctly refuses the unapproved host-delivery identity.
+**Expect:** exit 0 while the design correctly refuses host-derived identity for the anonymous live
+stream; the stored-session identity is documented separately.
 
 ### T-E2 — Implement the durable collector after identity approval
 
 **Tier:** implement-complex · **Host:** either for portable tests, Pi for Linux build/live use ·
-**Context budget:** ~8k · **Depends:** T-E1 decision · **Review required:** yes
+**Context budget:** ~8k · **Depends:** T-E1 stored-session identity decision · **Review required:** yes
 
 **Reads:** `docs/specs/AMENDMENTS.md`, `vitals/registry.toml`, `crates/vitals-decode/src/emay.rs`,
 `crates/vitals-core/src/lib.rs`, `crates/vitals-core/src/session.rs`,
@@ -52,7 +53,8 @@ second store or disturb H10/BP.
 **Verify:** a task-specific local/Pi build, test, clippy, and live append command that proves the
 approved identity is used and EMAY rows advance in PostgreSQL.
 
-**Expect:** exit 0 only after T-E1 has a recorded approved identity decision.
+**Expect:** exit 0 only after T-E1's recorded stored-session identity decision is used; the
+anonymous live stream must not be written as numeric durable rows.
 
 ### T-E3 — Add PostgreSQL-backed panel history
 
@@ -88,7 +90,8 @@ fresh, the EMAY source/type row count increasing, and H10 still advancing.
 
 ## Completion gate
 
-No task may be ticked until the identity issue is resolved under the accepted amendments. The final
-change requires actual EMAY rows in PostgreSQL, database-backed history after page reload, healthy
-H10/EMAY operation, and final status/chat records. Until then, the display-only graph and service
-remain the honest safe state.
+T-E1 is resolved for device-storage records under the accepted amendments. T-E2 must use the
+source-provided stored cursor and deterministic session identity; it must not assign a host identity
+to live `EB` frames. The final change requires actual stored-session EMAY rows in PostgreSQL,
+database-backed history after page reload, healthy H10/EMAY operation, and final status/chat records.
+Until then, the display-only graph and service remain the honest safe state.
