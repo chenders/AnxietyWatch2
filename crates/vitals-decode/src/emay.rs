@@ -125,12 +125,15 @@ pub fn checksum_ok(frame: &[u8]) -> bool {
 
 /// Decodes a real-time data notification.
 ///
-/// Layout: `EB 01 05 <PR> <SPO2> 7F 00 <cks>`, exactly 8 bytes.
+/// Layout: `EB 01 05 <PR> <SPO2> 7F 00 <cks>`, exactly 8 bytes. The device
+/// also emits the same-sized `EB 01 07 7F 7F 7F 00 70` transition frame while
+/// moving to or from its no-reading state. That frame is valid link evidence,
+/// but it carries no measurement and must not be turned into a numeric row.
 ///
-/// Validates length, header (`EB 01 05`), trailer (`7F 00`) and checksum before
-/// reading any value. Genuine extremes are preserved — only the sentinels and a
-/// physically impossible `SpO₂` above 100% are dropped. See [`SPO2_MAX`] for why
-/// there is no lower bound.
+/// Validates length, header, trailer (`7F 00`) and checksum before reading any
+/// value. Genuine extremes are preserved — only the sentinels and a physically
+/// impossible `SpO₂` above 100% are dropped. See [`SPO2_MAX`] for why there is
+/// no lower bound.
 #[must_use]
 pub fn decode_data(frame: &[u8]) -> Option<Reading> {
     if frame.len() != FRAME_LEN {
@@ -138,7 +141,11 @@ pub fn decode_data(frame: &[u8]) -> Option<Reading> {
     }
     // Header and trailer are fixed. Checking them rejects a misaligned read
     // that the checksum alone might let through.
-    if *frame.first()? != OP_DATA || *frame.get(1)? != 0x01 || *frame.get(2)? != 0x05 {
+    if *frame.first()? != OP_DATA || *frame.get(1)? != 0x01 {
+        return None;
+    }
+    let layout = *frame.get(2)?;
+    if layout != 0x05 && layout != 0x07 {
         return None;
     }
     if *frame.get(5)? != 0x7F || *frame.get(6)? != 0x00 {
@@ -146,6 +153,18 @@ pub fn decode_data(frame: &[u8]) -> Option<Reading> {
     }
     if !checksum_ok(frame) {
         return None;
+    }
+    // `0x07` is an observed transition format, not a second measurement
+    // layout. Accept only its exact all-sentinel payload so an unknown variant
+    // cannot smuggle values into the live path.
+    if layout == 0x07 {
+        if !frame.get(3..6)?.iter().all(|byte| *byte == 0x7F) {
+            return None;
+        }
+        return Some(Reading {
+            spo2: None,
+            pulse_bpm: None,
+        });
     }
     Some(Reading {
         // Pulse: sentinel check only. No range — see SPO2_MAX's note.
@@ -381,6 +400,7 @@ pub fn decode_session_descriptor(frame: &[u8]) -> Option<SessionDescriptor> {
 ///
 /// The record checksum uses the same `sum & 0x7f` algorithm as the live
 /// protocol. `0x00`, `0x7f`, and `0xff` are absent values; `0x7f` is the
+/// storage-mode sentinel observed in the official-app transfer.
 #[must_use]
 pub fn decode_stored_record(frame: &[u8]) -> Option<StoredRecord> {
     if frame.len() != STORED_RECORD_LEN {
@@ -531,6 +551,9 @@ mod tests {
     /// The device's frame layout with substituted readings: PR 70, `SpO2` 97.
     const DEVICE_LAYOUT_FRAME: [u8; 8] = [0xEB, 0x01, 0x05, 0x46, 0x61, 0x7F, 0x00, 0x17];
 
+    /// Captured from the device during a no-reading transition.
+    const NO_READING_TRANSITION: [u8; 8] = [0xEB, 0x01, 0x07, 0x7F, 0x7F, 0x7F, 0x00, 0x70];
+
     /// One `EC` descriptor in the official app's storage-download layout; date substituted.
     /// The stream's trailing zero terminator is intentionally not included.
     const STORED_SESSION: [u8; 21] = [
@@ -538,7 +561,7 @@ mod tests {
         0x73, 0x65, 0x72, 0x00, 0x00, 0x74,
     ];
 
-    /// First SpO₂ `ED` record for storage slot 1.
+    /// First `SpO₂` `ED` record for storage slot 1.
     /// Empty-session marker returned after the last available slot.
     const EMPTY_SESSION: [u8; 21] = [
         0xEC, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -569,7 +592,7 @@ mod tests {
         assert_eq!(d.slot, 1);
         assert_eq!((d.year, d.month, d.day), (0x1A, 7, 9));
         assert_eq!((d.hour, d.minute, d.second), (3, 0x29, 0x36));
-        assert_eq!(d.metadata().get(0), Some(&0x78));
+        assert_eq!(d.metadata().first(), Some(&0x78));
         assert_eq!(d.metadata().get(10), Some(&0x74));
     }
 
@@ -685,6 +708,17 @@ mod tests {
         assert_eq!(r.pulse_bpm, Some(70));
         assert_eq!(r.spo2, Some(97));
         assert!(r.is_measurement());
+    }
+
+    #[test]
+    fn recognizes_the_no_reading_transition_frame() {
+        let r = decode_data(&NO_READING_TRANSITION).expect("transition frame");
+        assert_eq!(r.spo2, None);
+        assert_eq!(r.pulse_bpm, None);
+        assert!(!r.is_measurement());
+        let (scanned, used) = scan_frame(&NO_READING_TRANSITION).expect("scanned transition");
+        assert_eq!(scanned, r);
+        assert_eq!(used, FRAME_LEN);
     }
 
     /// The gotcha this decoder exists to get right. With a 0xFF mask the
