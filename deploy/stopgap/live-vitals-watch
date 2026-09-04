@@ -228,10 +228,13 @@ def check_once(status_url: str, page_url: str, health_path: pathlib.Path) -> boo
     }
     database, database_detail = database_state()
     components["database"] = {"state": database, "detail": database_detail}
-    source_ok = h10[0] == "WORKING" and emay[0] == "WORKING" and bp[0] == "RECORDED"
+    # H10 and EMAY are the overnight must-have streams. BP is a useful
+    # store-and-forward opportunistic source; its absence must not turn a
+    # healthy H10/EMAY night into a degraded safety-path result.
+    source_ok = h10[0] == "WORKING" and emay[0] == "WORKING"
     components["sources"] = {
         "state": "OK" if source_ok else "DEGRADED",
-        "detail": f"H10={h10[0]} EMAY={emay[0]} BP={bp[0]}",
+        "detail": f"H10={h10[0]} EMAY={emay[0]} BP={bp[0]} (optional)",
     }
     kiosk_state = "OK" if page_state == "OK" and service_states["kiosk"] == "active" else "DEGRADED"
     components["kiosk"] = {
@@ -239,7 +242,14 @@ def check_once(status_url: str, page_url: str, health_path: pathlib.Path) -> boo
         "detail": f"page={page_state} panel-kiosk.service={service_states['kiosk']}",
     }
 
-    infrastructure_ok = all(value["state"] == "OK" for value in components.values())
+    # The web status feed and live-vitals.html response are required for the
+    # remote observer and remain part of this result. The attached DSI kiosk is
+    # presentation-only for this overnight run: its fault must remain visible
+    # in its component, but must not turn a healthy H10/EMAY collection path
+    # into a degraded sensor result.
+    infrastructure_ok = all(
+        value["state"] == "OK" for key, value in components.items() if key != "kiosk"
+    )
     overall = "OK" if source_ok and infrastructure_ok else "DEGRADED"
     document = {
         "schema": 1,

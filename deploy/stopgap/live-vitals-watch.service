@@ -1,0 +1,22 @@
+# Local Pi-side health verification for the H10 and EMAY overnight streams.
+# This is a checker, not a Bluetooth scanner or a reboot policy.
+[Unit]
+Description=AnxietyWatch H10 and EMAY live-vitals checker
+After=panel-http.service panel-status-merge.service panel-vitals-status.service
+Wants=panel-http.service panel-status-merge.service panel-vitals-status.service
+
+[Service]
+Type=simple
+User=pi-user
+ExecStart=/usr/local/libexec/live-vitals-watch --duration 31536000 --interval 60
+Restart=always
+RestartSec=30
+Environment=PYTHONUNBUFFERED=1
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=$HOME/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

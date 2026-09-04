@@ -206,8 +206,11 @@ marked `WORKING` only when its link, finger state, writer heartbeat, and sample
 are fresh. BP is displayed as the latest durable reading and retains its
 `arrival_estimate` provenance.
 
-`live-vitals-watch` is a display check, not an alarm. To run the ten-hour
-check on the Pi:
+`live-vitals-watch` is a display check, not an alarm. H10 and EMAY are the
+overnight must-have streams; BP is reported when available but is optional and
+never makes a healthy H10/EMAY run degraded. The attached DSI kiosk is also
+reported separately and does not change the sensor-priority result. To run the
+ten-hour check on the Pi:
 
 ```sh
 sudo systemd-run --unit=live-vitals-watch --property=User=pi-user \
