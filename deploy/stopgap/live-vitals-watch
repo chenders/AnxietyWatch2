@@ -37,7 +37,7 @@ SERVICES = {
     "core": "vitalsd.service",
     "drain": "vitals-spool-drain.service",
     "h10": "vitals-h10.service",
-    "emay": "emay-live.service",
+    "emay": "vitals-emay.service",
     "merger": "panel-status-merge.service",
     "http": "panel-http.service",
     "kiosk": "panel-kiosk.service",
