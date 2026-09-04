@@ -9,6 +9,11 @@
 //! cannot hit the SMP Security-Request failure that blocks a bonded reconnect on
 //! kernel 6.12.x (amendment 06 §3) — there is no bond to resume.
 //!
+//! The official app's stored-session mode uses the same transport. `EC`
+//! descriptors identify device sessions and `ED` records carry the metric,
+//! storage slot, and source-provided cursor used for durable identity. The live
+//! `EB` notification remains anonymous and is deliberately kept separate.
+//!
 //! # The checksum gotcha, and why testing cannot catch it
 //!
 //! `checksum = sum(payload) & 0x7F` — masked with **0x7F, not 0xFF**.
@@ -197,6 +202,293 @@ pub fn scan_frame(buf: &[u8]) -> Option<(Reading, usize)> {
     None
 }
 
+/// Length of an `EC` stored-session descriptor, excluding the trailing stream
+/// terminator byte.
+pub const SESSION_DESCRIPTOR_LEN: usize = 21;
+
+/// Length of one `ED` stored-session record.
+pub const STORED_RECORD_LEN: usize = 24;
+
+const OP_SESSION_DESCRIPTOR: u8 = 0xEC;
+const OP_STORED_RECORD: u8 = 0xED;
+
+/// The two metric streams in a stored session.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StoredMetric {
+    /// Oxygen saturation, in percent.
+    Spo2,
+    /// Pulse rate, in beats per minute.
+    Pulse,
+}
+
+impl StoredMetric {
+    /// The metric selector used by the device's storage command and record.
+    #[must_use]
+    pub const fn code(self) -> u8 {
+        match self {
+            Self::Spo2 => 1,
+            Self::Pulse => 2,
+        }
+    }
+}
+
+/// The session identity and device-local start time returned by `EC`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SessionDescriptor {
+    /// Device status flags echoed in the descriptor.
+    pub flags: u8,
+    /// Device storage slot. The observed device exposes slots 1 through 7.
+    pub slot: u8,
+    /// Two-digit year, interpreted by the collector's configured century.
+    pub year: u8,
+    /// Month, 1 through 12.
+    pub month: u8,
+    /// Day of month, 1 through 31.
+    pub day: u8,
+    /// Hour, 0 through 23, in the device's local clock.
+    pub hour: u8,
+    /// Minute, 0 through 59, in the device's local clock.
+    pub minute: u8,
+    /// Second, 0 through 59, in the device's local clock.
+    pub second: u8,
+    /// Uninterpreted descriptor bytes, retained for deterministic identity.
+    metadata: [u8; 11],
+}
+
+impl SessionDescriptor {
+    /// The descriptor metadata after the six date/time bytes.
+    #[must_use]
+    pub const fn metadata(&self) -> &[u8; 11] {
+        &self.metadata
+    }
+}
+
+/// One source-provided record from an EMAY stored session.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StoredRecord {
+    /// Whether the value is `SpO₂` or pulse.
+    pub metric: StoredMetric,
+    /// Device storage slot echoed by the record.
+    pub slot: u8,
+    /// Device storage cursor. This is the durable `seq` input, not arrival
+    /// order. The low byte's bit 7 is reserved by the device's page layout.
+    pub cursor: u16,
+    /// The metric value, or `None` for a stored no-reading sentinel.
+    pub value: Option<u8>,
+    /// The sixteen uninterpreted record payload bytes, including `value` at
+    /// payload offset 2. Keeping these allows provenance in `extra` without
+    /// reparsing the radio frame.
+    pub payload: [u8; 16],
+}
+
+/// Maps the device's page-encoded cursor to its logical one-Hz ordinal.
+///
+/// The device emits cursor values `0..0x007f`, then `0x0100..0x017f`, and so
+/// on. Bit 7 of the low byte is a reserved page marker and is not a sample.
+/// The raw cursor remains the identity; this mapping is only for event-time
+/// reconstruction and gap accounting.
+#[must_use]
+pub fn storage_ordinal(cursor: u16) -> Option<u32> {
+    if cursor & 0x0080 != 0 {
+        return None;
+    }
+    let page = u32::from(cursor >> 8);
+    let offset = u32::from(cursor & 0x007f);
+    Some(page * 128 + offset)
+}
+
+/// Returns the source cursor immediately after a valid stored cursor.
+///
+/// The low-byte page marker is reserved, so `0x007f` is followed by `0x0100`,
+/// not by the invalid raw value `0x0080`. `None` means the cursor is reserved
+/// or the representable device cursor space is exhausted.
+#[must_use]
+pub fn next_storage_cursor(cursor: u16) -> Option<u16> {
+    let ordinal = storage_ordinal(cursor)?.checked_add(1)?;
+    let page = ordinal / 128;
+    let offset = ordinal % 128;
+    let raw = page.checked_mul(0x100)?.checked_add(offset)?;
+    u16::try_from(raw).ok()
+}
+
+/// Recognizes the device's end-of-session-list marker.
+///
+/// An empty slot is returned as a checksummed `EC` frame with selector and slot
+/// zero and no descriptor payload. It is a protocol marker, not a session and
+/// must never become a durable row.
+#[must_use]
+pub fn is_empty_session_descriptor(frame: &[u8]) -> bool {
+    let Some(payload) = frame.get(4..20) else {
+        return false;
+    };
+    frame.len() == SESSION_DESCRIPTOR_LEN
+        && frame.first() == Some(&OP_SESSION_DESCRIPTOR)
+        && frame.get(2) == Some(&0)
+        && frame.get(3) == Some(&0)
+        && payload.iter().all(|byte| *byte == 0)
+        && checksum_ok(frame)
+}
+
+/// Decodes one `EC` session descriptor.
+///
+/// The BLE stream appends one zero terminator after the 21-byte descriptor;
+/// that terminator is framing, not part of this function's input.
+#[must_use]
+pub fn decode_session_descriptor(frame: &[u8]) -> Option<SessionDescriptor> {
+    if frame.len() != SESSION_DESCRIPTOR_LEN {
+        return None;
+    }
+    if *frame.first()? != OP_SESSION_DESCRIPTOR || *frame.get(2)? != 0x01 || !checksum_ok(frame) {
+        return None;
+    }
+    let flags = *frame.get(1)?;
+    let slot = *frame.get(3)?;
+    if !(1..=7).contains(&slot) {
+        return None;
+    }
+    let year = *frame.get(4)?;
+    let month = *frame.get(5)?;
+    let day = *frame.get(6)?;
+    let hour = *frame.get(7)?;
+    let minute = *frame.get(8)?;
+    let second = *frame.get(9)?;
+    if !(1..=12).contains(&month)
+        || !(1..=31).contains(&day)
+        || hour > 23
+        || minute > 59
+        || second > 59
+    {
+        return None;
+    }
+    let mut metadata = [0u8; 11];
+    for (i, byte) in metadata.iter_mut().enumerate() {
+        *byte = *frame.get(10 + i)?;
+    }
+    Some(SessionDescriptor {
+        flags,
+        slot,
+        year,
+        month,
+        day,
+        hour,
+        minute,
+        second,
+        metadata,
+    })
+}
+
+/// Decodes one `ED` stored-session metric record.
+///
+/// The record checksum uses the same `sum & 0x7f` algorithm as the live
+/// protocol. `0x00`, `0x7f`, and `0xff` are absent values; `0x7f` is the
+#[must_use]
+pub fn decode_stored_record(frame: &[u8]) -> Option<StoredRecord> {
+    if frame.len() != STORED_RECORD_LEN {
+        return None;
+    }
+    if *frame.first()? != OP_STORED_RECORD || *frame.get(1)? != 0x01 || *frame.get(3)? != 0x01 {
+        return None;
+    }
+    let metric = match *frame.get(2)? {
+        0x01 => StoredMetric::Spo2,
+        0x02 => StoredMetric::Pulse,
+        _ => return None,
+    };
+    let slot = *frame.get(4)?;
+    if !(1..=7).contains(&slot) {
+        return None;
+    }
+    let cursor = u16::from_le_bytes([*frame.get(5)?, *frame.get(6)?]);
+    if storage_ordinal(cursor).is_none() || !checksum_ok(frame) {
+        return None;
+    }
+    let mut payload = [0u8; 16];
+    for (i, byte) in payload.iter_mut().enumerate() {
+        *byte = *frame.get(7 + i)?;
+    }
+    let value = match *frame.get(9)? {
+        0x00 | 0x7f | 0xff => None,
+        v => Some(v),
+    };
+    if matches!(metric, StoredMetric::Spo2) && value.is_some_and(|v| v > SPO2_MAX) {
+        return None;
+    }
+    Some(StoredRecord {
+        metric,
+        slot,
+        cursor,
+        value,
+        payload,
+    })
+}
+
+/// Commands and framing helpers for the official app's stored-session mode.
+pub mod storage {
+    use super::StoredMetric;
+
+    /// Set the device-local clock before reading stored session timestamps.
+    /// The six time fields are decimal bytes, as observed in the official app.
+    #[must_use]
+    pub fn clock_command(
+        year: u8,
+        month: u8,
+        day: u8,
+        hour: u8,
+        minute: u8,
+        second: u8,
+    ) -> Option<[u8; 10]> {
+        if !(1..=12).contains(&month)
+            || !(1..=31).contains(&day)
+            || hour > 23
+            || minute > 59
+            || second > 59
+        {
+            return None;
+        }
+        let mut frame = [0x83, year, month, day, hour, minute, second, 0, 0, 0];
+        let sum = frame
+            .get(..9)?
+            .iter()
+            .fold(0u32, |total, byte| total + u32::from(*byte));
+        *frame.last_mut()? = u8::try_from(sum & 0x7f).ok()?;
+        Some(frame)
+    }
+
+    /// Enter stored-session mode after the device clock has been set.
+    pub const PREPARE: [u8; 3] = [0x90, 0x06, 0x16];
+    /// Ask for the next stored-session descriptor. The device answers with an
+    /// `EC` descriptor followed by a zero stream terminator.
+    pub const LIST_NEXT: [u8; 3] = [0x9c, 0x01, 0x1d];
+    /// Leave stored-session mode after a download.
+    pub const EXIT: [u8; 8] = [0x9d, 0x7f, 0x7f, 0x7f, 0x7f, 0x00, 0x00, 0x19];
+
+    /// Builds a metric download command beginning at a device cursor.
+    ///
+    /// The command's cursor is a source cursor, so callers may resume a
+    /// partial transfer without inventing a host position.
+    #[must_use]
+    pub fn read_command(metric: StoredMetric, slot: u8, cursor: u16) -> Option<[u8; 8]> {
+        if !(1..=7).contains(&slot) || super::storage_ordinal(cursor).is_none() {
+            return None;
+        }
+        let mut frame = [0u8; 8];
+        *frame.get_mut(0)? = 0x9d;
+        *frame.get_mut(1)? = 0x01;
+        *frame.get_mut(2)? = metric.code();
+        *frame.get_mut(3)? = 0x01;
+        *frame.get_mut(4)? = slot;
+        let [lo, hi] = cursor.to_le_bytes();
+        *frame.get_mut(5)? = lo;
+        *frame.get_mut(6)? = hi;
+        let sum = frame
+            .get(..7)?
+            .iter()
+            .fold(0u32, |total, byte| total + u32::from(*byte));
+        *frame.last_mut()? = u8::try_from(sum & 0x7f).ok()?;
+        Some(frame)
+    }
+}
+
 /// Commands the host writes to `0xFF01`.
 ///
 /// Kept here beside the decoder so the protocol lives in one file rather than
@@ -238,6 +530,154 @@ mod tests {
 
     /// The device's frame layout with substituted readings: PR 70, `SpO2` 97.
     const DEVICE_LAYOUT_FRAME: [u8; 8] = [0xEB, 0x01, 0x05, 0x46, 0x61, 0x7F, 0x00, 0x17];
+
+    /// One `EC` descriptor in the official app's storage-download layout; date substituted.
+    /// The stream's trailing zero terminator is intentionally not included.
+    const STORED_SESSION: [u8; 21] = [
+        0xEC, 0x00, 0x01, 0x01, 0x1A, 0x01, 0x0F, 0x0A, 0x28, 0x30, 0x78, 0x43, 0x00, 0x00, 0x75,
+        0x73, 0x65, 0x72, 0x00, 0x00, 0x74,
+    ];
+
+    /// First SpO₂ `ED` record for storage slot 1.
+    /// Empty-session marker returned after the last available slot.
+    const EMPTY_SESSION: [u8; 21] = [
+        0xEC, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x2C,
+    ];
+
+    const STORED_SPO2: [u8; 24] = [
+        0xED, 0x01, 0x01, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x5F, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x51,
+    ];
+
+    /// First pulse `ED` record paired with [`STORED_SPO2`].
+    const STORED_PULSE: [u8; 24] = [
+        0xED, 0x01, 0x02, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x43, 0x00, 0x00, 0x01, 0x09, 0x00,
+        0x00, 0x09, 0x09, 0x00, 0x00, 0x00, 0x00, 0x10, 0x61,
+    ];
+
+    /// Final no-reading record from slot 1. Its cursor is page 2, offset 0x42.
+    const STORED_ABSENT: [u8; 24] = [
+        0xED, 0x01, 0x01, 0x01, 0x01, 0x42, 0x02, 0x7F, 0x7F, 0x7F, 0x7F, 0x7F, 0x7F, 0x7F, 0x7F,
+        0x7F, 0x7F, 0x7F, 0x7F, 0x7F, 0x7F, 0x7F, 0x7F, 0x25,
+    ];
+
+    #[test]
+    fn decodes_a_stored_session_descriptor() {
+        let d = decode_session_descriptor(&STORED_SESSION).expect("descriptor");
+        assert_eq!(d.flags, 0);
+        assert_eq!(d.slot, 1);
+        assert_eq!((d.year, d.month, d.day), (0x1A, 7, 9));
+        assert_eq!((d.hour, d.minute, d.second), (3, 0x29, 0x36));
+        assert_eq!(d.metadata().get(0), Some(&0x78));
+        assert_eq!(d.metadata().get(10), Some(&0x74));
+    }
+
+    #[test]
+    fn recognizes_the_empty_session_list_marker() {
+        assert!(is_empty_session_descriptor(&EMPTY_SESSION));
+        assert!(decode_session_descriptor(&EMPTY_SESSION).is_none());
+        let mut corrupt = EMPTY_SESSION;
+        if let Some(last) = corrupt.last_mut() {
+            *last ^= 1;
+        }
+        assert!(!is_empty_session_descriptor(&corrupt));
+    }
+
+    #[test]
+    fn decodes_paired_stored_metric_records() {
+        let spo2 = decode_stored_record(&STORED_SPO2).expect("SpO2 record");
+        assert_eq!(spo2.metric, StoredMetric::Spo2);
+        assert_eq!(spo2.slot, 1);
+        assert_eq!(spo2.cursor, 0);
+        assert_eq!(storage_ordinal(spo2.cursor), Some(0));
+        assert_eq!(spo2.value, Some(95));
+        assert_eq!(spo2.payload.get(2), Some(&95));
+
+        let pulse = decode_stored_record(&STORED_PULSE).expect("pulse record");
+        assert_eq!(pulse.metric, StoredMetric::Pulse);
+        assert_eq!(pulse.slot, spo2.slot);
+        assert_eq!(pulse.cursor, spo2.cursor);
+        assert_eq!(pulse.value, Some(67));
+    }
+
+    #[test]
+    fn stored_page_cursor_maps_to_logical_ordinal() {
+        assert_eq!(storage_ordinal(0x007F), Some(127));
+        assert_eq!(storage_ordinal(0x0100), Some(128));
+        assert_eq!(storage_ordinal(0x0242), Some(322));
+        assert_eq!(storage_ordinal(0x0080), None);
+        assert_eq!(next_storage_cursor(0x007f), Some(0x0100));
+        assert_eq!(next_storage_cursor(0x0100), Some(0x0101));
+        assert_eq!(next_storage_cursor(0x0080), None);
+        assert_eq!(next_storage_cursor(0xff7f), None);
+        let r = decode_stored_record(&STORED_ABSENT).expect("absent record");
+        assert_eq!(r.value, None);
+        assert_eq!(storage_ordinal(r.cursor), Some(322));
+    }
+
+    #[test]
+    fn storage_clock_command_matches_the_captured_app_command() {
+        assert_eq!(
+            storage::clock_command(0x1a, 9, 4, 4, 9, 0x12),
+            Some([0x83, 0x1a, 0x09, 0x04, 0x04, 0x09, 0x12, 0x00, 0x00, 0x49])
+        );
+        assert_eq!(storage::clock_command(0x1a, 0, 4, 4, 9, 0x12), None);
+        assert_eq!(storage::clock_command(0x1a, 9, 4, 4, 60, 0x12), None);
+    }
+
+    #[test]
+    fn storage_commands_use_the_device_checksum() {
+        assert_eq!(
+            storage::read_command(StoredMetric::Spo2, 1, 0),
+            Some([0x9D, 0x01, 0x01, 0x01, 0x01, 0x00, 0x00, 0x21])
+        );
+        assert_eq!(
+            storage::read_command(StoredMetric::Pulse, 1, 0),
+            Some([0x9D, 0x01, 0x02, 0x01, 0x01, 0x00, 0x00, 0x22])
+        );
+        assert_eq!(storage::read_command(StoredMetric::Spo2, 0, 0), None);
+        assert_eq!(storage::read_command(StoredMetric::Spo2, 1, 0x0080), None);
+    }
+
+    #[test]
+    fn malformed_stored_records_and_descriptors_are_rejected() {
+        assert!(decode_session_descriptor(STORED_SESSION.get(..20).expect("short")).is_none());
+        let mut bad_descriptor = STORED_SESSION;
+        if let Some(second) = bad_descriptor.get_mut(8) {
+            *second = 60;
+        }
+        assert!(decode_session_descriptor(&bad_descriptor).is_none());
+        let mut bad_descriptor_checksum = STORED_SESSION;
+        if let Some(last) = bad_descriptor_checksum.last_mut() {
+            *last ^= 1;
+        }
+        assert!(decode_session_descriptor(&bad_descriptor_checksum).is_none());
+
+        let mut bad_record = STORED_SPO2;
+        if let Some(last) = bad_record.last_mut() {
+            *last ^= 1;
+        }
+        assert!(decode_stored_record(&bad_record).is_none());
+        assert!(decode_stored_record(STORED_SPO2.get(..23).expect("short")).is_none());
+    }
+
+    #[test]
+    fn stored_spo2_above_physical_maximum_is_rejected() {
+        let mut frame = STORED_SPO2;
+        if let Some(value) = frame.get_mut(9) {
+            *value = 101;
+        }
+        let sum = frame
+            .get(..23)
+            .expect("payload")
+            .iter()
+            .fold(0u32, |total, byte| total + u32::from(*byte));
+        if let Some(last) = frame.last_mut() {
+            *last = u8::try_from(sum & 0x7F).expect("masked checksum");
+        }
+        assert!(decode_stored_record(&frame).is_none());
+    }
 
     #[test]
     fn decodes_a_frame_in_the_device_layout() {

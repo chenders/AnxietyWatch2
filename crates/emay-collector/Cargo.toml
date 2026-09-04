@@ -1,0 +1,22 @@
+[package]
+name = "emay-collector"
+description = "Durable EMAY SleepO2 stored-session collector"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+vitals-decode = { path = "../vitals-decode" }
+vitals-proto = { path = "../vitals-proto" }
+vitals-registry = { path = "../vitals-registry" }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+bluer = { version = "0.17", features = ["bluetoothd"] }
+futures = "0.3"
+tokio = { version = "1", features = ["rt", "macros", "time", "signal", "net", "io-util"] }
+
+[lints]
+workspace = true

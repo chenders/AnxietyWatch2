@@ -13,9 +13,9 @@
 //! reads normal (amendment 05 §1).
 //!
 //! `seq` derives from whatever the source makes stable across retransmission —
-//! the sensor's own data for a streaming source, the delivery index for a
-//! confirmed store-and-forward one (amendment 06 §1.2). A source that is
-//! neither cannot be given a correct identity and must not be ingested.
+//! the sensor's own data for a streaming source, or a source-provided cursor
+//! for stored records. A source that is neither cannot be given a correct
+//! identity and must not be ingested.
 #![forbid(unsafe_code)]
 
 pub mod copybin;
@@ -39,8 +39,9 @@ pub struct Sample {
     pub source: i32,
     /// `VitalsType` id from the registry.
     pub r#type: i32,
-    /// Identifies one upstream connection. **Unique across process restarts** —
-    /// see [`SessionMinter`] for why that is load-bearing.
+    /// Identifies one upstream source session. For a live connection this is
+    /// unique across process restarts; for a stored session it is the
+    /// deterministic device-session identity derived from source metadata.
     pub session_id: i64,
     /// Stable identity within the session.
     pub seq: i64,

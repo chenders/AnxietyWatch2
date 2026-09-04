@@ -41,7 +41,9 @@ pub struct WireSample {
     pub source: i32,
     /// Registry type id.
     pub r#type: i32,
-    /// Identifies one upstream connection; unique across process restarts.
+    /// Identifies one upstream source session. Live collectors use a
+    /// restart-unique connection id; stored-session collectors use the
+    /// deterministic device-session identity.
     pub session_id: i64,
     /// Stable identity within the session.
     pub seq: i64,

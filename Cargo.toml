@@ -8,6 +8,7 @@ members = [
     "crates/vitalsd",           # the single-writer daemon (Linux)
     "crates/hr-spike",          # T-B1 overnight capture (Linux)
     "crates/emay-spike",        # T-B1 substitute: SpO2 capture (Linux)
+    "crates/emay-collector",    # durable EMAY stored-session collector (Linux)
 ]
 
 [workspace.package]

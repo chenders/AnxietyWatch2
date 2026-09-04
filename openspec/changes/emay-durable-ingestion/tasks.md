@@ -8,7 +8,7 @@ unblocked for the stored-session collector. The anonymous live stream remains no
 ## Task index
 
 - [x] 1.1 Establish a stable EMAY record identity
-- [ ] 1.2 Implement the durable collector after identity approval
+- [x] 1.2 Implement the durable collector after identity approval
 - [ ] 1.3 Add PostgreSQL-backed panel history after durable ingestion
 - [ ] 1.4 Activate and verify on pi-host
 
