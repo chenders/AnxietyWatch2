@@ -45,36 +45,121 @@ jobs:
         run: sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client libdbus-1-dev
       - uses: dtolnay/rust-toolchain@stable
         with: { components: rustfmt, clippy }
+      - uses: taiki-e/install-action@nextest
       - uses: Swatinem/rust-cache@v2
       - name: Format
         run: cargo fmt --all --check
       - name: Clippy
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
-      - name: Test
+      - name: Test (no skips)
         run: |
           set -o pipefail
-          cargo test --workspace --all-features --no-fail-fast 2>&1 | tee /tmp/test.out
-          # `cargo test` on a workspace with no tests exits 0. That is the same
-          # vacuous pass the jobs above used to give, one layer down, so assert
-          # the run did work rather than trusting the exit code.
-          # `|| true`: grep exits 1 on no match, pipefail propagates it, and
-          # bash -e kills the step BEFORE the ::error:: below can print -- the
-          # same fail-closed-silently defect fixed in specs-are-reconciled.
-          passed=$(grep -oE '[0-9]+ passed' /tmp/test.out | awk '{s+=$1} END{print s+0}' || true)
-          echo "tests passed: $passed"
-          if [ "$passed" -lt 5 ]; then
-            echo "::error::only $passed tests ran -- sfloat.rs alone has 6, so the suite is not executing"
+          # --no-capture makes the explicit SKIPPED: diagnostics from database
+          # fixtures visible. The service and VITALS_TEST_PG above are required;
+          # a fixture that returns early is not a passing verification.
+          cargo nextest run --workspace --all-features --no-fail-fast --no-capture 2>&1 | tee /tmp/test.out
+          summary=$(grep -E 'Summary .* tests run:' /tmp/test.out | tail -1 || true)
+          passed=$(printf '%s\n' "$summary" | sed -nE 's/.*tests run: ([0-9]+) passed.*/\1/p')
+          skipped=$(printf '%s\n' "$summary" | sed -nE 's/.*,[[:space:]]+([0-9]+) skipped.*/\1/p')
+          echo "nextest summary: $summary"
+          if [ -z "$passed" ] || [ "$passed" -lt 5 ]; then
+            echo "::error::nextest reported fewer than 5 passing tests -- the suite is not executing"
             exit 1
           fi
-          # The round-trip announces itself when it skips. Treat that as a
-          # failure here: VITALS_TEST_PG is set above, so a skip means the
-          # service container did not come up, and a silently-skipped
-          # database test is worth less than no test at all.
+          if [ -z "$skipped" ] || [ "$skipped" -ne 0 ]; then
+            echo "::error::nextest reported skipped tests: ${skipped:-unknown}"
+            exit 1
+          fi
           if grep -q "SKIPPED:" /tmp/test.out; then
             grep "SKIPPED:" /tmp/test.out
             echo "::error::a test skipped in CI -- the Postgres service did not come up"
             exit 1
           fi
+
+  dependency-policy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install Rust dependency policy tools
+        run: |
+          cargo install cargo-audit --locked
+          cargo install cargo-deny --locked
+      - name: RustSec audit
+        run: cargo audit --deny warnings
+      - name: Dependency policy
+        run: cargo deny check advisories bans licenses sources
+
+  mutation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    # Drainer mutations exercise the real PostgreSQL-backed tests. A missing
+    # service must be a failing test, never a successful early return.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: scratch
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    env:
+      VITALS_TEST_PG: postgres://postgres:scratch@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@nextest
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-mutants
+        run: cargo install cargo-mutants --locked
+      - name: Mutation gate — spool, protocol, state, and publisher
+        run: |
+          set -o pipefail
+          cargo mutants \
+            --package vitals-core \
+            --package vitals-proto \
+            --package vitalsd \
+            --package vitals-drain \
+            --file crates/vitals-core/src/spool.rs \
+            --file crates/vitals-proto/src/lib.rs \
+            --file crates/vitalsd/src/state.rs \
+            --file crates/vitalsd/src/main.rs \
+            --file crates/vitals-drain/src/lib.rs \
+            --test-tool nextest \
+            --all-features \
+            --cap-lints true \
+            --timeout 120 \
+            --jobs 2 \
+            --no-shuffle \
+            -- \
+            --no-capture \
+            2>&1 | tee /tmp/mutants.out
+          if grep -q "SKIPPED:" /tmp/mutants.out; then
+            grep "SKIPPED:" /tmp/mutants.out
+            echo "::error::mutation tests contain a skipped integration test"
+            exit 1
+          fi
+
+  presentation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - name: Install presentation test tools
+        run: python -m pip install --disable-pip-version-check --no-warn-script-location pytest ruff black
+      - name: Panel and admin tests
+        run: |
+          python -m pytest -q vitals/tools/tests/test_panel_vitals_status.py
+          node --test tools/tests/test_admin_monitoring_page.mjs tools/tests/test_live_vitals_panel.mjs
+      - name: Panel formatting and lint
+        run: |
+          ruff check tools/panel_vitals_status.py vitals/tools/tests/test_panel_vitals_status.py
+          black --check tools/panel_vitals_status.py vitals/tools/tests/test_panel_vitals_status.py
 
   # The two design gates (docs/design/**/{palette,panel}-check.mjs) verify the
   # colour, contrast, CVD-separation and layout claims that the imported designs
@@ -207,7 +292,8 @@ jobs:
             echo "::error::$OUT exists but $GEN does not -- codegen is unverifiable"
             exit 1
           else
-            echo "::warning::T-D1 has not landed; registry codegen is unverified"
+            echo "::error::generated registry output is unverifiable -- $GEN and $OUT are both missing"
+            exit 1
           fi
 
   fuzz-smoke:
@@ -251,11 +337,26 @@ jobs:
               cargo fuzz run "$(basename "$t" .rs)" -- -max_total_time=60 || exit 1
             done
           else
-            echo "::warning::no fuzz targets exist yet; the gate above passed only because no decoder is implemented"
+            echo "::error::no fuzz targets were found -- decoder fuzzing is not being enforced"
+            exit 1
           fi
 
   coverage:
     runs-on: ubuntu-latest
+    # The database-backed drain tests must not turn into successful no-ops in
+    # this job. The hardware-only binaries are reported separately because
+    # their BlueZ paths require the Pi acceptance gate below.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: scratch
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    env:
+      VITALS_TEST_PG: postgres://postgres:scratch@localhost:5432/postgres
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -268,13 +369,18 @@ jobs:
       # not with the one where it was first noticed.
       - name: Install D-Bus headers
         run: sudo apt-get update -qq && sudo apt-get install -y -qq libdbus-1-dev pkg-config
-      # Decoders are the highest-value and most testable code here, so they carry
-      # the hard gate. A flat workspace number would let untested decoder paths
-      # hide behind well-covered glue.
-      - name: Coverage gate — vitals-decode
-        run: cargo llvm-cov --package vitals-decode --fail-under-lines 90 --summary-only
+      # These are the hard gates for code that can run deterministically in CI.
+      # Each command names its package set and keeps the 95% threshold explicit;
+      # the combined workspace report below remains visible for the Linux/BlueZ
+      # binaries whose real acceptance is on pi-host.
+      - name: Coverage gate — decoder
+        run: cargo llvm-cov --package vitals-decode --all-features --fail-under-lines 95 --summary-only
+      - name: Coverage gate — core libraries
+        run: cargo llvm-cov --package vitals-core --package vitals-proto --package vitalsd --package vitals-drain --lib --all-features --fail-under-lines 95 --summary-only
+      - name: Coverage gate — EMAY collector library
+        run: cargo llvm-cov --package emay-collector --lib --all-features --fail-under-lines 95 --summary-only
       - name: Coverage report — workspace
-        run: cargo llvm-cov --workspace --summary-only
+        run: cargo llvm-cov --workspace --all-features --summary-only
 
   specs-are-reconciled:
     runs-on: ubuntu-latest
