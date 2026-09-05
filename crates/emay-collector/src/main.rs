@@ -1,8 +1,9 @@
 //! Linux wiring for the durable EMAY `SleepO2` stored-session collector.
 //!
-//! The collector first downloads source-identified stored sessions, appends
-//! them through `vitalsd`, then keeps the live stream alive for bedside status.
-//! Live `EB` frames are never assigned a durable sequence here.
+//! The collector downloads source-identified stored sessions at startup and
+//! on a bounded periodic interval, appends them through `vitalsd`, then keeps
+//! the live stream alive for bedside status. Live `EB` frames are never
+//! assigned a durable sequence here.
 
 #[cfg(target_os = "linux")]
 use std::path::{Path, PathBuf};
@@ -14,11 +15,21 @@ const DEFAULT_SOCKET: &str = "/run/vitals/vitalsd.sock";
 fn main() {
     eprintln!("emay-collector needs BlueZ and runs on the Pi; portable protocol tests run with: ");
     eprintln!("    cargo test -p emay-collector");
+    #[cfg(not(test))]
     std::process::exit(64);
+}
+
+#[cfg(all(test, not(target_os = "linux")))]
+#[test]
+fn non_linux_entrypoint_reports_its_platform_requirement() {
+    // The production entrypoint exits with a usage status. Test builds omit
+    // that final process exit so coverage can execute the same evidence path.
+    main();
 }
 
 #[cfg(target_os = "linux")]
 mod linux {
+    use std::collections::HashMap;
     use std::path::Path;
     use std::pin::Pin;
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -36,8 +47,9 @@ mod linux {
     use vitals_proto::{
         Request, Response, WireSample, check_frame_len, decode_payload, encode_frame,
     };
+    use vitals_registry::VitalsType;
 
-    use emay_collector::wire_samples;
+    use emay_collector::{LiveIdentityState, StoredSyncState, StoredTransferState, wire_samples};
 
     const SERVICE: bluer::Uuid = bluer::Uuid::from_u128(0x0000_ff12_0000_1000_8000_0080_5f9b_34fb);
     const WRITE_CHAR: bluer::Uuid =
@@ -51,6 +63,13 @@ mod linux {
     const EMPTY_STREAM_GRACE: Duration = Duration::from_secs(1);
     const KEEPALIVE_INTERVAL: Duration = Duration::from_millis(1200);
     const SILENCE_LIMIT: Duration = Duration::from_mins(2);
+    /// Re-enter confirmed device storage often enough to bound the time a
+    /// source cursor can remain unsynchronized, without making live display
+    /// the history path.
+    const STORAGE_SYNC_INTERVAL: Duration = Duration::from_mins(15);
+    /// Every per-command timeout is finite, but a malformed or quiet device
+    /// must also be prevented from occupying live mode indefinitely.
+    const STORAGE_SYNC_DEADLINE: Duration = Duration::from_mins(3);
     type CollectorResult<T> = Result<T, String>;
 
     /// Current live status, deliberately separate from durable stored rows.
@@ -66,10 +85,11 @@ mod linux {
         measurements: u64,
         no_finger: u64,
         undecodable: u64,
+        stored_sync: StoredSyncState,
     }
 
     impl LiveStatus {
-        fn new() -> Self {
+        fn new(stored_sync: StoredSyncState) -> Self {
             Self {
                 written_at: now_secs(),
                 sample_at: None,
@@ -81,6 +101,7 @@ mod linux {
                 measurements: 0,
                 no_finger: 0,
                 undecodable: 0,
+                stored_sync,
             }
         }
     }
@@ -95,33 +116,83 @@ mod linux {
         value.map_or_else(|| "null".to_owned(), |number| number.to_string())
     }
 
+    /// Encodes externally sourced error text without allowing it to corrupt
+    /// the status document. A malformed status feed is a safety failure, not
+    /// a cosmetic problem.
+    fn json_string(value: &str) -> String {
+        use std::fmt::Write as _;
+
+        let mut output = String::with_capacity(value.len() + 2);
+        output.push('"');
+        for character in value.chars() {
+            match character {
+                '"' => output.push_str("\\\""),
+                '\\' => output.push_str("\\\\"),
+                '\u{08}' => output.push_str("\\b"),
+                '\u{0c}' => output.push_str("\\f"),
+                '\n' => output.push_str("\\n"),
+                '\r' => output.push_str("\\r"),
+                '\t' => output.push_str("\\t"),
+                character if character.is_control() => {
+                    let _ = write!(output, "\\u{:04x}", u32::from(character));
+                }
+                character => output.push(character),
+            }
+        }
+        output.push('"');
+        output
+    }
+
+    fn json_option_string(value: Option<&str>) -> String {
+        value.map_or_else(|| "null".to_owned(), json_string)
+    }
+
+    fn json_option_f64(value: Option<f64>) -> String {
+        value.map_or_else(|| "null".to_owned(), |number| format!("{number:.3}"))
+    }
+
     fn status_json(status: &LiveStatus) -> String {
         format!(
             concat!(
-                "{{\"schema\":1,",
+                "{{\"schema\":2,",
                 "\"written_at\":{:.3},",
                 "\"sample_at\":{},",
                 "\"spo2\":{},",
                 "\"pulse_bpm\":{},",
                 "\"finger\":{},",
-                "\"link\":\"{}\",",
+                "\"link\":{},",
+                "\"live_identity\":{},",
+                "\"live_durability\":\"status_only_not_committed\",",
                 "\"frames\":{},",
                 "\"measurements\":{},",
                 "\"no_finger\":{},",
-                "\"undecodable\":{}}}\n"
+                "\"undecodable\":{},",
+                "\"stored_transfer\":{},",
+                "\"stored_identity\":{},",
+                "\"stored_durability\":{},",
+                "\"stored_records_transferred\":{},",
+                "\"stored_rows_spooled\":{},",
+                "\"stored_last_sync_at\":{},",
+                "\"stored_last_error\":{}}}\n"
             ),
             status.written_at,
-            status
-                .sample_at
-                .map_or_else(|| "null".to_owned(), |value| format!("{value:.3}")),
+            json_option_f64(status.sample_at),
             json_option(status.spo2),
             json_option(status.pulse_bpm),
             status.finger,
-            status.link,
+            json_string(status.link),
+            json_string(LiveIdentityState::AnonymousNotDurable.as_str()),
             status.frames,
             status.measurements,
             status.no_finger,
             status.undecodable,
+            json_string(status.stored_sync.transfer.as_str()),
+            json_string(status.stored_sync.identity.as_str()),
+            json_string(status.stored_sync.durability.as_str()),
+            status.stored_sync.last_records_transferred,
+            status.stored_sync.last_rows_spooled,
+            json_option_f64(status.stored_sync.last_sync_at),
+            json_option_string(status.stored_sync.last_error.as_deref()),
         )
     }
 
@@ -135,8 +206,9 @@ mod linux {
             .and_then(|()| std::fs::rename(&temporary, path))
         {
             eprintln!(
-                "emay-collector: status write to {} failed: {error}",
-                path.display()
+                "event=emay.status stage=status_publication outcome=error path={:?} error={:?}",
+                path.display().to_string(),
+                error.to_string()
             );
         }
     }
@@ -326,7 +398,7 @@ mod linux {
                         // this framing degradation visible.
                         Some(0xEB) => {
                             eprintln!(
-                                "emay-collector: EC slot {} had no zero terminator; next byte is EB, accepting the validated descriptor",
+                                "event=emay.storage_descriptor stage=framing outcome=degraded source=emay slot={} reason=missing_zero_terminator next_opcode=0xeb",
                                 descriptor.slot
                             );
                             pending.drain(..SESSION_DESCRIPTOR_LEN);
@@ -491,21 +563,72 @@ mod linux {
         Ok(())
     }
 
+    #[derive(Debug, Clone, Copy)]
+    struct StoredCursorPair {
+        spo2: Option<u16>,
+        pulse: Option<u16>,
+    }
+
+    impl Default for StoredCursorPair {
+        fn default() -> Self {
+            Self {
+                spo2: Some(0),
+                pulse: Some(0),
+            }
+        }
+    }
+
+    fn next_cursor_after(
+        initial: Option<u16>,
+        records: &[StoredRecord],
+        metric: StoredMetric,
+        slot: u8,
+    ) -> CollectorResult<Option<u16>> {
+        let Some(record) = records.last() else {
+            return Ok(initial);
+        };
+        next_storage_cursor(record.cursor)
+            .ok_or_else(|| {
+                format!(
+                    "EMAY {metric:?} slot {slot} cursor {:#06x} has no representable successor",
+                    record.cursor
+                )
+            })
+            .map(Some)
+    }
+
+    async fn read_metric_if_needed<S>(
+        write: &bluer::gatt::remote::Characteristic,
+        stream: &mut Pin<Box<S>>,
+        pending: &mut Vec<u8>,
+        metric: StoredMetric,
+        slot: u8,
+        start_cursor: Option<u16>,
+    ) -> CollectorResult<Vec<StoredRecord>>
+    where
+        S: Stream<Item = Vec<u8>> + ?Sized,
+    {
+        let Some(start_cursor) = start_cursor else {
+            return Ok(Vec::new());
+        };
+        read_metric(write, stream, pending, metric, slot, start_cursor).await
+    }
+
     async fn read_metric<S>(
         write: &bluer::gatt::remote::Characteristic,
         stream: &mut Pin<Box<S>>,
         pending: &mut Vec<u8>,
         metric: StoredMetric,
         slot: u8,
+        start_cursor: u16,
     ) -> CollectorResult<Vec<StoredRecord>>
     where
         S: Stream<Item = Vec<u8>> + ?Sized,
     {
         let mut records = Vec::new();
-        let mut cursor = 0u16;
+        let mut cursor = start_cursor;
         let mut retries = 0usize;
         loop {
-            pending.clear();
             match read_metric_attempt(write, stream, pending, metric, slot, cursor).await {
                 Ok(chunk) => {
                     append_metric_records(&mut records, &chunk, metric, slot, cursor)?;
@@ -530,10 +653,15 @@ mod linux {
                             records.len()
                         ));
                     }
+                    // Only the timed-out partial tail is discarded. A
+                    // completed stream terminator may be followed by the
+                    // next metric's ED records in the same BLE notification,
+                    // and those bytes must remain queued for that metric.
+                    pending.clear();
                     retries += 1;
                     cursor = next;
                     eprintln!(
-                        "emay-collector: retry {retries}/{STORAGE_TRANSFER_RETRIES} for {metric:?} slot {slot} from source cursor {cursor:#06x}"
+                        "event=emay.storage_transfer stage=retry outcome=retry metric={metric:?} slot={slot} attempt={retries} max_attempts={STORAGE_TRANSFER_RETRIES} source_cursor={cursor:#06x}"
                     );
                 }
                 Err(MetricAttemptError::Transport(error) | MetricAttemptError::Protocol(error)) => {
@@ -570,9 +698,116 @@ mod linux {
         Ok(records)
     }
 
-    async fn append_rows(socket_path: &Path, rows: &[WireSample]) -> CollectorResult<usize> {
+    #[derive(Debug, Clone, Copy)]
+    struct AppendReceipt {
+        count: usize,
+        durable: bool,
+    }
+
+    #[derive(Debug)]
+    struct StorageSyncProgress {
+        records_transferred: usize,
+        rows_spooled: usize,
+        all_fsynced: bool,
+    }
+
+    impl StorageSyncProgress {
+        fn new() -> Self {
+            Self {
+                records_transferred: 0,
+                rows_spooled: 0,
+                all_fsynced: true,
+            }
+        }
+
+        fn record_batch(&mut self, receipt: AppendReceipt) -> CollectorResult<()> {
+            self.rows_spooled = self
+                .rows_spooled
+                .checked_add(receipt.count)
+                .ok_or_else(|| "EMAY spooled-row count overflowed usize".to_owned())?;
+            self.all_fsynced &= receipt.durable;
+            Ok(())
+        }
+
+        fn record_source_records(&mut self, count: usize) -> CollectorResult<()> {
+            self.records_transferred = self
+                .records_transferred
+                .checked_add(count)
+                .ok_or_else(|| "EMAY transferred-record count overflowed usize".to_owned())?;
+            Ok(())
+        }
+    }
+
+    #[derive(Debug)]
+    struct StorageSyncReceipt {
+        records_transferred: usize,
+        rows_spooled: usize,
+        all_fsynced: bool,
+    }
+
+    #[derive(Debug)]
+    struct StorageSyncFailure {
+        detail: String,
+        records_transferred: usize,
+        rows_spooled: usize,
+        all_fsynced: bool,
+    }
+
+    fn storage_sync_receipt(progress: &StorageSyncProgress) -> StorageSyncReceipt {
+        StorageSyncReceipt {
+            records_transferred: progress.records_transferred,
+            rows_spooled: progress.rows_spooled,
+            all_fsynced: progress.all_fsynced,
+        }
+    }
+
+    fn storage_sync_failure(progress: &StorageSyncProgress, detail: String) -> StorageSyncFailure {
+        StorageSyncFailure {
+            detail,
+            records_transferred: progress.records_transferred,
+            rows_spooled: progress.rows_spooled,
+            all_fsynced: progress.all_fsynced,
+        }
+    }
+
+    fn finish_storage_sync<E>(
+        result: Result<(), String>,
+        exit: Result<(), E>,
+        progress: &StorageSyncProgress,
+        updated_cursors: Vec<(i64, StoredCursorPair)>,
+        cursors: &mut HashMap<i64, StoredCursorPair>,
+    ) -> Result<StorageSyncReceipt, StorageSyncFailure>
+    where
+        E: std::fmt::Display,
+    {
+        match (result, exit) {
+            (Ok(()), Ok(())) => {
+                for (identity, cursor) in updated_cursors {
+                    cursors.insert(identity, cursor);
+                }
+                Ok(storage_sync_receipt(progress))
+            }
+            (Ok(()), Err(error)) => Err(storage_sync_failure(
+                progress,
+                format!("leave EMAY storage mode: {error}"),
+            )),
+            (Err(error), Ok(())) => Err(storage_sync_failure(progress, error)),
+            (Err(error), Err(exit_error)) => Err(storage_sync_failure(
+                progress,
+                format!("{error}; leave EMAY storage mode also failed: {exit_error}"),
+            )),
+        }
+    }
+
+    async fn append_rows(
+        socket_path: &Path,
+        rows: &[WireSample],
+    ) -> CollectorResult<AppendReceipt> {
         if rows.is_empty() {
-            return Ok(0);
+            return Ok(AppendReceipt {
+                count: 0,
+                durable: true,
+            });
         }
         let mut socket = UnixStream::connect(socket_path)
             .await
@@ -606,7 +841,19 @@ mod linux {
         match decode_payload::<Response>(&body)
             .map_err(|error| format!("decode vitalsd response: {error}"))?
         {
-            Response::Appended { count, .. } if count == rows.len() => Ok(count),
+            Response::Appended { count, durable } if count == rows.len() => {
+                eprintln!(
+                    "event=emay.append stage=spooled outcome=ok source=emay type_first={} type_last={} session_id={} seq_first={} seq_last={} row_count={} fsynced={} identity=source_descriptor_cursor",
+                    rows.first().map_or(0, |row| row.r#type),
+                    rows.last().map_or(0, |row| row.r#type),
+                    rows.first().map_or(0, |row| row.session_id),
+                    rows.first().map_or(0, |row| row.seq),
+                    rows.last().map_or(0, |row| row.seq),
+                    count,
+                    durable
+                );
+                Ok(AppendReceipt { count, durable })
+            }
             Response::Appended { count, .. } => Err(format!(
                 "vitalsd appended {count} EMAY rows, but collector sent {}",
                 rows.len()
@@ -621,14 +868,67 @@ mod linux {
     async fn append_rows_in_batches(
         socket_path: &Path,
         rows: &[WireSample],
-    ) -> CollectorResult<usize> {
-        let mut appended = 0usize;
+        progress: &mut StorageSyncProgress,
+    ) -> CollectorResult<()> {
         for batch in rows.chunks(APPEND_BATCH_SIZE) {
-            appended = appended
-                .checked_add(append_rows(socket_path, batch).await?)
-                .ok_or_else(|| "EMAY appended-row count overflowed usize".to_owned())?;
+            let receipt = append_rows(socket_path, batch).await?;
+            progress.record_batch(receipt)?;
         }
-        Ok(appended)
+        Ok(())
+    }
+
+    async fn read_descriptors<S>(
+        write: &bluer::gatt::remote::Characteristic,
+        stream: &mut Pin<Box<S>>,
+        pending: &mut Vec<u8>,
+    ) -> CollectorResult<Vec<SessionDescriptor>>
+    where
+        S: Stream<Item = Vec<u8>> + ?Sized,
+    {
+        let mut descriptors = Vec::with_capacity(STORAGE_SLOTS);
+        for _ in 0..STORAGE_SLOTS {
+            match tokio::time::timeout(RESPONSE_TIMEOUT, read_descriptor(write, stream, pending))
+                .await
+            {
+                Ok(Ok(Some(descriptor))) => {
+                    if descriptors
+                        .iter()
+                        .any(|seen: &SessionDescriptor| seen.slot == descriptor.slot)
+                    {
+                        return Err(format!(
+                            "EMAY stored-session descriptor repeated slot {}",
+                            descriptor.slot
+                        ));
+                    }
+                    descriptors.push(descriptor);
+                }
+                Ok(Ok(None)) => {
+                    pending.clear();
+                    if descriptors.is_empty() {
+                        eprintln!(
+                            "event=emay.storage_sync stage=descriptor_list outcome=empty source=emay reason=device_reported_no_stored_sessions"
+                        );
+                    }
+                    break;
+                }
+                Ok(Err(error)) => {
+                    pending.clear();
+                    return Err(format!(
+                        "EMAY stored-session descriptor list unavailable after {} descriptors: {error}",
+                        descriptors.len()
+                    ));
+                }
+                Err(_) => {
+                    pending.clear();
+                    return Err(format!(
+                        "EMAY stored-session descriptor {} timed out after {}s",
+                        descriptors.len() + 1,
+                        RESPONSE_TIMEOUT.as_secs()
+                    ));
+                }
+            }
+        }
+        Ok(descriptors)
     }
 
     async fn storage_sync<S>(
@@ -636,92 +936,99 @@ mod linux {
         stream: &mut Pin<Box<S>>,
         pending: &mut Vec<u8>,
         socket_path: &Path,
-    ) -> CollectorResult<usize>
+        cursors: &mut HashMap<i64, StoredCursorPair>,
+    ) -> Result<StorageSyncReceipt, StorageSyncFailure>
     where
         S: Stream<Item = Vec<u8>> + ?Sized,
     {
-        let result = async {
+        let mut progress = StorageSyncProgress::new();
+        let mut updated_cursors = Vec::with_capacity(STORAGE_SLOTS);
+        let result = tokio::time::timeout(STORAGE_SYNC_DEADLINE, async {
             send_setup(write).await?;
-            let mut descriptors = Vec::with_capacity(STORAGE_SLOTS);
-            for _ in 0..STORAGE_SLOTS {
-                match tokio::time::timeout(
-                    RESPONSE_TIMEOUT,
-                    read_descriptor(write, stream, pending),
-                )
-                .await
-                {
-                    Ok(Ok(Some(descriptor))) => {
-                        if descriptors
-                            .iter()
-                            .any(|seen: &SessionDescriptor| seen.slot == descriptor.slot)
-                        {
-                            return Err(format!(
-                                "EMAY stored-session descriptor repeated slot {}",
-                                descriptor.slot
-                            ));
-                        }
-                        descriptors.push(descriptor);
-                    }
-                    Ok(Ok(None)) => {
-                        pending.clear();
-                        if descriptors.is_empty() {
-                            eprintln!("emay-collector: device reported no stored sessions");
-                        }
-                        break;
-                    }
-                    Ok(Err(error)) if descriptors.is_empty() => {
-                        pending.clear();
-                        eprintln!("emay-collector: no stored-session descriptor: {error}");
-                        break;
-                    }
-                    Ok(Err(error)) => {
-                        pending.clear();
-                        return Err(format!(
-                            "EMAY stored-session descriptor {} failed: {error}",
-                            descriptors.len() + 1
-                        ));
-                    }
-                    Err(_) if descriptors.is_empty() => {
-                        pending.clear();
-                        eprintln!(
-                            "emay-collector: no stored sessions reported within {}s",
-                            RESPONSE_TIMEOUT.as_secs()
-                        );
-                        break;
-                    }
-                    Err(_) => {
-                        pending.clear();
-                        break;
-                    }
-                }
-            }
-
-            let mut appended = 0usize;
+            let descriptors = read_descriptors(write, stream, pending).await?;
             for descriptor in descriptors {
-                let spo2 = read_metric(write, stream, pending, StoredMetric::Spo2, descriptor.slot)
-                    .await?;
-                let pulse =
-                    read_metric(write, stream, pending, StoredMetric::Pulse, descriptor.slot)
-                        .await?;
+                let identity = emay_collector::session_id(&descriptor);
+                let cursor = cursors.get(&identity).copied().unwrap_or_default();
+                eprintln!(
+                    "event=emay.storage_session stage=received outcome=ok source=emay session_id={identity} slot={} identity=source_descriptor_cursor spo2_start_cursor={:?} pulse_start_cursor={:?}",
+                    descriptor.slot, cursor.spo2, cursor.pulse
+                );
+                let spo2 = read_metric_if_needed(
+                    write,
+                    stream,
+                    pending,
+                    StoredMetric::Spo2,
+                    descriptor.slot,
+                    cursor.spo2,
+                )
+                .await?;
+                let pulse = read_metric_if_needed(
+                    write,
+                    stream,
+                    pending,
+                    StoredMetric::Pulse,
+                    descriptor.slot,
+                    cursor.pulse,
+                )
+                .await?;
                 let records = pair_records(&descriptor, &spo2, &pulse)?;
+                progress.record_source_records(records.len())?;
+                eprintln!(
+                    "event=emay.stored_records stage=received outcome=accepted source=emay session_id={identity} type_first={} type_last={} seq_first={} seq_last={} records={} identity=source_descriptor_cursor",
+                    records.first().map_or(0, |record| record.metric.code()),
+                    records.last().map_or(0, |record| record.metric.code()),
+                    records.first().map_or(0, |record| record.cursor),
+                    records.last().map_or(0, |record| record.cursor),
+                    records.len()
+                );
                 let rows = wire_samples(&descriptor, &records)?;
-                appended = appended
-                    .checked_add(append_rows_in_batches(socket_path, &rows).await?)
-                    .ok_or_else(|| "EMAY appended-row count overflowed usize".to_owned())?;
+                append_rows_in_batches(socket_path, &rows, &mut progress).await?;
+                let next = StoredCursorPair {
+                    spo2: next_cursor_after(
+                        cursor.spo2,
+                        &spo2,
+                        StoredMetric::Spo2,
+                        descriptor.slot,
+                    )?,
+                    pulse: next_cursor_after(
+                        cursor.pulse,
+                        &pulse,
+                        StoredMetric::Pulse,
+                        descriptor.slot,
+                    )?,
+                };
+                // Do not advance the in-process cursor until the whole
+                // exit acknowledgement fails, the next attempt must replay
+                // the source records rather than trusting an incomplete
+                // transfer; source identity makes that replay idempotent.
+                updated_cursors.push((identity, next));
+                eprintln!(
+                    "event=emay.storage_session stage=spooled outcome=ok source=emay session_id={identity} slot={} records={} rows={} next_spo2_cursor={:?} next_pulse_cursor={:?}",
+                    descriptor.slot,
+                    records.len(),
+                    rows.len(),
+                    next.spo2,
+                    next.pulse
+                );
             }
-            Ok(appended)
-        }
+            Ok(())
+        })
         .await;
-
-        let exit = write.write(&storage::EXIT).await;
-        match (result, exit) {
-            (Ok(appended), Ok(())) => Ok(appended),
-            (Err(error), Ok(())) => Err(error),
-            (Ok(_), Err(error)) => Err(format!("leave EMAY storage mode: {error}")),
-            (Err(error), Err(exit_error)) => Err(format!(
-                "{error}; leave EMAY storage mode also failed: {exit_error}"
+        let result = match result {
+            Ok(result) => result,
+            Err(_) => Err(format!(
+                "EMAY stored-session transfer exceeded {}s deadline",
+                STORAGE_SYNC_DEADLINE.as_secs()
             )),
-        }
+        };
+
+        finish_storage_sync(
+            result,
+            write.write(&storage::EXIT).await,
+            &progress,
+            updated_cursors,
+            cursors,
+        )
     }
 
     fn drain_live(
@@ -740,17 +1047,27 @@ mod linux {
             } else {
                 status.no_finger = status.no_finger.saturating_add(1);
             }
-            status.sample_at = Some(now_secs());
+            let sample_at = now_secs();
+            status.sample_at = Some(sample_at);
             status.spo2 = reading.spo2;
             status.pulse_bpm = reading.pulse_bpm;
             status.finger = reading.is_measurement();
+            eprintln!(
+                "event=emay.live stage=received outcome=accepted source=emay type_first={} type_last={} session_id=none seq=none event_time_unix_secs={sample_at:.3} measurement={} spo2={:?} pulse_bpm={:?} durability=status_only_not_committed received_total={}",
+                VitalsType::Spo2.id(),
+                VitalsType::Hr.id(),
+                reading.is_measurement(),
+                reading.spo2,
+                reading.pulse_bpm,
+                status.frames
+            );
             write_status(status_path, status);
         }
         pending.drain(..consumed);
         if pending.len() > 32 {
             status.undecodable = status.undecodable.saturating_add(1);
             eprintln!(
-                "emay-collector: dropping {} live bytes after no valid EB frame ({} drops)",
+                "event=emay.live stage=decode outcome=rejected source=emay identity=anonymous_not_durable bytes={} rejected_frames={}",
                 pending.len(),
                 status.undecodable
             );
@@ -759,14 +1076,79 @@ mod linux {
         }
     }
 
-    async fn live<S>(
+    fn apply_storage_sync_result(
+        status: &mut LiveStatus,
+        result: Result<StorageSyncReceipt, StorageSyncFailure>,
+    ) -> CollectorResult<()> {
+        match result {
+            Ok(receipt) => {
+                let records = u64::try_from(receipt.records_transferred)
+                    .map_err(|_| "EMAY transferred-record count exceeded u64".to_owned())?;
+                let rows = u64::try_from(receipt.rows_spooled)
+                    .map_err(|_| "EMAY spooled-row count exceeded u64".to_owned())?;
+                status
+                    .stored_sync
+                    .complete(now_secs(), records, rows, receipt.all_fsynced);
+                eprintln!(
+                    "event=emay.storage_sync stage=transfer outcome=complete state={} records_transferred={} rows_spooled={} all_fsynced={} durability={}",
+                    status.stored_sync.transfer.as_str(),
+                    records,
+                    rows,
+                    receipt.all_fsynced,
+                    status.stored_sync.durability.as_str()
+                );
+            }
+            Err(failure) => {
+                let records = u64::try_from(failure.records_transferred)
+                    .map_err(|_| "EMAY transferred-record count exceeded u64".to_owned())?;
+                let rows = u64::try_from(failure.rows_spooled)
+                    .map_err(|_| "EMAY spooled-row count exceeded u64".to_owned())?;
+                eprintln!(
+                    "event=emay.storage_sync stage=transfer outcome=failed state={} records_transferred={} rows_spooled={} all_fsynced={} error={:?}",
+                    StoredTransferState::Failed.as_str(),
+                    records,
+                    rows,
+                    failure.all_fsynced,
+                    failure.detail
+                );
+                status.stored_sync.fail(
+                    now_secs(),
+                    records,
+                    rows,
+                    failure.all_fsynced,
+                    failure.detail,
+                );
+            }
+        }
+        Ok(())
+    }
+
+    async fn run_storage_sync<S>(
         write: &bluer::gatt::remote::Characteristic,
         stream: &mut Pin<Box<S>>,
+        pending: &mut Vec<u8>,
+        socket_path: &Path,
         status_path: Option<&Path>,
+        status: &mut LiveStatus,
+        cursors: &mut HashMap<i64, StoredCursorPair>,
     ) -> CollectorResult<()>
     where
         S: Stream<Item = Vec<u8>> + ?Sized,
     {
+        status.stored_sync.begin();
+        eprintln!(
+            "event=emay.storage_sync stage=transfer outcome=started state={} identity={}",
+            status.stored_sync.transfer.as_str(),
+            status.stored_sync.identity.as_str()
+        );
+        write_status(status_path, status);
+        let result = storage_sync(write, stream, pending, socket_path, cursors).await;
+        apply_storage_sync_result(status, result)?;
+        write_status(status_path, status);
+        Ok(())
+    }
+
+    async fn start_live(write: &bluer::gatt::remote::Characteristic) -> CollectorResult<()> {
         for command in [
             cmd::HELLO.as_slice(),
             cmd::DEVICE_STATE.as_slice(),
@@ -778,40 +1160,93 @@ mod linux {
             })?;
             tokio::time::sleep(Duration::from_millis(400)).await;
         }
-        let mut status = LiveStatus::new();
-        write_status(status_path, &mut status);
-        let mut pending = Vec::with_capacity(64);
+        Ok(())
+    }
+
+    async fn live<S>(
+        write: &bluer::gatt::remote::Characteristic,
+        stream: &mut Pin<Box<S>>,
+        status_path: Option<&Path>,
+        socket_path: &Path,
+        status: &mut LiveStatus,
+        pending: &mut Vec<u8>,
+        cursors: &mut HashMap<i64, StoredCursorPair>,
+    ) -> CollectorResult<()>
+    where
+        S: Stream<Item = Vec<u8>> + ?Sized,
+    {
+        if let Err(error) = start_live(write).await {
+            status.link = "lost";
+            write_status(status_path, status);
+            return Err(format!("start live EMAY stream: {error}"));
+        }
+        write_status(status_path, status);
         let mut keepalive = tokio::time::interval(KEEPALIVE_INTERVAL);
+        let mut storage_sync_tick = tokio::time::interval(STORAGE_SYNC_INTERVAL);
+        storage_sync_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        // `interval` ticks immediately on its first call. The initial sync was
+        // completed by `run`, so consume that tick before waiting for the
+        // bounded periodic transfer interval.
+        storage_sync_tick.tick().await;
         let mut last_frame = tokio::time::Instant::now();
         loop {
             tokio::select! {
                 item = next_notification(stream) => {
-                    let bytes = item?;
+                    let bytes = match item {
+                        Ok(bytes) => bytes,
+                        Err(error) => {
+                            status.link = "lost";
+                            write_status(status_path, status);
+                            return Err(error);
+                        }
+                    };
                     let before = status.frames;
-                    drain_live(&bytes, &mut pending, &mut status, status_path);
+                    drain_live(&bytes, pending, status, status_path);
                     if status.frames != before {
                         last_frame = tokio::time::Instant::now();
                     }
                 }
                 _ = keepalive.tick() => {
-                    write.write(&cmd::KEEPALIVE).await.map_err(|error| {
-                        format!("EMAY live keepalive failed; link is gone: {error}")
-                    })?;
-                    write_status(status_path, &mut status);
+                    if let Err(error) = write.write(&cmd::KEEPALIVE).await {
+                        status.link = "lost";
+                        write_status(status_path, status);
+                        return Err(format!(
+                            "EMAY live keepalive failed; link is gone: {error}"
+                        ));
+                    }
+                    write_status(status_path, status);
                     if last_frame.elapsed() > SILENCE_LIMIT {
                         status.link = "lost";
-                        write_status(status_path, &mut status);
+                        write_status(status_path, status);
                         return Err(format!(
                             "EMAY live stream stale for {}s while keepalives succeeded",
                             last_frame.elapsed().as_secs()
                         ));
                     }
                 }
+                _ = storage_sync_tick.tick() => {
+                    run_storage_sync(
+                        write,
+                        stream,
+                        pending,
+                        socket_path,
+                        status_path,
+                        status,
+                        cursors,
+                    ).await?;
+                    start_live(write).await.map_err(|error| {
+                        status.link = "lost";
+                        write_status(status_path, status);
+                        format!("resume live EMAY stream after storage sync: {error}")
+                    })?;
+                    last_frame = tokio::time::Instant::now();
+                    write_status(status_path, status);
+                }
                 interrupted = tokio::signal::ctrl_c() => {
                     interrupted.map_err(|error| format!("wait for EMAY shutdown signal: {error}"))?;
                     let _ = write.write(&cmd::STOP_REALTIME).await;
                     status.link = "lost";
-                    write_status(status_path, &mut status);
+                    write_status(status_path, status);
                     return Ok(());
                 }
             }
@@ -823,6 +1258,9 @@ mod linux {
         socket_path: &Path,
         status_path: Option<&Path>,
     ) -> CollectorResult<()> {
+        let mut status = LiveStatus::new(StoredSyncState::new());
+        status.link = "connecting";
+        write_status(status_path, &mut status);
         let target = mac
             .parse::<Address>()
             .map_err(|error| format!("{mac:?} is not a Bluetooth address: {error}"))?;
@@ -846,20 +1284,29 @@ mod linux {
                 .map_err(|error| format!("subscribe to EMAY FF02: {error}"))?,
         );
         let mut pending = Vec::with_capacity(256);
-        match storage_sync(&write, &mut stream, &mut pending, socket_path).await {
-            Ok(appended) => {
-                eprintln!("emay-collector: appended {appended} stored-session rows");
-            }
-            Err(error) => {
-                // Stored history is retryable from the device cursor. Keep
-                // the current anonymous stream alive rather than sacrificing
-                // bedside EMAY display when a history transfer is degraded.
-                eprintln!(
-                    "emay-collector: stored-session sync unavailable; continuing live display-only: {error}"
-                );
-            }
-        }
-        live(&write, &mut stream, status_path).await
+        let mut cursors = HashMap::new();
+        status.link = "up";
+        write_status(status_path, &mut status);
+        run_storage_sync(
+            &write,
+            &mut stream,
+            &mut pending,
+            socket_path,
+            status_path,
+            &mut status,
+            &mut cursors,
+        )
+        .await?;
+        live(
+            &write,
+            &mut stream,
+            status_path,
+            socket_path,
+            &mut status,
+            &mut pending,
+            &mut cursors,
+        )
+        .await
     }
 }
 

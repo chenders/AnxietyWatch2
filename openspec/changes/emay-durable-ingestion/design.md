@@ -63,7 +63,9 @@ T-E1's evidence work is complete for stored-session ingestion. The production co
 1. Keep one known-device connection and use the existing FF12/FF01/FF02 transport.
 2. Query the device's session descriptors, then download each slot's metric records with the
    observed `9d` commands. Reassemble notifications before parsing; a partial transfer must be
-   retryable.
+   retryable. Run this as an initial sync and as a bounded fifteen-minute periodic sync; retain the
+   next source cursor per descriptor in process, and replay from the source cursor after a failed
+   transfer or process restart.
 3. Validate every `EC`/`ED` frame and reject/quarantine malformed or out-of-range values. Preserve
    the `0x7f` no-reading state as absent.
 4. Derive a deterministic `session_id` from the complete descriptor and slot, use the device
@@ -71,7 +73,10 @@ T-E1's evidence work is complete for stored-session ingestion. The production co
    ordinal. Store UTC epoch seconds only.
 5. Send rows through `vitalsd` → COPY spool → PostgreSQL and make the existing panel projection read
    them. The live `EB` stream may continue to update the bedside display and journal, but it must not
-   be assigned a host identity merely to enter `samples`.
+   be assigned a host identity merely to enter `samples`. The collector status document exposes
+   `in_progress`, `succeeded`, and `failed` transfer states, the source-descriptor/cursor identity,
+   and only `spool_pending` or `fsynced_pending_commit` durability; it never claims a PostgreSQL
+   commit that the collector cannot observe.
 
 No new identity amendment is required for the stored records. This plan does not claim exactly-once
 BLE transport; it relies on source-provided keys for idempotent re-downloads and surfaces partial

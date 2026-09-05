@@ -12,6 +12,201 @@ use vitals_registry::{VitalsSource, VitalsType};
 /// The byte-level version used in the source-specific `extra` field.
 const EXTRA_VERSION: u8 = 1;
 
+/// The identity state of the anonymous real-time stream.
+///
+/// An `EB` notification has no source cursor, timestamp, or record id. It is
+/// useful for bedside freshness, but it is never a durable numeric sample.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LiveIdentityState {
+    /// The live value is explicitly excluded from durable ingestion.
+    AnonymousNotDurable,
+}
+
+impl LiveIdentityState {
+    /// The stable status-document spelling.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::AnonymousNotDurable => "anonymous_not_durable",
+        }
+    }
+}
+
+/// The transfer state of the most recent stored-session synchronization.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StoredTransferState {
+    /// No synchronization has been attempted in this process.
+    NeverAttempted,
+    /// A bounded device-storage transfer is in progress.
+    InProgress,
+    /// The descriptor and both metric streams completed and the rows were
+    /// accepted by `vitalsd`.
+    Succeeded,
+    /// The transfer or its exit acknowledgement failed.
+    Failed,
+}
+
+impl StoredTransferState {
+    /// The stable status-document spelling.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::NeverAttempted => "never_attempted",
+            Self::InProgress => "in_progress",
+            Self::Succeeded => "succeeded",
+            Self::Failed => "failed",
+        }
+    }
+}
+
+/// The identity evidence used by stored-session rows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StoredIdentityState {
+    /// The `EC` descriptor and `ED` device cursor supply the durable key.
+    SourceDescriptorCursor,
+}
+
+impl StoredIdentityState {
+    /// The stable status-document spelling.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::SourceDescriptorCursor => "source_descriptor_cursor",
+        }
+    }
+}
+
+/// The strongest durability claim currently available to the collector.
+///
+/// The collector can observe the `vitalsd` append receipt, but it cannot
+/// observe a `PostgreSQL` commit. No variant claims that the database committed
+/// a row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StoredDurabilityState {
+    /// There has not yet been a completed stored transfer.
+    NotObserved,
+    /// The append was accepted, but its bytes were not fsynced before the
+    /// `vitalsd` response; a later periodic sync may still make them durable.
+    SpoolPending,
+    /// `vitalsd` reported an fsynced append, but `PostgreSQL` commit is still not
+    /// observed by this collector.
+    FsyncedPendingCommit,
+    /// A transfer completed but contained no numeric values to append.
+    NoNumericRows,
+    /// A transfer failed, so its final durability state is not established.
+    Unknown,
+}
+
+impl StoredDurabilityState {
+    /// The stable status-document spelling.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::NotObserved => "not_observed",
+            Self::SpoolPending => "spool_pending",
+            Self::FsyncedPendingCommit => "fsynced_pending_commit",
+            Self::NoNumericRows => "no_numeric_rows",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
+/// Pure state for a stored-session transfer.
+///
+/// This is deliberately independent of clocks, `BlueZ`, and socket I/O. The
+/// Linux collector feeds it only confirmed transfer and append outcomes, so a
+/// live `EB` value cannot accidentally advance the durable state.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StoredSyncState {
+    /// Transfer lifecycle state.
+    pub transfer: StoredTransferState,
+    /// Identity evidence approved for rows from this transfer.
+    pub identity: StoredIdentityState,
+    /// Durability evidence for the last transfer outcome.
+    pub durability: StoredDurabilityState,
+    /// Number of source records decoded during the last attempt.
+    pub last_records_transferred: u64,
+    /// Number of numeric rows accepted by `vitalsd` during the last attempt.
+    pub last_rows_spooled: u64,
+    /// Unix epoch seconds at which the last attempt finished.
+    pub last_sync_at: Option<f64>,
+    /// The current/last named transfer failure.
+    pub last_error: Option<String>,
+}
+
+impl StoredSyncState {
+    /// Creates the fail-closed initial state.
+    #[must_use]
+    pub const fn new() -> Self {
+        Self {
+            transfer: StoredTransferState::NeverAttempted,
+            identity: StoredIdentityState::SourceDescriptorCursor,
+            durability: StoredDurabilityState::NotObserved,
+            last_records_transferred: 0,
+            last_rows_spooled: 0,
+            last_sync_at: None,
+            last_error: None,
+        }
+    }
+
+    /// Marks the beginning of a new bounded transfer.
+    pub fn begin(&mut self) {
+        self.transfer = StoredTransferState::InProgress;
+        self.last_error = None;
+    }
+
+    /// Records a fully completed transfer and its `vitalsd` append receipt.
+    pub fn complete(
+        &mut self,
+        finished_at: f64,
+        records_transferred: u64,
+        rows_spooled: u64,
+        all_fsynced: bool,
+    ) {
+        self.transfer = StoredTransferState::Succeeded;
+        self.durability = if rows_spooled == 0 {
+            StoredDurabilityState::NoNumericRows
+        } else if all_fsynced {
+            StoredDurabilityState::FsyncedPendingCommit
+        } else {
+            StoredDurabilityState::SpoolPending
+        };
+        self.last_records_transferred = records_transferred;
+        self.last_rows_spooled = rows_spooled;
+        self.last_sync_at = Some(finished_at);
+        self.last_error = None;
+    }
+
+    /// Records a failed transfer while retaining any partial append evidence.
+    pub fn fail(
+        &mut self,
+        finished_at: f64,
+        records_transferred: u64,
+        rows_spooled: u64,
+        all_fsynced: bool,
+        error: String,
+    ) {
+        self.transfer = StoredTransferState::Failed;
+        self.durability = if rows_spooled == 0 {
+            StoredDurabilityState::Unknown
+        } else if all_fsynced {
+            StoredDurabilityState::FsyncedPendingCommit
+        } else {
+            StoredDurabilityState::SpoolPending
+        };
+        self.last_records_transferred = records_transferred;
+        self.last_rows_spooled = rows_spooled;
+        self.last_sync_at = Some(finished_at);
+        self.last_error = Some(error);
+    }
+}
+
+impl Default for StoredSyncState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// A deterministic session identity for one device-stored recording.
 ///
 /// The complete descriptor is the source's session identity. FNV-1a is used
@@ -365,5 +560,137 @@ mod tests {
         let duplicate = decode_stored_record(&second).expect("second");
         let error = wire_samples(&descriptor, &[first, duplicate]).expect_err("duplicate");
         assert!(error.contains("is not after"), "{error}");
+    }
+
+    #[test]
+    fn stored_sync_state_transitions_keep_live_identity_out_of_storage() {
+        assert_eq!(
+            LiveIdentityState::AnonymousNotDurable.as_str(),
+            "anonymous_not_durable"
+        );
+        let mut state = StoredSyncState::new();
+        assert_eq!(state.transfer, StoredTransferState::NeverAttempted);
+        assert_eq!(state.identity, StoredIdentityState::SourceDescriptorCursor);
+        assert_eq!(state.durability, StoredDurabilityState::NotObserved);
+        state.begin();
+        assert_eq!(state.transfer, StoredTransferState::InProgress);
+        state.complete(100.0, 4, 2, false);
+        assert_eq!(state.transfer, StoredTransferState::Succeeded);
+        assert_eq!(state.durability, StoredDurabilityState::SpoolPending);
+        assert_eq!(state.last_records_transferred, 4);
+        assert_eq!(state.last_rows_spooled, 2);
+        assert!(
+            state
+                .last_sync_at
+                .is_some_and(|at| (at - 100.0).abs() < 1e-9)
+        );
+        assert_eq!(state.last_error, None);
+        assert_eq!(
+            StoredDurabilityState::SpoolPending.as_str(),
+            "spool_pending"
+        );
+    }
+
+    #[test]
+    fn stored_sync_state_reports_fsync_empty_and_partial_failure() {
+        let mut state = StoredSyncState::new();
+        state.complete(200.0, 6, 6, true);
+        assert_eq!(
+            state.durability,
+            StoredDurabilityState::FsyncedPendingCommit
+        );
+        state.complete(201.0, 3, 0, true);
+        assert_eq!(state.durability, StoredDurabilityState::NoNumericRows);
+        state.begin();
+        state.fail(
+            202.0,
+            2,
+            1,
+            false,
+            "stored-session response timeout at cursor 0x0042".to_owned(),
+        );
+        assert_eq!(state.transfer, StoredTransferState::Failed);
+        assert_eq!(state.durability, StoredDurabilityState::SpoolPending);
+        assert_eq!(state.last_rows_spooled, 1);
+        assert_eq!(
+            state.last_error.as_deref(),
+            Some("stored-session response timeout at cursor 0x0042")
+        );
+        state.begin();
+        state.fail(203.0, 1, 1, true, "exit acknowledgement failed".to_owned());
+        assert_eq!(
+            state.durability,
+            StoredDurabilityState::FsyncedPendingCommit
+        );
+        state.begin();
+        state.fail(204.0, 0, 0, false, "no confirmed descriptor".to_owned());
+        assert_eq!(state.durability, StoredDurabilityState::Unknown);
+        assert_eq!(state.last_error.as_deref(), Some("no confirmed descriptor"));
+    }
+
+    #[test]
+    fn status_state_spellings_and_default_are_explicit() {
+        assert_eq!(
+            StoredTransferState::NeverAttempted.as_str(),
+            "never_attempted"
+        );
+        assert_eq!(StoredTransferState::InProgress.as_str(), "in_progress");
+        assert_eq!(StoredTransferState::Succeeded.as_str(), "succeeded");
+        assert_eq!(StoredTransferState::Failed.as_str(), "failed");
+        assert_eq!(
+            StoredIdentityState::SourceDescriptorCursor.as_str(),
+            "source_descriptor_cursor"
+        );
+        for (state, spelling) in [
+            (StoredDurabilityState::NotObserved, "not_observed"),
+            (StoredDurabilityState::SpoolPending, "spool_pending"),
+            (
+                StoredDurabilityState::FsyncedPendingCommit,
+                "fsynced_pending_commit",
+            ),
+            (StoredDurabilityState::NoNumericRows, "no_numeric_rows"),
+            (StoredDurabilityState::Unknown, "unknown"),
+        ] {
+            assert_eq!(state.as_str(), spelling);
+        }
+        assert_eq!(StoredSyncState::default(), StoredSyncState::new());
+    }
+
+    #[test]
+    fn malformed_source_metadata_and_identity_are_rejected() {
+        let descriptor = decode_session_descriptor(&SESSION).expect("session");
+        let mut invalid_date = descriptor;
+        invalid_date.month = 13;
+        let error =
+            session_start_unix_micros_in(&invalid_date, &FixedOffset::east_opt(0).expect("UTC"))
+                .expect_err("invalid date");
+        assert!(error.contains("invalid date"), "{error}");
+
+        let mut invalid_time = descriptor;
+        invalid_time.hour = 24;
+        let error =
+            session_start_unix_micros_in(&invalid_time, &FixedOffset::east_opt(0).expect("UTC"))
+                .expect_err("invalid time");
+        assert!(error.contains("invalid time"), "{error}");
+
+        let mut record = decode_stored_record(&SPO2).expect("record");
+        record.slot = 2;
+        let error = wire_sample(&descriptor, &record).expect_err("slot mismatch");
+        assert!(error.contains("disagrees with descriptor slot"), "{error}");
+
+        record.slot = descriptor.slot;
+        record.cursor = 0x0080;
+        let error =
+            record_timestamp_unix_micros(&descriptor, &record).expect_err("reserved cursor");
+        assert!(error.contains("reserved page bit"), "{error}");
+    }
+
+    #[test]
+    fn wire_samples_preserves_absent_records_as_gaps() {
+        let descriptor = decode_session_descriptor(&SESSION).expect("session");
+        let mut absent = decode_stored_record(&SPO2).expect("record");
+        absent.value = None;
+        let rows = wire_samples(&descriptor, &[absent]).expect("gap");
+        assert!(rows.is_empty());
     }
 }
