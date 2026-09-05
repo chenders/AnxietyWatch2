@@ -498,6 +498,20 @@ mod tests {
     }
 
     #[test]
+    fn exact_staleness_boundary_is_still_live() {
+        let mut s = state();
+        s.set_stale_after(Duration::from_secs(10));
+        let t0 = Instant::now();
+        s.record_appended(&[sample(HR, 1)], 0, t0);
+        let h = s.health(t0 + Duration::from_secs(10));
+        assert_eq!(
+            h.sources.first().map(|source| source.liveness),
+            Some(Liveness::Live)
+        );
+        assert!(!h.degraded.iter().any(|d| d.contains("source 1 is stale")));
+    }
+
+    #[test]
     fn a_live_source_is_not_degraded() {
         let mut s = state();
         s.record_drain_health(healthy_drain(), 100);
@@ -644,6 +658,14 @@ mod tests {
     }
 
     #[test]
+    fn exact_drain_health_age_is_still_fresh() {
+        let mut s = state();
+        s.record_drain_health(healthy_drain(), 105);
+        assert!(s.drain_progressing);
+        assert!(s.drain_blocker().is_none());
+    }
+
+    #[test]
     fn future_and_schema_mismatched_drain_health_fail_closed() {
         let mut future = healthy_drain();
         future.generated_at_unix_secs = 101;
@@ -674,6 +696,14 @@ mod tests {
                 .is_some_and(|d| d.contains("last_success=101"))
         );
 
+        let mut equal_success = healthy_drain();
+        equal_success.pending_segments = 1;
+        equal_success.pending_bytes = 1;
+        equal_success.last_success_unix_secs = Some(100);
+        let mut s = state();
+        s.record_drain_health(equal_success, 100);
+        assert!(s.drain_blocker().is_none());
+
         let mut recent_success = healthy_drain();
         recent_success.pending_segments = 2;
         recent_success.pending_bytes = 4096;
@@ -681,6 +711,27 @@ mod tests {
         let mut s = state();
         s.record_drain_health(recent_success, 100);
         assert!(s.drain_blocker().is_none());
+
+        let mut old_success = healthy_drain();
+        old_success.pending_segments = 1;
+        old_success.pending_bytes = 1;
+        old_success.last_success_unix_secs = Some(94);
+        let mut s = state();
+        s.record_drain_health(old_success, 100);
+        assert!(
+            s.drain_blocker()
+                .is_some_and(|d| d.contains("pending_bytes=1"))
+        );
+
+        let mut only_segments = healthy_drain();
+        only_segments.pending_segments = 1;
+        only_segments.pending_bytes = 0;
+        let mut s = state();
+        s.record_drain_health(only_segments, 100);
+        assert!(
+            s.drain_blocker()
+                .is_some_and(|d| d.contains("pending_segments=1"))
+        );
 
         let mut health = healthy_drain();
         health.pending_segments = 2;
@@ -713,6 +764,25 @@ mod tests {
         assert!(
             s.drain_blocker()
                 .is_some_and(|d| d.contains("available=false") && d.contains("malformed"))
+        );
+    }
+
+    #[test]
+    fn an_empty_subscriber_queue_is_not_a_drop() {
+        let mut s = state();
+        s.record_drain_health(healthy_drain(), 100);
+        s.add_subscriber(
+            42,
+            Selector {
+                source: None,
+                r#type: None,
+            },
+        );
+        let h = s.health(Instant::now());
+        assert!(
+            !h.degraded
+                .iter()
+                .any(|detail| detail.contains("subscriber 42 has dropped"))
         );
     }
 
