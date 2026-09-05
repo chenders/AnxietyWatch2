@@ -133,10 +133,9 @@ where
     Ok(())
 }
 
-fn verify_live(
-    client: &mut postgres::Client,
+fn validate_live_fingerprint(
+    live: vitals_core::spool::SchemaFingerprint,
 ) -> Result<vitals_core::spool::SchemaFingerprint, DrainError> {
-    let live = live_fingerprint(client)?;
     let expected = expected_fingerprint();
     if live != expected {
         return Err(DrainError::FingerprintMismatch {
@@ -146,6 +145,64 @@ fn verify_live(
         });
     }
     Ok(live)
+}
+
+trait DrainSession {
+    fn verify_schema(&mut self) -> Result<vitals_core::spool::SchemaFingerprint, DrainError>;
+
+    fn drain_segments(
+        &mut self,
+        spool: &Path,
+        live: vitals_core::spool::SchemaFingerprint,
+        verify_only: bool,
+        health: &mut DrainHealth,
+    ) -> Result<(), DrainError>;
+}
+
+trait RunEnvironment {
+    fn connect(&mut self, dsn: &str) -> Result<Box<dyn DrainSession>, DrainError>;
+    fn refresh_health(&mut self, spool: &Path, health: &mut DrainHealth) -> Result<(), DrainError>;
+    fn sleep(&mut self, duration: Duration);
+}
+
+struct PostgresSession {
+    client: postgres::Client,
+}
+
+impl DrainSession for PostgresSession {
+    fn verify_schema(&mut self) -> Result<vitals_core::spool::SchemaFingerprint, DrainError> {
+        validate_live_fingerprint(live_fingerprint(&mut self.client)?)
+    }
+
+    fn drain_segments(
+        &mut self,
+        spool: &Path,
+        live: vitals_core::spool::SchemaFingerprint,
+        verify_only: bool,
+        health: &mut DrainHealth,
+    ) -> Result<(), DrainError> {
+        process_segments(spool, live, verify_only, health, |segment, live| {
+            segment.drain(&mut self.client, live)
+        })
+    }
+}
+
+struct PostgresEnvironment;
+
+impl RunEnvironment for PostgresEnvironment {
+    fn connect(&mut self, dsn: &str) -> Result<Box<dyn DrainSession>, DrainError> {
+        Ok(Box::new(PostgresSession {
+            client: connect_locked(dsn)?,
+        }))
+    }
+
+    fn refresh_health(&mut self, spool: &Path, health: &mut DrainHealth) -> Result<(), DrainError> {
+        refresh_health(spool, health)
+    }
+
+    fn sleep(&mut self, duration: Duration) {
+        thread::sleep(duration);
+    }
 }
 
 fn publish_failure(spool: &Path, health: &mut DrainHealth, error: &DrainError) {
@@ -182,7 +239,11 @@ fn publish_failure(spool: &Path, health: &mut DrainHealth, error: &DrainError) {
     );
 }
 
-fn run(args: &Args, health: &mut DrainHealth) -> Result<(), DrainError> {
+fn run_with(
+    args: &Args,
+    health: &mut DrainHealth,
+    environment: &mut dyn RunEnvironment,
+) -> Result<(), DrainError> {
     eprintln!(
         "event=drainer.start spool={} verify={} once={}",
         args.spool.display(),
@@ -191,15 +252,15 @@ fn run(args: &Args, health: &mut DrainHealth) -> Result<(), DrainError> {
     );
     // Hold the PostgreSQL advisory lock for the lifetime of a healthy daemon,
     // including idle periods. Reconnect only after a database/drain failure.
-    let mut client = match connect_locked(&args.dsn) {
-        Ok(client) => client,
+    let mut session = match environment.connect(&args.dsn) {
+        Ok(session) => session,
         Err(error @ DrainError::LockHeld) => return Err(error),
         Err(error) => {
             publish_failure(&args.spool, health, &error);
             return Err(error);
         }
     };
-    let live = match verify_live(&mut client) {
+    let live = match session.verify_schema() {
         Ok(live) => live,
         Err(error) => {
             publish_failure(&args.spool, health, &error);
@@ -207,15 +268,11 @@ fn run(args: &Args, health: &mut DrainHealth) -> Result<(), DrainError> {
         }
     };
     loop {
-        if let Err(error) =
-            process_segments(&args.spool, live, args.verify, health, |segment, live| {
-                segment.drain(&mut client, live)
-            })
-        {
+        if let Err(error) = session.drain_segments(&args.spool, live, args.verify, health) {
             publish_failure(&args.spool, health, &error);
             return Err(error);
         }
-        if let Err(error) = refresh_health(&args.spool, health) {
+        if let Err(error) = environment.refresh_health(&args.spool, health) {
             publish_failure(&args.spool, health, &error);
             return Err(error);
         }
@@ -232,11 +289,20 @@ fn run(args: &Args, health: &mut DrainHealth) -> Result<(), DrainError> {
         if args.once {
             return Ok(());
         }
-        thread::sleep(Duration::from_secs(1));
+        environment.sleep(Duration::from_secs(1));
     }
 }
 
-fn main_with_args(raw: &[String]) -> ExitCode {
+fn run(args: &Args, health: &mut DrainHealth) -> Result<(), DrainError> {
+    let mut environment = PostgresEnvironment;
+    run_with(args, health, &mut environment)
+}
+
+fn main_with_runner<R, S>(raw: &[String], mut run_once: R, mut sleep: S) -> ExitCode
+where
+    R: FnMut(&Args, &mut DrainHealth) -> Result<(), DrainError>,
+    S: FnMut(Duration),
+{
     let args = match parse_args(raw) {
         Ok(args) => args,
         Err(e) => {
@@ -246,7 +312,7 @@ fn main_with_args(raw: &[String]) -> ExitCode {
     };
     let mut health = DrainHealth::default();
     loop {
-        match run(&args, &mut health) {
+        match run_once(&args, &mut health) {
             Ok(()) => return ExitCode::SUCCESS,
             Err(DrainError::LockHeld) if args.verify => {
                 eprintln!(
@@ -271,10 +337,14 @@ fn main_with_args(raw: &[String]) -> ExitCode {
                     "event=drainer.retry detail={:?} retry_after_secs=30",
                     e.to_string()
                 );
-                thread::sleep(Duration::from_secs(30));
+                sleep(Duration::from_secs(30));
             }
         }
     }
+}
+
+fn main_with_args(raw: &[String]) -> ExitCode {
+    main_with_runner(raw, run, thread::sleep)
 }
 
 fn main() -> ExitCode {
@@ -289,6 +359,68 @@ fn main() -> ExitCode {
 )]
 mod tests {
     use super::*;
+    use std::collections::VecDeque;
+    use std::io;
+
+    struct FakeSession {
+        verify: Option<Result<vitals_core::spool::SchemaFingerprint, DrainError>>,
+        drains: VecDeque<Result<(), DrainError>>,
+    }
+
+    impl DrainSession for FakeSession {
+        fn verify_schema(&mut self) -> Result<vitals_core::spool::SchemaFingerprint, DrainError> {
+            self.verify.take().unwrap_or_else(|| {
+                Err(DrainError::Io(io::Error::other(
+                    "fake session was asked to verify twice",
+                )))
+            })
+        }
+
+        fn drain_segments(
+            &mut self,
+            _spool: &Path,
+            _live: vitals_core::spool::SchemaFingerprint,
+            _verify_only: bool,
+            _health: &mut DrainHealth,
+        ) -> Result<(), DrainError> {
+            self.drains.pop_front().unwrap_or_else(|| {
+                Err(DrainError::Io(io::Error::other(
+                    "fake session has no drain result",
+                )))
+            })
+        }
+    }
+
+    struct FakeEnvironment {
+        connect: Option<Result<FakeSession, DrainError>>,
+        refresh: VecDeque<Result<(), DrainError>>,
+        sleeps: Vec<Duration>,
+    }
+
+    impl RunEnvironment for FakeEnvironment {
+        fn connect(&mut self, _dsn: &str) -> Result<Box<dyn DrainSession>, DrainError> {
+            self.connect
+                .take()
+                .ok_or_else(|| DrainError::Io(io::Error::other("fake connect called twice")))?
+                .map(|session| Box::new(session) as Box<dyn DrainSession>)
+        }
+
+        fn refresh_health(
+            &mut self,
+            _spool: &Path,
+            _health: &mut DrainHealth,
+        ) -> Result<(), DrainError> {
+            self.refresh.pop_front().unwrap_or_else(|| {
+                Err(DrainError::Io(io::Error::other(
+                    "fake environment has no refresh result",
+                )))
+            })
+        }
+
+        fn sleep(&mut self, duration: Duration) {
+            self.sleeps.push(duration);
+        }
+    }
 
     fn strings(values: &[&str]) -> Vec<String> {
         values.iter().map(ToString::to_string).collect()
@@ -313,6 +445,27 @@ mod tests {
         drop(spool);
         path
     }
+
+    #[expect(
+        clippy::unnecessary_wraps,
+        reason = "the callback must match process_segments' fallible drain boundary"
+    )]
+    fn mark_drained(
+        segment: &mut vitals_drain::Segment,
+        _live: vitals_core::spool::SchemaFingerprint,
+    ) -> Result<vitals_drain::DrainOutcome, DrainError> {
+        let offset = segment.length;
+        segment.offset = offset;
+        Ok(vitals_drain::DrainOutcome {
+            rows_read: 2,
+            rows_inserted: 1,
+            rows_duplicate: 1,
+            rows_rejected: 0,
+            offset,
+        })
+    }
+
+    fn no_wait(_duration: Duration) {}
 
     #[test]
     fn parses_only_documented_arguments() {
@@ -387,40 +540,14 @@ mod tests {
         let segment_path = make_segment(dir.path());
         let live = expected_fingerprint();
         let mut verify_health = DrainHealth::default();
-        let mut called = false;
-        process_segments(
-            dir.path(),
-            live,
-            true,
-            &mut verify_health,
-            |_segment, _live| {
-                called = true;
-                Ok(vitals_drain::DrainOutcome {
-                    rows_read: 0,
-                    rows_inserted: 0,
-                    rows_duplicate: 0,
-                    rows_rejected: 0,
-                    offset: 0,
-                })
-            },
-        )
-        .expect("verify segment");
-        assert!(!called);
+        process_segments(dir.path(), live, true, &mut verify_health, mark_drained)
+            .expect("verify segment");
+        assert_eq!(verify_health.rows_read, 0);
         assert!(segment_path.is_file());
 
         let mut health = DrainHealth::default();
-        process_segments(dir.path(), live, false, &mut health, |segment, _live| {
-            let offset = segment.length;
-            segment.offset = offset;
-            Ok(vitals_drain::DrainOutcome {
-                rows_read: 2,
-                rows_inserted: 1,
-                rows_duplicate: 1,
-                rows_rejected: 0,
-                offset,
-            })
-        })
-        .expect("drain segment");
+        process_segments(dir.path(), live, false, &mut health, mark_drained)
+            .expect("drain segment");
         assert_eq!(health.rows_read, 2);
         assert_eq!(health.rows_inserted, 1);
         assert_eq!(health.rows_duplicate, 1);
@@ -438,7 +565,7 @@ mod tests {
             expected_fingerprint(),
             false,
             &mut health,
-            |_segment, _live| unreachable!("active segment must not be drained"),
+            mark_drained,
         )
         .expect("active segment remains pending");
         assert_eq!(health.rows_read, 0);
@@ -447,7 +574,7 @@ mod tests {
             expected_fingerprint(),
             true,
             &mut health,
-            |_segment, _live| unreachable!("locked segment must not be drained"),
+            mark_drained,
         )
         .expect_err("verify must identify the locked segment");
         assert!(
@@ -465,11 +592,112 @@ mod tests {
         let wrong = vitals_core::spool::SchemaFingerprint::from_value(
             expected_fingerprint().value().wrapping_add(1),
         );
-        let error = process_segments(dir.path(), wrong, true, &mut health, |_segment, _live| {
-            unreachable!("fingerprint mismatch must stop first")
-        })
-        .expect_err("wrong fingerprint");
+        let error = process_segments(dir.path(), wrong, true, &mut health, mark_drained)
+            .expect_err("wrong fingerprint");
         assert!(matches!(error, DrainError::FingerprintMismatch { .. }));
+    }
+
+    #[test]
+    fn process_segments_propagates_non_lock_open_and_drain_errors() {
+        let invalid_dir = tempfile::tempdir().expect("invalid segment tempdir");
+        std::fs::write(invalid_dir.path().join("bad.spool"), b"not a segment")
+            .expect("invalid segment");
+        let mut health = DrainHealth::default();
+        let error = process_segments(
+            invalid_dir.path(),
+            expected_fingerprint(),
+            false,
+            &mut health,
+            mark_drained,
+        )
+        .expect_err("invalid framing");
+        assert!(matches!(error, DrainError::Io(_)));
+
+        let drain_dir = tempfile::tempdir().expect("drain error tempdir");
+        let segment_path = make_segment(drain_dir.path());
+        let mut drain_health = DrainHealth::default();
+        let error = process_segments(
+            drain_dir.path(),
+            expected_fingerprint(),
+            false,
+            &mut drain_health,
+            |_segment, _live| Err(DrainError::Io(io::Error::other("fake COPY failed"))),
+        )
+        .expect_err("drain callback failure");
+        assert!(error.to_string().contains("fake COPY failed"));
+        assert!(segment_path.exists());
+    }
+
+    #[test]
+    fn production_environment_delegates_health_and_zero_duration_sleep() {
+        let dir = tempfile::tempdir().expect("health tempdir");
+        let mut environment = PostgresEnvironment;
+        let mut health = DrainHealth::default();
+        environment
+            .refresh_health(dir.path(), &mut health)
+            .expect("refresh health");
+        assert!(health.available);
+        environment.sleep(Duration::ZERO);
+    }
+
+    #[test]
+    fn fake_boundaries_fail_loudly_when_a_result_is_missing() {
+        let mut session = FakeSession {
+            verify: None,
+            drains: VecDeque::new(),
+        };
+        assert!(session.verify_schema().is_err());
+        assert!(
+            session
+                .drain_segments(
+                    Path::new("/tmp"),
+                    expected_fingerprint(),
+                    false,
+                    &mut DrainHealth::default(),
+                )
+                .is_err()
+        );
+
+        let mut environment = FakeEnvironment {
+            connect: None,
+            refresh: VecDeque::new(),
+            sleeps: Vec::new(),
+        };
+        assert!(environment.connect("unused").is_err());
+        assert!(
+            environment
+                .refresh_health(Path::new("/tmp"), &mut DrainHealth::default())
+                .is_err()
+        );
+    }
+
+    fn fake_args(spool: &Path, once: bool) -> Args {
+        Args {
+            dsn: "fake-database".to_owned(),
+            spool: spool.to_path_buf(),
+            verify: false,
+            once,
+        }
+    }
+
+    fn fake_session(drains: impl IntoIterator<Item = Result<(), DrainError>>) -> FakeSession {
+        FakeSession {
+            verify: Some(Ok(expected_fingerprint())),
+            drains: drains.into_iter().collect(),
+        }
+    }
+
+    #[test]
+    fn validates_live_schema_fingerprint_without_a_database() {
+        assert_eq!(
+            validate_live_fingerprint(expected_fingerprint()).expect("matching schema"),
+            expected_fingerprint()
+        );
+        let wrong = vitals_core::spool::SchemaFingerprint::from_value(
+            expected_fingerprint().value().wrapping_add(1),
+        );
+        let error = validate_live_fingerprint(wrong).expect_err("mismatched schema");
+        assert!(error.to_string().contains("live samples table differs"));
     }
 
     #[test]
@@ -490,6 +718,196 @@ mod tests {
                 .join(vitals_drain::DRAIN_HEALTH_FILENAME)
                 .is_file()
         );
+    }
+
+    #[test]
+    fn run_with_preserves_lock_held_as_a_caller_decision() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut environment = FakeEnvironment {
+            connect: Some(Err(DrainError::LockHeld)),
+            refresh: VecDeque::new(),
+            sleeps: Vec::new(),
+        };
+        let mut health = DrainHealth::default();
+        let error = run_with(&fake_args(dir.path(), true), &mut health, &mut environment)
+            .expect_err("lock must stop this run");
+        assert!(matches!(error, DrainError::LockHeld));
+        assert!(
+            !dir.path()
+                .join(vitals_drain::DRAIN_HEALTH_FILENAME)
+                .exists()
+        );
+    }
+
+    #[test]
+    fn run_with_publishes_connect_and_schema_failures() {
+        let connect_dir = tempfile::tempdir().expect("connect tempdir");
+        let mut connect_environment = FakeEnvironment {
+            connect: Some(Err(DrainError::Io(io::Error::other("database offline")))),
+            refresh: VecDeque::new(),
+            sleeps: Vec::new(),
+        };
+        let mut health = DrainHealth::default();
+        assert!(
+            run_with(
+                &fake_args(connect_dir.path(), true),
+                &mut health,
+                &mut connect_environment,
+            )
+            .is_err()
+        );
+        assert!(!health.available);
+        assert!(
+            connect_dir
+                .path()
+                .join(vitals_drain::DRAIN_HEALTH_FILENAME)
+                .is_file()
+        );
+
+        let schema_dir = tempfile::tempdir().expect("schema tempdir");
+        let mut schema_environment = FakeEnvironment {
+            connect: Some(Ok(FakeSession {
+                verify: Some(Err(DrainError::SchemaMismatch(
+                    "value field changed".to_owned(),
+                ))),
+                drains: VecDeque::new(),
+            })),
+            refresh: VecDeque::new(),
+            sleeps: Vec::new(),
+        };
+        let mut schema_health = DrainHealth::default();
+        assert!(
+            run_with(
+                &fake_args(schema_dir.path(), true),
+                &mut schema_health,
+                &mut schema_environment,
+            )
+            .is_err()
+        );
+        assert!(
+            schema_health
+                .last_error
+                .as_deref()
+                .is_some_and(|detail| detail.contains("value field changed"))
+        );
+    }
+
+    #[test]
+    fn run_with_completes_a_one_shot_without_postgres() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut environment = FakeEnvironment {
+            connect: Some(Ok(fake_session([Ok(())]))),
+            refresh: VecDeque::from([Ok(())]),
+            sleeps: Vec::new(),
+        };
+        let mut health = DrainHealth::default();
+        run_with(&fake_args(dir.path(), true), &mut health, &mut environment)
+            .expect("one-shot run");
+        assert!(environment.sleeps.is_empty());
+    }
+
+    #[test]
+    fn run_with_reports_drain_and_refresh_errors_and_never_waits_in_tests() {
+        let drain_dir = tempfile::tempdir().expect("drain tempdir");
+        let mut drain_environment = FakeEnvironment {
+            connect: Some(Ok(fake_session([
+                Ok(()),
+                Err(DrainError::Io(io::Error::other("COPY failed"))),
+            ]))),
+            refresh: VecDeque::from([Ok(())]),
+            sleeps: Vec::new(),
+        };
+        let mut drain_health = DrainHealth::default();
+        assert!(
+            run_with(
+                &fake_args(drain_dir.path(), false),
+                &mut drain_health,
+                &mut drain_environment,
+            )
+            .is_err()
+        );
+        assert_eq!(drain_environment.sleeps, [Duration::from_secs(1)]);
+        assert!(
+            drain_health
+                .last_error
+                .as_deref()
+                .is_some_and(|detail| detail.contains("COPY failed"))
+        );
+
+        let refresh_dir = tempfile::tempdir().expect("refresh tempdir");
+        let mut refresh_environment = FakeEnvironment {
+            connect: Some(Ok(fake_session([Ok(())]))),
+            refresh: VecDeque::from([Err(DrainError::Io(io::Error::other(
+                "health filesystem failed",
+            )))]),
+            sleeps: Vec::new(),
+        };
+        let mut refresh_health_state = DrainHealth::default();
+        assert!(
+            run_with(
+                &fake_args(refresh_dir.path(), true),
+                &mut refresh_health_state,
+                &mut refresh_environment,
+            )
+            .is_err()
+        );
+        assert!(
+            refresh_health_state
+                .last_error
+                .as_deref()
+                .is_some_and(|detail| detail.contains("health filesystem failed"))
+        );
+    }
+
+    #[test]
+    fn main_runner_handles_lock_modes_and_one_shot_failure() {
+        assert_eq!(
+            main_with_runner(
+                &strings(&["drain", "--verify"]),
+                |_args, _health| Err(DrainError::LockHeld),
+                no_wait,
+            ),
+            ExitCode::FAILURE
+        );
+
+        assert_eq!(
+            main_with_runner(
+                &strings(&["drain"]),
+                |_args, _health| Err(DrainError::LockHeld),
+                no_wait,
+            ),
+            ExitCode::SUCCESS
+        );
+
+        assert_eq!(
+            main_with_runner(
+                &strings(&["drain", "--once"]),
+                |_args, _health| Err(DrainError::Io(io::Error::other("one-shot down"))),
+                no_wait,
+            ),
+            ExitCode::FAILURE
+        );
+    }
+
+    #[test]
+    fn main_runner_retries_without_sleeping_for_thirty_seconds() {
+        let mut attempts = 0;
+        let mut waits = Vec::new();
+        let result = main_with_runner(
+            &strings(&["drain"]),
+            |_args, _health| {
+                attempts += 1;
+                if attempts == 1 {
+                    Err(DrainError::Io(io::Error::other("temporary outage")))
+                } else {
+                    Ok(())
+                }
+            },
+            |duration| waits.push(duration),
+        );
+        assert_eq!(result, ExitCode::SUCCESS);
+        assert_eq!(attempts, 2);
+        assert_eq!(waits, [Duration::from_secs(30)]);
     }
 
     #[test]
