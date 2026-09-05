@@ -23,6 +23,10 @@ assert.match(html, /min-height:\s*174px/);
 assert.match(html, /Place the sensor on a finger\./);
 assert.match(html, /the last frame reported no finger/);
 assert.match(html, /PERSISTED \+ LIVE · LAST 10 MIN · GAPS PRESERVED/);
+assert.match(
+  html,
+  /scale: \{ min: 75, max: 100, step: 5, ticks: \[75, 80, 85, 90, 95, 100\] \}/,
+);
 assert.match(html, /emay_history/);
 assert.match(html, /emay_delta/);
 

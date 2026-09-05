@@ -678,7 +678,9 @@ function renderTrend(svgId, latestId, now, config) {
     values: seriesConfig.bucket.points.filter(point => point.t >= xMin && point.t <= xMax),
   }));
   const values = series.flatMap(item => item.values.map(point => point.v));
-  const scale = niceScale(values, config.fallback);
+  // Some clinical series need stable bounds so a value is comparable across
+  // reloads and overnight gaps rather than rescaling around recent points.
+  const scale = config.scale || niceScale(values, config.fallback);
   const x = value => left + ((value - xMin) / (xMax - xMin)) * (plotRight - left);
   const y = value => top + (1 - (value - scale.min) / (scale.max - scale.min)) * 210;
 
@@ -729,7 +731,7 @@ function renderTrends(snapshot, now) {
     title: "EMAY SleepO2 oxygen saturation over time",
     name: "EMAY",
     unit: "%",
-    fallback: [94, 100],
+    scale: { min: 75, max: 100, step: 5, ticks: [75, 80, 85, 90, 95, 100] },
     series: [{ bucket: trends.emay.spo2, color: "#54d38a" }],
     latest: () => emay && finite(emay.spo2) ? `SpO₂ ${Math.round(emay.spo2)}%` : "SpO₂ —",
   });
