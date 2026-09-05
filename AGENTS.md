@@ -91,7 +91,14 @@ id and a type id be transposed at a call site without the compiler noticing. A s
 
 ## Tests
 
-- Every new or changed behavior gets a test. Coverage gates: 90% decoders, 85% store/daemon.
+- Every new or changed behavior gets a test. Coverage is a per-source contract: every major
+  Rust module/source target reported by `cargo llvm-cov` must reach at least 90% line coverage,
+  including binaries and hardware-boundary seams; the workspace aggregate must reach at least 95%.
+  CI enforces the exact command:
+  `cargo llvm-cov --workspace --all-features --fail-under-file-lines 90 --fail-under-lines 95 --summary-only`.
+  Never exclude a binary or hide code with a coverage exclusion to satisfy the floor. A real
+  BlueZ/Pi acceptance run remains required for hardware-only behavior; it does not waive the
+  measured source-file floor.
 - Never assert float equality. Use a tolerance: `(a - b).abs() < 1e-9`.
 - Fixed reference timestamps. No wall clock in assertions.
 - Fixing a failing test is always in scope, related to your task or not.

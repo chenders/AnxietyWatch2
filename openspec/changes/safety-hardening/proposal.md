@@ -23,8 +23,10 @@ truthfully displayed.
    duplication, smoothing, or fabricated timestamps.
 5. Make infrastructure and display health fail closed when durability evidence is missing.
 6. Reconcile the deployed drainer with source control and test the exact artifact.
-7. Establish a continuously runnable validation framework with a hard 95% line-coverage gate for
-   testable core packages, fuzzing for byte decoders, dependency policy checks, and mutation tests.
+7. Establish a continuously runnable validation framework with a hard 90% per-source-file line
+   floor and 95% workspace line floor, including binaries and hardware-boundary seams; no source is
+   excluded to make the number pass. Real BlueZ/systemd behavior remains a Pi acceptance gate,
+   alongside fuzzing for byte decoders, dependency policy checks, and mutation tests.
 8. Add a read-only admin monitoring page showing current state, pipeline evidence, and bounded
    historical records/gaps.
 

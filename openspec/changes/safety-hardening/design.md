@@ -108,8 +108,11 @@ The repository runs, on every change:
 
 1. format and clippy with denied warnings;
 2. `cargo nextest` with a no-skip assertion;
-3. `cargo llvm-cov` with `--fail-under-lines 95` for each core library package and the combined
-   core set;
+3. `cargo llvm-cov` with `--fail-under-file-lines 90 --fail-under-lines 95` for the complete
+   workspace. Every major Rust module/source target, including binaries and deterministic seams
+   around hardware boundaries, must reach 90% lines; the aggregate must reach 95%. No binary or
+   source may be excluded merely to satisfy the contract; Pi acceptance still exercises the real
+   BlueZ/systemd boundary.
 4. RustSec audit and `cargo deny` policy checks;
 5. decoder fuzz targets, with a bounded smoke run in CI;
 6. focused mutation tests for spool, protocol, state, and publisher logic;

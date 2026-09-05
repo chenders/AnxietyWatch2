@@ -87,4 +87,9 @@ unrelated failures.
 - Formatting handled by `.clang-format` or `.editorconfig`.
 - Generated files under `vitals/generated/` — review `registry.toml` and `gen_registry.py` instead.
   Those files are produced by codegen and CI verifies they are current.
-- Missing coverage on BlueZ/D-Bus/systemd glue. It needs real radios and is measured, not gated.
+- Missing coverage on any Rust source target, including BlueZ/D-Bus/systemd glue. Keep the
+  hardware boundary explicit and test its deterministic seams without faking successful hardware;
+  the Pi acceptance run covers the real radio path. CI still enforces at least 90% lines per
+  reported source file and at least 95% workspace lines with:
+  `cargo llvm-cov --workspace --all-features --fail-under-file-lines 90 --fail-under-lines 95 --summary-only`.
+  Do not exclude binaries or hide code with coverage exclusions.

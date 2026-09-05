@@ -89,11 +89,18 @@ cargo build --workspace
 cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 python3 vitals/tools/gen_registry.py --check
+cargo llvm-cov --workspace --all-features \
+  --fail-under-file-lines 90 \
+  --fail-under-lines 95 --summary-only
 ```
 
-Decoder coverage is gated at 90% in CI, and every decoder that parses radio bytes gets a
-`cargo-fuzz` target. Linux-specific integration work runs against real BlueZ, PostgreSQL, systemd,
-and radios on the Pi rather than macOS mocks.
+Coverage is a per-source contract: every major Rust module/source target reported by
+`cargo llvm-cov`, including binaries and hardware-boundary seams, must reach at least 90% line
+coverage, while the workspace aggregate must reach at least 95%. CI must not exclude binaries or
+hide code with coverage exclusions to satisfy that floor. Every decoder that parses radio bytes
+also gets a `cargo-fuzz` target. Linux-specific integration work runs against real BlueZ,
+PostgreSQL, systemd, and radios on the Pi rather than macOS mocks; hardware acceptance supplements,
+not waives, the source-file coverage contract.
 
 ## Repository map
 

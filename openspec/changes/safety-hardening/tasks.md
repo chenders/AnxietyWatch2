@@ -84,6 +84,20 @@ run database/spool crash/replay and live EMAY/H10 continuity checks, inspect all
 record every command/output in a Pacific-time status update. Stop and report if any evidence is
 ambiguous.
 
+**Coverage policy:** In addition to this task's exact Verify command, CI enforces the repository-wide
+source contract: every major Rust module/source target reported by `cargo llvm-cov` (including
+binaries and deterministic hardware-boundary seams) is at least 90% covered by lines, and the
+workspace aggregate is at least 95%. The exact CI command is:
+
+```sh
+cargo llvm-cov --workspace --all-features \
+  --fail-under-file-lines 90 \
+  --fail-under-lines 95 --summary-only
+```
+
+The real BlueZ/systemd/radio path still requires Pi acceptance; that does not justify excluding its
+source file or binary from coverage.
+
 **Verify:** `cargo fmt --all --check && cargo clippy --workspace --all-targets --all-features -- -D warnings && cargo nextest run --workspace --all-features --no-fail-fast && cargo llvm-cov --workspace --all-features --fail-under-lines 95 --summary-only`
 
 ## Completion rule

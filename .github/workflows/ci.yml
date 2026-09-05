@@ -371,16 +371,20 @@ jobs:
         run: sudo apt-get update -qq && sudo apt-get install -y -qq libdbus-1-dev pkg-config
       # These are the hard gates for code that can run deterministically in CI.
       # Each command names its package set and keeps the 95% threshold explicit;
-      # the combined workspace report below remains visible for the Linux/BlueZ
-      # binaries whose real acceptance is on pi-host.
+      # the workspace command below additionally enforces the per-file floor.
+      # It deliberately includes binaries: a major executable is not allowed to
+      # disappear from coverage merely because its hardware boundary is awkward.
       - name: Coverage gate — decoder
         run: cargo llvm-cov --package vitals-decode --all-features --fail-under-lines 95 --summary-only
       - name: Coverage gate — core libraries
         run: cargo llvm-cov --package vitals-core --package vitals-proto --package vitalsd --package vitals-drain --lib --all-features --fail-under-lines 95 --summary-only
       - name: Coverage gate — EMAY collector library
         run: cargo llvm-cov --package emay-collector --lib --all-features --fail-under-lines 95 --summary-only
-      - name: Coverage report — workspace
-        run: cargo llvm-cov --workspace --all-features --summary-only
+      - name: Coverage gate — workspace files and aggregate
+        run: |
+          cargo llvm-cov --workspace --all-features \
+            --fail-under-file-lines 90 \
+            --fail-under-lines 95 --summary-only
 
   specs-are-reconciled:
     runs-on: ubuntu-latest
@@ -403,7 +407,7 @@ jobs:
           # which is worse than no guard at all.
           #
           # Anything a worker reads is in scope.
-          CONTEXT="$BRIEFS AGENTS.md README.md Cargo.toml"
+          CONTEXT="$BRIEFS AGENTS.md CODEX.md README.md Cargo.toml"
           # Everything else a worker actually reads. AGENTS.md sends every Linux
           # task through sync-to-pi.sh; HERDR-GUIDE links RUNBOOK; the OpenSpec
           # design/proposal carry Verify and acceptance lines a conductor runs.

@@ -156,30 +156,31 @@ Or drive `claude` / `pi` directly on the Pi where the logs and radios are local 
 
 ## 5. Test coverage
 
-**Gate: 95% on pure logic, 85% on store/daemon logic, hardware seam measured but not gated.**
+**Gate: at least 90% lines in every reported Rust source file, and at least 95% lines in the
+workspace aggregate.**
 
 ```sh
-scripts/coverage.sh            # report
-scripts/coverage.sh --check    # enforce; nonzero exit on failure
+cargo llvm-cov --workspace --all-features \
+  --fail-under-file-lines 90 \
+  --fail-under-lines 95 --summary-only
 ```
 
-A single flat number would be the wrong shape here, in both directions. The BlueZ/D-Bus glue cannot
-be exercised without real radios, so gating on it would either block merges forever or push someone
-to write tests that assert nothing. Meanwhile the decoders are pure functions with no state and no
-I/O — 90% there would be *too low*, because the untested 10% is where a malformed radio frame walks
-off the end of a buffer.
+This is a floor for each major module/source target, not just a flattering aggregate. Binaries are
+included. A missing test seam must be fixed rather than hidden with a coverage exclusion or an
+exclusion of the binary. The BlueZ/D-Bus/systemd boundary is kept explicit and its deterministic
+argument/state/capture decisions are tested without pretending that hardware succeeded; the real
+link, service resolution, and radio continuity still require Pi acceptance evidence.
 
-So the bar is highest exactly where testing is cheapest and the consequences are worst:
-
-| Layer | Gate | Why |
+| Layer | Gate | Additional evidence |
 |---|---|---|
-| Decoders | **90%** | Pure functions. No excuse, and hostile input lands here. |
-| Store, daemon logic | **85%** | Testable against a scratch Postgres. |
-| BLE / systemd glue | measured only | Needs real radios. Covered by the T-B1 overnight run instead. |
+| Every Rust module/source target | **90% per file** | `cargo llvm-cov` file report; no binary exclusions |
+| Workspace aggregate | **95%** | The exact command above in CI |
+| BLE / systemd hardware boundary | **90% source file plus Pi acceptance** | Real radios and services on pi-host; no laptop mocks |
+| Byte decoders | **90% source file plus fuzzing** | Every decoder also has a `cargo-fuzz` target |
 
-**Coverage is a floor, not the goal.** Every byte-parsing function also gets a `cargo-fuzz` target,
-because coverage tells you a line ran, not that it survived a truncated frame. CI runs each fuzzer
-for 60 s per push.
+**Coverage is a floor, not the goal.** It proves a line ran, not that a malformed radio frame was
+handled correctly. CI runs each fuzzer for 60 s per push, and hardware acceptance tests the paths a
+laptop cannot honestly simulate.
 
 ---
 
@@ -282,7 +283,7 @@ AnxietyWatch2/
 │   └── postgres/               schema, tuning, pgBackRest config
 ├── scripts/
 │   ├── sync-to-pi.sh           push + build + test on the Pi
-│   └── coverage.sh             instrumented build, report, threshold gate
+│   └── cargo llvm-cov           workspace per-file and aggregate coverage gate
 ├── docs/
 │   ├── HERDR-GUIDE.md          this file
 │   ├── specs/                  architecture
@@ -305,8 +306,10 @@ cargo test -p vitals-decode sfloat          # one task's suite
 # on the Pi
 scripts/sync-to-pi.sh --test
 
-# coverage
-scripts/coverage.sh --check
+# coverage (every Rust source file >=90%; workspace aggregate >=95%)
+cargo llvm-cov --workspace --all-features \
+  --fail-under-file-lines 90 \
+  --fail-under-lines 95 --summary-only
 
 # fuzz
 cargo +nightly fuzz run fuzz_sfloat -- -max_total_time=60

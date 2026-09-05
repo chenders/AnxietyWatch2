@@ -42,7 +42,6 @@ this project's whole thesis is preferring structural.
 **Where C's risk is not covered by fuzzing:** the collectors. Long-lived connection state machines,
 reconnect backoff, per-device buffers, D-Bus callback lifetimes. Bugs there are stateful and emerge
 over hours, which is exactly what a pure-function fuzzer does not reach.
-[CVE-2026-46056](https://windowsnews.ai/article/cve-2026-46056-critical-linux-bluetooth-use-after-free-flaw-demands-immediate-patching.420382)
 is a current use-after-free in Linux Bluetooth, one of a long line, and
 [BlueZ has itself been rewritten in Rust](https://blitzy.com/blog/the-blitzy-bluez-building-bluetooth-support)
 (380K LOC) for precisely this reason.
@@ -177,4 +176,6 @@ Rust would be written fresh. That risk is small at 100 lines and grows daily.
 - `.github/instructions/c.instructions.md` becomes `rust.instructions.md`. Most rules survive
   verbatim; the bounds-checking rules become "no `unsafe` without a comment justifying it, and
   `#![forbid(unsafe_code)]` in the decoder crates."
-- Coverage tooling changes from lcov to `cargo-llvm-cov`. Gates stay at 95/85.
+- Coverage tooling changes from lcov to `cargo-llvm-cov`. The original 95/85 split was a planning
+  baseline and is superseded by the current contract: every reported Rust source file is at least
+  90% covered by lines and the workspace aggregate is at least 95%; binaries are not excluded.
