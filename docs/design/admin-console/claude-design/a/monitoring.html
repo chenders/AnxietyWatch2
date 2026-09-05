@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AnxietyWatch — Monitoring &amp; History</title>
+  <link rel="stylesheet" href="console.css">
+  <style>
+    body { background: var(--monitor-bg); color: var(--monitor-text); }
+    .monitor-shell { width: min(1180px, 100%); margin: 0 auto; padding: 28px; }
+    .monitor-header { display: flex; justify-content: space-between; align-items: end; gap: 24px; border-bottom: 1px solid var(--monitor-rule); padding-bottom: 16px; }
+    .monitor-kicker { color: var(--monitor-muted); font: 700 11px/1.2 ui-monospace, monospace; letter-spacing: 2px; }
+    h1 { margin: 7px 0 0; font-size: clamp(24px, 4vw, 38px); letter-spacing: 1px; }
+    .monitor-state { color: var(--monitor-unknown); font: 700 12px/1.2 ui-monospace, monospace; letter-spacing: 1.5px; }
+    .monitor-state.healthy { color: var(--monitor-good); }
+    .monitor-state.degraded { color: var(--monitor-watch); }
+    .monitor-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 18px; }
+    .monitor-card { min-width: 0; border: 1px solid var(--monitor-rule); background: var(--monitor-panel); padding: 16px; }
+    .monitor-card h2 { margin: 0 0 12px; color: var(--monitor-muted); font: 700 11px/1.2 ui-monospace, monospace; letter-spacing: 1.5px; }
+    .monitor-list { display: grid; gap: 8px; }
+    .monitor-line { color: var(--monitor-text); font: 12px/1.45 ui-monospace, monospace; overflow-wrap: anywhere; }
+    .monitor-line.unknown { color: var(--monitor-unknown); }
+    .monitor-line.gap { color: var(--monitor-watch); }
+    .monitor-note { margin: 18px 0 0; color: var(--monitor-muted); font: 11px/1.5 ui-monospace, monospace; }
+    @media (max-width: 720px) {
+      .monitor-shell { padding: 18px 12px; }
+      .monitor-header { align-items: start; flex-direction: column; gap: 10px; }
+      .monitor-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main class="monitor-shell" aria-live="polite">
+    <header class="monitor-header">
+      <div>
+        <div class="monitor-kicker">ANXIETYWATCH · READ-ONLY OPERATIONS</div>
+        <h1>Monitoring &amp; History</h1>
+      </div>
+      <div id="monitor-state" class="monitor-state unknown">UNKNOWN</div>
+    </header>
+
+    <section class="monitor-grid" aria-label="Current source status and pipeline">
+      <article class="monitor-card">
+        <h2>CURRENT SOURCE STATUS</h2>
+        <div id="source-list" class="monitor-list"><div class="monitor-line unknown">STATUS · UNKNOWN</div></div>
+      </article>
+      <article class="monitor-card">
+        <h2>PIPELINE STAGES · EVIDENCE ONLY</h2>
+        <div id="stage-list" class="monitor-list"><div class="monitor-line unknown">ALL STAGES · UNKNOWN</div></div>
+      </article>
+      <article class="monitor-card">
+        <h2>BOUNDED DURABLE HISTORY</h2>
+        <div id="history-list" class="monitor-list"><div class="monitor-line unknown">HISTORY · UNKNOWN</div></div>
+      </article>
+      <article class="monitor-card">
+        <h2>EXPLICIT GAPS / PENDING</h2>
+        <div id="gap-list" class="monitor-list"><div class="monitor-line gap">GAPS · UNKNOWN</div></div>
+      </article>
+      <article class="monitor-card">
+        <h2>FEED EVIDENCE</h2>
+        <div id="evidence-list" class="monitor-list"><div class="monitor-line unknown">FEEDS · UNKNOWN</div></div>
+      </article>
+    </section>
+    <p class="monitor-note">READ ONLY · GET requests only · source identity is (source, type, session_id, seq) · live anonymous values are not history · missing or stale evidence is UNKNOWN · no interpolation, smoothing, or fabricated points.</p>
+  </main>
+  <script src="admin-monitoring.js"></script>
+  <script>
+    "use strict";
+    const query = new URLSearchParams(location.search);
+    const endpoints = {
+      status: query.get("status") || "status.json",
+      history: query.get("history") || "vitals_h10_history.json",
+      health: query.get("health") || "health.json",
+      drain: query.get("drain") || "drain-health.json",
+    };
+
+    async function readEvidence(url, validator) {
+      const separator = url.includes("?") ? "&" : "?";
+      const response = await fetch(`${url}${separator}_=${Date.now()}`, { cache: "no-store" });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const result = validator(await response.json());
+      if (!result.ok) throw new Error(result.reason);
+      return result;
+    }
+
+    async function pollMonitoring() {
+      const now = Date.now() / 1000;
+      const [status, history, health, drain] = await Promise.all([
+        readEvidence(endpoints.status, value => AdminMonitoring.validateStatus(value, now)),
+        readEvidence(endpoints.history, value => AdminMonitoring.validateHistory(value, now)),
+        readEvidence(endpoints.health, value => AdminMonitoring.validateHealth(value, now)),
+        readEvidence(endpoints.drain, value => AdminMonitoring.validateDrain(value, now)),
+      ].map(promise => promise.catch(error => ({
+        ok: false,
+        reason: error && error.message ? error.message : String(error),
+      }))));
+      AdminMonitoring.renderModel(AdminMonitoring.buildModel({ status, history, health, drain }, now));
+    }
+
+    pollMonitoring();
+    setInterval(pollMonitoring, 5000);
+  </script>
+</body>
+</html>

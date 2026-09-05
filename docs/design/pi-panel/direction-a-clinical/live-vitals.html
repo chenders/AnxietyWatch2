@@ -92,6 +92,7 @@ body.kiosk #app {
 .trend-chart { width: 100%; height: auto; aspect-ratio: 420 / 300; margin-top: 3px; overflow: visible; }
 .chart-axis { stroke: var(--muted); stroke-width: 1; vector-effect: non-scaling-stroke; }
 .chart-path { fill: none; stroke-width: 2.2; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.chart-live { stroke-width: 2; vector-effect: non-scaling-stroke; }
 .chart-label { fill: var(--muted); font-family: var(--mono); font-size: 18px; }
 .chart-axis-label { fill: var(--text); font-family: var(--mono); font-size: 16px; letter-spacing: .5px; }
 .chart-empty { fill: var(--unknown); font-family: var(--mono); font-size: 18px; letter-spacing: .5px; }
@@ -161,6 +162,25 @@ body.kiosk #app {
 .bp-number { color: var(--text); font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 46px; line-height: .9; letter-spacing: -2px; }
 .bp-unit { color: var(--muted); font-size: 13px; }
 .bp-meta { display: flex; flex-direction: column; justify-content: flex-end; gap: 7px; padding-bottom: 1px; }
+.pipeline {
+  flex: 0 0 auto;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  background: var(--panel);
+  padding: 10px 14px;
+}
+.pipeline-head { display: flex; justify-content: space-between; gap: 12px; }
+.pipeline-title { color: var(--muted); font-size: 10px; letter-spacing: 1.8px; font-weight: 700; }
+.pipeline-state { color: var(--unknown); font-family: var(--mono); font-size: 10px; font-weight: 700; letter-spacing: 1px; }
+.pipeline-state.healthy { color: var(--good); }
+.pipeline-state.degraded { color: var(--watch); }
+.pipeline-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; margin-top: 8px; }
+.pipeline-stage { min-width: 0; border-top: 1px solid var(--rule); padding-top: 5px; }
+.pipeline-name { display: block; color: var(--quiet); font-size: 9px; letter-spacing: .8px; overflow-wrap: anywhere; }
+.pipeline-value { display: block; margin-top: 3px; color: var(--text); font-family: var(--mono); font-size: 10px; overflow-wrap: anywhere; }
+.pipeline-value.unknown { color: var(--unknown); }
+.pipeline-pending, .pipeline-gaps { margin-top: 8px; color: var(--muted); font-family: var(--mono); font-size: 10px; line-height: 1.4; overflow-wrap: anywhere; }
+.pipeline-gaps strong { color: var(--watch); font-weight: 700; }
 .meta-label { color: var(--quiet); font-size: 10px; letter-spacing: 1.2px; }
 .meta-value { color: var(--text); font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 14px; }
 .meta-value.missing { color: var(--unknown); }
@@ -262,6 +282,7 @@ body.kiosk #app {
     gap: 13px;
   }
   .bp-meta { padding-bottom: 0; }
+  .pipeline-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .footer {
     min-height: 0;
     gap: 10px;
@@ -331,6 +352,7 @@ body.kiosk #app {
       </div>
       <div class="trend-legend" aria-label="Polar H10 graph legend">
         <span class="legend-item"><span class="legend-swatch" style="background:#54d38a"></span>HEART RATE · bpm</span>
+        <span class="legend-item"><span class="legend-swatch" style="background:#e3b34d"></span>LIVE · NOT STORED</span>
       </div>
       <svg id="h10-trend" class="trend-chart" viewBox="0 0 420 300" role="img" aria-label="Polar H10 heart rate over time"></svg>
     </article>
@@ -344,6 +366,7 @@ body.kiosk #app {
       </div>
       <div class="trend-legend" aria-label="EMAY graph legend">
         <span class="legend-item"><span class="legend-swatch" style="background:#54d38a"></span>SPO₂ · %</span>
+        <span class="legend-item"><span class="legend-swatch" style="background:#e3b34d"></span>LIVE · NOT STORED</span>
       </div>
       <svg id="emay-trend" class="trend-chart" viewBox="0 0 420 300" role="img" aria-label="EMAY oxygen saturation over time"></svg>
     </article>
@@ -360,6 +383,23 @@ body.kiosk #app {
       <div class="meta-row"><span class="meta-label">EVENT TIME</span><span id="bp-event" class="meta-value">—</span></div>
       <div class="meta-row"><span class="meta-label">FLAGS</span><span id="bp-flags" class="meta-value">—</span></div>
     </div>
+  </section>
+  <section class="pipeline" aria-label="Pipeline evidence">
+    <div class="pipeline-head">
+      <div class="pipeline-title">PIPELINE EVIDENCE · NO STAGE IS IMPLIED</div>
+      <div id="pipeline-state" class="pipeline-state">UNKNOWN</div>
+    </div>
+    <div id="pipeline-grid" class="pipeline-grid">
+      <div class="pipeline-stage"><span class="pipeline-name">RECEIVED</span><span class="pipeline-value unknown">UNKNOWN</span></div>
+      <div class="pipeline-stage"><span class="pipeline-name">SPOOLED</span><span class="pipeline-value unknown">UNKNOWN</span></div>
+      <div class="pipeline-stage"><span class="pipeline-name">FSYNCED</span><span class="pipeline-value unknown">UNKNOWN</span></div>
+      <div class="pipeline-stage"><span class="pipeline-name">DRAINED</span><span class="pipeline-value unknown">UNKNOWN</span></div>
+      <div class="pipeline-stage"><span class="pipeline-name">COMMITTED</span><span class="pipeline-value unknown">UNKNOWN</span></div>
+      <div class="pipeline-stage"><span class="pipeline-name">PUBLISHED</span><span class="pipeline-value unknown">UNKNOWN</span></div>
+      <div class="pipeline-stage"><span class="pipeline-name">DISPLAYED</span><span class="pipeline-value unknown">UNKNOWN</span></div>
+    </div>
+    <div id="pipeline-pending" class="pipeline-pending">PENDING / LIVE: UNKNOWN</div>
+    <div id="pipeline-gaps" class="pipeline-gaps"><strong>GAPS: UNKNOWN</strong></div>
   </section>
   <footer class="footer" aria-label="System health">
     <div class="health-head">
@@ -389,6 +429,9 @@ const h10HistoryUrl = qs.get("history") || "vitals_h10_history.json";
 const h10StatusUrl = qs.get("history-status") || "vitals_status.json";
 const H10_FRESH_SECONDS = 15;
 const EMAY_FRESH_SECONDS = 15;
+const STATUS_FRESH_SECONDS = 5;
+const PIPELINE_STAGES = ["received", "spooled", "fsynced", "drained", "committed", "published", "displayed"];
+const HISTORY_DOC_FRESH_SECONDS = 600;
 const HEALTH_FRESH_SECONDS = 120;
 const TREND_SECONDS = 10 * 60;
 const TREND_MAX_GAP_SECONDS = 15;
@@ -400,6 +443,7 @@ const live = {
   fetchedAt: 0,
   health: null,
   healthError: null,
+  historyError: null,
 };
 const trends = {
   h10: {
@@ -409,6 +453,9 @@ const trends = {
     spo2: { points: [], keys: new Set() },
   },
 };
+// These are ephemeral presentation overlays. They are replaced on every
+// status poll and are deliberately never merged into the durable buckets.
+const liveOverlays = { h10: { hr: null }, emay: { spo2: null } };
 
 const byId = id => document.getElementById(id);
 const finite = value => typeof value === "number" && Number.isFinite(value);
@@ -418,6 +465,35 @@ function ageSeconds(value, now) {
   if (!finite(value)) return null;
   const age = now - value;
   return Number.isFinite(age) ? age : null;
+}
+
+function validateStatus(value) {
+  if (!value || typeof value !== "object" || value.schema !== 2)
+    throw new Error("status schema is missing or unsupported");
+  const age = ageSeconds(value.written_at, Date.now() / 1000);
+  if (age == null || age < 0 || age > STATUS_FRESH_SECONDS)
+    throw new Error("status evidence is missing or stale");
+  if (typeof value.error === "string" && value.error.length)
+    throw new Error(`status publisher degraded: ${value.error}`);
+  if (!value.pipeline || typeof value.pipeline !== "object"
+    || !["healthy", "degraded", "unknown"].includes(value.pipeline.state)
+    || !value.pipeline.stages || typeof value.pipeline.stages !== "object"
+    || PIPELINE_STAGES.some(stage => !(stage in value.pipeline.stages))
+    || !value.pending_live || typeof value.pending_live !== "object"
+    || !("h10" in value.pending_live) || !("emay" in value.pending_live)
+    || !value.pending_durable || typeof value.pending_durable !== "object"
+    || [
+      ["hr", 1, 1], ["rr", 1, 5], ["spo2", 0, 2], ["pulse", 0, 1],
+    ].some(([kind, source, type]) => !Array.isArray(value.pending_durable[kind])
+      || value.pending_durable[kind].length > 1000000
+      || value.pending_durable[kind].some(point =>
+        !point || !finite(point.t) || !finite(point.v)
+        || point.source !== source || point.type !== type || durableIdentity(point) === null))
+    || !Array.isArray(value.gaps)
+    || value.gaps.some(gap => !gap || typeof gap !== "object"
+      || typeof gap.source !== "string" || typeof gap.reason !== "string"))
+    throw new Error("status pipeline/pending/gap evidence is incomplete");
+  return value;
 }
 
 function ageText(age) {
@@ -460,11 +536,14 @@ function renderH10(s, now, feedOkay) {
   }
   const age = ageSeconds(s.sample_at, now);
   const physical = s.test_origin === "physical_device";
-  const liveNow = feedOkay && physical && s.live === true && age != null && age <= H10_FRESH_SECONDS;
-  const state = liveNow ? "working" : feedOkay && physical ? "watching" : "error";
-  const label = liveNow ? "WORKING" : !physical ? "NON-PHYSICAL" : feedOkay ? "STALE" : "FEED ERROR";
+  const durable = s.live === false && s.durability === "database_committed";
+  const liveNow = feedOkay && physical && s.live === true && age != null && age >= 0 && age <= H10_FRESH_SECONDS;
+  const state = durable ? (feedOkay ? "watching" : "error")
+    : liveNow ? "working" : feedOkay && physical ? "watching" : "error";
+  const label = durable ? "HISTORY" : liveNow ? "WORKING" : !physical ? "NON-PHYSICAL" : feedOkay ? "STALE" : "FEED ERROR";
   setClass(card, state); setBadge("h10-badge", state, label);
-  if (liveNow) byId("h10-reason").textContent = "Live physical-device values are arriving.";
+  if (durable) byId("h10-reason").textContent = "Latest committed H10 value; a live transport claim is not made.";
+  else if (liveNow) byId("h10-reason").textContent = "Live physical-device values are arriving; this overlay is not stored here.";
   else if (!physical) byId("h10-reason").textContent = "This value is not from the physical H10.";
   else if (!feedOkay) byId("h10-reason").textContent = "Cannot verify the H10 while the data feed is unavailable.";
   else byId("h10-reason").textContent = `No live H10 value for ${ageText(age)}.`;
@@ -502,7 +581,7 @@ function renderEmay(s, now, feedOkay) {
     : !feedOkay ? "FEED ERROR" : !linkUp ? "LINK DOWN" : "STALE";
   setClass(card, state); setBadge("emay-badge", state, label);
   if (stored) byId("emay-reason").textContent = "Latest persisted EMAY value; live sensor state is not claimed.";
-  else if (liveNow) byId("emay-reason").textContent = "Live physical-device values are arriving.";
+  else if (liveNow) byId("emay-reason").textContent = "Live physical-device values are arriving; anonymous overlay is not stored here.";
   else if (noFingerNow) byId("emay-reason").textContent = "The sensor reports no finger. Place the sensor on a finger.";
   else if (!feedOkay && noFingerEvidence)
     byId("emay-reason").textContent = "Cannot verify EMAY currently; the last frame reported no finger. Place the sensor on a finger.";
@@ -525,29 +604,47 @@ function renderEmay(s, now, feedOkay) {
   byId("emay-age").innerHTML = `${ageLabel} <strong>${ageText(age)}</strong>`;
 }
 
+function durableIdentity(point) {
+  if (!point || !Number.isInteger(point.source) || !Number.isInteger(point.type)
+    || !Number.isInteger(point.session_id) || !Number.isInteger(point.seq)) return null;
+  return `${point.source}:${point.type}:${point.session_id}:${point.seq}`;
+}
+
 function addTrendPoint(bucket, point) {
   if (!finite(point.t) || !finite(point.v)) return;
-  const key = `${point.t}:${point.v}`;
-  if (bucket.keys.has(key)) return;
-  bucket.keys.add(key);
+  const identity = durableIdentity(point);
+  // SQL history and status deltas must carry source identity. A timestamp and
+  // value are not a key: two equal readings can be different samples.
+  if (identity === null) return;
+  if (bucket.keys.has(identity)) return;
+  bucket.keys.add(identity);
   const previous = bucket.points[bucket.points.length - 1];
-  bucket.points.push(point);
+  bucket.points.push({ ...point, session_id: point.session_id, seq: point.seq });
   if (previous && point.t < previous.t)
-    bucket.points.sort((a, b) => a.t - b.t || a.v - b.v);
+    bucket.points.sort((a, b) => a.t - b.t || a.session_id - b.session_id || a.seq - b.seq);
 }
 
 function pruneTrend(bucket, cutoff) {
   bucket.points = bucket.points.filter(point => point.t >= cutoff);
-  bucket.keys = new Set(bucket.points.map(point => `${point.t}:${point.v}`));
+  bucket.keys = new Set(bucket.points.map(durableIdentity).filter(identity => identity !== null));
+}
+
+function clearDurableTrends() {
+  for (const device of Object.values(trends)) {
+    for (const metric of Object.values(device)) {
+      metric.points = [];
+      metric.keys = new Set();
+    }
+  }
 }
 
 function recordTrends(snapshot) {
-  const h10 = snapshot && snapshot.h10;
-  if (h10 && typeof h10 === "object" && finite(h10.sample_at) && finite(h10.hr))
-    addTrendPoint(trends.h10.hr, { t: h10.sample_at, v: h10.hr });
-  const emay = snapshot && snapshot.emay;
-  if (emay && typeof emay === "object" && emay.synthetic !== true && finite(emay.sample_at) && finite(emay.spo2))
-    addTrendPoint(trends.emay.spo2, { t: emay.sample_at, v: emay.spo2 });
+  const h10 = snapshot && snapshot.h10_live;
+  liveOverlays.h10.hr = h10 && typeof h10 === "object" && finite(h10.sample_at) && finite(h10.hr)
+    ? { t: h10.sample_at, v: h10.hr } : null;
+  const emay = snapshot && snapshot.emay_live;
+  liveOverlays.emay.spo2 = emay && typeof emay === "object" && finite(emay.sample_at) && finite(emay.spo2)
+    ? { t: emay.sample_at, v: emay.spo2 } : null;
   const cutoff = Date.now() / 1000 - TREND_SECONDS - TREND_MAX_GAP_SECONDS;
   for (const device of Object.values(trends)) {
     for (const metric of Object.values(device)) pruneTrend(metric, cutoff);
@@ -558,9 +655,39 @@ function mergeH10Series(bucket, points, cutoff) {
   if (!Array.isArray(points)) return;
   for (const raw of points) {
     if (!raw || !finite(Number(raw.t)) || !finite(Number(raw.v))) continue;
-    const point = { t: Number(raw.t), v: Number(raw.v) };
+    const point = {
+      t: Number(raw.t),
+      v: Number(raw.v),
+      source: raw.source,
+      type: raw.type,
+      session_id: raw.session_id,
+      seq: raw.seq,
+    };
     if (point.t >= cutoff) addTrendPoint(bucket, point);
   }
+}
+
+function validateHistoryDocument(data) {
+  if (!data || data.schema !== 2) throw new Error("history schema is missing or unsupported");
+  const age = ageSeconds(data.written_at, Date.now() / 1000);
+  if (age == null || age < 0 || age > HISTORY_DOC_FRESH_SECONDS)
+    throw new Error("history evidence is missing or stale");
+  if (!finite(data.history_window_seconds) || data.history_window_seconds <= 0 || data.history_window_seconds > 7 * 86400)
+    throw new Error("history window is missing or unbounded");
+  if (!Array.isArray(data.gaps) || data.gaps.some(gap =>
+    !gap || typeof gap !== "object" || typeof gap.source !== "string" || typeof gap.reason !== "string"))
+    throw new Error("explicit history gaps are malformed");
+  for (const series of [
+    data.h10_history && data.h10_history.hr,
+    data.h10_history && data.h10_history.rr,
+    data.emay_history && data.emay_history.spo2,
+    data.emay_history && data.emay_history.pulse,
+  ]) {
+    if (!Array.isArray(series) || series.length > 1000000 || series.some(point =>
+      !point || !finite(point.t) || !finite(point.v) || durableIdentity(point) === null))
+      throw new Error("history series or durable identity is malformed");
+  }
+  return data;
 }
 
 function mergeStoredH10History(data) {
@@ -598,14 +725,18 @@ function mergeEmayStatusHistory(data) {
 
 async function loadStoredH10History() {
   try {
-    const data = await fetchJson(h10HistoryUrl, 2);
+    const data = await fetchJson(h10HistoryUrl, 2, validateHistoryDocument);
     mergeStoredH10History(data);
+    live.historyError = null;
     if (live.snapshot) recordTrends(live.snapshot);
     render();
   } catch (error) {
-    // The live status and bounded overlay remain usable if the optional
-    // historical document is unavailable; do not turn that into fake data.
-    console.warn(`H10/EMAY history unavailable: ${error.message}`);
+    // A malformed or stale history document is not evidence. Clear any
+    // previously cached durable points instead of leaving a stale graph.
+    live.historyError = error && error.message ? error.message : String(error);
+    clearDurableTrends();
+    console.warn(`H10/EMAY history unavailable: ${live.historyError}`);
+    render();
   }
 }
 
@@ -711,6 +842,13 @@ function renderTrend(svgId, latestId, now, config) {
     const path = trendPath(item.bucket.points, left, top, plotRight, xMin, xMax, scale);
     if (path) svg.append(svgElement("path", { d: path, class: "chart-path", stroke: item.color }));
   }
+  const overlay = config.livePoint;
+  if (overlay && finite(overlay.t) && finite(overlay.v) && overlay.t >= xMin && overlay.t <= xMax) {
+    hasData = true;
+    svg.append(svgElement("circle", {
+      cx: x(overlay.t), cy: y(overlay.v), r: 4, fill: "#e3b34d", class: "chart-live",
+    }));
+  }
   if (!hasData) svgText(svg, (left + plotRight) / 2, top + 105, `WAITING FOR ${config.name} HISTORY`, "chart-empty");
   svg.setAttribute("aria-label", `${config.title}; ${hasData ? "fresh points plotted" : "waiting for fresh points"}`);
   byId(latestId).textContent = config.latest(now);
@@ -725,6 +863,7 @@ function renderTrends(snapshot, now) {
     unit: "bpm",
     fallback: [60, 100],
     series: [{ bucket: trends.h10.hr, color: "#54d38a" }],
+    livePoint: liveOverlays.h10.hr,
     latest: () => h10 && finite(h10.hr) ? `HR ${Math.round(h10.hr)} bpm` : "HR —",
   });
   renderTrend("emay-trend", "emay-trend-latest", now, {
@@ -733,8 +872,70 @@ function renderTrends(snapshot, now) {
     unit: "%",
     scale: { min: 75, max: 100, step: 5, ticks: [75, 80, 85, 90, 95, 100] },
     series: [{ bucket: trends.emay.spo2, color: "#54d38a" }],
+    livePoint: liveOverlays.emay.spo2,
     latest: () => emay && finite(emay.spo2) ? `SpO₂ ${Math.round(emay.spo2)}%` : "SpO₂ —",
   });
+}
+
+function pipelineValue(value) {
+  if (value == null) return "UNKNOWN";
+  if (finite(value)) return String(Math.round(value));
+  if (typeof value === "string") return value.toUpperCase();
+  if (typeof value === "object") {
+    if (finite(value.count)) return `COUNT ${Math.round(value.count)}`;
+    if (typeof value.state === "string") return value.state.toUpperCase();
+    return "EVIDENCE";
+  }
+  return "UNKNOWN";
+}
+
+function renderPipeline(snapshot, feedOkay) {
+  const unknown = !feedOkay || !snapshot || typeof snapshot.pipeline !== "object";
+  const pipeline = unknown ? null : snapshot.pipeline;
+  const state = unknown || !["healthy", "degraded"].includes(pipeline.state)
+    ? "unknown" : pipeline.state;
+  const noStageEvidence = unknown || state === "unknown";
+  const stateElement = byId("pipeline-state");
+  stateElement.className = `pipeline-state ${state}`;
+  stateElement.textContent = state.toUpperCase();
+  const stages = !noStageEvidence && pipeline.stages && typeof pipeline.stages === "object"
+    ? pipeline.stages : {};
+  const grid = byId("pipeline-grid");
+  grid.replaceChildren();
+  for (const [key, label] of [
+    ["received", "RECEIVED"], ["spooled", "SPOOLED"], ["fsynced", "FSYNCED"],
+    ["drained", "DRAINED"], ["committed", "COMMITTED"], ["published", "PUBLISHED"],
+    ["displayed", "DISPLAYED"],
+  ]) {
+    const item = document.createElement("div");
+    item.className = "pipeline-stage";
+    const name = document.createElement("span");
+    name.className = "pipeline-name";
+    name.textContent = label;
+    const value = document.createElement("span");
+    value.className = `pipeline-value ${stages[key] == null || noStageEvidence ? "unknown" : ""}`;
+    value.textContent = noStageEvidence ? "UNKNOWN" : pipelineValue(stages[key]);
+    item.append(name, value);
+    grid.append(item);
+  }
+  const pendingLive = snapshot && snapshot.pending_live;
+  const liveLabels = [];
+  if (pendingLive && pendingLive.h10) liveLabels.push("H10 LIVE OVERLAY · NOT COMMITTED");
+  if (pendingLive && pendingLive.emay) liveLabels.push("EMAY LIVE OVERLAY · ANONYMOUS · NOT COMMITTED");
+  const pendingDurable = snapshot && snapshot.pending_durable;
+  const durableCount = pendingDurable && typeof pendingDurable === "object"
+    ? ["hr", "rr", "spo2", "pulse"].reduce((total, key) =>
+      total + (Array.isArray(pendingDurable[key]) ? pendingDurable[key].length : 0), 0) : 0;
+  if (durableCount) liveLabels.push(`${durableCount} COMMITTED ROWS AWAITING HISTORY DOCUMENT REFRESH`);
+  byId("pipeline-pending").textContent = liveLabels.length
+    ? `PENDING / LIVE: ${liveLabels.join(" · ")}`
+    : "PENDING / LIVE: NONE EVIDENCED";
+
+  const gaps = !noStageEvidence && Array.isArray(snapshot.gaps) ? snapshot.gaps : [];
+  byId("pipeline-gaps").textContent = gaps.length
+    ? `GAPS: ${gaps.map(gap => `${text(gap.source)} — ${text(gap.reason)}`).join(" · ")}`
+    : noStageEvidence ? "GAPS: UNKNOWN — status evidence is unavailable or stale"
+    : "GAPS: none reported by the publisher; no values were interpolated";
 }
 
 function renderBp(bp, now) {
@@ -810,7 +1011,9 @@ function render() {
   const now = Date.now() / 1000;
   byId("clock").textContent = new Date().toLocaleTimeString([], { hour12: false });
   const fetchAge = live.fetchedAt ? (Date.now() - live.fetchedAt * 1000) / 1000 : Infinity;
-  const feedOkay = !live.error && live.snapshot && fetchAge <= 5;
+  const statusAge = live.snapshot ? ageSeconds(live.snapshot.written_at, now) : null;
+  const feedOkay = !live.error && live.snapshot && fetchAge <= STATUS_FRESH_SECONDS
+    && statusAge != null && statusAge >= 0 && statusAge <= STATUS_FRESH_SECONDS;
   const feed = byId("feed");
   feed.className = feedOkay ? "feed" : "feed bad";
   feed.textContent = feedOkay ? "STATUS FEED LIVE" : live.error ? "FEED UNAVAILABLE" : "WAITING FOR FEED";
@@ -819,24 +1022,25 @@ function render() {
   renderEmay(s && s.emay, now, feedOkay);
   renderTrends(s, now);
   renderBp(s && s.bp, now);
+  renderPipeline(s, feedOkay);
   renderHealth();
   byId("updated").textContent = `FEED AGE ${feedOkay ? ageText(fetchAge) : "—"}`;
 }
 
-async function fetchJson(url, expectedSchema = 1) {
+async function fetchJson(url, expectedSchema = 1, validate = value => value) {
   const separator = url.includes("?") ? "&" : "?";
   const response = await fetch(`${url}${separator}_=${Date.now()}`, { cache: "no-store" });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   const value = await response.json();
   if (!value || value.schema !== expectedSchema) throw new Error(`unexpected schema: ${value && value.schema}`);
-  return value;
+  return validate(value);
 }
 
 async function poll() {
   const [statusResult, healthResult, h10StatusResult] = await Promise.allSettled([
-    fetchJson(statusUrl),
+    fetchJson(statusUrl, 2, validateStatus),
     fetchJson(healthUrl),
-    fetchJson(h10StatusUrl, 2),
+    fetchJson(h10StatusUrl, 2, validateStatus),
   ]);
   if (statusResult.status === "fulfilled") {
     live.snapshot = statusResult.value;
@@ -845,6 +1049,8 @@ async function poll() {
   } else {
     const error = statusResult.reason;
     live.error = error && error.message ? error.message : String(error);
+    live.snapshot = null;
+    recordTrends(null);
   }
   if (healthResult.status === "fulfilled") {
     live.health = healthResult.value;
