@@ -246,6 +246,10 @@ mod tests {
         let err = NodeId::load_or_create(d.path()).expect_err("must refuse");
         assert_eq!(err.kind(), io::ErrorKind::InvalidData);
         assert!(err.to_string().contains("refusing to regenerate"));
+
+        let io_error_dir = tempdir().expect("I/O error tempdir");
+        fs::create_dir(io_error_dir.path().join("node_id")).expect("node id directory");
+        assert!(NodeId::load_or_create(io_error_dir.path()).is_err());
     }
 
     /// The defect this module exists to prevent. A fresh `SessionMinter` on the

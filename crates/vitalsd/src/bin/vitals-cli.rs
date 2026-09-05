@@ -131,6 +131,16 @@ fn health_json(h: &vitals_proto::Health) -> String {
     use std::fmt::Write as _;
     let mut o = String::new();
     let _ = write!(o, "{{\"uptime_secs\":{}", h.uptime_secs);
+    let _ = write!(o, ",\"received_samples\":{}", h.received_samples);
+    let _ = write!(o, ",\"spooled_samples\":{}", h.spooled_samples);
+    let _ = write!(o, ",\"fsynced_samples\":{}", h.fsynced_samples);
+    let _ = write!(o, ",\"published_samples\":{}", h.published_samples);
+    let _ = write!(
+        o,
+        ",\"displayed_samples\":{}",
+        h.displayed_samples
+            .map_or_else(|| "null".to_owned(), |count| count.to_string())
+    );
     let _ = write!(o, ",\"total_samples\":{}", h.total_samples);
     let _ = write!(o, ",\"spool_bytes\":{}", h.spool_bytes);
     let _ = write!(o, ",\"heartbeat_pulsing\":{}", h.heartbeat_pulsing);
@@ -168,4 +178,176 @@ fn health_json(h: &vitals_proto::Health) -> String {
     }
     o.push_str("]}");
     o
+}
+
+#[cfg(test)]
+#[expect(
+    clippy::expect_used,
+    reason = "CLI socket fixtures should fail loudly in tests"
+)]
+mod tests {
+    use super::*;
+    use std::os::unix::net::UnixListener;
+    use std::path::Path;
+    use std::thread;
+    use vitals_proto::{DrainHealth, HeartbeatInputs, Liveness, SourceHealth, SubscriberHealth};
+
+    fn health(degraded: Vec<String>) -> vitals_proto::Health {
+        vitals_proto::Health {
+            uptime_secs: 7,
+            received_samples: 3,
+            spooled_samples: 2,
+            fsynced_samples: 1,
+            published_samples: 1,
+            displayed_samples: None,
+            sources: vec![SourceHealth {
+                source: 6,
+                liveness: Liveness::Stale,
+                last_sample_age_secs: Some(9),
+                samples: 2,
+            }],
+            total_samples: 2,
+            spool_bytes: 128,
+            subscribers: vec![SubscriberHealth {
+                id: 4,
+                dropped: 1,
+                queued: 2,
+            }],
+            drain: DrainHealth::default(),
+            heartbeat: HeartbeatInputs {
+                monitoring_window_active: true,
+                primary_sample_age_secs: Some(1),
+                tier_evaluation_age_secs: Some(1),
+                drain_progressing: true,
+            },
+            heartbeat_pulsing: false,
+            degraded,
+        }
+    }
+
+    fn server(response: Response) -> (tempfile::TempDir, PathBuf, thread::JoinHandle<()>) {
+        let dir = tempfile::tempdir().expect("socket tempdir");
+        let path = dir.path().join("vitalsd.sock");
+        let listener = UnixListener::bind(&path).expect("bind fixture socket");
+        let handle = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept fixture client");
+            let mut prefix = [0_u8; 4];
+            stream.read_exact(&mut prefix).expect("read request prefix");
+            let n = check_frame_len(u32::from_le_bytes(prefix)).expect("request length");
+            let mut body = vec![0_u8; n];
+            stream.read_exact(&mut body).expect("read request body");
+            stream
+                .write_all(&encode_frame(&response).expect("encode fixture response"))
+                .expect("write fixture response");
+        });
+        (dir, path, handle)
+    }
+
+    #[test]
+    fn health_json_contains_stage_evidence_and_escapes_blockers() {
+        let json = health_json(&health(vec![r#"bad "quote"\path"#.to_owned()]));
+        assert!(json.contains("\"received_samples\":3"));
+        assert!(json.contains("\"spooled_samples\":2"));
+        assert!(json.contains("\"fsynced_samples\":1"));
+        assert!(json.contains("\"published_samples\":1"));
+        assert!(json.contains("\"displayed_samples\":null"));
+        assert!(json.contains(r#"bad \"quote\"\\path"#));
+        assert!(json.contains("\"liveness\":\"Stale\""));
+    }
+
+    #[test]
+    fn run_reports_health_and_protocol_outcomes() {
+        let (dir, path, thread) = server(Response::Health {
+            health: Box::new(health(Vec::new())),
+        });
+        assert_eq!(
+            run(&path, "health").expect("healthy CLI"),
+            ExitCode::SUCCESS
+        );
+        thread.join().expect("fixture thread");
+        drop(dir);
+
+        let (dir, path, thread) = server(Response::Health {
+            health: Box::new(health(vec!["blocked=1".to_owned()])),
+        });
+        assert_eq!(
+            run(&path, "health").expect("degraded CLI"),
+            ExitCode::FAILURE
+        );
+        thread.join().expect("fixture thread");
+        drop(dir);
+
+        let (dir, path, thread) = server(Response::Error {
+            kind: vitals_proto::ErrorKind::Unavailable,
+            detail: "store missing".to_owned(),
+        });
+        assert_eq!(
+            run(&path, "health").expect("error response"),
+            ExitCode::FAILURE
+        );
+        thread.join().expect("fixture thread");
+        drop(dir);
+
+        let (dir, path, thread) = server(Response::Appended {
+            count: 1,
+            durable: false,
+        });
+        assert_eq!(
+            run(&path, "health").expect("append response"),
+            ExitCode::SUCCESS
+        );
+        thread.join().expect("fixture thread");
+        drop(dir);
+
+        assert!(run(Path::new("/no/such/vitalsd.sock"), "health").is_err());
+        assert_eq!(
+            run(Path::new("/no/socket"), "unknown").expect("unknown verb"),
+            usage()
+        );
+    }
+
+    #[test]
+    fn subscribe_streams_samples_and_eof_is_clean() {
+        let sample = vitals_proto::WireSample {
+            source: 6,
+            r#type: 6,
+            session_id: 4,
+            seq: 2,
+            timestamp_unix_micros: 1,
+            value: 98.0,
+            extra: None,
+            batch_id: None,
+        };
+        let (dir, path, thread) = server(Response::Sample {
+            sample: Box::new(sample),
+        });
+        assert_eq!(
+            run(&path, "subscribe").expect("subscribe CLI"),
+            ExitCode::SUCCESS
+        );
+        thread.join().expect("fixture thread");
+        drop(dir);
+    }
+
+    #[test]
+    fn malformed_response_length_is_an_error() {
+        let dir = tempfile::tempdir().expect("socket tempdir");
+        let path = dir.path().join("vitalsd.sock");
+        let listener = UnixListener::bind(&path).expect("bind fixture socket");
+        let thread = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept fixture client");
+            let mut request = [0_u8; 4];
+            stream
+                .read_exact(&mut request)
+                .expect("read request prefix");
+            let n = check_frame_len(u32::from_le_bytes(request)).expect("request length");
+            let mut body = vec![0_u8; n];
+            stream.read_exact(&mut body).expect("read request body");
+            stream
+                .write_all(&u32::MAX.to_le_bytes())
+                .expect("write bad length");
+        });
+        assert!(run(&path, "health").is_err());
+        thread.join().expect("fixture thread");
+    }
 }

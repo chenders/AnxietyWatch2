@@ -133,11 +133,12 @@ pub fn pg_timestamp_micros(t: SystemTime) -> Result<i64, EncodeError> {
         .ok_or(EncodeError::TimestampOutOfRange { unix_secs })
 }
 
+fn field_length(len: usize, field: &'static str) -> Result<i32, EncodeError> {
+    i32::try_from(len).map_err(|_| EncodeError::FieldTooLarge { field, len })
+}
+
 fn put_field(out: &mut Vec<u8>, bytes: &[u8], field: &'static str) -> Result<(), EncodeError> {
-    let len = i32::try_from(bytes.len()).map_err(|_| EncodeError::FieldTooLarge {
-        field,
-        len: bytes.len(),
-    })?;
+    let len = field_length(bytes.len(), field)?;
     out.extend_from_slice(&len.to_be_bytes());
     out.extend_from_slice(bytes);
     Ok(())
@@ -350,6 +351,24 @@ mod tests {
         let us = pg_timestamp_micros(t).expect("representable");
         assert_eq!(us, (-86_400 - 946_684_800) * 1_000_000);
         assert!(us < 0);
+        assert_eq!(
+            pg_timestamp_micros(UNIX_EPOCH - Duration::from_micros(1)),
+            Ok(-946_684_800_000_001)
+        );
+    }
+
+    #[test]
+    fn encode_errors_have_actionable_text() {
+        let timestamp = EncodeError::TimestampOutOfRange { unix_secs: 42 };
+        assert!(timestamp.to_string().contains("42s"));
+        let field = EncodeError::FieldTooLarge {
+            field: "extra",
+            len: usize::MAX,
+        };
+        assert!(field.to_string().contains("extra"));
+        assert!(field.to_string().contains("too large"));
+        let error = field_length(usize::MAX, "extra").expect_err("length must fit i32");
+        assert_eq!(error, field);
     }
 
     #[test]

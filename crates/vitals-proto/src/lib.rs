@@ -23,6 +23,13 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Version of the atomically published drainer health document.
+///
+/// Kept in the wire crate so the drainer, daemon, and read-only consumers
+/// validate the same snapshot schema instead of each carrying a private
+/// literal.
+pub const DRAIN_HEALTH_SCHEMA: u32 = 1;
+
 /// Largest frame the reader will accept, in bytes.
 ///
 /// Generous for a batch of samples, far below anything that threatens memory.
@@ -41,9 +48,10 @@ pub struct WireSample {
     pub source: i32,
     /// Registry type id.
     pub r#type: i32,
-    /// Identifies one upstream source session. Live collectors use a
-    /// restart-unique connection id; stored-session collectors use the
-    /// deterministic device-session identity.
+    /// Identifies one upstream source session. It must come from a
+    /// retransmission-stable source identity. An anonymous live observation
+    /// that has no such identity is status-only and must not be represented as
+    /// a durable `WireSample`.
     pub session_id: i64,
     /// Stable identity within the session.
     pub seq: i64,
@@ -195,6 +203,58 @@ pub struct SubscriberHealth {
     pub queued: usize,
 }
 
+/// The drainer's independent durability evidence.
+///
+/// This is a snapshot, not a history store. `available = false` means the
+/// daemon could not prove the drainer's state. Consumers must render that as
+/// unknown, never as an empty or healthy spool.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DrainHealth {
+    /// Version of this JSON/wire snapshot.
+    pub schema: u32,
+    /// Whether the snapshot was read and validated.
+    pub available: bool,
+    /// Unix epoch seconds when the drainer wrote the snapshot.
+    pub generated_at_unix_secs: u64,
+    /// Unix epoch seconds of the last successful database commit, if any.
+    pub last_success_unix_secs: Option<u64>,
+    /// Segments containing rows not yet committed.
+    pub pending_segments: u64,
+    /// Bytes containing rows not yet committed.
+    pub pending_bytes: u64,
+    /// Age of the oldest pending segment, if any.
+    pub oldest_pending_age_secs: Option<u64>,
+    /// Rows read from COPY staging.
+    pub rows_read: u64,
+    /// Rows inserted as new durable identities.
+    pub rows_inserted: u64,
+    /// Rows replayed and rejected by the primary-key conflict as duplicates.
+    pub rows_duplicate: u64,
+    /// Rows rejected by an invalid batch or database transaction.
+    pub rows_rejected: u64,
+    /// Last named drainer failure, if one occurred.
+    pub last_error: Option<String>,
+}
+
+impl Default for DrainHealth {
+    fn default() -> Self {
+        Self {
+            schema: DRAIN_HEALTH_SCHEMA,
+            available: false,
+            generated_at_unix_secs: 0,
+            last_success_unix_secs: None,
+            pending_segments: 0,
+            pending_bytes: 0,
+            oldest_pending_age_secs: None,
+            rows_read: 0,
+            rows_inserted: 0,
+            rows_duplicate: 0,
+            rows_rejected: 0,
+            last_error: None,
+        }
+    }
+}
+
 /// The four facts the hardware dead-man switch depends on (amendment 05 §2.1).
 ///
 /// `klaxond` pulses its pin only if all of these hold during a monitoring
@@ -270,6 +330,23 @@ impl HeartbeatInputs {
 pub struct Health {
     /// Seconds since start.
     pub uptime_secs: u64,
+    /// Samples accepted at the daemon boundary, before spool I/O.
+    #[serde(default)]
+    pub received_samples: u64,
+    /// Samples successfully appended to the spool.
+    #[serde(default)]
+    pub spooled_samples: u64,
+    /// Samples covered by a completed fsync.
+    #[serde(default)]
+    pub fsynced_samples: u64,
+    /// Samples admitted to subscriber queues. This is not browser/display
+    /// evidence.
+    #[serde(default)]
+    pub published_samples: u64,
+    /// Browser/display evidence is external to `vitalsd`; `None` is explicit
+    /// unknown rather than a fabricated count.
+    #[serde(default)]
+    pub displayed_samples: Option<u64>,
     /// Per-source liveness.
     pub sources: Vec<SourceHealth>,
     /// Total samples appended since start.
@@ -278,6 +355,9 @@ pub struct Health {
     pub spool_bytes: u64,
     /// Subscribers, with their drop counts.
     pub subscribers: Vec<SubscriberHealth>,
+    /// Last validated snapshot from the independent drainer.
+    #[serde(default)]
+    pub drain: DrainHealth,
     /// Inputs to the hardware dead-man switch.
     pub heartbeat: HeartbeatInputs,
     /// Whether the heartbeat should currently pulse.
@@ -418,6 +498,68 @@ mod tests {
     /// cannot accidentally opt every append into fsync — or, worse, have its
     /// omission read as `true`.
     #[test]
+    fn health_and_drain_evidence_round_trip_with_explicit_display_unknown() {
+        let drain = DrainHealth {
+            available: true,
+            generated_at_unix_secs: 10,
+            last_success_unix_secs: Some(9),
+            pending_segments: 1,
+            pending_bytes: 128,
+            oldest_pending_age_secs: Some(2),
+            rows_read: 4,
+            rows_inserted: 3,
+            rows_duplicate: 1,
+            rows_rejected: 0,
+            last_error: None,
+            ..DrainHealth::default()
+        };
+        let health = Health {
+            uptime_secs: 7,
+            received_samples: 5,
+            spooled_samples: 4,
+            fsynced_samples: 2,
+            published_samples: 1,
+            displayed_samples: None,
+            sources: vec![SourceHealth {
+                source: 6,
+                liveness: Liveness::Live,
+                last_sample_age_secs: Some(1),
+                samples: 4,
+            }],
+            total_samples: 4,
+            spool_bytes: 128,
+            subscribers: vec![SubscriberHealth {
+                id: 2,
+                dropped: 0,
+                queued: 1,
+            }],
+            drain: drain.clone(),
+            heartbeat: HeartbeatInputs {
+                monitoring_window_active: false,
+                primary_sample_age_secs: None,
+                tier_evaluation_age_secs: None,
+                drain_progressing: true,
+            },
+            heartbeat_pulsing: true,
+            degraded: Vec::new(),
+        };
+        let frame = encode_frame(&Response::Health {
+            health: Box::new(health.clone()),
+        })
+        .expect("encode health");
+        let decoded: Response =
+            decode_payload(frame.get(4..).expect("frame body")).expect("decode health");
+        assert_eq!(
+            decoded,
+            Response::Health {
+                health: Box::new(health),
+            }
+        );
+        assert_eq!(DrainHealth::default().schema, DRAIN_HEALTH_SCHEMA);
+        assert!(!DrainHealth::default().available);
+    }
+
+    #[test]
     fn sync_defaults_to_false_when_absent() {
         #[derive(Serialize)]
         struct Old {
@@ -443,6 +585,16 @@ mod tests {
     /// allocation.
     #[test]
     fn oversized_frames_are_rejected_before_allocation() {
+        let frame_error = ProtoError::FrameTooLarge { len: MAX_FRAME + 1 };
+        assert!(frame_error.to_string().contains("exceeds"));
+        let cbor_error = ProtoError::Cbor("bad payload".to_owned());
+        assert!(cbor_error.to_string().contains("bad payload"));
+        let oversized = vec![b'x'; MAX_FRAME + 1];
+        assert!(matches!(
+            encode_frame(&oversized),
+            Err(ProtoError::FrameTooLarge { .. })
+        ));
+
         assert!(check_frame_len(u32::MAX).is_err());
         let ok = u32::try_from(MAX_FRAME).expect("fits");
         assert!(check_frame_len(ok).is_ok());

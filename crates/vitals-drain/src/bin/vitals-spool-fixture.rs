@@ -6,8 +6,7 @@ use std::process::ExitCode;
 use std::time::{Duration, UNIX_EPOCH};
 use vitals_core::{NodeId, Sample, Spool};
 
-fn run() -> Result<(), Box<dyn std::error::Error>> {
-    let args: Vec<_> = env::args().collect();
+fn run_with_args(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let dir = args
         .get(1)
         .ok_or("usage: vitals-spool-fixture DIR [ROWS]")?;
@@ -32,6 +31,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+fn run() -> Result<(), Box<dyn std::error::Error>> {
+    let args: Vec<_> = env::args().collect();
+    run_with_args(&args)
+}
+
 fn main() -> ExitCode {
     match run() {
         Ok(()) => ExitCode::SUCCESS,
@@ -39,5 +43,39 @@ fn main() -> ExitCode {
             eprintln!("vitals-spool-fixture: {e}");
             ExitCode::FAILURE
         }
+    }
+}
+
+#[cfg(test)]
+#[expect(
+    clippy::expect_used,
+    reason = "fixture tests should fail loudly when a spool invariant breaks"
+)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    fn args(values: &[&str]) -> Vec<String> {
+        values.iter().map(ToString::to_string).collect()
+    }
+
+    #[test]
+    fn rejects_missing_and_invalid_arguments() {
+        assert!(run_with_args(&args(&["fixture"])).is_err());
+        assert!(run_with_args(&args(&["fixture", "/tmp", "not-a-number"])).is_err());
+    }
+
+    #[test]
+    fn writes_the_requested_fixture_and_reports_a_segment() {
+        let dir = tempfile::tempdir().expect("fixture tempdir");
+        run_with_args(&args(&["fixture", dir.path().to_str().expect("utf8"), "2"]))
+            .expect("fixture writes");
+        let spool = fs::read_dir(dir.path())
+            .expect("list spool")
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .find(|path| path.extension().is_some_and(|ext| ext == "spool"))
+            .expect("segment exists");
+        assert!(fs::metadata(spool).expect("segment stat").len() > 37);
     }
 }

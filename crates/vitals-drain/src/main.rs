@@ -6,8 +6,10 @@ use std::process::ExitCode;
 use std::thread;
 use std::time::Duration;
 use vitals_drain::{
-    DrainError, connect_locked, discover, expected_fingerprint, live_fingerprint, open_segment,
+    DrainError, connect_locked, discover, epoch_seconds, expected_fingerprint, live_fingerprint,
+    open_segment, pending_spool, publish_health, refresh_health,
 };
+use vitals_proto::DrainHealth;
 
 #[derive(Debug, PartialEq, Eq)]
 struct Args {
@@ -66,6 +68,7 @@ fn process_segments(
     spool: &Path,
     live: vitals_core::spool::SchemaFingerprint,
     verify_only: bool,
+    health: &mut DrainHealth,
 ) -> Result<(), DrainError> {
     for path in discover(spool)? {
         let mut segment = match open_segment(&path) {
@@ -80,6 +83,10 @@ fn process_segments(
                         ),
                     )));
                 }
+                eprintln!(
+                    "event=drainer.segment stage=pending reason=locked_active path={}",
+                    path.display()
+                );
                 continue;
             }
             Err(e) => return Err(e),
@@ -95,10 +102,24 @@ fn process_segments(
             });
         }
         if !verify_only {
-            let inserted = segment.drain(client, live)?;
+            let outcome = segment.drain(client, live)?;
+            health.rows_read = health.rows_read.saturating_add(outcome.rows_read);
+            health.rows_inserted = health.rows_inserted.saturating_add(outcome.rows_inserted);
+            health.rows_duplicate = health.rows_duplicate.saturating_add(outcome.rows_duplicate);
+            health.rows_rejected = health.rows_rejected.saturating_add(outcome.rows_rejected);
+            health.last_success_unix_secs = Some(epoch_seconds());
             eprintln!(
-                "vitals-spool-drain: segment={} offset={} inserted={inserted}",
-                segment.name, segment.length
+                "event=drainer.segment stage=drained segment={} offset={} rows_read={}",
+                segment.name, outcome.offset, outcome.rows_read
+            );
+            eprintln!(
+                "event=drainer.segment stage=committed segment={} offset={} rows_read={} rows_inserted={} rows_duplicate={} rows_rejected={}",
+                segment.name,
+                outcome.offset,
+                outcome.rows_read,
+                outcome.rows_inserted,
+                outcome.rows_duplicate,
+                outcome.rows_rejected
             );
             segment.remove_if_drained()?;
         }
@@ -121,13 +142,83 @@ fn verify_live(
     Ok(live)
 }
 
-fn run(args: &Args) -> Result<(), DrainError> {
+fn publish_failure(spool: &Path, health: &mut DrainHealth, error: &DrainError) {
+    let mut detail = error.to_string();
+    health.rows_rejected = health.rows_rejected.saturating_add(error.rejected_rows());
+    health.schema = vitals_drain::DRAIN_HEALTH_SCHEMA;
+    health.available = false;
+    health.generated_at_unix_secs = epoch_seconds();
+    health.last_error = Some(detail.clone());
+    match pending_spool(spool) {
+        Ok(pending) => {
+            health.pending_segments = pending.segments;
+            health.pending_bytes = pending.bytes;
+            health.oldest_pending_age_secs = pending.oldest_age_secs;
+        }
+        Err(pending_error) => {
+            detail = format!("{detail}; pending inspection failed: {pending_error}");
+            health.last_error = Some(detail.clone());
+            eprintln!(
+                "event=drainer.failure stage=pending_inspection detail={:?}",
+                pending_error.to_string()
+            );
+        }
+    }
+    if let Err(publish_error) = publish_health(spool, health) {
+        eprintln!(
+            "event=drainer.failure stage=health_publish detail={:?}",
+            publish_error.to_string()
+        );
+    }
+    eprintln!(
+        "event=drainer.failure stage=run detail={:?} pending_segments={} pending_bytes={} rows_rejected={}",
+        detail, health.pending_segments, health.pending_bytes, health.rows_rejected
+    );
+}
+
+fn run(args: &Args, health: &mut DrainHealth) -> Result<(), DrainError> {
+    eprintln!(
+        "event=drainer.start spool={} verify={} once={}",
+        args.spool.display(),
+        args.verify,
+        args.once
+    );
     // Hold the PostgreSQL advisory lock for the lifetime of a healthy daemon,
     // including idle periods. Reconnect only after a database/drain failure.
-    let mut client = connect_locked(&args.dsn)?;
-    let live = verify_live(&mut client)?;
+    let mut client = match connect_locked(&args.dsn) {
+        Ok(client) => client,
+        Err(error @ DrainError::LockHeld) => return Err(error),
+        Err(error) => {
+            publish_failure(&args.spool, health, &error);
+            return Err(error);
+        }
+    };
+    let live = match verify_live(&mut client) {
+        Ok(live) => live,
+        Err(error) => {
+            publish_failure(&args.spool, health, &error);
+            return Err(error);
+        }
+    };
     loop {
-        process_segments(&mut client, &args.spool, live, args.verify)?;
+        if let Err(error) = process_segments(&mut client, &args.spool, live, args.verify, health) {
+            publish_failure(&args.spool, health, &error);
+            return Err(error);
+        }
+        if let Err(error) = refresh_health(&args.spool, health) {
+            publish_failure(&args.spool, health, &error);
+            return Err(error);
+        }
+        eprintln!(
+            "event=drainer.health stage=published available=true pending_segments={} pending_bytes={} oldest_age_secs={:?} rows_read={} rows_inserted={} rows_duplicate={} rows_rejected={}",
+            health.pending_segments,
+            health.pending_bytes,
+            health.oldest_pending_age_secs,
+            health.rows_read,
+            health.rows_inserted,
+            health.rows_duplicate,
+            health.rows_rejected
+        );
         if args.once {
             return Ok(());
         }
@@ -140,30 +231,36 @@ fn main() -> ExitCode {
     let args = match parse_args(&raw) {
         Ok(args) => args,
         Err(e) => {
-            eprintln!("vitals-spool-drain: {e}");
+            eprintln!("event=drainer.failure stage=argument_parse detail={e:?}");
             return ExitCode::FAILURE;
         }
     };
+    let mut health = DrainHealth::default();
     loop {
-        match run(&args) {
+        match run(&args, &mut health) {
             Ok(()) => return ExitCode::SUCCESS,
             Err(DrainError::LockHeld) if args.verify => {
                 eprintln!(
-                    "vitals-spool-drain: verify blocked: advisory lock held by active drainer"
+                    "event=drainer.failure stage=lock detail={:?}",
+                    "verify blocked: advisory lock held by active drainer"
                 );
                 return ExitCode::FAILURE;
             }
             Err(DrainError::LockHeld) => {
-                eprintln!("vitals-spool-drain: advisory lock held; another drainer is active");
+                eprintln!(
+                    "event=drainer.exit stage=lock detail={:?}",
+                    "another drainer is active"
+                );
                 return ExitCode::SUCCESS;
             }
             Err(e) if args.once => {
-                eprintln!("vitals-spool-drain: {e}");
+                eprintln!("event=drainer.exit stage=once detail={:?}", e.to_string());
                 return ExitCode::FAILURE;
             }
             Err(e) => {
                 eprintln!(
-                    "vitals-spool-drain: {e}; retrying in 30 seconds without advancing offset"
+                    "event=drainer.retry detail={:?} retry_after_secs=30",
+                    e.to_string()
                 );
                 thread::sleep(Duration::from_secs(30));
             }

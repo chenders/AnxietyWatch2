@@ -38,9 +38,10 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 /// Rotate once a segment reaches this size.
 pub const MAX_SEGMENT_BYTES: u64 = 64 * 1024 * 1024;
 
-/// Rotate at least this often, so a quiet source still produces drainable
-/// segments and the drain lag stays observable.
-pub const MAX_SEGMENT_AGE: Duration = Duration::from_hours(1);
+/// Rotate at least this often after data arrives, so a pending row is not
+/// hidden behind a long-lived writer segment. Empty segments do not rotate;
+/// otherwise an idle daemon would create an unbounded stream of files.
+pub const MAX_SEGMENT_AGE: Duration = Duration::from_secs(1);
 
 /// Upper bound on unsynced data in the default (non-`sync`) path.
 pub const SYNC_INTERVAL: Duration = Duration::from_millis(250);
@@ -62,6 +63,10 @@ pub const SEGMENT_HEADER_BYTES: usize = 18;
 /// Bytes before the first COPY row: the spool header plus `PostgreSQL`'s COPY
 /// binary header. The COPY header is fixed by `copybin::copy_header`.
 pub const FIRST_ROW_OFFSET: u64 = SEGMENT_HEADER_BYTES as u64 + 19;
+
+/// Name of the atomically published drainer health snapshot in the spool
+/// directory. It is telemetry only; deleting it cannot delete samples.
+pub const DRAIN_HEALTH_FILENAME: &str = ".drain-health.json";
 
 /// Canonical `samples` field names and `PostgreSQL` type OIDs, in declaration
 /// order. Binary COPY is positional, so the independent drainer must use the
@@ -148,6 +153,10 @@ pub struct Spool {
     opened: Instant,
     last_sync: Instant,
     dirty: bool,
+    /// Rows written since the last successful sync.
+    unsynced_rows: u64,
+    /// Rows made durable by successful sync calls since the caller last took them.
+    fsynced_rows: u64,
     fingerprint: SchemaFingerprint,
 }
 
@@ -214,6 +223,8 @@ impl Spool {
             opened: now,
             last_sync: now,
             dirty: false,
+            unsynced_rows: 0,
+            fsynced_rows: 0,
             fingerprint,
         })
     }
@@ -349,7 +360,7 @@ impl Spool {
     }
 
     fn segment_header(fp: SchemaFingerprint) -> Vec<u8> {
-        let mut h = Vec::with_capacity(18);
+        let mut h = Vec::with_capacity(SEGMENT_HEADER_BYTES);
         h.extend_from_slice(SEGMENT_MAGIC);
         h.extend_from_slice(&SEGMENT_FORMAT_VERSION.to_be_bytes());
         h.extend_from_slice(&fp.value().to_be_bytes());
@@ -381,6 +392,26 @@ impl Spool {
     #[must_use]
     pub const fn fingerprint(&self) -> SchemaFingerprint {
         self.fingerprint
+    }
+
+    /// Whether a write has not yet been fsynced.
+    ///
+    /// The daemon uses this to log a periodic `fsynced` stage without turning
+    /// a no-op timer tick into a false durability event.
+    #[must_use]
+    pub const fn has_unsynced_data(&self) -> bool {
+        self.dirty
+    }
+
+    /// Takes the count of rows made durable by successful sync calls.
+    ///
+    /// This is an observation counter for the daemon; it does not alter the
+    /// on-disk durability state. A caller that does not need stage accounting
+    /// may leave it untouched.
+    pub const fn take_fsynced_rows(&mut self) -> u64 {
+        let rows = self.fsynced_rows;
+        self.fsynced_rows = 0;
+        rows
     }
 
     /// Appends rows.
@@ -417,6 +448,9 @@ impl Spool {
 
         self.file.write_all(&buf)?;
         self.bytes += buf.len() as u64;
+        self.unsynced_rows = self
+            .unsynced_rows
+            .saturating_add(u64::try_from(rows.len()).unwrap_or(u64::MAX));
         self.dirty = true;
 
         if sync || self.last_sync.elapsed() >= SYNC_INTERVAL {
@@ -432,6 +466,8 @@ impl Spool {
     pub fn sync(&mut self) -> io::Result<()> {
         if self.dirty {
             self.file.sync_all()?;
+            self.fsynced_rows = self.fsynced_rows.saturating_add(self.unsynced_rows);
+            self.unsynced_rows = 0;
             self.dirty = false;
         }
         self.last_sync = Instant::now();
@@ -441,7 +477,8 @@ impl Spool {
     /// Whether the current segment is due for rotation.
     #[must_use]
     pub fn rotation_due(&self) -> bool {
-        self.bytes >= MAX_SEGMENT_BYTES || self.opened.elapsed() >= MAX_SEGMENT_AGE
+        self.bytes > FIRST_ROW_OFFSET
+            && (self.bytes >= MAX_SEGMENT_BYTES || self.opened.elapsed() >= MAX_SEGMENT_AGE)
     }
 
     /// Rotates if due. The finished segment is fsynced and its lock released
@@ -575,6 +612,8 @@ mod tests {
     #[test]
     fn fingerprint_is_deterministic() {
         assert_eq!(samples_fingerprint(), samples_fingerprint());
+        let raw = 0x0123_4567_89ab_cdef;
+        assert_eq!(SchemaFingerprint::from_value(raw).value(), raw);
         assert_eq!(
             samples_fingerprint().value(),
             SchemaFingerprint::of(&[
@@ -618,6 +657,8 @@ mod tests {
         let mut s = Spool::open(d.path()).expect("open");
         s.append(&[sample(0)], &node(), true).expect("append");
         assert!(!s.dirty, "sync: true must fsync before returning");
+        assert_eq!(s.take_fsynced_rows(), 1);
+        assert_eq!(s.take_fsynced_rows(), 0);
     }
 
     #[test]
@@ -626,7 +667,13 @@ mod tests {
         let mut s = Spool::open(d.path()).expect("open");
         s.sync().expect("reset the timer");
         s.append(&[sample(0)], &node(), false).expect("append");
+        assert!(s.has_unsynced_data());
         assert!(s.dirty, "the default path must not block on disk");
+        s.sync().expect("sync");
+        assert!(!s.has_unsynced_data());
+        assert_eq!(s.take_fsynced_rows(), 1);
+        s.sync().expect("no-op sync");
+        assert_eq!(s.take_fsynced_rows(), 0);
     }
 
     /// A second writer must fail loudly. Interleaved partial rows in one binary
@@ -809,6 +856,47 @@ mod tests {
             discovered.last(),
             Some(&active.segment_path().to_path_buf())
         );
+    }
+
+    #[test]
+    fn helper_guards_are_named_and_do_not_overwrite_data() {
+        assert_eq!(
+            Spool::collision_name("not-a-spool", 3),
+            "not-a-spool-00000000000000000003"
+        );
+        assert!(Spool::next_collision(u64::MAX, Path::new("/tmp")).is_err());
+
+        let d = tempdir().expect("tempdir");
+        let existing = d.path().join("staging.tmp");
+        fs::write(&existing, b"partial").expect("partial staging");
+        let cause = io::Error::other("initialization");
+        let returned = Spool::remove_staging_after_error(&existing, cause);
+        assert_eq!(returned.kind(), io::ErrorKind::Other);
+        assert!(!existing.exists());
+        let returned = Spool::remove_staging_after_error(
+            &d.path().join("already-gone.tmp"),
+            io::Error::other("initialization"),
+        );
+        assert!(returned.to_string().contains("initialization"));
+    }
+
+    #[test]
+    fn invalid_spool_directory_is_reported() {
+        let d = tempdir().expect("tempdir");
+        let path = d.path().join("not-a-directory");
+        fs::write(&path, b"file").expect("file");
+        assert!(Spool::open(&path).is_err());
+    }
+
+    #[test]
+    fn public_rotation_wrapper_creates_a_new_segment() {
+        let d = tempdir().expect("tempdir");
+        let mut s = Spool::open(d.path()).expect("open");
+        s.bytes = MAX_SEGMENT_BYTES;
+        let old = s.segment_path().to_path_buf();
+        assert!(s.rotate_if_due().expect("rotate"));
+        assert_ne!(s.segment_path(), old);
+        assert_eq!(s.segment_bytes(), FIRST_ROW_OFFSET);
     }
 
     #[test]

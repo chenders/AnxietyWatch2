@@ -7,10 +7,13 @@ use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 use vitals_core::copybin;
+pub use vitals_core::spool::DRAIN_HEALTH_FILENAME;
 use vitals_core::spool::{
     FIRST_ROW_OFFSET, SAMPLES_LAYOUT, SEGMENT_FORMAT_VERSION, SEGMENT_HEADER_BYTES, SEGMENT_MAGIC,
     SchemaFingerprint, samples_fingerprint,
 };
+pub use vitals_proto::DRAIN_HEALTH_SCHEMA;
+use vitals_proto::DrainHealth;
 const ADVISORY_LOCK: i64 = 0x5641_4C53;
 
 /// A validated segment and its durable local offset file.
@@ -29,6 +32,21 @@ pub struct Segment {
     file: File,
     offset_file: File,
     offset_path: PathBuf,
+}
+
+/// The result of one transactional segment drain.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DrainOutcome {
+    /// Rows loaded into the private staging table.
+    pub rows_read: u64,
+    /// New durable identities inserted into `samples`.
+    pub rows_inserted: u64,
+    /// Rows replayed and ignored by the durable identity key.
+    pub rows_duplicate: u64,
+    /// Rows rejected during this successful drain (always zero on success).
+    pub rows_rejected: u64,
+    /// Byte offset committed for the segment.
+    pub offset: u64,
 }
 
 /// A named drain failure.
@@ -58,6 +76,13 @@ pub enum DrainError {
         /// Invalid database offset.
         offset: i64,
     },
+    /// A transaction rejected rows after they were read from the spool.
+    Rejected {
+        /// Rows that could not become durable in this transaction.
+        rows: u64,
+        /// The database or validation error that rejected them.
+        source: Box<DrainError>,
+    },
 }
 
 impl std::fmt::Display for DrainError {
@@ -84,11 +109,32 @@ impl std::fmt::Display for DrainError {
                 f,
                 "drain blocked: spool_status offset {offset} is invalid for segment {segment}"
             ),
+            Self::Rejected { rows, source } => {
+                write!(f, "drain rejected {rows} row(s): {source}")
+            }
         }
     }
 }
 
-impl std::error::Error for DrainError {}
+impl std::error::Error for DrainError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Rejected { source, .. } => Some(source.as_ref()),
+            _ => None,
+        }
+    }
+}
+
+impl DrainError {
+    /// Number of rows known to have been rejected by the failed operation.
+    #[must_use]
+    pub fn rejected_rows(&self) -> u64 {
+        match self {
+            Self::Rejected { rows, .. } => *rows,
+            _ => 0,
+        }
+    }
+}
 impl From<io::Error> for DrainError {
     fn from(value: io::Error) -> Self {
         Self::Io(value)
@@ -115,6 +161,16 @@ pub fn connect_locked(dsn: &str) -> Result<Client, DrainError> {
     Ok(client)
 }
 
+/// Validates a `PostgreSQL` type OID before it is used in a schema fingerprint.
+fn checked_type_oid(oid: i64) -> Result<u32, io::Error> {
+    u32::try_from(oid).map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("live type OID {oid} does not fit u32"),
+        )
+    })
+}
+
 /// Computes the live `samples` fingerprint in declaration order.
 ///
 /// A mismatch names the first changed column (or column count), rather than
@@ -131,12 +187,7 @@ pub fn live_fingerprint(client: &mut Client) -> Result<SchemaFingerprint, DrainE
     for row in rows {
         let name: String = row.get(0);
         let oid: i64 = row.get(1);
-        let oid = u32::try_from(oid).map_err(|_| {
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("live type OID {oid} does not fit u32"),
-            )
-        })?;
+        let oid = checked_type_oid(oid)?;
         owned.push((name, oid));
     }
     for (index, (expected_name, expected_oid)) in SAMPLES_LAYOUT.iter().enumerate() {
@@ -212,7 +263,13 @@ pub fn open_segment(path: &Path) -> Result<Segment, DrainError> {
         )
         .into());
     }
-    let version = u16::from_be_bytes([header[8], header[9]]);
+    let version = header
+        .get(8..10)
+        .and_then(|bytes| bytes.try_into().ok())
+        .map(u16::from_be_bytes)
+        .ok_or_else(|| {
+            io::Error::new(io::ErrorKind::InvalidData, "spool version header truncated")
+        })?;
     if version != SEGMENT_FORMAT_VERSION {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
@@ -223,9 +280,12 @@ pub fn open_segment(path: &Path) -> Result<Segment, DrainError> {
         )
         .into());
     }
-    let raw: [u8; 8] = header[10..18]
-        .try_into()
-        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "fingerprint header truncated"))?;
+    let raw: [u8; 8] = header
+        .get(10..18)
+        .and_then(|bytes| bytes.try_into().ok())
+        .ok_or_else(|| {
+            io::Error::new(io::ErrorKind::InvalidData, "fingerprint header truncated")
+        })?;
     let actual = u64::from_be_bytes(raw);
     let fingerprint = SchemaFingerprint::from_value(actual);
     let length = file.metadata()?.len();
@@ -313,7 +373,7 @@ impl Segment {
         &mut self,
         client: &mut Client,
         expected: SchemaFingerprint,
-    ) -> Result<u64, DrainError> {
+    ) -> Result<DrainOutcome, DrainError> {
         if self.fingerprint != expected {
             return Err(DrainError::FingerprintMismatch {
                 expected: expected.value(),
@@ -350,7 +410,13 @@ impl Segment {
         if start == self.length {
             self.persist_offset(start)?;
             self.persist_progress()?;
-            return Ok(0);
+            return Ok(DrainOutcome {
+                rows_read: 0,
+                rows_inserted: 0,
+                rows_duplicate: 0,
+                rows_rejected: 0,
+                offset: start,
+            });
         }
         self.file.seek(SeekFrom::Start(start))?;
 
@@ -367,27 +433,55 @@ impl Segment {
         io::copy(&mut suffix, &mut sink)?;
         sink.write_all(&copybin::copy_trailer())?;
         sink.finish()?;
+        let rows_read_i64: i64 = tx.query_one("SELECT count(*) FROM staging", &[])?.get(0);
+        let rows_read = u64::try_from(rows_read_i64).map_err(|_| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("PostgreSQL returned a negative staging row count {rows_read_i64}"),
+            )
+        })?;
         // Test-only crash window used by the Pi acceptance script. The
         // transaction remains uncommitted, proving replay after SIGKILL.
         if let Ok(raw) = std::env::var("VITALS_DRAIN_TEST_PAUSE_BEFORE_COMMIT") {
-            let seconds = raw.parse::<u64>().map_err(|_| {
-                io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    format!("VITALS_DRAIN_TEST_PAUSE_BEFORE_COMMIT={raw:?} is not seconds"),
-                )
-            })?;
+            let seconds = parse_pause_seconds(&raw)?;
             std::thread::sleep(std::time::Duration::from_secs(seconds));
         }
-        let inserted = tx.execute("INSERT INTO samples SELECT * FROM staging ON CONFLICT (source,type,session_id,seq) DO NOTHING", &[])?;
+        let rows_inserted = tx
+            .execute(
+                "INSERT INTO samples SELECT * FROM staging ON CONFLICT (source,type,session_id,seq) DO NOTHING",
+                &[],
+            )
+            .map_err(|error| DrainError::Rejected {
+                rows: rows_read,
+                source: Box::new(error.into()),
+            })?;
+        let rows_duplicate = rows_read.checked_sub(rows_inserted).ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "staging reported {rows_read} rows but PostgreSQL inserted {rows_inserted}"
+                ),
+            )
+        })?;
         let end = i64::try_from(self.length).map_err(|_| {
             io::Error::new(io::ErrorKind::InvalidData, "segment length exceeds BIGINT")
         })?;
         let fp = self.fingerprint.value().to_be_bytes().to_vec();
-        tx.execute("INSERT INTO spool_status(segment,offset_bytes,drained,fingerprint,last_advanced) VALUES($1,$2,TRUE,$3,clock_timestamp()) ON CONFLICT(segment) DO UPDATE SET offset_bytes=EXCLUDED.offset_bytes,drained=TRUE,fingerprint=EXCLUDED.fingerprint,last_advanced=EXCLUDED.last_advanced", &[&self.name, &end, &fp])?;
+        tx.execute("INSERT INTO spool_status(segment,offset_bytes,drained,fingerprint,last_advanced) VALUES($1,$2,TRUE,$3,clock_timestamp()) ON CONFLICT(segment) DO UPDATE SET offset_bytes=EXCLUDED.offset_bytes,drained=TRUE,fingerprint=EXCLUDED.fingerprint,last_advanced=EXCLUDED.last_advanced", &[&self.name, &end, &fp])
+            .map_err(|error| DrainError::Rejected {
+                rows: rows_read,
+                source: Box::new(error.into()),
+            })?;
         tx.commit()?;
         self.persist_offset(self.length)?;
         self.persist_progress()?;
-        Ok(inserted)
+        Ok(DrainOutcome {
+            rows_read,
+            rows_inserted,
+            rows_duplicate,
+            rows_rejected: 0,
+            offset: self.length,
+        })
     }
 
     fn persist_progress(&self) -> Result<(), DrainError> {
@@ -442,6 +536,174 @@ impl Segment {
     }
 }
 
+/// Summary of rows that are still pending in the spool.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PendingSpool {
+    /// Number of published segments with an undrained suffix.
+    pub segments: u64,
+    /// Number of bytes after the locally recorded offset.
+    pub bytes: u64,
+    /// Age of the oldest pending segment.
+    pub oldest_age_secs: Option<u64>,
+}
+
+fn local_offset(path: &Path, length: u64) -> Result<u64, DrainError> {
+    let offset_path = path.with_extension("offset");
+    let text = match fs::read_to_string(&offset_path) {
+        Ok(text) => text,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(FIRST_ROW_OFFSET),
+        Err(e) => return Err(e.into()),
+    };
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return Ok(FIRST_ROW_OFFSET);
+    }
+    let offset = trimmed.parse::<u64>().map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("{}: invalid offset {:?}", offset_path.display(), trimmed),
+        )
+    })?;
+    if !(FIRST_ROW_OFFSET..=length).contains(&offset) {
+        return Err(DrainError::InvalidOffset {
+            segment: path.display().to_string(),
+            offset: i64::try_from(offset).unwrap_or(i64::MAX),
+        });
+    }
+    Ok(offset)
+}
+
+/// Inspects pending bytes without opening or locking the active segment.
+///
+/// The writer intentionally keeps the active segment locked, so a health
+/// reader must use metadata and its offset sidecar rather than treating a lock
+/// as an empty spool. A future modification time is an invalid clock/evidence
+/// state, not an age of zero.
+///
+/// # Errors
+/// Returns a named filesystem, offset, or clock error.
+pub fn pending_spool(dir: &Path) -> Result<PendingSpool, DrainError> {
+    let now = SystemTime::now();
+    let mut summary = PendingSpool {
+        segments: 0,
+        bytes: 0,
+        oldest_age_secs: None,
+    };
+    for path in discover(dir)? {
+        let metadata = fs::metadata(&path)?;
+        let length = metadata.len();
+        if length <= FIRST_ROW_OFFSET {
+            continue;
+        }
+        let offset = local_offset(&path, length)?;
+        if offset == length {
+            continue;
+        }
+        let modified = metadata.modified().map_err(|e| {
+            io::Error::new(
+                e.kind(),
+                format!(
+                    "{}: cannot establish pending-segment age: {e}",
+                    path.display()
+                ),
+            )
+        })?;
+        let age = now.duration_since(modified).map_err(|_| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "{}: modification time is in the future; refusing to report pending age",
+                    path.display()
+                ),
+            )
+        })?;
+        let pending = length.checked_sub(offset).ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "{}: offset {offset} exceeds length {length}",
+                    path.display()
+                ),
+            )
+        })?;
+        summary.segments = summary.segments.saturating_add(1);
+        summary.bytes = summary.bytes.saturating_add(pending);
+        let age_secs = age.as_secs();
+        summary.oldest_age_secs = Some(
+            summary
+                .oldest_age_secs
+                .map_or(age_secs, |oldest| oldest.max(age_secs)),
+        );
+    }
+    Ok(summary)
+}
+
+/// Atomically publishes a drainer health snapshot beside the spool.
+///
+/// The temporary file is written and fsynced before rename, followed by a
+/// directory fsync. Readers therefore see either the previous complete JSON
+/// document or the new complete document, never a partially written one.
+///
+/// # Errors
+/// Returns serialization or filesystem errors. A failed publication is a
+/// monitoring failure and must not be reported as a healthy snapshot.
+pub fn publish_health(dir: &Path, health: &DrainHealth) -> Result<(), DrainError> {
+    let payload = serde_json::to_vec(health).map_err(|e| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("drainer health JSON serialization failed: {e}"),
+        )
+    })?;
+    let target = dir.join(DRAIN_HEALTH_FILENAME);
+    let temporary = dir.join(format!(
+        ".{DRAIN_HEALTH_FILENAME}.{}.tmp",
+        std::process::id()
+    ));
+    match fs::remove_file(&temporary) {
+        Ok(()) => {}
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+        Err(e) => return Err(e.into()),
+    }
+    let mut file = OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .open(&temporary)?;
+    file.write_all(&payload)?;
+    file.write_all(b"\n")?;
+    file.sync_all()?;
+    fs::rename(&temporary, &target)?;
+    File::open(dir)?.sync_all()?;
+    Ok(())
+}
+
+/// Refreshes pending counts and publishes a successful health snapshot.
+///
+/// The caller owns cumulative counters and last-error state; this function
+/// changes only the current evidence fields and publication timestamp.
+///
+/// # Errors
+/// Returns any pending-spool or publication failure.
+pub fn refresh_health(dir: &Path, health: &mut DrainHealth) -> Result<(), DrainError> {
+    let pending = pending_spool(dir)?;
+    health.schema = DRAIN_HEALTH_SCHEMA;
+    health.available = true;
+    health.generated_at_unix_secs = epoch_seconds();
+    health.pending_segments = pending.segments;
+    health.pending_bytes = pending.bytes;
+    health.oldest_pending_age_secs = pending.oldest_age_secs;
+    health.last_error = None;
+    publish_health(dir, health)
+}
+
+fn parse_pause_seconds(raw: &str) -> Result<u64, io::Error> {
+    raw.parse::<u64>().map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("VITALS_DRAIN_TEST_PAUSE_BEFORE_COMMIT={raw:?} is not seconds"),
+        )
+    })
+}
+
 /// Current epoch seconds for liveness reporting.
 #[must_use]
 pub fn epoch_seconds() -> u64 {
@@ -460,7 +722,66 @@ pub fn expected_fingerprint() -> SchemaFingerprint {
 #[expect(clippy::expect_used, reason = "test setup must fail loudly")]
 mod tests {
     use super::*;
+    use postgres::NoTls;
     use vitals_core::{NodeId, Sample, Spool};
+
+    const TEST_PG_DEFAULT: &str = "host=/tmp port=5432 dbname=postgres";
+
+    fn test_client() -> Option<Client> {
+        let dsn = std::env::var("VITALS_TEST_PG").unwrap_or_else(|_| TEST_PG_DEFAULT.to_owned());
+        match Client::connect(&dsn, NoTls) {
+            Ok(client) => Some(client),
+            Err(error) => {
+                eprintln!(
+                    "SKIPPED: PostgreSQL integration coverage — {error}; set VITALS_TEST_PG to a test database"
+                );
+                None
+            }
+        }
+    }
+
+    fn install_test_tables(client: &mut Client) {
+        client
+            .batch_execute(
+                "CREATE TEMP TABLE samples (
+                    source INTEGER NOT NULL,
+                    type INTEGER NOT NULL,
+                    session_id BIGINT NOT NULL,
+                    seq BIGINT NOT NULL,
+                    timestamp TIMESTAMPTZ NOT NULL,
+                    value DOUBLE PRECISION NOT NULL,
+                    extra BYTEA,
+                    node_id BYTEA NOT NULL,
+                    batch_id BIGINT,
+                    PRIMARY KEY (source, type, session_id, seq)
+                );
+                CREATE TEMP TABLE spool_status (
+                    segment TEXT PRIMARY KEY,
+                    offset_bytes BIGINT NOT NULL,
+                    drained BOOLEAN NOT NULL,
+                    fingerprint BYTEA NOT NULL,
+                    last_advanced TIMESTAMPTZ NOT NULL DEFAULT now()
+                );",
+            )
+            .expect("install temporary drain tables");
+    }
+
+    fn dsn() -> String {
+        std::env::var("VITALS_TEST_PG").unwrap_or_else(|_| TEST_PG_DEFAULT.to_owned())
+    }
+
+    fn sample() -> Sample {
+        Sample {
+            source: 1,
+            r#type: 1,
+            session_id: 1,
+            seq: 1,
+            timestamp: UNIX_EPOCH,
+            value: 1.0,
+            extra: None,
+            batch_id: None,
+        }
+    }
 
     #[test]
     fn discovers_only_published_segments_in_order() {
@@ -583,5 +904,509 @@ mod tests {
         let segment = open_segment(&path).expect("open");
         assert!(!segment.remove_if_drained().expect("refuse removal"));
         assert!(path.exists());
+    }
+
+    #[test]
+    fn pending_inspection_includes_the_locked_active_segment() {
+        let d = tempfile::tempdir().expect("tempdir");
+        let mut spool = Spool::open(d.path()).expect("spool");
+        let sample = Sample {
+            source: 1,
+            r#type: 1,
+            session_id: 1,
+            seq: 1,
+            timestamp: UNIX_EPOCH,
+            value: 1.0,
+            extra: None,
+            batch_id: None,
+        };
+        spool
+            .append(&[sample], &NodeId::from_bytes([1; 16]), true)
+            .expect("append");
+        let pending = pending_spool(d.path()).expect("inspect active segment");
+        assert_eq!(pending.segments, 1);
+        assert!(pending.bytes > 0);
+        assert!(pending.oldest_age_secs.is_some());
+    }
+
+    #[test]
+    fn empty_and_fully_drained_segments_are_not_pending() {
+        let d = tempfile::tempdir().expect("tempdir");
+        let path = published_segment(d.path());
+        let length = fs::metadata(&path).expect("stat").len();
+        fs::write(path.with_extension("offset"), format!("{length}\n")).expect("offset");
+        let pending = pending_spool(d.path()).expect("inspect");
+        assert_eq!(
+            pending,
+            PendingSpool {
+                segments: 0,
+                bytes: 0,
+                oldest_age_secs: None,
+            }
+        );
+    }
+
+    #[test]
+    fn health_snapshot_is_atomic_json() {
+        let d = tempfile::tempdir().expect("tempdir");
+        let health = DrainHealth {
+            available: true,
+            generated_at_unix_secs: 123,
+            pending_segments: 2,
+            pending_bytes: 456,
+            ..DrainHealth::default()
+        };
+        publish_health(d.path(), &health).expect("publish");
+        let bytes = fs::read(d.path().join(DRAIN_HEALTH_FILENAME)).expect("read snapshot");
+        let decoded: DrainHealth = serde_json::from_slice(&bytes).expect("decode snapshot");
+        assert_eq!(decoded, health);
+        assert!(
+            fs::read_dir(d.path())
+                .expect("list")
+                .filter_map(Result::ok)
+                .all(|entry| !entry.file_name().to_string_lossy().ends_with(".tmp"))
+        );
+    }
+
+    #[test]
+    fn refresh_health_clears_old_error_and_records_pending_data() {
+        let d = tempfile::tempdir().expect("tempdir");
+        let mut spool = Spool::open(d.path()).expect("spool");
+        spool
+            .append(&[sample()], &NodeId::from_bytes([1; 16]), true)
+            .expect("append");
+        let mut health = DrainHealth {
+            last_error: Some("old error".to_owned()),
+            ..DrainHealth::default()
+        };
+        refresh_health(d.path(), &mut health).expect("refresh");
+        assert!(health.available);
+        assert_eq!(health.last_error, None);
+        assert_eq!(health.pending_segments, 1);
+        assert!(health.pending_bytes > 0);
+    }
+
+    #[test]
+    fn live_schema_is_fingerprinted_and_lock_is_exclusive() {
+        let Some(mut first) = test_client() else {
+            return;
+        };
+        install_test_tables(&mut first);
+        assert_eq!(
+            live_fingerprint(&mut first).expect("fingerprint"),
+            expected_fingerprint()
+        );
+        let first_locked: bool = first
+            .query_one("SELECT pg_try_advisory_lock($1)", &[&ADVISORY_LOCK])
+            .expect("acquire test advisory lock")
+            .get(0);
+        assert!(first_locked);
+
+        assert!(matches!(connect_locked(&dsn()), Err(DrainError::LockHeld)));
+        let released: bool = first
+            .query_one("SELECT pg_advisory_unlock($1)", &[&ADVISORY_LOCK])
+            .expect("release test advisory lock")
+            .get(0);
+        assert!(released);
+        drop(first);
+
+        let mut third = connect_locked(&dsn()).expect("lock is released with the client");
+        install_test_tables(&mut third);
+        third
+            .batch_execute("ALTER TABLE samples ALTER COLUMN value TYPE REAL")
+            .expect("change temporary schema");
+        let error = live_fingerprint(&mut third).expect_err("wrong OID must be named");
+        assert!(error.to_string().contains("value"));
+    }
+
+    #[test]
+    fn schema_and_error_variants_name_the_blocker() {
+        assert!(checked_type_oid(-1).is_err());
+        assert!(connect_locked("host=/no/such/socket dbname=postgres connect_timeout=1").is_err());
+        assert_eq!(parse_pause_seconds("0").expect("zero pause"), 0);
+        assert!(parse_pause_seconds("not-seconds").is_err());
+
+        let Some(mut client) = test_client() else {
+            return;
+        };
+        install_test_tables(&mut client);
+        client
+            .batch_execute("ALTER TABLE samples ADD COLUMN unexpected INTEGER")
+            .expect("add unexpected column");
+        let extra = live_fingerprint(&mut client).expect_err("extra column must be rejected");
+        assert!(extra.to_string().contains("unexpected"));
+
+        client
+            .batch_execute("DROP TABLE samples")
+            .expect("drop temp table");
+        client
+            .batch_execute("CREATE TEMP TABLE samples (source INTEGER NOT NULL)")
+            .expect("create short temp table");
+        let short = live_fingerprint(&mut client).expect_err("short table must be rejected");
+        assert!(short.to_string().contains("field 2"));
+
+        client
+            .batch_execute("DROP TABLE samples")
+            .expect("drop temp table");
+        let database =
+            live_fingerprint(&mut client).expect_err("missing table is a database error");
+        assert!(database.to_string().contains("PostgreSQL blocked drain"));
+
+        let rejected = DrainError::Rejected {
+            rows: 2,
+            source: Box::new(DrainError::SchemaMismatch("constraint".to_owned())),
+        };
+        assert_eq!(rejected.rejected_rows(), 2);
+        assert!(std::error::Error::source(&rejected).is_some());
+        assert_eq!(DrainError::LockHeld.rejected_rows(), 0);
+
+        let variants = [
+            DrainError::Io(io::Error::other("disk")),
+            DrainError::LockHeld,
+            DrainError::FingerprintMismatch {
+                expected: 1,
+                actual: 2,
+                context: "test segment".to_owned(),
+            },
+            DrainError::SchemaMismatch("test column".to_owned()),
+            DrainError::InvalidOffset {
+                segment: "test.spool".to_owned(),
+                offset: -1,
+            },
+        ];
+        for error in variants {
+            let text = error.to_string();
+            assert!(!text.is_empty(), "every drain error must be actionable");
+        }
+    }
+
+    #[test]
+    fn open_segment_rejects_short_framing_and_invalid_names() {
+        let d = tempfile::tempdir().expect("tempdir");
+        let short = d.path().join("short.spool");
+        fs::write(&short, {
+            let mut bytes = Vec::from(SEGMENT_MAGIC);
+            bytes.extend_from_slice(&SEGMENT_FORMAT_VERSION.to_be_bytes());
+            bytes.extend_from_slice(&expected_fingerprint().value().to_be_bytes());
+            bytes
+        })
+        .expect("short segment");
+        let error = open_segment(&short).expect_err("header without COPY bytes");
+        assert!(error.to_string().contains("shorter than framing"));
+    }
+
+    #[test]
+    fn open_segment_rejects_a_locked_offset_sidecar() {
+        let d = tempfile::tempdir().expect("tempdir");
+        let path = published_segment(d.path());
+        let alias = d.path().join(
+            path.file_stem()
+                .expect("segment stem")
+                .to_string_lossy()
+                .to_string()
+                + ".data",
+        );
+        fs::copy(&path, &alias).expect("copy segment alias");
+        let held = open_segment(&path).expect("hold original offset");
+        let error = open_segment(&alias).expect_err("offset sidecar must be exclusive");
+        assert!(error.to_string().contains("offset lock held"));
+        drop(held);
+    }
+
+    #[test]
+    fn segment_drain_commits_checkpoint_and_replay_counts_duplicate() {
+        let Some(mut client) = test_client() else {
+            return;
+        };
+        install_test_tables(&mut client);
+        let d = tempfile::tempdir().expect("tempdir");
+        let path = published_segment(d.path());
+        let mut segment = open_segment(&path).expect("open published segment");
+        let outcome = segment
+            .drain(&mut client, expected_fingerprint())
+            .expect("drain");
+        assert_eq!(outcome.rows_read, 1);
+        assert_eq!(outcome.rows_inserted, 1);
+        assert_eq!(outcome.rows_duplicate, 0);
+        assert_eq!(outcome.offset, segment.length);
+        assert!(d.path().join(".drain-status").exists());
+        drop(segment);
+
+        // Mimic a restored database without spool_status: replay is safe and
+        // the durable identity reports the row as a duplicate.
+        client
+            .execute("DELETE FROM spool_status", &[])
+            .expect("remove checkpoint");
+        fs::write(
+            path.with_extension("offset"),
+            format!("{FIRST_ROW_OFFSET}\n"),
+        )
+        .expect("rewind local checkpoint");
+        let mut replay = open_segment(&path).expect("reopen for replay");
+        let replayed = replay
+            .drain(&mut client, expected_fingerprint())
+            .expect("replay");
+        assert_eq!(replayed.rows_read, 1);
+        assert_eq!(replayed.rows_inserted, 0);
+        assert_eq!(replayed.rows_duplicate, 1);
+        assert!(
+            replay
+                .remove_if_drained()
+                .expect("remove committed segment")
+        );
+        assert!(!path.exists());
+        assert!(!path.with_extension("offset").exists());
+    }
+
+    #[test]
+    fn segment_drain_rejects_fingerprint_and_database_offsets() {
+        let Some(mut client) = test_client() else {
+            return;
+        };
+        install_test_tables(&mut client);
+        let d = tempfile::tempdir().expect("tempdir");
+        let path = published_segment(d.path());
+        let mut segment = open_segment(&path).expect("open");
+        let wrong = SchemaFingerprint::from_value(expected_fingerprint().value() ^ 1);
+        let error = segment
+            .drain(&mut client, wrong)
+            .expect_err("fingerprint guard");
+        assert!(matches!(error, DrainError::FingerprintMismatch { .. }));
+
+        client
+            .execute(
+                "INSERT INTO spool_status(segment, offset_bytes, drained, fingerprint) VALUES($1, -1, TRUE, $2)",
+                &[&segment.name, &expected_fingerprint().value().to_be_bytes().to_vec()],
+            )
+            .expect("insert invalid status");
+        let error = segment
+            .drain(&mut client, expected_fingerprint())
+            .expect_err("negative database offset");
+        assert!(matches!(
+            error,
+            DrainError::InvalidOffset { offset: -1, .. }
+        ));
+
+        client
+            .execute(
+                &[&segment.name],
+            )
+            .expect("update invalid status");
+        let error = segment
+            .drain(&mut client, expected_fingerprint())
+            .expect_err("offset beyond segment must be rejected");
+        assert!(matches!(error, DrainError::InvalidOffset { .. }));
+    }
+
+    #[test]
+    fn segment_at_database_eof_persists_local_progress_without_copy() {
+        let Some(mut client) = test_client() else {
+            return;
+        };
+        install_test_tables(&mut client);
+        let d = tempfile::tempdir().expect("tempdir");
+        let path = published_segment(d.path());
+        let length = fs::metadata(&path).expect("stat").len();
+        client
+            .execute(
+                "INSERT INTO spool_status(segment, offset_bytes, drained, fingerprint) VALUES($1, $2, TRUE, $3)",
+                &[
+                    &path.file_name().expect("name").to_string_lossy().to_string(),
+                    &i64::try_from(length).expect("length fits"),
+                    &expected_fingerprint().value().to_be_bytes().to_vec(),
+                ],
+            )
+            .expect("insert EOF status");
+        let mut segment = open_segment(&path).expect("open");
+        let outcome = segment
+            .drain(&mut client, expected_fingerprint())
+            .expect("EOF drain");
+        assert_eq!(outcome.rows_read, 0);
+        assert_eq!(outcome.offset, length);
+    }
+
+    #[test]
+    fn transaction_rejection_reports_the_rows_that_were_read() {
+        let Some(mut client) = test_client() else {
+            return;
+        };
+        install_test_tables(&mut client);
+        client
+            .batch_execute("ALTER TABLE samples ADD CONSTRAINT reject_values CHECK (value < 0)")
+            .expect("add rejecting constraint");
+        let d = tempfile::tempdir().expect("tempdir");
+        let path = published_segment(d.path());
+        let mut segment = open_segment(&path).expect("open");
+        let error = segment
+            .drain(&mut client, expected_fingerprint())
+            .expect_err("constraint must reject the row");
+        assert_eq!(error.rejected_rows(), 1);
+        assert!(error.to_string().contains("rejected 1 row"));
+        assert_eq!(segment.offset, FIRST_ROW_OFFSET);
+    }
+
+    #[test]
+    fn copy_and_status_failures_do_not_advance_checkpoint() {
+        let Some(mut client) = test_client() else {
+            return;
+        };
+        install_test_tables(&mut client);
+
+        let truncated_dir = tempfile::tempdir().expect("truncated tempdir");
+        let truncated_path = published_segment(truncated_dir.path());
+        let truncated_length = fs::metadata(&truncated_path).expect("stat").len();
+        OpenOptions::new()
+            .write(true)
+            .open(&truncated_path)
+            .expect("open truncated segment")
+            .set_len(truncated_length - 10)
+            .expect("truncate copy row");
+        let mut truncated = open_segment(&truncated_path).expect("open truncated segment");
+        let copy_error = truncated
+            .drain(&mut client, expected_fingerprint())
+            .expect_err("truncated COPY must fail");
+        assert_eq!(copy_error.rejected_rows(), 0);
+        assert_eq!(truncated.offset, FIRST_ROW_OFFSET);
+
+        client
+            .batch_execute("DROP TABLE spool_status")
+            .expect("drop temporary status table");
+        let missing_status_dir = tempfile::tempdir().expect("missing-status tempdir");
+        let missing_status_path = published_segment(missing_status_dir.path());
+        let mut missing_status = open_segment(&missing_status_path).expect("open segment");
+        let status_error = missing_status
+            .drain(&mut client, expected_fingerprint())
+            .expect_err("missing status table must fail closed");
+        assert_eq!(status_error.rejected_rows(), 0);
+        assert_eq!(missing_status.offset, FIRST_ROW_OFFSET);
+    }
+
+    #[test]
+    fn progress_and_removal_failures_are_returned() {
+        let d = tempfile::tempdir().expect("tempdir");
+        let path = published_segment(d.path());
+        let temporary = d
+            .path()
+            .join(format!(".drain-status.{}.tmp", std::process::id()));
+        fs::write(&temporary, b"stale").expect("stale progress file");
+        let segment = open_segment(&path).expect("open");
+        segment.persist_progress().expect("replace progress file");
+        assert!(d.path().join(".drain-status").exists());
+        drop(segment);
+
+        let error_dir = tempfile::tempdir().expect("progress-error tempdir");
+        let error_path = published_segment(error_dir.path());
+        let error_temporary = error_dir
+            .path()
+            .join(format!(".drain-status.{}.tmp", std::process::id()));
+        fs::create_dir(&error_temporary).expect("progress temporary directory");
+        let error_segment = open_segment(&error_path).expect("open error segment");
+        assert!(matches!(
+            error_segment.persist_progress(),
+            Err(DrainError::Io(_))
+        ));
+        drop(error_segment);
+
+        let removal_dir = tempfile::tempdir().expect("removal tempdir");
+        let removal_path = published_segment(removal_dir.path());
+        let length = fs::metadata(&removal_path).expect("stat").len();
+        fs::write(removal_path.with_extension("offset"), format!("{length}\n"))
+            .expect("drained offset");
+        let removal = open_segment(&removal_path).expect("open drained segment");
+        fs::remove_file(&removal_path).expect("remove segment before retry");
+        assert!(matches!(
+            removal.remove_if_drained(),
+            Err(DrainError::Io(_))
+        ));
+    }
+
+    #[test]
+    fn health_publication_failures_are_not_reported_as_success() {
+        let d = tempfile::tempdir().expect("tempdir");
+        let missing = d.path().join("missing");
+        let health = DrainHealth::default();
+        assert!(matches!(
+            publish_health(&missing, &health),
+            Err(DrainError::Io(_))
+        ));
+        let temporary = d.path().join(format!(
+            ".{DRAIN_HEALTH_FILENAME}.{}.tmp",
+            std::process::id()
+        ));
+        fs::create_dir(&temporary).expect("health temporary directory");
+        assert!(matches!(
+            publish_health(d.path(), &health),
+            Err(DrainError::Io(_))
+        ));
+        fs::remove_dir(temporary).expect("remove health temporary directory");
+        let mut health = DrainHealth::default();
+        assert!(matches!(
+            refresh_health(&missing, &mut health),
+            Err(DrainError::Io(_))
+        ));
+    }
+
+    #[test]
+    fn pending_inspection_rejects_sidecar_read_errors_and_uses_oldest_age() {
+        let d = tempfile::tempdir().expect("tempdir");
+        let first = published_segment(d.path());
+        let second = d.path().join("second.spool");
+        fs::copy(&first, &second).expect("copy second segment");
+        fs::create_dir(first.with_extension("offset")).expect("offset directory");
+        let error = pending_spool(d.path()).expect_err("offset directory is not readable text");
+        assert!(error.to_string().contains("I/O") || error.to_string().contains("Is a directory"));
+        fs::remove_dir(first.with_extension("offset")).expect("remove offset directory");
+        fs::write(
+            first.with_extension("offset"),
+            format!("{FIRST_ROW_OFFSET}\n"),
+        )
+        .expect("first offset");
+        fs::write(
+            second.with_extension("offset"),
+            format!("{FIRST_ROW_OFFSET}\n"),
+        )
+        .expect("second offset");
+        let pending = pending_spool(d.path()).expect("two pending segments");
+        assert_eq!(pending.segments, 2);
+        assert!(pending.oldest_age_secs.is_some());
+    }
+
+    #[test]
+    fn pending_inspection_names_missing_directory_and_bad_clock_data() {
+        let d = tempfile::tempdir().expect("tempdir");
+        let missing = d.path().join("missing");
+        assert!(matches!(discover(&missing), Err(DrainError::Io(_))));
+        assert!(matches!(pending_spool(&missing), Err(DrainError::Io(_))));
+
+        let empty = d.path().join("empty.spool");
+        File::create(&empty).expect("empty segment");
+        assert_eq!(
+            pending_spool(d.path()).expect("inspect empty"),
+            PendingSpool {
+                segments: 0,
+                bytes: 0,
+                oldest_age_secs: None,
+            }
+        );
+
+        let path = d.path().join("future.spool");
+        fs::write(
+            &path,
+            vec![0_u8; usize::try_from(FIRST_ROW_OFFSET).expect("offset fits") + 1],
+        )
+        .expect("segment");
+        fs::write(
+            path.with_extension("offset"),
+            format!("{FIRST_ROW_OFFSET}\n"),
+        )
+        .expect("offset");
+        let future = std::fs::FileTimes::new()
+            .set_modified(SystemTime::now() + std::time::Duration::from_mins(1));
+        File::open(&path)
+            .expect("open segment for mtime")
+            .set_times(future)
+            .expect("future mtime");
+        let error = pending_spool(d.path()).expect_err("future evidence");
+        assert!(error.to_string().contains("in the future"));
     }
 }

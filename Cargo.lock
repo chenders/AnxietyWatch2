@@ -1292,8 +1292,11 @@ version = "0.1.0"
 dependencies = [
  "fs4",
  "postgres",
+ "serde",
+ "serde_json",
  "tempfile",
  "vitals-core",
+ "vitals-proto",
 ]
 
 [[package]]
@@ -1315,6 +1318,7 @@ version = "0.1.0"
 dependencies = [
  "ciborium",
  "serde",
+ "serde_json",
  "tempfile",
  "tokio",
  "vitals-core",

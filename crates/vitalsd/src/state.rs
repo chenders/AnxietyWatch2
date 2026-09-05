@@ -7,7 +7,10 @@
 
 use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
-use vitals_proto::{Health, HeartbeatInputs, Liveness, SourceHealth, SubscriberHealth, WireSample};
+use vitals_proto::{
+    DRAIN_HEALTH_SCHEMA, DrainHealth, Health, HeartbeatInputs, Liveness, SourceHealth,
+    SubscriberHealth, WireSample,
+};
 
 /// How long a source may be silent before it is `Stale`.
 ///
@@ -17,6 +20,11 @@ pub const DEFAULT_STALE_AFTER: Duration = Duration::from_mins(2);
 
 /// Freshness limit for the heartbeat's inputs (amendment 05 §2.1).
 pub const HEARTBEAT_MAX_AGE: Duration = Duration::from_secs(30);
+
+/// A drainer snapshot older than this cannot prove that the database path is
+/// still advancing. Missing or stale evidence is a safety fault, not an idle
+/// success.
+pub const DRAIN_HEALTH_MAX_AGE: Duration = Duration::from_secs(5);
 
 /// Per-subscriber queue depth before samples are dropped.
 ///
@@ -66,7 +74,10 @@ struct SourceState {
 pub struct State {
     started: Instant,
     sources: BTreeMap<i32, SourceState>,
+    received_samples: u64,
     total_samples: u64,
+    fsynced_samples: u64,
+    published_samples: u64,
     spool_bytes: u64,
     subscribers: Vec<Subscriber>,
     stale_after: Duration,
@@ -78,12 +89,17 @@ pub struct State {
     pub monitoring_window_active: bool,
     /// Last tier evaluation from `cns-engine`. `None` until one arrives.
     pub last_tier_evaluation: Option<Instant>,
-    /// Whether the drain offset advanced, or the spool is empty.
-    ///
-    /// Defaults to **true** so a system with nothing yet spooled is not
-    /// reported as stuck; the drainer sets it false when it observes a
-    /// non-empty spool that is not advancing.
+    /// Whether the validated drain snapshot proves progress, or proves that
+    /// no rows are pending. Defaults to **false**: without an independent
+    /// drainer snapshot the daemon cannot claim storage health.
     pub drain_progressing: bool,
+    /// Last validated drainer snapshot. `available = false` is explicit
+    /// unknown evidence and is rendered as degraded.
+    pub drain: DrainHealth,
+    /// The exact blocker derived from the last snapshot, if any. Keeping this
+    /// at the state boundary lets the daemon report stale evidence even when
+    /// there are no pending bytes.
+    drain_blocker: Option<String>,
     /// Sources whose samples count as "primary" for the heartbeat: `SpO2` and
     /// respiratory rate. HR and HRV corroborate but must never launder a
     /// missing primary into "all clear" (amendment 05 §2.1).
@@ -109,13 +125,20 @@ impl State {
         Self {
             started: Instant::now(),
             sources: BTreeMap::new(),
+            received_samples: 0,
             total_samples: 0,
+            fsynced_samples: 0,
+            published_samples: 0,
             spool_bytes: 0,
             subscribers: Vec::new(),
             stale_after: DEFAULT_STALE_AFTER,
             monitoring_window_active: false,
             last_tier_evaluation: None,
-            drain_progressing: true,
+            drain_progressing: false,
+            drain: DrainHealth::default(),
+            drain_blocker: Some(format!(
+                "drain health unavailable: available=false schema={DRAIN_HEALTH_SCHEMA} error=not published"
+            )),
             primary_sources,
         }
     }
@@ -129,15 +152,106 @@ impl State {
         self.stale_after = d;
     }
 
-    /// Records that samples were appended.
+    /// Records observations accepted at the daemon boundary.
+    pub fn record_received(&mut self, count: usize) {
+        let count = u64::try_from(count).unwrap_or(u64::MAX);
+        self.received_samples = self.received_samples.saturating_add(count);
+    }
+
+    /// Records that samples were appended to the spool.
     pub fn record_appended(&mut self, samples: &[WireSample], spool_bytes: u64, now: Instant) {
         for s in samples {
             let e = self.sources.entry(s.source).or_default();
             e.last_sample = Some(now);
-            e.samples += 1;
+            e.samples = e.samples.saturating_add(1);
         }
-        self.total_samples += samples.len() as u64;
+        let count = u64::try_from(samples.len()).unwrap_or(u64::MAX);
+        self.total_samples = self.total_samples.saturating_add(count);
         self.spool_bytes = spool_bytes;
+    }
+
+    /// Records rows made durable by an explicit or periodic fsync.
+    pub fn record_fsynced(&mut self, count: u64) {
+        self.fsynced_samples = self.fsynced_samples.saturating_add(count);
+    }
+
+    /// Records samples admitted to subscriber queues. This is `published`, not
+    /// proof that a panel or browser rendered the value.
+    pub fn record_published(&mut self, count: u64) {
+        self.published_samples = self.published_samples.saturating_add(count);
+    }
+
+    /// Replaces the last drainer snapshot and derives the conservative
+    /// heartbeat input from it.
+    ///
+    /// The timestamp is supplied by the caller so this pure state transition
+    /// can be tested with fixed values. A future-dated, stale, unavailable, or
+    /// errored snapshot never satisfies the storage requirement.
+    pub fn record_drain_health(&mut self, health: DrainHealth, now_unix_secs: u64) {
+        let blocker = if !health.available {
+            Some(format!(
+                "drain health unavailable: available={} schema={} error={}",
+                health.available,
+                health.schema,
+                health.last_error.as_deref().unwrap_or("not published")
+            ))
+        } else if health.schema != DRAIN_HEALTH_SCHEMA {
+            Some(format!(
+                "drain health blocked: schema={} expected={DRAIN_HEALTH_SCHEMA}",
+                health.schema
+            ))
+        } else if health.generated_at_unix_secs > now_unix_secs {
+            Some(format!(
+                "drain health blocked: generated_at={} is newer than now={now_unix_secs}",
+                health.generated_at_unix_secs
+            ))
+        } else if now_unix_secs.saturating_sub(health.generated_at_unix_secs)
+            > DRAIN_HEALTH_MAX_AGE.as_secs()
+        {
+            Some(format!(
+                "drain health stale: generated_at={} age_secs={} limit_secs={}",
+                health.generated_at_unix_secs,
+                now_unix_secs.saturating_sub(health.generated_at_unix_secs),
+                DRAIN_HEALTH_MAX_AGE.as_secs()
+            ))
+        } else if let Some(error) = &health.last_error {
+            Some(format!("drain blocked: {error}"))
+        } else if health
+            .last_success_unix_secs
+            .is_some_and(|last| last > now_unix_secs)
+        {
+            Some(format!(
+                "drain health blocked: last_success={} is newer than now={now_unix_secs}",
+                health.last_success_unix_secs.unwrap_or(now_unix_secs)
+            ))
+        } else {
+            let no_pending = health.pending_bytes == 0 && health.pending_segments == 0;
+            let recent_success = health.last_success_unix_secs.is_some_and(|last| {
+                last <= now_unix_secs
+                    && now_unix_secs.saturating_sub(last) <= DRAIN_HEALTH_MAX_AGE.as_secs()
+            });
+            if no_pending || recent_success {
+                None
+            } else {
+                Some(format!(
+                    "drain blocked: pending_bytes={} pending_segments={} oldest_age_secs={}",
+                    health.pending_bytes,
+                    health.pending_segments,
+                    health
+                        .oldest_pending_age_secs
+                        .map_or_else(|| "unknown".to_owned(), |age| age.to_string())
+                ))
+            }
+        };
+        self.drain_progressing = blocker.is_none();
+        self.drain = health;
+        self.drain_blocker = blocker;
+    }
+
+    /// The last explicit drainer blocker, if the storage evidence is not safe.
+    #[must_use]
+    pub fn drain_blocker(&self) -> Option<&str> {
+        self.drain_blocker.as_deref()
     }
 
     /// Registers a subscriber.
@@ -175,17 +289,17 @@ impl State {
             .map(|sub| sub.id)
     }
 
-    fn liveness_of(&self, st: &SourceState, now: Instant) -> (Liveness, Option<u64>) {
-        match st.last_sample {
+    fn liveness_of(&self, st: Option<&SourceState>, now: Instant) -> (Liveness, Option<u64>) {
+        match st.and_then(|state| state.last_sample) {
             None => (Liveness::NeverSeen, None),
             Some(t) => {
                 let age = now.saturating_duration_since(t);
-                let l = if age > self.stale_after {
+                let liveness = if age > self.stale_after {
                     Liveness::Stale
                 } else {
                     Liveness::Live
                 };
-                (l, Some(age.as_secs()))
+                (liveness, Some(age.as_secs()))
             }
         }
     }
@@ -215,23 +329,29 @@ impl State {
     pub fn health(&self, now: Instant) -> Health {
         let mut degraded = Vec::new();
 
-        let sources: Vec<SourceHealth> = self
-            .sources
-            .iter()
-            .map(|(&source, st)| {
-                let (liveness, age) = self.liveness_of(st, now);
+        let mut source_ids = self.primary_sources.clone();
+        source_ids.extend(self.sources.keys().copied());
+        source_ids.sort_unstable();
+        source_ids.dedup();
+        let sources: Vec<SourceHealth> = source_ids
+            .into_iter()
+            .map(|source| {
+                let state = self.sources.get(&source);
+                let (liveness, age) = self.liveness_of(state, now);
                 if liveness == Liveness::Stale {
+                    let age = age.unwrap_or(0);
                     degraded.push(format!(
-                        "source {source} is stale: {}s since last sample (limit {}s)",
-                        age.unwrap_or(0),
+                        "source {source} is stale: {age}s since last sample (limit {}s)",
                         self.stale_after.as_secs()
                     ));
+                } else if liveness == Liveness::NeverSeen {
+                    degraded.push(format!("source {source} has never produced a sample"));
                 }
                 SourceHealth {
                     source,
                     liveness,
                     last_sample_age_secs: age,
-                    samples: st.samples,
+                    samples: state.map_or(0, |value| value.samples),
                 }
             })
             .collect();
@@ -255,6 +375,10 @@ impl State {
             })
             .collect();
 
+        if let Some(blocker) = &self.drain_blocker {
+            degraded.push(blocker.clone());
+        }
+
         let heartbeat = self.heartbeat_inputs(now);
         let max_age = HEARTBEAT_MAX_AGE.as_secs();
         for b in heartbeat.blockers(max_age) {
@@ -264,9 +388,15 @@ impl State {
         Health {
             uptime_secs: now.saturating_duration_since(self.started).as_secs(),
             sources,
+            received_samples: self.received_samples,
+            spooled_samples: self.total_samples,
+            fsynced_samples: self.fsynced_samples,
+            published_samples: self.published_samples,
+            displayed_samples: None,
             total_samples: self.total_samples,
             spool_bytes: self.spool_bytes,
             subscribers,
+            drain: self.drain.clone(),
             heartbeat_pulsing: heartbeat.should_pulse(max_age),
             heartbeat,
             degraded,
@@ -298,16 +428,56 @@ mod tests {
         State::new(vec![SPO2])
     }
 
+    fn healthy_drain() -> DrainHealth {
+        DrainHealth {
+            available: true,
+            generated_at_unix_secs: 100,
+            ..DrainHealth::default()
+        }
+    }
+
+    #[test]
+    fn existing_spool_bytes_are_reported_at_startup() {
+        let s = State::new_with_spool_bytes(vec![SPO2], 4096);
+        let h = s.health(Instant::now());
+        assert_eq!(h.spool_bytes, 4096);
+        assert_eq!(h.received_samples, 0);
+    }
+
+    #[test]
+    fn pipeline_counters_keep_each_stage_distinct() {
+        let mut s = state();
+        let now = Instant::now();
+        s.record_received(3);
+        s.record_appended(&[sample(SPO2, 1), sample(HR, 1)], 512, now);
+        s.record_fsynced(1);
+        s.record_published(1);
+        let h = s.health(now);
+        assert_eq!(h.received_samples, 3);
+        assert_eq!(h.spooled_samples, 2);
+        assert_eq!(h.fsynced_samples, 1);
+        assert_eq!(h.published_samples, 1);
+        assert_eq!(h.displayed_samples, None);
+        assert_eq!(h.total_samples, h.spooled_samples);
+    }
+
     #[test]
     fn a_source_that_never_reported_is_not_healthy() {
         let mut s = state();
         let now = Instant::now();
         s.record_appended(&[sample(HR, 1)], 0, now);
         let h = s.health(now);
-        // SpO2 has never been seen, so it does not appear at all rather than
-        // appearing as fine — and the heartbeat notices.
-        assert!(h.sources.iter().all(|x| x.source != SPO2));
+        // SpO2 has never been seen, so it is represented explicitly as
+        // NeverSeen rather than omitted and mistaken for a quiet healthy night.
+        assert_eq!(
+            h.sources
+                .iter()
+                .find(|source| source.source == SPO2)
+                .map(|source| source.liveness),
+            Some(Liveness::NeverSeen)
+        );
         assert_eq!(h.heartbeat.primary_sample_age_secs, None);
+        assert!(h.degraded.iter().any(|d| d.contains("source 2 has never")));
     }
 
     #[test]
@@ -330,10 +500,15 @@ mod tests {
     #[test]
     fn a_live_source_is_not_degraded() {
         let mut s = state();
+        s.record_drain_health(healthy_drain(), 100);
         let t0 = Instant::now();
-        s.record_appended(&[sample(HR, 1)], 0, t0);
+        s.record_appended(&[sample(HR, 1), sample(SPO2, 2)], 0, t0);
         let h = s.health(t0 + Duration::from_secs(1));
-        assert_eq!(h.sources.first().map(|s| s.liveness), Some(Liveness::Live));
+        assert!(
+            h.sources
+                .iter()
+                .all(|source| source.liveness == Liveness::Live)
+        );
         assert!(h.degraded.is_empty());
     }
 
@@ -342,6 +517,7 @@ mod tests {
     #[test]
     fn a_corroborating_source_does_not_satisfy_the_primary_requirement() {
         let mut s = state();
+        s.record_drain_health(healthy_drain(), 100);
         s.monitoring_window_active = true;
         let t0 = Instant::now();
         s.last_tier_evaluation = Some(t0);
@@ -433,7 +609,111 @@ mod tests {
         let h = s.health(Instant::now());
         assert!(!h.heartbeat.monitoring_window_active);
         assert!(h.heartbeat_pulsing, "unconditional outside a window");
+        assert!(
+            h.degraded
+                .iter()
+                .any(|d| d.contains("drain health unavailable")),
+            "missing storage evidence remains degraded outside a monitoring window"
+        );
+    }
+
+    #[test]
+    fn fresh_empty_drain_health_proves_storage_path() {
+        let mut s = state();
+        s.record_drain_health(healthy_drain(), 100);
+        let t0 = Instant::now();
+        s.record_appended(&[sample(SPO2, 2)], 0, t0);
+        let h = s.health(t0);
+        assert!(s.drain_progressing);
+        assert!(s.drain_blocker().is_none());
         assert!(h.degraded.is_empty());
+    }
+
+    #[test]
+    fn stale_drain_health_names_age_and_limit() {
+        let mut s = state();
+        s.record_drain_health(healthy_drain(), 106);
+        let h = s.health(Instant::now());
+        assert!(!s.drain_progressing);
+        assert!(
+            h.degraded
+                .iter()
+                .any(|d| d.contains("drain health stale") && d.contains("age_secs=6"))
+        );
+        assert!(h.degraded.iter().any(|d| d.contains("limit_secs=5")));
+    }
+
+    #[test]
+    fn future_and_schema_mismatched_drain_health_fail_closed() {
+        let mut future = healthy_drain();
+        future.generated_at_unix_secs = 101;
+        let mut s = state();
+        s.record_drain_health(future, 100);
+        assert!(
+            s.drain_blocker()
+                .is_some_and(|d| d.contains("newer than now=100"))
+        );
+
+        let mut wrong_schema = healthy_drain();
+        wrong_schema.schema += 1;
+        s.record_drain_health(wrong_schema, 100);
+        assert!(
+            s.drain_blocker()
+                .is_some_and(|d| d.contains("schema=2") && d.contains("expected=1"))
+        );
+    }
+
+    #[test]
+    fn pending_without_recent_success_names_the_pending_values() {
+        let mut future_success = healthy_drain();
+        future_success.last_success_unix_secs = Some(101);
+        let mut s = state();
+        s.record_drain_health(future_success, 100);
+        assert!(
+            s.drain_blocker()
+                .is_some_and(|d| d.contains("last_success=101"))
+        );
+
+        let mut recent_success = healthy_drain();
+        recent_success.pending_segments = 2;
+        recent_success.pending_bytes = 4096;
+        recent_success.last_success_unix_secs = Some(99);
+        let mut s = state();
+        s.record_drain_health(recent_success, 100);
+        assert!(s.drain_blocker().is_none());
+
+        let mut health = healthy_drain();
+        health.pending_segments = 2;
+        health.pending_bytes = 4096;
+        health.oldest_pending_age_secs = Some(9);
+        let mut s = state();
+        s.record_drain_health(health, 100);
+        let h = s.health(Instant::now());
+        assert!(h.degraded.iter().any(|d| d.contains("pending_bytes=4096")
+            && d.contains("pending_segments=2")
+            && d.contains("oldest_age_secs=9")));
+    }
+
+    #[test]
+    fn drainer_error_and_unavailable_evidence_are_named() {
+        let mut errored = healthy_drain();
+        errored.last_error = Some("PostgreSQL blocked drain: connection refused".to_owned());
+        let mut s = state();
+        s.record_drain_health(errored, 100);
+        assert!(
+            s.drain_blocker()
+                .is_some_and(|d| d.contains("connection refused"))
+        );
+
+        let unavailable = DrainHealth {
+            last_error: Some("health file malformed".to_owned()),
+            ..DrainHealth::default()
+        };
+        s.record_drain_health(unavailable, 100);
+        assert!(
+            s.drain_blocker()
+                .is_some_and(|d| d.contains("available=false") && d.contains("malformed"))
+        );
     }
 
     #[test]

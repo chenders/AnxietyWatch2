@@ -1,6 +1,6 @@
 # Tasks — production safety hardening and monitoring evidence
 
-**Status:** planned; work is intentionally staged and each task is verified before the next starts.
+**Status:** T-S1 and T-S2 verified locally; T-S3 is next, and Pi deployment/complete-stack evidence remains open. Work is intentionally staged and each task is verified before the next starts.
 
 **Amends:** `docs/specs/AMENDMENTS.md`; operationally supersedes the stale bounded-overlay
 interpretation in `openspec/changes/emay-durable-ingestion/tasks.md` without changing the accepted
@@ -25,15 +25,17 @@ CI cannot silently skip a core gate.
 **Tier:** implement-complex · **Host:** either for tests, Pi for runtime · **Context budget:** ~8k ·
 **Depends:** T-S1 · **Review required:** yes
 
-**Reads:** `docs/specs/AMENDMENTS.md`, `crates/vitals-core/src/spool.rs`,
-`crates/vitalsd/src/main.rs`, `crates/vitalsd/src/state.rs`, `crates/vitals-proto/src/lib.rs`,
-`crates/vitals-drain/src/lib.rs`, `crates/vitals-drain/src/main.rs`, `db/deploy/samples.sql`
+**Reads:** `docs/specs/AMENDMENTS.md`, `crates/vitals-core/src/copybin.rs`, `crates/vitals-core/src/spool.rs`,
+`crates/vitalsd/src/main.rs`, `crates/vitalsd/src/state.rs`, `crates/vitalsd/src/bin/vitals-cli.rs`,
+`crates/vitalsd/tests/socket.rs`, `crates/vitals-proto/src/lib.rs`, `crates/vitals-drain/src/lib.rs`,
+`crates/vitals-drain/src/main.rs`, `crates/vitals-drain/src/bin/vitals-spool-fixture.rs`,
+`crates/vitals-core/tests/roundtrip.rs`, `db/deploy/samples.sql`
 
 **Do:** Bound active-segment lag, preserve crash-safe checkpoint ordering, report all stage counters,
 fail closed on sync/rotation errors, and publish named drainer health. Add outage, partial-file,
 duplicate, crash-window, lock, and recovery tests.
 
-**Verify:** `cargo test --workspace --all-features && cargo clippy --workspace --all-targets --all-features -- -D warnings && cargo llvm-cov --package vitals-core --package vitals-proto --package vitalsd --package vitals-drain --fail-under-lines 95 --summary-only`
+**Verify:** `cargo test --workspace --all-features && cargo clippy --workspace --all-targets --all-features -- -D warnings && cargo llvm-cov --package vitals-core --package vitals-proto --package vitalsd --package vitals-drain --lib --fail-under-lines 95 --summary-only`
 
 ## T-S3 — Reconcile EMAY live freshness with durable stored-session identity
 
