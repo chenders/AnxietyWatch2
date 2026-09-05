@@ -8,7 +8,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-vitals-decode = { path = "../vitals-decode" }
+vitals-decode = { path = "../vitals-decode", version = "0.1.0" }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 bluer = { version = "0.17", features = ["bluetoothd"] }

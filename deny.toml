@@ -1,0 +1,34 @@
+# Dependency policy for the safety-critical workspace.
+# Keep this list explicit: adding a crate with a new license requires review.
+
+[advisories]
+version = 2
+
+[bans]
+# A duplicate version increases the reviewed attack surface. It is currently a
+# warning because upstream compatibility can require two versions; CI reports
+# every occurrence and a future cleanup can make this deny once the graph is
+# converged.
+multiple-versions = "warn"
+# Wildcard requirements make dependency updates non-reproducible.
+wildcards = "deny"
+
+[licenses]
+version = 2
+confidence-threshold = 0.8
+allow = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSL-1.0",
+    "LGPL-2.1-or-later",
+    "MIT",
+    "Unicode-3.0",
+    "Unlicense",
+    "Zlib",
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-git = []

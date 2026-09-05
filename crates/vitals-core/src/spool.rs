@@ -46,11 +46,37 @@ pub const MAX_SEGMENT_AGE: Duration = Duration::from_hours(1);
 pub const SYNC_INTERVAL: Duration = Duration::from_millis(250);
 
 /// Magic at the head of every segment, before the fingerprint.
-const SEGMENT_MAGIC: &[u8; 8] = b"VITSPOOL";
+///
+/// This is public because the independent drainer validates the framing before
+/// it sends any bytes to `PostgreSQL`. A segment is untrusted input to the
+/// drainer, even though both processes normally run as the same service user.
+pub const SEGMENT_MAGIC: &[u8; 8] = b"VITSPOOL";
 
 /// Bumped when the segment framing itself changes — distinct from the schema
 /// fingerprint, which tracks the *table*.
-const SEGMENT_FORMAT_VERSION: u16 = 1;
+pub const SEGMENT_FORMAT_VERSION: u16 = 1;
+
+/// Bytes in the spool-specific magic/version/fingerprint header.
+pub const SEGMENT_HEADER_BYTES: usize = 18;
+
+/// Bytes before the first COPY row: the spool header plus `PostgreSQL`'s COPY
+/// binary header. The COPY header is fixed by `copybin::copy_header`.
+pub const FIRST_ROW_OFFSET: u64 = SEGMENT_HEADER_BYTES as u64 + 19;
+
+/// Canonical `samples` field names and `PostgreSQL` type OIDs, in declaration
+/// order. Binary COPY is positional, so the independent drainer must use the
+/// same layout rather than duplicating an undocumented list.
+pub const SAMPLES_LAYOUT: [(&str, u32); 9] = [
+    ("source", 23),
+    ("type", 23),
+    ("session_id", 20),
+    ("seq", 20),
+    ("timestamp", 1184),
+    ("value", 701),
+    ("extra", 17),
+    ("node_id", 17),
+    ("batch_id", 20),
+];
 
 /// Identifies the exact table layout a segment's rows were encoded against.
 ///
@@ -85,6 +111,15 @@ impl SchemaFingerprint {
         Self(h)
     }
 
+    /// Reconstructs a fingerprint read from a validated segment header.
+    ///
+    /// The header parser validates the framing around this value; the value
+    /// itself is opaque and is compared with the live schema fingerprint.
+    #[must_use]
+    pub const fn from_value(value: u64) -> Self {
+        Self(value)
+    }
+
     /// The raw value, for the segment header and for reporting a mismatch.
     #[must_use]
     pub const fn value(self) -> u64 {
@@ -96,17 +131,7 @@ impl SchemaFingerprint {
 /// OIDs: int4 = 23, int8 = 20, timestamptz = 1184, float8 = 701, bytea = 17.
 #[must_use]
 pub fn samples_fingerprint() -> SchemaFingerprint {
-    SchemaFingerprint::of(&[
-        ("source", 23),
-        ("type", 23),
-        ("session_id", 20),
-        ("seq", 20),
-        ("timestamp", 1184),
-        ("value", 701),
-        ("extra", 17),
-        ("node_id", 17),
-        ("batch_id", 20),
-    ])
+    SchemaFingerprint::of(&SAMPLES_LAYOUT)
 }
 
 /// An append-only spool directory holding one open segment.

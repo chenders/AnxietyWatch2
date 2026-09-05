@@ -9,6 +9,7 @@ members = [
     "crates/hr-spike",          # T-B1 overnight capture (Linux)
     "crates/emay-spike",        # T-B1 substitute: SpO2 capture (Linux)
     "crates/emay-collector",    # durable EMAY stored-session collector (Linux)
+    "crates/vitals-drain",       # COPY-binary spool to PostgreSQL
 ]
 
 [workspace.package]

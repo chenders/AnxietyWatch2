@@ -8,8 +8,8 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-vitals-core = { path = "../vitals-core" }
-vitals-proto = { path = "../vitals-proto" }
+vitals-core = { path = "../vitals-core", version = "0.1.0" }
+vitals-proto = { path = "../vitals-proto", version = "0.1.0" }
 ciborium = "0.2"
 serde = { version = "1", features = ["derive"] }
 # Current-thread runtime only: a single writer needs no locking, and that is the
