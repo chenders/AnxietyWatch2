@@ -28,11 +28,14 @@ fn usage() -> ExitCode {
     ExitCode::from(2)
 }
 
-fn main() -> ExitCode {
+fn main_with_args<I>(arguments: I) -> ExitCode
+where
+    I: IntoIterator<Item = String>,
+{
     let mut socket = PathBuf::from(DEFAULT_SOCKET);
     let mut verb: Option<String> = None;
 
-    let mut it = std::env::args().skip(1);
+    let mut it = arguments.into_iter();
     while let Some(a) = it.next() {
         match a.as_str() {
             "--socket" => match it.next() {
@@ -55,6 +58,10 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+fn main() -> ExitCode {
+    main_with_args(std::env::args().skip(1))
 }
 
 fn run(socket: &std::path::Path, verb: &str) -> std::io::Result<ExitCode> {
@@ -253,6 +260,24 @@ mod tests {
         assert!(json.contains("\"displayed_samples\":null"));
         assert!(json.contains(r#"bad \"quote\"\\path"#));
         assert!(json.contains("\"liveness\":\"Stale\""));
+
+        let mut with_optional_fields = health(Vec::new());
+        with_optional_fields.displayed_samples = Some(5);
+        with_optional_fields.sources.push(SourceHealth {
+            source: 7,
+            liveness: Liveness::NeverSeen,
+            last_sample_age_secs: None,
+            samples: 0,
+        });
+        with_optional_fields.subscribers.push(SubscriberHealth {
+            id: 8,
+            dropped: 0,
+            queued: 0,
+        });
+        let optional_json = health_json(&with_optional_fields);
+        assert!(optional_json.contains("\"displayed_samples\":5"));
+        assert!(optional_json.contains("\"last_sample_age_secs\":null"));
+        assert!(optional_json.contains("\"id\":8"));
     }
 
     #[test]
@@ -349,5 +374,25 @@ mod tests {
         });
         assert!(run(&path, "health").is_err());
         thread.join().expect("fixture thread");
+    }
+
+    #[test]
+    fn main_argument_paths_are_testable_without_process_arguments() {
+        assert_eq!(main_with_args(Vec::<String>::new()), usage());
+        assert_eq!(main_with_args(["--help".to_owned()]), usage());
+        assert_eq!(main_with_args(["--socket".to_owned()]), usage());
+        assert_eq!(main_with_args(["--not-a-verb".to_owned()]), usage());
+
+        let dir = tempfile::tempdir().expect("socket tempdir");
+        let missing = dir.path().join("missing.sock");
+        assert_eq!(
+            main_with_args([
+                "--socket".to_owned(),
+                missing.to_str().expect("UTF-8 socket path").to_owned(),
+                "health".to_owned(),
+            ]),
+            ExitCode::FAILURE
+        );
+        assert_eq!(main(), usage());
     }
 }

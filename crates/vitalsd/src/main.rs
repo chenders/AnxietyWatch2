@@ -88,13 +88,16 @@ struct Args {
     state_dir: PathBuf,
 }
 
-fn parse_args() -> Args {
+fn parse_args_from<I>(arguments: I) -> Args
+where
+    I: IntoIterator<Item = String>,
+{
     let mut a = Args {
         socket: PathBuf::from(DEFAULT_SOCKET),
         spool: PathBuf::from(DEFAULT_SPOOL),
         state_dir: PathBuf::from(DEFAULT_STATE),
     };
-    let mut it = std::env::args().skip(1);
+    let mut it = arguments.into_iter();
     while let Some(flag) = it.next() {
         match flag.as_str() {
             "--socket" => {
@@ -116,6 +119,10 @@ fn parse_args() -> Args {
         }
     }
     a
+}
+
+fn parse_args() -> Args {
+    parse_args_from(std::env::args().skip(1))
 }
 
 fn unix_seconds() -> u64 {
@@ -166,9 +173,7 @@ fn refresh_drain_health(st: &mut State, spool: &Path, previous_blocker: &mut Opt
     }
 }
 
-fn main() -> std::io::Result<()> {
-    let args = parse_args();
-
+fn main_with_args(args: Args) -> std::io::Result<()> {
     // Current-thread on purpose. See the module docs.
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -182,6 +187,10 @@ fn main() -> std::io::Result<()> {
         );
     }
     result
+}
+
+fn main() -> std::io::Result<()> {
+    main_with_args(parse_args())
 }
 
 async fn run(args: Args) -> std::io::Result<()> {
@@ -568,6 +577,7 @@ async fn serve_client(
 #[cfg(test)]
 #[expect(
     clippy::expect_used,
+    clippy::panic,
     reason = "a failing assertion in a test should panic loudly"
 )]
 mod tests {
@@ -721,5 +731,447 @@ mod tests {
                 .as_micros(),
             1_000_000
         );
+    }
+
+    #[test]
+    fn argument_overrides_are_parsed_without_process_state() {
+        let args = parse_args_from([
+            "--socket".to_owned(),
+            "/tmp/test-vitalsd.sock".to_owned(),
+            "--spool".to_owned(),
+            "/tmp/test-vitalsd-spool".to_owned(),
+            "--state".to_owned(),
+            "/tmp/test-vitalsd-state".to_owned(),
+            "--unknown".to_owned(),
+            "ignored".to_owned(),
+        ]);
+        assert_eq!(args.socket, PathBuf::from("/tmp/test-vitalsd.sock"));
+        assert_eq!(args.spool, PathBuf::from("/tmp/test-vitalsd-spool"));
+        assert_eq!(args.state_dir, PathBuf::from("/tmp/test-vitalsd-state"));
+    }
+
+    #[test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "the test keeps each daemon command and durability assertion together"
+    )]
+    fn handle_records_append_durability_subscription_and_unavailable_query() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut spool = Spool::open(&dir.path().join("spool")).expect("spool");
+        let node_id = NodeId::load_or_create(&dir.path().join("state")).expect("node id");
+        let mut state = State::new(Vec::new());
+        let mut subscribers = Vec::new();
+
+        let (reply, mut responses) = mpsc::channel(4);
+        handle(
+            Cmd::Append {
+                client_id: 1,
+                request_id: 1,
+                samples: vec![wire_sample(1)],
+                sync: true,
+                reply,
+            },
+            &mut state,
+            &mut spool,
+            &node_id,
+            &mut subscribers,
+        );
+        assert!(matches!(
+            responses.try_recv(),
+            Ok(Response::Appended {
+                count: 1,
+                durable: true
+            })
+        ));
+
+        let (subscriber_tx, mut subscriber_rx) = mpsc::channel(1);
+        handle(
+            Cmd::Subscribe {
+                id: 7,
+                selector: Selector {
+                    source: Some(1),
+                    r#type: Some(1),
+                },
+                tx: subscriber_tx,
+            },
+            &mut state,
+            &mut spool,
+            &node_id,
+            &mut subscribers,
+        );
+        assert_eq!(subscribers.len(), 1);
+
+        let (reply, mut responses) = mpsc::channel(1);
+        handle(
+            Cmd::Append {
+                client_id: 1,
+                request_id: 2,
+                samples: vec![wire_sample(2)],
+                sync: false,
+                reply,
+            },
+            &mut state,
+            &mut spool,
+            &node_id,
+            &mut subscribers,
+        );
+        assert!(matches!(
+            responses.try_recv(),
+            Ok(Response::Appended {
+                count: 1,
+                durable: false
+            })
+        ));
+        // Leave the one-slot subscriber queue full so the next append records
+        // a named drop instead of blocking the single writer.
+        let (reply, mut responses) = mpsc::channel(1);
+        handle(
+            Cmd::Append {
+                client_id: 1,
+                request_id: 3,
+                samples: vec![wire_sample(3)],
+                sync: false,
+                reply,
+            },
+            &mut state,
+            &mut spool,
+            &node_id,
+            &mut subscribers,
+        );
+        assert!(matches!(
+            responses.try_recv(),
+            Ok(Response::Appended {
+                count: 1,
+                durable: false
+            })
+        ));
+        assert!(matches!(
+            subscriber_rx.try_recv(),
+            Ok(Response::Sample { .. })
+        ));
+        assert_eq!(
+            state
+                .health(Instant::now())
+                .subscribers
+                .first()
+                .map(|subscriber| subscriber.dropped),
+            Some(1)
+        );
+
+        let (reply, mut responses) = mpsc::channel(1);
+        handle(
+            Cmd::Health { reply },
+            &mut state,
+            &mut spool,
+            &node_id,
+            &mut subscribers,
+        );
+        assert!(matches!(responses.try_recv(), Ok(Response::Health { .. })));
+
+        let (reply, mut responses) = mpsc::channel(1);
+        handle(
+            Cmd::Query { reply },
+            &mut state,
+            &mut spool,
+            &node_id,
+            &mut subscribers,
+        );
+        assert!(matches!(
+            responses.try_recv(),
+            Ok(Response::Error {
+                kind: ErrorKind::Unavailable,
+                ..
+            })
+        ));
+
+        let (reply, response_rx) = mpsc::channel(1);
+        drop(response_rx);
+        handle(
+            Cmd::Health { reply },
+            &mut state,
+            &mut spool,
+            &node_id,
+            &mut subscribers,
+        );
+        let (reply, response_rx) = mpsc::channel(1);
+        drop(response_rx);
+        handle(
+            Cmd::Query { reply },
+            &mut state,
+            &mut spool,
+            &node_id,
+            &mut subscribers,
+        );
+
+        handle(
+            Cmd::Unsubscribe { id: 7 },
+            &mut state,
+            &mut spool,
+            &node_id,
+            &mut subscribers,
+        );
+        assert!(subscribers.is_empty());
+
+        // A disconnected client must not make the writer panic when its
+        // response receiver has already gone away.
+        let (reply, responses) = mpsc::channel(1);
+        drop(responses);
+        handle(
+            Cmd::Append {
+                client_id: 1,
+                request_id: 4,
+                samples: vec![wire_sample(4)],
+                sync: false,
+                reply,
+            },
+            &mut state,
+            &mut spool,
+            &node_id,
+            &mut subscribers,
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn socket_client_routes_requests_and_unregisters_subscriber() {
+        let local = tokio::task::LocalSet::new();
+        local
+            .run_until(async {
+                let (server, mut peer) = UnixStream::pair().expect("socket pair");
+                let (cmd_tx, mut cmd_rx) = mpsc::channel(16);
+                let task = tokio::task::spawn_local(serve_client(server, 42, cmd_tx.clone()));
+
+                let requests = [
+                    Request::Append {
+                        samples: Vec::new(),
+                        sync: true,
+                    },
+                    Request::Subscribe {
+                        source: Some(1),
+                        r#type: Some(1),
+                    },
+                    Request::Health,
+                    Request::Query {
+                        source: None,
+                        r#type: None,
+                        since_unix_micros: 0,
+                        until_unix_micros: 1,
+                    },
+                ];
+                for request in requests {
+                    peer.write_all(&encode_frame(&request).expect("encode request"))
+                        .await
+                        .expect("write request");
+                }
+                drop(peer);
+                drop(cmd_tx);
+
+                let mut saw_append = false;
+                let mut saw_subscribe = false;
+                let mut saw_health = false;
+                let mut saw_query = false;
+                let mut saw_unsubscribe = false;
+                while let Some(command) = cmd_rx.recv().await {
+                    match command {
+                        Cmd::Append {
+                            client_id,
+                            request_id,
+                            sync,
+                            samples,
+                            ..
+                        } => {
+                            assert_eq!((client_id, request_id, sync), (42, 1, true));
+                            assert!(samples.is_empty());
+                            saw_append = true;
+                        }
+                        Cmd::Subscribe { id, selector, .. } => {
+                            assert_eq!(id, 42);
+                            assert_eq!(selector.source, Some(1));
+                            assert_eq!(selector.r#type, Some(1));
+                            saw_subscribe = true;
+                        }
+                        Cmd::Health { .. } => saw_health = true,
+                        Cmd::Query { .. } => saw_query = true,
+                        Cmd::Unsubscribe { id } => {
+                            assert_eq!(id, 42);
+                            saw_unsubscribe = true;
+                        }
+                    }
+                }
+                task.await.expect("client task").expect("client result");
+                assert!(saw_append && saw_subscribe && saw_health && saw_query);
+                assert!(saw_unsubscribe);
+            })
+            .await;
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn socket_client_rejects_bad_and_truncated_frames() {
+        let local = tokio::task::LocalSet::new();
+        local
+            .run_until(async {
+                let (server, mut peer) = UnixStream::pair().expect("socket pair");
+                let (cmd_tx, cmd_rx) = mpsc::channel(4);
+                drop(cmd_rx);
+                let task = tokio::task::spawn_local(serve_client(server, 9, cmd_tx));
+
+                // The malformed payload is recoverable because its framing is
+                // intact; the following request reaches the closed command
+                // channel and exercises the shutdown path.
+                peer.write_all(&1_u32.to_le_bytes())
+                    .await
+                    .expect("write malformed length");
+                peer.write_all(&[0]).await.expect("write malformed payload");
+                peer.write_all(&encode_frame(&Request::Health).expect("encode health"))
+                    .await
+                    .expect("write health");
+                task.await.expect("client task").expect("client result");
+                drop(peer);
+            })
+            .await;
+
+        let local = tokio::task::LocalSet::new();
+        local
+            .run_until(async {
+                let (server, mut peer) = UnixStream::pair().expect("socket pair");
+                let (cmd_tx, _cmd_rx) = mpsc::channel(1);
+                let task = tokio::task::spawn_local(serve_client(server, 10, cmd_tx));
+                peer.write_all(&5_u32.to_le_bytes())
+                    .await
+                    .expect("write truncated length");
+                peer.write_all(&[0]).await.expect("write truncated payload");
+                drop(peer);
+                task.await.expect("client task").expect("client result");
+            })
+            .await;
+
+        let local = tokio::task::LocalSet::new();
+        local
+            .run_until(async {
+                let (server, mut peer) = UnixStream::pair().expect("socket pair");
+                let (cmd_tx, _cmd_rx) = mpsc::channel(1);
+                let task = tokio::task::spawn_local(serve_client(server, 12, cmd_tx));
+                peer.write_all(&u32::MAX.to_le_bytes())
+                    .await
+                    .expect("write oversized length");
+                task.await.expect("client task").expect("client result");
+                drop(peer);
+            })
+            .await;
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn run_creates_socket_and_can_be_cancelled() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let socket = dir.path().join("run/vitalsd.sock");
+        let spool = dir.path().join("spool");
+        let state = dir.path().join("state");
+        let args = Args {
+            socket: socket.clone(),
+            spool,
+            state_dir: state,
+        };
+        let local = tokio::task::LocalSet::new();
+        local
+            .run_until(async {
+                let task = tokio::task::spawn_local(run(args));
+                for _ in 0..100 {
+                    if socket.exists() {
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+                assert!(socket.exists());
+                let mut client = UnixStream::connect(&socket).await.expect("connect socket");
+                client
+                    .write_all(
+                        &encode_frame(&Request::Append {
+                            samples: vec![wire_sample(1)],
+                            sync: true,
+                        })
+                        .expect("encode append"),
+                    )
+                    .await
+                    .expect("write append");
+                let mut length = [0_u8; 4];
+                client
+                    .read_exact(&mut length)
+                    .await
+                    .expect("read append response length");
+                let response_length = check_frame_len(u32::from_le_bytes(length))
+                    .expect("valid append response length");
+                let mut payload = vec![0_u8; response_length];
+                client
+                    .read_exact(&mut payload)
+                    .await
+                    .expect("read append response");
+                assert!(matches!(
+                    decode_payload::<Response>(&payload).expect("decode append response"),
+                    Response::Appended {
+                        count: 1,
+                        durable: true
+                    }
+                ));
+                drop(client);
+                tokio::time::sleep(Duration::from_millis(270)).await;
+                task.abort();
+                let _ = task.await;
+            })
+            .await;
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn run_reports_invalid_spool_before_listening() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let spool = dir.path().join("spool-file");
+        fs::write(&spool, b"not a directory").expect("spool marker");
+        let result = run(Args {
+            socket: dir.path().join("vitalsd.sock"),
+            spool,
+            state_dir: dir.path().join("state"),
+        })
+        .await;
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn runtime_entrypoint_reports_startup_errors() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let spool = dir.path().join("spool-file");
+        fs::write(&spool, b"not a directory").expect("spool marker");
+        let result = main_with_args(Args {
+            socket: dir.path().join("vitalsd.sock"),
+            spool,
+            state_dir: dir.path().join("state"),
+        });
+        assert!(result.is_err());
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn socket_writer_handles_a_peer_that_disconnects_before_a_reply() {
+        let local = tokio::task::LocalSet::new();
+        local
+            .run_until(async {
+                let (server, mut peer) = UnixStream::pair().expect("socket pair");
+                let (cmd_tx, mut cmd_rx) = mpsc::channel(1);
+                let task = tokio::task::spawn_local(serve_client(server, 11, cmd_tx));
+                peer.write_all(&encode_frame(&Request::Health).expect("encode health"))
+                    .await
+                    .expect("write health");
+                drop(peer);
+                let command = cmd_rx.recv().await.expect("health command");
+                if let Cmd::Health { reply } = command {
+                    reply
+                        .send(Response::Error {
+                            kind: ErrorKind::Io,
+                            detail: "test response after disconnect".to_owned(),
+                        })
+                        .await
+                        .expect("response queued");
+                } else {
+                    panic!("expected health command");
+                }
+                task.await.expect("client task").expect("client result");
+            })
+            .await;
     }
 }

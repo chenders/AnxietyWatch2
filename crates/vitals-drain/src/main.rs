@@ -63,13 +63,19 @@ fn parse_args(raw: &[String]) -> Result<Args, String> {
     Ok(args)
 }
 
-fn process_segments(
-    client: &mut postgres::Client,
+fn process_segments<F>(
     spool: &Path,
     live: vitals_core::spool::SchemaFingerprint,
     verify_only: bool,
     health: &mut DrainHealth,
-) -> Result<(), DrainError> {
+    mut drain: F,
+) -> Result<(), DrainError>
+where
+    F: FnMut(
+        &mut vitals_drain::Segment,
+        vitals_core::spool::SchemaFingerprint,
+    ) -> Result<vitals_drain::DrainOutcome, DrainError>,
+{
     for path in discover(spool)? {
         let mut segment = match open_segment(&path) {
             Ok(segment) => segment,
@@ -102,7 +108,7 @@ fn process_segments(
             });
         }
         if !verify_only {
-            let outcome = segment.drain(client, live)?;
+            let outcome = drain(&mut segment, live)?;
             health.rows_read = health.rows_read.saturating_add(outcome.rows_read);
             health.rows_inserted = health.rows_inserted.saturating_add(outcome.rows_inserted);
             health.rows_duplicate = health.rows_duplicate.saturating_add(outcome.rows_duplicate);
@@ -201,7 +207,11 @@ fn run(args: &Args, health: &mut DrainHealth) -> Result<(), DrainError> {
         }
     };
     loop {
-        if let Err(error) = process_segments(&mut client, &args.spool, live, args.verify, health) {
+        if let Err(error) =
+            process_segments(&args.spool, live, args.verify, health, |segment, live| {
+                segment.drain(&mut client, live)
+            })
+        {
             publish_failure(&args.spool, health, &error);
             return Err(error);
         }
@@ -226,9 +236,8 @@ fn run(args: &Args, health: &mut DrainHealth) -> Result<(), DrainError> {
     }
 }
 
-fn main() -> ExitCode {
-    let raw: Vec<_> = env::args().collect();
-    let args = match parse_args(&raw) {
+fn main_with_args(raw: &[String]) -> ExitCode {
+    let args = match parse_args(raw) {
         Ok(args) => args,
         Err(e) => {
             eprintln!("event=drainer.failure stage=argument_parse detail={e:?}");
@@ -268,12 +277,41 @@ fn main() -> ExitCode {
     }
 }
 
+fn main() -> ExitCode {
+    let raw: Vec<_> = env::args().collect();
+    main_with_args(&raw)
+}
+
 #[cfg(test)]
+#[expect(
+    clippy::expect_used,
+    reason = "drainer tests should fail loudly when a fixture invariant breaks"
+)]
 mod tests {
     use super::*;
 
     fn strings(values: &[&str]) -> Vec<String> {
         values.iter().map(ToString::to_string).collect()
+    }
+
+    fn make_segment(dir: &Path) -> PathBuf {
+        let mut spool = vitals_core::Spool::open(dir).expect("spool");
+        let node = vitals_core::NodeId::from_bytes([0xA5; 16]);
+        let sample = vitals_core::Sample {
+            source: 1,
+            r#type: 1,
+            session_id: 2,
+            seq: 3,
+            timestamp: std::time::UNIX_EPOCH,
+            value: 96.0,
+            extra: None,
+            batch_id: None,
+        };
+        spool.append(&[sample], &node, false).expect("append");
+        spool.sync().expect("sync");
+        let path = spool.segment_path().to_path_buf();
+        drop(spool);
+        path
     }
 
     #[test]
@@ -298,5 +336,176 @@ mod tests {
         assert!(parse_args(&strings(&["drain", "--bogus"])).is_err());
         assert!(parse_args(&strings(&["drain", "--database=dbname=x"])).is_err());
         assert!(parse_args(&strings(&["drain", "--spool"])).is_err());
+        assert!(parse_args(&strings(&["drain", "--spool", "-not-a-path"])).is_err());
+    }
+
+    #[test]
+    fn verify_also_selects_one_shot_mode() {
+        let args = parse_args(&strings(&["drain", "--verify"])).expect("arguments");
+        assert!(args.verify);
+        assert!(args.once);
+    }
+
+    #[test]
+    fn publish_failure_keeps_rejection_and_pending_evidence() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut health = DrainHealth::default();
+        let error = DrainError::Rejected {
+            rows: 3,
+            source: Box::new(DrainError::LockHeld),
+        };
+        publish_failure(dir.path(), &mut health, &error);
+        assert!(!health.available);
+        assert_eq!(health.rows_rejected, 3);
+        assert_eq!(health.pending_segments, 0);
+        assert!(health.last_error.is_some());
+        let health_path = dir.path().join(vitals_drain::DRAIN_HEALTH_FILENAME);
+        let bytes = std::fs::read(health_path).expect("published health");
+        let published: DrainHealth = serde_json::from_slice(&bytes).expect("health JSON");
+        assert_eq!(published.rows_rejected, 3);
+        assert!(!published.available);
+    }
+
+    #[test]
+    fn publish_failure_names_pending_inspection_blocker() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let missing = dir.path().join("missing-spool");
+        let mut health = DrainHealth::default();
+        let error = DrainError::LockHeld;
+        publish_failure(&missing, &mut health, &error);
+        assert!(
+            health
+                .last_error
+                .as_deref()
+                .is_some_and(|detail| detail.contains("pending inspection failed"))
+        );
+    }
+
+    #[test]
+    fn process_segments_validates_and_drains_without_a_database() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let segment_path = make_segment(dir.path());
+        let live = expected_fingerprint();
+        let mut verify_health = DrainHealth::default();
+        let mut called = false;
+        process_segments(
+            dir.path(),
+            live,
+            true,
+            &mut verify_health,
+            |_segment, _live| {
+                called = true;
+                Ok(vitals_drain::DrainOutcome {
+                    rows_read: 0,
+                    rows_inserted: 0,
+                    rows_duplicate: 0,
+                    rows_rejected: 0,
+                    offset: 0,
+                })
+            },
+        )
+        .expect("verify segment");
+        assert!(!called);
+        assert!(segment_path.is_file());
+
+        let mut health = DrainHealth::default();
+        process_segments(dir.path(), live, false, &mut health, |segment, _live| {
+            let offset = segment.length;
+            segment.offset = offset;
+            Ok(vitals_drain::DrainOutcome {
+                rows_read: 2,
+                rows_inserted: 1,
+                rows_duplicate: 1,
+                rows_rejected: 0,
+                offset,
+            })
+        })
+        .expect("drain segment");
+        assert_eq!(health.rows_read, 2);
+        assert_eq!(health.rows_inserted, 1);
+        assert_eq!(health.rows_duplicate, 1);
+        assert!(health.last_success_unix_secs.is_some());
+        assert!(!segment_path.exists());
+    }
+
+    #[test]
+    fn process_segments_preserves_locked_active_data_and_verify_fails_closed() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let _spool = vitals_core::Spool::open(dir.path()).expect("spool");
+        let mut health = DrainHealth::default();
+        process_segments(
+            dir.path(),
+            expected_fingerprint(),
+            false,
+            &mut health,
+            |_segment, _live| unreachable!("active segment must not be drained"),
+        )
+        .expect("active segment remains pending");
+        assert_eq!(health.rows_read, 0);
+        let verify_error = process_segments(
+            dir.path(),
+            expected_fingerprint(),
+            true,
+            &mut health,
+            |_segment, _live| unreachable!("locked segment must not be drained"),
+        )
+        .expect_err("verify must identify the locked segment");
+        assert!(
+            verify_error
+                .to_string()
+                .contains("verify could not inspect locked")
+        );
+    }
+
+    #[test]
+    fn process_segments_rejects_a_segment_with_the_wrong_fingerprint() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let _segment_path = make_segment(dir.path());
+        let mut health = DrainHealth::default();
+        let wrong = vitals_core::spool::SchemaFingerprint::from_value(
+            expected_fingerprint().value().wrapping_add(1),
+        );
+        let error = process_segments(dir.path(), wrong, true, &mut health, |_segment, _live| {
+            unreachable!("fingerprint mismatch must stop first")
+        })
+        .expect_err("wrong fingerprint");
+        assert!(matches!(error, DrainError::FingerprintMismatch { .. }));
+    }
+
+    #[test]
+    fn run_publishes_health_when_database_connection_is_blocked() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut health = DrainHealth::default();
+        let args = Args {
+            dsn: "host=/tmp/vitals-no-postgres port=5432 dbname=missing user=missing".to_owned(),
+            spool: dir.path().to_path_buf(),
+            verify: false,
+            once: true,
+        };
+        let result = run(&args, &mut health);
+        assert!(result.is_err());
+        assert!(!health.available);
+        assert!(
+            dir.path()
+                .join(vitals_drain::DRAIN_HEALTH_FILENAME)
+                .is_file()
+        );
+    }
+
+    #[test]
+    fn main_reports_argument_and_one_shot_failures_without_retrying() {
+        let argument_error = main_with_args(&strings(&["drain", "--unknown"]));
+        assert_eq!(argument_error, ExitCode::FAILURE);
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let result = main_with_args(&strings(&[
+            "drain",
+            "--database",
+            "host=/tmp/vitals-no-postgres port=5432 dbname=missing user=missing",
+            "--spool",
+            dir.path().to_str().expect("UTF-8 temp path"),
+            "--once",
+        ]));
+        assert_eq!(result, ExitCode::FAILURE);
     }
 }

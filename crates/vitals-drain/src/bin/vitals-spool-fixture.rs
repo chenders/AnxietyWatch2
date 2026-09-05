@@ -31,19 +31,19 @@ fn run_with_args(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn run() -> Result<(), Box<dyn std::error::Error>> {
-    let args: Vec<_> = env::args().collect();
-    run_with_args(&args)
-}
-
-fn main() -> ExitCode {
-    match run() {
+fn main_with_args(args: &[String]) -> ExitCode {
+    match run_with_args(args) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("vitals-spool-fixture: {e}");
             ExitCode::FAILURE
         }
     }
+}
+
+fn main() -> ExitCode {
+    let raw: Vec<_> = env::args().collect();
+    main_with_args(&raw)
 }
 
 #[cfg(test)]
@@ -63,13 +63,17 @@ mod tests {
     fn rejects_missing_and_invalid_arguments() {
         assert!(run_with_args(&args(&["fixture"])).is_err());
         assert!(run_with_args(&args(&["fixture", "/tmp", "not-a-number"])).is_err());
+        let dir = tempfile::tempdir().expect("missing spool parent");
+        let file = dir.path().join("not-a-directory");
+        fs::write(&file, b"not a spool directory").expect("spool marker");
+        assert!(run_with_args(&args(&["fixture", file.to_str().expect("utf8")])).is_err());
     }
 
     #[test]
     fn writes_the_requested_fixture_and_reports_a_segment() {
         let dir = tempfile::tempdir().expect("fixture tempdir");
-        run_with_args(&args(&["fixture", dir.path().to_str().expect("utf8"), "2"]))
-            .expect("fixture writes");
+        let fixture_args = args(&["fixture", dir.path().to_str().expect("utf8"), "2"]);
+        assert_eq!(main_with_args(&fixture_args), ExitCode::SUCCESS);
         let spool = fs::read_dir(dir.path())
             .expect("list spool")
             .filter_map(Result::ok)
@@ -77,5 +81,13 @@ mod tests {
             .find(|path| path.extension().is_some_and(|ext| ext == "spool"))
             .expect("segment exists");
         assert!(fs::metadata(spool).expect("segment stat").len() > 37);
+    }
+
+    #[test]
+    fn main_reports_an_argument_failure() {
+        assert_eq!(main_with_args(&args(&["fixture"])), ExitCode::FAILURE);
+        // Calling the real entry point is safe: it returns an ExitCode rather
+        // than terminating the test process, and exercises env::args wiring.
+        assert_eq!(main(), ExitCode::FAILURE);
     }
 }
