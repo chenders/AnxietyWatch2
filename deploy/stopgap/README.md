@@ -1,5 +1,12 @@
 # Stopgap — real EMAY numbers on the bedside panel, at boot
 
+> **Historical deployment only — superseded 2026-09-05.** The current Pi uses
+> `vitals-emay.service`, the durable collector, and PostgreSQL-backed panel
+> history. Do not enable `emay-live.service` from these instructions on the
+> current system: running it beside the durable collector would create a
+> competing EMAY connection. See [`docs/hardware/EMAY_OXIMETER.md`](../../docs/hardware/EMAY_OXIMETER.md)
+> and the [recovery record](../../docs/status-updates/2026-09-05T08-09-24Z-emay-recovery.md).
+
 Gets a live SpO₂ and pulse onto the 7″ DSI panel **without** the storage, query
 or detection paths. It wires the sensor process straight to the browser and
 bypasses the architecture on purpose.
@@ -32,7 +39,11 @@ pull can never conflict with it. No restart is needed for a page change — the
 HTTP server reads from disk per request; only a Chromium reload is required,
 which `systemctl restart panel-kiosk` does.
 
-## Install
+## Install (historical stopgap reproduction only)
+
+These commands reproduce the old display-only experiment. They are not the
+current EMAY installation or recovery procedure, and the `emay-live` enable
+step must not be run on the production Pi.
 
 ```sh
 sudo apt-get install -y cage chromium-browser python3 git
@@ -101,7 +112,7 @@ notice it and switch to `CAN'T ASSESS`, naming which of the three faults it is
 (process gone, link lost, or no sample). That behaviour is the point; if the ring
 comes off your finger at 2 a.m. the panel must not keep showing 97.
 
-## Deployed and verified on the Pi, 2026-08-04
+## Historical deployment snapshot — 2026-08-04 (superseded)
 
 Running: EMAY `SleepO2 device` at 1 Hz, SpO₂ and pulse on the DSI panel, all
 three units enabled and pulled in by `graphical.target`.
@@ -240,6 +251,8 @@ sudo rm -rf /opt/anxietywatch-panel                # the checkout
 Also revoke the deploy key in the repository's **Settings → Deploy keys**, and
 delete `~anxietywatch/.ssh/anxietywatch_deploy*` plus its `~anxietywatch/.ssh/config` stanza.
 
-Nothing else on the Pi depends on any of it. When the real path lands (T-C1..C3
-for the sensor adapters, then a read endpoint on `vitalsd`), this whole directory
-goes away rather than being grown into the real thing.
+Nothing else on the Pi depends on any of it. The real durable EMAY path has
+now landed: `vitals-emay.service` uses stored-session identity through the
+existing `vitalsd` → COPY spool → PostgreSQL path, while anonymous live frames
+remain display-only. This directory is retained as a historical stopgap record;
+do not grow it into, or enable it alongside, the production collector.

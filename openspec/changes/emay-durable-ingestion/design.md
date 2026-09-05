@@ -33,7 +33,6 @@ ATT-confirmed store-and-forward delivery. Repeated live readings are byte-identi
 retransmission, and a reconnect starts with no sensor-provided continuity marker. The live path
 therefore remains display/journal-only until a different accepted identity is available.
 
-The official app's device-storage mode supplies that identity. Its `EC` session descriptor contains
 the storage slot and device recording start (`YY MM DD hh mm ss`). Its `ED` records are 24-byte
 checksummed records with this layout:
 
@@ -85,6 +84,20 @@ The old stopgap's journal lines are useful evidence, but they were not assigned 
 sequence identity. They must not be bulk-inserted into `samples` by assigning a new session/counter;
 that would make their identity appear stronger than the source can support. They can remain in the
 journal until an approved replay identity is defined.
+
+## Runtime discovery caveat
+
+The deployed EMAY is unpaired and unbonded. Its configured address is not, by itself, a persistent
+BlueZ device object: after a Pi/BlueZ reboot the object may be absent, in which case the collector
+reports `the target object was either not present or removed` and an address-only retry cannot
+connect. This is a BlueZ discovery precondition, not a change to the stored-record identity rule
+and not evidence that anonymous live `EB` frames can be durably keyed.
+
+On 2026-09-05, an operator-approved bounded discovery interval recreated
+`SleepO2-2_XXXX` at `D9:80:A3XX:XX:XX`; BlueZ then reported `Connected: yes` and
+`ServicesResolved: yes`, and the existing collector resumed without a code or configuration change. The discovery
+interval was stopped immediately. No automatic scan is part of this design. The incident record is
+`docs/status-updates/2026-09-05T08-09-24Z-emay-recovery.md`.
 
 ## Safe deployed state
 

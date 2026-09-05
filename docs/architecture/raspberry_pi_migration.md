@@ -13,7 +13,7 @@ This document outlines the architectural decisions and feasibility research that
 
 **Storage is the make-or-break decision.** A write-heavy Postgres workload on a consumer microSD card will wear it out and corrupt on power loss. The database must reside on an NVMe via the PCIe connector and official M.2 HAT+.
 
-**BLE is the crux and the least certain area.** The Pi's onboard Cypress/Infineon combo chip shares a single antenna between WiFi and BLE, and coexistence-induced BLE drops are extensively documented. Mitigations are well understood: use an external USB dongle with its own antenna (CSR8510A10), 5GHz WiFi or Ethernet, and modern BlueZ. `vitalsd` leverages `tokio` and BlueZ to manage these connections. Two simultaneous BLE central connections (oximeter + chest strap) is within BlueZ's capability but adds instability under load.
+**BLE is the crux and the least certain area.** The Pi's onboard Cypress/Infineon combo chip shares a single antenna between WiFi and BLE, and coexistence-induced BLE drops are extensively documented. Mitigations are well understood: use an external USB dongle with its own antenna (CSR8510A10), 5GHz WiFi or Ethernet, and modern BlueZ. The Linux collectors use `tokio` and BlueZ, with `vitalsd` remaining the single append boundary for durable samples. Two simultaneous BLE central connections (oximeter + chest strap) is within BlueZ's capability but adds instability under load.
 
 **Apple boundary is absolute.** HealthKit has no server-side API. The Pi cannot compile or sign iOS/watchOS builds. The ecosystem is thus split: data ingestion on the Pi, presentation/client on iOS.
 
@@ -31,6 +31,7 @@ Postgres has first-class arm64 packages. **The caveat is storage:**
 **EMAY SleepO2 (overnight, multi-hour)**
 Proven at the protocol level (UART-style RX/TX GATT). However, multi-hour continuous-session stability on Linux requires careful handling.
 - The Wellue/EMAY auto-powers-off after ~2 minutes without a BLE connection.
+- The deployed EMAY is unpaired/unbonded; after a Pi or BlueZ reboot, its configured address may not recreate the transient BlueZ device object. A bounded discovery interval may be required before the address-pinned collector can reconnect. The LED is not a substitute for checking BlueZ connection and fresh sample timestamps; see [`EMAY_OXIMETER.md`](../hardware/EMAY_OXIMETER.md) and the recovery record.
 
 **Polar H10 (HR + RR/ECG streaming)**
 Streams HR and RR via `0x180D`. Overnight multi-hour drops are real and partly hardware/environmental.
