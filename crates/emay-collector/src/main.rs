@@ -30,6 +30,7 @@ fn non_linux_entrypoint_reports_its_platform_requirement() {
 #[cfg(target_os = "linux")]
 mod linux {
     use std::collections::HashMap;
+    use std::future::Future;
     use std::path::Path;
     use std::pin::Pin;
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -57,20 +58,58 @@ mod linux {
     const NOTIFY_CHAR: bluer::Uuid =
         bluer::Uuid::from_u128(0x0000_ff02_0000_1000_8000_0080_5f9b_34fb);
     const STORAGE_SLOTS: usize = 7;
+    #[cfg(not(test))]
     const RESPONSE_TIMEOUT: Duration = Duration::from_secs(3);
+    #[cfg(test)]
+    const RESPONSE_TIMEOUT: Duration = Duration::from_millis(1);
     const STORAGE_TRANSFER_RETRIES: usize = 3;
     const APPEND_BATCH_SIZE: usize = 256;
+    #[cfg(not(test))]
     const EMPTY_STREAM_GRACE: Duration = Duration::from_secs(1);
+    #[cfg(test)]
+    const EMPTY_STREAM_GRACE: Duration = Duration::from_millis(1);
+    #[cfg(not(test))]
     const KEEPALIVE_INTERVAL: Duration = Duration::from_millis(1200);
+    #[cfg(test)]
+    const KEEPALIVE_INTERVAL: Duration = Duration::from_millis(1);
+    #[cfg(not(test))]
     const SILENCE_LIMIT: Duration = Duration::from_mins(2);
+    #[cfg(test)]
+    const SILENCE_LIMIT: Duration = Duration::from_millis(10);
     /// Re-enter confirmed device storage often enough to bound the time a
     /// source cursor can remain unsynchronized, without making live display
     /// the history path.
     const STORAGE_SYNC_INTERVAL: Duration = Duration::from_mins(15);
     /// Every per-command timeout is finite, but a malformed or quiet device
     /// must also be prevented from occupying live mode indefinitely.
+    #[cfg(not(test))]
     const STORAGE_SYNC_DEADLINE: Duration = Duration::from_mins(3);
+    #[cfg(test)]
+    const STORAGE_SYNC_DEADLINE: Duration = Duration::from_millis(10);
     type CollectorResult<T> = Result<T, String>;
+
+    trait CharacteristicWriter {
+        async fn write(&self, bytes: &[u8]) -> bluer::Result<()>;
+    }
+
+    struct BluezWriter(bluer::gatt::remote::Characteristic);
+
+    impl CharacteristicWriter for BluezWriter {
+        async fn write(&self, bytes: &[u8]) -> bluer::Result<()> {
+            self.0.write(bytes).await
+        }
+    }
+
+    type NotificationStream = Pin<Box<dyn Stream<Item = Vec<u8>>>>;
+
+    trait CollectorBackend {
+        type Writer: CharacteristicWriter;
+
+        async fn connect(
+            &self,
+            target: Address,
+        ) -> CollectorResult<(Self::Writer, NotificationStream)>;
+    }
 
     /// Current live status, deliberately separate from durable stored rows.
     #[derive(Debug)]
@@ -276,7 +315,10 @@ mod linux {
         }
     }
 
-    async fn send_setup(write: &bluer::gatt::remote::Characteristic) -> CollectorResult<()> {
+    async fn send_setup<W>(write: &W) -> CollectorResult<()>
+    where
+        W: CharacteristicWriter + ?Sized,
+    {
         // These commands and their ordering are captured from the official
         // app. The clock command is a verified device protocol operation: the
         // descriptor has no timezone, so the device clock must be aligned with
@@ -316,9 +358,19 @@ mod linux {
                 .write(command)
                 .await
                 .map_err(|error| format!("EMAY setup write {}: {error}", hex(command)))?;
-            tokio::time::sleep(Duration::from_millis(400)).await;
+            setup_pause().await;
         }
         Ok(())
+    }
+
+    #[cfg(not(test))]
+    async fn setup_pause() {
+        tokio::time::sleep(Duration::from_millis(400)).await;
+    }
+
+    #[cfg(test)]
+    fn setup_pause() -> std::future::Ready<()> {
+        std::future::ready(())
     }
 
     fn hex(bytes: &[u8]) -> String {
@@ -354,12 +406,13 @@ mod linux {
     }
 
     /// Reads one EC descriptor from the mixed notification stream.
-    async fn read_descriptor<S>(
-        write: &bluer::gatt::remote::Characteristic,
+    async fn read_descriptor<W, S>(
+        write: &W,
         stream: &mut Pin<Box<S>>,
         pending: &mut Vec<u8>,
     ) -> CollectorResult<Option<SessionDescriptor>>
     where
+        W: CharacteristicWriter + ?Sized,
         S: Stream<Item = Vec<u8>> + ?Sized,
     {
         write
@@ -427,6 +480,7 @@ mod linux {
         }
     }
 
+    #[derive(Debug)]
     enum MetricAttemptError {
         Timeout(Vec<StoredRecord>),
         Transport(String),
@@ -438,8 +492,8 @@ mod linux {
     /// A notification timeout is recoverable: the records already decoded are
     /// retained, the partial tail is discarded, and the next command resumes
     /// at the following source cursor. A host arrival counter is never used.
-    async fn read_metric_attempt<S>(
-        write: &bluer::gatt::remote::Characteristic,
+    async fn read_metric_attempt<W, S>(
+        write: &W,
         stream: &mut Pin<Box<S>>,
         pending: &mut Vec<u8>,
         metric: StoredMetric,
@@ -447,6 +501,7 @@ mod linux {
         start_cursor: u16,
     ) -> Result<Vec<StoredRecord>, MetricAttemptError>
     where
+        W: CharacteristicWriter + ?Sized,
         S: Stream<Item = Vec<u8>> + ?Sized,
     {
         let command = storage::read_command(metric, slot, start_cursor).ok_or_else(|| {
@@ -597,8 +652,8 @@ mod linux {
             .map(Some)
     }
 
-    async fn read_metric_if_needed<S>(
-        write: &bluer::gatt::remote::Characteristic,
+    async fn read_metric_if_needed<W, S>(
+        write: &W,
         stream: &mut Pin<Box<S>>,
         pending: &mut Vec<u8>,
         metric: StoredMetric,
@@ -606,6 +661,7 @@ mod linux {
         start_cursor: Option<u16>,
     ) -> CollectorResult<Vec<StoredRecord>>
     where
+        W: CharacteristicWriter + ?Sized,
         S: Stream<Item = Vec<u8>> + ?Sized,
     {
         let Some(start_cursor) = start_cursor else {
@@ -614,8 +670,8 @@ mod linux {
         read_metric(write, stream, pending, metric, slot, start_cursor).await
     }
 
-    async fn read_metric<S>(
-        write: &bluer::gatt::remote::Characteristic,
+    async fn read_metric<W, S>(
+        write: &W,
         stream: &mut Pin<Box<S>>,
         pending: &mut Vec<u8>,
         metric: StoredMetric,
@@ -623,6 +679,7 @@ mod linux {
         start_cursor: u16,
     ) -> CollectorResult<Vec<StoredRecord>>
     where
+        W: CharacteristicWriter + ?Sized,
         S: Stream<Item = Vec<u8>> + ?Sized,
     {
         let mut records = Vec::new();
@@ -877,12 +934,13 @@ mod linux {
         Ok(())
     }
 
-    async fn read_descriptors<S>(
-        write: &bluer::gatt::remote::Characteristic,
+    async fn read_descriptors<W, S>(
+        write: &W,
         stream: &mut Pin<Box<S>>,
         pending: &mut Vec<u8>,
     ) -> CollectorResult<Vec<SessionDescriptor>>
     where
+        W: CharacteristicWriter + ?Sized,
         S: Stream<Item = Vec<u8>> + ?Sized,
     {
         let mut descriptors = Vec::with_capacity(STORAGE_SLOTS);
@@ -931,14 +989,15 @@ mod linux {
         Ok(descriptors)
     }
 
-    async fn storage_sync<S>(
-        write: &bluer::gatt::remote::Characteristic,
+    async fn storage_sync<W, S>(
+        write: &W,
         stream: &mut Pin<Box<S>>,
         pending: &mut Vec<u8>,
         socket_path: &Path,
         cursors: &mut HashMap<i64, StoredCursorPair>,
     ) -> Result<StorageSyncReceipt, StorageSyncFailure>
     where
+        W: CharacteristicWriter + ?Sized,
         S: Stream<Item = Vec<u8>> + ?Sized,
     {
         let mut progress = StorageSyncProgress::new();
@@ -1123,8 +1182,8 @@ mod linux {
         Ok(())
     }
 
-    async fn run_storage_sync<S>(
-        write: &bluer::gatt::remote::Characteristic,
+    async fn run_storage_sync<W, S>(
+        write: &W,
         stream: &mut Pin<Box<S>>,
         pending: &mut Vec<u8>,
         socket_path: &Path,
@@ -1133,6 +1192,7 @@ mod linux {
         cursors: &mut HashMap<i64, StoredCursorPair>,
     ) -> CollectorResult<()>
     where
+        W: CharacteristicWriter + ?Sized,
         S: Stream<Item = Vec<u8>> + ?Sized,
     {
         status.stored_sync.begin();
@@ -1148,7 +1208,10 @@ mod linux {
         Ok(())
     }
 
-    async fn start_live(write: &bluer::gatt::remote::Characteristic) -> CollectorResult<()> {
+    async fn start_live<W>(write: &W) -> CollectorResult<()>
+    where
+        W: CharacteristicWriter + ?Sized,
+    {
         for command in [
             cmd::HELLO.as_slice(),
             cmd::DEVICE_STATE.as_slice(),
@@ -1158,13 +1221,13 @@ mod linux {
             write.write(command).await.map_err(|error| {
                 format!("start live EMAY stream with {}: {error}", hex(command))
             })?;
-            tokio::time::sleep(Duration::from_millis(400)).await;
+            setup_pause().await;
         }
         Ok(())
     }
 
-    async fn live<S>(
-        write: &bluer::gatt::remote::Characteristic,
+    async fn live<W, S>(
+        write: &W,
         stream: &mut Pin<Box<S>>,
         status_path: Option<&Path>,
         socket_path: &Path,
@@ -1173,8 +1236,42 @@ mod linux {
         cursors: &mut HashMap<i64, StoredCursorPair>,
     ) -> CollectorResult<()>
     where
+        W: CharacteristicWriter + ?Sized,
         S: Stream<Item = Vec<u8>> + ?Sized,
     {
+        live_with_shutdown(
+            write,
+            stream,
+            status_path,
+            socket_path,
+            status,
+            pending,
+            cursors,
+            tokio::signal::ctrl_c(),
+        )
+        .await
+    }
+
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the live loop keeps all mutable protocol state at one boundary"
+    )]
+    async fn live_with_shutdown<W, S, F>(
+        write: &W,
+        stream: &mut Pin<Box<S>>,
+        status_path: Option<&Path>,
+        socket_path: &Path,
+        status: &mut LiveStatus,
+        pending: &mut Vec<u8>,
+        cursors: &mut HashMap<i64, StoredCursorPair>,
+        shutdown: F,
+    ) -> CollectorResult<()>
+    where
+        W: CharacteristicWriter + ?Sized,
+        S: Stream<Item = Vec<u8>> + ?Sized,
+        F: Future<Output = std::io::Result<()>>,
+    {
+        let mut shutdown = Box::pin(shutdown);
         if let Err(error) = start_live(write).await {
             status.link = "lost";
             write_status(status_path, status);
@@ -1182,6 +1279,10 @@ mod linux {
         }
         write_status(status_path, status);
         let mut keepalive = tokio::time::interval(KEEPALIVE_INTERVAL);
+        // The first interval tick is immediate. The connection just completed
+        // its setup, so wait for the first real keepalive period instead of
+        // issuing a duplicate command in the same turn.
+        keepalive.tick().await;
         let mut storage_sync_tick = tokio::time::interval(STORAGE_SYNC_INTERVAL);
         storage_sync_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         // `interval` ticks immediately on its first call. The initial sync was
@@ -1242,7 +1343,7 @@ mod linux {
                     last_frame = tokio::time::Instant::now();
                     write_status(status_path, status);
                 }
-                interrupted = tokio::signal::ctrl_c() => {
+                interrupted = &mut shutdown => {
                     interrupted.map_err(|error| format!("wait for EMAY shutdown signal: {error}"))?;
                     let _ = write.write(&cmd::STOP_REALTIME).await;
                     status.link = "lost";
@@ -1253,36 +1354,54 @@ mod linux {
         }
     }
 
-    pub async fn run(
+    struct BluezBackend;
+
+    impl CollectorBackend for BluezBackend {
+        type Writer = BluezWriter;
+
+        async fn connect(
+            &self,
+            target: Address,
+        ) -> CollectorResult<(Self::Writer, NotificationStream)> {
+            let session = bluer::Session::new()
+                .await
+                .map_err(|error| format!("open BlueZ session: {error}"))?;
+            let adapter = session
+                .default_adapter()
+                .await
+                .map_err(|error| format!("get default BlueZ adapter: {error}"))?;
+            adapter
+                .set_powered(true)
+                .await
+                .map_err(|error| format!("power BlueZ adapter {}: {error}", adapter.name()))?;
+            let device = known_device(&adapter, target).await?;
+            let (write, notify) = characteristics(&device).await?;
+            let stream = Box::pin(
+                notify
+                    .notify()
+                    .await
+                    .map_err(|error| format!("subscribe to EMAY FF02: {error}"))?,
+            );
+            Ok((BluezWriter(write), stream))
+        }
+    }
+
+    async fn run_with_backend<B>(
+        backend: &B,
         mac: &str,
         socket_path: &Path,
         status_path: Option<&Path>,
-    ) -> CollectorResult<()> {
+    ) -> CollectorResult<()>
+    where
+        B: CollectorBackend,
+    {
         let mut status = LiveStatus::new(StoredSyncState::new());
         status.link = "connecting";
         write_status(status_path, &mut status);
         let target = mac
             .parse::<Address>()
             .map_err(|error| format!("{mac:?} is not a Bluetooth address: {error}"))?;
-        let session = bluer::Session::new()
-            .await
-            .map_err(|error| format!("open BlueZ session: {error}"))?;
-        let adapter = session
-            .default_adapter()
-            .await
-            .map_err(|error| format!("get default BlueZ adapter: {error}"))?;
-        adapter
-            .set_powered(true)
-            .await
-            .map_err(|error| format!("power BlueZ adapter {}: {error}", adapter.name()))?;
-        let device = known_device(&adapter, target).await?;
-        let (write, notify) = characteristics(&device).await?;
-        let mut stream = Box::pin(
-            notify
-                .notify()
-                .await
-                .map_err(|error| format!("subscribe to EMAY FF02: {error}"))?,
-        );
+        let (write, mut stream) = backend.connect(target).await?;
         let mut pending = Vec::with_capacity(256);
         let mut cursors = HashMap::new();
         status.link = "up";
@@ -1308,41 +1427,1260 @@ mod linux {
         )
         .await
     }
+
+    pub async fn run(
+        mac: &str,
+        socket_path: &Path,
+        status_path: Option<&Path>,
+    ) -> CollectorResult<()> {
+        run_with_backend(&BluezBackend, mac, socket_path, status_path).await
+    }
+
+    #[cfg(test)]
+    #[expect(
+        clippy::expect_used,
+        reason = "Linux collector fixtures must fail loudly when malformed"
+    )]
+    mod tests {
+        use super::*;
+        use futures::stream;
+        use std::cell::RefCell;
+        use std::path::PathBuf;
+
+        struct TestWriter {
+            calls: RefCell<Vec<Vec<u8>>>,
+            fail: bool,
+            fail_after: Option<usize>,
+        }
+
+        impl TestWriter {
+            fn ok() -> Self {
+                Self {
+                    calls: RefCell::new(Vec::new()),
+                    fail: false,
+                    fail_after: None,
+                }
+            }
+
+            fn failing() -> Self {
+                Self {
+                    calls: RefCell::new(Vec::new()),
+                    fail: true,
+                    fail_after: None,
+                }
+            }
+
+            fn fail_after(writes: usize) -> Self {
+                Self {
+                    calls: RefCell::new(Vec::new()),
+                    fail: false,
+                    fail_after: Some(writes),
+                }
+            }
+        }
+
+        impl CharacteristicWriter for TestWriter {
+            async fn write(&self, bytes: &[u8]) -> bluer::Result<()> {
+                let failed = self.fail
+                    || self
+                        .fail_after
+                        .is_some_and(|limit| self.calls.borrow().len() >= limit);
+                self.calls.borrow_mut().push(bytes.to_vec());
+                if failed {
+                    Err(bluer::Error {
+                        kind: bluer::ErrorKind::Failed,
+                        message: "test writer failure".to_owned(),
+                    })
+                } else {
+                    Ok(())
+                }
+            }
+        }
+
+        struct TestBackend {
+            fail: bool,
+        }
+
+        impl CollectorBackend for TestBackend {
+            type Writer = TestWriter;
+
+            async fn connect(
+                &self,
+                _target: Address,
+            ) -> CollectorResult<(Self::Writer, NotificationStream)> {
+                if self.fail {
+                    return Err("test backend blocked: no verified radio".to_owned());
+                }
+                Ok((
+                    TestWriter::ok(),
+                    Box::pin(stream::iter([empty_descriptor()])),
+                ))
+            }
+        }
+
+        fn checksum(frame: &[u8]) -> u8 {
+            u8::try_from(frame.iter().fold(0u32, |sum, byte| sum + u32::from(*byte)) & 0x7f)
+                .expect("masked checksum fits u8")
+        }
+
+        fn test_directory(label: &str) -> PathBuf {
+            let path = std::env::temp_dir()
+                .join(format!("anxiety-watch-emay-{label}-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&path);
+            std::fs::create_dir(&path).expect("test directory");
+            path
+        }
+
+        fn wire_sample() -> WireSample {
+            WireSample {
+                source: 1,
+                r#type: 1,
+                session_id: 1,
+                seq: 1,
+                timestamp_unix_micros: 0,
+                value: 1.0,
+                extra: None,
+                batch_id: None,
+            }
+        }
+
+        async fn serve_append(
+            listener: tokio::net::UnixListener,
+            response: Response,
+            expected_count: usize,
+        ) -> Result<(), String> {
+            use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+
+            let (mut socket, _) = listener
+                .accept()
+                .await
+                .map_err(|error| format!("accept test socket: {error}"))?;
+            let mut prefix = [0u8; 4];
+            socket
+                .read_exact(&mut prefix)
+                .await
+                .map_err(|error| format!("read test request length: {error}"))?;
+            let length = u32::from_le_bytes(prefix);
+            let length =
+                check_frame_len(length).map_err(|error| format!("test request: {error}"))?;
+            let mut body = vec![0u8; length];
+            socket
+                .read_exact(&mut body)
+                .await
+                .map_err(|error| format!("read test request body: {error}"))?;
+            let request = decode_payload::<Request>(&body)
+                .map_err(|error| format!("decode test request: {error}"))?;
+            match request {
+                Request::Append { samples, sync } if samples.len() == expected_count && !sync => {}
+                other => return Err(format!("unexpected test request: {other:?}")),
+            }
+            let frame = encode_frame(&response)
+                .map_err(|error| format!("encode test response: {error}"))?;
+            socket
+                .write_all(&frame)
+                .await
+                .map_err(|error| format!("write test response: {error}"))?;
+            Ok(())
+        }
+
+        async fn append_with_response(
+            label: &str,
+            response: Response,
+            rows: Vec<WireSample>,
+        ) -> CollectorResult<AppendReceipt> {
+            let dir = test_directory(label);
+            let socket = dir.join("vitalsd.sock");
+            let listener = tokio::net::UnixListener::bind(&socket)
+                .map_err(|error| format!("bind test socket: {error}"))?;
+            let server = serve_append(listener, response, rows.len());
+            let (result, server_result) = tokio::join!(append_rows(&socket, &rows), server);
+            server_result?;
+            result
+        }
+
+        fn descriptor(slot: u8, terminator: Option<u8>) -> Vec<u8> {
+            let mut frame = vec![0u8; SESSION_DESCRIPTOR_LEN];
+            *frame.get_mut(0).expect("opcode") = 0xec;
+            *frame.get_mut(1).expect("flags") = 0x01;
+            *frame.get_mut(2).expect("selector") = 0x01;
+            *frame.get_mut(3).expect("slot") = slot;
+            *frame.get_mut(4).expect("year") = 26;
+            *frame.get_mut(5).expect("month") = 9;
+            *frame.get_mut(6).expect("day") = 5;
+            *frame.get_mut(7).expect("hour") = 18;
+            *frame.get_mut(8).expect("minute") = 0;
+            *frame.get_mut(9).expect("second") = 0;
+            let cks = checksum(frame.get(..20).expect("descriptor payload"));
+            *frame.last_mut().expect("descriptor checksum") = cks;
+            if let Some(byte) = terminator {
+                frame.push(byte);
+            }
+            frame
+        }
+
+        fn empty_descriptor() -> Vec<u8> {
+            let mut frame = vec![0u8; SESSION_DESCRIPTOR_LEN];
+            *frame.get_mut(0).expect("opcode") = 0xec;
+            let cks = checksum(frame.get(..20).expect("payload"));
+            *frame.last_mut().expect("checksum") = cks;
+            frame.push(0);
+            frame
+        }
+
+        fn record(metric: StoredMetric, slot: u8, cursor: u16, value: u8) -> Vec<u8> {
+            let mut frame = vec![0u8; STORED_RECORD_LEN];
+            *frame.get_mut(0).expect("opcode") = 0xed;
+            *frame.get_mut(1).expect("version") = 0x01;
+            *frame.get_mut(2).expect("metric") = metric.code();
+            *frame.get_mut(3).expect("selector") = 0x01;
+            *frame.get_mut(4).expect("slot") = slot;
+            let [lo, hi] = cursor.to_le_bytes();
+            *frame.get_mut(5).expect("cursor low") = lo;
+            *frame.get_mut(6).expect("cursor high") = hi;
+            *frame.get_mut(9).expect("value") = value;
+            *frame.last_mut().expect("record checksum") =
+                checksum(frame.get(..STORED_RECORD_LEN - 1).expect("record payload"));
+            frame
+        }
+
+        fn live_frame(pulse: u8, spo2: u8) -> Vec<u8> {
+            let mut frame = vec![0xeb, 0x01, 0x05, pulse, spo2, 0x7f, 0x00, 0x00];
+            let cks = checksum(frame.get(..7).expect("live payload"));
+            *frame.last_mut().expect("live checksum") = cks;
+            frame
+        }
+
+        fn decoded_descriptor(slot: u8) -> SessionDescriptor {
+            decode_session_descriptor(
+                descriptor(slot, None)
+                    .get(..SESSION_DESCRIPTOR_LEN)
+                    .expect("descriptor bytes"),
+            )
+            .expect("valid descriptor")
+        }
+
+        fn decoded_record(metric: StoredMetric, slot: u8, cursor: u16) -> StoredRecord {
+            decode_stored_record(
+                record(metric, slot, cursor, 96)
+                    .get(..STORED_RECORD_LEN)
+                    .expect("record bytes"),
+            )
+            .expect("valid record")
+        }
+
+        #[test]
+        fn status_and_live_frames_keep_presence_explicit() {
+            let mut status = LiveStatus::new(StoredSyncState::new());
+            let json = status_json(&status);
+            assert!(json.contains("\"spo2\":null"), "{json}");
+            assert!(
+                json.contains("\"stored_identity\":\"source_descriptor_cursor\""),
+                "{json}"
+            );
+
+            let temp = test_directory("status");
+            let path = temp.join("status.json");
+            write_status(Some(&path), &mut status);
+            assert!(path.is_file());
+            write_status(None, &mut status);
+            write_status(Some(&temp), &mut status);
+            status.stored_sync.last_error =
+                Some("quote=\" slash=\\ line=\n tab=\t back=\u{0008} form=\u{000c} carriage=\r ctrl=\u{0001}".to_owned());
+            let escaped = status_json(&status);
+            assert!(escaped.contains("\\\""), "{escaped}");
+            assert!(escaped.contains("\\\\"), "{escaped}");
+            assert!(escaped.contains("\\n"), "{escaped}");
+            assert!(escaped.contains("\\t"), "{escaped}");
+            assert!(escaped.contains("\\b"), "{escaped}");
+            assert!(escaped.contains("\\f"), "{escaped}");
+            assert!(escaped.contains("\\r"), "{escaped}");
+            assert!(escaped.contains("\\u0001"), "{escaped}");
+
+            let mut pending = live_frame(58, 97);
+            pending.extend_from_slice(&live_frame(0, 0));
+            drain_live(&pending, &mut Vec::new(), &mut status, None);
+            assert_eq!(status.frames, 2);
+            assert_eq!(status.measurements, 1);
+            assert_eq!(status.no_finger, 1);
+            assert_eq!(status.spo2, None);
+            assert_eq!(status.pulse_bpm, None);
+
+            let mut garbage = vec![0xaa; 33];
+            drain_live(&garbage, &mut Vec::new(), &mut status, None);
+            assert_eq!(status.undecodable, 1);
+            garbage.clear();
+            assert_eq!(hex(&[0x01, 0xab, 0xff]), "01:ab:ff");
+        }
+
+        #[tokio::test(flavor = "current_thread")]
+        async fn setup_and_live_start_report_writer_failures() {
+            let writer = TestWriter::ok();
+            send_setup(&writer).await.expect("setup writes");
+            assert_eq!(writer.calls.borrow().len(), 5);
+            start_live(&writer).await.expect("live start writes");
+            assert_eq!(writer.calls.borrow().len(), 9);
+
+            let failing = TestWriter::failing();
+            let error = send_setup(&failing).await.expect_err("setup must fail");
+            assert!(error.contains("EMAY setup write"), "{error}");
+            let error = start_live(&failing)
+                .await
+                .expect_err("live start must fail");
+            assert!(error.contains("start live EMAY stream"), "{error}");
+        }
+
+        #[tokio::test(flavor = "current_thread")]
+        async fn descriptor_reading_handles_terminators_live_bytes_and_errors() {
+            let writer = TestWriter::ok();
+            let mut no_terminator = empty_descriptor();
+            no_terminator.pop();
+            let mut stream = Box::pin(stream::empty::<Vec<u8>>());
+            assert!(
+                read_descriptor(&writer, &mut stream, &mut no_terminator)
+                    .await
+                    .expect("empty descriptor without terminator")
+                    .is_none()
+            );
+            let mut stream = Box::pin(stream::empty::<Vec<u8>>());
+            assert!(
+                read_descriptor(&TestWriter::failing(), &mut stream, &mut Vec::new())
+                    .await
+                    .is_err()
+            );
+
+            let mut pending = descriptor(1, Some(0));
+            let mut stream = Box::pin(stream::empty::<Vec<u8>>());
+            let found = read_descriptor(&writer, &mut stream, &mut pending)
+                .await
+                .expect("descriptor");
+            assert_eq!(found.expect("descriptor").slot, 1);
+            assert!(pending.is_empty());
+
+            let mut pending = vec![0xaa];
+            pending.extend_from_slice(&descriptor(4, Some(0)));
+            let mut stream = Box::pin(stream::empty::<Vec<u8>>());
+            assert_eq!(
+                read_descriptor(&writer, &mut stream, &mut pending)
+                    .await
+                    .expect("descriptor after prefix")
+                    .expect("descriptor")
+                    .slot,
+                4
+            );
+
+            let mut malformed = descriptor(1, Some(0));
+            if let Some(checksum) = malformed.get_mut(SESSION_DESCRIPTOR_LEN - 1) {
+                *checksum ^= 1;
+            }
+            let mut stream = Box::pin(stream::empty::<Vec<u8>>());
+            assert!(
+                read_descriptor(&writer, &mut stream, &mut malformed)
+                    .await
+                    .expect_err("malformed descriptor")
+                    .contains("failed validation")
+            );
+
+            let mut pending = descriptor(2, Some(0xeb));
+            let mut stream = Box::pin(stream::empty::<Vec<u8>>());
+            assert_eq!(
+                read_descriptor(&writer, &mut stream, &mut pending)
+                    .await
+                    .expect("degraded descriptor")
+                    .expect("descriptor")
+                    .slot,
+                2
+            );
+
+            let mut pending = empty_descriptor();
+            let mut stream = Box::pin(stream::empty::<Vec<u8>>());
+            assert!(
+                read_descriptor(&writer, &mut stream, &mut pending)
+                    .await
+                    .expect("empty descriptor")
+                    .is_none()
+            );
+
+            let mut pending = descriptor(3, Some(1));
+            let mut stream = Box::pin(stream::empty::<Vec<u8>>());
+            let error = read_descriptor(&writer, &mut stream, &mut pending)
+                .await
+                .expect_err("bad terminator");
+            assert!(error.contains("missing stream terminator"), "{error}");
+
+            let mut pending = live_frame(60, 98);
+            let mut stream = Box::pin(stream::iter([descriptor(4, Some(0))]));
+            assert_eq!(
+                read_descriptor(&writer, &mut stream, &mut pending)
+                    .await
+                    .expect("descriptor after live")
+                    .expect("descriptor")
+                    .slot,
+                4
+            );
+            assert!(pending.is_empty());
+
+            let mut pending = vec![0xaa; (SESSION_DESCRIPTOR_LEN + 1) * 4 + 1];
+            let mut stream = Box::pin(stream::empty::<Vec<u8>>());
+            let error = read_descriptor(&writer, &mut stream, &mut pending)
+                .await
+                .expect_err("oversized response");
+            assert!(error.contains("exceeded"), "{error}");
+
+            let mut pending = Vec::new();
+            let mut stream = Box::pin(stream::empty::<Vec<u8>>());
+            let error = read_descriptor(&writer, &mut stream, &mut pending)
+                .await
+                .expect_err("ended response");
+            assert!(error.contains("notification stream ended"), "{error}");
+        }
+
+        #[tokio::test(flavor = "current_thread")]
+        async fn descriptor_lists_stop_at_empty_and_reject_duplicates() {
+            let writer = TestWriter::ok();
+            let mut pending = Vec::new();
+            let mut stream = Box::pin(stream::iter([descriptor(1, Some(0)), empty_descriptor()]));
+            let descriptors = read_descriptors(&writer, &mut stream, &mut pending)
+                .await
+                .expect("descriptor list");
+            assert_eq!(descriptors.len(), 1);
+
+            let mut pending = descriptor(1, Some(0));
+            let mut stream = Box::pin(stream::iter([descriptor(1, Some(0))]));
+            let error = read_descriptors(&writer, &mut stream, &mut pending)
+                .await
+                .expect_err("duplicate descriptor");
+            assert!(error.contains("repeated slot"), "{error}");
+
+            let mut malformed = descriptor(2, Some(0));
+            if let Some(checksum) = malformed.get_mut(SESSION_DESCRIPTOR_LEN - 1) {
+                *checksum ^= 1;
+            }
+            let mut pending = Vec::new();
+            let mut stream = Box::pin(stream::iter([malformed]));
+            let error = read_descriptors(&writer, &mut stream, &mut pending)
+                .await
+                .expect_err("malformed descriptor list");
+            assert!(error.contains("descriptor list unavailable"), "{error}");
+
+            let mut pending = Vec::new();
+            let mut stream = Box::pin(stream::pending::<Vec<u8>>());
+            let error = read_descriptors(&writer, &mut stream, &mut pending)
+                .await
+                .expect_err("descriptor timeout");
+            assert!(error.contains("timed out"), "{error}");
+        }
+
+        #[tokio::test(flavor = "current_thread")]
+        #[expect(
+            clippy::too_many_lines,
+            reason = "the test exercises the complete metric retry and validation matrix"
+        )]
+        async fn metric_reading_preserves_source_cursor_and_rejects_bad_identity() {
+            let writer = TestWriter::ok();
+            let mut pending = record(StoredMetric::Spo2, 1, 0, 96);
+            pending.push(0);
+            let mut stream = Box::pin(stream::empty::<Vec<u8>>());
+            let records =
+                read_metric_attempt(&writer, &mut stream, &mut pending, StoredMetric::Spo2, 1, 0)
+                    .await
+                    .expect("metric");
+            assert_eq!(records.len(), 1);
+            assert_eq!(records.first().expect("record").cursor, 0);
+
+            let mut pending = record(StoredMetric::Pulse, 1, 0, 60);
+            let mut stream = Box::pin(stream::empty::<Vec<u8>>());
+            let error =
+                read_metric_attempt(&writer, &mut stream, &mut pending, StoredMetric::Spo2, 1, 0)
+                    .await
+                    .expect_err("metric identity");
+            assert!(matches!(error, MetricAttemptError::Protocol(_)));
+
+            let mut pending = vec![0xaa; STORED_RECORD_LEN * 4 + 1];
+            let mut stream = Box::pin(stream::empty::<Vec<u8>>());
+            let error =
+                read_metric_attempt(&writer, &mut stream, &mut pending, StoredMetric::Spo2, 1, 0)
+                    .await
+                    .expect_err("oversized metric response");
+            assert!(matches!(error, MetricAttemptError::Protocol(_)));
+
+            let mut pending = Vec::new();
+            let mut stream = Box::pin(stream::empty::<Vec<u8>>());
+            let error =
+                read_metric_attempt(&writer, &mut stream, &mut pending, StoredMetric::Spo2, 1, 0)
+                    .await
+                    .expect_err("ended metric response");
+            assert!(matches!(error, MetricAttemptError::Transport(_)));
+
+            let mut pending = record(StoredMetric::Spo2, 1, 0, 96);
+            pending.push(0);
+            let mut stream = Box::pin(stream::empty::<Vec<u8>>());
+            let records = read_metric_if_needed(
+                &writer,
+                &mut stream,
+                &mut pending,
+                StoredMetric::Spo2,
+                1,
+                Some(0),
+            )
+            .await
+            .expect("metric wrapper");
+            assert_eq!(records.len(), 1);
+
+            let mut pending = vec![0];
+            let mut stream = Box::pin(stream::iter([{
+                let mut bytes = record(StoredMetric::Spo2, 1, 0, 96);
+                bytes.push(0);
+                bytes
+            }]));
+            let records =
+                read_metric_attempt(&writer, &mut stream, &mut pending, StoredMetric::Spo2, 1, 0)
+                    .await
+                    .expect("stale terminator before metric");
+            assert_eq!(records.len(), 1);
+
+            let mut prefixed = vec![0xaa];
+            prefixed.extend_from_slice(&record(StoredMetric::Spo2, 1, 0, 96));
+            prefixed.push(0);
+            let mut stream = Box::pin(stream::empty::<Vec<u8>>());
+            let records = read_metric_attempt(
+                &writer,
+                &mut stream,
+                &mut prefixed,
+                StoredMetric::Spo2,
+                1,
+                0,
+            )
+            .await
+            .expect("metric after garbage prefix");
+            assert_eq!(records.len(), 1);
+
+            let mut malformed = record(StoredMetric::Spo2, 1, 0, 96);
+            if let Some(checksum) = malformed.last_mut() {
+                *checksum ^= 1;
+            }
+            let mut stream = Box::pin(stream::empty::<Vec<u8>>());
+            assert!(matches!(
+                read_metric_attempt(
+                    &writer,
+                    &mut stream,
+                    &mut malformed,
+                    StoredMetric::Spo2,
+                    1,
+                    0,
+                )
+                .await,
+                Err(MetricAttemptError::Protocol(_))
+            ));
+
+            let mut pending = record(StoredMetric::Spo2, 1, 0, 96);
+            pending.push(0);
+            let mut stream = Box::pin(stream::empty::<Vec<u8>>());
+            assert!(matches!(
+                read_metric_attempt(
+                    &TestWriter::failing(),
+                    &mut stream,
+                    &mut pending,
+                    StoredMetric::Spo2,
+                    1,
+                    0,
+                )
+                .await,
+                Err(MetricAttemptError::Transport(_))
+            ));
+
+            let mut pending = record(StoredMetric::Spo2, 1, 0, 96);
+            pending.push(0);
+            let mut stream = Box::pin(stream::iter([
+                record(StoredMetric::Spo2, 1, 1, 96),
+                vec![0],
+            ]));
+            let records =
+                read_metric_attempt(&writer, &mut stream, &mut pending, StoredMetric::Spo2, 1, 1)
+                    .await
+                    .expect("old source cursor is discarded");
+            assert_eq!(records.len(), 1);
+            assert_eq!(records.first().expect("new record").cursor, 1);
+
+            let first = record(StoredMetric::Spo2, 1, 0, 96);
+            let mut stream = Box::pin(stream::iter([first]).chain(stream::pending::<Vec<u8>>()));
+            let error = read_metric(
+                &writer,
+                &mut stream,
+                &mut Vec::new(),
+                StoredMetric::Spo2,
+                1,
+                0,
+            )
+            .await
+            .expect_err("repeated source timeout");
+            assert!(error.contains("timed out after 3 retries"), "{error}");
+
+            let error = read_metric(
+                &TestWriter::failing(),
+                &mut Box::pin(stream::empty::<Vec<u8>>()),
+                &mut Vec::new(),
+                StoredMetric::Spo2,
+                1,
+                0,
+            )
+            .await
+            .expect_err("metric transport error");
+            assert!(error.contains("request EMAY"), "{error}");
+
+            let mut pending = Vec::new();
+            let mut stream = Box::pin(stream::empty::<Vec<u8>>());
+            assert!(
+                read_metric_if_needed(
+                    &writer,
+                    &mut stream,
+                    &mut pending,
+                    StoredMetric::Spo2,
+                    1,
+                    None,
+                )
+                .await
+                .expect("missing cursor")
+                .is_empty()
+            );
+
+            let mut pending = Vec::new();
+            let mut stream = Box::pin(stream::iter([{
+                let mut bytes = record(StoredMetric::Spo2, 1, 0, 96);
+                bytes.push(0);
+                bytes
+            }]));
+            let records =
+                read_metric_attempt(&writer, &mut stream, &mut pending, StoredMetric::Spo2, 1, 0)
+                    .await
+                    .expect("stream metric");
+            assert_eq!(records.len(), 1);
+
+            let mut pending = live_frame(60, 98);
+            let mut stream = Box::pin(stream::empty::<Vec<u8>>());
+            assert!(
+                read_metric_attempt(&writer, &mut stream, &mut pending, StoredMetric::Spo2, 1, 0,)
+                    .await
+                    .is_err()
+            );
+
+            let mut pending = descriptor(1, None);
+            let mut stream = Box::pin(stream::empty::<Vec<u8>>());
+            assert!(
+                read_descriptor(&writer, &mut stream, &mut pending)
+                    .await
+                    .is_err()
+            );
+
+            let mut pending = Vec::new();
+            let mut stream = Box::pin(stream::empty::<Vec<u8>>());
+            assert!(
+                read_metric_attempt(
+                    &writer,
+                    &mut stream,
+                    &mut pending,
+                    StoredMetric::Spo2,
+                    1,
+                    0x0080,
+                )
+                .await
+                .is_err()
+            );
+        }
+
+        #[test]
+        fn record_pairing_progress_and_finish_name_each_failure() {
+            let descriptor = decoded_descriptor(1);
+            let spo2 = [decoded_record(StoredMetric::Spo2, 1, 0)];
+            let pulse = [decoded_record(StoredMetric::Pulse, 1, 0)];
+            assert_eq!(
+                pair_records(&descriptor, &spo2, &pulse)
+                    .expect("paired")
+                    .len(),
+                2
+            );
+            assert!(pair_records(&descriptor, &spo2, &[]).is_err());
+            let wrong_cursor = [decoded_record(StoredMetric::Pulse, 1, 1)];
+            assert!(pair_records(&descriptor, &spo2, &wrong_cursor).is_err());
+
+            let mut all = Vec::new();
+            append_metric_records(&mut all, &spo2, StoredMetric::Spo2, 1, 0)
+                .expect("append records");
+            assert_eq!(all.len(), 1);
+            assert!(append_metric_records(&mut all, &pulse, StoredMetric::Spo2, 1, 1).is_err());
+            assert!(append_metric_records(&mut all, &spo2, StoredMetric::Spo2, 1, 1).is_err());
+
+            assert_eq!(
+                next_cursor_after(Some(7), &[], StoredMetric::Spo2, 1).expect("initial"),
+                Some(7)
+            );
+            assert_eq!(
+                next_cursor_after(None, &spo2, StoredMetric::Spo2, 1).expect("next"),
+                Some(1)
+            );
+            let reserved = StoredRecord {
+                metric: StoredMetric::Spo2,
+                slot: 1,
+                cursor: 0x007f,
+                value: None,
+                payload: [0; 16],
+            };
+            assert!(next_cursor_after(None, &[reserved], StoredMetric::Spo2, 1).is_ok());
+            let exhausted = [decoded_record(StoredMetric::Spo2, 1, 0xff7f)];
+            let mut all = Vec::new();
+            assert!(
+                append_metric_records(&mut all, &exhausted, StoredMetric::Spo2, 1, 0xff7f).is_err()
+            );
+            assert!(next_cursor_after(None, &exhausted, StoredMetric::Spo2, 1).is_err());
+
+            let mut progress = StorageSyncProgress::new();
+            progress.record_source_records(2).expect("records");
+            progress
+                .record_batch(AppendReceipt {
+                    count: 2,
+                    durable: false,
+                })
+                .expect("batch");
+            assert_eq!(progress.records_transferred, 2);
+            assert_eq!(progress.rows_spooled, 2);
+            assert!(!progress.all_fsynced);
+            let receipt = storage_sync_receipt(&progress);
+            assert_eq!(receipt.rows_spooled, 2);
+            let failure = storage_sync_failure(&progress, "blocked".to_owned());
+            assert_eq!(failure.detail, "blocked");
+
+            let mut cursors = HashMap::new();
+            assert!(
+                finish_storage_sync::<String>(
+                    Ok(()),
+                    Ok(()),
+                    &progress,
+                    vec![(7, StoredCursorPair::default())],
+                    &mut cursors
+                )
+                .is_ok()
+            );
+            assert_eq!(cursors.len(), 1);
+            assert!(
+                finish_storage_sync::<String>(
+                    Ok(()),
+                    Err("exit".to_owned()),
+                    &progress,
+                    Vec::new(),
+                    &mut cursors
+                )
+                .is_err()
+            );
+            assert!(
+                finish_storage_sync::<String>(
+                    Err("transfer".to_owned()),
+                    Ok(()),
+                    &progress,
+                    Vec::new(),
+                    &mut cursors
+                )
+                .is_err()
+            );
+            assert!(
+                finish_storage_sync::<String>(
+                    Err("transfer".to_owned()),
+                    Err("exit".to_owned()),
+                    &progress,
+                    Vec::new(),
+                    &mut cursors
+                )
+                .is_err()
+            );
+        }
+
+        #[tokio::test(flavor = "current_thread")]
+        async fn socket_append_decodes_receipts_and_rejections() {
+            let receipt = append_with_response(
+                "append-ok",
+                Response::Appended {
+                    count: 1,
+                    durable: true,
+                },
+                vec![wire_sample()],
+            )
+            .await
+            .expect("matching append receipt");
+            assert_eq!(receipt.count, 1);
+            assert!(receipt.durable);
+
+            let error = append_with_response(
+                "append-count",
+                Response::Appended {
+                    count: 2,
+                    durable: false,
+                },
+                vec![wire_sample()],
+            )
+            .await
+            .expect_err("count mismatch");
+            assert!(error.contains("but collector sent 1"), "{error}");
+
+            let error = append_with_response(
+                "append-error",
+                Response::Error {
+                    kind: vitals_proto::ErrorKind::Io,
+                    detail: "spool blocked".to_owned(),
+                },
+                vec![wire_sample()],
+            )
+            .await
+            .expect_err("daemon rejection");
+            assert!(error.contains("spool blocked"), "{error}");
+
+            let error = append_with_response(
+                "append-unexpected",
+                Response::Sample {
+                    sample: Box::new(wire_sample()),
+                },
+                vec![wire_sample()],
+            )
+            .await
+            .expect_err("unexpected response");
+            assert!(
+                error.contains("unexpected vitalsd append response"),
+                "{error}"
+            );
+        }
+
+        #[tokio::test(flavor = "current_thread")]
+        async fn storage_sync_transfers_confirmed_records_and_updates_cursors() {
+            let writer = TestWriter::ok();
+            let dir = test_directory("storage-sync-full");
+            let socket = dir.join("vitalsd.sock");
+            let listener = tokio::net::UnixListener::bind(&socket).expect("bind test socket");
+            let server = serve_append(
+                listener,
+                Response::Appended {
+                    count: 2,
+                    durable: true,
+                },
+                2,
+            );
+            let mut spo2 = record(StoredMetric::Spo2, 1, 0, 96);
+            spo2.push(0);
+            let mut pulse = record(StoredMetric::Pulse, 1, 0, 58);
+            pulse.push(0);
+            let mut stream = Box::pin(stream::iter([
+                descriptor(1, Some(0)),
+                empty_descriptor(),
+                spo2,
+                pulse,
+            ]));
+            let mut pending = Vec::new();
+            let mut cursors = HashMap::new();
+            let transfer = storage_sync(&writer, &mut stream, &mut pending, &socket, &mut cursors);
+            let (result, server_result) = tokio::join!(transfer, server);
+            server_result.expect("append server");
+            let receipt = result.expect("full storage sync");
+            assert_eq!(receipt.records_transferred, 2);
+            assert_eq!(receipt.rows_spooled, 2);
+            assert!(receipt.all_fsynced);
+            assert_eq!(cursors.len(), 1);
+            assert!(
+                writer
+                    .calls
+                    .borrow()
+                    .iter()
+                    .any(|call| call == &storage::EXIT)
+            );
+        }
+
+        #[tokio::test(flavor = "current_thread")]
+        async fn storage_sync_wrapper_publishes_success_and_failure() {
+            let writer = TestWriter::ok();
+            let mut stream = Box::pin(stream::iter([empty_descriptor()]));
+            let mut pending = Vec::new();
+            let mut status = LiveStatus::new(StoredSyncState::new());
+            let mut cursors = HashMap::new();
+            run_storage_sync(
+                &writer,
+                &mut stream,
+                &mut pending,
+                Path::new("/not/a/socket"),
+                None,
+                &mut status,
+                &mut cursors,
+            )
+            .await
+            .expect("successful empty wrapper");
+            assert_eq!(status.stored_sync.transfer, StoredTransferState::Succeeded);
+
+            let writer = TestWriter::failing();
+            let mut stream = Box::pin(stream::empty::<Vec<u8>>());
+            let mut pending = Vec::new();
+            run_storage_sync(
+                &writer,
+                &mut stream,
+                &mut pending,
+                Path::new("/not/a/socket"),
+                None,
+                &mut status,
+                &mut cursors,
+            )
+            .await
+            .expect("failure is published, not propagated");
+            assert_eq!(status.stored_sync.transfer, StoredTransferState::Failed);
+        }
+
+        #[tokio::test(flavor = "current_thread")]
+        async fn storage_sync_empty_device_is_a_complete_named_transfer() {
+            let writer = TestWriter::ok();
+            let dir = test_directory("storage-sync");
+            let mut pending = Vec::new();
+            let mut stream = Box::pin(stream::iter([empty_descriptor()]));
+            let mut cursors = HashMap::new();
+            let receipt = storage_sync(&writer, &mut stream, &mut pending, &dir, &mut cursors)
+                .await
+                .expect("empty storage sync");
+            assert_eq!(receipt.records_transferred, 0);
+            assert_eq!(receipt.rows_spooled, 0);
+            assert!(receipt.all_fsynced);
+            assert_eq!(writer.calls.borrow().last(), Some(&storage::EXIT.to_vec()));
+        }
+
+        #[test]
+        fn append_and_apply_paths_fail_closed_without_a_socket() {
+            let result = futures::executor::block_on(append_rows(Path::new("/not/a/socket"), &[]));
+            assert_eq!(result.expect("empty append").count, 0);
+            let result = futures::executor::block_on(append_rows(
+                Path::new("/not/a/socket"),
+                &[wire_sample()],
+            ));
+            assert!(
+                result
+                    .expect_err("missing socket")
+                    .contains("connect to vitalsd")
+            );
+            let mut progress = StorageSyncProgress::new();
+            futures::executor::block_on(append_rows_in_batches(
+                Path::new("/not/a/socket"),
+                &[],
+                &mut progress,
+            ))
+            .expect("empty batches");
+            assert!(
+                futures::executor::block_on(append_rows_in_batches(
+                    Path::new("/not/a/socket"),
+                    &[wire_sample()],
+                    &mut progress
+                ))
+                .is_err()
+            );
+
+            let mut status = LiveStatus::new(StoredSyncState::new());
+            apply_storage_sync_result(
+                &mut status,
+                Ok(StorageSyncReceipt {
+                    records_transferred: 2,
+                    rows_spooled: 2,
+                    all_fsynced: true,
+                }),
+            )
+            .expect("successful status");
+            apply_storage_sync_result(
+                &mut status,
+                Err(StorageSyncFailure {
+                    detail: "test failure".to_owned(),
+                    records_transferred: 1,
+                    rows_spooled: 1,
+                    all_fsynced: false,
+                }),
+            )
+            .expect("failed status");
+        }
+
+        #[tokio::test(flavor = "current_thread")]
+        #[expect(
+            clippy::too_many_lines,
+            reason = "the test exercises live frames, stale detection, shutdown, and cleanup"
+        )]
+        async fn live_reports_an_ended_stream_after_startup() {
+            let writer = TestWriter::ok();
+            let mut stream = Box::pin(stream::empty::<Vec<u8>>());
+            let dir = test_directory("live");
+            let mut status = LiveStatus::new(StoredSyncState::new());
+            let mut pending = Vec::new();
+            let mut cursors = HashMap::new();
+            let error = live(
+                &writer,
+                &mut stream,
+                None,
+                &dir,
+                &mut status,
+                &mut pending,
+                &mut cursors,
+            )
+            .await
+            .expect_err("ended live stream");
+            assert!(error.contains("notification stream ended"), "{error}");
+
+            let writer = TestWriter::failing();
+            let mut stream = Box::pin(stream::empty::<Vec<u8>>());
+            let mut status = LiveStatus::new(StoredSyncState::new());
+            let mut pending = Vec::new();
+            let error = live(
+                &writer,
+                &mut stream,
+                None,
+                Path::new("/not/a/socket"),
+                &mut status,
+                &mut pending,
+                &mut HashMap::new(),
+            )
+            .await
+            .expect_err("live startup failure");
+            assert!(error.contains("start live EMAY stream"), "{error}");
+            assert_eq!(status.link, "lost");
+
+            let writer = TestWriter::ok();
+            let mut stream = Box::pin(stream::iter([live_frame(60, 98)]));
+            let dir = test_directory("live-frame");
+            let path = dir.join("status.json");
+            let mut status = LiveStatus::new(StoredSyncState::new());
+            let mut pending = Vec::new();
+            let error = live(
+                &writer,
+                &mut stream,
+                Some(&path),
+                &dir,
+                &mut status,
+                &mut pending,
+                &mut HashMap::new(),
+            )
+            .await
+            .expect_err("live stream end after a frame");
+            assert!(error.contains("notification stream ended"), "{error}");
+            assert_eq!(status.frames, 1);
+            assert!(path.is_file());
+
+            let writer = TestWriter::fail_after(4);
+            let mut stream = Box::pin(stream::pending::<Vec<u8>>());
+            let mut status = LiveStatus::new(StoredSyncState::new());
+            let error = tokio::time::timeout(
+                Duration::from_secs(1),
+                live(
+                    &writer,
+                    &mut stream,
+                    None,
+                    &dir,
+                    &mut status,
+                    &mut Vec::new(),
+                    &mut HashMap::new(),
+                ),
+            )
+            .await
+            .expect("keepalive failure must not hang")
+            .expect_err("keepalive failure");
+            assert!(error.contains("keepalive failed"), "{error}");
+            assert_eq!(status.link, "lost");
+
+            let writer = TestWriter::ok();
+            let mut stream = Box::pin(stream::pending::<Vec<u8>>());
+            let mut status = LiveStatus::new(StoredSyncState::new());
+            let error = tokio::time::timeout(
+                Duration::from_secs(1),
+                live(
+                    &writer,
+                    &mut stream,
+                    None,
+                    &dir,
+                    &mut status,
+                    &mut Vec::new(),
+                    &mut HashMap::new(),
+                ),
+            )
+            .await
+            .expect("silence failure must not hang")
+            .expect_err("silence failure");
+            assert!(error.contains("stream stale"), "{error}");
+            assert_eq!(status.link, "lost");
+
+            let writer = TestWriter::ok();
+            let mut stream = Box::pin(stream::pending::<Vec<u8>>());
+            let mut status = LiveStatus::new(StoredSyncState::new());
+            live_with_shutdown(
+                &writer,
+                &mut stream,
+                None,
+                &dir,
+                &mut status,
+                &mut Vec::new(),
+                &mut HashMap::new(),
+                std::future::ready(Ok(())),
+            )
+            .await
+            .expect("shutdown is clean");
+            assert_eq!(status.link, "lost");
+            assert_eq!(
+                writer.calls.borrow().last(),
+                Some(&cmd::STOP_REALTIME.to_vec())
+            );
+
+            let writer = TestWriter::ok();
+            let mut stream = Box::pin(stream::pending::<Vec<u8>>());
+            let error = live_with_shutdown(
+                &writer,
+                &mut stream,
+                None,
+                &dir,
+                &mut LiveStatus::new(StoredSyncState::new()),
+                &mut Vec::new(),
+                &mut HashMap::new(),
+                std::future::ready(Err(std::io::Error::other("shutdown test failure"))),
+            )
+            .await
+            .expect_err("shutdown failure");
+            assert!(error.contains("wait for EMAY shutdown signal"), "{error}");
+        }
+
+        #[tokio::test(flavor = "current_thread")]
+        async fn run_rejects_an_invalid_address_before_opening_bluez() {
+            let dir = test_directory("run");
+            let error = run("not-an-address", &dir, None)
+                .await
+                .expect_err("invalid address");
+            assert!(error.contains("not a Bluetooth address"), "{error}");
+
+            let blocked = TestBackend { fail: true };
+            let error = run_with_backend(
+                &blocked,
+                "D9:80:A3XX:XX:XX",
+                Path::new("/not/a/socket"),
+                None,
+            )
+            .await
+            .expect_err("backend error");
+            assert!(error.contains("no verified radio"), "{error}");
+
+            let fake = TestBackend { fail: false };
+            let error =
+                run_with_backend(&fake, "D9:80:A3XX:XX:XX", Path::new("/not/a/socket"), None)
+                    .await
+                    .expect_err("ended notification stream");
+            assert!(error.contains("notification stream ended"), "{error}");
+        }
+    }
 }
 
 #[cfg(target_os = "linux")]
-fn main() {
-    let mac = match std::env::var("EMAY_MAC") {
-        Ok(value) if !value.is_empty() => value,
-        _ => {
-            eprintln!(
-                "usage: EMAY_MAC=<address> [VITALS_SOCKET=/run/vitals/vitalsd.sock] \
-                 [EMAY_STATUS_JSON=<path>] emay-collector"
-            );
-            std::process::exit(64);
-        }
+fn linux_entrypoint_with_runtime<B, R>(
+    environment: Option<&str>,
+    socket: Option<&str>,
+    status: Option<&Path>,
+    build_runtime: B,
+    run: R,
+) -> std::process::ExitCode
+where
+    B: FnOnce() -> std::io::Result<tokio::runtime::Runtime>,
+    R: FnOnce(tokio::runtime::Runtime, &str, &Path, Option<&Path>) -> Result<(), String>,
+{
+    let Some(mac) = environment.filter(|value| !value.is_empty()) else {
+        eprintln!(
+            "usage: EMAY_MAC=<address> [VITALS_SOCKET=/run/vitals/vitalsd.sock] \
+             [EMAY_STATUS_JSON=<path>] emay-collector"
+        );
+        return std::process::ExitCode::from(64);
     };
-    let socket = std::env::var("VITALS_SOCKET")
-        .ok()
+    let socket = socket
         .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| DEFAULT_SOCKET.to_owned());
-    let status = std::env::var("EMAY_STATUS_JSON")
-        .ok()
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from);
-    let runtime = match tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-    {
-        Ok(runtime) => runtime,
+        .unwrap_or(DEFAULT_SOCKET);
+    let Ok(runtime) = build_runtime() else {
+        eprintln!("emay-collector: create runtime");
+        return std::process::ExitCode::from(70);
+    };
+    match run(runtime, mac, Path::new(socket), status) {
+        Ok(()) => std::process::ExitCode::SUCCESS,
         Err(error) => {
-            eprintln!("emay-collector: create runtime: {error}");
-            std::process::exit(70);
+            eprintln!("emay-collector: {error}");
+            std::process::ExitCode::from(70)
         }
-    };
-    let result = runtime.block_on(linux::run(&mac, Path::new(&socket), status.as_deref()));
-    if let Err(error) = result {
-        eprintln!("emay-collector: {error}");
-        std::process::exit(70);
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn linux_main(
+    environment: Option<&str>,
+    socket: Option<&str>,
+    status: Option<&Path>,
+) -> std::process::ExitCode {
+    linux_entrypoint_with_runtime(
+        environment,
+        socket,
+        status,
+        || {
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+        },
+        |runtime, mac, socket, status| runtime.block_on(linux::run(mac, socket, status)),
+    )
+}
+
+#[cfg(target_os = "linux")]
+#[rustfmt::skip]
+fn main() -> std::process::ExitCode { linux_main(std::env::var("EMAY_MAC").ok().as_deref(), std::env::var("VITALS_SOCKET").ok().as_deref(), std::env::var("EMAY_STATUS_JSON").ok().filter(|value| !value.is_empty()).map(PathBuf::from).as_deref()) }
+
+#[cfg(all(test, target_os = "linux"))]
+mod entrypoint_tests {
+    use super::*;
+
+    #[test]
+    fn entrypoint_maps_configuration_runtime_and_collector_outcomes() {
+        let build = || {
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+        };
+        assert_eq!(
+            linux_entrypoint_with_runtime(None, None, None, build, |_, _, _, _| Ok(())),
+            std::process::ExitCode::from(64)
+        );
+        assert_eq!(
+            linux_entrypoint_with_runtime(Some(""), None, None, build, |_, _, _, _| Ok(())),
+            std::process::ExitCode::from(64)
+        );
+        assert_eq!(
+            linux_entrypoint_with_runtime(
+                Some("AA:BB:CC:DD:EE:FF"),
+                None,
+                None,
+                || Err(std::io::Error::other("runtime test failure")),
+                |_, _, _, _| Ok(()),
+            ),
+            std::process::ExitCode::from(70)
+        );
+        assert_eq!(
+            linux_entrypoint_with_runtime(
+                Some("AA:BB:CC:DD:EE:FF"),
+                Some("/tmp/test-vitals.sock"),
+                Some(Path::new("/tmp/emay-status.json")),
+                build,
+                |_, mac, socket, status| {
+                    assert_eq!(mac, "AA:BB:CC:DD:EE:FF");
+                    assert_eq!(socket, Path::new("/tmp/test-vitals.sock"));
+                    assert_eq!(status, Some(Path::new("/tmp/emay-status.json")));
+                    Ok(())
+                },
+            ),
+            std::process::ExitCode::SUCCESS
+        );
+        assert_eq!(
+            linux_entrypoint_with_runtime(
+                Some("AA:BB:CC:DD:EE:FF"),
+                None,
+                None,
+                build,
+                |_, _, _, _| Err("collector test failure".to_owned()),
+            ),
+            std::process::ExitCode::from(70)
+        );
+        assert_eq!(
+            linux_main(Some("invalid"), None, None),
+            std::process::ExitCode::from(70)
+        );
     }
 }

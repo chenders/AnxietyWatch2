@@ -230,11 +230,15 @@ mod tests {
 }
 
 #[cfg(target_os = "linux")]
+use std::path::PathBuf;
+
+#[cfg(target_os = "linux")]
 mod linux {
     use crate::status::{Link, Snapshot, to_json};
     use bluer::{Adapter, AdapterEvent, Address, Device};
     use futures::StreamExt as _;
     use std::path::{Path, PathBuf};
+    use std::pin::Pin;
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
     use vitals_decode::emay::{FRAME_LEN, cmd, scan_frame};
 
@@ -299,6 +303,29 @@ mod linux {
         }
     }
 
+    async fn wait_for_target<S>(
+        events: &mut S,
+        target: Address,
+        deadline: tokio::time::Instant,
+    ) -> Option<Address>
+    where
+        S: futures::Stream<Item = AdapterEvent> + Unpin,
+    {
+        loop {
+            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+            if remaining.is_zero() {
+                return None;
+            }
+            match tokio::time::timeout(remaining, events.next()).await {
+                Ok(Some(AdapterEvent::DeviceAdded(addr))) if addr == target => {
+                    return Some(addr);
+                }
+                Ok(Some(_)) => {}
+                Ok(None) | Err(_) => return None,
+            }
+        }
+    }
+
     async fn find(adapter: &Adapter, target: Address) -> bluer::Result<Option<Device>> {
         if let Ok(d) = adapter.device(target)
             && d.is_connected().await.unwrap_or(false)
@@ -307,19 +334,10 @@ mod linux {
         }
         let mut events = adapter.discover_devices().await?;
         let deadline = tokio::time::Instant::now() + DISCOVERY_TIMEOUT;
-        loop {
-            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
-            if remaining.is_zero() {
-                return Ok(None);
-            }
-            match tokio::time::timeout(remaining, events.next()).await {
-                Ok(Some(AdapterEvent::DeviceAdded(addr))) if addr == target => {
-                    return Ok(Some(adapter.device(addr)?));
-                }
-                Ok(Some(_)) => {}
-                Ok(None) | Err(_) => return Ok(None),
-            }
-        }
+        let Some(addr) = wait_for_target(&mut events, target, deadline).await else {
+            return Ok(None);
+        };
+        Ok(Some(adapter.device(addr)?))
     }
 
     /// Totals a run reports at the end.
@@ -388,16 +406,65 @@ mod linux {
         }
     }
 
-    async fn capture(
-        write: bluer::gatt::remote::Characteristic,
-        notify: bluer::gatt::remote::Characteristic,
-        status: Option<&Path>,
-    ) -> bluer::Result<Totals> {
-        // Not Unpin, so it must be pinned before `.next()` can be used in
-        // select!. Building on the Pi is what surfaced this; macOS compiles
-        // only the non-Linux stub.
-        let mut stream = Box::pin(notify.notify().await?);
+    trait CharacteristicWriter {
+        async fn write(&self, bytes: &[u8]) -> bluer::Result<()>;
+    }
 
+    struct BluezWriter(bluer::gatt::remote::Characteristic);
+
+    impl CharacteristicWriter for BluezWriter {
+        async fn write(&self, bytes: &[u8]) -> bluer::Result<()> {
+            self.0.write(bytes).await
+        }
+    }
+
+    type NotificationStream = Pin<Box<dyn futures::Stream<Item = Vec<u8>>>>;
+
+    enum Preparation<W> {
+        NotFound,
+        CharacteristicMissing,
+        Ready(W, NotificationStream),
+    }
+
+    trait CaptureBackend {
+        type Writer: CharacteristicWriter;
+
+        async fn connect(&self, target: Address) -> bluer::Result<Preparation<Self::Writer>>;
+    }
+
+    #[cfg(not(test))]
+    async fn setup_pause() {
+        tokio::time::sleep(Duration::from_millis(400)).await;
+    }
+
+    #[cfg(test)]
+    fn setup_pause() -> std::future::Ready<()> {
+        std::future::ready(())
+    }
+
+    async fn capture_stream<W, S>(
+        write: &W,
+        stream: S,
+        status: Option<&Path>,
+    ) -> bluer::Result<Totals>
+    where
+        W: CharacteristicWriter,
+        S: futures::Stream<Item = Vec<u8>> + Unpin,
+    {
+        capture_stream_with_limits(write, stream, status, KEEPALIVE_INTERVAL, SILENCE_LIMIT).await
+    }
+
+    async fn capture_stream_with_limits<W, S>(
+        write: &W,
+        mut stream: S,
+        status: Option<&Path>,
+        keepalive_interval: Duration,
+        silence_limit: Duration,
+    ) -> bluer::Result<Totals>
+    where
+        W: CharacteristicWriter,
+        S: futures::Stream<Item = Vec<u8>> + Unpin,
+    {
         for c in [
             cmd::HELLO.as_slice(),
             cmd::DEVICE_STATE.as_slice(),
@@ -405,7 +472,7 @@ mod linux {
             cmd::BATTERY.as_slice(),
         ] {
             write.write(c).await?;
-            tokio::time::sleep(Duration::from_millis(400)).await;
+            setup_pause().await;
         }
         eprintln!("emay-spike: start sequence sent — capturing until interrupted");
 
@@ -444,7 +511,7 @@ mod linux {
         publish(&mut snap, &t, Link::Up);
         // Reassembly buffer: records straddle notification boundaries.
         let mut pending: Vec<u8> = Vec::with_capacity(FRAME_LEN * 8);
-        let mut keepalive = tokio::time::interval(KEEPALIVE_INTERVAL);
+        let mut keepalive = tokio::time::interval(keepalive_interval);
         let mut last_frame = tokio::time::Instant::now();
 
         loop {
@@ -469,7 +536,7 @@ mod linux {
                     }
                     // Proof of life even when the device is silent.
                     publish(&mut snap, &t, Link::Up);
-                    if last_frame.elapsed() > SILENCE_LIMIT {
+                    if last_frame.elapsed() > silence_limit {
                         eprintln!(
                             "emay-spike: NO FRAMES for {}s while keepalives were still being \
                              written. The link is dead; this is not a quiet night.",
@@ -495,52 +562,76 @@ mod linux {
         Ok(t)
     }
 
-    pub async fn run(mac: &str, status: Option<PathBuf>) -> bluer::Result<i32> {
+    struct BluezBackend;
+
+    impl CaptureBackend for BluezBackend {
+        type Writer = BluezWriter;
+
+        async fn connect(&self, target: Address) -> bluer::Result<Preparation<Self::Writer>> {
+            let session = bluer::Session::new().await?;
+            let adapter = session.default_adapter().await?;
+            adapter.set_powered(true).await?;
+            eprintln!("emay-spike: adapter {} · target {target}", adapter.name());
+
+            let Some(device) = find(&adapter, target).await? else {
+                eprintln!(
+                    "emay-spike: NOT FOUND — {target} did not appear within {}s. The EMAY powers \
+                     down when not worn and does not advertise at all; put it on a finger.",
+                    DISCOVERY_TIMEOUT.as_secs()
+                );
+                return Ok(Preparation::NotFound);
+            };
+
+            if !device.is_connected().await.unwrap_or(false) {
+                // No pairing, no bonding, no encryption — verified live against
+                // this device on 2026-08-03.
+                device.connect().await?;
+            }
+
+            let mut write = None;
+            let mut notify = None;
+            for service in device.services().await? {
+                if service.uuid().await? != SERVICE {
+                    continue;
+                }
+                for characteristic in service.characteristics().await? {
+                    match characteristic.uuid().await? {
+                        u if u == WRITE_CHAR => write = Some(characteristic),
+                        u if u == NOTIFY_CHAR => notify = Some(characteristic),
+                        _ => {}
+                    }
+                }
+            }
+            let (Some(write), Some(notify)) = (write, notify) else {
+                eprintln!(
+                    "emay-spike: {target} does not expose 0xFF01/0xFF02 under service 0xFF12"
+                );
+                return Ok(Preparation::CharacteristicMissing);
+            };
+            let stream = Box::pin(notify.notify().await?);
+            Ok(Preparation::Ready(BluezWriter(write), stream))
+        }
+    }
+
+    async fn run_with_backend<B>(
+        backend: &B,
+        mac: &str,
+        status: Option<PathBuf>,
+    ) -> bluer::Result<i32>
+    where
+        B: CaptureBackend,
+    {
         let target: Address = mac.parse().map_err(|_| bluer::Error {
             kind: bluer::ErrorKind::InvalidArguments,
             message: format!("{mac:?} is not a Bluetooth address"),
         })?;
-
-        let session = bluer::Session::new().await?;
-        let adapter = session.default_adapter().await?;
-        adapter.set_powered(true).await?;
-        eprintln!("emay-spike: adapter {} · target {target}", adapter.name());
-
-        let Some(device) = find(&adapter, target).await? else {
-            eprintln!(
-                "emay-spike: NOT FOUND — {target} did not appear within {}s. The EMAY powers \
-                 down when not worn and does not advertise at all; put it on a finger.",
-                DISCOVERY_TIMEOUT.as_secs()
-            );
-            return Ok(3);
+        let preparation = backend.connect(target).await?;
+        let (writer, stream) = match preparation {
+            Preparation::NotFound => return Ok(3),
+            Preparation::CharacteristicMissing => return Ok(6),
+            Preparation::Ready(writer, stream) => (writer, stream),
         };
-
-        if !device.is_connected().await.unwrap_or(false) {
-            // No pairing, no bonding, no encryption — verified live against
-            // this device on 2026-08-03.
-            device.connect().await?;
-        }
-
-        let mut write = None;
-        let mut notify = None;
-        for service in device.services().await? {
-            if service.uuid().await? != SERVICE {
-                continue;
-            }
-            for c in service.characteristics().await? {
-                match c.uuid().await? {
-                    u if u == WRITE_CHAR => write = Some(c),
-                    u if u == NOTIFY_CHAR => notify = Some(c),
-                    _ => {}
-                }
-            }
-        }
-        let (Some(write), Some(notify)) = (write, notify) else {
-            eprintln!("emay-spike: {target} does not expose 0xFF01/0xFF02 under service 0xFF12");
-            return Ok(6);
-        };
-
-        let t = capture(write, notify, status.as_deref()).await?;
+        let t = capture_stream(&writer, stream, status.as_deref()).await?;
         eprintln!(
             "emay-spike: {} frames · {} measurements · {} no-finger · {} undecodable",
             t.frames, t.measurements, t.no_finger, t.undecodable
@@ -549,42 +640,485 @@ mod linux {
         // reads an empty file as a clean night.
         Ok(i32::from(t.frames == 0))
     }
-}
 
-#[cfg(target_os = "linux")]
-fn main() {
-    let mac = std::env::var("EMAY_MAC").unwrap_or_else(|_| {
-        std::env::args().nth(1).unwrap_or_else(|| {
-            eprintln!(
-                "usage: EMAY_MAC=<addr> [EMAY_STATUS_JSON=<path>] emay-spike   (or: emay-spike <addr>)"
-            );
-            std::process::exit(64);
-        })
-    });
-
-    let Ok(rt) = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-    else {
-        eprintln!("emay-spike: could not start the runtime");
-        std::process::exit(70);
-    };
-    // Env rather than a flag: this binary takes no argument parser, and systemd
-    // sets Environment= anyway. Unset means "write no status file", which is
-    // exactly the overnight-capture behaviour that already exists.
-    let status = std::env::var("EMAY_STATUS_JSON")
-        .ok()
-        .filter(|v| !v.is_empty())
-        .map(std::path::PathBuf::from);
-    if let Some(p) = status.as_ref() {
-        eprintln!("emay-spike: writing live status to {}", p.display());
+    pub async fn run(mac: &str, status: Option<PathBuf>) -> bluer::Result<i32> {
+        run_with_backend(&BluezBackend, mac, status).await
     }
 
-    match rt.block_on(linux::run(&mac, status)) {
-        Ok(code) => std::process::exit(code),
-        Err(e) => {
-            eprintln!("emay-spike: {e}");
-            std::process::exit(70);
+    #[cfg(test)]
+    #[expect(
+        clippy::expect_used,
+        reason = "Linux capture fixtures must fail loudly when malformed"
+    )]
+    mod tests {
+        use super::*;
+        use crate::{linux_entrypoint, linux_entrypoint_with_runtime, linux_main};
+        use futures::stream;
+        use std::cell::RefCell;
+
+        struct TestWriter {
+            calls: RefCell<Vec<Vec<u8>>>,
+            fail_after: Option<usize>,
+        }
+
+        impl TestWriter {
+            fn ok() -> Self {
+                Self {
+                    calls: RefCell::new(Vec::new()),
+                    fail_after: None,
+                }
+            }
+
+            fn fail_after(writes: usize) -> Self {
+                Self {
+                    calls: RefCell::new(Vec::new()),
+                    fail_after: Some(writes),
+                }
+            }
+        }
+
+        impl CharacteristicWriter for TestWriter {
+            async fn write(&self, bytes: &[u8]) -> bluer::Result<()> {
+                let failed = self
+                    .fail_after
+                    .is_some_and(|limit| self.calls.borrow().len() >= limit);
+                self.calls.borrow_mut().push(bytes.to_vec());
+                if failed {
+                    Err(bluer::Error {
+                        kind: bluer::ErrorKind::Failed,
+                        message: "test writer failure".to_owned(),
+                    })
+                } else {
+                    Ok(())
+                }
+            }
+        }
+
+        struct TestBackend {
+            outcome: u8,
+        }
+
+        impl CaptureBackend for TestBackend {
+            type Writer = TestWriter;
+
+            async fn connect(&self, _target: Address) -> bluer::Result<Preparation<Self::Writer>> {
+                match self.outcome {
+                    3 => Ok(Preparation::NotFound),
+                    6 => Ok(Preparation::CharacteristicMissing),
+                    7 => Err(bluer::Error {
+                        kind: bluer::ErrorKind::Failed,
+                        message: "test backend failure".to_owned(),
+                    }),
+                    8 => Ok(Preparation::Ready(
+                        TestWriter::fail_after(0),
+                        Box::pin(stream::iter([live_frame(false)])),
+                    )),
+                    _ => Ok(Preparation::Ready(
+                        TestWriter::ok(),
+                        Box::pin(stream::iter([live_frame(false)])),
+                    )),
+                }
+            }
+        }
+
+        fn checksum(frame: &[u8]) -> u8 {
+            u8::try_from(frame.iter().fold(0u32, |sum, byte| sum + u32::from(*byte)) & 0x7f)
+                .expect("masked checksum fits u8")
+        }
+
+        fn live_frame(no_finger: bool) -> Vec<u8> {
+            let mut frame = if no_finger {
+                vec![0xeb, 0x01, 0x07, 0x7f, 0x7f, 0x7f, 0x00, 0]
+            } else {
+                vec![0xeb, 0x01, 0x05, 58, 97, 0x7f, 0x00, 0]
+            };
+            let cks = checksum(frame.get(..FRAME_LEN - 1).expect("live payload"));
+            *frame.last_mut().expect("live checksum") = cks;
+            frame
+        }
+
+        fn test_directory(label: &str) -> PathBuf {
+            let path = std::env::temp_dir().join(format!(
+                "anxiety-watch-emay-spike-{label}-{}",
+                std::process::id()
+            ));
+            let _ = std::fs::remove_dir_all(&path);
+            std::fs::create_dir(&path).expect("test directory");
+            path
+        }
+
+        fn snapshot() -> Snapshot {
+            Snapshot {
+                written_at: 1_700_000_000.5,
+                sample_at: Some(1_700_000_000.25),
+                spo2: Some(97),
+                pulse_bpm: Some(58),
+                finger: true,
+                link: Link::Up,
+                frames: 1,
+                measurements: 1,
+                no_finger: 0,
+                undecodable: 0,
+            }
+        }
+
+        #[test]
+        fn notification_drain_reassembles_frames_and_names_garbage() {
+            let mut pending = Vec::new();
+            let mut totals = Totals {
+                frames: 0,
+                measurements: 0,
+                no_finger: 0,
+                undecodable: 0,
+            };
+            let mut snap = snapshot();
+            let published = RefCell::new(Vec::new());
+            let publish = |s: &mut Snapshot, t: &Totals, link: Link| {
+                published.borrow_mut().push((s.frames, t.frames, link));
+            };
+            let frame = live_frame(false);
+            drain_notification(
+                frame.get(..3).expect("partial frame"),
+                &mut pending,
+                &mut totals,
+                &mut snap,
+                &publish,
+            );
+            assert_eq!(totals.frames, 0);
+            drain_notification(
+                frame.get(3..).expect("remaining frame"),
+                &mut pending,
+                &mut totals,
+                &mut snap,
+                &publish,
+            );
+            drain_notification(
+                &live_frame(true),
+                &mut pending,
+                &mut totals,
+                &mut snap,
+                &publish,
+            );
+            assert_eq!(totals.frames, 2);
+            assert_eq!(totals.measurements, 1);
+            assert_eq!(totals.no_finger, 1);
+            assert_eq!(snap.spo2, None);
+            assert!(!snap.finger);
+            assert_eq!(published.borrow().len(), 2);
+
+            drain_notification(
+                &[0xaa; FRAME_LEN * 4 + 1],
+                &mut pending,
+                &mut totals,
+                &mut snap,
+                &publish,
+            );
+            assert_eq!(totals.undecodable, 1);
+            assert!(pending.is_empty());
+        }
+
+        #[test]
+        fn status_writer_is_atomic_and_reports_link_state() {
+            let dir = test_directory("status");
+            let path = dir.join("status.json");
+            let snap = snapshot();
+            write_status(&path, &snap);
+            assert!(path.is_file());
+            assert!(
+                to_json(&Snapshot {
+                    link: Link::Lost,
+                    ..snap
+                })
+                .contains("\"link\":\"lost\"")
+            );
+            write_status(&dir, &snap);
+            emit(None, None);
+            emit(Some(58), Some(97));
+        }
+
+        #[tokio::test(flavor = "current_thread")]
+        async fn capture_stream_uses_fake_transport_for_success_and_loss() {
+            let dir = test_directory("capture");
+            let path = dir.join("status.json");
+            let writer = TestWriter::ok();
+            let totals = capture_stream(&writer, stream::iter([live_frame(false)]), Some(&path))
+                .await
+                .expect("capture");
+            assert_eq!(totals.frames, 1);
+            assert_eq!(totals.measurements, 1);
+            assert_eq!(writer.calls.borrow().len(), 5);
+            assert!(path.is_file());
+
+            let writer = TestWriter::fail_after(4);
+            let totals = tokio::time::timeout(
+                Duration::from_secs(2),
+                capture_stream(&writer, stream::pending::<Vec<u8>>(), None),
+            )
+            .await
+            .expect("keepalive failure must not hang")
+            .expect("capture returns totals after lost link");
+            assert_eq!(totals.frames, 0);
+        }
+
+        #[tokio::test(flavor = "current_thread")]
+        async fn capture_limits_exercise_keepalive_success_and_silence_loss() {
+            let writer = TestWriter::ok();
+            let totals = tokio::time::timeout(
+                Duration::from_secs(2),
+                capture_stream_with_limits(
+                    &writer,
+                    stream::pending::<Vec<u8>>(),
+                    None,
+                    Duration::from_nanos(1),
+                    Duration::from_nanos(1),
+                ),
+            )
+            .await
+            .expect("silence limit must not hang")
+            .expect("silence is a normal lost-link result");
+            assert_eq!(totals.frames, 0);
+            assert!(writer.calls.borrow().len() >= 6);
+        }
+
+        #[tokio::test(flavor = "current_thread")]
+        async fn discovery_wait_accepts_target_and_fails_closed_on_end_or_timeout() {
+            let target: Address = "D9:80:A3XX:XX:XX".parse().expect("target address");
+            let other: Address = "00:11:22XX:XX:XX".parse().expect("other address");
+            let mut events = stream::iter([
+                AdapterEvent::DeviceAdded(other),
+                AdapterEvent::DeviceAdded(target),
+            ]);
+            assert!(
+                wait_for_target(
+                    &mut events,
+                    target,
+                    tokio::time::Instant::now() + Duration::from_secs(1),
+                )
+                .await
+                .is_some()
+            );
+
+            let mut ended = stream::empty::<AdapterEvent>();
+            assert!(
+                wait_for_target(
+                    &mut ended,
+                    target,
+                    tokio::time::Instant::now() + Duration::from_secs(1),
+                )
+                .await
+                .is_none()
+            );
+            let mut pending = stream::pending::<AdapterEvent>();
+            assert!(
+                wait_for_target(&mut pending, target, tokio::time::Instant::now())
+                    .await
+                    .is_none()
+            );
+        }
+
+        #[tokio::test(flavor = "current_thread")]
+        async fn run_rejects_invalid_address_without_touching_bluez() {
+            let error = run("invalid", None).await.expect_err("invalid address");
+            assert!(error.message.contains("not a Bluetooth address"), "{error}");
+
+            let target = "D9:80:A3XX:XX:XX";
+            assert_eq!(
+                run_with_backend(&TestBackend { outcome: 3 }, target, None)
+                    .await
+                    .expect("not found"),
+                3
+            );
+            assert_eq!(
+                run_with_backend(&TestBackend { outcome: 6 }, target, None)
+                    .await
+                    .expect("missing characteristic"),
+                6
+            );
+            assert!(
+                run_with_backend(&TestBackend { outcome: 7 }, target, None)
+                    .await
+                    .is_err()
+            );
+            assert!(
+                run_with_backend(&TestBackend { outcome: 8 }, target, None)
+                    .await
+                    .is_err()
+            );
+            let dir = test_directory("run-ready");
+            let path = dir.join("status.json");
+            assert_eq!(
+                run_with_backend(&TestBackend { outcome: 1 }, target, Some(path.clone()))
+                    .await
+                    .expect("ready capture"),
+                0
+            );
+            assert!(path.is_file());
+            assert!(
+                capture_stream(&TestWriter::fail_after(0), stream::empty::<Vec<u8>>(), None,)
+                    .await
+                    .is_err()
+            );
+        }
+
+        #[test]
+        fn entrypoint_validation_and_runtime_are_testable_without_bluetooth() {
+            assert_eq!(
+                linux_entrypoint_with_runtime(
+                    Some("AA:BB:CC:DD:EE:FF"),
+                    None,
+                    None,
+                    || Err(std::io::Error::other("runtime test failure")),
+                    |_, _, _| Ok(0),
+                ),
+                std::process::ExitCode::from(70)
+            );
+            assert_eq!(
+                linux_entrypoint_with_runtime(
+                    None,
+                    None,
+                    None,
+                    || {
+                        tokio::runtime::Builder::new_current_thread()
+                            .enable_all()
+                            .build()
+                    },
+                    |_, _, _| Ok(0),
+                ),
+                std::process::ExitCode::from(64)
+            );
+            let status = test_directory("entrypoint").join("status.json");
+            assert_eq!(
+                linux_entrypoint_with_runtime(
+                    Some("ignored"),
+                    None,
+                    Some(status),
+                    || {
+                        tokio::runtime::Builder::new_current_thread()
+                            .enable_all()
+                            .build()
+                    },
+                    |_, _, _| Err(bluer::Error {
+                        kind: bluer::ErrorKind::Failed,
+                        message: "test run failure".to_owned(),
+                    }),
+                ),
+                std::process::ExitCode::from(70)
+            );
+            assert_eq!(
+                linux_entrypoint_with_runtime(
+                    Some("ignored"),
+                    None,
+                    None,
+                    || {
+                        tokio::runtime::Builder::new_current_thread()
+                            .enable_all()
+                            .build()
+                    },
+                    |_, _, _| Ok(0),
+                ),
+                std::process::ExitCode::SUCCESS
+            );
+            assert_eq!(
+                linux_entrypoint_with_runtime(
+                    Some("ignored"),
+                    None,
+                    None,
+                    || {
+                        tokio::runtime::Builder::new_current_thread()
+                            .enable_all()
+                            .build()
+                    },
+                    |_, _, _| Ok(256),
+                ),
+                std::process::ExitCode::from(70)
+            );
+            assert_eq!(
+                linux_entrypoint(Some("invalid"), None, None),
+                std::process::ExitCode::from(70)
+            );
+            assert_eq!(
+                linux_main(
+                    vec!["emay-spike".to_owned(), "invalid".to_owned()].into_iter(),
+                    None,
+                    None,
+                ),
+                std::process::ExitCode::from(70)
+            );
+            assert_eq!(
+                linux_main(vec!["emay-spike".to_owned()].into_iter(), None, None,),
+                std::process::ExitCode::from(64)
+            );
         }
     }
 }
+
+#[cfg(target_os = "linux")]
+fn linux_entrypoint_with_runtime<B, R>(
+    environment: Option<&str>,
+    argument: Option<&str>,
+    status: Option<PathBuf>,
+    build_runtime: B,
+    run: R,
+) -> std::process::ExitCode
+where
+    B: FnOnce() -> std::io::Result<tokio::runtime::Runtime>,
+    R: FnOnce(tokio::runtime::Runtime, &str, Option<PathBuf>) -> bluer::Result<i32>,
+{
+    let Some(mac) = environment.or(argument) else {
+        eprintln!(
+            "usage: EMAY_MAC=<addr> [EMAY_STATUS_JSON=<path>] emay-spike   (or: emay-spike <addr>)"
+        );
+        return std::process::ExitCode::from(64);
+    };
+    let Ok(runtime) = build_runtime() else {
+        eprintln!("emay-spike: could not start the runtime");
+        return std::process::ExitCode::from(70);
+    };
+    if let Some(path) = status.as_ref() {
+        eprintln!("emay-spike: writing live status to {}", path.display());
+    }
+    match run(runtime, mac, status) {
+        Ok(code) => u8::try_from(code).map_or(
+            std::process::ExitCode::from(70),
+            std::process::ExitCode::from,
+        ),
+        Err(error) => {
+            eprintln!("emay-spike: {error}");
+            std::process::ExitCode::from(70)
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn linux_entrypoint(
+    environment: Option<&str>,
+    argument: Option<&str>,
+    status: Option<PathBuf>,
+) -> std::process::ExitCode {
+    linux_entrypoint_with_runtime(
+        environment,
+        argument,
+        status,
+        || {
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+        },
+        |runtime, mac, status| runtime.block_on(linux::run(mac, status)),
+    )
+}
+
+#[cfg(target_os = "linux")]
+fn linux_main(
+    mut arguments: impl Iterator<Item = String>,
+    environment: Option<&str>,
+    status: Option<PathBuf>,
+) -> std::process::ExitCode {
+    let _program = arguments.next();
+    let argument = arguments.next();
+    linux_entrypoint(environment, argument.as_deref(), status)
+}
+
+#[cfg(target_os = "linux")]
+#[rustfmt::skip]
+fn main() -> std::process::ExitCode { linux_main(std::env::args(), std::env::var("EMAY_MAC").ok().as_deref(), std::env::var("EMAY_STATUS_JSON").ok().filter(|value| !value.is_empty()).map(PathBuf::from)) }
