@@ -1,6 +1,6 @@
 # Operational log registry
 
-**Updated:** 2026-09-05 16:51 PDT
+**Updated:** 2026-09-05 18:16 PDT
 **Audit scope:** T-S5 local verification and operational evidence for PostgreSQL, the spool/drainer,
 BlueZ/kernel/systemd, the panel/admin readers, CI, deployment, and retention.
 
@@ -29,10 +29,10 @@ browser rendered the value.
 
 | Producer / owner | Evidence required | Current evidence at this audit | Gap / required action | Location / reader |
 |---|---|---|---|---|
-| `vitals-core::Spool` / vitalsd | append result, segment name, byte growth, explicit and periodic fsync result, rotation result | `append` returns `Result`; `sync=true` is represented in the reply; the local implementation now emits stage/error events and exposes whether unsynced bytes existed | Deployed Pi still runs the pre-telemetry artifact; stage counters and journal verification remain a deployment gate | journald via vitalsd; `vitalsd` health; drainer snapshot |
-| `vitalsd` ingest boundary | received → spooled → fsynced ledger; malformed-frame and client disconnect reason; bounded subscriber drops | Local implementation emits `event=vitalsd.*` records with client/request ids, stage/result, and named details; it reads `.drain-health.json` and logs blocker transitions | Deployed Pi still emits the old unstructured lines and has no health snapshot; subscriber `published` is still not UI `displayed` | journald; Unix-socket `Health` response |
+| `vitals-core::Spool` / vitalsd | append result, segment name, byte growth, explicit and periodic fsync result, rotation result | `append` returns `Result`; `sync=true` is represented in the reply; the deployed `fe529c0` artifact emits stage/error events and exposes whether unsynced bytes existed | Post-install health reset to zero observed samples and named `source 0 has never produced a sample`; fresh physiological ingest remains unproven | journald via vitalsd; `vitalsd` health; drainer snapshot |
+| `vitalsd` ingest boundary | received → spooled → fsynced ledger; malformed-frame and client disconnect reason; bounded subscriber drops | Deployed `fe529c0` emits `event=vitalsd.*` records, reads `.drain-health.json`, and reported a named unavailable-then-healthy drain transition after restart | Current health reports zero new samples and `published=0`; subscriber `published` is still not UI `displayed` | journald; Unix-socket `Health` response |
 | `vitals-proto` | machine-readable error class and enough context for caller logging | `ErrorKind` and error detail exist; malformed CBOR/frame errors are returned | Pure wire crate must not log; every caller must log the returned class, peer id, and frame/request context | caller journal; wire `Health`/`Error` response |
-| `vitals-spool-drain` | startup/lock/schema validation, pending bytes/age, per-segment drained/committed result, inserted/duplicate/rejected counters, last successful commit, last named error | Local implementation publishes an atomically replaced `.drain-health.json`, reports active-segment pending bytes, and emits `event=drainer.*` records; tests cover JSON publication and active-segment inspection | Deployed Pi still runs the hourly pre-telemetry artifact and has no `.drain-health.json`; exact artifact deployment and crash/outage checks remain open | `/var/lib/vitals/spool/.drain-health.json`; journald; vitalsd health reader |
+| `vitals-spool-drain` | startup/lock/schema validation, pending bytes/age, per-segment drained/committed result, inserted/duplicate/rejected counters, last successful commit, last named error | Deployed `fe529c0` publishes an atomically replaced `.drain-health.json`, reports the locked active segment, and emits `event=drainer.*`; the snapshot currently says `available=true`, `pending_segments=0`, `pending_bytes=0`, all row counters zero, and `last_success_unix_secs=null` | No fresh physiological append has reached this post-install daemon; the null last-success field and zero ingest health remain evidence to reconcile, not success | `/var/lib/vitals/spool/.drain-health.json`; journald; vitalsd health reader |
 | `spool_status` / PostgreSQL owner | transactional segment offset and fingerprint; commit evidence must agree with local offset | `spool_status` has `segment`, `offset_bytes`, `drained`, `fingerprint`, `last_advanced`; unique primary key is present | No explicit database-side stage/audit event for a failed transaction; drainer must expose commit counters and named DB errors without advancing status | PostgreSQL `spool_status`; drainer snapshot |
 | active segment | pending rows must be visible even while the writer holds its lock | the drainer skips a locked active segment during normal processing | Pending calculation must include the active segment without opening it; an old/locked segment must not be reported as empty | drainer snapshot; vitalsd health |
 | schema/fingerprint guard | migration mismatch must name expected/actual fingerprint and first changed field | `SchemaFingerprint`, live layout query, and named mismatch errors exist | Ensure every mismatch is emitted to journal and health; no silent retry that looks healthy | drainer journal and snapshot; sqitch operator output |
@@ -54,9 +54,10 @@ client is not, by itself, evidence that the spool checkpoint and the row commit 
 | pgBackRest backup | stanza check, backup type/time, repository and encryption configuration, result | pgBackRest repository and journal | restore verifier/operator; a backup not restored is only a hypothesis |
 | restore verification | JSON with `ok`, timestamp, tables checked, mismatches, restore duration | `/var/lib/vitals/restore-verify.json` | vitalsd health, panel, admin, operator; missing, stale, malformed, or false is `UNKNOWN` |
 
-The Pi is not claimed healthy from this checkout: the last audit found pre-T-S2/T-S3 artifacts on
-`pi-host`, and exact deployment evidence remains open until the atomic installation and database
-queries have exit code 0.
+The Pi is not claimed healthy from this checkout: the `fe529c0` core artifact is now installed and
+hash-matched, but the post-install daemon has zero fresh samples, H10 continuity is timing out,
+EMAY is in an exit-70 restart loop, and G1 has no `hci1`. The database query is evidence of retained
+history, not proof of fresh ingest or display.
 
 ## BlueZ, kernel, and systemd evidence
 
@@ -66,11 +67,11 @@ log is not a successful overnight capture.
 
 | Producer / event | Required evidence | Location | Readers and failure rule |
 |---|---|---|---|
-| controller/kernel | controller count, stable adapter identity (`hci1` Sena when provisioned), `UP RUNNING`, USB binding | `hciconfig -a`, `/sys/class/bluetooth`, `dmesg` | Pi acceptance and operator; never apply `dtoverlay=disable-bt` before G1 is green |
-| BlueZ discovery/pairing | target address/name, bond/IRK state, discovery result and bounded timeout | BlueZ journal; `btmgmt`; `bluetoothctl` evidence | collector and operator; privacy devices are identified by bond/IRK, not a static address claim |
+| controller/kernel | controller count, stable adapter identity (`hci1` Sena when provisioned), `UP RUNNING`, USB binding | `btmgmt info` and `/sys/class/bluetooth` on 2026-09-05 report only powered `hci0` (`00:01:95XX:XX:XX`); the required `hci1` was absent | G1 is not green; Pi acceptance and operator must not apply `dtoverlay=disable-bt` |
+| BlueZ discovery/pairing | target address/name, bond/IRK state, discovery result and bounded timeout | H10 `24:AC:ACXX:XX:XX` is paired/bonded/trusted but disconnected; configured EMAY `D9:80:A3XX:XX:XX` was not available; H10 journal recorded a bounded connect timeout and EMAY exited 70 with the missing-object error | H10/EMAY continuity is `UNKNOWN`/failed; collector and operator must use bond/IRK evidence, not a static address claim |
 | H10 GATT | connection, `ServicesResolved`, `0x180D`/`0x2A37` subscription, decoded/undecodable counts | `hr-spike` stderr/stdout and systemd journal | T-B1 histogram and operator; unresolved services are an explicit exit state |
 | EMAY live/stored path | live `EB` status-only identity, stored `EC`/`ED` cursor identity, transfer result, return-to-live state | collector status JSON and journal | panel/admin; anonymous live values never become durable numeric rows |
-| systemd lifecycle | active state, restart count, exit status, OOM score/resource limits, dependency result | `systemctl show`, `systemctl status`, journal | operator/admin; `active` without fresh stage evidence is not healthy |
+| systemd lifecycle | active state, restart count, exit status, OOM score/resource limits, dependency result | After atomic install, `vitalsd` and `vitals-spool-drain` are active; `vitals-emay` is `activating (auto-restart)` with exit 70; `vitals-h10` is active but timing out; panel services remain active | operator/admin; `active` without fresh stage evidence is not healthy, and the EMAY restart loop is a named blocker |
 | continuity checker | fixed window, H10/EMAY sample ages, gaps, link state, and exact blocker | checker JSON/journal | panel/admin and operator; absent input holds `UNKNOWN` and does not reassure |
 
 These are Pi-only facts. A macOS unit test may cover argument, state, and capture decision logic,
@@ -111,15 +112,17 @@ cargo llvm-cov --workspace --all-features \
 The coverage command must report at least 90% lines for every major Rust source target, including
 binaries, and at least 95% for the workspace aggregate. No binary or source may be excluded and no
 coverage exclusion may hide code merely to pass. The exact output, toolchain, commit, and exit code
-belong in the Pacific-time status update. Additional gates are `cargo audit --deny warnings`,
+belong in the Pacific-time status update. On 2026-09-05 the portable/macOS report was green, while
+the required Linux-target command was red because the EMAY executable wiring is not yet covered;
+that is an open gate, not an inferred pass. Additional gates are `cargo audit --deny warnings`,
 `cargo deny check advisories bans licenses sources`, decoder fuzz smoke runs, mutation tests, and
 panel/admin tests. A skipped test or missing target is a failed gate, not a green result.
 
 ## Deployment evidence
 
 Deployment uses a clean artifact/worktree, never the dirty checkout. `scripts/sync-to-pi.sh` uses
-`rsync --delete`, so it is prohibited from this dirty working tree because unrelated artifacts could
-be deleted or copied. The safe record contains:
+`rsync --delete`; this run used a detached clean worktree at `fe529c0`, and the dirty root was not
+transferred. The safe record contains:
 
 1. source commit and exact build commands;
 2. SHA-256 for every binary, service unit, script, generated registry artifact, and page bundle;
