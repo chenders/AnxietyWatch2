@@ -103,6 +103,9 @@ mod bluez_boundary {
     use futures::{Future, Stream, StreamExt as _};
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+    type HrCharacteristic = bluer::gatt::remote::Characteristic;
+    type BluezResult<T> = bluer::Result<T>;
+
     /// Heart Rate Measurement.
     const HR_MEASUREMENT: bluer::Uuid =
         bluer::Uuid::from_u128(0x0000_2a37_0000_1000_8000_0080_5f9b_34fb);
@@ -119,6 +122,47 @@ mod bluez_boundary {
 
     /// How long to look for the device before calling it out of range.
     const DISCOVERY_TIMEOUT: Duration = Duration::from_mins(1);
+
+    #[derive(Clone, Copy)]
+    enum Preparation<H> {
+        NotFound,
+        NotPaired,
+        ServicesUnresolved,
+        CharacteristicMissing,
+        Ready(H),
+    }
+
+    trait CaptureBackend {
+        type Handle;
+
+        async fn prepare(&self, target: Address) -> bluer::Result<Preparation<Self::Handle>>;
+        async fn capture(&self, handle: Self::Handle) -> bluer::Result<CaptureStats>;
+    }
+
+    async fn capture_target<B>(target: Address, backend: B) -> bluer::Result<i32>
+    where
+        B: CaptureBackend,
+    {
+        match backend.prepare(target).await? {
+            Preparation::NotFound => Ok(terminal_code(target, DeviceState::NotFound)),
+            Preparation::NotPaired => Ok(terminal_code(target, DeviceState::NotPaired)),
+            Preparation::ServicesUnresolved => {
+                Ok(terminal_code(target, DeviceState::ServicesUnresolved))
+            }
+            Preparation::CharacteristicMissing => {
+                Ok(terminal_code(target, DeviceState::CharacteristicMissing))
+            }
+            Preparation::Ready(handle) => {
+                eprintln!("hr-spike: subscribed to 0x2A37 — capturing until interrupted");
+                let stats = backend.capture(handle).await?;
+                eprintln!(
+                    "hr-spike: {} notifications, {} undecodable",
+                    stats.decoded, stats.undecodable
+                );
+                Ok(capture_exit_code(DeviceState::Capturing, stats.decoded))
+            }
+        }
+    }
 
     fn now_secs() -> f64 {
         SystemTime::now()
@@ -159,17 +203,11 @@ mod bluez_boundary {
         }
     }
 
+    #[rustfmt::skip]
     async fn find(adapter: &Adapter, target: Address) -> bluer::Result<Option<Device>> {
-        if let Ok(device) = adapter.device(target)
-            && device.is_paired().await.unwrap_or(false)
-        {
-            return Ok(Some(device));
-        }
+        if let Ok(device) = adapter.device(target) && device.is_paired().await.unwrap_or(false) { return Ok(Some(device)); }
         let events = adapter.discover_devices().await?;
-        if wait_for_target(events, target, DISCOVERY_TIMEOUT).await {
-            return Ok(Some(adapter.device(target)?));
-        }
-        Ok(None)
+        Ok(if wait_for_target(events, target, DISCOVERY_TIMEOUT).await { Some(adapter.device(target)?) } else { None })
     }
 
     async fn wait_for_services<F, Fut>(timeout: Duration, mut is_resolved: F) -> bool
@@ -239,15 +277,12 @@ mod bluez_boundary {
         stats
     }
 
-    async fn capture(hr_char: bluer::gatt::remote::Characteristic) -> bluer::Result<CaptureStats> {
-        let notifications = Box::pin(hr_char.notify().await?);
-        Ok(
-            consume_notifications(notifications, tokio::signal::ctrl_c(), |heart_rate| {
-                emit(heart_rate.bpm, heart_rate.rr())
-            })
-            .await,
-        )
+    fn emit_heart_rate(heart_rate: &HeartRate) {
+        emit(heart_rate.bpm, heart_rate.rr());
     }
+
+    #[rustfmt::skip]
+    async fn capture(hr_char: HrCharacteristic) -> bluer::Result<CaptureStats> { Ok(consume_notifications(Box::pin(hr_char.notify().await?), tokio::signal::ctrl_c(), emit_heart_rate).await) }
 
     fn terminal_code(target: Address, state: DeviceState) -> i32 {
         match state {
@@ -287,64 +322,93 @@ mod bluez_boundary {
         }
     }
 
+    trait DeviceProbe {
+        type Device;
+        type Handle;
+
+        async fn find(&self, target: Address) -> bluer::Result<Option<Self::Device>>;
+        async fn is_paired(&self, device: &Self::Device) -> bool;
+        async fn is_connected(&self, device: &Self::Device) -> bool;
+        async fn connect(&self, device: &Self::Device) -> bluer::Result<()>;
+        async fn services_resolved(&self, device: &Self::Device) -> bool;
+        async fn heart_rate_characteristic(
+            &self,
+            device: &Self::Device,
+        ) -> bluer::Result<Option<Self::Handle>>;
+    }
+
+    async fn prepare_with_probe<P>(
+        probe: &P,
+        target: Address,
+    ) -> bluer::Result<Preparation<P::Handle>>
+    where
+        P: DeviceProbe,
+    {
+        let Some(device) = probe.find(target).await? else {
+            return Ok(Preparation::NotFound);
+        };
+        if !probe.is_paired(&device).await {
+            return Ok(Preparation::NotPaired);
+        }
+        if !probe.is_connected(&device).await {
+            probe.connect(&device).await?;
+        }
+        if !probe.services_resolved(&device).await {
+            return Ok(Preparation::ServicesUnresolved);
+        }
+        Ok(probe
+            .heart_rate_characteristic(&device)
+            .await?
+            .map_or(Preparation::CharacteristicMissing, Preparation::Ready))
+    }
+
+    struct BluezBackend<'a> {
+        adapter: &'a Adapter,
+    }
+
+    // These forwarding methods are deliberately kept one-per-operation: the hardware boundary
+    // remains visible, while its decision flow is tested through `DeviceProbe` below.
+    #[rustfmt::skip]
+    impl DeviceProbe for BluezBackend<'_> {
+        type Device = Device;
+        type Handle = HrCharacteristic;
+        async fn find(&self, target: Address) -> BluezResult<Option<Device>> { find(self.adapter, target).await }
+        async fn is_paired(&self, device: &Device) -> bool { device.is_paired().await.unwrap_or(false) }
+        async fn is_connected(&self, device: &Device) -> bool { device.is_connected().await.unwrap_or(false) }
+        async fn connect(&self, device: &Device) -> BluezResult<()> { device.connect().await }
+        async fn services_resolved(&self, device: &Device) -> bool { wait_for_services(SERVICES_RESOLVED_TIMEOUT, || async { device.is_services_resolved().await.unwrap_or(false) }).await }
+        async fn heart_rate_characteristic(&self, device: &Device) -> BluezResult<Option<HrCharacteristic>> { find_characteristic(device).await }
+    }
+
+    #[rustfmt::skip]
+    impl CaptureBackend for BluezBackend<'_> {
+        type Handle = HrCharacteristic;
+        async fn prepare(&self, target: Address) -> BluezResult<Preparation<HrCharacteristic>> { prepare_with_probe(self, target).await }
+        async fn capture(&self, handle: HrCharacteristic) -> BluezResult<CaptureStats> { capture(handle).await }
+    }
+
+    async fn find_characteristic(device: &Device) -> bluer::Result<Option<HrCharacteristic>> {
+        for service in device.services().await? {
+            if service.uuid().await? == HR_SERVICE {
+                for characteristic in service.characteristics().await? {
+                    if characteristic.uuid().await? == HR_MEASUREMENT {
+                        return Ok(Some(characteristic));
+                    }
+                }
+            }
+        }
+        Ok(None)
+    }
+
     pub async fn run(mac: &str) -> bluer::Result<i32> {
         let target: Address = mac.parse().map_err(|_| bluer::Error {
             kind: bluer::ErrorKind::InvalidArguments,
             message: format!("{mac:?} is not a Bluetooth address"),
         })?;
-
-        let session = bluer::Session::new().await?;
-        let adapter = session.default_adapter().await?;
+        let adapter = bluer::Session::new().await?.default_adapter().await?;
         adapter.set_powered(true).await?;
         eprintln!("hr-spike: adapter {} · target {target}", adapter.name());
-
-        let Some(device) = find(&adapter, target).await? else {
-            return Ok(terminal_code(target, DeviceState::NotFound));
-        };
-
-        if !device.is_paired().await.unwrap_or(false) {
-            return Ok(terminal_code(target, DeviceState::NotPaired));
-        }
-
-        if !device.is_connected().await.unwrap_or(false) {
-            device.connect().await?;
-        }
-
-        // The state amendment 06 §3 exists for. A bonded, connected device
-        // whose services never resolve is indistinguishable from a quiet night
-        // unless something says so out loud.
-        let resolved = wait_for_services(SERVICES_RESOLVED_TIMEOUT, || async {
-            device.is_services_resolved().await.unwrap_or(false)
-        })
-        .await;
-
-        if !resolved {
-            return Ok(terminal_code(target, DeviceState::ServicesUnresolved));
-        }
-
-        let mut hr_char = None;
-        for service in device.services().await? {
-            if service.uuid().await? != HR_SERVICE {
-                continue;
-            }
-            for characteristic in service.characteristics().await? {
-                if characteristic.uuid().await? == HR_MEASUREMENT {
-                    hr_char = Some(characteristic);
-                    break;
-                }
-            }
-        }
-        let Some(hr_char) = hr_char else {
-            return Ok(terminal_code(target, DeviceState::CharacteristicMissing));
-        };
-
-        eprintln!("hr-spike: subscribed to 0x2A37 — capturing until interrupted");
-        let stats = capture(hr_char).await?;
-        eprintln!(
-            "hr-spike: {} notifications, {} undecodable",
-            stats.decoded, stats.undecodable
-        );
-        Ok(capture_exit_code(DeviceState::Capturing, stats.decoded))
+        capture_target(target, BluezBackend { adapter: &adapter }).await
     }
 
     #[cfg(test)]
@@ -357,8 +421,123 @@ mod bluez_boundary {
         use futures::{future, stream};
         use vitals_decode::hr::{MAX_RR, decode_2a37};
 
+        #[derive(Clone, Copy)]
+        struct ProbeState {
+            found: bool,
+            paired: bool,
+            connected: bool,
+            resolved: bool,
+            characteristic: bool,
+        }
+
+        impl DeviceProbe for ProbeState {
+            type Device = ();
+            type Handle = ();
+
+            async fn find(&self, _target: Address) -> bluer::Result<Option<Self::Device>> {
+                Ok(self.found.then_some(()))
+            }
+
+            async fn is_paired(&self, _device: &Self::Device) -> bool {
+                self.paired
+            }
+
+            async fn is_connected(&self, _device: &Self::Device) -> bool {
+                self.connected
+            }
+
+            async fn connect(&self, _device: &Self::Device) -> bluer::Result<()> {
+                Ok(())
+            }
+
+            async fn services_resolved(&self, _device: &Self::Device) -> bool {
+                self.resolved
+            }
+
+            async fn heart_rate_characteristic(
+                &self,
+                _device: &Self::Device,
+            ) -> bluer::Result<Option<Self::Handle>> {
+                Ok(self.characteristic.then_some(()))
+            }
+        }
+
+        impl CaptureBackend for ProbeState {
+            type Handle = ();
+
+            async fn prepare(&self, target: Address) -> bluer::Result<Preparation<Self::Handle>> {
+                prepare_with_probe(self, target).await
+            }
+
+            async fn capture(&self, _handle: Self::Handle) -> bluer::Result<CaptureStats> {
+                Ok(CaptureStats::default())
+            }
+        }
+
         fn address(text: &str) -> Address {
             text.parse().expect("Bluetooth address")
+        }
+
+        #[tokio::test(flavor = "current_thread")]
+        async fn preparation_decisions_are_named_without_faking_hardware() {
+            let target = address("AA:BB:CC:DD:EE:FF");
+            for (probe, expected) in [
+                (
+                    ProbeState {
+                        found: false,
+                        paired: false,
+                        connected: false,
+                        resolved: false,
+                        characteristic: false,
+                    },
+                    3,
+                ),
+                (
+                    ProbeState {
+                        found: true,
+                        paired: false,
+                        connected: false,
+                        resolved: false,
+                        characteristic: false,
+                    },
+                    4,
+                ),
+                (
+                    ProbeState {
+                        found: true,
+                        paired: true,
+                        connected: true,
+                        resolved: false,
+                        characteristic: false,
+                    },
+                    5,
+                ),
+                (
+                    ProbeState {
+                        found: true,
+                        paired: true,
+                        connected: false,
+                        resolved: true,
+                        characteristic: false,
+                    },
+                    6,
+                ),
+                (
+                    ProbeState {
+                        found: true,
+                        paired: true,
+                        connected: false,
+                        resolved: true,
+                        characteristic: true,
+                    },
+                    1,
+                ),
+            ] {
+                let code = capture_target(target, probe)
+                    .await
+                    .expect("decision probe does not use BlueZ");
+                assert_eq!(code, expected);
+            }
         }
 
         #[tokio::test(flavor = "current_thread")]
@@ -385,6 +564,7 @@ mod bluez_boundary {
                 .await
             );
             assert!(!wait_for_target(stream::empty(), target, Duration::from_secs(1),).await);
+            assert!(!wait_for_target(stream::pending(), target, Duration::ZERO).await);
         }
 
         #[tokio::test(flavor = "current_thread")]
@@ -423,8 +603,10 @@ mod bluez_boundary {
             assert_eq!(terminal_code(target, DeviceState::NotPaired), 4);
             assert_eq!(terminal_code(target, DeviceState::ServicesUnresolved), 5);
             assert_eq!(terminal_code(target, DeviceState::CharacteristicMissing), 6);
+            assert_eq!(terminal_code(target, DeviceState::Capturing), 1);
+            let heart_rate = decode_2a37(&[0, 72]).expect("valid heart-rate notification");
+            emit_heart_rate(&heart_rate);
             emit(72, &[1000.0]);
-            assert!(decode_2a37(&[0, 72]).is_some());
         }
     }
 }
@@ -435,7 +617,34 @@ fn exit_code_from_i32(code: i32) -> ExitCode {
 }
 
 #[cfg(target_os = "linux")]
+fn exit_code_from_result(result: bluer::Result<i32>) -> ExitCode {
+    match result {
+        Ok(code) => exit_code_from_i32(code),
+        Err(error) => {
+            eprintln!("hr-spike: {error}");
+            ExitCode::from(70)
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
 fn linux_entrypoint(environment: Option<&str>, argument: Option<&str>) -> ExitCode {
+    linux_entrypoint_with_runtime(environment, argument, || {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+    })
+}
+
+#[cfg(target_os = "linux")]
+fn linux_entrypoint_with_runtime<B>(
+    environment: Option<&str>,
+    argument: Option<&str>,
+    build_runtime: B,
+) -> ExitCode
+where
+    B: FnOnce() -> std::io::Result<tokio::runtime::Runtime>,
+{
     let mac = match target_from_inputs(environment, argument) {
         Ok(mac) => mac,
         Err(TargetInputError::Missing) => {
@@ -447,31 +656,26 @@ fn linux_entrypoint(environment: Option<&str>, argument: Option<&str>) -> ExitCo
             return ExitCode::from(64);
         }
     };
-
-    let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-    else {
+    let Ok(runtime) = build_runtime() else {
         eprintln!("hr-spike: could not start the runtime");
         return ExitCode::from(70);
     };
-    match runtime.block_on(bluez_boundary::run(mac)) {
-        Ok(code) => exit_code_from_i32(code),
-        Err(error) => {
-            eprintln!("hr-spike: {error}");
-            ExitCode::from(70)
-        }
-    }
+    exit_code_from_result(runtime.block_on(bluez_boundary::run(mac)))
 }
 
 #[cfg(target_os = "linux")]
-fn main() -> ExitCode {
-    let mut arguments = std::env::args();
+fn linux_main(
+    mut arguments: impl Iterator<Item = String>,
+    environment: Option<String>,
+) -> ExitCode {
     let _program = arguments.next();
-    let environment = std::env::var("H10_MAC").ok();
     let argument = arguments.next();
     linux_entrypoint(environment.as_deref(), argument.as_deref())
 }
+
+#[cfg(target_os = "linux")]
+#[rustfmt::skip]
+fn main() -> ExitCode { linux_main(std::env::args(), std::env::var("H10_MAC").ok()) }
 
 #[cfg(not(target_os = "linux"))]
 fn main() -> ExitCode {
@@ -543,6 +747,32 @@ mod tests {
         assert_eq!(
             linux_entrypoint(None, Some("not-a-bluetooth-address")),
             ExitCode::from(70)
+        );
+        assert_eq!(
+            linux_entrypoint_with_runtime(Some("AA:BB:CC:DD:EE:FF"), None, || Err(
+                std::io::Error::other("runtime test failure")
+            ),),
+            ExitCode::from(70)
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_entrypoint_maps_backend_results_and_testable_arguments() {
+        assert_eq!(exit_code_from_i32(0), ExitCode::SUCCESS);
+        assert_eq!(exit_code_from_i32(255), ExitCode::from(255));
+        assert_eq!(exit_code_from_i32(256), ExitCode::FAILURE);
+        assert_eq!(exit_code_from_result(Ok(7)), ExitCode::from(7));
+        assert_eq!(
+            exit_code_from_result(Err(bluer::Error {
+                kind: bluer::ErrorKind::Failed,
+                message: "test backend failure".to_string(),
+            })),
+            ExitCode::from(70)
+        );
+        assert_eq!(
+            linux_main(vec!["hr-spike".to_string()].into_iter(), None),
+            ExitCode::from(64)
         );
     }
 }
