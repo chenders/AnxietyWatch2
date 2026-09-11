@@ -53,9 +53,15 @@ const WRITE_QUEUE_CAPACITY: usize = 1;
 #[derive(Debug)]
 pub enum BluezError {
     /// A `BlueZ` or D-Bus operation returned an error.
-    Operation { operation: &'static str },
+    Operation {
+        /// The operation that failed.
+        operation: &'static str,
+    },
     /// A `BlueZ` operation did not complete before its deadline.
-    Deadline { operation: &'static str },
+    Deadline {
+        /// The operation that exceeded its deadline.
+        operation: &'static str,
+    },
     /// The configured target is not bonded, so the collector will not pair it.
     NotBonded,
     /// The configured adapter name was invalid or unavailable.
@@ -65,25 +71,43 @@ pub enum BluezError {
     /// The required service was not resolved.
     ServiceMissing,
     /// A required characteristic was not resolved.
-    CharacteristicMissing { name: &'static str },
+    CharacteristicMissing {
+        /// The missing characteristic name.
+        name: &'static str,
+    },
     /// Two matching objects were resolved, which is ambiguous and unsafe.
-    DuplicateCharacteristic { name: &'static str },
+    DuplicateCharacteristic {
+        /// The ambiguous characteristic name.
+        name: &'static str,
+    },
     /// The TX characteristic does not support a write operation.
     TxNotWritable,
     /// The RX characteristic has no notification or indication capability.
     RxNotNotifiable,
     /// The negotiated MTU cannot carry an ATT value.
-    MtuInvalid { mtu: usize },
+    MtuInvalid {
+        /// The invalid negotiated MTU.
+        mtu: usize,
+    },
     /// The notification stream ended before the pending operation completed.
     NotificationEnded,
     /// A bounded FIG notification could not be retained or decoded.
-    FigProtocol { reason: &'static str },
-    /// A decrypted response was not a valid bounded StreamData object.
+    FigProtocol {
+        /// The protocol invariant that failed.
+        reason: &'static str,
+    },
+    /// A decrypted response was not a valid bounded `StreamData` object.
     StreamDataInvalid,
     /// The device returned a JSON-RPC error; only its code is retained.
-    DeviceRpc { code: i64 },
+    DeviceRpc {
+        /// The device error code.
+        code: i64,
+    },
     /// The device response omitted a required authentication field.
-    RpcResultInvalid { field: &'static str },
+    RpcResultInvalid {
+        /// The missing result field.
+        field: &'static str,
+    },
     /// The typed request failed the final read-only gate.
     RpcRejected(RpcError),
     /// The final transport queue or GATT write failed.
@@ -142,9 +166,17 @@ pub enum TransportError {
     /// The crypto mutex was poisoned after a task failure.
     CryptoStatePoisoned,
     /// A request attempted to use an unsupported FIG lane.
-    InvalidVcid { vcid: u16 },
+    InvalidVcid {
+        /// The rejected virtual circuit id.
+        vcid: u16,
+    },
     /// The FIG payload exceeded its fixed protocol capacity.
-    FigPayloadTooLarge { len: usize, max: usize },
+    FigPayloadTooLarge {
+        /// Observed payload length.
+        len: usize,
+        /// Maximum accepted payload length.
+        max: usize,
+    },
     /// Another request is still waiting for its GATT write acknowledgement.
     WritePending,
     /// The bounded writer queue is full.
@@ -160,7 +192,10 @@ pub enum TransportError {
     /// The characteristic write exceeded its deadline.
     GattWriteDeadline,
     /// The MTU leaves no room for an ATT value.
-    MtuTooSmall { mtu: usize },
+    MtuTooSmall {
+        /// The rejected MTU.
+        mtu: usize,
+    },
     /// The random-IV envelope could not be produced.
     Envelope(EnvelopeError),
 }
@@ -190,7 +225,7 @@ impl std::error::Error for TransportError {}
 
 struct WriteItem {
     packet: Vec<u8>,
-    acknowledgement: oneshot::Sender<Result<(), TransportError>>,
+    acknowledgement: Option<oneshot::Sender<Result<(), TransportError>>>,
 }
 
 impl Drop for WriteItem {
@@ -286,7 +321,7 @@ impl RpcTransport for BluezRpcTransport {
         let acknowledgement = self.waiter.reserve()?;
         let item = WriteItem {
             packet,
-            acknowledgement,
+            acknowledgement: Some(acknowledgement),
         };
         match self.queue.try_send(item) {
             Ok(()) => Ok(()),
@@ -411,28 +446,39 @@ impl Air11BleTransport {
         ensure_success(&response)
     }
 
+    /// Waits for one encrypted `StreamData`-lane envelope without decoding it.
+    ///
+    /// The caller must journal the returned bounded plaintext before passing it
+    /// to [`decode_stream`]. Authentication and application responses are
+    /// consumed by [`Self::authenticate`] and [`Self::start_stream`], so this
+    /// method is only valid after the fixed stream has been started.
+    ///
+    /// # Errors
+    /// Returns a bounded FIG, envelope, or notification error.
+    pub async fn next_stream_envelope(&mut self) -> Result<Vec<u8>, BluezError> {
+        let (vcid, payload) = self.next_fig().await?;
+        if vcid != ENCRYPTED_RESPONSE_VCID {
+            return Err(BluezError::FigProtocol {
+                reason: "stream_vcid",
+            });
+        }
+        self.decrypt(&payload)
+    }
+
     /// Waits for and decodes one encrypted `StreamData` notification.
     ///
     /// # Errors
-    /// Returns a bounded FIG, envelope, notification, or StreamData error.
+    /// Returns a bounded FIG, envelope, notification, or `StreamData` error.
     pub async fn next_stream_frame(&mut self) -> Result<StreamFrame, BluezError> {
-        loop {
-            let (vcid, payload) = self.next_fig().await?;
-            if vcid != ENCRYPTED_RESPONSE_VCID {
-                return Err(BluezError::FigProtocol {
-                    reason: "stream_vcid",
-                });
-            }
-            let plaintext = self.decrypt(&payload)?;
-            if let Some(frame) = decode_stream(&plaintext) {
-                return Ok(frame);
-            }
-            return Err(BluezError::StreamDataInvalid);
-        }
+        let plaintext = self.next_stream_envelope().await?;
+        decode_stream(&plaintext).ok_or(BluezError::StreamDataInvalid)
     }
 
     /// Disconnects the BLE link without sending a device `StopStream` RPC.
     /// Dropping the notification subscription is the stream termination path.
+    ///
+    /// # Errors
+    /// Returns a bounded `BlueZ` disconnect failure.
     pub async fn disconnect(&mut self) -> Result<(), BluezError> {
         self.writer_task.abort();
         with_deadline("ble_disconnect", self.device.disconnect()).await
@@ -463,7 +509,7 @@ impl Air11BleTransport {
             };
             match crate::as11_rpc::correlate_response(request, vcid, &plaintext) {
                 Ok(response) => return Ok(response),
-                Err(RpcResponseError::Notification) => continue,
+                Err(RpcResponseError::Notification) => {}
                 Err(error) => return Err(BluezError::Response(error)),
             }
         }
@@ -487,30 +533,28 @@ impl Air11BleTransport {
                     reason: "reassembly_buffer_full",
                 });
             }
-            loop {
-                match self.fig.take() {
-                    FigTake::NeedMore => break,
-                    FigTake::Packet(packet) => return Ok((packet.vcid, packet.payload.to_vec())),
-                    FigTake::HeaderCrcMismatch => {
-                        return Err(BluezError::FigProtocol {
-                            reason: "header_crc",
-                        });
-                    }
-                    FigTake::PayloadTooLarge => {
-                        return Err(BluezError::FigProtocol {
-                            reason: "payload_too_large",
-                        });
-                    }
-                    FigTake::PayloadCrcMismatch => {
-                        return Err(BluezError::FigProtocol {
-                            reason: "payload_crc",
-                        });
-                    }
-                    FigTake::BufferFull => {
-                        return Err(BluezError::FigProtocol {
-                            reason: "reassembly_buffer_full",
-                        });
-                    }
+            match self.fig.take() {
+                FigTake::NeedMore => {}
+                FigTake::Packet(packet) => return Ok((packet.vcid, packet.payload.to_vec())),
+                FigTake::HeaderCrcMismatch => {
+                    return Err(BluezError::FigProtocol {
+                        reason: "header_crc",
+                    });
+                }
+                FigTake::PayloadTooLarge => {
+                    return Err(BluezError::FigProtocol {
+                        reason: "payload_too_large",
+                    });
+                }
+                FigTake::PayloadCrcMismatch => {
+                    return Err(BluezError::FigProtocol {
+                        reason: "payload_crc",
+                    });
+                }
+                FigTake::BufferFull => {
+                    return Err(BluezError::FigProtocol {
+                        reason: "reassembly_buffer_full",
+                    });
                 }
             }
         }
@@ -607,10 +651,12 @@ async fn write_loop(
     mtu: usize,
     write_op: WriteOp,
 ) {
-    while let Some(item) = writes.recv().await {
+    while let Some(mut item) = writes.recv().await {
         let result = write_packet(&tx, &item.packet, mtu, write_op).await;
         let stop = result.is_err();
-        let _ = item.acknowledgement.send(result);
+        if let Some(acknowledgement) = item.acknowledgement.take() {
+            let _ = acknowledgement.send(result);
+        }
         if stop {
             break;
         }
@@ -630,8 +676,10 @@ async fn write_packet(
     if chunk_size == 0 {
         return Err(TransportError::MtuTooSmall { mtu });
     }
-    let mut write_request = CharacteristicWriteRequest::default();
-    write_request.op_type = write_op;
+    let write_request = CharacteristicWriteRequest {
+        op_type: write_op,
+        ..CharacteristicWriteRequest::default()
+    };
     let result = timeout(GATT_WRITE_TIMEOUT, async {
         for chunk in packet.chunks(chunk_size) {
             tx.write_ext(chunk, &write_request).await.map_err(|_| ())?;
@@ -738,14 +786,14 @@ fn ensure_confirmation(response: &RpcResponse) -> Result<(), BluezError> {
 fn device_error(response: &RpcResponse) -> BluezError {
     response
         .device_error()
-        .map(|error| BluezError::DeviceRpc { code: error.code })
-        .unwrap_or(BluezError::RpcResultInvalid { field: "result" })
+        .map_or(BluezError::RpcResultInvalid { field: "result" }, |error| {
+            BluezError::DeviceRpc { code: error.code }
+        })
 }
 
 #[cfg(test)]
 #[expect(
     clippy::expect_used,
-    clippy::indexing_slicing,
     reason = "the FIG test uses fixed synthetic protocol bytes"
 )]
 mod tests {
