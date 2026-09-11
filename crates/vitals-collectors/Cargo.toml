@@ -12,6 +12,15 @@ vitals-core = { path = "../vitals-core" }
 vitals-decode = { path = "../vitals-decode" }
 vitals-proto = { path = "../vitals-proto" }
 vitals-registry = { path = "../vitals-registry" }
+aes = { version = "0.8", default-features = false }
+cbc = { version = "0.1", default-features = false, features = ["block-padding"] }
+crypto-bigint = { version = "0.5", default-features = false }
+getrandom = "0.3"
+hmac = "0.12"
+serde = "1"
+serde_json = "1"
+sha2 = "0.10"
+zeroize = "1"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 bluer = { version = "0.17", features = ["bluetoothd"] }
