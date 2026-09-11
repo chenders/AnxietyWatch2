@@ -2,10 +2,13 @@
 
 ## Governing decisions
 
-This change follows amendments 07, 08, and 09. The API and admin surface are
-Rust. One AirSense view-model feeds Service Mode, Preflight, and Flowpath
-renderings. The console is private to the configured local network; it is not a
-public phone API. The AirSense BLE device remains read-only.
+This change follows amendments 07 and 08. It keeps the public phone API
+separate from the operator surface and does not grant public exposure. The
+proposed direct private-LAN operator bind must be reconciled with amendment
+09's accepted loopback/WireGuard production topology before production
+acceptance. The API and admin surface are Rust. One AirSense view-model feeds
+Service Mode, Preflight, and Flowpath renderings. The AirSense BLE device
+remains read-only.
 
 ## Backend projection
 
@@ -51,12 +54,12 @@ fixed action without first reading the same-origin page.
 
 ## LAN and authorization boundary
 
-The listener binds to a LAN-capable address (the code default is
-`0.0.0.0:8480`). The AirSense API route uses `ConnectInfo<SocketAddr>` and
-admits only configured private CIDRs, defaulting to loopback, RFC1918 IPv4, and
-IPv6 unique-local space. An operator may narrow this to the appliance's exact
-local CIDR. A peer outside the list or a missing peer identity is rejected with
-a named blocker.
+The supplied LAN deployment binds to `0.0.0.0:8480`; the binary remains
+loopback by default unless `VITALS_CONSOLE_BIND` is explicitly configured. The
+AirSense API route uses `ConnectInfo<SocketAddr>` and admits only configured
+private CIDRs, defaulting to loopback, RFC1918 IPv4, and IPv6 unique-local
+space. An operator may narrow this to the appliance's exact local CIDR. A peer
+outside the list or a missing peer identity is rejected with a named blocker.
 
 Read-only status and logs are available to an allowed private-LAN peer. POST
 operations require all of:
