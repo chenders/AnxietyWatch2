@@ -575,7 +575,7 @@ impl Drop for Air11BleTransport {
     }
 }
 
-async fn resolve_pipe(
+pub(crate) async fn resolve_pipe(
     device: &bluer::Device,
 ) -> Result<(Characteristic, Characteristic, usize, WriteOp), BluezError> {
     let service_uuid = Uuid::parse_str(SERVICE_UUID).map_err(|_| BluezError::ServiceMissing)?;
@@ -663,7 +663,7 @@ async fn write_loop(
     }
 }
 
-async fn write_packet(
+pub(crate) async fn write_packet(
     tx: &Characteristic,
     packet: &[u8],
     mtu: usize,
@@ -694,7 +694,7 @@ async fn write_packet(
     }
 }
 
-fn encode_fig(vcid: u16, payload: &[u8]) -> Result<Vec<u8>, TransportError> {
+pub(crate) fn encode_fig(vcid: u16, payload: &[u8]) -> Result<Vec<u8>, TransportError> {
     if payload.len() > FIG_MAX_PAYLOAD || payload.len() > usize::from(u16::MAX) {
         return Err(TransportError::FigPayloadTooLarge {
             len: payload.len(),

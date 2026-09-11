@@ -8,9 +8,10 @@
   live `StreamData` for flow, pressure, ventilation, leak, respiratory rate,
   tidal volume, snore, and flow-limitation signals.
 - **BLE is still not a control or historical-data path for AnxietyWatch2.** The
-  planned Rust collector will use saved credentials and a fixed observation-only
-  RPC allowlist. It will never send settings, therapy transitions, reset, erase,
-  pairing, OTA, or other control operations.
+  Rust collector uses saved credentials and a fixed observation-only RPC
+  allowlist. A separate bounded onboarding command may discover the FD56 target
+  and perform the documented first application pairing, but it never sends
+  settings, therapy transitions, reset, erase, OTA, or other control operations.
 - **EzShare SD remains the independent durable/archive fallback.** Its EDF
   mirror/import path is specified separately in
   [`hms-cpap-ezshare-integration.md`](hms-cpap-ezshare-integration.md) and is not
@@ -19,8 +20,10 @@
   AirCANnect demonstrates useful AirSense mappings, but its ESP32/CAN runtime is
   not copied into AnxietyWatch2.
 
-This handoff records research evidence and boundaries. It is not deployment or
-activation authorization.
+This handoff records research evidence and boundaries. The separate
+`resmed-air11-onboard` command is the approved path for operator-authorized
+first discovery/pairing; it is not service activation or live-collection
+authorization.
 
 ## Key Findings
 
