@@ -9,7 +9,7 @@ activation on the Pi.
 - [x] T-A11-2 — Implement portable SRP/session crypto and the final read-only RPC gate · implement-complex · host either
 - [x] T-A11-3 — Build the Linux BlueZ transport, source identity, and sample builder · implement-complex · Linux/Pi for transport, either for tests
 - [x] T-A11-4 — Connect journaling, vitalsd append, reconnect supervision, and status · implement-complex · Linux/Pi for transport, either for tests
-- [ ] T-A11-5 — Add the hardened service and offline/replay acceptance gates · implement-standard · host either
+- [x] T-A11-5 — Add the hardened service and offline/replay acceptance gates · implement-standard · host either
 - [ ] T-A11-6 — Perform bounded Pi activation and live acceptance · implement-complex · **physical/governance gate**
 
 **Amends:** `docs/specs/AMENDMENTS.md` is mandatory for every task. This change follows amendments 01, 02, 04, 05, 06, and 07; it does not amend any accepted decision.
@@ -36,7 +36,7 @@ activation on the Pi.
 
 **Context budget:** ~12k tokens · **Depends:** T-A11-0 · **Review required:** yes, including a physiology/unit review
 
-**Reads:** `AGENTS.md` · `docs/specs/AMENDMENTS.md` · `vitals/registry.toml` · `vitals/tools/gen_registry.py` · `vitals/tools/tests/test_gen_registry.py` · `crates/vitals-registry/src/lib.rs` · `crates/vitals-decode/src/lib.rs` · `crates/vitals-decode/src/{bp,emay,hr,sfloat}.rs` · `/Users/chris/Source/airbreak-plus/docs/as11/{bluetooth_protocol,rpc_protocol,rpc_streams}.md` · `/Users/chris/Source/airbreak-plus/docs/{edf_signals,edf_str_signals}.md` · `/Users/chris/Source/aircannect/src/{as11_ble_fig,stream_frame,as11_stream_signals}.cpp` · `/Users/chris/Source/aircannect/include/{as11_ble_fig,stream_frame,as11_stream_signals}.h`
+**Reads:** `AGENTS.md` · `docs/specs/AMENDMENTS.md` · `vitals/registry.toml` · `vitals/tools/gen_registry.py` · `vitals/tools/tests/test_gen_registry.py` · `crates/vitals-registry/src/lib.rs` · `crates/vitals-decode/src/lib.rs` · `crates/vitals-decode/src/{bp,emay,hr,sfloat}.rs` · `$AIRBREAK_PLUS/docs/as11/{bluetooth_protocol,rpc_protocol,rpc_streams}.md` · `$AIRBREAK_PLUS/docs/{edf_signals,edf_str_signals}.md` · `$AIRCANNECT/src/{as11_ble_fig,stream_frame,as11_stream_signals}.cpp` · `$AIRCANNECT/include/{as11_ble_fig,stream_frame,as11_stream_signals}.h`
 
 **Creates/updates:** registry TOML, generated artifacts via `vitals/tools/gen_registry.py`, portable decoder modules, sanitized fixtures, decoder tests, and one fuzz target per new decoder. No BlueZ, SQL, systemd, socket, or PostgreSQL work.
 
@@ -52,7 +52,7 @@ activation on the Pi.
 
 **Context budget:** ~12k tokens · **Depends:** T-A11-1 · **Review required:** yes, security review
 
-**Reads:** `AGENTS.md` · `docs/specs/AMENDMENTS.md` · `openspec/changes/resmed-air11-ble-stream/{proposal,design}.md` · `/Users/chris/Source/airbreak-plus/docs/as11/{bluetooth_protocol,rpc_protocol}.md` · `/Users/chris/Source/aircannect/src/{as11_ble_srp,as11_ble_crypto,as11_ble_rpc_link}.cpp` · `/Users/chris/Source/aircannect/include/{as11_ble_srp,as11_ble_crypto,as11_ble_rpc_link}.h` · `crates/vitals-decode/Cargo.toml` · `crates/vitals-collectors/Cargo.toml` · `crates/vitals-collectors/src/lib.rs`
+**Reads:** `AGENTS.md` · `docs/specs/AMENDMENTS.md` · `openspec/changes/resmed-air11-ble-stream/{proposal,design}.md` · `$AIRBREAK_PLUS/docs/as11/{bluetooth_protocol,rpc_protocol}.md` · `$AIRCANNECT/src/{as11_ble_srp,as11_ble_crypto,as11_ble_rpc_link}.cpp` · `$AIRCANNECT/include/{as11_ble_srp,as11_ble_crypto,as11_ble_rpc_link}.h` · `crates/vitals-decode/Cargo.toml` · `crates/vitals-collectors/Cargo.toml` · `crates/vitals-collectors/src/lib.rs`
 
 **Creates/updates:** bounded portable crypto/protocol code, deterministic public test vectors with synthetic keys, JSON-RPC request/response handling, and tests that record the final send boundary. No live BLE writes and no credentials.
 
@@ -68,7 +68,7 @@ activation on the Pi.
 
 **Context budget:** ~14k tokens · **Depends:** T-A11-2 · **Review required:** yes, including a physiology/unit review
 
-**Reads:** `AGENTS.md` · `docs/specs/AMENDMENTS.md` · `openspec/changes/resmed-air11-ble-stream/{proposal,design}.md` · `vitals/registry.toml` · `crates/vitals-core/src/session.rs` · `crates/vitals-core/src/lib.rs` · `crates/vitals-decode/src/lib.rs` · `crates/vitals-collectors/src/{lib,h10_reconnect}.rs` · `crates/vitals-collectors/Cargo.toml` · `crates/vitals-proto/src/lib.rs` · `deploy/vitalsd.service` · `deploy/vitals-h10.service` · `/Users/chris/Source/aircannect/{include/as11_ble_rpc_link.h,src/as11_ble_rpc_link.cpp}`
+**Reads:** `AGENTS.md` · `docs/specs/AMENDMENTS.md` · `openspec/changes/resmed-air11-ble-stream/{proposal,design}.md` · `vitals/registry.toml` · `crates/vitals-core/src/session.rs` · `crates/vitals-core/src/lib.rs` · `crates/vitals-decode/src/lib.rs` · `crates/vitals-collectors/src/{lib,h10_reconnect}.rs` · `crates/vitals-collectors/Cargo.toml` · `crates/vitals-proto/src/lib.rs` · `deploy/vitalsd.service` · `deploy/vitals-h10.service` · `$AIRCANNECT/{include/as11_ble_rpc_link.h,src/as11_ble_rpc_link.cpp}`
 
 **Creates/updates:** portable Air11 configuration/normalization and sample-building modules, the Linux `resmed-air11-collector` binary, bounded BlueZ GATT transport, and transport/build tests. Do not pair, scan indefinitely, or touch system overlays/network routes.
 
