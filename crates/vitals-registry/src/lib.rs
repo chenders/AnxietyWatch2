@@ -65,6 +65,26 @@ mod tests {
         assert_eq!(VitalsType::Hr.unit(), "bpm");
     }
 
+    /// `AirSense` uses permanent ids for source-backed stream rows. The source
+    /// and type enums are what prevent a numeric source/type transposition.
+    #[test]
+    fn air11_source_and_types_match_the_contract() {
+        assert_eq!(VitalsSource::ResmedAir11.id(), 5);
+        assert_eq!(VitalsType::RespiratoryRate.id(), 9);
+        assert_eq!(VitalsType::PatientFlow.id(), 10);
+        assert_eq!(VitalsType::MaskPressure.id(), 11);
+        assert_eq!(VitalsType::MaskPressure2s.id(), 12);
+        assert_eq!(VitalsType::Leak.id(), 15);
+        assert_eq!(VitalsType::TidalVolume.id(), 16);
+        assert_eq!(VitalsType::TriggerCycleEvent.id(), 23);
+        assert_eq!(VitalsType::Leak.unit(), "L/min");
+        assert_eq!(VitalsType::TidalVolume.unit(), "mL");
+        assert_eq!(
+            VitalsSource::ResmedAir11.expected_cadence(),
+            Cadence::EverySeconds(1)
+        );
+    }
+
     /// The declared cadences come straight from `registry.toml`; the liveness
     /// law (SPEC-admin-console §2.5) evaluates age against exactly these
     /// numbers, so a drift here silently changes when a source turns UNKNOWN.
@@ -112,7 +132,7 @@ mod tests {
                 Cadence::OnDemand => on_demand += 1,
             }
         }
-        assert_eq!(periodic, 4);
+        assert_eq!(periodic, 5);
         assert_eq!(on_demand, 2);
     }
 }

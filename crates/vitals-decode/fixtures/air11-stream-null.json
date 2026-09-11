@@ -1,0 +1,16 @@
+{
+  "jsonrpc": "1.0",
+  "method": "StreamData",
+  "params": {
+    "data": [
+      {"_RFL": [0.29, 0.31, null]},
+      {"_LKF": [0.0]},
+      {"_TD2": [0.52]},
+      {"_HRT": [null]},
+      {"_SAO": [null]}
+    ],
+    "intervalMs": 200,
+    "startTime": "2008-01-01T00:00:25.000Z",
+    "streamId": 4
+  }
+}

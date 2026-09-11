@@ -72,6 +72,141 @@
         200.0
       ],
       "precision": 1.0
+    },
+    "respiratory_rate": {
+      "id": 9,
+      "unit": "bpm",
+      "range": [
+        1.0,
+        120.0
+      ],
+      "precision": 0.1
+    },
+    "patient_flow": {
+      "id": 10,
+      "unit": "L/s",
+      "range": [
+        -20.0,
+        20.0
+      ],
+      "precision": 0.001
+    },
+    "mask_pressure": {
+      "id": 11,
+      "unit": "cmH2O",
+      "range": [
+        0.0,
+        50.0
+      ],
+      "precision": 0.1
+    },
+    "mask_pressure_2s": {
+      "id": 12,
+      "unit": "cmH2O",
+      "range": [
+        0.0,
+        50.0
+      ],
+      "precision": 0.1
+    },
+    "inspiratory_pressure": {
+      "id": 13,
+      "unit": "cmH2O",
+      "range": [
+        0.0,
+        50.0
+      ],
+      "precision": 0.1
+    },
+    "expiratory_pressure": {
+      "id": 14,
+      "unit": "cmH2O",
+      "range": [
+        0.0,
+        50.0
+      ],
+      "precision": 0.1
+    },
+    "leak": {
+      "id": 15,
+      "unit": "L/min",
+      "range": [
+        0.0,
+        300.0
+      ],
+      "precision": 0.1
+    },
+    "tidal_volume": {
+      "id": 16,
+      "unit": "mL",
+      "range": [
+        0.0,
+        5000.0
+      ],
+      "precision": 0.1
+    },
+    "minute_ventilation": {
+      "id": 17,
+      "unit": "L/min",
+      "range": [
+        0.0,
+        60.0
+      ],
+      "precision": 0.1
+    },
+    "target_minute_ventilation": {
+      "id": 18,
+      "unit": "L/min",
+      "range": [
+        0.0,
+        60.0
+      ],
+      "precision": 0.1
+    },
+    "ie_ratio": {
+      "id": 19,
+      "unit": "ratio",
+      "range": [
+        0.0,
+        10.0
+      ],
+      "precision": 0.01
+    },
+    "snore_index": {
+      "id": 20,
+      "unit": "index",
+      "range": [
+        0.0,
+        100.0
+      ],
+      "precision": 0.1
+    },
+    "flow_limitation": {
+      "id": 21,
+      "unit": "ratio",
+      "range": [
+        0.0,
+        1.0
+      ],
+      "precision": 0.01
+    },
+    "inspiratory_duration": {
+      "id": 22,
+      "unit": "seconds",
+      "range": [
+        0.0,
+        10.0
+      ],
+      "precision": 0.001
+    },
+    "trigger_cycle_event": {
+      "id": 23,
+      "unit": "code",
+      "range": [
+        0.0,
+        255.0
+      ],
+      "precision": 1.0
     }
   },
   "source": {
@@ -117,6 +252,33 @@
       ],
       "cadence": {
         "on_demand": true
+      }
+    },
+    "resmed_air11": {
+      "id": 5,
+      "transport": "ble",
+      "provides": [
+        "hr",
+        "spo2",
+        "respiratory_rate",
+        "patient_flow",
+        "mask_pressure",
+        "mask_pressure_2s",
+        "inspiratory_pressure",
+        "expiratory_pressure",
+        "leak",
+        "tidal_volume",
+        "minute_ventilation",
+        "target_minute_ventilation",
+        "ie_ratio",
+        "snore_index",
+        "flow_limitation",
+        "inspiratory_duration",
+        "trigger_cycle_event"
+      ],
+      "service": "0xFD56",
+      "cadence": {
+        "expected_cadence_s": 1
       }
     },
     "ad_ua651ble": {

@@ -21,13 +21,20 @@
 // hostile input. Tests are the one place asserting-by-panic is the point.
 #![cfg_attr(
     test,
-    allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)
+    allow(
+        clippy::expect_used,
+        clippy::unwrap_used,
+        clippy::panic,
+        clippy::indexing_slicing
+    )
 )]
 
 pub mod bp;
 pub mod emay;
+pub mod fig;
 pub mod hr;
 pub mod sfloat;
+pub mod stream;
 
 pub use emay::decode_data;
 pub use hr::decode_2a37;

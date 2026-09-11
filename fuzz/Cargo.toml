@@ -42,3 +42,17 @@ path = "fuzz_targets/fuzz_bp_decode.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "fuzz_fig"
+path = "fuzz_targets/fuzz_fig.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_stream"
+path = "fuzz_targets/fuzz_stream.rs"
+test = false
+doc = false
+bench = false

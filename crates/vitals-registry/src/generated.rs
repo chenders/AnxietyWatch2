@@ -25,6 +25,36 @@ pub enum VitalsType {
     BpDiastolic = 7,
     /// `bp_map` — `mmHg`, valid 40.0..200.0
     BpMap = 8,
+    /// `respiratory_rate` — `bpm`, valid 1.0..120.0
+    RespiratoryRate = 9,
+    /// `patient_flow` — `L/s`, valid -20.0..20.0
+    PatientFlow = 10,
+    /// `mask_pressure` — `cmH2O`, valid 0.0..50.0
+    MaskPressure = 11,
+    /// `mask_pressure_2s` — `cmH2O`, valid 0.0..50.0
+    MaskPressure2s = 12,
+    /// `inspiratory_pressure` — `cmH2O`, valid 0.0..50.0
+    InspiratoryPressure = 13,
+    /// `expiratory_pressure` — `cmH2O`, valid 0.0..50.0
+    ExpiratoryPressure = 14,
+    /// `leak` — `L/min`, valid 0.0..300.0
+    Leak = 15,
+    /// `tidal_volume` — `mL`, valid 0.0..5000.0
+    TidalVolume = 16,
+    /// `minute_ventilation` — `L/min`, valid 0.0..60.0
+    MinuteVentilation = 17,
+    /// `target_minute_ventilation` — `L/min`, valid 0.0..60.0
+    TargetMinuteVentilation = 18,
+    /// `ie_ratio` — `ratio`, valid 0.0..10.0
+    IeRatio = 19,
+    /// `snore_index` — `index`, valid 0.0..100.0
+    SnoreIndex = 20,
+    /// `flow_limitation` — `ratio`, valid 0.0..1.0
+    FlowLimitation = 21,
+    /// `inspiratory_duration` — `seconds`, valid 0.0..10.0
+    InspiratoryDuration = 22,
+    /// `trigger_cycle_event` — `code`, valid 0.0..255.0
+    TriggerCycleEvent = 23,
 }
 
 /// Where a sample came from. Provenance, and it must survive aggregation.
@@ -39,6 +69,8 @@ pub enum VitalsSource {
     Healthkit = 2,
     /// `derived` — `internal`
     Derived = 3,
+    /// `resmed_air11` — `ble`, service `0xFD56`
+    ResmedAir11 = 5,
     /// `ad_ua651ble` — `ble`, service `0x1810` (indication)
     AdUa651ble = 6,
     /// `polar_h10_emulator` — `internal`
@@ -79,6 +111,21 @@ impl VitalsType {
             Self::BpSystolic => (50.0, 260.0),
             Self::BpDiastolic => (30.0, 160.0),
             Self::BpMap => (40.0, 200.0),
+            Self::RespiratoryRate => (1.0, 120.0),
+            Self::PatientFlow => (-20.0, 20.0),
+            Self::MaskPressure => (0.0, 50.0),
+            Self::MaskPressure2s => (0.0, 50.0),
+            Self::InspiratoryPressure => (0.0, 50.0),
+            Self::ExpiratoryPressure => (0.0, 50.0),
+            Self::Leak => (0.0, 300.0),
+            Self::TidalVolume => (0.0, 5000.0),
+            Self::MinuteVentilation => (0.0, 60.0),
+            Self::TargetMinuteVentilation => (0.0, 60.0),
+            Self::IeRatio => (0.0, 10.0),
+            Self::SnoreIndex => (0.0, 100.0),
+            Self::FlowLimitation => (0.0, 1.0),
+            Self::InspiratoryDuration => (0.0, 10.0),
+            Self::TriggerCycleEvent => (0.0, 255.0),
         }
     }
 
@@ -99,6 +146,21 @@ impl VitalsType {
             Self::BpSystolic => "mmHg",
             Self::BpDiastolic => "mmHg",
             Self::BpMap => "mmHg",
+            Self::RespiratoryRate => "bpm",
+            Self::PatientFlow => "L/s",
+            Self::MaskPressure => "cmH2O",
+            Self::MaskPressure2s => "cmH2O",
+            Self::InspiratoryPressure => "cmH2O",
+            Self::ExpiratoryPressure => "cmH2O",
+            Self::Leak => "L/min",
+            Self::TidalVolume => "mL",
+            Self::MinuteVentilation => "L/min",
+            Self::TargetMinuteVentilation => "L/min",
+            Self::IeRatio => "ratio",
+            Self::SnoreIndex => "index",
+            Self::FlowLimitation => "ratio",
+            Self::InspiratoryDuration => "seconds",
+            Self::TriggerCycleEvent => "code",
         }
     }
 
@@ -115,6 +177,21 @@ impl VitalsType {
             6 => Some(Self::BpSystolic),
             7 => Some(Self::BpDiastolic),
             8 => Some(Self::BpMap),
+            9 => Some(Self::RespiratoryRate),
+            10 => Some(Self::PatientFlow),
+            11 => Some(Self::MaskPressure),
+            12 => Some(Self::MaskPressure2s),
+            13 => Some(Self::InspiratoryPressure),
+            14 => Some(Self::ExpiratoryPressure),
+            15 => Some(Self::Leak),
+            16 => Some(Self::TidalVolume),
+            17 => Some(Self::MinuteVentilation),
+            18 => Some(Self::TargetMinuteVentilation),
+            19 => Some(Self::IeRatio),
+            20 => Some(Self::SnoreIndex),
+            21 => Some(Self::FlowLimitation),
+            22 => Some(Self::InspiratoryDuration),
+            23 => Some(Self::TriggerCycleEvent),
             _ => None,
         }
     }
@@ -135,6 +212,7 @@ impl VitalsSource {
             1 => Some(Self::PolarH10),
             2 => Some(Self::Healthkit),
             3 => Some(Self::Derived),
+            5 => Some(Self::ResmedAir11),
             6 => Some(Self::AdUa651ble),
             7 => Some(Self::PolarH10Emulator),
             _ => None,
@@ -161,6 +239,7 @@ impl VitalsSource {
             Self::PolarH10 => Cadence::EverySeconds(1),
             Self::Healthkit => Cadence::EverySeconds(21600),
             Self::Derived => Cadence::OnDemand,
+            Self::ResmedAir11 => Cadence::EverySeconds(1),
             Self::AdUa651ble => Cadence::OnDemand,
             Self::PolarH10Emulator => Cadence::EverySeconds(1),
         }
@@ -168,7 +247,7 @@ impl VitalsSource {
 }
 
 /// Every type, for exhaustive iteration in tests and admin views.
-pub const ALL_TYPES: [VitalsType; 8] = [
+pub const ALL_TYPES: [VitalsType; 23] = [
     VitalsType::Hr,
     VitalsType::Spo2,
     VitalsType::Accel,
@@ -177,14 +256,30 @@ pub const ALL_TYPES: [VitalsType; 8] = [
     VitalsType::BpSystolic,
     VitalsType::BpDiastolic,
     VitalsType::BpMap,
+    VitalsType::RespiratoryRate,
+    VitalsType::PatientFlow,
+    VitalsType::MaskPressure,
+    VitalsType::MaskPressure2s,
+    VitalsType::InspiratoryPressure,
+    VitalsType::ExpiratoryPressure,
+    VitalsType::Leak,
+    VitalsType::TidalVolume,
+    VitalsType::MinuteVentilation,
+    VitalsType::TargetMinuteVentilation,
+    VitalsType::IeRatio,
+    VitalsType::SnoreIndex,
+    VitalsType::FlowLimitation,
+    VitalsType::InspiratoryDuration,
+    VitalsType::TriggerCycleEvent,
 ];
 
 /// Every source.
-pub const ALL_SOURCES: [VitalsSource; 6] = [
+pub const ALL_SOURCES: [VitalsSource; 7] = [
     VitalsSource::Emay,
     VitalsSource::PolarH10,
     VitalsSource::Healthkit,
     VitalsSource::Derived,
+    VitalsSource::ResmedAir11,
     VitalsSource::AdUa651ble,
     VitalsSource::PolarH10Emulator,
 ];
