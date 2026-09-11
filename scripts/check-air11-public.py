@@ -69,6 +69,37 @@ FORBIDDEN_SERVICE_TOKENS = (
     "StopStream",
 )
 UNIT_START_LIMITS = ("StartLimitIntervalSec=300", "StartLimitBurst=5")
+ACCEPTANCE_REQUIRED = (
+    "--require-postgres",
+    "--require-h10",
+    "--require-emay",
+    "--require-ezshare-unchanged",
+    "AIR11-LIVE-",
+    "bluetoothctl info",
+    'systemctl start "$AIR11_UNIT"',
+    'systemctl restart "$AIR11_UNIT"',
+    'systemctl stop "$AIR11_UNIT"',
+    "--no-password",
+    '"durability_unknown"',
+    '"received_envelopes"',
+    '"decoded_frames"',
+    '"published_samples"',
+    "distinct session_ids=",
+)
+FORBIDDEN_ACCEPTANCE_TOKENS = (
+    "bluetoothctl pair",
+    "bluetoothctl scan",
+    "bluetoothctl trust",
+    "bluetoothctl remove",
+    "systemctl enable",
+    "systemctl disable",
+    "ip route add",
+    "ip route del",
+    "ip route replace",
+    "dtoverlay",
+    "StartStream",
+    "StopStream",
+)
 
 
 def root_dir() -> Path:
@@ -164,9 +195,36 @@ def copied_aircannect_findings(root: Path, path: Path) -> list[str]:
     return findings
 
 
+def acceptance_findings_for_text(text: str) -> list[str]:
+    findings = [
+        f"acceptance harness missing required guard: {token}"
+        for token in ACCEPTANCE_REQUIRED
+        if token not in text
+    ]
+    findings.extend(
+        f"acceptance harness contains forbidden action: {token}"
+        for token in FORBIDDEN_ACCEPTANCE_TOKENS
+        if token in text
+    )
+    return findings
+
+
+def acceptance_findings(root: Path) -> list[str]:
+    path = root / "scripts/air11-pi-acceptance.sh"
+    if not path.is_file():
+        return [f"missing bounded Pi acceptance harness: {path.relative_to(root)}"]
+    if not path.stat().st_mode & 0o111:
+        return [f"bounded Pi acceptance harness is not executable: {path.relative_to(root)}"]
+    try:
+        text = path.read_text()
+    except (UnicodeDecodeError, OSError) as error:
+        return [f"cannot read bounded Pi acceptance harness: {error}"]
+    return acceptance_findings_for_text(text)
+
+
 def scan(root: Path) -> list[str]:
     service = root / "deploy/vitals-air11.service"
-    findings = []
+    findings = acceptance_findings(root)
     try:
         findings.extend(service_findings(service.read_text()))
     except OSError as error:
@@ -185,6 +243,15 @@ def self_test(root: Path) -> None:
     mutated = service.replace("ProtectHome=true", "ProtectHome=false", 1)
     if not service_findings(mutated):
         raise AssertionError("service gate did not reject a weakened ProtectHome")
+    acceptance = root / "scripts/air11-pi-acceptance.sh"
+    acceptance_text = acceptance.read_text()
+    if acceptance_findings(root):
+        raise AssertionError("bounded Pi acceptance harness does not satisfy its own gate")
+    weakened_acceptance = acceptance_text.replace(
+        'systemctl start "$AIR11_UNIT"', 'systemctl enable "$AIR11_UNIT"', 1
+    )
+    if not acceptance_findings_for_text(weakened_acceptance):
+        raise AssertionError("acceptance gate did not reject a service enable action")
     if not file_findings(root, root / "air11-night-20260906.jsonl"):
         raise AssertionError("artifact gate missed a raw-capture filename")
     masked = "11:22:" + "33:44:55:66"
