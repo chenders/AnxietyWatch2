@@ -67,6 +67,34 @@ pub enum VitalsType {
     PhysicalEffort = 28,
     /// `body_mass` — `kg`, valid 0.1..500.0
     BodyMass = 29,
+    /// `patient_flow` — `L/s`, valid -20.0..20.0
+    PatientFlow = 30,
+    /// `mask_pressure` — `cmH2O`, valid 0.0..50.0
+    MaskPressure = 31,
+    /// `mask_pressure_2s` — `cmH2O`, valid 0.0..50.0
+    MaskPressure2s = 32,
+    /// `inspiratory_pressure` — `cmH2O`, valid 0.0..50.0
+    InspiratoryPressure = 33,
+    /// `expiratory_pressure` — `cmH2O`, valid 0.0..50.0
+    ExpiratoryPressure = 34,
+    /// `leak` — `L/min`, valid 0.0..300.0
+    Leak = 35,
+    /// `tidal_volume` — `mL`, valid 0.0..5000.0
+    TidalVolume = 36,
+    /// `minute_ventilation` — `L/min`, valid 0.0..60.0
+    MinuteVentilation = 37,
+    /// `target_minute_ventilation` — `L/min`, valid 0.0..60.0
+    TargetMinuteVentilation = 38,
+    /// `ie_ratio` — `ratio`, valid 0.0..10.0
+    IeRatio = 39,
+    /// `snore_index` — `index`, valid 0.0..100.0
+    SnoreIndex = 40,
+    /// `flow_limitation` — `ratio`, valid 0.0..1.0
+    FlowLimitation = 41,
+    /// `inspiratory_duration` — `seconds`, valid 0.0..10.0
+    InspiratoryDuration = 42,
+    /// `trigger_cycle_event` — `code`, valid 0.0..255.0
+    TriggerCycleEvent = 43,
 }
 
 /// Where a sample came from. Provenance, and it must survive aggregation.
@@ -83,6 +111,8 @@ pub enum VitalsSource {
     Derived = 3,
     /// `acconeer_xe125` — `usb_serial`
     AcconeerXe125 = 4,
+    /// `resmed_air11` — `ble`, service `0xFD56`
+    ResmedAir11 = 5,
     /// `ad_ua651ble` — `ble`, service `0x1810` (indication)
     AdUa651ble = 6,
     /// `polar_h10_emulator` — `internal`
@@ -144,6 +174,20 @@ impl VitalsType {
             Self::TimeInDaylight => (0.0, 1_440.0),
             Self::PhysicalEffort => (0.0, 100.0),
             Self::BodyMass => (0.1, 500.0),
+            Self::PatientFlow => (-20.0, 20.0),
+            Self::MaskPressure => (0.0, 50.0),
+            Self::MaskPressure2s => (0.0, 50.0),
+            Self::InspiratoryPressure => (0.0, 50.0),
+            Self::ExpiratoryPressure => (0.0, 50.0),
+            Self::Leak => (0.0, 300.0),
+            Self::TidalVolume => (0.0, 5_000.0),
+            Self::MinuteVentilation => (0.0, 60.0),
+            Self::TargetMinuteVentilation => (0.0, 60.0),
+            Self::IeRatio => (0.0, 10.0),
+            Self::SnoreIndex => (0.0, 100.0),
+            Self::FlowLimitation => (0.0, 1.0),
+            Self::InspiratoryDuration => (0.0, 10.0),
+            Self::TriggerCycleEvent => (0.0, 255.0),
         }
     }
 
@@ -185,6 +229,20 @@ impl VitalsType {
             Self::TimeInDaylight => "min",
             Self::PhysicalEffort => "kcal/kg*hr",
             Self::BodyMass => "kg",
+            Self::PatientFlow => "L/s",
+            Self::MaskPressure => "cmH2O",
+            Self::MaskPressure2s => "cmH2O",
+            Self::InspiratoryPressure => "cmH2O",
+            Self::ExpiratoryPressure => "cmH2O",
+            Self::Leak => "L/min",
+            Self::TidalVolume => "mL",
+            Self::MinuteVentilation => "L/min",
+            Self::TargetMinuteVentilation => "L/min",
+            Self::IeRatio => "ratio",
+            Self::SnoreIndex => "index",
+            Self::FlowLimitation => "ratio",
+            Self::InspiratoryDuration => "seconds",
+            Self::TriggerCycleEvent => "code",
         }
     }
 
@@ -222,6 +280,20 @@ impl VitalsType {
             27 => Some(Self::TimeInDaylight),
             28 => Some(Self::PhysicalEffort),
             29 => Some(Self::BodyMass),
+            30 => Some(Self::PatientFlow),
+            31 => Some(Self::MaskPressure),
+            32 => Some(Self::MaskPressure2s),
+            33 => Some(Self::InspiratoryPressure),
+            34 => Some(Self::ExpiratoryPressure),
+            35 => Some(Self::Leak),
+            36 => Some(Self::TidalVolume),
+            37 => Some(Self::MinuteVentilation),
+            38 => Some(Self::TargetMinuteVentilation),
+            39 => Some(Self::IeRatio),
+            40 => Some(Self::SnoreIndex),
+            41 => Some(Self::FlowLimitation),
+            42 => Some(Self::InspiratoryDuration),
+            43 => Some(Self::TriggerCycleEvent),
             _ => None,
         }
     }
@@ -243,6 +315,7 @@ impl VitalsSource {
             2 => Some(Self::Healthkit),
             3 => Some(Self::Derived),
             4 => Some(Self::AcconeerXe125),
+            5 => Some(Self::ResmedAir11),
             6 => Some(Self::AdUa651ble),
             7 => Some(Self::PolarH10Emulator),
             _ => None,
@@ -270,6 +343,7 @@ impl VitalsSource {
             Self::Healthkit => Cadence::EverySeconds(21600),
             Self::Derived => Cadence::OnDemand,
             Self::AcconeerXe125 => Cadence::OnDemand,
+            Self::ResmedAir11 => Cadence::EverySeconds(1),
             Self::AdUa651ble => Cadence::OnDemand,
             Self::PolarH10Emulator => Cadence::EverySeconds(1),
         }
@@ -277,7 +351,7 @@ impl VitalsSource {
 }
 
 /// Every type, for exhaustive iteration in tests and admin views.
-pub const ALL_TYPES: [VitalsType; 29] = [
+pub const ALL_TYPES: [VitalsType; 43] = [
     VitalsType::Hr,
     VitalsType::Spo2,
     VitalsType::Accel,
@@ -307,15 +381,30 @@ pub const ALL_TYPES: [VitalsType; 29] = [
     VitalsType::TimeInDaylight,
     VitalsType::PhysicalEffort,
     VitalsType::BodyMass,
+    VitalsType::PatientFlow,
+    VitalsType::MaskPressure,
+    VitalsType::MaskPressure2s,
+    VitalsType::InspiratoryPressure,
+    VitalsType::ExpiratoryPressure,
+    VitalsType::Leak,
+    VitalsType::TidalVolume,
+    VitalsType::MinuteVentilation,
+    VitalsType::TargetMinuteVentilation,
+    VitalsType::IeRatio,
+    VitalsType::SnoreIndex,
+    VitalsType::FlowLimitation,
+    VitalsType::InspiratoryDuration,
+    VitalsType::TriggerCycleEvent,
 ];
 
 /// Every source.
-pub const ALL_SOURCES: [VitalsSource; 7] = [
+pub const ALL_SOURCES: [VitalsSource; 8] = [
     VitalsSource::Emay,
     VitalsSource::PolarH10,
     VitalsSource::Healthkit,
     VitalsSource::Derived,
     VitalsSource::AcconeerXe125,
+    VitalsSource::ResmedAir11,
     VitalsSource::AdUa651ble,
     VitalsSource::PolarH10Emulator,
 ];
