@@ -62,8 +62,10 @@ not part of AirSense activation.
 
 ## BLE and protocol boundary
 
-The Linux transport connects only to the configured, already-bonded target and
-resolves the documented service and characteristics:
+The Linux transport connects only to the configured target and resolves the
+documented service and characteristics. It authenticates through the AirSense
+application protocol before requesting the fixed stream; a separate BlueZ bond
+is not required:
 
 | Item | Value |
 |---|---|
@@ -342,8 +344,8 @@ A successful run requires all of the following:
 
 1. the `vitals` credential file exists, is private, and contains a valid
    explicit Linux target and key shape without printing the key;
-2. `bluetoothctl info` reports an existing paired target; no pairing command is
-   attempted;
+2. the configured target was resolved by bounded FD56 discovery; no pairing
+   command is attempted by the collector;
 3. the PostgreSQL connection and `public.samples` table are available;
 4. the collector reaches authenticated streaming and measured states;
 5. at least one unavailable/null observation is preserved in status;
@@ -366,7 +368,7 @@ source checks. Neither proves overnight reliability, universal device firmware
 compatibility, trustworthy device wall time, or support for oximetry when
 `_HRT`/`_SAO` remain null.
 
-If credentials, the bond, PostgreSQL, a source row, host-time metadata,
-reconnect sessions, or unaffected-source health is missing, the result is
+If credentials, the configured target, PostgreSQL, a source row, host-time
+metadata, reconnect sessions, or unaffected-source health is missing, the result is
 failed or unknown—not successful by inference. Keep EzShare enabled as the
 separate durable/archive fallback while BLE evidence is still limited.

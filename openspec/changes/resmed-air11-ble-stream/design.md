@@ -154,8 +154,9 @@ credential, session key, device serial, or full target address. Health is not
 ## Reconnect and deployment
 
 The Linux transport uses bounded connect, service-resolution, notification, RPC,
-and append deadlines. It requires the configured BlueZ device to be bonded by
-an operator; it does not pair or scan indefinitely. A disconnect tears down the
+and append deadlines. It connects to the explicitly resolved target without
+requiring a separate BlueZ bond; AirSense application authentication remains the
+security gate. It does not pair or scan indefinitely. A disconnect tears down the
 session, mints a new identity only after the next authentication succeeds,
 re-authenticates, reissues `StartStream`, and resets exponential backoff. A
 failed connect, authentication, journal, decode, append, or stale stream names

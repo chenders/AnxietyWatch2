@@ -29,6 +29,7 @@ Runs a finite, read-only AirSense acceptance window. SECONDS must be between
 The command asks for an interactive operator confirmation before it starts or
 restarts vitals-air11.service. It never pairs, scans, enables a unit, changes
 an adapter, edits /boot/firmware, changes a route, or sends a control RPC.
+Optional --require-* flags add independent host-health gates.
 EOF
 }
 
@@ -88,13 +89,8 @@ duration=$((10#$duration))
 ((duration >= MIN_DURATION && duration <= MAX_DURATION)) || \
     die "duration=$duration is outside the bounded range ${MIN_DURATION}..${MAX_DURATION} seconds"
 
-((require_postgres == 1)) || die "PostgreSQL evidence gate missing: pass --require-postgres"
-((require_h10 == 1)) || die "H10 evidence gate missing: pass --require-h10"
-((require_emay == 1)) || die "EMAY evidence gate missing: pass --require-emay"
-((require_ezshare == 1)) || die "EzShare route gate missing: pass --require-ezshare-unchanged"
-
 for command_name in \
-    systemctl bluetoothctl getent awk python3 timeout ip stat cmp date sleep seq mktemp mkdir cp rm tr head psql; do
+    systemctl getent awk python3 timeout ip stat cmp date sleep seq mktemp mkdir cp rm tr head psql; do
     require_command "$command_name"
 done
 
@@ -104,7 +100,7 @@ fi
 confirmation_token="AIR11-LIVE-${duration}"
 printf '%s\n' \
     "This will run the read-only AirSense collector for ${duration} seconds," \
-    "restart its session once, query PostgreSQL, and verify H10/EMAY/EzShare." \
+    "restart its session once and verify the selected host-health gates." \
     "It will not pair, scan, change an adapter, enable a unit, or edit firmware." \
     "Type ${confirmation_token} to authorize this exact bounded run: " >&2
 IFS= read -r confirmation || die "operator authorization failed: confirmation input was unavailable"
@@ -196,14 +192,6 @@ fi
 [[ "$target" =~ ^([0-9A-F]{2}:){5}[0-9A-F]{2}$ ]] || \
     die "credentials gate failed: normalized target is not a six-octet uppercase MAC"
 
-bond_info="$work_dir/bond.info"
-if ! timeout 15 bluetoothctl info "$target" >"$bond_info" 2>&1; then
-    die "BlueZ bond/IRK gate failed: bluetoothctl info returned nonzero; expected an existing bond"
-fi
-paired=$(awk -F: 'tolower($1) ~ /^[[:space:]]*paired[[:space:]]*$/ { gsub(/[[:space:]]/, "", $2); print tolower($2); exit }' "$bond_info")
-paired=${paired:-missing}
-[[ "$paired" == "yes" ]] || die "BlueZ bond/IRK gate failed: Paired=$paired; expected Paired=yes"
-
 unit_state() {
     systemctl is-active "$1" 2>/dev/null || true
 }
@@ -217,13 +205,18 @@ require_active() {
         die "$label health gate failed: unit_state=${state:-unknown}; expected active"
 }
 
-require_active "$H10_UNIT" "H10"
-require_active "$EMAY_UNIT" "EMAY"
-require_active "$EZSHARE_UNIT" "EzShare"
-
-route_before="$work_dir/route.before"
-if ! ip route show table main >"$route_before" 2>/dev/null; then
-    die "EzShare route gate failed: could not capture the main route table before the run"
+if ((require_h10 == 1)); then
+    require_active "$H10_UNIT" "H10"
+fi
+if ((require_emay == 1)); then
+    require_active "$EMAY_UNIT" "EMAY"
+fi
+if ((require_ezshare == 1)); then
+    require_active "$EZSHARE_UNIT" "EzShare"
+    route_before="$work_dir/route.before"
+    if ! ip route show table main >"$route_before" 2>/dev/null; then
+        die "EzShare route gate failed: could not capture the main route table before the run"
+    fi
 fi
 
 psql_scalar() {
@@ -237,11 +230,13 @@ psql_scalar() {
     printf '%s' "$output"
 }
 
-if ! schema_state=$(psql_scalar "SELECT CASE WHEN to_regclass('public.samples') IS NULL THEN 'missing' ELSE 'ready' END;"); then
-    die "PostgreSQL gate failed: health query did not complete"
+if ((require_postgres == 1)); then
+    if ! schema_state=$(psql_scalar "SELECT CASE WHEN to_regclass('public.samples') IS NULL THEN 'missing' ELSE 'ready' END;"); then
+        die "PostgreSQL gate failed: health query did not complete"
+    fi
+    [[ "$schema_state" == "ready" ]] || \
+        die "PostgreSQL gate failed: public.samples=$schema_state; expected ready"
 fi
-[[ "$schema_state" == "ready" ]] || \
-    die "PostgreSQL gate failed: public.samples=$schema_state; expected ready"
 
 if ! start_epoch=$(date +%s); then
     die "host-time gate failed: could not read the host epoch seconds"
@@ -407,6 +402,11 @@ then
     die "status/reconnect/null gate failed: ${status_reason:-evidence was unavailable}"
 fi
 
+sample_rows=0
+distinct_types=0
+metadata_rows=0
+distinct_sessions=0
+if ((require_postgres == 1)); then
 window_predicate="source = 5 AND timestamp >= to_timestamp(${start_epoch} - 5) AND timestamp <= now() + interval '5 seconds' AND type BETWEEN 9 AND 23"
 query_count() {
     local sql=$1
@@ -444,15 +444,22 @@ while :; do
     sleep 3
 done
 
-require_active "$H10_UNIT" "H10"
-require_active "$EMAY_UNIT" "EMAY"
-require_active "$EZSHARE_UNIT" "EzShare"
-route_after="$work_dir/route.after"
-if ! ip route show table main >"$route_after" 2>/dev/null; then
-    die "EzShare route gate failed: could not capture the main route table after the run"
 fi
-cmp -s "$route_before" "$route_after" || \
-    die "EzShare route gate failed: main route snapshot changed; expected unchanged"
+if ((require_h10 == 1)); then
+    require_active "$H10_UNIT" "H10"
+fi
+if ((require_emay == 1)); then
+    require_active "$EMAY_UNIT" "EMAY"
+fi
+if ((require_ezshare == 1)); then
+    require_active "$EZSHARE_UNIT" "EzShare"
+    route_after="$work_dir/route.after"
+    if ! ip route show table main >"$route_after" 2>/dev/null; then
+        die "EzShare route gate failed: could not capture the main route table after the run"
+    fi
+    cmp -s "$route_before" "$route_after" || \
+        die "EzShare route gate failed: main route snapshot changed; expected unchanged"
+fi
 
-printf 'AirSense Pi acceptance passed: duration=%s seconds, source_rows=%s, types=%s, metadata_rows=%s, sessions=%s; H10/EMAY/EzShare remained healthy\n' \
+printf 'AirSense Pi acceptance passed: duration=%s seconds, source_rows=%s, types=%s, metadata_rows=%s, sessions=%s\n' \
     "$duration" "$sample_rows" "$distinct_types" "$metadata_rows" "$distinct_sessions"

@@ -32,7 +32,8 @@ redesign the admin console, widen the production RPC allowlist, alter systemd
 activation, or change H10/EMAY/EzShare behavior.
 
 The multiple-candidate wording now requires an exact operator-selected
-address, and the user guide distinguishes application pairing from the
-steady-state collector's pre-existing BlueZ-bond requirement. The remaining
-steps are a Linux/Pi operator-authorized discovery or first-pair run, followed
-by the separate bounded AirSense acceptance command.
+address, and the user guide records that AirSense application authentication is
+the collector security gate; a separate BlueZ bond is not required. A Pi
+operator-authorized discovery resolved the Linux mapping while the AirSense was
+in app mode. The remaining step is the separate bounded AirSense acceptance
+command.

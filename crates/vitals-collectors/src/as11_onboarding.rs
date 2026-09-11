@@ -595,26 +595,33 @@ mod linux {
             });
         }
         let candidates = discovery_result?;
+        let address = choose_candidate(&candidates, selected)?;
+        normalize_linux_target(&address.to_string(), None)
+            .map_err(|_| OnboardingError::InvalidAddress)
+    }
+
+    fn choose_candidate(
+        candidates: &HashSet<Address>,
+        selected: Option<Address>,
+    ) -> Result<Address, OnboardingError> {
         if let Some(selected) = selected {
             if !candidates.contains(&selected) {
                 return Err(OnboardingError::SelectedCandidateMissing {
                     count: candidates.len(),
                 });
             }
-            return normalize_linux_target(&selected.to_string(), None)
-                .map_err(|_| OnboardingError::InvalidAddress);
+            return Ok(selected);
         }
         if candidates.len() != 1 {
             return Err(OnboardingError::CandidateCount {
                 count: candidates.len(),
             });
         }
-        let address = candidates
-            .into_iter()
+        candidates
+            .iter()
             .next()
-            .ok_or(OnboardingError::CandidateCount { count: 0 })?;
-        normalize_linux_target(&address.to_string(), None)
-            .map_err(|_| OnboardingError::InvalidAddress)
+            .copied()
+            .ok_or(OnboardingError::CandidateCount { count: 0 })
     }
 
     async fn discover_candidates(
@@ -628,30 +635,33 @@ mod linux {
             .map_err(|_| OnboardingError::Bluez {
                 operation: "start_discovery",
             })?;
-        let result = timeout(duration, async {
-            let mut candidates = HashSet::new();
-            while let Some(event) = events.next().await {
-                match event {
-                    AdapterEvent::DeviceAdded(address) => {
-                        if is_air11_candidate(adapter, address, service_uuid).await {
-                            candidates.insert(address);
-                        }
+        let mut deadline = Box::pin(tokio::time::sleep(duration));
+        let mut candidates = HashSet::new();
+        loop {
+            let event = tokio::select! {
+                () = &mut deadline => break,
+                event = events.next() => event,
+            };
+            let Some(event) = event else {
+                break;
+            };
+            match event {
+                AdapterEvent::DeviceAdded(address) => {
+                    let eligible = tokio::select! {
+                        () = &mut deadline => break,
+                        eligible = is_air11_candidate(adapter, address, service_uuid) => eligible,
+                    };
+                    if eligible {
+                        candidates.insert(address);
                     }
-                    AdapterEvent::DeviceRemoved(address) => {
-                        candidates.remove(&address);
-                    }
-                    AdapterEvent::PropertyChanged(_) => {}
                 }
+                AdapterEvent::DeviceRemoved(address) => {
+                    candidates.remove(&address);
+                }
+                AdapterEvent::PropertyChanged(_) => {}
             }
-            candidates
-        })
-        .await;
-        match result {
-            Ok(candidates) => Ok(candidates),
-            Err(_) => Err(OnboardingError::BluezDeadline {
-                operation: "discovery",
-            }),
         }
+        Ok(candidates)
     }
 
     async fn is_air11_candidate(
@@ -886,6 +896,45 @@ mod linux {
             Self::Bluez {
                 operation: "gatt_operation",
             }
+        }
+    }
+
+    #[cfg(test)]
+    #[expect(
+        clippy::expect_used,
+        reason = "candidate-selection tests use fixed synthetic addresses"
+    )]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn candidate_selection_never_uses_arrival_order() {
+            let first = Address::new([0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0x01]);
+            let second = Address::new([0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0x02]);
+            let candidates = HashSet::from([first, second]);
+            assert!(matches!(
+                choose_candidate(&candidates, None),
+                Err(OnboardingError::CandidateCount { count: 2 })
+            ));
+            assert_eq!(
+                choose_candidate(&candidates, Some(second)).expect("selected address"),
+                second
+            );
+            assert!(matches!(
+                choose_candidate(
+                    &candidates,
+                    Some(Address::new([0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0x03])),
+                ),
+                Err(OnboardingError::SelectedCandidateMissing { count: 2 })
+            ));
+        }
+
+        #[test]
+        fn empty_candidate_set_is_a_named_failure() {
+            assert!(matches!(
+                choose_candidate(&HashSet::new(), None),
+                Err(OnboardingError::CandidateCount { count: 0 })
+            ));
         }
     }
 }
