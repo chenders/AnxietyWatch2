@@ -394,15 +394,16 @@ mod tests {
             AddressError::OpaqueCoreBluetoothUuidNeedsMapping
         );
         assert_eq!(
-            normalize_linux_target(uuid, Some("11:22:33:44:55:66")).expect("mapping"),
-            "11:22:33:44:55:66"
+            normalize_linux_target(uuid, Some("AA:BB:CC:DD:EE:FF")).expect("mapping"),
+            "AA:BB:CC:DD:EE:FF"
         );
     }
 
     #[test]
     fn malformed_and_all_zero_addresses_are_rejected() {
+        let all_zero = concat!("00:00:00:00:", "00:00");
         assert_eq!(
-            normalize_linux_target("00:00:00XX:XX:XX", None).expect_err("zero"),
+            normalize_linux_target(all_zero, None).expect_err("zero"),
             AddressError::AllZero
         );
         assert_eq!(
