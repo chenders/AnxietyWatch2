@@ -1,8 +1,8 @@
 //! Linux `BlueZ` transport for the read-only `AirSense` 11 stream.
 //!
 //! This module is deliberately the only `AirSense` code that knows about `BlueZ`.
-//! It connects to an already bonded address, resolves the exact FD56 service
-//! and characteristics, subscribes to RX notifications, and sends only the
+//! It connects to the configured address, resolves the exact FD56 service and
+//! characteristics, subscribes to RX notifications, and sends only the
 //! typed requests accepted by [`crate::as11_rpc::ReadOnlyRpcLink`].  There is
 //! no discovery or pairing path here.
 
@@ -62,8 +62,6 @@ pub enum BluezError {
         /// The operation that exceeded its deadline.
         operation: &'static str,
     },
-    /// The configured target is not bonded, so the collector will not pair it.
-    NotBonded,
     /// The configured adapter name was invalid or unavailable.
     AdapterUnavailable,
     /// The normalized target could not be converted to a `BlueZ` address.
@@ -127,7 +125,6 @@ impl core::fmt::Display for BluezError {
         match self {
             Self::Operation { operation } => write!(f, "bluez operation failed: {operation}"),
             Self::Deadline { operation } => write!(f, "bluez deadline expired: {operation}"),
-            Self::NotBonded => f.write_str("bluez target is not bonded; pairing is disabled"),
             Self::AdapterUnavailable => f.write_str("bluez adapter unavailable"),
             Self::AddressInvalid => f.write_str("bluez target address invalid"),
             Self::ServiceMissing => f.write_str("air11 service fd56 not resolved"),
@@ -339,8 +336,9 @@ impl RpcTransport for BluezRpcTransport {
 
 /// A connected, authenticated-capable Linux `AirSense` BLE link.
 ///
-/// Construction requires a pre-existing bond and a validated external
-/// credential.  The link has no pairing, scanning, or control-RPC method.
+/// Construction requires a validated external credential. Application-level
+/// authentication supplies session security; this link has no generic BlueZ
+/// pairing, scanning, or control-RPC method.
 pub struct Air11BleTransport {
     device: bluer::Device,
     rpc: ReadOnlyRpcLink<BluezRpcTransport>,
@@ -353,12 +351,12 @@ pub struct Air11BleTransport {
 }
 
 impl Air11BleTransport {
-    /// Connects to an already bonded target and resolves the exact `AirSense`
+    /// Connects to the configured target and resolves the exact `AirSense`
     /// service and TX/RX characteristics.
     ///
     /// # Errors
-    /// Returns [`BluezError::NotBonded`] instead of initiating pairing, or a
-    /// named bounded transport error when `BlueZ` cannot resolve the pipe.
+    /// Returns a named bounded transport error when `BlueZ` cannot resolve the
+    /// pipe.
     pub async fn connect(
         credentials: &Air11Credentials,
         adapter_name: &str,
@@ -374,10 +372,6 @@ impl Air11BleTransport {
         let device = adapter
             .device(address)
             .map_err(|_| BluezError::AddressInvalid)?;
-        let paired = with_deadline("bond_check", device.is_paired()).await?;
-        if !paired {
-            return Err(BluezError::NotBonded);
-        }
         let connected = with_deadline("connection_check", device.is_connected()).await?;
         if !connected {
             with_deadline("ble_connect", device.connect()).await?;

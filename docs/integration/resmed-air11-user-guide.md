@@ -31,10 +31,11 @@ time is retained only as `clock_quality="untrusted"` provenance. Missing and
 Confirm all of the following before changing a service or starting a live run:
 
 - The host is Linux with BlueZ and a working `vitalsd` socket.
-- For an existing credential, the AirSense is bonded to the intended
-  Bluetooth adapter, including its existing IRK where applicable. If the Linux
-  target or application credential is absent, use the separate bounded
-  onboarding command below; the steady-state collector does not pair or scan.
+- The AirSense is in its app mode when onboarding discovery is needed. A
+  separate BlueZ bond is not required: the collector authenticates at the
+  AirSense application layer. If the Linux target or application credential is
+  absent, use the separate bounded onboarding command below; the steady-state
+  collector does not pair or scan.
 - The existing H10, EMAY, and EzShare paths have an operator-approved baseline.
 - PostgreSQL and the existing COPY spool/drain path are available.
 - The operator has an approved credential source and is authorized to run a
@@ -46,9 +47,10 @@ unknown, stop and record the blocker rather than enabling a unit.
 ## 3. Onboard the AirSense target when needed
 
 Use the separately installed Rust command from an interactive Pi terminal. It
-runs a finite FD56-filtered discovery and restores the adapter discovery filter
-on exit. It does not start `vitals-air11.service` or change H10, EMAY, EzShare,
-routes, overlays, or firmware.
+runs a finite FD56-filtered discovery and restores the adapter discovery
+filter on exit. The AirSense must be in app mode while it is discoverable. It
+does not start `vitals-air11.service` or change H10, EMAY, EzShare, routes,
+overlays, or firmware.
 
 For a valid existing credential whose Linux address is missing or needs to be
 resolved:
@@ -276,7 +278,7 @@ is shown as a blocker; it is not silently rendered as an empty history.
 | `credential state=INVALID` | Validate the JSON shape, explicit Linux target/mapping, client-id bound, and 32-byte key shape without printing values. |
 | `config table unavailable` | Deploy/verify the AirSense Sqitch change or restore database access; do not infer opt-in. |
 | `active_state=failed` | Read the highlighted status blocker and sanitized journal errors before restarting. |
-| `link_state=disconnected` | Check the existing bond/adapter and service dependencies; use `resmed-air11-onboard` only for an explicitly authorized bounded provisioning operation. |
+| `link_state=disconnected` | Put the AirSense in app mode, then check the target/adapter and service dependencies; use `resmed-air11-onboard` only for an explicitly authorized bounded provisioning operation. |
 | `measurement_state=unavailable` | Frames arrived without usable numeric values; preserve that unknown evidence and do not call it zero. |
 | `durability unknown` | The append result was not confirmed; retain and replay the journal according to the collector procedure. |
 | `logs unavailable` | The console cannot read the unit journal; use authorized host diagnostics and fix the read policy. |
@@ -313,7 +315,7 @@ scripts/air11-pi-acceptance.sh --duration 60 --require-postgres --require-h10 --
 ```
 
 The harness requires its duration-specific interactive authorization. It
-checks the existing bond, private credentials, measured/null evidence,
+checks the resolved target, private credentials, measured/null evidence,
 host/device provenance, PostgreSQL rows, distinct sessions, reconnect behavior,
 and unchanged H10/EMAY/EzShare routes. It does not pair, scan, change an
 adapter, enable overlays, change routes, or enable the AirSense unit. A nonzero
