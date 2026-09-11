@@ -84,7 +84,8 @@ fn air11_capabilities() -> (bool, Option<Arc<String>>, Option<Arc<String>>) {
     reason = "startup keeps bind, route, and middleware assembly in one auditable sequence"
 )]
 async fn main() {
-    let bind_addr = env::var("VITALS_CONSOLE_BIND").unwrap_or_else(|_| "0.0.0.0:8480".to_string());
+    let bind_addr =
+        env::var("VITALS_CONSOLE_BIND").unwrap_or_else(|_| "127.0.0.1:8480".to_string());
     let socket_path =
         env::var("VITALSD_SOCKET").unwrap_or_else(|_| "/run/vitals/vitalsd.sock".to_string());
     let test_routes_enabled = env::var("VITALS_CONSOLE_TEST_ROUTES").is_ok_and(|v| v == "1");
