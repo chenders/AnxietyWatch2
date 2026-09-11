@@ -19,6 +19,7 @@ jobs:
         run: |
           python3 scripts/check-public-info.py --self-test
           python3 scripts/check-air11-public.py --self-test
+          python3 scripts/check-air11-admin-sql.py --self-test
           bash -n scripts/air11-pi-acceptance.sh
           scripts/air11-pi-acceptance.sh --help
 
@@ -139,6 +140,8 @@ jobs:
       # the only way they break is the runner image's default node moving.
       - uses: actions/setup-node@v4
         with: { node-version: '22' }
+      - name: Console asset syntax and kiosk contract
+        run: python3 scripts/check-console-assets.py --self-test
 
       - name: Design gates pass
         run: |

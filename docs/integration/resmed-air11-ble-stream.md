@@ -2,9 +2,10 @@
 
 This document is the operational and product-facing guide for the read-only
 AirSense 11 integration. It describes the data path, safety boundary, service,
-acceptance evidence, and the admin-page presentation contract. It does not
-authorize pairing, credential creation, service activation, adapter changes, or
-changes to `/boot/firmware`.
+acceptance evidence, and the admin-page/kiosk contract. It does not authorize
+pairing, credential creation, service activation, adapter changes, or changes
+to `/boot/firmware`. For the operator's complete setup and usage sequence, see
+[`resmed-air11-user-guide.md`](resmed-air11-user-guide.md).
 
 ## Scope and non-goals
 
@@ -100,10 +101,13 @@ plus an explicit Linux mapping, and a 32-byte master pair key. No credential is 
 in Git, an environment file, an ordinary command-line argument, a status
 record, a journal record, a sample extra field, or a log line.
 
-The systemd unit uses `LoadCredential` to copy the private source into a
+The AirSense unit uses `LoadCredential` to copy the private source into a
 runtime-only credential directory. The collector receives only that runtime
-path; `ProtectHome` then hides the source home directory from the service.
-Invalid permissions, malformed JSON, an invalid key length, an opaque
+path; `ProtectHome` then hides the source home directory from the service. The
+console unit uses a separate optional `LoadCredential` view of the same source
+for readiness inspection; if the source is absent, the console remains
+available for status and logs while mutations stay disabled. Neither process
+returns the credential contents. Invalid permissions, malformed JSON, an invalid key length, an opaque
 CoreBluetooth UUID without a Linux mapping, or an all-zero target fails closed.
 
 Each successful authenticated connection receives a fresh persistent
@@ -198,12 +202,13 @@ The collector atomically publishes its operator-safe status at:
 /run/vitals-air11/status.json
 ```
 
-The status file is a backend input. A browser must not be granted direct access
-to the runtime directory or credential directory. The existing admin/status
-API or server-side page seam should read this safe document and expose only its
-facts and blockers. This change does not add a browser filesystem route or an
-AirSense control route; the admin page integration is a safe read-only
-projection of the existing status seam.
+The status file is a backend input. A browser is not granted direct access to
+the runtime directory or credential directory. The Rust admin API reads this
+safe document and exposes only its facts and blockers. The same API exposes a
+small fixed set of operator actions—opt-in/out and start/stop/restart of the
+collector—behind the private-LAN allowlist, an external console-admin
+capability, a per-process action token, explicit confirmation, and append-only
+audit. It has no browser filesystem route and no AirSense device-control route.
 
 ### Link and measurement are separate
 
@@ -258,6 +263,22 @@ The admin page should show counters for received envelopes, decoded frames,
 published samples, unavailable values, duplicates, quarantined values, dropped
 envelopes, retries, and reconnects. This makes a quiet therapy stream
 observable without converting quietness into an alarm or a false healthy state.
+
+### Admin and kiosk surfaces
+
+The admin screen is available through the Rust console at
+`/console/?screen=air11&dir=a|b|c`; all three directions consume the same safe
+view-model. The dedicated read-only monitor is
+`/console/air11-kiosk.html`. It shows the current status, service state,
+counters, blocker precedence, and bounded sanitized journal entries, but no
+lifecycle buttons or credential inputs. The physiology dashboard links to this
+monitor without merging AirSense machine state into physiological measurements.
+
+The admin page never accepts or returns the AirSense master pair key. It checks
+external-file presence, owner-only permissions, and credential shape. The
+separate console-admin capability is used only for console lifecycle actions;
+it is not an AirSense credential. Missing admin authorization leaves the status,
+last blocker, and logs readable while leaving all mutations disabled.
 
 ### Admin-page failure precedence
 

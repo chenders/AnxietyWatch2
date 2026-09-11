@@ -13,3 +13,4 @@ attempts [retention] 2026-08-06T12:00:00Z Chris Henderson <chenders@users.norepl
 status_observations [attempts] 2026-08-06T12:01:00Z Chris Henderson <chenders@users.noreply.github.com> # stored assertion freshness distinct from value change
 domain_records [status_observations] 2026-08-06T12:02:00Z Chris Henderson <chenders@users.noreply.github.com> # idempotent client-minted domain records
 envelope_clients [domain_records] 2026-08-06T12:03:00Z Chris Henderson <chenders@users.noreply.github.com> # register-once envelope credentials
+air11_admin [envelope_clients] 2026-09-11T09:30:00Z Chris Henderson <chenders@users.noreply.github.com> # non-secret AirSense opt-in state and fixed-action audit

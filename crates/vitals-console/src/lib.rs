@@ -1,11 +1,12 @@
 //! The vitals admin console HTTP service.
 //!
-//! Serves the console API (`/api/health`, `/api/version`), the real-data
-//! read API (`/api/query`, `/api/latest`, `/api/nightly`), and the host
-//! status endpoints (`/api/services`, `/api/host`, `/api/display`,
-//! `/api/recovery`, `/api/clock`). The daemon wire protocol, host
-//! inspection, and `PostgreSQL` access live in the `client` and `api`
-//! modules so the handlers stay thin.
+//! Serves the console API (`/api/health`, `/api/version`, `/api/air11`), the
+//! real-data read API (`/api/query`, `/api/latest`, `/api/nightly`), and the
+//! host status endpoints (`/api/services`, `/api/host`, `/api/display`,
+//! `/api/recovery`, `/api/clock`). The `AirSense` projection includes the
+//! dedicated read-only kiosk feed. The daemon wire protocol, host inspection,
+//! and `PostgreSQL` access live in the `client` and `api` modules so the
+//! handlers stay thin.
 
 /// Real-data read API: sample queries, host status, and recovery state.
 pub mod api;

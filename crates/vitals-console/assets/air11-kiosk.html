@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>AirSense 11 monitor</title>
+  <link rel="stylesheet" href="/console/air11-kiosk.css">
+</head>
+<body>
+  <main class="kiosk-shell" id="kiosk-main" aria-live="polite">
+    <header class="kiosk-header">
+      <div>
+        <p class="kiosk-kicker">Read-only therapy stream · local monitor</p>
+        <h1>AirSense 11</h1>
+      </div>
+      <div class="kiosk-header__meta"><a href="/console/?screen=air11">Admin page</a><br>Refresh target: 5 seconds</div>
+    </header>
+    <noscript><div class="kiosk-alert kiosk-alert--critical" role="alert"><span class="kiosk-alert__label">UNKNOWN · JAVASCRIPT DISABLED</span><h2>Live AirSense status is not measured</h2><p>Enable JavaScript to load the local status projection. No physiological value is substituted.</p></div></noscript>
+    <section id="kiosk-content" aria-label="AirSense monitor content">
+      <div class="kiosk-verdict kiosk-verdict--unknown"><span class="kiosk-verdict__label">UNKNOWN · LOADING</span><h2>Waiting for status evidence</h2><p>No placeholder physiology is shown.</p></div>
+    </section>
+    <footer class="kiosk-footer"><span>Read-only boundary: no therapy controls or pairing actions</span><span id="kiosk-updated">Last page update: not observed</span></footer>
+  </main>
+<script>
+"use strict";
+(() => {
+  const content = document.querySelector("#kiosk-content");
+  const updated = document.querySelector("#kiosk-updated");
+  let latest = null;
+  let lastSuccessMs = null;
+  let lastError = null;
+  const esc = value => String(value == null ? "" : value).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;", "'":"&#39;"}[c]));
+  const value = item => item == null ? "not measured" : String(item);
+  const text = item => value(item).replaceAll("_", " ").toUpperCase();
+  const age = micros => {
+    if (micros == null || !Number.isFinite(Number(micros))) return null;
+    const seconds = Date.now() / 1000 - Number(micros) / 1000000;
+    return Number.isFinite(seconds) && seconds >= 0 ? seconds : null;
+  };
+  const ageText = seconds => {
+    if (seconds == null || !Number.isFinite(seconds)) return "not observed";
+    if (seconds < 60) return `${Math.floor(seconds)}s ago`;
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+    return `${Math.floor(seconds / 3600)}h ago`;
+  };
+  const health = item => {
+    const state = String(item || "").toLowerCase();
+    if (["streaming", "authenticated", "connected", "measured", "active", "running", "ready", "observed"].includes(state)) return "live";
+    if (["degraded", "disconnected", "failed", "invalid", "insecure", "stale"].includes(state)) return "failing";
+    return "unknown";
+  };
+  const fact = (label, item, state, detail) => `<article class="kiosk-card kiosk-card--${state}"><h2>${esc(label)}</h2><span class="kiosk-card__value">${esc(item)}</span><p>${esc(detail)}</p></article>`;
+  const metric = (label, item) => `<div><dt>${esc(label)}</dt><dd>${esc(value(item))}</dd></div>`;
+  const alertList = data => {
+    const result = [];
+    const optedIn = data.config && data.config.opted_in === true;
+    if (optedIn && data.credentials && data.credentials.state !== "ready") result.push({kind:"critical", label:"CREDENTIAL BLOCKER", detail:data.credentials.blocker || `credential state=${value(data.credentials.state)}`});
+    if (data.config && data.config.blocker) result.push({kind:data.config.state === "unavailable" ? "unknown" : "critical", label:"CONFIGURATION BLOCKER", detail:data.config.blocker});
+    if (data.service && data.service.blocker) result.push({kind:"unknown", label:"SERVICE STATE UNKNOWN", detail:data.service.blocker});
+    if (data.status && data.status.blocker) result.push({kind:health(data.status.link_state) === "failing" ? "critical" : "unknown", label:"LAST COLLECTOR BLOCKER", detail:data.status.blocker});
+    if (data.status && data.status.durability_unknown === true) result.push({kind:"critical", label:"DURABILITY UNKNOWN", detail:"vitalsd did not confirm the last append; the raw journal is retained."});
+    if (data.logs && data.logs.blocker) result.push({kind:"unknown", label:"LOG FEED UNKNOWN", detail:data.logs.blocker});
+    const errors = data.logs && Array.isArray(data.logs.entries) ? data.logs.entries.filter(item => item.level === "error") : [];
+    if (errors.length) result.push({kind:"critical", label:"COLLECTOR ERROR LOG", detail:`${errors.length} important error log ${errors.length === 1 ? "entry is" : "entries are"} shown below.`});
+    return result;
+  };
+  const verdict = data => {
+    if (!data) return {state:"unknown", label:"UNKNOWN · STATUS NOT OBSERVED", title:"AirSense status cannot be confirmed", detail:lastError || "The local status projection has not answered."};
+    const alerts = alertList(data);
+    if (alerts.some(item => item.kind === "critical")) return {state:"failing", label:"FAILING · ACTION REQUIRED", title:"Read-only stream has an important blocker", detail:"See the highlighted blocker and error log below."};
+    if (alerts.length) return {state:"unknown", label:"UNKNOWN · INCOMPLETE EVIDENCE", title:"AirSense state is not fully confirmed", detail:"Some checks are unavailable or stale; this is not a healthy verdict."};
+    if (!data.config || data.config.opted_in !== true) return {state:"absent", label:"NOT CONFIGURED", title:"AirSense is not opted in", detail:"This page is ready for observation after explicit non-secret opt-in and external credential provisioning."};
+    if (data.status && data.status.link_state === "streaming" && data.status.measurement_state === "measured") return {state:"live", label:"LIVE · READ-ONLY STREAM", title:"Therapy telemetry is being observed", detail:"The collector reports a streaming link and measured evidence."};
+    return {state:"unknown", label:"UNKNOWN · NOT STREAMING", title:"The collector is not currently providing measured stream evidence", detail:"A connected or authenticated link alone is not a measurement."};
+  };
+  const render = () => {
+    const data = latest;
+    const result = verdict(data);
+    const alerts = data ? alertList(data) : [{kind:"unknown", label:"STATUS FEED UNKNOWN", detail:lastError || "No status response has been observed."}];
+    const status = data && data.status ? data.status : {};
+    const service = data && data.service ? data.service : {};
+    const credentials = data && data.credentials ? data.credentials : {};
+    const receiptAge = age(status.last_host_receipt_unix_micros);
+    const stale = lastSuccessMs == null || Date.now() - lastSuccessMs > 15000;
+    const staleNotice = stale && lastSuccessMs != null ? `<div class="kiosk-alert kiosk-alert--critical" role="alert"><span class="kiosk-alert__label">UNKNOWN · KIOSK FEED STALE</span><h2>Current evidence is not being refreshed</h2><p>Last successful API response: ${esc(ageText((Date.now() - lastSuccessMs) / 1000))}. Last known content remains visible below.</p></div>` : "";
+    const alertHtml = alerts.map(item => `<article class="kiosk-alert kiosk-alert--${item.kind === "critical" ? "critical" : "unknown"}" role="${item.kind === "critical" ? "alert" : "status"}"><span class="kiosk-alert__label">${esc(item.label)}</span><h2>${item.kind === "critical" ? "Important attention item" : "Evidence incomplete"}</h2><p>${esc(item.detail)}</p></article>`).join("");
+    const counters = [
+      metric("Session id", status.session_id), metric("Received envelopes", status.received_envelopes), metric("Decoded frames", status.decoded_frames),
+      metric("Published samples", status.published_samples), metric("Unavailable/null", status.unavailable), metric("Duplicates", status.duplicates),
+      metric("Quarantined", status.quarantined), metric("Dropped", status.dropped), metric("Durability unknown", status.durability_unknown),
+      metric("Reconnects", status.reconnect_count), metric("Retries", status.retry_count), metric("Device time", status.last_device_start_time),
+    ].join("");
+    const logs = data && data.logs && Array.isArray(data.logs.entries) ? data.logs.entries : [];
+    const logHtml = logs.length ? logs.map(item => `<article class="kiosk-log kiosk-log--${item.level === "error" ? "error" : item.level === "warning" ? "warning" : "info"}"${item.level === "error" ? " role=alert" : ""}><span class="kiosk-log__level">${esc(item.level)}</span><span class="kiosk-log__time">${esc(item.observed_at)}</span><span class="kiosk-log__message">${esc(item.message)}</span></article>`).join("") : `<p class="kiosk-empty">${data && data.logs && data.logs.state === "empty" ? "The journal was checked and returned no entries." : "No sanitized service journal entries are available."}</p>`;
+    content.innerHTML = `${staleNotice}<section class="kiosk-verdict kiosk-verdict--${result.state}" aria-labelledby="kiosk-verdict-title"><span class="kiosk-verdict__label">${esc(result.label)}</span><h2 id="kiosk-verdict-title">${esc(result.title)}</h2><p>${esc(result.detail)}</p></section><div class="kiosk-alerts">${alertHtml}</div><section class="kiosk-grid" aria-label="AirSense current facts">${fact("Link state", text(status.link_state), health(status.link_state), status.blocker || "Current BLE/session evidence")}${fact("Measurement state", text(status.measurement_state), status.measurement_state === "measured" ? "live" : "unknown", receiptAge == null ? "Host receipt time not observed" : `${ageText(receiptAge)} · host receipt is authoritative`)}${fact("Service process", text(service.active_state), service.active_state === "active" && service.sub_state === "running" ? "live" : health(service.active_state), `${text(service.sub_state)} · restarts=${value(service.restart_count)}`)}${fact("Credential readiness", text(credentials.state), credentials.state === "ready" ? "live" : "unknown", credentials.blocker || "Only presence, permissions, and shape are shown")}</section><section class="kiosk-section" aria-labelledby="kiosk-evidence-title"><header><h2 id="kiosk-evidence-title">Last status evidence</h2><p>Latest host receipt: ${esc(receiptAge == null ? "not observed" : ageText(receiptAge))}</p></header><div class="kiosk-panel"><dl class="kiosk-facts">${metric("Status document", status.status_state)}${metric("Link state", status.link_state)}${metric("Measurement state", status.measurement_state)}${metric("Host receipt age", receiptAge == null ? null : ageText(receiptAge))}${metric("Untrusted device time", status.last_device_start_time)}${metric("Service started", service.started_at)}</dl></div></section><section class="kiosk-section" aria-labelledby="kiosk-counter-title"><header><h2 id="kiosk-counter-title">Ingest and durability</h2><p>Zero and false are retained as measured values; null remains not measured.</p></header><div class="kiosk-panel"><dl class="kiosk-facts">${counters}</dl></div></section><section class="kiosk-section" aria-labelledby="kiosk-log-title"><header><h2 id="kiosk-log-title">Latest service logs</h2><p>Important errors are red and announced; messages are sanitized before display.</p></header><div class="kiosk-panel"><div class="kiosk-log-list" aria-live="polite">${logHtml}</div></div></section>`;
+    updated.textContent = `Last page update: ${new Date().toLocaleTimeString()}${stale ? " · feed stale" : ""}`;
+    updated.className = stale ? "kiosk-footer__stale" : "";
+  };
+  const refresh = async () => {
+    try {
+      const response = await fetch("/api/air11", {headers:{Accept:"application/json"}, cache:"no-store"});
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(body && body.error ? body.error : `HTTP ${response.status}`);
+      latest = body;
+      lastError = null;
+      lastSuccessMs = Date.now();
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+    }
+    render();
+  };
+  render();
+  refresh();
+  setInterval(refresh, 5000);
+  setInterval(render, 1000);
+})();
+</script>
+</body>
+</html>

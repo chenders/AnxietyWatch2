@@ -69,6 +69,27 @@ FORBIDDEN_SERVICE_TOKENS = (
     "StopStream",
 )
 UNIT_START_LIMITS = ("StartLimitIntervalSec=300", "StartLimitBurst=5")
+CONSOLE_REQUIRED_LINES = (
+    "ExecStart=/usr/local/bin/vitals-console",
+    "User=vitals",
+    "Group=vitals",
+    "Environment=VITALS_CONSOLE_BIND=0.0.0.0:8480",
+    "Environment=VITALS_CONSOLE_ALLOWED_NETWORKS=10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fd00::/8,::1/128",
+    "Environment=VITALS_CONSOLE_AIR11_ACTIONS=1",
+    "Environment=VITALS_CONSOLE_ADMIN_TOKEN_FILE=/etc/vitals/console-admin-token",
+    "LoadCredential=air11-credentials.json:-%h/.air11/air11-credentials.json",
+    "Environment=AIR11_CREDENTIALS_PATH=%d/air11-credentials.json",
+    "ProtectHome=true",
+    "NoNewPrivileges=true",
+    "ProtectSystem=strict",
+    "RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6",
+)
+CONSOLE_FORBIDDEN_TOKENS = (
+    "EnvironmentFile=",
+    "AF_BLUETOOTH",
+    "ExecStart=/bin/sh",
+    "ExecStart=/bin/bash",
+)
 ACCEPTANCE_REQUIRED = (
     "--require-postgres",
     "--require-h10",
@@ -195,6 +216,23 @@ def copied_aircannect_findings(root: Path, path: Path) -> list[str]:
     return findings
 
 
+def console_service_findings(text: str) -> list[str]:
+    findings = [
+        f"console service missing required directive: {line}"
+        for line in CONSOLE_REQUIRED_LINES
+        if line not in text
+    ]
+    findings.extend(
+        f"forbidden console service token: {token}"
+        for token in CONSOLE_FORBIDDEN_TOKENS
+        if token in text
+    )
+    exec_lines = [line for line in text.splitlines() if line.startswith("ExecStart=")]
+    if len(exec_lines) != 1:
+        findings.append(f"expected one console ExecStart, found {len(exec_lines)}")
+    return findings
+
+
 def acceptance_findings_for_text(text: str) -> list[str]:
     findings = [
         f"acceptance harness missing required guard: {token}"
@@ -224,11 +262,16 @@ def acceptance_findings(root: Path) -> list[str]:
 
 def scan(root: Path) -> list[str]:
     service = root / "deploy/vitals-air11.service"
+    console = root / "deploy/vitals-console.service"
     findings = acceptance_findings(root)
     try:
         findings.extend(service_findings(service.read_text()))
     except OSError as error:
         findings.append(f"cannot read {service.relative_to(root)}: {error}")
+    try:
+        findings.extend(console_service_findings(console.read_text()))
+    except OSError as error:
+        findings.append(f"cannot read {console.relative_to(root)}: {error}")
     for path in tracked_files(root):
         findings.extend(file_findings(root, path))
         findings.extend(copied_aircannect_findings(root, path))
@@ -243,6 +286,13 @@ def self_test(root: Path) -> None:
     mutated = service.replace("ProtectHome=true", "ProtectHome=false", 1)
     if not service_findings(mutated):
         raise AssertionError("service gate did not reject a weakened ProtectHome")
+    console = root / "deploy/vitals-console.service"
+    console_text = console.read_text()
+    if console_service_findings(console_text):
+        raise AssertionError("console service does not satisfy its own confinement gate")
+    weakened_console = console_text.replace("ProtectHome=true", "ProtectHome=false", 1)
+    if not console_service_findings(weakened_console):
+        raise AssertionError("console service gate did not reject a weakened ProtectHome")
     acceptance = root / "scripts/air11-pi-acceptance.sh"
     acceptance_text = acceptance.read_text()
     if acceptance_findings(root):
