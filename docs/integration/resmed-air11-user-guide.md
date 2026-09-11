@@ -1,11 +1,10 @@
 # AirSense 11 integration user guide
 
 This guide covers the complete operator path for the **read-only** ResMed
-AirSense 11 BLE stream: preparation, external credential provisioning,
-installation, opt-in, service start, monitoring, kiosk use, logs, and bounded
-acceptance. It does not authorize pairing, passkey collection, scanning,
-therapy control, adapter changes, route changes, firmware changes, or changes
-under `/boot/firmware`.
+AirSense 11 BLE stream: preparation, bounded onboarding, external credential
+provisioning, installation, opt-in, service start, monitoring, kiosk use, logs,
+and bounded acceptance. It does not authorize therapy control, adapter changes,
+route changes, firmware changes, or changes under `/boot/firmware`.
 
 ## 1. What this integration does
 
@@ -32,8 +31,10 @@ time is retained only as `clock_quality="untrusted"` provenance. Missing and
 Confirm all of the following before changing a service or starting a live run:
 
 - The host is Linux with BlueZ and a working `vitalsd` socket.
-- The AirSense is already bonded to the intended Bluetooth adapter, including
-  its existing IRK where applicable. This integration does not pair or scan.
+- For an existing credential, the AirSense is bonded to the intended
+  Bluetooth adapter, including its existing IRK where applicable. If the Linux
+  target or application credential is absent, use the separate bounded
+  onboarding command below; the steady-state collector does not pair or scan.
 - The existing H10, EMAY, and EzShare paths have an operator-approved baseline.
 - PostgreSQL and the existing COPY spool/drain path are available.
 - The operator has an approved credential source and is authorized to run a
@@ -42,7 +43,38 @@ Confirm all of the following before changing a service or starting a live run:
 OpenSpec approval alone is not physical authorization. If any prerequisite is
 unknown, stop and record the blocker rather than enabling a unit.
 
-## 3. Provision the AirSense credential externally
+## 3. Onboard the AirSense target when needed
+
+Use the separately installed Rust command from an interactive Pi terminal. It
+runs a finite FD56-filtered discovery and restores the adapter discovery filter
+on exit. It does not start `vitals-air11.service` or change H10, EMAY, EzShare,
+routes, overlays, or firmware.
+
+For a valid existing credential whose Linux address is missing or needs to be
+resolved:
+
+```sh
+sudo -u vitals -H -- resmed-air11-onboard discover --adapter hci0 --duration 30 \
+  --credentials /var/lib/vitals/.air11/air11-credentials.json
+```
+
+When no reusable credential file exists, use the first-pair flow instead. Put
+the AirSense in its documented pairing-ready state before authorizing this
+command; it prompts for the four-digit passkey without echoing it:
+
+```sh
+sudo -u vitals -H -- resmed-air11-onboard pair --adapter hci0 --duration 30 \
+  --credentials /var/lib/vitals/.air11/air11-credentials.json
+```
+
+The command asks for `AIR11-ONBOARD-DISCOVER-30` or
+`AIR11-ONBOARD-PAIR-30`. If more than one eligible AirSense is visible, rerun
+with the exact operator-selected address using `--address`; no target is chosen
+by proximity or arrival order. A successful operation writes only the private
+credential file. It does not start collection; continue with the normal
+credential/readiness and acceptance steps below.
+
+## 3.1 Provision the AirSense credential externally
 
 The collector expects the operator-managed file:
 
@@ -51,15 +83,18 @@ The collector expects the operator-managed file:
 ```
 
 For the `vitals` service account, `~` is that account's home directory. The
-file must be a regular owner-readable file with no group or other permissions
+commands above make that mapping explicit on this host. The file must be a
+regular owner-readable file with no group or other permissions
 (mode `0600` is the usual choice). It contains the client id, an explicit
 six-octet Linux target (or an opaque source address plus a separate explicit
 Linux mapping), and the 32-byte master pair key.
 
-Use the approved credential source to create the file. Do not generate,
-reveal, paste, or rotate the key in this web page. Do not put it in a shell
-argument, environment file, Git checkout, issue, chat, screenshot, journal, or
-ordinary log. A shape-only example is:
+For an existing pairing, use the approved credential source to create the
+file. The `resmed-air11-onboard pair` command is the only documented generator
+and writes the resulting values directly to the private file. Do not reveal,
+paste, or rotate the key in this web page. Do not put it in a shell argument,
+environment file, Git checkout, issue, chat, screenshot, journal, or ordinary
+log. A shape-only example is:
 
 ```json
 {
@@ -241,7 +276,7 @@ is shown as a blocker; it is not silently rendered as an empty history.
 | `credential state=INVALID` | Validate the JSON shape, explicit Linux target/mapping, client-id bound, and 32-byte key shape without printing values. |
 | `config table unavailable` | Deploy/verify the AirSense Sqitch change or restore database access; do not infer opt-in. |
 | `active_state=failed` | Read the highlighted status blocker and sanitized journal errors before restarting. |
-| `link_state=disconnected` | Check the existing bond/adapter and service dependencies; do not pair or scan from this integration. |
+| `link_state=disconnected` | Check the existing bond/adapter and service dependencies; use `resmed-air11-onboard` only for an explicitly authorized bounded provisioning operation. |
 | `measurement_state=unavailable` | Frames arrived without usable numeric values; preserve that unknown evidence and do not call it zero. |
 | `durability unknown` | The append result was not confirmed; retain and replay the journal according to the collector procedure. |
 | `logs unavailable` | The console cannot read the unit journal; use authorized host diagnostics and fix the read policy. |

@@ -27,6 +27,10 @@ zeroize = "1"
 name = "resmed-air11-collector"
 path = "src/bin/resmed_air11_collector.rs"
 
+[[bin]]
+name = "resmed-air11-onboard"
+path = "src/bin/resmed_air11_onboard.rs"
+
 [target.'cfg(target_os = "linux")'.dependencies]
 bluer = { version = "0.17", features = ["bluetoothd"] }
 # `bluer` uses D-Bus on Linux. Enable its vendored libdbus build so the Pi

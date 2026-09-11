@@ -1,11 +1,12 @@
 # ResMed AirSense 11 BLE therapy stream
 
 This document is the operational and product-facing guide for the read-only
-AirSense 11 integration. It describes the data path, safety boundary, service,
+AirSense 11 collector. It describes the data path, safety boundary, service,
 acceptance evidence, and the admin-page/kiosk contract. It does not authorize
-pairing, credential creation, service activation, adapter changes, or changes
-to `/boot/firmware`. For the operator's complete setup and usage sequence, see
-[`resmed-air11-user-guide.md`](resmed-air11-user-guide.md).
+service activation or live acceptance. First-time target discovery and
+application pairing are handled by the separate, bounded
+`resmed-air11-onboard` operation. For the operator's complete setup and usage
+sequence, see [`resmed-air11-user-guide.md`](resmed-air11-user-guide.md).
 
 ## Scope and non-goals
 
@@ -21,7 +22,9 @@ by an operator and sends only the fixed observation request. It does not:
 
 A BLE connection is not a physiological measurement. Authentication, stream
 subscription, receipt of a frame, and receipt of a usable numeric value are
-separate facts and are reported separately.
+separate facts and are reported separately. Onboarding only establishes the
+Linux target and application credential; it does not imply collection or
+measurement.
 
 ## Data path
 
