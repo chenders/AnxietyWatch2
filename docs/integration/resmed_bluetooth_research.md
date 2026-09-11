@@ -76,6 +76,8 @@ spool extraction, arbitrary `Get`, or CAN commands. There is no assumed
 
 Use the proposed read-only Rust Air11 change for low-latency live therapy
 telemetry only after its offline replay, Linux build, supervision, and physical
-acceptance gates pass. Keep the EzShare SD/EDF path enabled as the independent
-archive and recovery route. Treat missing/null signals and bad device time as
-unknown evidence, not as reassuring values.
+acceptance gates pass. The implementation and admin-page status contract are
+documented in `resmed-air11-ble-stream.md`; use that runbook for bounded Pi
+evidence and operator presentation. Keep the EzShare SD/EDF path enabled as
+the independent archive and recovery route. Treat missing/null signals and bad
+device time as unknown evidence, not as reassuring values.
