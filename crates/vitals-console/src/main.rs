@@ -1,16 +1,22 @@
 //! The vitals-console HTTP server binary.
 //!
-//! Reads `VITALS_CONSOLE_BIND`, `VITALSD_SOCKET`, `DATABASE_URL` (read API)
-//! and `VITALS_CONSOLE_DATABASE_URL` (write API) from the environment, builds
-//! the application state, and serves the console routes.
+//! Reads `VITALS_CONSOLE_BIND`, `VITALSD_SOCKET`, `DATABASE_URL` (read API),
+//! `VITALS_CONSOLE_DATABASE_URL` (write API), the private-network allowlist,
+//! and the external console-admin capability from the environment, builds the
+//! application state, and serves the console routes.
 
 use axum::{Router, middleware, routing::get, routing::post};
 use std::env;
 use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
+use std::sync::Arc;
 use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::services::{ServeDir, ServeFile};
 use uuid::Uuid;
+use vitals_console::api::air11::{
+    air11_action_handler, air11_handler, air11_network_guard, default_allowed_networks,
+    load_admin_token, parse_allowed_networks,
+};
 use vitals_console::api::clock::clock_handler;
 use vitals_console::api::display::display_handler;
 use vitals_console::api::host::host_handler;
@@ -28,15 +34,57 @@ use vitals_console::handlers::{
 use vitals_console::security::{
     MAX_REQUEST_BODY_BYTES, login_handler, logout_handler, security_handler, security_middleware,
 };
+fn configured_networks() -> Vec<vitals_console::api::air11::AllowedNetwork> {
+    match env::var("VITALS_CONSOLE_ALLOWED_NETWORKS") {
+        Ok(raw) => match parse_allowed_networks(&raw) {
+            Ok(networks) => networks,
+            Err(error) => {
+                eprintln!("vitals-console: invalid VITALS_CONSOLE_ALLOWED_NETWORKS: {error}");
+                std::process::exit(64);
+            }
+        },
+        Err(_) => default_allowed_networks(),
+    }
+}
 
+fn air11_capabilities() -> (bool, Option<Arc<String>>, Option<Arc<String>>) {
+    let actions_enabled = env::var("VITALS_CONSOLE_AIR11_ACTIONS").is_ok_and(|v| v == "1");
+    let admin_token = match load_admin_token() {
+        Ok(token) => token.map(Arc::new),
+        Err(error) => {
+            eprintln!("vitals-console: AirSense admin actions disabled: {error}");
+            None
+        }
+    };
+    if actions_enabled && admin_token.is_none() {
+        eprintln!(
+            "vitals-console: AirSense admin actions requested but no external admin capability is available"
+        );
+    }
+    let action_token = if actions_enabled && admin_token.is_some() {
+        let mut bytes = [0_u8; 32];
+        if let Err(error) = getrandom::getrandom(&mut bytes) {
+            eprintln!("vitals-console: cannot create AirSense action capability: {error}");
+            std::process::exit(70);
+        }
+        Some(Arc::new(hex::encode(bytes)))
+    } else {
+        None
+    };
+    (actions_enabled, action_token, admin_token)
+}
+
+#[expect(
+    clippy::too_many_lines,
+    reason = "startup wiring keeps network, credential, database, and route policy together"
+)]
 #[tokio::main]
 #[allow(
     clippy::too_many_lines,
     reason = "startup keeps bind, route, and middleware assembly in one auditable sequence"
 )]
 async fn main() {
-    let bind_addr =
-        env::var("VITALS_CONSOLE_BIND").unwrap_or_else(|_| "127.0.0.1:8480".to_string());
+    let bind_addr = env::var("VITALS_CONSOLE_BIND").unwrap_or_else(|_| "0.0.0.0:8480".to_string());
     let socket_path =
         env::var("VITALSD_SOCKET").unwrap_or_else(|_| "/run/vitals/vitalsd.sock".to_string());
     let test_routes_enabled = env::var("VITALS_CONSOLE_TEST_ROUTES").is_ok_and(|v| v == "1");
@@ -62,6 +110,8 @@ async fn main() {
         |_| PathBuf::from("crates/vitals-console/assets"),
         PathBuf::from,
     );
+    let allowed_networks = configured_networks();
+    let (air11_actions_enabled, air11_action_token, air11_admin_token) = air11_capabilities();
 
     // Write-API pool: the service must still serve every read without it.
     let db = if let Ok(url) = env::var("VITALS_CONSOLE_DATABASE_URL") {
@@ -151,12 +201,23 @@ async fn main() {
         client_origin: env::var("VITALS_CONSOLE_CLIENT_ORIGIN").ok(),
         server_display_label: env::var("VITALS_CONSOLE_SERVER_DISPLAY_LABEL")
             .unwrap_or_else(|_| "AnxietyWatch Pi".to_string()),
+        air11_actions_enabled,
+        air11_action_token,
+        air11_admin_token,
+        air11_allowed_networks: Arc::new(allowed_networks),
     };
 
     println!("Starting vitals-console on {bind_addr} (vitalsd socket: {socket_path})");
     if test_routes_enabled {
         println!("WARNING: test routes enabled (VITALS_CONSOLE_TEST_ROUTES=1)");
     }
+
+    let air11_routes = Router::new()
+        .route("/api/air11", get(air11_handler).post(air11_action_handler))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            air11_network_guard,
+        ));
 
     let app = Router::new()
         .merge(vitals_console::client_api::router::<AppState>())
@@ -172,6 +233,7 @@ async fn main() {
             "/api/admin/notifications/apns/send",
             post(vitals_console::client_api::admin_apns_send_handler),
         )
+        .merge(air11_routes)
         .route("/dashboard", get(dashboard_handler))
         .route("/dashboard/", get(dashboard_handler))
         .route("/api/health", get(health_handler))
