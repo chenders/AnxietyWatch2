@@ -7,7 +7,7 @@ activation on the Pi.
 - [x] T-A11-0 — Publish the separate contract and correct the stale BLE handoff · documentation · host either
 - [x] T-A11-1 — Freeze registry mappings and implement hostile-input FIG/StreamData decoders · implement-complex · host either
 - [x] T-A11-2 — Implement portable SRP/session crypto and the final read-only RPC gate · implement-complex · host either
-- [ ] T-A11-3 — Build the Linux BlueZ transport, source identity, and sample builder · implement-complex · Linux/Pi for transport, either for tests
+- [x] T-A11-3 — Build the Linux BlueZ transport, source identity, and sample builder · implement-complex · Linux/Pi for transport, either for tests
 - [ ] T-A11-4 — Connect journaling, vitalsd append, reconnect supervision, and status · implement-complex · Linux/Pi for transport, either for tests
 - [ ] T-A11-5 — Add the hardened service and offline/replay acceptance gates · implement-standard · host either
 - [ ] T-A11-6 — Perform bounded Pi activation and live acceptance · implement-complex · **physical/governance gate**

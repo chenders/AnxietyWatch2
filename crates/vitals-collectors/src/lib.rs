@@ -3,6 +3,10 @@
 //! The `BlueZ` transports live in the binaries and are Linux-only; the
 //! sample-building gates live here so they compile and test anywhere.
 
+#[cfg(target_os = "linux")]
+pub mod as11_bluez;
+pub mod as11_build;
+pub mod as11_config;
 pub mod as11_crypto;
 pub mod as11_rpc;
 pub mod bp_build;
