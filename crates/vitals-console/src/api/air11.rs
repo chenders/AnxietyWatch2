@@ -13,7 +13,7 @@
 use axum::{
     Json,
     body::Body,
-    extract::{ConnectInfo, State},
+    extract::{ConnectInfo, Query, State},
     http::{HeaderMap, Request, StatusCode},
     middleware::Next,
     response::{IntoResponse, Response},
@@ -227,6 +227,17 @@ pub struct Air11StatusView {
     pub last_host_receipt_unix_micros: Option<i64>,
     pub last_device_start_time: Option<String>,
     pub blocker: Option<String>,
+    pub event_subscription_state: Option<String>,
+    pub event_notifications: Option<u64>,
+    pub event_records: Option<u64>,
+    pub event_truncated_notifications: Option<u64>,
+    pub last_event_data_id: Option<String>,
+    pub event_blocker: Option<String>,
+    pub therapy_state: Option<String>,
+    pub therapy_start_host_unix_micros: Option<i64>,
+    pub therapy_stop_host_unix_micros: Option<i64>,
+    pub therapy_finalized_host_unix_micros: Option<i64>,
+    pub therapy_blocker: Option<String>,
     pub status_state: String,
 }
 
@@ -293,6 +304,41 @@ pub struct Air11LatestView {
     pub unit: String,
     pub t_micros: i64,
     pub value: f64,
+}
+
+/// Query for bounded stored `AirSense` history.
+#[derive(Debug, Deserialize)]
+pub struct Air11HistoryQuery {
+    /// Stored-history lookback in hours. The route rejects zero and values over 48.
+    pub window_hours: Option<u32>,
+}
+
+/// One one-minute stored `AirSense` history bucket.
+#[derive(Debug, Clone, Serialize)]
+pub struct Air11HistoryPoint {
+    pub t_micros: i64,
+    pub value: f64,
+    pub min: f64,
+    pub max: f64,
+    pub count: i64,
+}
+
+/// One registry type in the stored `AirSense` history projection.
+#[derive(Debug, Clone, Serialize)]
+pub struct Air11HistorySeries {
+    pub name: String,
+    pub unit: String,
+    pub points: Vec<Air11HistoryPoint>,
+}
+
+/// Stored `AirSense` history used by the bedside visual field.
+#[derive(Debug, Clone, Serialize)]
+pub struct Air11HistoryView {
+    pub state: String,
+    pub blocker: Option<String>,
+    pub window_hours: u32,
+    pub boundary: String,
+    pub series: Vec<Air11HistorySeries>,
 }
 
 /// Combined response for `GET /api/air11`.
@@ -990,6 +1036,137 @@ pub async fn air11_handler(State(state): State<AppState>) -> Json<Air11View> {
     Json(build_view(&state).await)
 }
 
+/// GET `/api/air11/history?window_hours=48`.
+///
+/// Returns bounded, one-minute `PostgreSQL` buckets rather than browser-session
+/// samples. The boundary is deliberately gap-bounded and provisional: Amendment 12
+/// does not yet provide a durable therapy-session record, so this endpoint must
+/// not pretend that a transport or time window is a finalized therapy session.
+#[expect(
+    clippy::too_many_lines,
+    reason = "the bounded history projection keeps validation, query, and response states together"
+)]
+pub async fn air11_history_handler(
+    State(state): State<AppState>,
+    Query(query): Query<Air11HistoryQuery>,
+) -> Json<Air11HistoryView> {
+    let window_hours = match query.window_hours {
+        None => 48,
+        Some(hours) if (1..=48).contains(&hours) => hours,
+        Some(hours) => {
+            return Json(Air11HistoryView {
+                state: "invalid".to_string(),
+                blocker: Some(format!(
+                    "history window rejected: window_hours={hours}; expected 1..=48"
+                )),
+                window_hours: hours,
+                boundary: "unknown".to_string(),
+                series: Vec::new(),
+            });
+        }
+    };
+    let Some(pool) = state.db.as_ref() else {
+        return Json(Air11HistoryView {
+            state: "unavailable".to_string(),
+            blocker: Some(
+                "database unavailable; stored AirSense history cannot be read".to_string(),
+            ),
+            window_hours,
+            boundary: "unknown".to_string(),
+            series: Vec::new(),
+        });
+    };
+    let source = VitalsSource::ResmedAir11.id();
+    let rows = sqlx::query_as::<_, (String, String, i64, f64, f64, f64, i64)>(
+        "WITH minute_presence AS (
+             SELECT time_bucket(INTERVAL '1 minute', timestamp) AS bucket
+             FROM samples
+             WHERE source = $1
+               AND timestamp >= now() - ($2::int * INTERVAL '1 hour')
+             GROUP BY bucket
+         ), ordered_presence AS (
+             SELECT bucket,
+                    lag(bucket) OVER (ORDER BY bucket) AS previous_bucket
+             FROM minute_presence
+         ), latest_window AS (
+             SELECT COALESCE(
+                        MAX(bucket) FILTER (
+                            WHERE previous_bucket IS NULL
+                               OR bucket - previous_bucket > INTERVAL '15 minutes'
+                        ),
+                        MIN(bucket)
+                    ) AS start_bucket
+             FROM ordered_presence
+         )
+         SELECT registry.name,
+                registry.unit,
+                (EXTRACT(epoch FROM time_bucket(INTERVAL '1 minute', s.timestamp)) * 1000000)::bigint,
+                AVG(s.value),
+                MIN(s.value),
+                MAX(s.value),
+                COUNT(*)::bigint
+         FROM samples AS s
+         JOIN vitals_type AS registry ON registry.id = s.type
+         CROSS JOIN latest_window
+         WHERE s.source = $1
+           AND latest_window.start_bucket IS NOT NULL
+           AND s.timestamp >= latest_window.start_bucket
+         GROUP BY registry.name, registry.unit, time_bucket(INTERVAL '1 minute', s.timestamp)
+         ORDER BY registry.name, time_bucket(INTERVAL '1 minute', s.timestamp)"
+    )
+    .bind(source)
+    .bind(u8::try_from(window_hours).map_or(48, i32::from))
+    .fetch_all(pool)
+    .await;
+    let Ok(rows) = rows else {
+        return Json(Air11HistoryView {
+            state: "unavailable".to_string(),
+            blocker: Some("stored AirSense history query failed".to_string()),
+            window_hours,
+            boundary: "unknown".to_string(),
+            series: Vec::new(),
+        });
+    };
+    let mut series: Vec<Air11HistorySeries> = Vec::new();
+    for (name, unit, t_micros, value, min, max, count) in rows {
+        let target = if let Some(target) = series.iter_mut().find(|item| item.name == name) {
+            target
+        } else {
+            series.push(Air11HistorySeries {
+                name: name.clone(),
+                unit: unit.clone(),
+                points: Vec::new(),
+            });
+            let Some(target) = series.last_mut() else {
+                continue;
+            };
+            target
+        };
+        target.points.push(Air11HistoryPoint {
+            t_micros,
+            value,
+            min,
+            max,
+            count,
+        });
+    }
+    Json(Air11HistoryView {
+        state: if series.is_empty() {
+            "empty".to_string()
+        } else {
+            "observed".to_string()
+        },
+        blocker: if series.is_empty() {
+            Some("no stored AirSense history is available".to_string())
+        } else {
+            None
+        },
+        window_hours,
+        boundary: "latest_gap_bounded_window_provisional_until_therapy_sessions_exist".to_string(),
+        series,
+    })
+}
+
 fn action_name(action: &Air11Action) -> &'static str {
     match action {
         Air11Action::OptIn => "opt_in",
@@ -1551,6 +1728,25 @@ mod tests {
             .insert(ConnectInfo(SocketAddr::from(([192, 168, 1, 25], 8480))));
         let response = app.oneshot(lan).await.expect("response");
         assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    }
+
+    #[tokio::test]
+    async fn history_rejects_an_unbounded_window_without_clamping() {
+        let view = air11_history_handler(
+            State(test_state()),
+            Query(Air11HistoryQuery {
+                window_hours: Some(49),
+            }),
+        )
+        .await
+        .0;
+        assert_eq!(view.state, "invalid");
+        assert_eq!(view.window_hours, 49);
+        assert!(
+            view.blocker
+                .as_deref()
+                .is_some_and(|message| message.contains("window_hours=49"))
+        );
     }
 
     #[tokio::test]
