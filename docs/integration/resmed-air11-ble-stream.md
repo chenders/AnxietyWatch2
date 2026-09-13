@@ -189,6 +189,19 @@ or flow-limitation samples. The next stage must persist event records, prove
 therapy-session boundaries and event coverage, and then compare a derived
 provisional AHI with the device Summary report.
 
+### Post-stop lifecycle policy
+
+The protocol does not document a ResMed-specific hose-clearing duration. The
+reference AirCANnect report path documents a 30-second post-therapy summary
+delay and a 180-second maximum report-settling wait; these are operational
+settling bounds, not clinical claims about hose clearing. The Rust collector
+therefore records `TherapyStop`, `MaskOff`, or `StandbyStarted` as a
+**provisional** boundary, permits finalization after 30 seconds only when no
+post-stop stream envelope arrived, and waits until 180 seconds when stream
+activity continued after the stop. A new start during settling resumes the
+current session rather than creating a duplicate. This in-memory projection is
+not yet the durable therapy-session record required by Amendment 12.
+
 Native cadence is retained in metadata. The collector does not turn repeated
 high-rate copies of a lower-rate signal into false clinical resolution.
 

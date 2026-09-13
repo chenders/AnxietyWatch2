@@ -11,6 +11,7 @@ pub mod as11_crypto;
 pub mod as11_journal;
 pub mod as11_onboarding;
 pub mod as11_rpc;
+pub mod as11_session;
 pub mod as11_status;
 pub mod as11_supervision;
 pub mod as11_vitalsd;
