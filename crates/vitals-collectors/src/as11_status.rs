@@ -47,6 +47,19 @@ pub enum MeasurementState {
     Stale,
 }
 
+/// State of the read-only `AirSense` event subscription.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum EventSubscriptionState {
+    /// No event subscription attempt has completed.
+    #[default]
+    NotAttempted,
+    /// The fixed event subscription was accepted by the device.
+    Subscribed,
+    /// The stream remains usable, but event coverage is unavailable.
+    Unavailable,
+}
+
 /// The status document written by the `AirSense` collector.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Air11Status {
@@ -82,6 +95,24 @@ pub struct Air11Status {
     pub last_device_start_time: Option<String>,
     /// The current degraded blocker, without private protocol material.
     pub blocker: Option<String>,
+    /// State of the fixed lifecycle and respiratory event subscription.
+    #[serde(default)]
+    pub event_subscription_state: EventSubscriptionState,
+    /// Number of event notifications journaled and decoded.
+    #[serde(default)]
+    pub event_notifications: u64,
+    /// Number of event records retained from notifications.
+    #[serde(default)]
+    pub event_records: u64,
+    /// Number of notifications whose event list exceeded the decoder bound.
+    #[serde(default)]
+    pub event_truncated_notifications: u64,
+    /// Last event data id, when it is valid UTF-8.
+    #[serde(default)]
+    pub last_event_data_id: Option<String>,
+    /// Why event coverage is unavailable, without private protocol material.
+    #[serde(default)]
+    pub event_blocker: Option<String>,
 }
 
 impl Default for Air11Status {
@@ -103,6 +134,12 @@ impl Default for Air11Status {
             last_host_receipt_unix_micros: None,
             last_device_start_time: None,
             blocker: None,
+            event_subscription_state: EventSubscriptionState::NotAttempted,
+            event_notifications: 0,
+            event_records: 0,
+            event_truncated_notifications: 0,
+            last_event_data_id: None,
+            event_blocker: None,
         }
     }
 }

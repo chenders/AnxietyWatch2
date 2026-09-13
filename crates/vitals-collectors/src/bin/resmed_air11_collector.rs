@@ -29,12 +29,15 @@ use vitals_collectors::{
     as11_build::Air11SampleBuilder,
     as11_config::{self, Air11Credentials},
     as11_journal::RawJournal,
-    as11_status::{Air11Status, LinkState, MeasurementState},
+    as11_status::{Air11Status, EventSubscriptionState, LinkState, MeasurementState},
     as11_supervision::{ReconnectBackoff, ReconnectCycle},
     as11_vitalsd::{encode_stream_append, validate_stream_append},
 };
 #[cfg(target_os = "linux")]
-use vitals_decode::stream::decode_stream;
+use vitals_decode::{
+    events::{EventFrame, decode_event},
+    stream::decode_stream,
+};
 #[cfg(target_os = "linux")]
 use vitals_proto::{Response, WireSample, check_frame_len, decode_payload};
 
@@ -210,6 +213,9 @@ impl Collector {
             self.status.link_state = LinkState::Starting;
             self.status.session_id = None;
             self.status.blocker = None;
+            self.status.event_subscription_state = EventSubscriptionState::NotAttempted;
+            self.status.event_blocker = None;
+            self.status.last_event_data_id = None;
             self.publish()?;
 
             match self.collect_connection().await {
@@ -354,6 +360,17 @@ impl Collector {
             }));
         }
         self.reconnect_cycle.mark_stream_started();
+        match transport.subscribe_events().await {
+            Ok(()) => {
+                self.status.event_subscription_state = EventSubscriptionState::Subscribed;
+                self.status.event_blocker = None;
+            }
+            Err(error) => {
+                self.status.event_subscription_state = EventSubscriptionState::Unavailable;
+                self.status.event_blocker =
+                    Some(format!("AirSense event subscription unavailable: {error}"));
+            }
+        }
         self.status.link_state = LinkState::Streaming;
         self.status.blocker = None;
         self.publish()?;
@@ -403,8 +420,14 @@ impl Collector {
         self.status.last_host_receipt_unix_micros = Some(receipt_unix_micros);
         self.publish()?;
 
+        if let Some(frame) = decode_event(&envelope) {
+            self.process_event_frame(frame);
+            return self.publish();
+        }
         let Some(frame) = decode_stream(&envelope) else {
-            self.quarantine("AirSense StreamData decode invalid; envelope journaled".to_owned())?;
+            self.quarantine(
+                "AirSense application envelope decode invalid; envelope journaled".to_owned(),
+            )?;
             return Ok(());
         };
         self.status.decoded_frames = self.status.decoded_frames.saturating_add(1);
@@ -441,6 +464,20 @@ impl Collector {
             }
         }
         self.publish()
+    }
+
+    fn process_event_frame(&mut self, frame: EventFrame) {
+        self.status.event_notifications = self.status.event_notifications.saturating_add(1);
+        self.status.event_records = self
+            .status
+            .event_records
+            .saturating_add(u64::from(frame.event_count));
+        if frame.truncated {
+            self.status.event_truncated_notifications =
+                self.status.event_truncated_notifications.saturating_add(1);
+        }
+        self.status.last_event_data_id =
+            std::str::from_utf8(frame.data_id()).ok().map(str::to_owned);
     }
 
     async fn publish_batch(&mut self, samples: Vec<WireSample>) -> Result<(), FatalFailure> {

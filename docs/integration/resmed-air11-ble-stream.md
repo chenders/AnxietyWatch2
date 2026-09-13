@@ -169,6 +169,24 @@ The collector accepts the observed frame interval independently of the fixed
 request's report interval; a mismatch with 200 ms is not, by itself, a bad
 measurement.
 
+### Event subscription and summary paths
+
+The collector now sends a fixed, read-only `SubscribeEvent` request alongside
+`StartStream`. It requests the four AirCANNect-compatible base selectors plus
+`TherapyEvents-RespiratoryEvents`. Event notifications are journaled on the
+same encrypted application lane and decoded into bounded lifecycle and
+respiratory event records. Event counters and the last data id are exposed in
+the operator-safe status document; event records are not yet persisted as
+therapy-session rows or used to calculate AHI.
+
+AirCANnect's independently verified source recognizes hypopnea, central apnea,
+obstructive apnea, unclassified apnea, RERA, and CSR events. Its separate
+Summary/report path contains a numeric AHI field. Therefore AHI is **not a
+`StartStream` signal** and is not derived from live respiration, leak, pressure,
+or flow-limitation samples. The next stage must persist event records, prove
+therapy-session boundaries and event coverage, and then compare a derived
+provisional AHI with the device Summary report.
+
 Native cadence is retained in metadata. The collector does not turn repeated
 high-rate copies of a lower-rate signal into false clinical resolution.
 

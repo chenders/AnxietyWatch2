@@ -31,6 +31,7 @@
 
 pub mod bp;
 pub mod emay;
+pub mod events;
 pub mod fig;
 pub mod hr;
 pub mod sfloat;

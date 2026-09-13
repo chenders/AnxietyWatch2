@@ -28,6 +28,14 @@ pub const AIR11_STREAM_IDS: [&str; 17] = [
     "_RFL", "_MKP", "_MKF", "_MKI", "_MKE", "_LKF", "_RR2", "_TD2", "_MV2", "_TGT", "_IE2", "_SNI",
     "_FFL", "_INT", "_BYV", "_HRT", "_SAO",
 ];
+/// The fixed read-only event selectors sent in `SubscribeEvent`.
+pub const AIR11_EVENT_IDS: [&str; 5] = [
+    "SystemActivityEvents-FrequentActivityEvents",
+    "SystemActivityEvents-SporadicActivityEvents",
+    "UsageEvents-TherapyStatusEvents",
+    "SettingsHistoryChangeCount",
+    "TherapyEvents-RespiratoryEvents",
+];
 /// The fixed source sample interval sent in `StartStream`.
 pub const AIR11_SAMPLE_INTERVAL_MS: u64 = 40;
 /// The fixed source report interval sent in `StartStream`.
@@ -36,7 +44,7 @@ pub const AIR11_REPORT_INTERVAL_MS: u64 = 200;
 pub const MAX_CLIENT_ID_BYTES: usize = 128;
 /// The methods that may reach the final send boundary.
 pub const READ_ONLY_ALLOWLIST: &str =
-    "RequestSession,CheckSessionIntegrity,GetVersion,GetDateTime,StartStream";
+    "RequestSession,CheckSessionIntegrity,GetVersion,GetDateTime,StartStream,SubscribeEvent";
 
 /// A method that production `AirSense` code is permitted to send.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -51,6 +59,8 @@ pub enum As11RpcMethod {
     GetDateTime,
     /// Start the fixed therapy observation stream on the encrypted lane.
     StartStream,
+    /// Subscribe to fixed lifecycle and respiratory event notifications.
+    SubscribeEvent,
 }
 
 impl As11RpcMethod {
@@ -63,27 +73,32 @@ impl As11RpcMethod {
             Self::GetVersion => "GetVersion",
             Self::GetDateTime => "GetDateTime",
             Self::StartStream => "StartStream",
+            Self::SubscribeEvent => "SubscribeEvent",
         }
     }
 
     const fn request_version(self) -> &'static str {
         match self {
             Self::RequestSession | Self::CheckSessionIntegrity | Self::GetVersion => "2.0",
-            Self::GetDateTime | Self::StartStream => "1.0",
+            Self::GetDateTime | Self::StartStream | Self::SubscribeEvent => "1.0",
         }
     }
 
     const fn request_vcid(self) -> u16 {
         match self {
             Self::RequestSession | Self::CheckSessionIntegrity => PLAINTEXT_REQUEST_VCID,
-            Self::GetVersion | Self::GetDateTime | Self::StartStream => ENCRYPTED_REQUEST_VCID,
+            Self::GetVersion | Self::GetDateTime | Self::StartStream | Self::SubscribeEvent => {
+                ENCRYPTED_REQUEST_VCID
+            }
         }
     }
 
     const fn response_vcid(self) -> u16 {
         match self {
             Self::RequestSession | Self::CheckSessionIntegrity => PLAINTEXT_RESPONSE_VCID,
-            Self::GetVersion | Self::GetDateTime | Self::StartStream => ENCRYPTED_RESPONSE_VCID,
+            Self::GetVersion | Self::GetDateTime | Self::StartStream | Self::SubscribeEvent => {
+                ENCRYPTED_RESPONSE_VCID
+            }
         }
     }
 
@@ -94,6 +109,7 @@ impl As11RpcMethod {
             "GetVersion" => Some(Self::GetVersion),
             "GetDateTime" => Some(Self::GetDateTime),
             "StartStream" => Some(Self::StartStream),
+            "SubscribeEvent" => Some(Self::SubscribeEvent),
             _ => None,
         }
     }
@@ -260,6 +276,25 @@ impl RpcRequest {
                 "sampleIntervalMs": AIR11_SAMPLE_INTERVAL_MS,
                 "reportIntervalMs": AIR11_REPORT_INTERVAL_MS,
             })),
+        )
+    }
+
+    /// Builds the fixed read-only lifecycle and respiratory event subscription.
+    ///
+    /// # Errors
+    /// Returns [`RpcError`] if the fixed JSON body cannot be emitted within the
+    /// protocol bound.
+    pub fn subscribe_events(id: u64) -> Result<Self, RpcError> {
+        let data_ids = Value::Array(
+            AIR11_EVENT_IDS
+                .iter()
+                .map(|name| Value::String((*name).to_owned()))
+                .collect(),
+        );
+        Self::build(
+            id,
+            As11RpcMethod::SubscribeEvent,
+            Some(json!({ "dataIds": data_ids })),
         )
     }
 
@@ -462,6 +497,35 @@ fn required_u64(
         .ok_or(RpcError::InvalidRequest { reason })
 }
 
+fn validate_event_params(params: Option<&Value>) -> Result<(), RpcError> {
+    let params = params.ok_or(RpcError::InvalidRequest {
+        reason: "event_params_missing",
+    })?;
+    let params = value_object(params, "params_not_object")?;
+    if params.len() != 1 {
+        return Err(RpcError::InvalidRequest {
+            reason: "event_params_shape",
+        });
+    }
+    let ids = params
+        .get("dataIds")
+        .and_then(Value::as_array)
+        .ok_or(RpcError::InvalidRequest {
+            reason: "event_ids_missing",
+        })?;
+    if ids.len() != AIR11_EVENT_IDS.len()
+        || !AIR11_EVENT_IDS
+            .iter()
+            .zip(ids)
+            .all(|(expected, actual)| actual.as_str().is_some_and(|value| value == *expected))
+    {
+        return Err(RpcError::InvalidRequest {
+            reason: "event_ids_not_fixed",
+        });
+    }
+    Ok(())
+}
+
 fn validate_params_shape(params: Option<&Value>, method: As11RpcMethod) -> Result<(), RpcError> {
     match method {
         As11RpcMethod::GetVersion | As11RpcMethod::GetDateTime => {
@@ -555,6 +619,7 @@ fn validate_params_shape(params: Option<&Value>, method: As11RpcMethod) -> Resul
                 });
             }
         }
+        As11RpcMethod::SubscribeEvent => validate_event_params(params)?,
     }
     Ok(())
 }
@@ -876,6 +941,20 @@ mod tests {
         assert_eq!(
             stream_value["params"]["dataIds"].as_array().map(Vec::len),
             Some(17)
+        );
+
+        let events = RpcRequest::subscribe_events(10).expect("event request");
+        assert_eq!(events.method(), As11RpcMethod::SubscribeEvent);
+        assert_eq!(events.request_vcid(), ENCRYPTED_REQUEST_VCID);
+        let event_value: Value = serde_json::from_slice(events.payload()).expect("JSON");
+        assert_eq!(event_value["jsonrpc"], "1.0");
+        assert_eq!(
+            event_value["params"]["dataIds"].as_array().map(Vec::len),
+            Some(AIR11_EVENT_IDS.len())
+        );
+        assert_eq!(
+            event_value["params"]["dataIds"][4],
+            "TherapyEvents-RespiratoryEvents"
         );
     }
 
