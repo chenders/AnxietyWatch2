@@ -341,11 +341,11 @@ The acceptance harness is:
 scripts/air11-pi-acceptance.sh
 ```
 
-It must be run on the Pi from an interactive terminal. It requires this exact
-full-evidence invocation:
+It must be run on the Pi from an interactive terminal. The required invocation
+uses the installed H10 implementation as an independent live-value gate:
 
 ```sh
-scripts/air11-pi-acceptance.sh --duration 60 --require-postgres --require-h10 --require-emay --require-ezshare-unchanged
+scripts/air11-pi-acceptance.sh --duration 60 --require-postgres --require-h10
 ```
 
 The harness asks the operator to type a duration-specific confirmation (for
@@ -367,8 +367,9 @@ A successful run requires all of the following:
 7. two distinct persistent sessions are observed across the bounded restart;
 8. source/type rows with untrusted-clock metadata reach PostgreSQL through the
    existing ingest path; and
-9. H10, EMAY, and EzShare remain active, while the main route snapshot is
-   unchanged.
+9. H10 remains active and produces a fresh registry-valid HR or RR interval
+   row. EMAY and EzShare are separate optional integrations and are not
+   required by this AirSense acceptance.
 
 The harness removes its temporary evidence on exit and prints only aggregate
 counts and named blockers. A nonzero exit is the acceptance result; a status

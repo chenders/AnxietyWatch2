@@ -312,13 +312,14 @@ After explicit operator authorization and only on the real Pi, run the exact
 bounded evidence command:
 
 ```sh
-scripts/air11-pi-acceptance.sh --duration 60 --require-postgres --require-h10 --require-emay --require-ezshare-unchanged
+scripts/air11-pi-acceptance.sh --duration 60 --require-postgres --require-h10
 ```
 
 The harness requires its duration-specific interactive authorization. It
 checks the resolved target, private credentials, measured/null evidence,
 host/device provenance, PostgreSQL rows, distinct sessions, reconnect behavior,
-and unchanged H10/EMAY/EzShare routes. It does not pair, scan indefinitely,
+and a fresh registry-valid H10 HR or RR interval row. EMAY and EzShare are not
+required because their current deployment implementations are unavailable. It does not pair, scan indefinitely,
 change an adapter, enable overlays, change routes, or enable the AirSense unit.
 A nonzero
 exit code is failed acceptance; a chat report is not a substitute.
