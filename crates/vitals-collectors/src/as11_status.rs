@@ -113,6 +113,21 @@ pub struct Air11Status {
     /// Why event coverage is unavailable, without private protocol material.
     #[serde(default)]
     pub event_blocker: Option<String>,
+    /// Conservative therapy lifecycle state.
+    #[serde(default)]
+    pub therapy_state: crate::as11_session::TherapyState,
+    /// Host receipt of the first observed therapy-start evidence.
+    #[serde(default)]
+    pub therapy_start_host_unix_micros: Option<i64>,
+    /// Host receipt of therapy-stop evidence.
+    #[serde(default)]
+    pub therapy_stop_host_unix_micros: Option<i64>,
+    /// Host receipt at which the post-stop boundary became complete.
+    #[serde(default)]
+    pub therapy_finalized_host_unix_micros: Option<i64>,
+    /// Why a therapy boundary remains provisional, if applicable.
+    #[serde(default)]
+    pub therapy_blocker: Option<String>,
 }
 
 impl Default for Air11Status {
@@ -140,6 +155,11 @@ impl Default for Air11Status {
             event_truncated_notifications: 0,
             last_event_data_id: None,
             event_blocker: None,
+            therapy_state: crate::as11_session::TherapyState::Unknown,
+            therapy_start_host_unix_micros: None,
+            therapy_stop_host_unix_micros: None,
+            therapy_finalized_host_unix_micros: None,
+            therapy_blocker: None,
         }
     }
 }

@@ -29,6 +29,7 @@ use vitals_collectors::{
     as11_build::Air11SampleBuilder,
     as11_config::{self, Air11Credentials},
     as11_journal::RawJournal,
+    as11_session::TherapyLifecycle,
     as11_status::{Air11Status, EventSubscriptionState, LinkState, MeasurementState},
     as11_supervision::{ReconnectBackoff, ReconnectCycle},
     as11_vitalsd::{encode_stream_append, validate_stream_append},
@@ -136,6 +137,7 @@ struct Collector {
     status: Air11Status,
     backoff: ReconnectBackoff,
     reconnect_cycle: ReconnectCycle,
+    therapy: TherapyLifecycle,
     attempted: bool,
     shutdown: Shutdown,
 }
@@ -198,6 +200,7 @@ impl Collector {
             status,
             backoff: ReconnectBackoff::new(),
             reconnect_cycle: ReconnectCycle::new(),
+            therapy: TherapyLifecycle::default(),
             attempted: false,
             shutdown: Box::pin(shutdown_signal()),
         })
@@ -382,8 +385,17 @@ impl Collector {
         transport: &mut Air11BleTransport,
         builder: &mut Air11SampleBuilder,
     ) -> Result<ConnectionOutcome, FatalFailure> {
+        let mut lifecycle_tick = tokio::time::interval(Duration::from_secs(1));
+        lifecycle_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
             tokio::select! {
+                _ = lifecycle_tick.tick() => {
+                    let (_, now_unix_micros) = host_receipt()
+                        .map_err(|error| FatalFailure::new(format!("therapy lifecycle clock failed: {error}")))?;
+                    if self.advance_therapy(now_unix_micros) {
+                        self.publish()?;
+                    }
+                }
                 signal = self.shutdown.as_mut() => {
                     signal.map_err(|error| FatalFailure::new(format!("shutdown signal failed: {error}")))?;
                     return Ok(ConnectionOutcome::Stopped);
@@ -418,10 +430,11 @@ impl Collector {
             })?;
         self.status.received_envelopes = self.status.received_envelopes.saturating_add(1);
         self.status.last_host_receipt_unix_micros = Some(receipt_unix_micros);
+        self.advance_therapy(receipt_unix_micros);
         self.publish()?;
 
         if let Some(frame) = decode_event(&envelope) {
-            self.process_event_frame(frame);
+            self.process_event_frame(frame, receipt_unix_micros);
             return self.publish();
         }
         let Some(frame) = decode_stream(&envelope) else {
@@ -431,6 +444,8 @@ impl Collector {
             return Ok(());
         };
         self.status.decoded_frames = self.status.decoded_frames.saturating_add(1);
+        self.therapy.observe_stream();
+        self.sync_therapy_status();
         self.status.last_device_start_time = std::str::from_utf8(frame.source_start_time())
             .ok()
             .map(str::to_owned);
@@ -466,7 +481,7 @@ impl Collector {
         self.publish()
     }
 
-    fn process_event_frame(&mut self, frame: EventFrame) {
+    fn process_event_frame(&mut self, frame: EventFrame, receipt_unix_micros: i64) {
         self.status.event_notifications = self.status.event_notifications.saturating_add(1);
         self.status.event_records = self
             .status
@@ -476,8 +491,37 @@ impl Collector {
             self.status.event_truncated_notifications =
                 self.status.event_truncated_notifications.saturating_add(1);
         }
+        for event in frame.events.iter().take(usize::from(frame.event_count)) {
+            self.therapy
+                .observe_event(event.name(), receipt_unix_micros);
+        }
         self.status.last_event_data_id =
             std::str::from_utf8(frame.data_id()).ok().map(str::to_owned);
+        self.sync_therapy_status();
+    }
+
+    fn advance_therapy(&mut self, now_unix_micros: i64) -> bool {
+        let changed = self.therapy.advance(now_unix_micros);
+        if changed {
+            self.sync_therapy_status();
+        }
+        changed
+    }
+
+    fn sync_therapy_status(&mut self) {
+        self.status.therapy_state = self.therapy.state();
+        self.status.therapy_start_host_unix_micros = self.therapy.start_host_unix_micros();
+        self.status.therapy_stop_host_unix_micros = self.therapy.stop_host_unix_micros();
+        self.status.therapy_finalized_host_unix_micros = self.therapy.finalized_host_unix_micros();
+        self.status.therapy_blocker = match self.therapy.state() {
+            vitals_collectors::as11_session::TherapyState::Provisional => Some(format!(
+                "therapy boundary provisional: stop_host_unix_micros={:?}; settle_min_micros={}; settle_max_micros={}",
+                self.therapy.stop_host_unix_micros(),
+                vitals_collectors::as11_session::POST_STOP_SETTLE_MICROS,
+                vitals_collectors::as11_session::POST_STOP_SETTLE_MAX_MICROS,
+            )),
+            _ => None,
+        };
     }
 
     async fn publish_batch(&mut self, samples: Vec<WireSample>) -> Result<(), FatalFailure> {
