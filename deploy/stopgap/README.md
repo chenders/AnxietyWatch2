@@ -26,9 +26,10 @@ real data?*
         │      index.html      <- tracked; `git pull` updates the panel
         │      status.json     <- gitignored; emay-spike rewrites it every second
         ▼
-  python http.server on 127.0.0.1:8975
+  restricted HTTP server on private LAN + loopback :8975
         │
   cage + chromium --kiosk  ──▶  DSI panel
+  operator browser on LAN  ──▶  same pages
 ```
 
 **Updating the panel is `git pull`.** It was previously a copy under
@@ -73,6 +74,7 @@ sudo -u anxietywatch git clone --branch main github-anxietywatch:chenders/Anxiet
 cargo build --release -p emay-spike           # on the Pi, or cross-build
 sudo install -m755 target/release/emay-spike /usr/local/bin/
 
+sudo install -m755 deploy/stopgap/anxietywatch-panel-http.py /usr/local/libexec/anxietywatch-panel-http.py
 sudo cp deploy/stopgap/*.service /etc/systemd/system/
 sudo systemctl daemon-reload
 
@@ -216,6 +218,22 @@ The page polls the merged `status.json` once per second. H10 is marked
 marked `WORKING` only when its link, finger state, writer heartbeat, and sample
 are fresh. BP is displayed as the latest durable reading and retains its
 `arrival_estimate` provenance.
+
+`live-vitals-watch` is a display check, not an alarm. H10 and EMAY are the
+overnight must-have streams; BP is reported when available but is optional and
+never makes a healthy H10/EMAY run degraded. The attached DSI kiosk is also
+reported separately and does not change the sensor-priority result.
+
+### Current physical kiosk page
+
+The physical DSI panel currently uses the read-only AirSense bedside page at
+`http://127.0.0.1:8480/console/air11-bedside.html`. Install
+`zzz-air11-bedside.conf` into `/etc/systemd/system/panel-kiosk.service.d/`, then
+run `sudo systemctl daemon-reload && sudo systemctl restart panel-kiosk`.
+The previous `live-vitals.html` URL remains available by removing that drop-in
+and restarting the kiosk. AirSense event notifications are currently journaled
+and counted by the collector but are not yet rendered as an event timeline on
+this page; the page shows stream-derived leak and pressure only.
 
 `live-vitals-watch` is a display check, not an alarm. H10 and EMAY are the
 overnight must-have streams; BP is reported when available but is optional and
