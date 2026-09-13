@@ -20,9 +20,8 @@ readonly MAX_DURATION=3600
 usage() {
     cat <<'EOF'
 Usage:
-  scripts/air11-pi-acceptance.sh --duration SECONDS \
-    --require-postgres --require-h10 --require-emay \
-    --require-ezshare-unchanged
+  scripts/air11-pi-acceptance.sh --duration SECONDS --require-postgres
+  [--require-h10] [--require-emay] [--require-ezshare-unchanged]
 
 Runs a finite, read-only AirSense acceptance window. SECONDS must be between
 20 and 3600 so the run contains an authenticated stream and a restart check.
@@ -78,7 +77,7 @@ while (($# > 0)); do
         *)
             # Do not echo an unknown argument: an operator must not be able to
             # put a secret into an error line by passing it as an option value.
-            die "unknown option; expected --duration and all four --require-* gates"
+            die "unknown option; expected --duration and a supported --require-* gate"
             ;;
     esac
 done

@@ -12,7 +12,7 @@ activation on the Pi.
 - [x] T-A11-5 — Add the hardened service and offline/replay acceptance gates · implement-standard · host either
 - [ ] T-A11-6 — Perform bounded Pi activation and live acceptance · implement-complex · **physical/governance gate**
 
-**Amends:** `docs/specs/AMENDMENTS.md` is mandatory for every task. This change follows amendments 01, 02, 04, 05, 06, and 07; it does not amend any accepted decision.
+**Amends:** `docs/specs/AMENDMENTS.md` is mandatory for every task. This change follows amendments 01, 02, 04, 05, 06, 07, and 10; it does not amend any other accepted decision.
 
 ---
 
@@ -118,8 +118,8 @@ activation on the Pi.
 
 **Reads:** `AGENTS.md` · `docs/specs/AMENDMENTS.md` · `openspec/changes/resmed-air11-ble-stream/{proposal,design,tasks}.md` · approved service file · collector status implementation · `docs/integration/resmed_bluetooth_research.md` · `docs/integration/hms-cpap-ezshare-integration.md`
 
-**Do:** Keep onboarding separate from this collector acceptance task: any discovery or first pairing must use the approved bounded `resmed-air11-onboard` operation. For this collector run, do not change an adapter, overlay, firmware, route, or service enablement. After the operator explicitly authorizes the exact bounded run, verify the operator-managed credential file and resolved Linux target, then run the collector for a finite window. Prove authentication, fixed stream subscription, host timestamp/clock metadata, null preservation, source/type rows through vitalsd and PostgreSQL, reconnect/restart replay behavior, and that H10/EMAY/EzShare remain healthy. Record unknown/unavailable and every failed gate; do not call unknown evidence success.
+**Do:** Keep onboarding separate from this collector acceptance task: any discovery or first pairing must use the approved bounded `resmed-air11-onboard` operation. For this collector run, do not change an adapter, overlay, firmware, route, or service enablement. After the operator explicitly authorizes the exact bounded run, verify the operator-managed credential file and resolved Linux target, then run the collector for a finite window. Prove authentication, fixed stream subscription, host timestamp/clock metadata, null preservation, source/type rows through vitalsd and PostgreSQL, and reconnect/restart replay behavior. H10, EMAY, and EzShare remain separate integrations and are not prerequisites for AirSense acceptance; optional cross-integration flags may be used only when those implementations are installed and active. Record unknown/unavailable and every failed gate; do not call unknown evidence success.
 
-**Verify:** `scripts/air11-pi-acceptance.sh --duration 60 --require-postgres --require-h10 --require-emay --require-ezshare-unchanged`
+**Verify:** `scripts/air11-pi-acceptance.sh --duration 60 --require-postgres`
 
 **Expect:** exit 0 only on the Pi after explicit authorization. The command must fail closed when credentials, resolved target, source rows, host-time metadata, database append, reconnect evidence, or unaffected-source evidence is missing; no chat report substitutes for its exit code.

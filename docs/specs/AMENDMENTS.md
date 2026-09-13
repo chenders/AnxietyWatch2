@@ -29,6 +29,7 @@ wins**. If you find a contradiction, report it rather than implementing either v
 | **16** | [Operator-directed APNs messages](2026-09-18-amendment-16-operator-directed-apns.md) | first-draft remote-notification deferral and the deferred Stage 7 alarm-push client follow-up; preserves Amendment 14's no-loop phone-silence rule | T-M6a–T-M6e, T-I22 |
 | **17** | [Opt-in iPhone BLE mobility relay](2026-09-22-amendment-17-iphone-ble-mobility-relay.md) | Stage 7's blanket exclusion of iPhone BLE sessions and the ordinary-sync socket/keep-alive wording, only for a bounded mobility relay | T-I3, T-I18, T-I20, T-I21, T-I23 |
 | **18** | [Deployment acceptance is evidence-based, not time-based](2026-09-28-amendment-18-deployment-evidence-not-time.md) | the undefined Pi deployment observation-period gate | Pi GitHub Actions deployment T-R8 |
+| **10-A11** | [AirSense acceptance scope](2026-09-13-amendment-10-air11-acceptance-scope.md) | T-A11-6's unrelated host-health gates | T-A11-6 |
 | — | [C vs Rust evaluation](2026-08-03-c-vs-rust-evaluation.md) | the C11 decision | all code tasks |
 | — | [Review synthesis and fix tracker](../reviews/SYNTHESIS.md) | — | status of every finding |
 
