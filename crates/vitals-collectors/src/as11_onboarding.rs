@@ -369,7 +369,7 @@ fn parse_pairing_response(
     request: &PairingRequest,
     response_vcid: u16,
     payload: &[u8],
-) -> Result<PairingResponse, OnboardingError> {
+) -> Result<Option<PairingResponse>, OnboardingError> {
     if response_vcid != PAIRING_RESPONSE_VCID {
         return Err(OnboardingError::PairingProtocol {
             reason: "response_vcid",
@@ -387,10 +387,11 @@ fn parse_pairing_response(
     let object = value.as_object().ok_or(OnboardingError::PairingProtocol {
         reason: "response_object",
     })?;
+    // Aircannect's working client ignores unsolicited JSON-RPC notifications
+    // while waiting for the response to its pairing request. AirSense can
+    // emit one on the same FD56 notification stream before the response.
     if object.get("method").is_some() {
-        return Err(OnboardingError::PairingProtocol {
-            reason: "response_notification",
-        });
+        return Ok(None);
     }
     if object.get("jsonrpc").and_then(Value::as_str) != Some("2.0") {
         return Err(OnboardingError::PairingProtocol {
@@ -416,7 +417,7 @@ fn parse_pairing_response(
                 })?;
             Err(OnboardingError::PairingDeviceError { code })
         }
-        (Some(result), None) => parse_pairing_result(request.method(), result),
+        (Some(result), None) => parse_pairing_result(request.method(), result).map(Some),
         (None, None) => Err(OnboardingError::PairingProtocol {
             reason: "result_or_error",
         }),
@@ -857,7 +858,11 @@ mod linux {
                 match self.fig.take() {
                     FigTake::NeedMore => {}
                     FigTake::Packet(packet) => {
-                        return parse_pairing_response(request, packet.vcid, packet.payload);
+                        if let Some(response) =
+                            parse_pairing_response(request, packet.vcid, packet.payload)?
+                        {
+                            return Ok(response);
+                        }
                     }
                     FigTake::HeaderCrcMismatch => {
                         return Err(OnboardingError::PairingProtocol {
@@ -999,6 +1004,26 @@ mod tests {
                 .as_bytes(),
         )
         .expect("response");
-        assert!(matches!(response, PairingResponse::Start(_)));
+        assert!(matches!(response, Some(PairingResponse::Start(_))));
+    }
+
+    #[test]
+    fn pairing_notifications_are_ignored_while_waiting_for_response() {
+        let public_key = "AB".repeat(SRP_PAD_BYTES);
+        let request = PairingRequest::start_key_exchange(7, &public_key).expect("start");
+        let notification = json!({
+            "jsonrpc": "2.0",
+            "method": "DeviceStateChanged",
+            "params": {}
+        });
+        let response = parse_pairing_response(
+            &request,
+            PAIRING_RESPONSE_VCID,
+            serde_json::to_string(&notification)
+                .expect("notification JSON")
+                .as_bytes(),
+        )
+        .expect("notification is not a protocol failure");
+        assert!(response.is_none());
     }
 }

@@ -106,7 +106,10 @@ recording transport around the final `send()` boundary and assert that control
 and OTA names never reach it.
 
 There is no `StopStream` assumption. On shutdown, disconnecting the BLE session
-terminates the observation stream; the collector must not invent a stop RPC.
+terminates the observation stream; the collector must not invent a stop RPC. The
+request uses sample/report intervals of 40/200 ms, but `StreamData.intervalMs`
+is treated as the observed spacing for values in that frame; the tested firmware
+reports 40 ms rather than echoing the requested report interval.
 
 ## Identity, time, and metadata
 
@@ -114,7 +117,7 @@ Each successful authenticated BLE connection mints a fresh persistent
 `session_id` using `SessionMinter`. `SessionMinter` is for connection identity
 only; Air11 sample `seq` is never `Session::next_seq()` and never host arrival
 order. The source position is derived from the device-provided `startTime`, the
-reported sample index, the fixed requested interval, and the signal's native
+reported sample index, the frame's observed interval, and the signal's native
 cadence. A duplicate source position in the same connection produces the same
 `seq` and is ignored; a new authenticated connection gets a new session even if
 the device repeats old values.
@@ -156,7 +159,9 @@ credential, session key, device serial, or full target address. Health is not
 The Linux transport uses bounded connect, service-resolution, notification, RPC,
 and append deadlines. It connects to the explicitly resolved target without
 requiring a separate BlueZ bond; AirSense application authentication remains the
-security gate. It does not pair or scan indefinitely. A disconnect tears down the
+security gate. It does not pair or scan indefinitely; if the direct BlueZ
+connection cannot materialize the configured target, one bounded FD56-filtered
+discovery fallback may resolve it. A disconnect tears down the
 session, mints a new identity only after the next authentication succeeds,
 re-authenticates, reissues `StartStream`, and resets exponential backoff. A
 failed connect, authentication, journal, decode, append, or stale stream names

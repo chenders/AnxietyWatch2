@@ -17,7 +17,7 @@ use vitals_decode::stream::{StreamFrame, StreamSignal};
 use vitals_proto::WireSample;
 use vitals_registry::{VitalsSource, VitalsType};
 
-use crate::as11_rpc::{AIR11_REPORT_INTERVAL_MS, AIR11_SAMPLE_INTERVAL_MS};
+use crate::as11_rpc::AIR11_SAMPLE_INTERVAL_MS;
 
 /// Maximum metadata size attached to one emitted sample.
 pub const MAX_AIR11_EXTRA_BYTES: usize = 512;
@@ -55,13 +55,6 @@ pub enum Air11BuildError {
         previous: i64,
         /// The rejected current parsed source start time in microseconds.
         current: i64,
-    },
-    /// The device changed the fixed requested report cadence.
-    ReportIntervalMismatch {
-        /// The reported interval.
-        actual_ms: u32,
-        /// The interval sent in the fixed request.
-        expected_ms: u64,
     },
     /// A source sample position moved backwards within one signal.
     SourcePositionBackwards {
@@ -109,13 +102,6 @@ impl core::fmt::Display for Air11BuildError {
             Self::SourceStartTimeBackwards { previous, current } => write!(
                 f,
                 "air11 startTime moved backwards: previous={previous}, current={current}"
-            ),
-            Self::ReportIntervalMismatch {
-                actual_ms,
-                expected_ms,
-            } => write!(
-                f,
-                "air11 report interval={actual_ms}ms, expected={expected_ms}ms"
             ),
             Self::SourcePositionBackwards {
                 signal,
@@ -176,29 +162,21 @@ impl Air11SampleBuilder {
     /// Builds all rows from one decoded stream frame.
     ///
     /// Source positions are absolute source sample ordinals: the parsed
-    /// `startTime` in microseconds is advanced by the fixed requested 40-ms
-    /// sample interval for each bounded array index, then divided by the
-    /// signal's native cadence.  Repeated positions are ignored; a backwards
-    /// position is an error.  State is committed only
-    /// after the whole frame succeeds, so a quarantined frame cannot partially
-    /// advance identity.
+    /// `startTime` in microseconds is advanced by the interval reported in the
+    /// frame for each bounded array index, then divided by the signal's native
+    /// cadence.  Repeated positions are ignored; a backwards position is an
+    /// error.  State is committed only after the whole frame succeeds, so a
+    /// quarantined frame cannot partially advance identity.
     ///
     /// # Errors
-    /// Returns a named error for a bad host timestamp, source clock, fixed
-    /// report interval, source position, conversion, registry range, or
-    /// metadata bound.
+    /// Returns a named error for a bad host timestamp, source clock, source
+    /// position, conversion, registry range, or metadata bound.
     pub fn build_frame(
         &mut self,
         frame: &StreamFrame,
         host_receipt: SystemTime,
     ) -> Result<Air11Batch, Air11BuildError> {
         let timestamp_unix_micros = host_timestamp_micros(host_receipt)?;
-        if u64::from(frame.interval_ms) != AIR11_REPORT_INTERVAL_MS {
-            return Err(Air11BuildError::ReportIntervalMismatch {
-                actual_ms: frame.interval_ms,
-                expected_ms: AIR11_REPORT_INTERVAL_MS,
-            });
-        }
         let start_time_micros = parse_source_start_time(frame.source_start_time())
             .ok_or(Air11BuildError::SourceStartTimeInvalid)?;
         if let Some(previous) = self.last_start_time_micros
@@ -220,14 +198,13 @@ impl Air11SampleBuilder {
             batch.unavailable = 1;
         }
 
-        let requested_interval_micros = i64::try_from(AIR11_SAMPLE_INTERVAL_MS)
-            .map_err(|_| Air11BuildError::SourceStartTimeInvalid)?
+        let reported_interval_micros = i64::from(frame.interval_ms)
             .checked_mul(1_000)
             .ok_or(Air11BuildError::SourceStartTimeInvalid)?;
         let context = BuildContext {
             start_time_micros,
             timestamp_unix_micros,
-            requested_interval_micros,
+            reported_interval_micros,
             same_start_time: self.last_start_time_micros == Some(start_time_micros),
             session_id: self.session_id,
         };
@@ -256,7 +233,7 @@ impl Air11SampleBuilder {
 struct BuildContext {
     start_time_micros: i64,
     timestamp_unix_micros: i64,
-    requested_interval_micros: i64,
+    reported_interval_micros: i64,
     same_start_time: bool,
     session_id: i64,
 }
@@ -298,7 +275,7 @@ fn build_signal(
         let value_index =
             i64::try_from(value_index).map_err(|_| Air11BuildError::SourceStartTimeInvalid)?;
         let sample_offset = context
-            .requested_interval_micros
+            .reported_interval_micros
             .checked_mul(value_index)
             .ok_or(Air11BuildError::SourceStartTimeInvalid)?;
         let source_time_micros = context
@@ -599,7 +576,7 @@ mod tests {
 
     fn frame() -> StreamFrame {
         decode_stream(
-            br#"{"method":"StreamData","params":{"streamId":7,"intervalMs":200,"startTime":"2026-09-10T01:02:03.000Z","data":[{"_RFL":[1.5,-1.0,0.0]},{"_LKF":[1.0]},{"_TD2":[0.5]},{"_HRT":[null]}]}}"#,
+            br#"{"method":"StreamData","params":{"streamId":7,"intervalMs":40,"startTime":"2026-09-10T01:02:03.000Z","data":[{"_RFL":[1.5,-1.0,0.0]},{"_LKF":[1.0]},{"_TD2":[0.5]},{"_HRT":[null]}]}}"#,
         )
         .expect("valid frame")
     }
@@ -653,7 +630,7 @@ mod tests {
     #[test]
     fn maps_every_fixed_stream_signal_through_registry_types() {
         let frame = decode_stream(
-            br#"{"method":"StreamData","params":{"streamId":7,"intervalMs":200,"startTime":"2026-09-10T01:02:03.000Z","data":[{"_RFL":[1.0]},{"_MKP":[2.0]},{"_MKF":[3.0]},{"_MKI":[4.0]},{"_MKE":[5.0]},{"_LKF":[1.0]},{"_RR2":[12.0]},{"_TD2":[0.5]},{"_MV2":[2.0]},{"_TGT":[3.0]},{"_IE2":[1.2]},{"_SNI":[0.0]},{"_FFL":[0.0]},{"_INT":[1.0]},{"_BYV":[0.0]},{"_HRT":[60.0]},{"_SAO":[98.0]}]}}"#,
+            br#"{"method":"StreamData","params":{"streamId":7,"intervalMs":40,"startTime":"2026-09-10T01:02:03.000Z","data":[{"_RFL":[1.0]},{"_MKP":[2.0]},{"_MKF":[3.0]},{"_MKI":[4.0]},{"_MKE":[5.0]},{"_LKF":[1.0]},{"_RR2":[12.0]},{"_TD2":[0.5]},{"_MV2":[2.0]},{"_TGT":[3.0]},{"_IE2":[1.2]},{"_SNI":[0.0]},{"_FFL":[0.0]},{"_INT":[1.0]},{"_BYV":[0.0]},{"_HRT":[60.0]},{"_SAO":[98.0]}]}}"#,
         )
         .expect("all fixed signals");
         let mut builder = Air11SampleBuilder::new(6).expect("session");
@@ -719,7 +696,7 @@ mod tests {
         let first = builder.build_frame(&frame(), receipt()).expect("first");
         assert_eq!(first.samples.len(), 5);
         let backward = decode_stream(
-            br#"{"method":"StreamData","params":{"streamId":7,"intervalMs":200,"startTime":"2026-09-09T01:02:03.000Z","data":[{"_RFL":[1.0]}]}}"#,
+            br#"{"method":"StreamData","params":{"streamId":7,"intervalMs":40,"startTime":"2026-09-09T01:02:03.000Z","data":[{"_RFL":[1.0]}]}}"#,
         )
         .expect("backward fixture");
         assert!(matches!(
@@ -727,7 +704,7 @@ mod tests {
             Err(Air11BuildError::SourceStartTimeBackwards { .. })
         ));
         let out_of_range = decode_stream(
-            br#"{"method":"StreamData","params":{"streamId":7,"intervalMs":200,"startTime":"2026-09-10T01:02:05.200Z","data":[{"_LKF":[6.0]}]}}"#,
+            br#"{"method":"StreamData","params":{"streamId":7,"intervalMs":40,"startTime":"2026-09-10T01:02:05.200Z","data":[{"_LKF":[6.0]}]}}"#,
         )
         .expect("range fixture");
         assert!(matches!(
@@ -735,7 +712,7 @@ mod tests {
             Err(Air11BuildError::ValueOutOfRange { .. })
         ));
         let good = decode_stream(
-            br#"{"method":"StreamData","params":{"streamId":7,"intervalMs":200,"startTime":"2026-09-10T01:02:03.200Z","data":[{"_RFL":[1.0]}]}}"#,
+            br#"{"method":"StreamData","params":{"streamId":7,"intervalMs":40,"startTime":"2026-09-10T01:02:03.200Z","data":[{"_RFL":[1.0]}]}}"#,
         )
         .expect("good fixture");
         let recovered = builder.build_frame(&good, receipt()).expect("good");
@@ -744,16 +721,50 @@ mod tests {
     }
 
     #[test]
+    fn reported_frame_interval_drives_source_positions() {
+        let frame = decode_stream(
+            br#"{"method":"StreamData","params":{"streamId":7,"intervalMs":40,"startTime":"2026-09-10T01:02:03.000Z","data":[{"_RFL":[1.0,2.0]}]}}"#,
+        )
+        .expect("observed interval frame");
+        let mut builder = Air11SampleBuilder::new(5).expect("session");
+        let samples = builder
+            .build_frame(&frame, receipt())
+            .expect("batch")
+            .samples;
+        let mut positions = samples.iter().map(|sample| sample.seq);
+        let first = positions.next().expect("first position");
+        let second = positions.next().expect("second position");
+        assert_eq!(second - first, 1);
+
+        let report_interval_frame = decode_stream(
+            br#"{"method":"StreamData","params":{"streamId":7,"intervalMs":200,"startTime":"2026-09-10T01:02:03.000Z","data":[{"_RFL":[1.0,2.0]}]}}"#,
+        )
+        .expect("report interval frame");
+        let mut other_builder = Air11SampleBuilder::new(6).expect("session");
+        let samples = other_builder
+            .build_frame(&report_interval_frame, receipt())
+            .expect("batch")
+            .samples;
+        let mut positions = samples.iter().map(|sample| sample.seq);
+        let first = positions.next().expect("first position");
+        let second = positions.next().expect("second position");
+        assert_eq!(second - first, 5);
+    }
+
+    #[test]
     fn fixed_interval_and_timestamp_guards_are_named() {
         let mut builder = Air11SampleBuilder::new(5).expect("session");
-        let wrong_interval = decode_stream(
-            br#"{"method":"StreamData","params":{"streamId":7,"intervalMs":100,"startTime":"2026-09-10T01:02:03.000Z","data":[]}}"#,
+        let observed_device_interval = decode_stream(
+            br#"{"method":"StreamData","params":{"streamId":7,"intervalMs":40,"startTime":"2026-09-10T01:02:03.000Z","data":[]}}"#,
         )
-        .expect("interval fixture");
-        assert!(matches!(
-            builder.build_frame(&wrong_interval, receipt()),
-            Err(Air11BuildError::ReportIntervalMismatch { .. })
-        ));
+        .expect("observed interval fixture");
+        assert_eq!(
+            builder
+                .build_frame(&observed_device_interval, receipt())
+                .expect("observed interval is accepted")
+                .unavailable,
+            1
+        );
         assert!(matches!(
             builder.build_frame(&frame(), UNIX_EPOCH - Duration::from_secs(1)),
             Err(Air11BuildError::HostTimestampInvalid)

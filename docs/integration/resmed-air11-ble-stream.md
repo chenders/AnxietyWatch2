@@ -63,15 +63,24 @@ not part of AirSense activation.
 ## BLE and protocol boundary
 
 The Linux transport connects only to the configured target and resolves the
-documented service and characteristics. It authenticates through the AirSense
-application protocol before requesting the fixed stream; a separate BlueZ bond
-is not required:
+documented service and characteristics. If BlueZ has not materialized the
+configured target, it first tries a direct connect and then performs one
+bounded LE discovery filtered to the FD56 service and target address. It never
+pairs or scans indefinitely. It authenticates through the AirSense application
+protocol before requesting the fixed stream; a separate BlueZ bond is not
+required:
 
 | Item | Value |
 |---|---|
 | Service | `0000fd56-0000-1000-8000-00805f9b34fb` |
 | TX characteristic | `a6220002-35f1-4b20-afae-cb089d2044aa` |
 | RX characteristic | `a6220003-35f1-4b20-afae-cb089d2044aa` |
+
+`StartStream` requests a 40-ms sample interval and a 200-ms report interval.
+The tested firmware reports `StreamData.intervalMs=40`; this is the observed
+spacing of values in the frame, not a required echo of the requested report
+interval. Source positions therefore use the reported frame interval, while
+native signal cadence remains the registry-backed metadata.
 
 FIG fragments are reassembled with fixed bounds and CRC checks before the
 payload is considered an RPC envelope. The decoder rejects truncation,
@@ -156,6 +165,10 @@ Invalid values are rejected, never clamped. JSON `null`, omitted data, and an
 invalid `StartStream` group produce no numeric row and increment unavailable
 evidence. A measured numeric `0.0` remains a measured zero.
 
+The collector accepts the observed frame interval independently of the fixed
+request's report interval; a mismatch with 200 ms is not, by itself, a bad
+measurement.
+
 Native cadence is retained in metadata. The collector does not turn repeated
 high-rate copies of a lower-rate signal into false clinical resolution.
 
@@ -196,8 +209,9 @@ The service:
 - applies `OOMScoreAdjust=-1000`, `MemoryMin`, and `MemoryHigh`; and
 - uses explicit restart, timeout, and start-rate limits.
 
-The service does not scan, pair, modify the Bluetooth adapter, enable itself,
-write PostgreSQL, or run an AirSense control RPC.
+The service does not pair, scan indefinitely, modify the Bluetooth adapter,
+enable itself, write PostgreSQL, or run an AirSense control RPC. Its bounded
+fallback discovery only resolves the already configured target.
 
 ## Status contract and admin page
 

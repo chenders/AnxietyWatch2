@@ -35,7 +35,8 @@ Confirm all of the following before changing a service or starting a live run:
   separate BlueZ bond is not required: the collector authenticates at the
   AirSense application layer. If the Linux target or application credential is
   absent, use the separate bounded onboarding command below; the steady-state
-  collector does not pair or scan.
+  collector does not pair and only uses a bounded target-discovery fallback
+  when BlueZ has not materialized the configured device.
 - The existing H10, EMAY, and EzShare paths have an operator-approved baseline.
 - PostgreSQL and the existing COPY spool/drain path are available.
 - The operator has an approved credential source and is authorized to run a
@@ -317,8 +318,9 @@ scripts/air11-pi-acceptance.sh --duration 60 --require-postgres --require-h10 --
 The harness requires its duration-specific interactive authorization. It
 checks the resolved target, private credentials, measured/null evidence,
 host/device provenance, PostgreSQL rows, distinct sessions, reconnect behavior,
-and unchanged H10/EMAY/EzShare routes. It does not pair, scan, change an
-adapter, enable overlays, change routes, or enable the AirSense unit. A nonzero
+and unchanged H10/EMAY/EzShare routes. It does not pair, scan indefinitely,
+change an adapter, enable overlays, change routes, or enable the AirSense unit.
+A nonzero
 exit code is failed acceptance; a chat report is not a substitute.
 
 Do not mark live acceptance complete based on the admin page alone. The page is

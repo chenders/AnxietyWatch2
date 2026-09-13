@@ -649,6 +649,20 @@ impl core::fmt::Display for RpcResponseError {
 
 impl std::error::Error for RpcResponseError {}
 
+/// Returns whether a response-lane packet should be ignored while waiting for
+/// the correlated response. `AirSense` can interleave notifications, another
+/// FIG lane, or a stale response with a request response.
+#[cfg(any(test, target_os = "linux"))]
+#[must_use]
+pub(crate) const fn is_response_noise(error: &RpcResponseError) -> bool {
+    matches!(
+        error,
+        RpcResponseError::Notification
+            | RpcResponseError::VcidMismatch { .. }
+            | RpcResponseError::IdMismatch { .. }
+    )
+}
+
 /// A device error returned for a correlated request.
 ///
 /// This type has no `Debug` implementation because the optional device data is
@@ -903,31 +917,35 @@ mod tests {
     fn response_correlation_rejects_notifications_and_wrong_ids() {
         let request = RpcRequest::get_version(4).expect("request");
         let notification = br#"{"jsonrpc":"2.0","method":"StreamData","params":{}}"#;
-        assert_eq!(
+        let notification_error =
             correlate_response(&request, ENCRYPTED_RESPONSE_VCID, notification)
                 .err()
-                .expect("notification"),
-            RpcResponseError::Notification
-        );
+                .expect("notification");
+        assert_eq!(notification_error, RpcResponseError::Notification);
+        assert!(is_response_noise(&notification_error));
         let wrong_id = br#"{"jsonrpc":"2.0","id":5,"result":true}"#;
+        let wrong_id_error = correlate_response(&request, ENCRYPTED_RESPONSE_VCID, wrong_id)
+            .err()
+            .expect("wrong id");
         assert_eq!(
-            correlate_response(&request, ENCRYPTED_RESPONSE_VCID, wrong_id)
-                .err()
-                .expect("wrong id"),
+            wrong_id_error,
             RpcResponseError::IdMismatch {
                 expected: 4,
                 actual: Some(5),
             }
         );
+        assert!(is_response_noise(&wrong_id_error));
+        let wrong_vcid_error = correlate_response(&request, PLAINTEXT_RESPONSE_VCID, br"{}")
+            .err()
+            .expect("wrong vcid");
         assert_eq!(
-            correlate_response(&request, PLAINTEXT_RESPONSE_VCID, br"{}")
-                .err()
-                .expect("wrong vcid"),
+            wrong_vcid_error,
             RpcResponseError::VcidMismatch {
                 expected: ENCRYPTED_RESPONSE_VCID,
                 actual: PLAINTEXT_RESPONSE_VCID,
             }
         );
+        assert!(is_response_noise(&wrong_vcid_error));
     }
 
     #[test]

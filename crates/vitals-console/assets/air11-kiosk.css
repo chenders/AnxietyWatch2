@@ -56,6 +56,10 @@ a { color: var(--k-focus); }
 .kiosk-section h2 { margin: 0 0 .5rem; font-size: 1.25rem; }
 .kiosk-section > header p { margin: 0 0 .5rem; color: var(--k-muted); }
 .kiosk-panel { border: 1px solid var(--k-line); background: var(--k-panel); padding: 1rem; }
+.kiosk-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.kiosk-table th, .kiosk-table td { border-bottom: 1px solid color-mix(in srgb, var(--k-line) 70%, transparent); padding: .55rem .45rem; text-align: left; }
+.kiosk-table th { color: var(--k-muted); font: 700 .85rem ui-monospace, SFMono-Regular, Consolas, monospace; letter-spacing: .06em; text-transform: uppercase; }
+.kiosk-table td:nth-child(2), .kiosk-table td:nth-child(4) { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
 .kiosk-log-list { display: grid; gap: .45rem; max-height: 30rem; overflow: auto; }
 .kiosk-log { display: grid; grid-template-columns: 6rem 12rem minmax(0, 1fr); gap: .75rem; border-left: .5rem solid var(--k-line); background: var(--k-panel-raised); padding: .6rem .75rem; }
 .kiosk-log--error { border-left-color: var(--k-bad); background: color-mix(in srgb, var(--k-bad) 12%, var(--k-panel)); }
