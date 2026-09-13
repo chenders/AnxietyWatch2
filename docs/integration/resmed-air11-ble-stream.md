@@ -173,10 +173,12 @@ measurement.
 
 The collector now sends a fixed, read-only `SubscribeEvent` request alongside
 `StartStream`. It requests the four AirCANNect-compatible base selectors plus
-`TherapyEvents-RespiratoryEvents`. Event notifications are journaled on the
-same encrypted application lane and decoded into bounded lifecycle and
-respiratory event records. Event counters and the last data id are exposed in
-the operator-safe status document; event records are not yet persisted as
+`TherapyEvents-RespiratoryEvents`. The response must return a non-zero
+subscription id and `valid: true` for every fixed selector; partial coverage is
+reported as unavailable with the selector named. Event notifications are
+journaled on the same encrypted application lane and decoded into bounded
+lifecycle and respiratory event records. Event counters and the last data id
+are exposed in the operator-safe status document; event records are not yet persisted as
 therapy-session rows or used to calculate AHI.
 
 AirCANnect's independently verified source recognizes hypopnea, central apnea,
