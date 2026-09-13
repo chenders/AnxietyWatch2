@@ -18,6 +18,7 @@ JS_ASSETS = (
     "crates/vitals-console/assets/dir-c.js",
 )
 KIOSK = "crates/vitals-console/assets/air11-kiosk.html"
+BEDSIDE = "crates/vitals-console/assets/air11-bedside.html"
 
 
 def root_dir() -> Path:
@@ -82,6 +83,28 @@ def check(root: Path) -> list[str]:
     for token in ("/api/air11", "Read-only therapy stream", "no therapy controls"):
         if token not in text:
             findings.append(f"kiosk page is missing its read-only contract token: {token}")
+
+    bedside = root / BEDSIDE
+    if not bedside.is_file():
+        findings.append(f"missing bedside page: {BEDSIDE}")
+    else:
+        bedside_text = bedside.read_text()
+        bedside_script = kiosk_script(bedside_text)
+        if bedside_script is None:
+            findings.append(f"bedside page must contain exactly one inline script: {BEDSIDE}")
+        else:
+            with tempfile.NamedTemporaryFile(
+                mode="w", prefix="air11-bedside-", suffix=".js", delete=False
+            ) as handle:
+                handle.write(bedside_script)
+                script_path = Path(handle.name)
+            try:
+                findings.extend(node_check(script_path, cwd=root))
+            finally:
+                script_path.unlink(missing_ok=True)
+        for token in ("/api/air11", "NIGHT FIELD", "AHI is intentionally not derived here"):
+            if token not in bedside_text:
+                findings.append(f"bedside page is missing its visual/read-only contract token: {token}")
     return findings
 
 
