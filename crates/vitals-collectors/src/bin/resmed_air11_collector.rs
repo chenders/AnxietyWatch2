@@ -29,7 +29,7 @@ use vitals_collectors::{
     as11_build::Air11SampleBuilder,
     as11_config::{self, Air11Credentials},
     as11_journal::RawJournal,
-    as11_session::TherapyLifecycle,
+    as11_session::{TherapyJournal, TherapyLifecycle},
     as11_status::{Air11Status, EventSubscriptionState, LinkState, MeasurementState},
     as11_supervision::{ReconnectBackoff, ReconnectCycle},
     as11_vitalsd::{encode_stream_append, validate_stream_append},
@@ -133,6 +133,7 @@ struct Collector {
     options: Options,
     credentials: Air11Credentials,
     journal: RawJournal,
+    therapy_journal: TherapyJournal,
     session_minter: vitals_core::SessionMinter,
     status: Air11Status,
     backoff: ReconnectBackoff,
@@ -183,6 +184,16 @@ impl Collector {
                 return Err(Box::new(error));
             }
         };
+        let therapy_journal = match TherapyJournal::open(&options.state_dir) {
+            Ok(value) => value,
+            Err(error) => {
+                status.link_state = LinkState::Degraded;
+                status.blocker = Some(format!("therapy lifecycle unavailable: {error}"));
+                let _ = status.write_atomic(&options.status_path);
+                return Err(Box::new(error));
+            }
+        };
+        let therapy = therapy_journal.lifecycle();
         let session_minter = match vitals_core::SessionMinter::open(&options.state_dir) {
             Ok(minter) => minter,
             Err(error) => {
@@ -192,18 +203,25 @@ impl Collector {
                 return Err(Box::new(error));
             }
         };
-        Ok(Self {
+        let mut collector = Self {
             options,
             credentials,
             journal,
+            therapy_journal,
             session_minter,
             status,
             backoff: ReconnectBackoff::new(),
             reconnect_cycle: ReconnectCycle::new(),
-            therapy: TherapyLifecycle::default(),
+            therapy,
             attempted: false,
             shutdown: Box::pin(shutdown_signal()),
-        })
+        };
+        collector.sync_therapy_status();
+        collector
+            .status
+            .write_atomic(&collector.options.status_path)
+            .map_err(|error| format_status_error(&collector.options.status_path, &error))?;
+        Ok(collector)
     }
 
     async fn supervise(&mut self) -> Result<(), Box<dyn std::error::Error>> {
@@ -392,7 +410,7 @@ impl Collector {
                 _ = lifecycle_tick.tick() => {
                     let (_, now_unix_micros) = host_receipt()
                         .map_err(|error| FatalFailure::new(format!("therapy lifecycle clock failed: {error}")))?;
-                    if self.advance_therapy(now_unix_micros) {
+                    if self.advance_therapy(now_unix_micros)? {
                         self.publish()?;
                     }
                 }
@@ -430,11 +448,11 @@ impl Collector {
             })?;
         self.status.received_envelopes = self.status.received_envelopes.saturating_add(1);
         self.status.last_host_receipt_unix_micros = Some(receipt_unix_micros);
-        self.advance_therapy(receipt_unix_micros);
+        self.advance_therapy(receipt_unix_micros)?;
         self.publish()?;
 
         if let Some(frame) = decode_event(&envelope) {
-            self.process_event_frame(frame, receipt_unix_micros);
+            self.process_event_frame(frame, receipt_unix_micros)?;
             return self.publish();
         }
         let Some(frame) = decode_stream(&envelope) else {
@@ -444,8 +462,12 @@ impl Collector {
             return Ok(());
         };
         self.status.decoded_frames = self.status.decoded_frames.saturating_add(1);
+        let therapy_before_stream = self.therapy;
         self.therapy.observe_stream();
-        self.sync_therapy_status();
+        if self.therapy != therapy_before_stream {
+            self.persist_therapy()?;
+            self.sync_therapy_status();
+        }
         self.status.last_device_start_time = std::str::from_utf8(frame.source_start_time())
             .ok()
             .map(str::to_owned);
@@ -481,7 +503,11 @@ impl Collector {
         self.publish()
     }
 
-    fn process_event_frame(&mut self, frame: EventFrame, receipt_unix_micros: i64) {
+    fn process_event_frame(
+        &mut self,
+        frame: EventFrame,
+        receipt_unix_micros: i64,
+    ) -> Result<(), FatalFailure> {
         self.status.event_notifications = self.status.event_notifications.saturating_add(1);
         self.status.event_records = self
             .status
@@ -491,21 +517,36 @@ impl Collector {
             self.status.event_truncated_notifications =
                 self.status.event_truncated_notifications.saturating_add(1);
         }
+        let therapy_before_event = self.therapy;
         for event in frame.events.iter().take(usize::from(frame.event_count)) {
             self.therapy
-                .observe_event(event.name(), receipt_unix_micros);
+                .observe_event(event.name(), receipt_unix_micros)
+                .map_err(|error| {
+                    FatalFailure::new(format!("therapy lifecycle update failed: {error}"))
+                })?;
+        }
+        if self.therapy != therapy_before_event {
+            self.persist_therapy()?;
         }
         self.status.last_event_data_id =
             std::str::from_utf8(frame.data_id()).ok().map(str::to_owned);
         self.sync_therapy_status();
+        Ok(())
     }
 
-    fn advance_therapy(&mut self, now_unix_micros: i64) -> bool {
+    fn advance_therapy(&mut self, now_unix_micros: i64) -> Result<bool, FatalFailure> {
         let changed = self.therapy.advance(now_unix_micros);
         if changed {
+            self.persist_therapy()?;
             self.sync_therapy_status();
         }
-        changed
+        Ok(changed)
+    }
+
+    fn persist_therapy(&mut self) -> Result<(), FatalFailure> {
+        self.therapy_journal.append(self.therapy).map_err(|error| {
+            FatalFailure::new(format!("therapy lifecycle journal blocked: {error}"))
+        })
     }
 
     fn sync_therapy_status(&mut self) {
