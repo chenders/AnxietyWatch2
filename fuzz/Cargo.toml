@@ -56,3 +56,10 @@ path = "fuzz_targets/fuzz_stream.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "fuzz_events"
+path = "fuzz_targets/fuzz_events.rs"
+test = false
+doc = false
+bench = false

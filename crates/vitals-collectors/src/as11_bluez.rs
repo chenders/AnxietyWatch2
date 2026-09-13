@@ -37,8 +37,9 @@ use crate::{
     as11_config::Air11Credentials,
     as11_crypto::{CryptoError, EnvelopeError, SessionCrypto},
     as11_rpc::{
-        ENCRYPTED_REQUEST_VCID, ENCRYPTED_RESPONSE_VCID, PLAINTEXT_REQUEST_VCID, ReadOnlyRpcLink,
-        RpcError, RpcRequest, RpcResponse, RpcResponseError, RpcSendError, RpcTransport,
+        AIR11_EVENT_IDS, ENCRYPTED_REQUEST_VCID, ENCRYPTED_RESPONSE_VCID, PLAINTEXT_REQUEST_VCID,
+        ReadOnlyRpcLink, RpcError, RpcRequest, RpcResponse, RpcResponseError, RpcSendError,
+        RpcTransport,
     },
 };
 
@@ -114,6 +115,13 @@ pub enum BluezError {
         /// The missing result field.
         field: &'static str,
     },
+    /// The device accepted the request but did not cover one fixed selector.
+    EventSubscriptionCoverage {
+        /// The selector whose coverage was absent or invalid.
+        selector: &'static str,
+        /// The device-reported validity, or false when it was absent.
+        valid: bool,
+    },
     /// The typed request failed the final read-only gate.
     RpcRejected(RpcError),
     /// The final transport queue or GATT write failed.
@@ -158,6 +166,10 @@ impl core::fmt::Display for BluezError {
             Self::RpcResultInvalid { field } => {
                 write!(f, "air11 RPC result missing field={field}")
             }
+            Self::EventSubscriptionCoverage { selector, valid } => write!(
+                f,
+                "air11 event subscription selector={selector} valid={valid}"
+            ),
             Self::RpcRejected(error) => write!(f, "air11 RPC rejected: {error}"),
             Self::Transport(error) => write!(f, "air11 transport: {error}"),
             Self::Response(error) => write!(f, "air11 response: {error}"),
@@ -467,12 +479,25 @@ impl Air11BleTransport {
         ensure_success(&response)
     }
 
+    /// Sends the fixed read-only lifecycle and respiratory event subscription.
+    ///
+    /// # Errors
+    /// Returns a named error when the fixed request cannot be sent or the
+    /// device returns a JSON-RPC error.
+    pub async fn subscribe_events(&mut self) -> Result<(), BluezError> {
+        let request =
+            RpcRequest::subscribe_events(self.next_id()?).map_err(BluezError::RpcRejected)?;
+        let response = self.send_request(&request).await?;
+        ensure_event_subscription(&response)
+    }
+
     /// Waits for one encrypted `StreamData`-lane envelope without decoding it.
     ///
     /// The caller must journal the returned bounded plaintext before passing it
-    /// to [`decode_stream`]. Authentication and application responses are
-    /// consumed by [`Self::authenticate`] and [`Self::start_stream`], so this
-    /// method is only valid after the fixed stream has been started.
+    /// to an application decoder. Authentication and application responses are
+    /// consumed by [`Self::authenticate`], [`Self::start_stream`], and
+    /// [`Self::subscribe_events`], so this method is only valid after the fixed
+    /// stream and event subscriptions have been requested.
     ///
     /// # Errors
     /// Returns a bounded FIG, envelope, or notification error.
@@ -877,6 +902,48 @@ fn ensure_success(response: &RpcResponse) -> Result<(), BluezError> {
     }
 }
 
+fn ensure_event_subscription(response: &RpcResponse) -> Result<(), BluezError> {
+    let result = response.result().ok_or_else(|| device_error(response))?;
+    let object = result.as_object().ok_or(BluezError::RpcResultInvalid {
+        field: "event_subscription_result",
+    })?;
+    if object
+        .get("subscriptionId")
+        .and_then(serde_json::Value::as_u64)
+        .filter(|value| *value != 0)
+        .is_none()
+    {
+        return Err(BluezError::RpcResultInvalid {
+            field: "event_subscription_id",
+        });
+    }
+    let data_ids = object
+        .get("dataIds")
+        .and_then(serde_json::Value::as_array)
+        .ok_or(BluezError::RpcResultInvalid {
+            field: "event_subscription_dataIds",
+        })?;
+    for selector in AIR11_EVENT_IDS {
+        let Some(item) = data_ids
+            .iter()
+            .find(|item| item.get("dataId").and_then(serde_json::Value::as_str) == Some(selector))
+        else {
+            return Err(BluezError::EventSubscriptionCoverage {
+                selector,
+                valid: false,
+            });
+        };
+        let valid = item
+            .get("valid")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false);
+        if !valid {
+            return Err(BluezError::EventSubscriptionCoverage { selector, valid });
+        }
+    }
+    Ok(())
+}
+
 fn ensure_confirmation(response: &RpcResponse) -> Result<(), BluezError> {
     let result = response.result().ok_or_else(|| device_error(response))?;
     if result
@@ -924,5 +991,35 @@ mod tests {
             encode_fig(PLAINTEXT_REQUEST_VCID, &payload),
             Err(TransportError::FigPayloadTooLarge { .. })
         ));
+    }
+
+    #[test]
+    fn event_subscription_requires_every_selector_to_be_valid() {
+        let result = serde_json::json!({
+            "subscriptionId": 4,
+            "dataIds": AIR11_EVENT_IDS.iter().enumerate().map(|(index, selector)| {
+                serde_json::json!({"dataId": selector, "valid": index != 4})
+            }).collect::<Vec<_>>()
+        });
+        let response = RpcResponse::Result { id: 1, result };
+        assert!(matches!(
+            ensure_event_subscription(&response),
+            Err(BluezError::EventSubscriptionCoverage {
+                selector: "TherapyEvents-RespiratoryEvents",
+                valid: false
+            })
+        ));
+    }
+
+    #[test]
+    fn event_subscription_accepts_complete_coverage() {
+        let result = serde_json::json!({
+            "subscriptionId": 4,
+            "dataIds": AIR11_EVENT_IDS.iter().map(|selector| {
+                serde_json::json!({"dataId": selector, "valid": true})
+            }).collect::<Vec<_>>()
+        });
+        let response = RpcResponse::Result { id: 1, result };
+        assert!(ensure_event_subscription(&response).is_ok());
     }
 }
