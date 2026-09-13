@@ -237,6 +237,20 @@ psql_scalar() {
     printf '%s' "$output"
 }
 
+require_h10_measurement() {
+    local schema_state value
+    schema_state=$(psql_scalar "SELECT CASE WHEN to_regclass('public.samples') IS NULL THEN 'missing' ELSE 'ready' END;") || \
+        die "H10 value gate failed: PostgreSQL health query did not complete"
+    [[ "$schema_state" == "ready" ]] || \
+        die "H10 value gate failed: public.samples=$schema_state; expected ready"
+    value=$(psql_scalar "SELECT count(*) FROM samples AS s JOIN vitals_source AS source ON source.id = s.source JOIN vitals_type AS type ON type.id = s.type WHERE source.name = 'polar_h10' AND type.name IN ('hr', 'rr_interval') AND s.timestamp >= to_timestamp(${start_epoch} - 5) AND s.timestamp <= now() + interval '5 seconds' AND s.value >= type.range_lo AND s.value <= type.range_hi;") || \
+        die "H10 value gate failed: fresh validated-row query did not complete"
+    [[ "$value" =~ ^[0-9]+$ ]] || \
+        die "H10 value gate failed: validated-row count=$value; expected a numeric count"
+    ((value >= 1)) || \
+        die "H10 value gate failed: fresh validated rows=$value; expected at least one HR or RR interval row"
+}
+
 if ((require_postgres == 1)); then
     if ! schema_state=$(psql_scalar "SELECT CASE WHEN to_regclass('public.samples') IS NULL THEN 'missing' ELSE 'ready' END;"); then
         die "PostgreSQL gate failed: health query did not complete"
@@ -531,6 +545,7 @@ done
 fi
 if ((require_h10 == 1)); then
     require_active "$H10_UNIT" "H10"
+    require_h10_measurement
 fi
 if ((require_emay == 1)); then
     require_active "$EMAY_UNIT" "EMAY"
