@@ -10,12 +10,13 @@ Restart=always
 RestartSec=3
 User=vitals
 Group=vitals
+SupplementaryGroups=systemd-journal
 
 # The console is reachable from the private LAN. The API middleware rejects
 # peers outside VITALS_CONSOLE_ALLOWED_NETWORKS; set that value to the exact
 # local CIDR when the appliance network is narrower than RFC1918.
 Environment=VITALS_CONSOLE_BIND=0.0.0.0:8480
-Environment=VITALS_CONSOLE_ALLOWED_NETWORKS=10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fd00::/8,::1/128
+Environment=VITALS_CONSOLE_ALLOWED_NETWORKS=127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fd00::/8,::1/128
 # Fixed AirSense actions require a separately provisioned console-admin token.
 # Missing or unreadable token material leaves the page read-only.
 Environment=VITALS_CONSOLE_AIR11_ACTIONS=1
@@ -30,7 +31,7 @@ Environment=VITALS_CONSOLE_ASSETS=/usr/local/share/vitals-console/assets
 # readiness check without exposing the rest of the operator home directory.
 # A missing source is allowed so status/log reads remain available before
 # credentials are provisioned; the console never returns this file's contents.
-LoadCredential=air11-credentials.json:-%h/.air11/air11-credentials.json
+LoadCredential=air11-credentials.json:/var/lib/vitals/.air11/air11-credentials.json
 Environment=AIR11_CREDENTIALS_PATH=%d/air11-credentials.json
 
 # This is an observability surface, not the safety path. Prefer collectors,

@@ -22,6 +22,8 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 #[cfg(target_os = "linux")]
 use tokio::net::UnixStream;
 #[cfg(target_os = "linux")]
+use tokio::signal::unix::{SignalKind, signal};
+#[cfg(target_os = "linux")]
 use vitals_collectors::{
     as11_bluez::Air11BleTransport,
     as11_build::Air11SampleBuilder,
@@ -143,6 +145,15 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[cfg(target_os = "linux")]
+async fn shutdown_signal() -> Result<(), std::io::Error> {
+    let mut terminate = signal(SignalKind::terminate())?;
+    tokio::select! {
+        result = tokio::signal::ctrl_c() => result,
+        _ = terminate.recv() => Ok(()),
+    }
+}
+
+#[cfg(target_os = "linux")]
 impl Collector {
     fn new(options: Options) -> Result<Self, Box<dyn std::error::Error>> {
         let mut status = Air11Status::default();
@@ -185,7 +196,7 @@ impl Collector {
             backoff: ReconnectBackoff::new(),
             reconnect_cycle: ReconnectCycle::new(),
             attempted: false,
-            shutdown: Box::pin(tokio::signal::ctrl_c()),
+            shutdown: Box::pin(shutdown_signal()),
         })
     }
 

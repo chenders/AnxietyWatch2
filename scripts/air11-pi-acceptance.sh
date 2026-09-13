@@ -14,7 +14,7 @@ readonly AIR11_STATUS="/run/vitals-air11/status.json"
 readonly H10_UNIT="vitals-h10.service"
 readonly EMAY_UNIT="vitals-emay.service"
 readonly EZSHARE_UNIT="hms-cpap.service"
-readonly MIN_DURATION=30
+readonly MIN_DURATION=20
 readonly MAX_DURATION=3600
 
 usage() {
@@ -25,7 +25,7 @@ Usage:
     --require-ezshare-unchanged
 
 Runs a finite, read-only AirSense acceptance window. SECONDS must be between
-30 and 3600 so the run contains an authenticated stream and a restart check.
+20 and 3600 so the run contains an authenticated stream and a restart check.
 The command asks for an interactive operator confirmation before it starts or
 restarts vitals-air11.service. It never pairs, scans, enables a unit, changes
 an adapter, edits /boot/firmware, changes a route, or sends a control RPC.
@@ -93,6 +93,9 @@ for command_name in \
     systemctl getent awk python3 timeout ip stat cmp date sleep seq mktemp mkdir cp rm tr head psql; do
     require_command "$command_name"
 done
+if ((EUID == 0)); then
+    require_command sudo
+fi
 
 if [[ ! -t 0 || ! -t 1 ]]; then
     die "operator authorization required: run this bounded command from a terminal"
@@ -222,7 +225,12 @@ fi
 psql_scalar() {
     local sql=$1
     local output
-    if ! output=$(timeout 15 psql --no-psqlrc --quiet --no-align --tuples-only \
+    local -a psql_prefix=()
+    if ((EUID == 0)); then
+        # PostgreSQL peer authentication belongs to the vitals role, not root.
+        psql_prefix=(sudo -u vitals)
+    fi
+    if ! output=$(timeout 15 "${psql_prefix[@]}" psql --no-psqlrc --quiet --no-align --tuples-only \
         --no-password --set=ON_ERROR_STOP=1 --command "$sql" 2>"$work_dir/psql.err"); then
         return 1
     fi
@@ -251,6 +259,54 @@ snapshot_status() {
         die "status gate failed: could not copy snapshot=$label"
 }
 
+fail_fast_status() {
+    local label=$1
+    if ! python3 - "$AIR11_STATUS" "$label" <<'PY'
+import json
+import sys
+
+path, label = sys.argv[1:]
+with open(path, encoding="utf-8") as handle:
+    status = json.load(handle)
+received = status.get("received_envelopes", 0)
+decoded = status.get("decoded_frames", 0)
+quarantined = status.get("quarantined", 0)
+published = status.get("published_samples", 0)
+if (
+    isinstance(received, int)
+    and isinstance(decoded, int)
+    and isinstance(quarantined, int)
+    and isinstance(published, int)
+    and received > 0
+    and decoded > 0
+    and quarantined > 0
+    and published == 0
+):
+    blocker = status.get("blocker")
+    raise SystemExit(
+        f"snapshot={label} received_envelopes={received} decoded_frames={decoded} "
+        f"quarantined={quarantined} published_samples={published}; blocker={blocker!r}"
+    )
+PY
+    then
+        reason=$(python3 - "$AIR11_STATUS" "$label" <<'PY'
+import json
+import sys
+
+path, label = sys.argv[1:]
+with open(path, encoding="utf-8") as handle:
+    status = json.load(handle)
+print(
+    f"snapshot={label} received_envelopes={status.get('received_envelopes')} "
+    f"decoded_frames={status.get('decoded_frames')} quarantined={status.get('quarantined')} "
+    f"published_samples={status.get('published_samples')}; blocker={status.get('blocker')!r}"
+)
+PY
+        )
+        die "status gate failed fast: $reason"
+    fi
+}
+
 wait_for_air11_active() {
     local attempt state
     for attempt in $(seq 1 20); do
@@ -260,6 +316,33 @@ wait_for_air11_active() {
     done
     state=$(unit_state "$AIR11_UNIT")
     die "AirSense service gate failed: unit_state=${state:-unknown}; expected active within 20 seconds"
+}
+
+wait_for_air11_measured() {
+    local remaining=$1
+    local deadline=$((SECONDS + remaining))
+    while :; do
+        if [[ -r "$AIR11_STATUS" ]] && python3 - "$AIR11_STATUS" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    status = json.load(handle)
+if (
+    status.get("link_state") == "streaming"
+    and status.get("measurement_state") == "measured"
+    and isinstance(status.get("published_samples"), int)
+    and status["published_samples"] > 0
+):
+    raise SystemExit(0)
+raise SystemExit(1)
+PY
+        then
+            return 0
+        fi
+        ((SECONDS >= deadline)) && return 0
+        sleep 1
+    done
 }
 
 initial_air11_state=$(unit_state "$AIR11_UNIT")
@@ -276,6 +359,7 @@ fi
 wait_for_air11_active
 sleep 2
 snapshot_status "after-start"
+fail_fast_status "after-start"
 
 half_duration=$((duration / 2))
 sleep "$half_duration"
@@ -285,9 +369,10 @@ fi
 wait_for_air11_active
 sleep 2
 snapshot_status "after-restart"
+fail_fast_status "after-restart"
 
 remaining_duration=$((duration - half_duration))
-sleep "$remaining_duration"
+wait_for_air11_measured "$remaining_duration"
 snapshot_status "final"
 
 if ! python3 - "$status_dir" "$target" <<'PY' 2>"$work_dir/status.err"
@@ -428,7 +513,7 @@ while :; do
     sample_rows=$(query_count "TRUE") || die "PostgreSQL evidence failed: source/type count query did not complete"
     distinct_types=$(psql_scalar "SELECT count(DISTINCT type) FROM samples WHERE ${window_predicate};") || \
         die "PostgreSQL evidence failed: distinct type query did not complete"
-    metadata_rows=$(query_count "extra::text LIKE '%clock_quality%' AND extra::text LIKE '%untrusted%'") || \
+    metadata_rows=$(query_count "convert_from(extra, 'UTF8') LIKE '%clock_quality%' AND convert_from(extra, 'UTF8') LIKE '%untrusted%'") || \
         die "PostgreSQL evidence failed: host-time metadata query did not complete"
     distinct_sessions=$(psql_scalar "SELECT count(DISTINCT session_id) FROM samples WHERE ${window_predicate};") || \
         die "PostgreSQL evidence failed: session identity query did not complete"

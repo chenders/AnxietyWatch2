@@ -3,17 +3,19 @@
 //! This module is deliberately the only `AirSense` code that knows about `BlueZ`.
 //! It connects to the configured address, resolves the exact FD56 service and
 //! characteristics, subscribes to RX notifications, and sends only the
-//! typed requests accepted by [`crate::as11_rpc::ReadOnlyRpcLink`].  There is
-//! no discovery or pairing path here.
+//! typed requests accepted by [`crate::as11_rpc::ReadOnlyRpcLink`].  It uses
+//! a bounded target-discovery fallback when `BlueZ` has no usable device object
+//! and never performs application pairing or sends control RPCs.
 
 use std::{
+    collections::HashSet,
     future::Future,
     sync::{Arc, Mutex},
     time::Duration,
 };
 
 use bluer::{
-    Address, Session, Uuid,
+    AdapterEvent, Address, DiscoveryFilter, DiscoveryTransport, Session, Uuid,
     gatt::{
         WriteOp,
         remote::{Characteristic, CharacteristicWriteRequest},
@@ -23,7 +25,7 @@ use futures::{StreamExt, stream::BoxStream};
 use tokio::{
     sync::{mpsc, oneshot},
     task::JoinHandle,
-    time::timeout,
+    time::{sleep, timeout},
 };
 use vitals_decode::{
     fig::{FIG_MAX_PAYLOAD, FIG_PREFIX_LENGTH, FIG_SYNC, FigReassembler, FigTake},
@@ -44,6 +46,8 @@ const SERVICE_UUID: &str = "0000fd56-0000-1000-8000-00805f9b34fb";
 const TX_UUID: &str = "a6220002-35f1-4b20-afae-cb089d2044aa";
 const RX_UUID: &str = "a6220003-35f1-4b20-afae-cb089d2044aa";
 const OPERATION_TIMEOUT: Duration = Duration::from_secs(30);
+const TARGET_DISCOVERY_TIMEOUT: Duration = Duration::from_secs(5);
+const DEVICE_NAME_PREFIX: &str = "ResMed";
 const NOTIFICATION_TIMEOUT: Duration = Duration::from_secs(5);
 const GATT_WRITE_TIMEOUT: Duration = Duration::from_secs(10);
 const WRITE_QUEUE_CAPACITY: usize = 1;
@@ -57,6 +61,10 @@ pub enum BluezError {
         /// The operation that failed.
         operation: &'static str,
     },
+    /// Another process already owns adapter discovery.
+    DiscoveryAlreadyActive,
+    /// The configured target was not present in the bounded discovery window.
+    TargetNotAdvertised,
     /// A `BlueZ` operation did not complete before its deadline.
     Deadline {
         /// The operation that exceeded its deadline.
@@ -124,6 +132,12 @@ impl core::fmt::Display for BluezError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::Operation { operation } => write!(f, "bluez operation failed: {operation}"),
+            Self::DiscoveryAlreadyActive => {
+                f.write_str("bluez discovery already active; target scan blocked")
+            }
+            Self::TargetNotAdvertised => {
+                f.write_str("air11 target not advertised during bounded discovery")
+            }
             Self::Deadline { operation } => write!(f, "bluez deadline expired: {operation}"),
             Self::AdapterUnavailable => f.write_str("bluez adapter unavailable"),
             Self::AddressInvalid => f.write_str("bluez target address invalid"),
@@ -337,8 +351,9 @@ impl RpcTransport for BluezRpcTransport {
 /// A connected, authenticated-capable Linux `AirSense` BLE link.
 ///
 /// Construction requires a validated external credential. Application-level
-/// authentication supplies session security; this link has no generic BlueZ
-/// pairing, scanning, or control-RPC method.
+/// authentication supplies session security; this link has no generic `BlueZ`
+/// pairing or control-RPC method. It may perform a bounded scan for the
+/// configured target when `BlueZ` has no usable device object.
 pub struct Air11BleTransport {
     device: bluer::Device,
     rpc: ReadOnlyRpcLink<BluezRpcTransport>,
@@ -369,12 +384,24 @@ impl Air11BleTransport {
         let adapter = session
             .adapter(adapter_name)
             .map_err(|_| BluezError::AdapterUnavailable)?;
-        let device = adapter
+        let mut device = adapter
             .device(address)
             .map_err(|_| BluezError::AddressInvalid)?;
-        let connected = with_deadline("connection_check", device.is_connected()).await?;
-        if !connected {
-            with_deadline("ble_connect", device.connect()).await?;
+        // A not-yet-materialized BlueZ Device1 object can reject this query;
+        // try the direct connection before falling back to bounded discovery.
+        let connected: bool = with_deadline("connection_check", device.is_connected())
+            .await
+            .unwrap_or_default();
+        if !connected
+            && with_deadline("ble_connect", device.connect())
+                .await
+                .is_err()
+        {
+            discover_target(&adapter, address).await?;
+            device = adapter
+                .device(address)
+                .map_err(|_| BluezError::AddressInvalid)?;
+            with_deadline("ble_connect_after_discovery", device.connect()).await?;
         }
         let (tx, rx, mtu, write_op) = resolve_pipe(&device).await?;
         let notification_stream = with_deadline("rx_subscribe", rx.notify()).await?;
@@ -503,7 +530,7 @@ impl Air11BleTransport {
             };
             match crate::as11_rpc::correlate_response(request, vcid, &plaintext) {
                 Ok(response) => return Ok(response),
-                Err(RpcResponseError::Notification) => {}
+                Err(error) if crate::as11_rpc::is_response_noise(&error) => {}
                 Err(error) => return Err(BluezError::Response(error)),
             }
         }
@@ -511,22 +538,10 @@ impl Air11BleTransport {
 
     async fn next_fig(&mut self) -> Result<(u16, Vec<u8>), BluezError> {
         loop {
-            let fragment = timeout(NOTIFICATION_TIMEOUT, self.notifications.next())
-                .await
-                .map_err(|_| BluezError::Deadline {
-                    operation: "rx_notification",
-                })?
-                .ok_or(BluezError::NotificationEnded)?;
-            if fragment.len() > FIG_PREFIX_LENGTH + FIG_MAX_PAYLOAD {
-                return Err(BluezError::FigProtocol {
-                    reason: "notification_too_large",
-                });
-            }
-            if !self.fig.feed(&fragment) {
-                return Err(BluezError::FigProtocol {
-                    reason: "reassembly_buffer_full",
-                });
-            }
+            // Drain packets already retained from a coalesced notification
+            // before waiting for more bytes. Otherwise one packet per
+            // notification leaks buffered frames until the bounded FIG buffer
+            // fills and falsely reports transport corruption.
             match self.fig.take() {
                 FigTake::NeedMore => {}
                 FigTake::Packet(packet) => return Ok((packet.vcid, packet.payload.to_vec())),
@@ -550,6 +565,23 @@ impl Air11BleTransport {
                         reason: "reassembly_buffer_full",
                     });
                 }
+            }
+
+            let fragment = timeout(NOTIFICATION_TIMEOUT, self.notifications.next())
+                .await
+                .map_err(|_| BluezError::Deadline {
+                    operation: "rx_notification",
+                })?
+                .ok_or(BluezError::NotificationEnded)?;
+            if fragment.len() > FIG_PREFIX_LENGTH + FIG_MAX_PAYLOAD {
+                return Err(BluezError::FigProtocol {
+                    reason: "notification_too_large",
+                });
+            }
+            if !self.fig.feed(&fragment) {
+                return Err(BluezError::FigProtocol {
+                    reason: "reassembly_buffer_full",
+                });
             }
         }
     }
@@ -626,6 +658,89 @@ pub(crate) async fn resolve_pipe(
         return Err(BluezError::MtuInvalid { mtu });
     }
     Ok((tx, rx, mtu, write_op))
+}
+
+async fn discover_target(adapter: &bluer::Adapter, target: Address) -> Result<(), BluezError> {
+    if with_deadline("discovery_state", adapter.is_discovering()).await? {
+        return Err(BluezError::DiscoveryAlreadyActive);
+    }
+
+    let previous_filter = adapter.discovery_filter().await;
+    let service_uuid = Uuid::parse_str(SERVICE_UUID).map_err(|_| BluezError::ServiceMissing)?;
+    let mut uuids = HashSet::new();
+    uuids.insert(service_uuid);
+    adapter
+        .set_discovery_filter(DiscoveryFilter {
+            uuids,
+            transport: DiscoveryTransport::Le,
+            duplicate_data: true,
+            ..DiscoveryFilter::default()
+        })
+        .await
+        .map_err(|_| BluezError::Operation {
+            operation: "set_discovery_filter",
+        })?;
+
+    let result = discover_target_events(adapter, target, service_uuid).await;
+    let restore = adapter.set_discovery_filter(previous_filter).await;
+    if restore.is_err() {
+        return Err(BluezError::Operation {
+            operation: "restore_discovery_filter",
+        });
+    }
+    result
+}
+
+async fn discover_target_events(
+    adapter: &bluer::Adapter,
+    target: Address,
+    service_uuid: Uuid,
+) -> Result<(), BluezError> {
+    let mut events = with_deadline("start_discovery", adapter.discover_devices()).await?;
+    let mut deadline = Box::pin(sleep(TARGET_DISCOVERY_TIMEOUT));
+    loop {
+        let event = tokio::select! {
+            () = &mut deadline => return Err(BluezError::TargetNotAdvertised),
+            event = events.next() => event,
+        };
+        match event {
+            Some(AdapterEvent::DeviceAdded(address)) if address == target => {
+                if is_air11_target(adapter, address, service_uuid).await {
+                    return Ok(());
+                }
+            }
+            Some(AdapterEvent::DeviceRemoved(address)) if address == target => {}
+            Some(
+                AdapterEvent::DeviceAdded(_)
+                | AdapterEvent::DeviceRemoved(_)
+                | AdapterEvent::PropertyChanged(_),
+            ) => {}
+            None => {
+                return Err(BluezError::Operation {
+                    operation: "discovery_stream_ended",
+                });
+            }
+        }
+    }
+}
+
+async fn is_air11_target(adapter: &bluer::Adapter, address: Address, service_uuid: Uuid) -> bool {
+    let Ok(device) = adapter.device(address) else {
+        return false;
+    };
+    let Ok(Some(uuids)) = device.uuids().await else {
+        return false;
+    };
+    if !uuids.contains(&service_uuid) {
+        return false;
+    }
+    let Ok(Some(_rssi)) = device.rssi().await else {
+        return false;
+    };
+    match device.name().await {
+        Ok(Some(name)) if !name.is_empty() => name.starts_with(DEVICE_NAME_PREFIX),
+        Ok(_) | Err(_) => true,
+    }
 }
 
 async fn with_deadline<T, F>(operation: &'static str, future: F) -> Result<T, BluezError>

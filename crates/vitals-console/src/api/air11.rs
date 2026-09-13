@@ -27,6 +27,7 @@ use std::{
 };
 
 use crate::handlers::AppState;
+use vitals_registry::VitalsSource;
 
 pub const AIR11_SERVICE: &str = "vitals-air11.service";
 pub const AIR11_STATUS_PATH: &str = "/run/vitals-air11/status.json";
@@ -284,6 +285,16 @@ pub struct Air11LogsView {
     pub entries: Vec<Air11LogView>,
 }
 
+/// One latest stored `AirSense` measurement in its registry unit.
+#[derive(Debug, Clone, Serialize)]
+pub struct Air11LatestView {
+    pub type_id: i32,
+    pub name: String,
+    pub unit: String,
+    pub t_micros: i64,
+    pub value: f64,
+}
+
 /// Combined response for `GET /api/air11`.
 #[derive(Debug, Clone, Serialize)]
 pub struct Air11View {
@@ -298,6 +309,9 @@ pub struct Air11View {
     pub audit_state: String,
     pub audit_blocker: Option<String>,
     pub audit: Vec<Air11AuditView>,
+    pub latest_state: String,
+    pub latest_blocker: Option<String>,
+    pub latest: Vec<Air11LatestView>,
 }
 
 /// Fixed actions supported by the page. There is no arbitrary command route.
@@ -785,6 +799,7 @@ async fn logs_view(state: &AppState) -> Air11LogsView {
             AIR11_SERVICE,
             "-n",
             "80",
+            "--since=-10min",
             "--no-pager",
             "-o",
             "json",
@@ -838,6 +853,61 @@ async fn config_view(state: &AppState) -> Air11ConfigView {
     }
 }
 
+async fn latest_view(state: &AppState) -> (Vec<Air11LatestView>, String, Option<String>) {
+    let Some(pool) = state.db.as_ref() else {
+        return (
+            Vec::new(),
+            "unavailable".to_string(),
+            Some("database unavailable; latest AirSense measurements cannot be read".to_string()),
+        );
+    };
+    let source = VitalsSource::ResmedAir11.id();
+    let rows = sqlx::query_as::<_, (i32, String, String, i64, f64)>(
+        "SELECT latest.type,
+                registry.name,
+                registry.unit,
+                (EXTRACT(epoch FROM latest.timestamp) * 1000000)::bigint,
+                latest.value
+         FROM (
+             SELECT DISTINCT ON (s.type)
+                    s.type, s.timestamp, s.value
+             FROM samples AS s
+             WHERE s.source = $1
+             ORDER BY s.type, s.timestamp DESC
+         ) AS latest
+         JOIN vitals_type AS registry ON registry.id = latest.type
+         ORDER BY latest.type",
+    )
+    .bind(source)
+    .fetch_all(pool)
+    .await;
+    match rows {
+        Ok(rows) if rows.is_empty() => (
+            Vec::new(),
+            "empty".to_string(),
+            Some("no stored AirSense measurements are available".to_string()),
+        ),
+        Ok(rows) => (
+            rows.into_iter()
+                .map(|(type_id, name, unit, t_micros, value)| Air11LatestView {
+                    type_id,
+                    name,
+                    unit,
+                    t_micros,
+                    value,
+                })
+                .collect(),
+            "observed".to_string(),
+            None,
+        ),
+        Err(_) => (
+            Vec::new(),
+            "unavailable".to_string(),
+            Some("latest AirSense measurement query failed".to_string()),
+        ),
+    }
+}
+
 async fn audit_view(state: &AppState) -> (Vec<Air11AuditView>, String, Option<String>) {
     let Some(pool) = state.db.as_ref() else {
         return (
@@ -847,7 +917,7 @@ async fn audit_view(state: &AppState) -> (Vec<Air11AuditView>, String, Option<St
         );
     };
     match sqlx::query_as::<_, (i64, String, String, String, String)>(
-        "SELECT id, action, outcome, detail, created_at::text\
+        "SELECT id, action, outcome, detail, created_at::text \
          FROM air11_admin_audit ORDER BY id DESC LIMIT 20",
     )
     .fetch_all(pool)
@@ -880,13 +950,15 @@ fn actions_enabled(state: &AppState) -> bool {
 
 async fn build_view(state: &AppState) -> Air11View {
     let credentials = credential_view(&credentials_path());
-    let (config, service, logs, audit_result) = tokio::join!(
+    let (config, service, logs, audit_result, latest_result) = tokio::join!(
         config_view(state),
         service_view(state),
         logs_view(state),
-        audit_view(state)
+        audit_view(state),
+        latest_view(state)
     );
     let (audit, audit_state, audit_blocker) = audit_result;
+    let (latest, latest_state, latest_blocker) = latest_result;
     let enabled = actions_enabled(state);
     Air11View {
         actions_enabled: enabled,
@@ -907,6 +979,9 @@ async fn build_view(state: &AppState) -> Air11View {
         audit_state,
         audit_blocker,
         audit,
+        latest_state,
+        latest_blocker,
+        latest,
     }
 }
 
