@@ -226,14 +226,19 @@ reported separately and does not change the sensor-priority result.
 
 ### Current physical kiosk page
 
-The physical DSI panel currently uses the read-only AirSense bedside page at
-`http://127.0.0.1:8480/console/air11-bedside.html`. Install
-`zzz-air11-bedside.conf` into `/etc/systemd/system/panel-kiosk.service.d/`, then
-run `sudo systemctl daemon-reload && sudo systemctl restart panel-kiosk`.
-The previous `live-vitals.html` URL remains available by removing that drop-in
-and restarting the kiosk. AirSense event notifications are currently journaled
-and counted by the collector but are not yet rendered as an event timeline on
-this page; the page shows stream-derived leak and pressure only.
+The physical DSI panel uses `bedside-vitals.html` at exactly 800×480. Both the
+main unit and `zzz-air11-bedside.conf` point to this page. It shows the latest
+A&D cuff BP, selected SpO₂/pulse, H10 ECG heart rate when fresh, CPAP/PAP fields,
+and respiratory rate with CPAP/direct-source precedence. Optional
+`wellue_status.json` and `cpap_status.json` feeds are accepted; absent feeds
+remain UNKNOWN rather than becoming a reassuring zero or stale current value.
+
+The kiosk URL includes `bp-check=1` for the current cuff verification window.
+The page waits five minutes for a new BP sample, changes to `BP RECEIVED` when
+one appears, and otherwise shows `OPERATOR ACTION REQUIRED` with the next
+thing to inspect. The normal page can omit `bp-check=1` after this verification.
+Review sizes are available with `?size=800x480`, `?size=1024x600`, or
+`?size=1280x720`; the physical monitor always uses 800×480.
 
 `live-vitals-watch` is a display check, not an alarm. H10 and EMAY are the
 overnight must-have streams; BP is reported when available but is optional and

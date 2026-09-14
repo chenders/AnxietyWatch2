@@ -14,6 +14,12 @@ node panel-check.mjs                # the gate — exit 0 or 1
 | File | What it is |
 |---|---|
 | `index.html` | The panel. Self-contained; the 800×480 frame plus review scaffolding that `?kiosk=1` hides. |
+| `clinical-monitor.html` | Clinical-layout review/demo; fixture values are explicitly labelled `DEMO DATA · NOT LIVE` unless `?live` is supplied. |
+| `live-vitals.html` | Detailed H10/EMAY/BP overview with preserved gaps and trend graphs. |
+| `bedside-vitals.html` | Fixed-size bedside summary: selected SpO₂/HR/respiration, last BP, PAP fields, and source precedence. |
+| `polar-h10.html` | H10-specific explanatory page with HR, RR, and HRV graphs. |
+| `noise-watch.html` | Aircraft/noise-only bedside page; it intentionally contains no physiological data. |
+| `air11.html` | LAN bedside wrapper for the read-only AirSense 11 page on port 8480. |
 | `panel-check.mjs` | Contrast, tier separation, layout arithmetic and touch target, behind an exit code. |
 
 `../index.html` is the earlier hand-built panel. `PROMPT-pi-panel.md` names it as
@@ -139,3 +145,20 @@ things to preserve:
   off it. Anything that coerces missing to a number defeats the design.
 - **Only `clear` may rest.** `armRest()` enforces it. Any other tier is either an
   alarm or an unanswered question, and both must stay lit.
+
+## Which pages are live
+
+The display pages are intentionally different kinds of evidence. A page that
+uses fixture values must say so on the panel itself:
+
+| Page | Purpose | Default data contract |
+|---|---|---|
+| `live-vitals.html` | Overnight sensor overview and trends | Live status projection; missing or stale values remain unknown |
+| `bedside-vitals.html` | Physical kiosk summary | `status.json` plus optional Wellue/CPAP feeds; missing values remain UNKNOWN; `bp-check=1` arms a five-minute cuff check |
+| `clinical-monitor.html` | Clinical-layout review/demo | **Fixture data by default**; the top banner says `DEMO DATA · NOT LIVE` |
+| `index.html` | Design/state review | **Fixture data by default**; `?live` enables the status feed and `?live&demo` explicitly simulates the non-EMAY rows |
+| `polar-h10.html` | H10 explanation, graphs, and signal-quality detail | H10 status/history documents only |
+| `noise-watch.html` | Aircraft/noise watch | Aircraft feeds only; it intentionally contains no physiological data |
+
+Do not remove the banner from fixture pages. A plausible number without an
+obvious provenance label is not acceptable bedside evidence.

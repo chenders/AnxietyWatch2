@@ -25,7 +25,7 @@ from urllib.error import URLError
 from urllib.request import Request, urlopen
 
 DEFAULT_STATUS_URL = "http://127.0.0.1:8975/status.json"
-DEFAULT_PAGE_URL = "http://127.0.0.1:8975/live-vitals.html?kiosk=1"
+DEFAULT_PAGE_URL = "http://127.0.0.1:8975/bedside-vitals.html?kiosk=1&size=800x480"
 DEFAULT_HEALTH_PATH = pathlib.Path(
     "$HOME/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical/health.json"
 )
@@ -38,6 +38,8 @@ SERVICES = {
     "drain": "vitals-spool-drain.service",
     "h10": "vitals-h10.service",
     "emay": "vitals-emay.service",
+    "bp": "vitals-bp.service",
+    "wellue": "wellue-collector.service",
     "merger": "panel-status-merge.service",
     "http": "panel-http.service",
     "kiosk": "panel-kiosk.service",
@@ -239,13 +241,23 @@ def check_once(status_url: str, page_url: str, health_path: pathlib.Path) -> boo
     }
     database, database_detail = database_state()
     components["database"] = {"state": database, "detail": database_detail}
-    # H10 and EMAY are the overnight must-have streams. BP is a useful
-    # store-and-forward opportunistic source; its absence must not turn a
-    # healthy H10/EMAY night into a degraded safety-path result.
-    source_ok = h10[0] == "WORKING" and emay[0] == "WORKING"
+    # EMAY is preferred, with Wellue as the oximeter fallback. BP remains a
+    # store-and-forward source, but every collector unit is reported so a
+    # missing process cannot be mistaken for a healthy source.
+    bp_collector = "OK" if service_states["bp"] == "active" else "DOWN"
+    wellue_collector = "OK" if service_states["wellue"] == "active" else "DOWN"
+    components["bp_collector"] = {
+        "state": bp_collector,
+        "detail": f"vitals-bp.service={service_states['bp']}; latest={bp[0]}",
+    }
+    components["wellue_collector"] = {
+        "state": wellue_collector,
+        "detail": f"wellue-collector.service={service_states['wellue']}",
+    }
+    source_ok = h10[0] == "WORKING" and (emay[0] == "WORKING" or wellue_collector == "OK")
     components["sources"] = {
         "state": "OK" if source_ok else "DEGRADED",
-        "detail": f"H10={h10[0]} EMAY={emay[0]} BP={bp[0]} (optional)",
+        "detail": f"H10={h10[0]} EMAY={emay[0]} WELLUE_SERVICE={wellue_collector} BP={bp[0]}",
     }
     kiosk_state = "OK" if page_state == "OK" and service_states["kiosk"] == "active" else "DEGRADED"
     components["kiosk"] = {
