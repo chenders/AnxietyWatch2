@@ -48,7 +48,7 @@ Environment=XDG_SESSION_TYPE=wayland
 # The launcher waits for the DSI connector and resolves which DRM card holds
 # it before exec-ing cage. See the script for the two cold-boot failures that
 # made both steps necessary.
-ExecStart=/usr/local/bin/panel-kiosk-launch /usr/bin/chromium-browser --kiosk --noerrdialogs --disable-infobars --incognito --disable-session-crashed-bubble --password-store=basic --disable-features=Translate --check-for-update-interval=31536000 --ozone-platform=wayland --disable-pinch --overscroll-history-navigation=0 --disable-features=TouchpadOverscrollHistoryNavigation "http://127.0.0.1:8975/bedside-vitals.html?kiosk=1&size=800x480&bp-check=1&wellue=wellue_status.json&cpap=cpap_status.json"
+ExecStart=/usr/local/bin/panel-kiosk-launch /usr/bin/chromium-browser --kiosk --noerrdialogs --disable-infobars --incognito --disable-session-crashed-bubble --password-store=basic --disable-features=Translate --check-for-update-interval=31536000 --ozone-platform=wayland --disable-pinch --overscroll-history-navigation=0 --disable-features=TouchpadOverscrollHistoryNavigation "http://127.0.0.1:8975/bedside-vitals.html?kiosk=1&size=800x480&bp-check=1&cpap=cpap_status.json"
 Restart=always
 RestartSec=5
 
