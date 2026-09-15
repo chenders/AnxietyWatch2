@@ -193,7 +193,13 @@ impl Collector {
                 return Err(Box::new(error));
             }
         };
-        let therapy = therapy_journal.lifecycle();
+        let mut therapy_journal = therapy_journal;
+        let mut therapy = therapy_journal.lifecycle();
+        if therapy.mark_process_restart() {
+            therapy_journal.append(therapy).map_err(|error| {
+                format!("therapy restart boundary could not be journaled: {error}")
+            })?;
+        }
         let session_minter = match vitals_core::SessionMinter::open(&options.state_dir) {
             Ok(minter) => minter,
             Err(error) => {
@@ -561,6 +567,10 @@ impl Collector {
                 vitals_collectors::as11_session::POST_STOP_SETTLE_MICROS,
                 vitals_collectors::as11_session::POST_STOP_SETTLE_MAX_MICROS,
             )),
+            vitals_collectors::as11_session::TherapyState::Unknown
+                if self.therapy.start_host_unix_micros().is_some() => Some(
+                "therapy state unknown after collector restart; no stop/start evidence was observed during downtime".to_owned(),
+            ),
             _ => None,
         };
     }
