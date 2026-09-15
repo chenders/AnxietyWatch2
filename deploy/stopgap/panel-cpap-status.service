@@ -1,0 +1,19 @@
+[Unit]
+Description=Publish read-only AirSense data for the bedside kiosk
+After=vitals-air11.service panel-http.service
+Wants=vitals-air11.service panel-http.service
+
+[Service]
+Type=simple
+User=pi-user
+ExecStart=/usr/local/bin/panel-cpap-status
+Restart=always
+RestartSec=5
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=$HOME/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+[Install]
+WantedBy=multi-user.target

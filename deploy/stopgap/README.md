@@ -232,6 +232,8 @@ A&D cuff BP, selected SpO₂/pulse, H10 ECG heart rate when fresh, CPAP/PAP fiel
 and respiratory rate with CPAP/direct-source precedence. Optional
 `wellue_status.json` and `cpap_status.json` feeds are accepted; absent feeds
 remain UNKNOWN rather than becoming a reassuring zero or stale current value.
+`panel-cpap-status.service` now publishes the read-only AirSense API into
+`cpap_status.json`, including live CPAP respiration, leak, and mask pressure.
 
 The kiosk URL includes `bp-check=1` for the current cuff verification window.
 The page waits five minutes for a new BP sample, changes to `BP RECEIVED` when
