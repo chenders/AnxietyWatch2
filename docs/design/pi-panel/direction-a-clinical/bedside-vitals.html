@@ -97,14 +97,16 @@ footer { min-width:0; border-top:1px solid var(--line); padding-top:7px; display
 .signal-head span:last-child { color:var(--quiet); font-weight:500; }
 .signal-svg { display:block; width:100%; height:76px; margin-top:3px; overflow:visible; }
 .signal-svg .guide { fill:none; stroke:var(--line); stroke-width:1; opacity:.5; }
-.signal-svg .ribbon { fill:none; stroke-width:3; stroke-linecap:round; stroke-linejoin:round; stroke-dasharray:2 9; }
-.signal-svg .ribbon.live { animation:ribbon-flow 7s linear infinite; }
+.signal-svg .ribbon { fill:var(--tone-color); fill-opacity:.62; stroke:var(--tone-color); stroke-width:1; stroke-linejoin:round; }
+.signal-svg .ribbon.live { opacity:1; }
 .signal-svg .ribbon.oxygen { stroke:var(--spo2); }
 .signal-svg .ribbon.pulse { stroke:var(--hr); }
 .signal-svg .ribbon.breath { stroke:var(--resp); }
 .signal-svg .ribbon.pressure { stroke:var(--pap); }
 .signal-svg .ribbon.stale { stroke:var(--stale); opacity:.8; }
 .signal-svg .ribbon.unknown { stroke:var(--unknown); opacity:.5; }
+.signal-svg .ribbon.tone-good,.signal-svg .ribbon.tone-warn,.signal-svg .ribbon.tone-bad,.signal-svg .ribbon.tone-stale,.signal-svg .ribbon.tone-unknown { stroke:var(--tone-color) !important; }
+.signal-svg .ribbon.tone-stale,.signal-svg .ribbon.tone-unknown { opacity:.8; }
 .signal-svg .dot { stroke:var(--bg); stroke-width:2; }
 .signal-svg .dot.oxygen { fill:var(--spo2); }
 .signal-svg .dot.pulse { fill:var(--hr); }
@@ -113,11 +115,13 @@ footer { min-width:0; border-top:1px solid var(--line); padding-top:7px; display
 .signal-svg .dot.unknown { display:none; }
 .signal-svg .dot.stale { fill:var(--stale); }
 .signal-svg .dot.unknown { fill:var(--unknown); }
+.signal-svg .dot.tone-good,.signal-svg .dot.tone-warn,.signal-svg .dot.tone-bad,.signal-svg .dot.tone-stale,.signal-svg .dot.tone-unknown { fill:var(--tone-color) !important; }
 .signal-svg text { fill:var(--quiet); font:10px var(--mono); letter-spacing:1px; }
 .signal-svg .value { font-weight:700; letter-spacing:.4px; }
 .signal-svg .value.oxygen.live { fill:var(--spo2); } .signal-svg .value.pulse.live { fill:var(--hr); }
 .signal-svg .value.breath.live { fill:var(--resp); } .signal-svg .value.pressure.live { fill:var(--pap); }
 .signal-svg .value.stale { fill:var(--stale); } .signal-svg .value.unknown { fill:var(--unknown); }
+.signal-svg .value.tone-good,.signal-svg .value.tone-warn,.signal-svg .value.tone-bad,.signal-svg .value.tone-stale,.signal-svg .value.tone-unknown { fill:var(--tone-color) !important; }
 @keyframes ribbon-flow { to { stroke-dashoffset:-44; } }
 @media (prefers-reduced-motion:reduce) { .signal-svg .ribbon.live { animation:none; } }
 #review { width:var(--W); margin:25px auto 50px; color:#c1c9cd; font-size:15px; line-height:1.5; }
@@ -151,10 +155,9 @@ footer { min-width:0; border-top:1px solid var(--line); padding-top:7px; display
   </section>
   <footer>
     <div class="signal-field" aria-label="Data availability field, not a clinical score">
-      <div class="signal-head"><span>CURRENT SIGNALS</span><span>FLOW = FRESH · GREY = STALE · GAP = NOT MEASURED</span></div>
+      <div class="signal-head"><span>LIVE STREAMGRAPH</span><span>BAND = RECENT VALUE · GREEN = NO LOW SIGNAL · YELLOW→RED = SEVERITY · GREY = NO DATA/STALE</span></div>
       <svg id="signal-svg" class="signal-svg" viewBox="0 0 680 76" role="img" aria-label="Current data availability across oxygen, pulse, breath, and pressure">
-        <path class="guide" d="M106 10H500M106 29H500M106 48H500M106 67H500"/>
-        <text x="0" y="13">O₂</text><text x="0" y="32">PULSE</text><text x="0" y="51">BREATH</text><text x="0" y="70">PRESSURE</text>
+        <path class="guide" d="M106 38H500"/>
         <path id="ribbon-oxygen" class="ribbon oxygen"/><path id="ribbon-pulse" class="ribbon pulse"/><path id="ribbon-breath" class="ribbon breath"/><path id="ribbon-pressure" class="ribbon pressure"/>
         <circle id="dot-oxygen" class="dot oxygen" r="4"/><circle id="dot-pulse" class="dot pulse" r="4"/><circle id="dot-breath" class="dot breath" r="4"/><circle id="dot-pressure" class="dot pressure" r="4"/>
         <text id="signal-value-oxygen" class="value oxygen" x="676" y="13" text-anchor="end"/>
@@ -270,7 +273,33 @@ function oximeterIssue(status, wellue) {
   const wellueIssue=!wellue ? "Wellue unavailable" : wellue.link && wellue.link !== "up" ? `Wellue ${String(wellue.link).toUpperCase()}` : !fresh(wellue,Date.now()/1000) ? "Wellue stale" : "Wellue not measured";
   return `${emayIssue} · ${wellueIssue}`;
 }
-window.__bedsideTest = { chooseOximeter, chooseRespiration, heartRate, cpapObject, breathState, metricState, oximeterIssue };
+/* These are the old CNS-depression detector's lower-value ramps. They are
+   signal severity only: they do not turn this bedside page into the detector,
+   which also requires dose-window, quality-gate, baseline, and fusion state. */
+function clinicalSeverity(kind, value) {
+  if (!finite(value)) return null;
+  const ramp=(onset,floor)=>onset > floor ? Math.min(1,Math.max(0,(onset-value)/(onset-floor))) : value <= floor ? 1 : 0;
+  if (kind === "oxygen") return value <= 80 ? 1 : ramp(88,85);
+  if (kind === "breath") return ramp(10,5);
+  if (kind === "pulse") return ramp(50,40);
+  return null;
+}
+function signalTone(kind, item) {
+  if (!item || !finite(item.value)) return "tone-unknown";
+  if (item.live !== true) return "tone-stale";
+  const severity=clinicalSeverity(kind,item.value);
+  if (severity == null || severity === 0) return "tone-good";
+  return severity >= .5 ? "tone-bad" : "tone-warn";
+}
+function toneColor(kind, item) {
+  const tone=signalTone(kind,item);
+  if (tone === "tone-unknown" || tone === "tone-stale") return "#77838a";
+  const severity=clinicalSeverity(kind,item.value);
+  if (severity == null || severity === 0) return "#55cfa5";
+  const hue=Math.max(0,150 - Math.min(1,severity * 1.5) * 150);
+  return `hsl(${hue.toFixed(0)} 72% 58%)`;
+}
+window.__bedsideTest = { chooseOximeter, chooseRespiration, heartRate, cpapObject, breathState, metricState, oximeterIssue, signalTone };
 const model = { status:null, health:null, wellue:null, cpap:null, error:null, fetchedAt:0 };
 function setCard(id, state) { const element=byId(id); if (element) element.className = `card ${state === "working" ? "" : "unknown"}`; }
 function setBadge(id, label, state="unknown") { const element=byId(id); if (!element) return; element.textContent=label; element.className=`badge ${state === "working" ? "" : state === "stale" ? "stale" : state === "warn" ? "warn" : state === "bad" ? "bad" : "unknown"}`; }
@@ -356,22 +385,41 @@ function renderPapValue(id, value, stale) {
   const span=element.querySelector("span"); element.textContent=finite(value) ? String(value) : "—"; if (span) element.prepend(span);
 }
 function signalState(item) { return item && finite(item.value) ? (item.live ? "live" : "stale") : "unknown"; }
-function signalPath(base, state) {
-  if (state === "unknown") return `M 108 ${base} H 240 M 350 ${base} H 500`;
-  return `M 108 ${base} H 500`;
+const streamHistory=[];
+const STREAM_SECONDS=90;
+const STREAM_MAX=45;
+function streamLayerPath(name, history, maxValue) {
+  const top=[], bottom=[], center=38, x0=108, x1=500, bandHeight=23;
+  for (const sample of history) {
+    const x=x1 - Math.min(STREAM_SECONDS, Math.max(0, history.atNow - sample.at)) / STREAM_SECONDS * (x1-x0);
+    const amounts=[];
+    for (const key of ["oxygen","pulse","breath","pressure"]) {
+      const item=sample.signals[key];
+      amounts.push(item && finite(item.value) ? Math.min(1,Math.max(0,item.value / maxValue[key])) * bandHeight : 0);
+    }
+    let cursor=center - amounts.reduce((sum,amount)=>sum+amount,0) / 2;
+    const index=["oxygen","pulse","breath","pressure"].indexOf(name);
+    for (let i=0;i<index;i++) cursor += amounts[i];
+    top.push([x,cursor]); bottom.push([x,cursor+amounts[index]]);
+  }
+  if (!top.length) return "";
+  let path=`M ${top[0][0].toFixed(1)} ${top[0][1].toFixed(1)}`;
+  for (let i=1;i<top.length;i++) path += ` L ${top[i][0].toFixed(1)} ${top[i][1].toFixed(1)}`;
+  for (let i=bottom.length-1;i>=0;i--) path += ` L ${bottom[i][0].toFixed(1)} ${bottom[i][1].toFixed(1)}`;
+  return `${path} Z`;
 }
-function renderSignalField(_now, signals) {
-  const rows=[
-    ["oxygen",signals.oxygen,10],
-    ["pulse",signals.pulse,29],
-    ["breath",signals.breath,48],
-    ["pressure",signals.pressure,67],
-  ];
-  for (const [name,item,base] of rows) {
-    const state=signalState(item), path=byId(`ribbon-${name}`), dot=byId(`dot-${name}`), value=byId(`signal-value-${name}`);
-    path.setAttribute("class",`ribbon ${name} ${state}`); path.setAttribute("d",signalPath(base,state));
-    dot.setAttribute("class",`dot ${name} ${state}`); dot.setAttribute("cx","500"); dot.setAttribute("cy",String(base));
-    value.setAttribute("class",`value ${name} ${state}`); value.textContent=item ? `${item.display}${state === "stale" ? " · STALE" : ""}` : "NO READING";
+function renderSignalField(now, signals) {
+  const previous=streamHistory.at(-1);
+  if (!previous || now - previous.at >= 1.5) streamHistory.push({at:now,signals:{...signals}});
+  while (streamHistory.length > STREAM_MAX || now - streamHistory[0].at > STREAM_SECONDS) streamHistory.shift();
+  const history=streamHistory.map(sample=>sample); history.atNow=now;
+  const maxValue={oxygen:1,pulse:1,breath:1,pressure:1};
+  for (const sample of history) for (const name of Object.keys(maxValue)) if (sample.signals[name] && finite(sample.signals[name].value)) maxValue[name]=Math.max(maxValue[name],sample.signals[name].value);
+  for (const [name,item] of Object.entries(signals)) {
+    const state=signalState(item), tone=signalTone(name,item), color=toneColor(name,item), path=byId(`ribbon-${name}`), dot=byId(`dot-${name}`), value=byId(`signal-value-${name}`);
+    path.setAttribute("class",`ribbon ${name} ${state} ${tone}`); path.style.setProperty("--tone-color",color); path.setAttribute("d",streamLayerPath(name,history,maxValue));
+    dot.setAttribute("class",`dot ${name} ${state} ${tone}`); dot.style.setProperty("--tone-color",color); dot.setAttribute("cx","500"); dot.setAttribute("cy","38");
+    value.setAttribute("class",`value ${name} ${state} ${tone}`); value.style.setProperty("--tone-color",color); value.textContent=item ? `${item.display}${state === "stale" ? " · STALE" : ""}` : "NO READING";
   }
 }
 function render(now) {

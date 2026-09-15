@@ -15,8 +15,8 @@ assert.match(html, /--H:480px/);
 for (const size of ["800x480", "1024x600", "1280x720"]) assert.ok(html.includes(size), `${size} review size must be offered`);
 assert.match(html, /query\.get\("bp-check"\) === "1"/);
 assert.doesNotMatch(html, /OPERATOR ACTION REQUIRED/);
-assert.match(html, /CURRENT SIGNALS/);
-assert.match(html, /FLOW = FRESH · GREY = STALE · GAP = NOT MEASURED/);
+assert.match(html, /LIVE STREAMGRAPH/);
+assert.match(html, /BAND = RECENT VALUE · GREEN = NO LOW SIGNAL · YELLOW→RED = SEVERITY · GREY = NO DATA\/STALE/);
 assert.match(html, /EMAY.*Wellue/);
 assert.match(html, /CPAP WHEN ACTIVE|direct respiration/);
 assert.match(html, /STALE/);
@@ -46,7 +46,7 @@ const context = {
 };
 const run = new Function("context", `with (context) { ${script.slice(0, helperEnd)} }`);
 run(context);
-const { chooseOximeter, chooseRespiration, heartRate, cpapObject, breathState, metricState, oximeterIssue } = context.window.__bedsideTest;
+const { chooseOximeter, chooseRespiration, heartRate, cpapObject, breathState, metricState, oximeterIssue, signalTone } = context.window.__bedsideTest;
 const now = 1_700_000_100;
 const live = sample => ({ ...sample, sample_at: now - 1, written_at: now - 1 });
 
@@ -70,6 +70,11 @@ assert.equal(metricState({ value: 9, live: false }), "stale");
 assert.equal(metricState({ value: 9, live: true }), "live");
 assert.equal(metricState(null), "unknown");
 assert.match(oximeterIssue({ emay: { link: "down" } }, { link: "lost" }), /EMAY DOWN.*Wellue LOST/);
+assert.equal(signalTone("oxygen", { value: 98, live: true }), "tone-good");
+assert.equal(signalTone("oxygen", { value: 87, live: true }), "tone-warn");
+assert.equal(signalTone("oxygen", { value: 82, live: true }), "tone-bad");
+assert.equal(signalTone("oxygen", null), "tone-unknown");
+assert.equal(signalTone("oxygen", { value: 82, live: false }), "tone-stale");
 
 assert.equal(heartRate(now, { h10: live({ hr: 58 }) }, chooseOximeter(now, emay, wellue)).name, "POLAR H10", "ECG HR wins over pulse-rate fallback");
 assert.equal(heartRate(now, {}, chooseOximeter(now, emay, wellue)).name, "EMAY", "selected oximeter supplies fallback pulse");
