@@ -16,7 +16,7 @@
 :root {
   --text:#e7edf0; --muted:#aebbc2; --quiet:#77868e;
   --spo2:#63d8e5; --hr:#71dc95; --resp:#e8bd5b; --pap:#d7a6ee;
-  --unknown:#c1cbd1; --danger:#ef8178;
+  --unknown:#c1cbd1; --stale:#77838a; --danger:#ef8178;
   --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
   --sans:"Helvetica Neue",Helvetica,Arial,sans-serif;
   --W:800px; --H:480px;
@@ -65,7 +65,7 @@ header { min-width:0; border-bottom:1px solid var(--line); display:flex; align-i
 .pap-value { color:var(--pap); font:700 25px/.9 var(--mono); white-space:nowrap; }
 .pap-value span { display:block; margin-bottom:4px; color:var(--quiet); font:11px/1 var(--sans); letter-spacing:1px; }
 .pap-value.missing { color:var(--unknown); }
-.big.stale,.bp-reading.stale,.meta-value.stale,.pap-value.stale { color:var(--unknown); }
+.big.stale,.bp-reading.stale,.meta-value.stale,.pap-value.stale { color:var(--stale); }
 .badge.stale { color:var(--resp); border-color:var(--resp); }
 .breath-visual { min-width:0; min-height:54px; display:flex; align-items:center; justify-content:center; gap:7px; color:var(--unknown); border-left:1px solid var(--line); padding-left:8px; }
 .lung-icon { width:55px; height:55px; flex:0 0 auto; overflow:visible; }
@@ -78,7 +78,7 @@ header { min-width:0; border-bottom:1px solid var(--line); display:flex; align-i
 .breath-copy { min-width:0; font-family:var(--mono); text-align:left; }
 .breath-copy span { display:block; color:var(--quiet); font:10px/1 var(--sans); letter-spacing:.8px; }
 .breath-copy strong { display:block; margin-top:4px; color:currentColor; font-size:17px; white-space:nowrap; }
-.breath-copy strong.stale { color:var(--unknown); }
+.breath-copy strong.stale { color:var(--stale); }
 @keyframes lung-breathe { 0%,100% { transform:scale(.82,.88); } 50% { transform:scale(1,1); } }
 @media (prefers-reduced-motion:reduce) { .breath-visual.good .lung { animation:none; } }
 .source { padding:8px 10px; display:grid; grid-template-columns:1fr auto; grid-template-rows:auto 1fr; gap:5px 6px; }
