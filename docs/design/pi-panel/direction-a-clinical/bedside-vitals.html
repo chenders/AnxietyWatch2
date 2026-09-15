@@ -401,7 +401,7 @@ function curvePath(points) {
   return path;
 }
 function streamLayerPath(name, history, maxValue) {
-  const top=[], bottom=[], center=38, x0=108, x1=500, bandHeight=23;
+  const top=[], bottom=[], center=38, x0=108, x1=500, bandHeight=15;
   for (const sample of history) {
     const x=x1 - Math.min(STREAM_SECONDS, Math.max(0, history.atNow - sample.at)) / STREAM_SECONDS * (x1-x0);
     const amounts=[];
@@ -420,7 +420,14 @@ function streamLayerPath(name, history, maxValue) {
 }
 function renderSignalField(now, signals) {
   const previous=streamHistory.at(-1);
-  if (!previous || now - previous.at >= 1.5) streamHistory.push({at:now,signals:{...signals}});
+  const liveSignals={}, sampleAt={};
+  for (const [name,item] of Object.entries(signals)) {
+    if (item && item.live === true && finite(item.sample_at)) {
+      liveSignals[name]={...item}; sampleAt[name]=item.sample_at;
+    }
+  }
+  const hasNewSample=Object.keys(sampleAt).some(name=>!previous || sampleAt[name] > (previous.sampleAt[name] || 0));
+  if (hasNewSample) streamHistory.push({at:now,sampleAt,signals:liveSignals});
   while (streamHistory.length > STREAM_MAX || now - streamHistory[0].at > STREAM_SECONDS) streamHistory.shift();
   const history=streamHistory.map(sample=>sample); history.atNow=now;
   const maxValue={oxygen:1,pulse:1,breath:1,pressure:1};
