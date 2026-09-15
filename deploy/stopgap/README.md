@@ -229,11 +229,14 @@ reported separately and does not change the sensor-priority result.
 The physical DSI panel uses `bedside-vitals.html` at exactly 800×480. Both the
 main unit and `zzz-air11-bedside.conf` point to this page. It shows the latest
 A&D cuff BP, selected SpO₂/pulse, H10 ECG heart rate when fresh, CPAP/PAP fields,
-and respiratory rate with CPAP/direct-source precedence. Optional
-`wellue_status.json` and `cpap_status.json` feeds are accepted; absent feeds
-remain UNKNOWN rather than becoming a reassuring zero or stale current value.
-`panel-cpap-status.service` now publishes the read-only AirSense API into
-`cpap_status.json`, including live CPAP respiration, leak, and mask pressure.
+and respiratory rate with CPAP/direct-source precedence. Missing values remain
+UNKNOWN; historical values are grey and carry a `STALE` badge rather than looking
+current. The panel uses the merged Wellue status and optional `cpap_status.json`
+feed. `panel-cpap-status.service` publishes read-only AirSense respiration and
+leak data; the bedside page replaces mask pressure with a lung-shaped animation.
+The animation is green only for a fresh active CPAP rate, amber for stale history,
+and red when no live breathing measurement exists. These colors describe data
+availability, not a medical judgment.
 
 The kiosk URL includes `bp-check=1` for the current cuff verification window.
 The page waits five minutes for a new BP sample, changes to `BP RECEIVED` when

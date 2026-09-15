@@ -17,6 +17,9 @@ assert.match(html, /query\.get\("bp-check"\) === "1"/);
 assert.match(html, /OPERATOR ACTION REQUIRED/);
 assert.match(html, /EMAY.*Wellue/);
 assert.match(html, /CPAP\/direct.*inferred/);
+assert.match(html, /STALE/);
+assert.match(html, /breath-visual/);
+assert.doesNotMatch(html, /pap-pressure/);
 assert.match(html, /No value is fabricated|no value is fabricated/i);
 
 const script = html.split("<script>\n", 2)[1].split("\n</script>", 1)[0];
@@ -41,7 +44,7 @@ const context = {
 };
 const run = new Function("context", `with (context) { ${script.slice(0, helperEnd)} }`);
 run(context);
-const { chooseOximeter, chooseRespiration, heartRate, cpapObject } = context.window.__bedsideTest;
+const { chooseOximeter, chooseRespiration, heartRate, cpapObject, breathState, metricState } = context.window.__bedsideTest;
 const now = 1_700_000_100;
 const live = sample => ({ ...sample, sample_at: now - 1, written_at: now - 1 });
 
@@ -58,6 +61,12 @@ assert.equal(chooseRespiration(now, { h10: live({ respiratory_rate: 18 }) }, cpa
 assert.equal(chooseRespiration(now, { direct_respiration: live({ respiratory_rate: 14 }) }, null).name, "DIRECT SENSOR");
 assert.equal(chooseRespiration(now, { h10: live({ respiratory_rate: 16 }) }, null).name, "H10 INFERRED");
 assert.equal(chooseRespiration(now, {}, null), null, "absent respiration remains unknown");
+assert.equal(breathState(now, cpap), "good", "active fresh CPAP gets live breathing state");
+assert.equal(breathState(now, { ...cpap, active: false }), "warn", "inactive CPAP is stale, not live");
+assert.equal(breathState(now, null), "bad", "absent CPAP has no live breathing state");
+assert.equal(metricState({ value: 9, live: false }), "stale");
+assert.equal(metricState({ value: 9, live: true }), "live");
+assert.equal(metricState(null), "unknown");
 
 assert.equal(heartRate(now, { h10: live({ hr: 58 }) }, chooseOximeter(now, emay, wellue)).name, "POLAR H10", "ECG HR wins over pulse-rate fallback");
 assert.equal(heartRate(now, {}, chooseOximeter(now, emay, wellue)).name, "EMAY", "selected oximeter supplies fallback pulse");

@@ -154,7 +154,7 @@ uses fixture values must say so on the panel itself:
 | Page | Purpose | Default data contract |
 |---|---|---|
 | `live-vitals.html` | Overnight sensor overview and trends | Live status projection; missing or stale values remain unknown |
-| `bedside-vitals.html` | Physical kiosk summary | `status.json` plus optional Wellue/CPAP feeds; missing values remain UNKNOWN; `bp-check=1` arms a five-minute cuff check |
+| `bedside-vitals.html` | Physical kiosk summary | `status.json` plus optional CPAP feed; missing values remain UNKNOWN, stale values are grey with a `STALE` badge, and `bp-check=1` arms a five-minute cuff check |
 | `clinical-monitor.html` | Clinical-layout review/demo | **Fixture data by default**; the top banner says `DEMO DATA · NOT LIVE` |
 | `index.html` | Design/state review | **Fixture data by default**; `?live` enables the status feed and `?live&demo` explicitly simulates the non-EMAY rows |
 | `polar-h10.html` | H10 explanation, graphs, and signal-quality detail | H10 status/history documents only |
