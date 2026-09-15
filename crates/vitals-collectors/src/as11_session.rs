@@ -183,6 +183,23 @@ impl TherapyLifecycle {
         Ok(())
     }
 
+    /// Marks an active session as unknown after the collector process restarts.
+    ///
+    /// The stop event may have occurred while the Pi was down, so restoring
+    /// `Active` would claim current therapy without evidence. The durable
+    /// session identity and its observed start are retained; a fresh lifecycle
+    /// event must establish the next state.
+    pub fn mark_process_restart(&mut self) -> bool {
+        if self.state != TherapyState::Active {
+            return false;
+        }
+        self.state = TherapyState::Unknown;
+        self.stop_host_unix_micros = None;
+        self.finalized_host_unix_micros = None;
+        self.stream_after_stop = false;
+        true
+    }
+
     /// Records a stream envelope received after a stop boundary.
     pub fn observe_stream(&mut self) {
         if self.state == TherapyState::Provisional {
@@ -449,6 +466,21 @@ mod tests {
         assert!(!lifecycle.advance(20_000_000 + POST_STOP_SETTLE_MICROS));
         assert!(lifecycle.advance(20_000_000 + POST_STOP_SETTLE_MAX_MICROS));
         assert_eq!(lifecycle.state(), TherapyState::Complete);
+    }
+
+    #[test]
+    fn active_session_becomes_unknown_after_process_restart() {
+        let mut lifecycle = TherapyLifecycle::default();
+        lifecycle
+            .observe_event(b"TherapyStart", 100)
+            .expect("start");
+        assert!(lifecycle.mark_process_restart());
+        assert_eq!(lifecycle.state(), TherapyState::Unknown);
+        assert_eq!(lifecycle.session_id(), 1);
+        assert_eq!(lifecycle.start_host_unix_micros(), Some(100));
+        assert!(!lifecycle.mark_process_restart());
+        lifecycle.observe_event(b"TherapyStop", 200).expect("stop");
+        assert_eq!(lifecycle.state(), TherapyState::Provisional);
     }
 
     #[test]
