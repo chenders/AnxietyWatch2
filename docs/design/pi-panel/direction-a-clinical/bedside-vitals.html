@@ -110,9 +110,14 @@ footer { min-width:0; border-top:1px solid var(--line); padding-top:7px; display
 .signal-svg .dot.pulse { fill:var(--hr); }
 .signal-svg .dot.breath { fill:var(--resp); }
 .signal-svg .dot.pressure { fill:var(--pap); }
+.signal-svg .dot.unknown { display:none; }
 .signal-svg .dot.stale { fill:var(--stale); }
 .signal-svg .dot.unknown { fill:var(--unknown); }
 .signal-svg text { fill:var(--quiet); font:10px var(--mono); letter-spacing:1px; }
+.signal-svg .value { font-weight:700; letter-spacing:.4px; }
+.signal-svg .value.oxygen.live { fill:var(--spo2); } .signal-svg .value.pulse.live { fill:var(--hr); }
+.signal-svg .value.breath.live { fill:var(--resp); } .signal-svg .value.pressure.live { fill:var(--pap); }
+.signal-svg .value.stale { fill:var(--stale); } .signal-svg .value.unknown { fill:var(--unknown); }
 @keyframes ribbon-flow { to { stroke-dashoffset:-44; } }
 @media (prefers-reduced-motion:reduce) { .signal-svg .ribbon.live { animation:none; } }
 #review { width:var(--W); margin:25px auto 50px; color:#c1c9cd; font-size:15px; line-height:1.5; }
@@ -146,12 +151,16 @@ footer { min-width:0; border-top:1px solid var(--line); padding-top:7px; display
   </section>
   <footer>
     <div class="signal-field" aria-label="Data availability field, not a clinical score">
-      <div class="signal-head"><span>OBSERVATION FIELD</span><span>DATA AVAILABILITY · NOT A CLINICAL SCORE</span></div>
+      <div class="signal-head"><span>CURRENT SIGNALS</span><span>FLOW = FRESH · GREY = STALE · GAP = NOT MEASURED</span></div>
       <svg id="signal-svg" class="signal-svg" viewBox="0 0 680 76" role="img" aria-label="Current data availability across oxygen, pulse, breath, and pressure">
-        <path class="guide" d="M106 10H676M106 29H676M106 48H676M106 67H676"/>
+        <path class="guide" d="M106 10H500M106 29H500M106 48H500M106 67H500"/>
         <text x="0" y="13">O₂</text><text x="0" y="32">PULSE</text><text x="0" y="51">BREATH</text><text x="0" y="70">PRESSURE</text>
         <path id="ribbon-oxygen" class="ribbon oxygen"/><path id="ribbon-pulse" class="ribbon pulse"/><path id="ribbon-breath" class="ribbon breath"/><path id="ribbon-pressure" class="ribbon pressure"/>
         <circle id="dot-oxygen" class="dot oxygen" r="4"/><circle id="dot-pulse" class="dot pulse" r="4"/><circle id="dot-breath" class="dot breath" r="4"/><circle id="dot-pressure" class="dot pressure" r="4"/>
+        <text id="signal-value-oxygen" class="value oxygen" x="676" y="13" text-anchor="end"/>
+        <text id="signal-value-pulse" class="value pulse" x="676" y="32" text-anchor="end"/>
+        <text id="signal-value-breath" class="value breath" x="676" y="51" text-anchor="end"/>
+        <text id="signal-value-pressure" class="value pressure" x="676" y="70" text-anchor="end"/>
       </svg>
     </div>
     <div id="updated">FEED AGE —</div>
@@ -347,17 +356,11 @@ function renderPapValue(id, value, stale) {
   const span=element.querySelector("span"); element.textContent=finite(value) ? String(value) : "—"; if (span) element.prepend(span);
 }
 function signalState(item) { return item && finite(item.value) ? (item.live ? "live" : "stale") : "unknown"; }
-function signalPath(base, state, now) {
-  const amplitude=state === "live" ? 5 : state === "stale" ? 2 : 1;
-  let path=`M 108 ${base}`;
-  for (let point=1; point<=14; point++) {
-    const x=108 + point * 40;
-    const y=base + Math.sin(point * .92 + now / 7) * amplitude;
-    path += ` L ${x} ${y.toFixed(1)}`;
-  }
-  return path;
+function signalPath(base, state) {
+  if (state === "unknown") return `M 108 ${base} H 240 M 350 ${base} H 500`;
+  return `M 108 ${base} H 500`;
 }
-function renderSignalField(now, signals) {
+function renderSignalField(_now, signals) {
   const rows=[
     ["oxygen",signals.oxygen,10],
     ["pulse",signals.pulse,29],
@@ -365,9 +368,10 @@ function renderSignalField(now, signals) {
     ["pressure",signals.pressure,67],
   ];
   for (const [name,item,base] of rows) {
-    const state=signalState(item), path=byId(`ribbon-${name}`), dot=byId(`dot-${name}`);
-    path.setAttribute("class",`ribbon ${name} ${state}`); path.setAttribute("d",signalPath(base,state,now));
-    dot.setAttribute("class",`dot ${name} ${state}`); dot.setAttribute("cx","668"); dot.setAttribute("cy",(base + Math.sin(14 * .92 + now / 7) * (state === "live" ? 5 : state === "stale" ? 2 : 1)).toFixed(1));
+    const state=signalState(item), path=byId(`ribbon-${name}`), dot=byId(`dot-${name}`), value=byId(`signal-value-${name}`);
+    path.setAttribute("class",`ribbon ${name} ${state}`); path.setAttribute("d",signalPath(base,state));
+    dot.setAttribute("class",`dot ${name} ${state}`); dot.setAttribute("cx","500"); dot.setAttribute("cy",String(base));
+    value.setAttribute("class",`value ${name} ${state}`); value.textContent=item ? `${item.display}${state === "stale" ? " · STALE" : ""}` : "NO READING";
   }
 }
 function render(now) {
@@ -382,7 +386,7 @@ function render(now) {
   const bp=status && status.bp; const bpPresent=bp && finite(bp.sample_at);
   setCard("bp-card","unknown"); setBadge("bp-badge",bpPresent ? "STALE" : "NO READING",bpPresent ? "stale" : "unknown"); byId("bp-reading").innerHTML=bpPresent ? `${finite(bp.systolic)?Math.round(bp.systolic):"—"} / ${finite(bp.diastolic)?Math.round(bp.diastolic):"—"} <span class="unit">mmHg</span>` : `— / — <span class="unit">mmHg</span>`; setStale("bp-reading",bpPresent); setValue("bp-map",bpPresent?bp.map:null); setStale("bp-map",bpPresent); setValue("bp-pulse",bpPresent?bp.pulse_bpm:null); setStale("bp-pulse",bpPresent); byId("bp-pulse").textContent=bpPresent && finite(bp.pulse_bpm) ? `${Math.round(bp.pulse_bpm)} bpm` : "—"; byId("bp-age").textContent=bpPresent ? ageText(ageSeconds(bp.sample_at,now)) : "—";
   const pap=cpap, papHasData=Boolean(pap && (finite(pap.rr) || finite(pap.ahi) || finite(pap.leak))), papLive=breathState(now,pap) === "good"; setCard("pap-card",papLive ? "working" : "unknown"); setBadge("pap-badge",papLive ? "ON" : papHasData ? "STALE" : "UNKNOWN",papLive ? "working" : papHasData ? "stale" : "unknown"); byId("pap-sub").textContent=papLive ? "THERAPY ACTIVE" : "SESSION FEED"; renderPapValue("pap-ahi",pap&&pap.ahi,!papLive); renderPapValue("pap-leak",pap&&pap.leak,!papLive); renderBreathVisual(now,pap); byId("pap-age").innerHTML=`SESSION <strong>${pap ? ageText(ageSeconds(pap.sample_at || pap.session_at,now)) : "not measured"}</strong>`;
-  renderSource("src-emay","src-emay-state","src-emay-detail","EMAY",ox && ox.name === "EMAY" && ox.live ? "LIVE" : "PREFERRED", sourceDetail(status && status.emay, ox && ox.name, "EMAY")); renderSource("src-wellue","src-wellue-state","src-wellue-detail","WELLUE",ox && ox.name === "WELLUE" && ox.live ? "LIVE" : "FALLBACK", sourceDetail(wellue, ox && ox.name, "WELLUE")); const h10=status&&status.h10; renderSource("src-h10","src-h10-state","src-h10-detail","H10",hr&&hr.name === "POLAR H10" ? "LIVE" : "UNKNOWN",hr&&hr.name === "POLAR H10" ? "ECG heart rate selected" : "no fresh ECG heart rate"); renderSource("src-cpap","src-cpap-state","src-cpap-detail","CPAP",papLive ? "LIVE" : papHasData ? "STALE" : "UNKNOWN",papLive ? "therapy active; direct respiration preferred" : papHasData ? "last session only; not current" : "no session evidence"); renderSignalField(now,{oxygen:ox&&ox.spo2!=null ? {value:ox.spo2,live:ox.live} : null,pulse:hr&&hr.value!=null ? hr : null,breath:resp,pressure:bpPresent ? {value:bp.sample_at,live:false} : null}); renderBpCheck(now,status); byId("updated").textContent=`FEED AGE ${feedOk ? ageText(now-model.fetchedAt) : "unknown"}`;
+  renderSource("src-emay","src-emay-state","src-emay-detail","EMAY",ox && ox.name === "EMAY" && ox.live ? "LIVE" : "PREFERRED", sourceDetail(status && status.emay, ox && ox.name, "EMAY")); renderSource("src-wellue","src-wellue-state","src-wellue-detail","WELLUE",ox && ox.name === "WELLUE" && ox.live ? "LIVE" : "FALLBACK", sourceDetail(wellue, ox && ox.name, "WELLUE")); const h10=status&&status.h10; renderSource("src-h10","src-h10-state","src-h10-detail","H10",hr&&hr.name === "POLAR H10" ? "LIVE" : "UNKNOWN",hr&&hr.name === "POLAR H10" ? "ECG heart rate selected" : "no fresh ECG heart rate"); renderSource("src-cpap","src-cpap-state","src-cpap-detail","CPAP",papLive ? "LIVE" : papHasData ? "STALE" : "UNKNOWN",papLive ? "therapy active; direct respiration preferred" : papHasData ? "last session only; not current" : "no session evidence"); renderSignalField(now,{oxygen:ox&&ox.spo2!=null ? {value:ox.spo2,live:ox.live,display:`${Math.round(ox.spo2)} %`} : null,pulse:hr&&hr.value!=null ? {...hr,display:`${Math.round(hr.value)} bpm`} : null,breath:resp&&resp.value!=null ? {...resp,display:`${Math.round(resp.value)} /min`} : null,pressure:bpPresent ? {value:finite(bp.map)?bp.map:bp.systolic,live:false,display:finite(bp.map)?`MAP ${Math.round(bp.map)} mmHg`:finite(bp.systolic)?`SYS ${Math.round(bp.systolic)} mmHg`:"NO VALUE"} : null}); renderBpCheck(now,status); byId("updated").textContent=`FEED AGE ${feedOk ? ageText(now-model.fetchedAt) : "unknown"}`;
 }
 async function fetchJson(url) { const response=await fetch(`${url}${url.includes("?")?"&":"?"}_=${Date.now()}`,{cache:"no-store"}); if(!response.ok) throw new Error(`HTTP ${response.status}`); return response.json(); }
 async function poll() { try { const status=await fetchJson(statusUrl); model.status=normalizeStatus(status); model.error=null; } catch (error) { model.status=null; model.error=error.message || String(error); } try { const health=await fetchJson(healthUrl); model.health=health && health.schema === 1 ? health : null; } catch (_) { model.health=null; } if (wellueUrl) { try { model.wellue=await fetchJson(wellueUrl); } catch (_) { model.wellue=null; } } if (cpapUrl) { try { model.cpap=await fetchJson(cpapUrl); } catch (_) { model.cpap=null; } } model.fetchedAt=Date.now()/1000; render(model.fetchedAt); }
