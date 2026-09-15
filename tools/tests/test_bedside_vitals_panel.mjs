@@ -14,9 +14,9 @@ assert.match(html, /--W:800px/);
 assert.match(html, /--H:480px/);
 for (const size of ["800x480", "1024x600", "1280x720"]) assert.ok(html.includes(size), `${size} review size must be offered`);
 assert.match(html, /query\.get\("bp-check"\) === "1"/);
-assert.match(html, /OPERATOR ACTION REQUIRED/);
+assert.doesNotMatch(html, /OPERATOR ACTION REQUIRED/);
 assert.match(html, /EMAY.*Wellue/);
-assert.match(html, /CPAP\/direct.*inferred/);
+assert.match(html, /CPAP WHEN ACTIVE|direct respiration/);
 assert.match(html, /STALE/);
 assert.match(html, /breath-visual/);
 assert.doesNotMatch(html, /pap-pressure/);
@@ -44,7 +44,7 @@ const context = {
 };
 const run = new Function("context", `with (context) { ${script.slice(0, helperEnd)} }`);
 run(context);
-const { chooseOximeter, chooseRespiration, heartRate, cpapObject, breathState, metricState } = context.window.__bedsideTest;
+const { chooseOximeter, chooseRespiration, heartRate, cpapObject, breathState, metricState, oximeterIssue } = context.window.__bedsideTest;
 const now = 1_700_000_100;
 const live = sample => ({ ...sample, sample_at: now - 1, written_at: now - 1 });
 
@@ -67,6 +67,7 @@ assert.equal(breathState(now, null), "bad", "absent CPAP has no live breathing s
 assert.equal(metricState({ value: 9, live: false }), "stale");
 assert.equal(metricState({ value: 9, live: true }), "live");
 assert.equal(metricState(null), "unknown");
+assert.match(oximeterIssue({ emay: { link: "down" } }, { link: "lost" }), /EMAY DOWN.*Wellue LOST/);
 
 assert.equal(heartRate(now, { h10: live({ hr: 58 }) }, chooseOximeter(now, emay, wellue)).name, "POLAR H10", "ECG HR wins over pulse-rate fallback");
 assert.equal(heartRate(now, {}, chooseOximeter(now, emay, wellue)).name, "EMAY", "selected oximeter supplies fallback pulse");

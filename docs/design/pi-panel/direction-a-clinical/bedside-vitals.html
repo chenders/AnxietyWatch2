@@ -124,7 +124,7 @@ footer strong { color:var(--muted); font-weight:500; }
     <article id="src-h10" class="source unknown"><div class="source-name">POLAR H10</div><div id="src-h10-state" class="source-state unknown">UNKNOWN</div><div id="src-h10-detail" class="source-detail">ECG heart rate not measured</div></article>
     <article id="src-cpap" class="source unknown"><div class="source-name">CPAP</div><div id="src-cpap-state" class="source-state unknown">UNKNOWN</div><div id="src-cpap-detail" class="source-detail">No session evidence</div></article>
   </section>
-  <footer><div id="operator-alert"><strong>SOURCE RULES</strong> SpO₂/pulse: EMAY → Wellue · RESP: CPAP/direct → inferred</div><div id="updated">FEED AGE —</div></footer>
+  <footer><div id="operator-alert" aria-live="polite"></div><div id="updated">FEED AGE —</div></footer>
 </main>
 <section id="review" aria-label="Bedside vitals review controls">
   <h1>Bedside vitals kiosk</h1>
@@ -224,7 +224,13 @@ function chooseRespiration(now, status, cpap) {
   if (h10 && valueOf(h10,["respiratory_rate"]) != null && fresh(h10, now)) return { value:valueOf(h10,["respiratory_rate"]), name:"H10 INFERRED", sample_at:h10.sample_at, live:true };
   return null;
 }
-window.__bedsideTest = { chooseOximeter, chooseRespiration, heartRate, cpapObject, breathState, metricState };
+function oximeterIssue(status, wellue) {
+  const emay=status && status.emay;
+  const emayIssue=!emay ? "EMAY unavailable" : emay.link && emay.link !== "up" ? `EMAY ${String(emay.link).toUpperCase()}` : !fresh(emay,Date.now()/1000) ? "EMAY stale" : "EMAY not measured";
+  const wellueIssue=!wellue ? "Wellue unavailable" : wellue.link && wellue.link !== "up" ? `Wellue ${String(wellue.link).toUpperCase()}` : !fresh(wellue,Date.now()/1000) ? "Wellue stale" : "Wellue not measured";
+  return `${emayIssue} · ${wellueIssue}`;
+}
+window.__bedsideTest = { chooseOximeter, chooseRespiration, heartRate, cpapObject, breathState, metricState, oximeterIssue };
 const model = { status:null, health:null, wellue:null, cpap:null, error:null, fetchedAt:0 };
 function setCard(id, state) { const element=byId(id); if (element) element.className = `card ${state === "working" ? "" : "unknown"}`; }
 function setBadge(id, label, state="unknown") { const element=byId(id); if (!element) return; element.textContent=label; element.className=`badge ${state === "working" ? "" : state === "stale" ? "stale" : state === "warn" ? "warn" : state === "bad" ? "bad" : "unknown"}`; }
@@ -241,8 +247,8 @@ function normalizeStatus(value) {
   throw new Error("unsupported status schema");
 }
 function renderMetric(card, badge, valueId, ageId, subId, item, unit="") {
-  if (!item || !finite(item.value)) { setCard(card,"unknown"); setBadge(badge,"UNKNOWN"); setValue(valueId,null); setStale(valueId,false); byId(ageId).innerHTML="LAST <strong>not measured</strong>"; return; }
-  const live=item.live === true; setCard(card, live ? "working" : "unknown"); setBadge(badge, live ? "LIVE" : "STALE", live ? "working" : "stale"); setValue(valueId,item.value); setStale(valueId,!live); byId(subId).textContent=item.name; byId(ageId).innerHTML=`LAST <strong>${ageText(ageSeconds(item.sample_at, Date.now()/1000))}</strong>`;
+  if (!item || !finite(item.value)) { setCard(card,"unknown"); setBadge(badge,item && item.reason ? "UNAVAILABLE" : "UNKNOWN",item && item.reason ? "bad" : "unknown"); setValue(valueId,null); setStale(valueId,false); byId(subId).textContent=item && item.name ? item.name : "SOURCE NOT AVAILABLE"; byId(ageId).innerHTML=`STATUS <strong>${item && item.reason ? item.reason : "not measured"}</strong>`; return; }
+  const live=item.live === true; setCard(card, live ? "working" : "unknown"); setBadge(badge, live ? "LIVE" : "STALE", live ? "working" : "stale"); setValue(valueId,item.value); setStale(valueId,!live); byId(subId).textContent=item.name; byId(ageId).innerHTML=`${live ? "LAST" : "STALE"} <strong>${ageText(ageSeconds(item.sample_at, Date.now()/1000))}</strong>`;
 }
 function sourceDetail(source, selectedName, liveName) {
   if (!source) return "feed not present";
@@ -278,31 +284,20 @@ function collectorFailure(status) {
   return null;
 }
 function renderBpCheck(now, status) {
-  const alert = byId("operator-alert");
-  const failure = collectorFailure(status);
-  if (failure) {
-    alert.className = "alert";
-    alert.innerHTML = `<strong>OPERATOR ACTION REQUIRED</strong> · collector reported ${String(failure)}`;
-    return;
-  }
   if (!bpCheckEnabled || bpCheckComplete) return;
   const sampleAt = status && status.bp && status.bp.sample_at;
   if (finite(sampleAt) && sampleAt >= bpCheckStartedAt) {
     bpCheckComplete = true;
-    alert.className = "received";
-    alert.innerHTML = "<strong>BP RECEIVED</strong> · new cuff sample is in the feed";
+    setBadge("bp-badge","RECEIVED","working"); byId("bp-age").textContent="NEW SAMPLE";
     return;
   }
   const remaining = BP_CHECK_SECONDS - (now - bpCheckStartedAt);
   if (remaining <= 0) {
-    alert.className = "alert";
-    alert.innerHTML = "<strong>OPERATOR ACTION REQUIRED</strong> · no new BP sample after 5 min; check bp-collector / cuff";
+    setBadge("bp-badge","ACTION","bad"); byId("bp-age").textContent="CHECK CUFF";
   } else if (model.error) {
-    alert.className = "alert";
-    alert.innerHTML = `<strong>OPERATOR ACTION REQUIRED</strong> · status feed unavailable; BP cannot be verified (${Math.ceil(remaining)} s left)`;
+    setBadge("bp-badge","ACTION","bad"); byId("bp-age").textContent="FEED UNAVAILABLE";
   } else {
-    alert.className = "";
-    alert.innerHTML = `<strong>BP CHECK ARMED</strong> · waiting for a new cuff sample (${Math.ceil(remaining)} s)`;
+    setBadge("bp-badge","CHECKING","warn"); byId("bp-age").textContent=`WAIT ${Math.ceil(remaining)}s`;
   }
 }
 function renderBreathVisual(now, pap) {
@@ -325,7 +320,7 @@ function render(now) {
   if (status) status.health = model.health;
   const feedAge=ageSeconds(model.fetchedAt,now), feedOk=model.status && model.error===null && feedAge != null && feedAge <= FRESH;
   byId("clock").textContent=new Date().toLocaleTimeString([], {hour12:false}); byId("feed").textContent=feedOk ? "STATUS FEED LIVE" : "FEED UNKNOWN"; byId("feed").className=feedOk ? "feed" : "feed bad";
-  renderMetric("spo2-card","spo2-badge","spo2","spo2-age","spo2-sub",ox && ox.spo2 != null ? {value:ox.spo2,name:ox.name,sample_at:ox.sample_at,live:ox.live} : null);
+  renderMetric("spo2-card","spo2-badge","spo2","spo2-age","spo2-sub",ox && ox.spo2 != null ? {value:ox.spo2,name:ox.name,sample_at:ox.sample_at,live:ox.live} : {name:"EMAY → WELLUE",reason:oximeterIssue(status,wellue)});
   renderMetric("hr-card","hr-badge","hr","hr-age","hr-sub",hr);
   renderMetric("resp-card","resp-badge","resp","resp-age","resp-sub",resp);
   byId("resp-sub").textContent=resp ? resp.name : "CPAP WHEN ACTIVE";
