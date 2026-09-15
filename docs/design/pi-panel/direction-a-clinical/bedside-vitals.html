@@ -419,7 +419,7 @@ function streamLayerPath(name, history, maxValue) {
   return `${topPath} ${bottomPath} Z`;
 }
 function renderSignalField(now, signals) {
-  const previous=streamHistory.at(-1);
+  const previous=streamHistory.length ? streamHistory[streamHistory.length - 1] : null;
   const liveSignals={}, sampleAt={};
   for (const [name,item] of Object.entries(signals)) {
     if (item && item.live === true && finite(item.sample_at)) {
@@ -428,7 +428,7 @@ function renderSignalField(now, signals) {
   }
   const hasNewSample=Object.keys(sampleAt).some(name=>!previous || sampleAt[name] > (previous.sampleAt[name] || 0));
   if (hasNewSample) streamHistory.push({at:now,sampleAt,signals:liveSignals});
-  while (streamHistory.length > STREAM_MAX || now - streamHistory[0].at > STREAM_SECONDS) streamHistory.shift();
+  while (streamHistory.length > STREAM_MAX || (streamHistory.length > 0 && now - streamHistory[0].at > STREAM_SECONDS)) streamHistory.shift();
   const history=streamHistory.map(sample=>sample); history.atNow=now;
   const maxValue={oxygen:1,pulse:1,breath:1,pressure:1};
   for (const sample of history) for (const name of Object.keys(maxValue)) if (sample.signals[name] && finite(sample.signals[name].value)) maxValue[name]=Math.max(maxValue[name],sample.signals[name].value);
