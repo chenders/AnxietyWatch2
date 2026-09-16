@@ -112,14 +112,15 @@ across the phone/Pi boundary silently.
 
 - Anxiety severity using the generation-one 1–10 scale and named bands.
 - Optional note, tags, and song. The entry time is captured by the iPhone when the user saves it;
-  user-entered backdating is not supported. The iPhone may use the no-login/no-secret Apple/iTunes
-  Search API for basic title, artist, album, artwork, and provider ID metadata; the mirror retains
-  the artwork URL and a small local thumbnail for offline display. A manual free-form song stub remains
-  available offline. The Pi may later enrich the synced record with Genius.com
-  lyrics using a Pi-held key, controlled by a Pi-admin global lyrics-enrichment setting that defaults
-  to automatic. Without a configured key, the Pi keeps enrichment off and disables the setting with a
-  guided-key-setup note. Public-release credentials, licensing, disclosure, and optional AI
-  analysis require a separate future decision.
+  user-entered backdating is not supported. Search uses the Pi Genius proxy when its key is available,
+  or direct Genius when the owner has explicitly provisioned the key to the iPhone; otherwise it uses
+  the no-login/no-secret Apple/iTunes Search API. Genius failures fall back to iTunes with the
+  provider shown. The mirror retains title, artist, album, provider metadata, artwork URL, and a small
+  local thumbnail for offline display. A manual free-form song stub remains available offline. The Pi
+  may enrich the synced record with Genius.com lyrics using its key, controlled by a Pi-admin global
+  setting that defaults to automatic; without a key, it is off and disabled with a guided setup note.
+  Public-release credentials, licensing, disclosure, and optional AI analysis require a separate
+  future decision.
 - Optional pain only after its scale and missing-value behavior are accepted in the domain schema.
 - Express Mode preserves one-tap anxiety capture. Optional secondary fields cannot delay the save.
 - Entry detail shows subject time, recorded time, sync state, and version/conflict state.
