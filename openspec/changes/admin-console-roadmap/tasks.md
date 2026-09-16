@@ -21,7 +21,7 @@ worktree/branch/commit/PR. `BLOCKED` tasks remain queued but must not be dispatc
 - [x] T-M2e — Silence detector daemon using the core evaluator · implement-complex · review
 - [x] T-M2f — Outbound email configuration, sender, coalescing, and test loop · implement-complex · review
 - [x] T-M2g — Operator overrides, optional-source declarations, and expiring mutes · implement-complex · review
-- [ ] T-M2h — Credentials, audit/config UI, and one-time key reveal · implement-complex · review
+- [x] T-M2h — Credentials, audit/config UI, and one-time key reveal · implement-complex · review
 - [ ] T-M2i — Optional OpenTelemetry/OTLP exporter and test loop · implement-complex · review
 - [ ] T-M2j — Services and Config screens in the surviving direction · implement-standard · **BLOCKED on T-M1e**
 - [ ] T-M2k — M2 milestone acceptance suite · implement-complex · review

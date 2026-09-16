@@ -13,6 +13,8 @@ pub mod api;
 pub mod client;
 /// Versioned Apple-client routes and generated OpenAPI contract.
 pub mod client_api;
+/// Operator-authorized mobile enrollment and public-key credential lifecycle.
+pub mod credentials;
 /// Secretbox envelope encryption for the legacy loopback test API.
 pub mod crypto;
 /// `PostgreSQL` access for attempts and domain records.
