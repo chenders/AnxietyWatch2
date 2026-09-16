@@ -113,8 +113,9 @@ across the phone/Pi boundary silently.
 - Anxiety severity using the generation-one 1–10 scale and named bands.
 - Optional note, tags, and song. The entry time is captured by the iPhone when the user saves it;
   user-entered backdating is not supported. The iPhone may use the no-login/no-secret Apple/iTunes
-  Search API for basic title, artist, album, artwork, and provider ID metadata; a manual free-form
-  song stub remains available offline. The Pi may later enrich the synced record with Genius.com
+  Search API for basic title, artist, album, artwork, and provider ID metadata; the mirror retains
+  the artwork URL and a small local thumbnail for offline display. A manual free-form song stub remains
+  available offline. The Pi may later enrich the synced record with Genius.com
   lyrics using a Pi-held key. Public-release credentials, licensing, disclosure, and optional AI
   analysis require a separate future decision.
 - Optional pain only after its scale and missing-value behavior are accepted in the domain schema.

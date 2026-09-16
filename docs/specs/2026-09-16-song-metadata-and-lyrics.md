@@ -5,7 +5,9 @@
 The iPhone may search basic song metadata directly through a provider that requires no user login or
 API secret. The first choice is the Apple/iTunes Search API. Search may return title, artist, album,
 artwork reference, and provider ID; the journal stores a metadata snapshot so the entry remains useful
-outside the LAN. A manual free-form song/album entry remains available when the iPhone has no network.
+outside the LAN. The mirror stores the artwork URL and a small local thumbnail so the cover remains
+visible offline, subject to provider licensing and attribution review. A manual free-form song/album
+entry remains available when the iPhone has no network.
 Search requests never include journal text.
 
 Lyrics retrieval is a Pi-side enrichment step. The private first draft may keep the existing
