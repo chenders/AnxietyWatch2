@@ -19,7 +19,7 @@ worktree/branch/commit/PR. `BLOCKED` tasks remain queued but must not be dispatc
 - [x] T-M2c — Service detail, sanitised logs, and crash-loop health · implement-complex · review
 - [x] T-M2d — Host history and diagnostics · implement-standard · review
 - [x] T-M2e — Silence detector daemon using the core evaluator · implement-complex · review
-- [ ] T-M2f — Outbound email configuration, sender, coalescing, and test loop · implement-complex · review
+- [x] T-M2f — Outbound email configuration, sender, coalescing, and test loop · implement-complex · review
 - [ ] T-M2g — Operator overrides, optional-source declarations, and expiring mutes · implement-complex · review
 - [ ] T-M2h — Credentials, audit/config UI, and one-time key reveal · implement-complex · review
 - [ ] T-M2i — Optional OpenTelemetry/OTLP exporter and test loop · implement-complex · review

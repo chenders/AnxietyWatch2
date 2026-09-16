@@ -19,6 +19,8 @@ pub mod crypto;
 pub mod db;
 /// Canonicalization and immutable metadata rules for domain records.
 pub mod domain;
+/// Gmail STARTTLS notification channel and encrypted app-password handling.
+pub mod email;
 /// Route handlers and shared application state.
 pub mod handlers;
 /// HTTP response view-model types.
