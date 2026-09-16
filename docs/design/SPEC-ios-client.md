@@ -56,9 +56,10 @@ The Stage 7 app does **not**:
 
 ## 2. Binding product decisions
 
-1. **Server authority.** The Pi owns durable truth. Local persistence is limited to a durable,
-   temporary write outbox, server-issued read cursors, settings, and bounded display caches. The app
-   has no local archive, analysis store, or user-facing “device history.”
+1. **Server authority.** The Pi owns authoritative durable truth. Local persistence includes a durable
+   temporary write outbox, server-issued read cursors, settings, bounded physiological display caches,
+   and a permanent Data-Protected journal/anxiety mirror for offline reading and reconciliation. The
+   journal mirror is not authoritative and is never used for local analysis.
 2. **Upload at the earliest opportunity.** A new journal/song/rating/dose/check-in or HealthKit
    observer result triggers a drain immediately when iOS permits network work. Foreground entry,
    connectivity restoration, app activation, HealthKit background delivery, and scheduled background
@@ -232,9 +233,10 @@ degrades the last beacon by cadence.
 - Read APIs return server-computed projections with `observed_at`, `generated_at`, and explicit
   coverage/gap metadata.
 - Pagination uses opaque server cursors, never client-computed timestamps.
-- Cache entries carry endpoint, authenticated client, schema version, response generation time, and
-  expiration. A cache from another server/account is never reused.
-- Cached content can remain visible while stale only with a persistent stale state and its age.
+- Physiological projection cache entries carry endpoint, authenticated client, schema version,
+  response generation time, and expiration. A cache from another server/account is never reused.
+- Physiological cached content can remain visible while stale only with a persistent stale state and
+  its age. Journal/anxiety history is held in the permanent local mirror and reconciled from the Pi.
 
 ---
 
@@ -248,12 +250,14 @@ eligible attempt, and last classified error.
 
 The outbox is not a general mirror:
 
-- an acknowledged raw HealthKit or domain payload is deleted from local persistence in the same
-  transaction that records its terminal acknowledgement;
+- an acknowledged raw HealthKit payload is deleted from local persistence in the same transaction
+  that records its terminal acknowledgement;
+- acknowledged journal/anxiety payloads are reconciled into the permanent local mirror after terminal
+  acknowledgement; the mirror stores the content needed for offline history and version reconciliation;
 - a bounded receipt may retain only record ID, outcome, acknowledgement time, and server attempt ID
-  — never the HealthKit value, journal text, song text, or dose content;
-- server read responses use bounded, expiring caches, not replication tables; viewer history is
-  fetched from the Pi and a cache can be evicted without data loss;
+  — never HealthKit values or journal content outside the protected mirror;
+- physiological server read responses use bounded, expiring caches; journal/anxiety history uses the
+  protected local mirror and is reconciled from the Pi when reachable;
 - unacknowledged items are the unavoidable exception: they remain until acknowledged or the user
   explicitly accepts a named loss. They are never age-evicted to satisfy a storage limit;
 - logout, reset, and server replacement always keep unsent records; queued items are never discarded
@@ -261,8 +265,9 @@ The outbox is not a general mirror:
 - uploaded records can be deleted normally by creating a tombstone, which remains part of the Pi's
   authoritative audit trail.
 
-There is no local HealthKit browser, local journal history database, local report archive, or local
-analysis over the outbox. Once the Pi acknowledges a write, the Pi is the only long-term owner.
+There is no local HealthKit browser, local report archive, or local analysis over the outbox or
+journal mirror. Once the Pi acknowledges a write, the Pi remains the authoritative long-term owner;
+the iPhone's journal mirror is a recoverable convenience replica.
 
 ### 5.2 Retry
 

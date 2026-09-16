@@ -16,8 +16,9 @@ The first iPhone release includes journal/anxiety records only: a required 1–1
 optional notes, tags, and song reference. Medication, check-in, and watch records are deferred.
 
 The Pi is the long-term source of truth. The iPhone keeps a durable temporary outbox until item-level
-acknowledgement, then removes acknowledged payload content. It may keep a bounded, expiring,
-Data-Protected read cache for convenience, but it does not become a permanent second history store.
+acknowledgement, then reconciles the acknowledged record into a permanent Data-Protected local mirror
+for journal/anxiety history. The mirror is a replica for offline reading, not a second authority or
+analysis store. Physiological projection caches remain bounded and expiring.
 
 The canonical record shape is an append-only `domain_records` envelope with strict kind-specific
 validation. A correction creates a new ID with `supersedes`; deletion creates a new tombstone ID. A

@@ -4,8 +4,9 @@ applyTo: "clients/apple/**/*.swift"
 
 # Swift rules for the thin Apple client
 
-This is an iPhone-first thin client. The Pi owns durable records and analysis; the phone keeps only
-an acknowledged-outbox boundary and bounded, expiring read caches.
+This is an iPhone-first thin client. The Pi owns authoritative durable records and analysis; the
+phone keeps a durable outbox, bounded physiological projection caches, and a protected permanent
+journal/anxiety read mirror for offline history.
 
 ## Data and sync invariants
 
@@ -17,8 +18,9 @@ an acknowledged-outbox boundary and bounded, expiring read caches.
   `supersedes` the prior version.
 - The first-draft entry time is the iPhone capture instant. The Pi receipt time is transport evidence
   and must not replace it.
-- Pi reads may be cached only with an expiry and visible stale/unknown state. No local history
-  database, local analysis, fabricated zero/healthy state, or polling loop.
+- Physiological Pi projections may be cached only with an expiry and visible stale/unknown state.
+  Journal/anxiety history is a protected local mirror reconciled from the Pi. No local analysis,
+  fabricated zero/healthy state, or polling loop.
 - Missing, absent, denied, or unknown data contributes nothing and is never coerced to zero.
 
 ## Security and privacy
