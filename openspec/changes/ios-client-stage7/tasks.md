@@ -16,10 +16,10 @@ dispatched before their named gate.
 
 ### Reliable temporary delivery
 
-- [ ] T-I4 — Secure enrollment, Keychain credential lifecycle, and endpoint trust UI · implement-complex · **BLOCKED on T-I1**
-- [ ] T-I5 — Temporary durable outbox and terminal-ack deletion · implement-complex
+- [x] T-I4 — Secure enrollment, Keychain credential lifecycle, and endpoint trust UI · implement-complex · **BLOCKED on T-I1**
+- [x] T-I5 — Temporary durable outbox and terminal-ack deletion · implement-complex
 - [ ] T-I6 — Registry-driven platform payload and sub-provenance client mapper · implement-complex · **BLOCKED on G-IOS-PROVENANCE / admin T-X3**
-- [ ] T-I7 — Immediate drain engine, retry taxonomy, rotation, and sync diagnostics · implement-complex · **BLOCKED on T-I2/T-I4/T-I5**
+- [x] T-I7 — Immediate drain engine, retry taxonomy, rotation, and sync diagnostics · implement-complex · **BLOCKED on T-I2/T-I4/T-I5**
 
 ### HealthKit proxy
 
@@ -28,7 +28,7 @@ dispatched before their named gate.
 
 ### Viewer
 
-- [ ] T-I10 — Pi read client, expiring projection cache, and unknown/stale model · implement-complex · **BLOCKED on T-I2**
+- [x] T-I10 — Pi read client, expiring projection cache, and unknown/stale model · implement-complex · **BLOCKED on T-I2**
 - [ ] T-I11 — Today, history, report, health-access, and diagnostics surfaces · implement-complex · **BLOCKED on T-I9/T-I10 and required M3/M4 APIs**
 
 ### Subjective input
