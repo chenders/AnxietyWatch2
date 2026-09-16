@@ -1,0 +1,16 @@
+{
+  "class": "domain_record",
+  "record": {
+    "id": "0192f6c1-7a00-7000-8000-000000000012",
+    "kind": "journal_entry",
+    "schema_version": 1,
+    "recorded_at": "2026-01-15T12:31:00Z",
+    "supersedes_id": "0192f6c1-7a00-7000-8000-000000000011",
+    "tombstone_target_id": null,
+    "content": {
+      "subject_at": "2026-01-15T12:29:59Z",
+      "anxiety": 8,
+      "note": "The immutable correction is a new record ID."
+    }
+  }
+}

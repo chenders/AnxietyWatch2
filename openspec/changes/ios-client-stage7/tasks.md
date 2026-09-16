@@ -33,7 +33,7 @@ dispatched before their named gate.
 
 ### Subjective input
 
-- [ ] T-I12 — Domain command/version/tombstone client contract · implement-complex · **BLOCKED on G-IOS-RECORDS / admin T-M5a/T-M5b**
+- [x] T-I12 — Domain command/version/tombstone client contract · implement-complex · **BLOCKED on G-IOS-RECORDS / admin T-M5a/T-M5b**
 - [ ] T-I13 — Journal rating, notes, tags, songs, and Express Mode · implement-complex · **BLOCKED on T-I5/T-I7/T-I12**
 - [ ] T-I14 — Medication doses and dose-triggered check-ins · implement-complex · **BLOCKED on T-I12 and server medication policy**
 - [ ] T-I15 — Random check-ins and notification-outcome evidence · implement-standard · **BLOCKED on T-I12**
