@@ -17,7 +17,7 @@ for suite in "$@"; do
     AWOutboxTests)
       swift test --package-path clients/apple/Packages/AWOutbox
       ;;
-    AWDomainContractTests)
+    AWDomainContractTests|AWJournalTests|AWExpressModeUITests|AWSongInputTests)
       swift test --package-path clients/apple/Packages/AWDomain
       ;;
     AWSyncEngineTests|AWTransportFaultTests|AWReadClientTests|AWProjectionCacheTests|AWUnknownStateTests)
