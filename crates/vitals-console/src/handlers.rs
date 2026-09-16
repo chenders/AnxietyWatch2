@@ -43,6 +43,8 @@ pub struct AppState {
     pub db_ops: std::sync::Arc<dyn crate::api::postgres::DbOps>,
     /// Operator authentication state; mobile client routes use a separate protocol.
     pub security: std::sync::Arc<crate::security::SecurityState>,
+    /// Second capability required for destructive service operations.
+    pub ops_token: Option<String>,
 }
 
 /// Require a database pool; return a named 503 when absent.
@@ -671,6 +673,7 @@ mod tests {
             sys_ops: crate::api::ops::SysOps::real(),
             db_ops: std::sync::Arc::new(DummyDbOps),
             security: std::sync::Arc::new(crate::security::SecurityState::unconfigured()),
+            ops_token: None,
         }
     }
 

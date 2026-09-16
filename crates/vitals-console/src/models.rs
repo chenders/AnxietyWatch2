@@ -174,7 +174,7 @@ pub struct DomainRecordResponse {
 /// This is stored as JSONB in the attempts.effect column and returned in
 /// attempt views so that "the sync succeeded" is not mistaken for progress
 /// when every record was a no-op replay (spec §2.3b).
-#[derive(Serialize, Deserialize, Clone, Default)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct Effect {
     /// Records newly created by this attempt.
     pub created: i32,

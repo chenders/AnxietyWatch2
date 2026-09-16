@@ -427,6 +427,7 @@ mod tests {
             sys_ops: crate::api::ops::SysOps::real(),
             db_ops: db.clone(),
             security: std::sync::Arc::new(crate::security::SecurityState::unconfigured()),
+            ops_token: None,
         };
 
         let resp = latest_handler(
@@ -451,6 +452,7 @@ mod tests {
             sys_ops: crate::api::ops::SysOps::real(),
             db_ops: db2,
             security: std::sync::Arc::new(crate::security::SecurityState::unconfigured()),
+            ops_token: None,
         };
 
         let resp2 = latest_handler(

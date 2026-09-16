@@ -29,6 +29,8 @@ const MAX_LOGIN_FAILURES: u32 = 5;
 const THROTTLE_SECONDS: i64 = 60;
 const SESSION_COOKIE: &str = "aw_admin_session";
 const CSRF_HEADER: &str = "x-anxietywatch-csrf";
+/// Stable actor id for the single configured operator identity.
+pub const AUTHENTICATED_ACTOR: &str = "operator";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// Admission failures are explicit so callers can render a named blocker.
@@ -519,7 +521,10 @@ pub async fn security_handler(
     Json(state.security.security_view(&headers, unix_now()))
 }
 
-fn security_reply(error: &SecurityError) -> (StatusCode, Json<crate::models::ErrorResponse>) {
+/// Convert an admission error to the common JSON response shape.
+pub(crate) fn security_reply(
+    error: &SecurityError,
+) -> (StatusCode, Json<crate::models::ErrorResponse>) {
     (
         error.status(),
         Json(crate::models::ErrorResponse {
@@ -540,7 +545,8 @@ fn cookie_value(headers: &HeaderMap, name: &str) -> Option<String> {
         })
 }
 
-fn unix_now() -> i64 {
+/// Return current UTC epoch seconds for request policy checks.
+pub(crate) fn unix_now() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .ok()

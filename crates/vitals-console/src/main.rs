@@ -14,6 +14,7 @@ use vitals_console::api::clock::clock_handler;
 use vitals_console::api::display::display_handler;
 use vitals_console::api::host::host_handler;
 use vitals_console::api::ops::SysOps;
+use vitals_console::api::ops::service_operation_handler;
 use vitals_console::api::postgres::{latest_handler, nightly_handler};
 use vitals_console::api::query::query_handler;
 use vitals_console::api::recovery::recovery_handler;
@@ -79,6 +80,9 @@ async fn main() {
         sys_ops: SysOps::real(),
         db_ops: std::sync::Arc::new(vitals_console::api::postgres::PgDbOps { db_url }),
         security: std::sync::Arc::new(vitals_console::security::SecurityState::from_env()),
+        ops_token: env::var("VITALS_CONSOLE_OPS_TOKEN")
+            .ok()
+            .filter(|token| !token.is_empty()),
     };
 
     println!("Starting vitals-console on {bind_addr} (vitalsd socket: {socket_path})");
@@ -96,6 +100,10 @@ async fn main() {
         .route("/api/latest", get(latest_handler))
         .route("/api/nightly", get(nightly_handler))
         .route("/api/services", get(services_handler))
+        .route(
+            "/api/services/:unit/:action",
+            post(service_operation_handler),
+        )
         .route("/api/host", get(host_handler))
         .route("/api/display", get(display_handler))
         .route("/api/recovery", get(recovery_handler))

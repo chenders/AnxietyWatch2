@@ -441,6 +441,97 @@ pub async fn finish_attempt(
     Ok(())
 }
 
+/// Values recorded for one immutable service-operation audit event.
+pub struct ServiceOperationAudit<'a> {
+    /// Authenticated actor label.
+    pub actor: &'a str,
+    /// Exact deployment-manifest unit.
+    pub target: &'a str,
+    /// Allowlisted operation.
+    pub action: &'a str,
+    /// UI confirmation class.
+    pub confirmation_class: &'a str,
+    /// Linked attempt id.
+    pub attempt_id: i64,
+    /// Final operation outcome.
+    pub outcome: &'a str,
+    /// Sanitised executor detail.
+    pub detail: Option<&'a str>,
+}
+
+/// Finish the operation attempt and audit it in one database transaction.
+///
+/// The external `systemd` call cannot be made atomic with `PostgreSQL`, but once
+/// it returns this keeps the attempt and immutable audit evidence together.
+///
+/// # Errors
+///
+/// 500 on database failure or when the attempt id is not exactly one row.
+pub async fn finish_service_operation_attempt(
+    pool: &PgPool,
+    audit: &ServiceOperationAudit<'_>,
+    effect: &Effect,
+) -> Result<(), (StatusCode, Json<ErrorResponse>)> {
+    let mut tx = pool.begin().await.map_err(|e| {
+        error_reply(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("db error beginning service-operation finalization: {e}"),
+        )
+    })?;
+    let updated = sqlx::query(
+        "UPDATE attempts SET finished_at = now(), outcome = $2, effect = $3, detail = $4 \
+         WHERE id = $1 AND outcome IS NULL",
+    )
+    .bind(audit.attempt_id)
+    .bind(audit.outcome)
+    .bind(serde_json::to_value(effect).unwrap_or_default())
+    .bind(audit.detail)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| {
+        error_reply(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("db error finishing service-operation attempt: {e}"),
+        )
+    })?;
+    if updated.rows_affected() != 1 {
+        return Err(error_reply(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!(
+                "service-operation audit blocked: attempt_id={} was not open",
+                audit.attempt_id
+            ),
+        ));
+    }
+    sqlx::query(
+        "INSERT INTO service_operation_audit \
+         (actor, target, action, confirmation_class, attempt_id, outcome, detail) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7)",
+    )
+    .bind(audit.actor)
+    .bind(audit.target)
+    .bind(audit.action)
+    .bind(audit.confirmation_class)
+    .bind(audit.attempt_id)
+    .bind(audit.outcome)
+    .bind(audit.detail)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| {
+        error_reply(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("db error recording service-operation audit: {e}"),
+        )
+    })?;
+    tx.commit().await.map_err(|e| {
+        error_reply(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("db error committing service-operation audit: {e}"),
+        )
+    })?;
+    Ok(())
+}
+
 /// Compute SHA-256 of canonical JSON content for legacy callers.
 #[must_use]
 pub fn content_sha256(content: &serde_json::Value) -> [u8; 32] {

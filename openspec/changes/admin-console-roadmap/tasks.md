@@ -15,7 +15,7 @@ worktree/branch/commit/PR. `BLOCKED` tasks remain queued but must not be dispatc
 ### M2 operations
 
 - [x] T-M2a — Bind/auth posture and security middleware (S1–S5) · implement-complex · review
-- [ ] T-M2b — Authenticated allowlisted audited service operations · implement-complex · review
+- [x] T-M2b — Authenticated allowlisted audited service operations · implement-complex · review
 - [ ] T-M2c — Service detail, sanitised logs, and crash-loop health · implement-complex · review
 - [ ] T-M2d — Host history and diagnostics · implement-standard · review
 - [ ] T-M2e — Silence detector daemon using the core evaluator · implement-complex · review
