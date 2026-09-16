@@ -33,5 +33,7 @@ pub mod models;
 pub mod security;
 /// Pure off-page source silence detection and notification coalescing.
 pub mod silence;
+/// Opt-in bounded OpenTelemetry-compatible operational metrics.
+pub mod telemetry;
 /// The deliberately-crude envelope test page (not part of the console).
 pub mod test_page;
