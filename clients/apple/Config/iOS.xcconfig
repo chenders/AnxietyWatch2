@@ -1,7 +1,7 @@
 #include "Shared.xcconfig"
 IPHONEOS_DEPLOYMENT_TARGET = 18.0
 TARGETED_DEVICE_FAMILY = 1
-PRODUCT_BUNDLE_IDENTIFIER = com.groundeffectsoftware.AnxietyWatch.Stage7
+PRODUCT_BUNDLE_IDENTIFIER = com.groundeffectsoftware.AnxietyWatch
 GENERATE_INFOPLIST_FILE = YES
 INFOPLIST_KEY_CFBundleDisplayName = Anxiety Watch
 INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES
