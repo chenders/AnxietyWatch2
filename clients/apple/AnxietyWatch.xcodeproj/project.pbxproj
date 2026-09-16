@@ -18,6 +18,7 @@
 		9521BA01F1BAE3C3FBA1B98E /* AnxietyWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB5CBD8F80136A268D7D6A6F /* AnxietyWatchApp.swift */; };
 		A712C1222B2F6FB9FD118D28 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AA88D4AA8FF909846CEEBC00 /* Foundation.framework */; };
 		AB8519620812712E6BA30005 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = EFD1A6E84CC434864FA2B031 /* PrivacyInfo.xcprivacy */; };
+		B3D5A7C9E1F304682A7C9D10 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = C8E2F4A6B8D013579BDF2468 /* Assets.xcassets */; };
 		C4D2C8B6A4E68FCD9E96583A /* AWClientCore in Frameworks */ = {isa = PBXBuildFile; productRef = 2E5DE88DFBFE6B9FDC78BF0E /* AWClientCore */; };
 		CE61281103D769C88BEBD8B0 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = F0854BAA8EB3A60E08D30D7B /* PrivacyInfo.xcprivacy */; };
 		D97E9B52E9C40F88A787FBA4 /* AWTransport in Frameworks */ = {isa = PBXBuildFile; productRef = FDB44C8D9DF6786EE86CBA3C /* AWTransport */; };
@@ -73,6 +74,7 @@
 		A5868297EEC548A56EF776F4 /* AnxietyWatchWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AnxietyWatchWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA88D4AA8FF909846CEEBC00 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = System/Library/Frameworks/Foundation.framework; sourceTree = SDKROOT; };
 		CB5CBD8F80136A268D7D6A6F /* AnxietyWatchApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AnxietyWatchApp.swift; sourceTree = "<group>"; };
+		C8E2F4A6B8D013579BDF2468 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		D6837A9FDF4B8906D2C3641B /* AnxietyWatchWatchApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AnxietyWatchWatchApp.swift; sourceTree = "<group>"; };
 		EFD1A6E84CC434864FA2B031 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		F0854BAA8EB3A60E08D30D7B /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
@@ -191,6 +193,7 @@
 			children = (
 				CB5CBD8F80136A268D7D6A6F /* AnxietyWatchApp.swift */,
 				33DE46CA1DE61090CD8688BE /* ClientRootView.swift */,
+				C8E2F4A6B8D013579BDF2468 /* Assets.xcassets */,
 				EFD1A6E84CC434864FA2B031 /* PrivacyInfo.xcprivacy */,
 				4BC3614DF23E18D95CCA39D2 /* AnxietyWatchApp.entitlements */,
 			);
@@ -345,6 +348,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				AB8519620812712E6BA30005 /* PrivacyInfo.xcprivacy in Resources */,
+				B3D5A7C9E1F304682A7C9D10 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
