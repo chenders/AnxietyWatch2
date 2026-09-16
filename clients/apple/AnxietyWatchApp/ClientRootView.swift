@@ -1,3 +1,4 @@
+import AWTransport
 import SwiftUI
 
 /// Navigation responsibility derives from generation-one `AnxietyWatch/App/ContentView.swift`.
@@ -29,10 +30,60 @@ struct ClientRootView: View {
         title: "Health", systemImage: "heart.circle", message: "Health access is not configured."
       )
       .tabItem { Label("Health", systemImage: "heart.circle") }
-      PlaceholderSurface(
-        title: "Settings", systemImage: "gear", message: "Enrollment is not configured."
-      )
-      .tabItem { Label("Settings", systemImage: "gear") }
+      EnrollmentSurface()
+        .tabItem { Label("Settings", systemImage: "gear") }
+    }
+  }
+}
+
+private struct EnrollmentSurface: View {
+  @State private var showingRecovery = false
+
+  var body: some View {
+    NavigationStack {
+      Form {
+        Section("Pi connection") {
+          Label("Not enrolled", systemImage: "lock.shield")
+          Text("Scan a one-time enrollment artifact from the private admin console to connect this iPhone.")
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+        }
+        Section {
+          Button("Start recovery") { showingRecovery = true }
+        } footer: {
+          Text("Recovery creates a new device key and does not restore unacknowledged entries from a deleted phone.")
+        }
+      }
+      .navigationTitle("Settings")
+      .sheet(isPresented: $showingRecovery) { RecoveryView() }
+    }
+  }
+}
+
+private struct RecoveryView: View {
+  @Environment(\.dismiss) private var dismiss
+  @State private var confirmed = false
+
+  var body: some View {
+    NavigationStack {
+      Form {
+        Section("New device enrollment") {
+          Text("Create a fresh enrollment artifact in the private admin console, then scan it here.")
+          Toggle("I understand that this creates a new device key", isOn: $confirmed)
+        }
+        Section {
+          Button("Continue") { dismiss() }
+            .disabled(!confirmed)
+        } footer: {
+          Text("The previous private key is never copied or recovered. Pending entries remain protected until this device is re-enrolled.")
+        }
+      }
+      .navigationTitle("Recovery")
+      .toolbar {
+        ToolbarItem(placement: .cancellationAction) {
+          Button("Cancel") { dismiss() }
+        }
+      }
     }
   }
 }
