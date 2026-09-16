@@ -10,8 +10,8 @@ use std::path::PathBuf;
 use std::{env, net::SocketAddr, sync::Arc};
 use tower_http::services::{ServeDir, ServeFile};
 use vitals_console::api::air11::{
-    air11_action_handler, air11_handler, air11_network_guard, default_allowed_networks,
-    load_admin_token, parse_allowed_networks,
+    air11_action_handler, air11_handler, air11_history_handler, air11_network_guard,
+    default_allowed_networks, load_admin_token, parse_allowed_networks,
 };
 use vitals_console::api::clock::clock_handler;
 use vitals_console::api::display::display_handler;
@@ -133,6 +133,7 @@ async fn main() {
 
     let air11_routes = Router::new()
         .route("/api/air11", get(air11_handler).post(air11_action_handler))
+        .route("/api/air11/history", get(air11_history_handler))
         .layer(middleware::from_fn_with_state(
             state.clone(),
             air11_network_guard,
