@@ -486,6 +486,10 @@ feeds the analysis context block — and it is the strongest part of gen-1's exi
   entire analysis pipeline; a typo is accepted, displayed back as correct, and silently falls back.
 - **An audit log, which does not currently exist.** Key revocation, profile edits, destructive
   actions, and job runs, each with actor and timestamp.
+- **Lyrics enrichment is operator-controlled.** Show Genius.com key presence and last-four only; never
+  echo the key after entry. The global automatic-enrichment control is on by default when a key is
+  present. Without a key it is forced off and disabled, with a guided explanation of how to obtain a
+  Genius.com key and place it in the Pi secret/configuration store.
 
 ---
 

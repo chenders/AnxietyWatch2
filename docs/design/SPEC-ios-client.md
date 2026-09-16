@@ -116,8 +116,9 @@ across the phone/Pi boundary silently.
   Search API for basic title, artist, album, artwork, and provider ID metadata; the mirror retains
   the artwork URL and a small local thumbnail for offline display. A manual free-form song stub remains
   available offline. The Pi may later enrich the synced record with Genius.com
-  lyrics using a Pi-held key, controlled by a global lyrics-enrichment setting that defaults to
-  automatic in the first draft. Public-release credentials, licensing, disclosure, and optional AI
+  lyrics using a Pi-held key, controlled by a Pi-admin global lyrics-enrichment setting that defaults
+  to automatic. Without a configured key, the Pi keeps enrichment off and disables the setting with a
+  guided-key-setup note. Public-release credentials, licensing, disclosure, and optional AI
   analysis require a separate future decision.
 - Optional pain only after its scale and missing-value behavior are accepted in the domain schema.
 - Express Mode preserves one-tap anxiety capture. Optional secondary fields cannot delay the save.
