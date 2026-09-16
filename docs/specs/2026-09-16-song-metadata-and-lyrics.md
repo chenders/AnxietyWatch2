@@ -12,8 +12,8 @@ Search requests never include journal text.
 
 Lyrics retrieval is a Pi-side enrichment step. The private first draft may keep the existing
 Genius.com API key on the Pi only; it must never be copied into the iPhone, repository, fixtures, logs,
-or diagnostics. The Pi downloads lyrics only after the record is synced and when enrichment is needed
-or preferred.
+or diagnostics. The Pi downloads lyrics only after the record is synced. A global lyrics-enrichment setting controls
+whether this happens automatically, and its first-draft default is automatic.
 
 Before any public release, the product must revisit Genius licensing/credentials and AI analysis. The
 public flow will require transparent user disclosure and consent, explain that lyrics and any optional
