@@ -426,6 +426,7 @@ mod tests {
             db_url: String::new(),
             sys_ops: crate::api::ops::SysOps::real(),
             db_ops: db.clone(),
+            security: std::sync::Arc::new(crate::security::SecurityState::unconfigured()),
         };
 
         let resp = latest_handler(
@@ -449,6 +450,7 @@ mod tests {
             db_url: String::new(),
             sys_ops: crate::api::ops::SysOps::real(),
             db_ops: db2,
+            security: std::sync::Arc::new(crate::security::SecurityState::unconfigured()),
         };
 
         let resp2 = latest_handler(

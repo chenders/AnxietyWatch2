@@ -41,6 +41,8 @@ pub struct AppState {
     pub sys_ops: crate::api::ops::SysOps,
     /// `PostgreSQL` access for the read API, injected for testability.
     pub db_ops: std::sync::Arc<dyn crate::api::postgres::DbOps>,
+    /// Operator authentication state; mobile client routes use a separate protocol.
+    pub security: std::sync::Arc<crate::security::SecurityState>,
 }
 
 /// Require a database pool; return a named 503 when absent.
@@ -199,10 +201,9 @@ pub async fn version_handler(State(state): State<AppState>) -> Json<VersionView>
 
 /// POST /api/envelope/register
 ///
-/// Register a client for the envelope write API. The bind default is
-/// 127.0.0.1 and the auth posture is an open decision (spec §9c) — see the
-/// design document for the bind and auth posture decision deferred to the
-/// point of use.
+/// Register a legacy client for the loopback-only envelope test API. Production
+/// uses the versioned signed-device client routes; this handler is mounted only
+/// when `VITALS_CONSOLE_TEST_ROUTES=1`.
 ///
 /// # Errors
 /// 400 on invalid base64 or a secret that is not 32 bytes; 503 when the
@@ -669,6 +670,7 @@ mod tests {
             db_url: String::new(),
             sys_ops: crate::api::ops::SysOps::real(),
             db_ops: std::sync::Arc::new(DummyDbOps),
+            security: std::sync::Arc::new(crate::security::SecurityState::unconfigured()),
         }
     }
 

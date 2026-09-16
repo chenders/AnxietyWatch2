@@ -4,9 +4,11 @@
 //! and `VITALS_CONSOLE_DATABASE_URL` (write API) from the environment, builds
 //! the application state, and serves the console routes.
 
-use axum::{Router, routing::get, routing::post};
+use axum::{Router, middleware, routing::get, routing::post};
 use std::env;
+use std::net::SocketAddr;
 use std::path::PathBuf;
+use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::services::{ServeDir, ServeFile};
 use vitals_console::api::clock::clock_handler;
 use vitals_console::api::display::display_handler;
@@ -20,19 +22,25 @@ use vitals_console::handlers::{
     AppState, attempts_handler, dashboard_handler, envelope_handler, health_handler,
     plaintext_test_handler, register_handler, test_page_handler, version_handler,
 };
+use vitals_console::security::{
+    MAX_REQUEST_BODY_BYTES, login_handler, logout_handler, security_handler, security_middleware,
+};
 
 #[tokio::main]
+#[allow(
+    clippy::too_many_lines,
+    reason = "startup keeps bind, route, and middleware assembly in one auditable sequence"
+)]
 async fn main() {
     let bind_addr =
         env::var("VITALS_CONSOLE_BIND").unwrap_or_else(|_| "127.0.0.1:8480".to_string());
     let socket_path =
         env::var("VITALSD_SOCKET").unwrap_or_else(|_| "/run/vitals/vitalsd.sock".to_string());
     let test_routes_enabled = env::var("VITALS_CONSOLE_TEST_ROUTES").is_ok_and(|v| v == "1");
-    if test_routes_enabled
-        && !(bind_addr.starts_with("127.0.0.1:") || bind_addr.starts_with("[::1]:"))
-    {
+    let loopback_bind = bind_addr.starts_with("127.0.0.1:") || bind_addr.starts_with("[::1]:");
+    if !loopback_bind {
         eprintln!(
-            "vitals-console: test routes require loopback bind; VITALS_CONSOLE_BIND={bind_addr}"
+            "vitals-console: bind blocked: VITALS_CONSOLE_BIND={bind_addr} is not loopback; Caddy/WireGuard is the only production ingress"
         );
         std::process::exit(64);
     }
@@ -70,6 +78,7 @@ async fn main() {
         db_url: db_url.clone(),
         sys_ops: SysOps::real(),
         db_ops: std::sync::Arc::new(vitals_console::api::postgres::PgDbOps { db_url }),
+        security: std::sync::Arc::new(vitals_console::security::SecurityState::from_env()),
     };
 
     println!("Starting vitals-console on {bind_addr} (vitalsd socket: {socket_path})");
@@ -92,7 +101,10 @@ async fn main() {
         .route("/api/recovery", get(recovery_handler))
         .route("/api/clock", get(clock_handler))
         .route("/api/envelope", post(envelope_handler))
-        .route("/api/attempts", get(attempts_handler));
+        .route("/api/attempts", get(attempts_handler))
+        .route("/api/admin/login", post(login_handler))
+        .route("/api/admin/logout", post(logout_handler))
+        .route("/api/admin/security", get(security_handler));
 
     // Amendment 09 retires caller-chosen secret registration and plaintext
     // helpers from production. They exist only on an explicitly enabled
@@ -105,6 +117,7 @@ async fn main() {
         app
     };
 
+    let security = state.security.clone();
     let app = app
         .nest_service(
             "/console",
@@ -112,7 +125,12 @@ async fn main() {
                 .append_index_html_on_directories(true)
                 .fallback(ServeFile::new(assets_path.join("index.html"))),
         )
-        .with_state(state);
+        .with_state(state)
+        .layer(RequestBodyLimitLayer::new(MAX_REQUEST_BODY_BYTES))
+        .layer(middleware::from_fn_with_state(
+            security,
+            security_middleware,
+        ));
 
     let listener = match tokio::net::TcpListener::bind(&bind_addr).await {
         Ok(l) => l,
@@ -121,7 +139,12 @@ async fn main() {
             std::process::exit(64);
         }
     };
-    if let Err(e) = axum::serve(listener, app).await {
+    if let Err(e) = axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await
+    {
         eprintln!("vitals-console: server exited: {e}");
         std::process::exit(70);
     }

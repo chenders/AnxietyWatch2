@@ -6,6 +6,7 @@ publish = false
 
 [dependencies]
 axum = "0.7"
+argon2 = "0.5"
 tokio = { version = "1", features = ["full", "process"] }
 tokio-postgres = "0.7"
 vitals-proto = { path = "../vitals-proto" }
@@ -24,7 +25,7 @@ chrono = { version = "0.4", features = ["serde"] }
 fs4 = "0.13"
 glob = "0.3"
 async-trait = "0.1"
-tower-http = { version = "0.6", features = ["fs"] }
+tower-http = { version = "0.6", features = ["fs", "limit"] }
 utoipa = { version = "5", features = ["chrono", "uuid"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]

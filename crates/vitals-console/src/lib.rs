@@ -23,5 +23,7 @@ pub mod domain;
 pub mod handlers;
 /// HTTP response view-model types.
 pub mod models;
+/// Operator authentication, CSRF, sessions, throttling, and request limits.
+pub mod security;
 /// The deliberately-crude envelope test page (not part of the console).
 pub mod test_page;
