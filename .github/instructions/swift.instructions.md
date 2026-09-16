@@ -29,6 +29,9 @@ journal/anxiety read mirror for offline history.
   health/journal content in URLs, analytics, crash breadcrumbs, or diagnostics.
 - The permanent journal/anxiety mirror's backup inclusion is a user setting asked before first journal
   use and changeable in General Settings. The temporary outbox remains excluded from backups.
+- Basic song search may use a no-login/no-secret metadata provider, but queries never include journal
+  text. Genius.com credentials remain Pi-side only and never enter the app, repository, fixtures, logs,
+  or diagnostics.
 - First-draft LAN HTTP is permitted only by Amendment 10 to a configured private address; device
   signatures, enrollment approval, scoped credentials, replay IDs, and private-address validation
   remain mandatory. Do not add unsigned or shared-secret fallback.
