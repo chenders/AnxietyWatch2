@@ -47,6 +47,12 @@ public struct ClientWriteBatch: Codable, Equatable, Sendable {
   public let recordedAt: String
   public let items: [ClientWriteItem]
 
+  public init(batchID: UUID, recordedAt: String, items: [ClientWriteItem]) {
+    self.batchID = batchID
+    self.recordedAt = recordedAt
+    self.items = items
+  }
+
   enum CodingKeys: String, CodingKey {
     case batchID = "batch_id"
     case recordedAt = "recorded_at"
@@ -59,6 +65,13 @@ public struct ClientWriteItem: Codable, Equatable, Sendable {
   public let `class`: String
   public let schemaVersion: UInt
   public let content: JSONValue
+
+  public init(id: UUID, recordClass: String, schemaVersion: UInt, content: JSONValue) {
+    self.id = id
+    self.`class` = recordClass
+    self.schemaVersion = schemaVersion
+    self.content = content
+  }
 
   enum CodingKeys: String, CodingKey {
     case id, `class`, content
