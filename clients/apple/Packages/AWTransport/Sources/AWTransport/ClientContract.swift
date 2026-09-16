@@ -79,6 +79,75 @@ public struct ClientWriteItem: Codable, Equatable, Sendable {
   }
 }
 
+public struct ClientProjectionQuery: Codable, Equatable, Hashable, Sendable {
+  public let metric: String?
+  public let windowStart: String?
+  public let windowEnd: String?
+  public let cursor: String?
+
+  public init(metric: String?, windowStart: String?, windowEnd: String?, cursor: String?) {
+    self.metric = metric
+    self.windowStart = windowStart
+    self.windowEnd = windowEnd
+    self.cursor = cursor
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case metric
+    case windowStart = "window_start"
+    case windowEnd = "window_end"
+    case cursor
+  }
+}
+
+public struct ClientProjectionPage: Codable, Equatable, Sendable {
+  public let apiVersion: String
+  public let metric: String
+  public let observedAt: String?
+  public let generatedAt: String
+  public let points: [ClientProjectionPoint]
+  public let missingIntervals: [[String]]
+  public let nextCursor: String?
+
+  public init(
+    apiVersion: String,
+    metric: String,
+    observedAt: String?,
+    generatedAt: String,
+    points: [ClientProjectionPoint],
+    missingIntervals: [[String]],
+    nextCursor: String?
+  ) {
+    self.apiVersion = apiVersion
+    self.metric = metric
+    self.observedAt = observedAt
+    self.generatedAt = generatedAt
+    self.points = points
+    self.missingIntervals = missingIntervals
+    self.nextCursor = nextCursor
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case apiVersion = "api_version"
+    case metric
+    case observedAt = "observed_at"
+    case generatedAt = "generated_at"
+    case points
+    case missingIntervals = "missing_intervals"
+    case nextCursor = "next_cursor"
+  }
+}
+
+public struct ClientProjectionPoint: Codable, Equatable, Sendable {
+  public let timestamp: String
+  public let value: Double?
+
+  public init(timestamp: String, value: Double?) {
+    self.timestamp = timestamp
+    self.value = value
+  }
+}
+
 public struct ClientWriteResponse: Codable, Equatable, Sendable {
   public let apiVersion: String
   public let batchID: UUID
