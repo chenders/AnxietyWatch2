@@ -33,3 +33,7 @@
    not a guessed value. A later provider result does not silently merge a conflicting canonical tuple.
 6. A canonical-key collision or ambiguous live/remaster/edition match is surfaced for explicit choice;
    it is never resolved by provider-ID precedence or last-write-wins behavior.
+7. The iPhone preserves the previous app's Journal/Songs interaction and relationship model: a
+   deduplicated Song catalog, one SongOccurrence-style journal link with timestamp/source, recent-use
+   ordering, and a detail screen with metadata, artwork, lyrics, and occurrence history. These are
+   implemented as versioned domain records and tombstones rather than mutable local SwiftData rows.

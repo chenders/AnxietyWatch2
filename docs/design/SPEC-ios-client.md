@@ -135,8 +135,11 @@ across the phone/Pi boundary silently.
   Pi/iPhone, the artwork, lyrics when present, lyrics provider and retrieval evidence, and explicit
   pending/unavailable/unknown states when lyrics are not available.
 - A song detail surface never invents lyrics or treats a missing lyrics response as an empty lyric.
-- Journal entries link to this same song detail surface; the song record is not duplicated into a
-  second independent history.
+- Journal entries link to this same song detail surface through a SongOccurrence-style relationship
+  carrying the entry timestamp and `journal` source; the first draft permits one linked song per
+  entry. The song record is not duplicated into a second independent history.
+- Preserve the previous app's catalog behavior: deduplicate logical songs, sort by most recent
+  activity and then title, and show occurrence count, last-used time, and occurrence history.
 
 ### 3.4 Medications and check-ins
 

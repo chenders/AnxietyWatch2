@@ -26,6 +26,13 @@ canonical key derived from case-independent Unicode-normalized artist, title, an
 the key is not a Genius or iTunes ID. Ambiguous editions and canonical-key collisions require explicit
 selection.
 
+The iPhone preserves the previous app's Journal/Songs relationship model: a deduplicated logical Song
+record is linked to each journal entry through a SongOccurrence containing the entry timestamp and
+`journal` source. The Songs section sorts by most recent activity and then title. A song detail surface
+shows metadata, artwork, lyrics when available, and occurrence history. The first draft permits one
+linked song per journal entry; changing the link creates the corresponding immutable domain edit rather
+than mutating history in place.
+
 Before any public release, the product must revisit Genius licensing/credentials and AI analysis. The
 public flow will require transparent user disclosure and consent, explain that lyrics and any optional
 AI analysis leave the device/Pi boundary as applicable, and guide each user through registering and
