@@ -86,9 +86,10 @@ func nonAcknowledgedTerminalItemsRemain() async throws {
   try await store.recordConflict(itemID: conflictID, failure: conflict)
 
   let terminalSnapshot = try await store.snapshot()
-  #expect(terminalSnapshot.pendingCount == 0)
+  #expect(terminalSnapshot.pendingCount == 2)
   let terminalItems = try await store.pendingItems(limit: 10)
   #expect(terminalItems.isEmpty)
+  #expect((try await store.allItems()).count == 2)
   try await store.discard(itemID: rejectedID, confirmed: true)
   try await store.discard(itemID: conflictID, confirmed: true)
 }
@@ -109,7 +110,7 @@ func resetRequiresConfirmation() async throws {
       Issue.record("unexpected reset error \(error)")
       return
     }
-    #expect(message.contains("1 unsent items"))
+    #expect(message.contains("1 unacknowledged items"))
   }
   try await store.reset(allowLoss: true)
   let resetSnapshot = try await store.snapshot()

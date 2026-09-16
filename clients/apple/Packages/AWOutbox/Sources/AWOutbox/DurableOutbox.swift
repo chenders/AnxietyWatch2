@@ -118,6 +118,7 @@ public struct OutboxSnapshot: Equatable, Sendable {
 public protocol DurableOutbox: Sendable {
   func enqueue(_ item: OutboxItem) async throws
   func pendingItems(limit: Int) async throws -> [OutboxItem]
+  func allItems() async throws -> [OutboxItem]
   func markSending(itemID: UUID) async throws
   func recordRetry(itemID: UUID, failure: OutboxFailure, nextAttemptAt: Date) async throws
   func recordRejected(itemID: UUID, failure: OutboxFailure) async throws
@@ -185,6 +186,10 @@ public actor FileOutboxStore: DurableOutbox {
     )
   }
 
+  public func allItems() throws -> [OutboxItem] {
+    persisted.items.sorted { $0.capturedAt < $1.capturedAt }
+  }
+
   public func markSending(itemID: UUID) throws {
     guard let index = persisted.items.firstIndex(where: { $0.id == itemID }) else {
       throw OutboxError.itemNotFound("cannot mark missing item \(itemID) as sending")
@@ -249,10 +254,9 @@ public actor FileOutboxStore: DurableOutbox {
   }
 
   public func snapshot() throws -> OutboxSnapshot {
-    let pending = persisted.items.filter { !$0.state.isTerminal }
     return OutboxSnapshot(
-      pendingCount: pending.count,
-      oldestPendingAt: pending.map(\.capturedAt).min(),
+      pendingCount: persisted.items.count,
+      oldestPendingAt: persisted.items.map(\.capturedAt).min(),
       receiptCount: persisted.receipts.count
     )
   }
@@ -268,10 +272,9 @@ public actor FileOutboxStore: DurableOutbox {
 
   public func reset(allowLoss: Bool) throws {
     guard allowLoss else {
-      let pending = persisted.items.filter { !$0.state.isTerminal }
-      let oldest = pending.map(\.capturedAt).min().map(String.init(describing:)) ?? "none"
+      let oldest = persisted.items.map(\.capturedAt).min().map(String.init(describing:)) ?? "none"
       throw OutboxError.resetBlocked(
-        "reset blocked: \(pending.count) unsent items, oldest captured at \(oldest)"
+        "reset blocked: \(persisted.items.count) unacknowledged items, oldest captured at \(oldest)"
       )
     }
     persisted.items.removeAll()
