@@ -14,6 +14,9 @@ for suite in "$@"; do
     AWTransportTests)
       swift test --package-path clients/apple/Packages/AWTransport
       ;;
+    AWOutboxTests)
+      swift test --package-path clients/apple/Packages/AWOutbox
+      ;;
     AWEnrollmentUITests)
       rg -q 'final class EnrollmentUITests: XCTestCase' clients/apple/Tests/AnxietyWatchAppTests/SkeletonTests.swift || {
         echo "test verification failed: ${suite} is not present in the app test target" >&2
