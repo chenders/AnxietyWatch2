@@ -916,7 +916,10 @@ early spends judgement on incomplete information and then anchors everything aft
    loop.
 2. **Retention.** Several high-volume tables have no pruning job in either generation. Does the
    console show retention state, trigger compaction, or both?
-3. **How much of Records migrates at all?** It is the least machine-ish part of the console and the
-   most personal. It may belong with the health viewer rather than here.
+3. **How much of Records migrates at all?** **Decided for the iPhone-first MVP:** journal and
+   anxiety records migrate into the same PostgreSQL database under a separate `domain` schema. The
+   iPhone health viewer owns capture, editing, history, and deletion; the console owns operational
+   conflict review, recovery, audit, and administration. Medication, check-in, and other legacy
+   records remain deferred until separately scoped.
 4. **Does the SQL pane ship in v1?** S6 makes it safe, but the same discipline argues that a console
    answering the real questions removes the need for it.
