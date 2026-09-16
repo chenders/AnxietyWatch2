@@ -17,3 +17,4 @@ domain_versions [domain_schema] 2026-09-17T12:01:00Z Chris Henderson <chenders@u
 domain_conflicts [domain_versions] 2026-09-17T12:02:00Z Chris Henderson <chenders@users.noreply.github.com> # durable conflicts and append-only audit evidence
 envelope_clients [domain_conflicts] 2026-08-06T12:03:00Z Chris Henderson <chenders@users.noreply.github.com> # register-once envelope credentials
 service_operation_audit [envelope_clients] 2026-09-18T12:00:00Z Chris Henderson <chenders@users.noreply.github.com> # immutable audited service-operation evidence
+silence_detector [status_observations] 2026-09-19T12:00:00Z Chris Henderson <chenders@users.noreply.github.com> # durable silence status and coalescible notification events

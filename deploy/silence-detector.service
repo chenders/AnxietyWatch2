@@ -1,0 +1,28 @@
+[Unit]
+Description=Vitals source silence detector
+After=postgresql.service
+Requires=postgresql.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/silence-detector
+Restart=always
+RestartSec=3
+User=vitals
+Group=vitals
+Environment=DATABASE_URL=host=/var/run/postgresql user=vitals dbname=vitals
+
+# The detector reads PostgreSQL only; it must not become a remote shell or
+# compete with the ingest safety path under memory pressure.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+RestrictAddressFamilies=AF_UNIX
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

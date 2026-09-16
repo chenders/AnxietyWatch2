@@ -20,7 +20,7 @@ sha2 = "0.10"
 subtle = "2"
 hex = "0.4"
 getrandom = "0.2"
-sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "postgres", "uuid", "chrono", "json"] }
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "postgres", "uuid", "chrono", "json", "macros"] }
 uuid = { version = "1", features = ["serde", "v4", "v7"] }
 chrono = { version = "0.4", features = ["serde"] }
 fs4 = "0.13"

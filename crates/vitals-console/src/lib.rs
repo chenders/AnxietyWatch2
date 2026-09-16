@@ -25,5 +25,7 @@ pub mod handlers;
 pub mod models;
 /// Operator authentication, CSRF, sessions, throttling, and request limits.
 pub mod security;
+/// Pure off-page source silence detection and notification coalescing.
+pub mod silence;
 /// The deliberately-crude envelope test page (not part of the console).
 pub mod test_page;
