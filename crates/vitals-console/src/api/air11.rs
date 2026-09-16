@@ -233,6 +233,7 @@ pub struct Air11StatusView {
     pub event_truncated_notifications: Option<u64>,
     pub last_event_data_id: Option<String>,
     pub event_blocker: Option<String>,
+    pub therapy_session_id: Option<u64>,
     pub therapy_state: Option<String>,
     pub therapy_start_host_unix_micros: Option<i64>,
     pub therapy_stop_host_unix_micros: Option<i64>,

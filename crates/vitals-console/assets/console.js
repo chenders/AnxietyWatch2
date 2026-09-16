@@ -158,6 +158,11 @@
     return Number.isFinite(age) && age >= 0 ? age : null;
   };
   const air11Value = value => value == null ? "not measured" : String(value);
+  const air11TimestampLabel = micros => {
+    if (micros == null || !Number.isFinite(Number(micros))) return "not observed";
+    const date = new Date(Number(micros) / 1000);
+    return Number.isNaN(date.getTime()) ? "invalid timestamp" : date.toISOString();
+  };
 
   function air11Page(results) {
     if (!results.air11.ok) {
@@ -205,6 +210,7 @@
     const linkHealth = air11Health(status.link_state);
     const measurementHealth = status.measurement_state === "measured" ? "live" : status.measurement_state === "stale" || status.measurement_state === "quarantined" ? "failing" : "unknown";
     const processHealth = service.active_state === "active" && service.sub_state === "running" ? "live" : service.active_state === "failed" ? "failing" : "unknown";
+    const therapyHealth = status.therapy_state === "active" || status.therapy_state === "complete" ? "live" : "unknown";
     const credentialHealth = credentials.state === "ready" ? "live" : optedIn && ["invalid", "insecure"].includes(credentials.state) ? "failing" : "unknown";
     const receiptAge = air11TimestampAge(status.last_host_receipt_unix_micros);
     const receiptDetail = receiptAge == null ? "host receipt time not measured" : `${h.ageText(receiptAge)} · host clock is authoritative`;
@@ -239,6 +245,13 @@
       metric("Client configured", credentials.client_id_present), metric("Target configured", credentials.target_present),
       metric("Master key shape", credentials.master_key_present), metric("File permissions", credentials.permissions),
     ].join("");
+    const therapyDetails = [
+      metric("Session id", status.therapy_session_id), metric("Lifecycle state", status.therapy_state),
+      metric("Event coverage", status.event_subscription_state), metric("Event records", status.event_records),
+      metric("Start evidence", air11TimestampLabel(status.therapy_start_host_unix_micros)),
+      metric("Stop evidence", air11TimestampLabel(status.therapy_stop_host_unix_micros)),
+      metric("Finalized evidence", air11TimestampLabel(status.therapy_finalized_host_unix_micros)),
+    ].join("");
 
     const actionDisabled = data.actions_enabled ? "" : " disabled";
     const button = (action, label, className, confirmation = "") => `<button type="button" class="air11-button ${className}" data-air11-action="${action}" data-air11-confirm="${confirmation}"${actionDisabled}>${h.esc(label)}</button>`;
@@ -262,7 +275,8 @@
       <section class="air11-facts" aria-label="AirSense summary">${facts}</section>
       <section class="air11-section" aria-labelledby="air11-evidence"><header><h2 id="air11-evidence">Current evidence</h2><p>Last status is retained; unknown is never healthy.</p></header><div class="air11-grid"><article class="air11-panel"><h3>Status document</h3><dl class="air11-facts-list">${metric("Status file", status.status_state)}${metric("Link state", status.link_state)}${metric("Measurement state", status.measurement_state)}${metric("Host receipt age", receiptAge == null ? null : h.ageText(receiptAge))}${metric("Untrusted device time", status.last_device_start_time)}</dl>${blockerHtml}</article><article class="air11-panel"><h3>Ingest and durability counters</h3><dl class="air11-facts-list">${counters}</dl></article></div></section>
       <section class="air11-section" aria-labelledby="air11-latest"><header><h2 id="air11-latest">Latest stored AirSense measurements</h2><p>Canonical registry values from PostgreSQL; age is measured from the host receipt timestamp.</p></header><div class="air11-panel">${latestHtml}</div></section>
-      <section class="air11-section" aria-labelledby="air11-credentials"><header><h2 id="air11-credentials">Credential and opt-in configuration</h2><p>No AirSense key or device address is displayed.</p></header><div class="air11-grid"><article class="air11-panel"><h3>External credential readiness</h3><dl class="air11-facts-list">${credentialDetails}</dl><p class="air11-callout"><strong>Provisioning boundary:</strong> the operator-managed credential file remains outside PostgreSQL and this browser. The page only checks presence, permissions, and shape.</p></article><article class="air11-panel"><h3>Lifecycle</h3><dl class="air11-facts-list">${metric("Opt-in state", configLabel)}${metric("Service active", service.active_state)}${metric("Service substate", service.sub_state)}${metric("Restart count", service.restart_count)}</dl>${lifecycle}${auth}${actionNotice}</article></div></section>
+      <section class="air11-section" aria-labelledby="air11-therapy"><header><h2 id="air11-therapy">Therapy lifecycle and event coverage</h2><p>Therapy sessions remain separate from BLE transport sessions; unresolved boundaries remain unknown or provisional.</p></header><div class="air11-grid"><article class="air11-panel air11-panel--${therapyHealth}"><h3>Current therapy evidence</h3><dl class="air11-facts-list">${therapyDetails}</dl><p class="air11-callout"><strong>Boundary blocker:</strong> ${h.esc(status.therapy_blocker || status.event_blocker || "No lifecycle blocker reported.")}</p></article><article class="air11-panel"><h3>Event evidence</h3><dl class="air11-facts-list">${metric("Notifications", status.event_notifications)}${metric("Retained records", status.event_records)}${metric("Truncated notifications", status.event_truncated_notifications)}${metric("Last data id", status.last_event_data_id)}</dl><p class="air11-callout"><strong>AHI:</strong> not derived from the live stream. A trustworthy value requires finalized session coverage and the device summary/report path.</p></article></div></section>
+      <section class="air11-section" aria-labelledby="air11-credentials"><header><h2 id="air11-credentials">Credential and opt-in configuration</h2><p>No AirSense key or device address is displayed.</p></header><div class="air11-grid"><article class="air11-panel"><h3>External credential readiness</h3><dl class="air11-facts-list">${credentialDetails}</dl><p class="air11-callout"><strong>Provisioning boundary:</strong> the operator-managed credential file remains outside PostgreSQL and this browser. The page only checks presence, permissions, and shape.</p></article><article class="air11-panel"><h3>Lifecycle controls</h3><dl class="air11-facts-list">${metric("Opt-in state", configLabel)}${metric("Service active", service.active_state)}${metric("Service substate", service.sub_state)}${metric("Restart count", service.restart_count)}</dl>${lifecycle}${auth}${actionNotice}</article></div></section>
       <section class="air11-section" aria-labelledby="air11-logs"><header><h2 id="air11-logs">Last status and service logs</h2><p>Journal entries are bounded and sanitized before display.</p></header><div class="air11-panel"><div class="air11-log-list" aria-live="polite">${logHtml}</div></div></section>
       <section class="air11-section" aria-labelledby="air11-audit"><header><h2 id="air11-audit">AirSense admin audit</h2><p>${h.esc(data.audit_state === "observed" ? "Append-only fixed-action history." : data.audit_blocker || "Audit state not observed.")}</p></header><div class="air11-panel">${auditHtml}</div></section>
       <dialog id="air11-confirm-dialog" class="air11-confirm"><form id="air11-confirm-form"><h2>Confirm AirSense action</h2><p>This changes only the collector process or non-secret opt-in state. It never controls therapy on the device.</p><p>Type <span id="air11-confirm-phrase" class="air11-confirm__phrase"></span> to continue.</p><input id="air11-confirm-input" autocomplete="off" spellcheck="false" required><input id="air11-confirm-action" type="hidden"><div class="air11-actions"><button type="button" class="air11-button" data-air11-cancel>Cancel</button><button type="submit" class="air11-button air11-button--danger">Confirm action</button></div></form></dialog>

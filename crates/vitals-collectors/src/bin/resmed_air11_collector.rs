@@ -556,6 +556,8 @@ impl Collector {
     }
 
     fn sync_therapy_status(&mut self) {
+        self.status.therapy_session_id =
+            (self.therapy.session_id() > 0).then_some(self.therapy.session_id());
         self.status.therapy_state = self.therapy.state();
         self.status.therapy_start_host_unix_micros = self.therapy.start_host_unix_micros();
         self.status.therapy_stop_host_unix_micros = self.therapy.stop_host_unix_micros();

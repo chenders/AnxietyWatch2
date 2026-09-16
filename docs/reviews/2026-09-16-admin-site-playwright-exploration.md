@@ -216,8 +216,15 @@ verified directly:
 - The remaining browser console error on that page is the unrelated missing
   `/favicon.ico` request.
 
-The history defect is therefore fixed in the deployed console. The therapy-session,
-aircraft-console, appliance-health, and viewport findings below remain open.
+The history defect is therefore fixed in the deployed console. A subsequent deployment
+also added the current therapy session identity, lifecycle state, boundary timestamps,
+event-subscription state, event counts, and lifecycle blocker to the AirSense admin
+screen. Playwright verified those fields while the collector conservatively reported
+`therapy_state: unknown` after restart. Completed-session records, deterministic
+summaries, and a separate current/completed session view remain open; the UI does not
+claim those are complete yet.
+
+The aircraft-console, appliance-health, and viewport findings below remain open.
 
 ## Recommended order of work
 
