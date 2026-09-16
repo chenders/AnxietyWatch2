@@ -203,16 +203,30 @@ console errors during an otherwise clean exploration.
 | Coherent appliance-wide health projection | **Partial: live mismatches surfaced** |
 | Fixed 800×480 for every kiosk route | **Partial** |
 
+## Follow-up verification after the exploration
+
+At 2026-09-16 02:20 UTC, the routed history handler was deployed to `pi-host` and
+verified directly:
+
+- `GET /api/air11/history?window_hours=48` returned HTTP 200.
+- The response was `state: observed`, with a provisional gap-bounded boundary and
+  stored series data.
+- A fresh Playwright load of `/console/air11-bedside.html` rendered `Stored history is
+  available` and no longer reported the history endpoint as a 404.
+- The remaining browser console error on that page is the unrelated missing
+  `/favicon.ico` request.
+
+The history defect is therefore fixed in the deployed console. The therapy-session,
+aircraft-console, appliance-health, and viewport findings below remain open.
+
 ## Recommended order of work
 
-1. Implement and verify `GET /api/air11/history` or remove the request until the
-   endpoint exists; add a browser acceptance test for the response and rendered history.
-2. Add completed/current therapy-session and event-record projections to the AirSense
+1. Add completed/current therapy-session and event-record projections to the AirSense
    admin and bedside views, retaining conservative unknown states and evidence.
-3. Decide whether aircraft/noise is a universal-console screen. If yes, add it to the
+2. Decide whether aircraft/noise is a universal-console screen. If yes, add it to the
    console navigation and use an authenticated/bounded backend projection rather than
    relying on the separate static panel port.
-4. Reconcile the generic Ingest source projection with the dedicated AirSense status.
-5. Define which routes are true 800×480 physical kiosk pages and constrain or relabel
+3. Reconcile the generic Ingest source projection with the dedicated AirSense status.
+4. Define which routes are true 800×480 physical kiosk pages and constrain or relabel
    the long-form pages accordingly.
-6. Add a favicon or explicitly suppress the request to keep browser diagnostics clean.
+5. Add a favicon or explicitly suppress the request to keep browser diagnostics clean.
