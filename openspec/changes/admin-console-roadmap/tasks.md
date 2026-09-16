@@ -8,7 +8,7 @@ worktree/branch/commit/PR. `BLOCKED` tasks remain queued but must not be dispatc
 
 ### M1 closeout
 
-- [ ] T-M1c — M1 behavioural acceptance and accessibility regression suite · implement-complex · review
+- [x] T-M1c — M1 behavioural acceptance and accessibility regression suite · implement-complex · review
 - [ ] T-M1d — Live direction determination · operator-judgment · **BLOCKED on real-use evaluation**
 - [ ] T-M1e — Prune losing console/dashboard directions · mechanical · **BLOCKED on T-M1d**
 
