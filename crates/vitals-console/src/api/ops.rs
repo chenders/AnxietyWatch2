@@ -4,8 +4,10 @@ use axum::http::{HeaderMap, Method, StatusCode};
 use serde::{Deserialize, Serialize};
 use std::future::Future;
 use std::path::Path;
+use std::process::Stdio;
 use std::time::Duration;
 use subtle::ConstantTimeEq;
+use tokio::io::{AsyncRead, AsyncReadExt};
 
 use crate::db;
 use crate::handlers::AppState;
@@ -43,6 +45,25 @@ pub struct SysOps {
     pub file_mtime: FileMtimeFn,
 }
 
+async fn read_command_output<R: AsyncRead + Unpin>(reader: &mut R) -> Result<Vec<u8>, String> {
+    let mut output = Vec::new();
+    reader
+        .take(
+            u64::try_from(MAX_COMMAND_OUTPUT_BYTES)
+                .unwrap_or(u64::MAX)
+                .saturating_add(1),
+        )
+        .read_to_end(&mut output)
+        .await
+        .map_err(|error| error.to_string())?;
+    if output.len() > MAX_COMMAND_OUTPUT_BYTES {
+        return Err(format!(
+            "command output exceeded {MAX_COMMAND_OUTPUT_BYTES} bytes"
+        ));
+    }
+    Ok(output)
+}
+
 impl SysOps {
     /// The production implementation backed by the real system.
     #[must_use]
@@ -55,16 +76,43 @@ impl SysOps {
                     .map(std::string::ToString::to_string)
                     .collect::<Vec<_>>();
                 Box::pin(async move {
-                    let out = tokio::process::Command::new(&prog)
+                    let mut child = tokio::process::Command::new(&prog)
                         .args(&args)
                         .kill_on_drop(true)
-                        .output()
-                        .await
-                        .map_err(|e| e.to_string())?;
-                    if out.status.success() {
-                        Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+                        .stdout(Stdio::piped())
+                        .stderr(Stdio::piped())
+                        .spawn()
+                        .map_err(|error| error.to_string())?;
+                    let mut stdout = child
+                        .stdout
+                        .take()
+                        .ok_or_else(|| "command stdout pipe is unavailable".to_string())?;
+                    let mut stderr = child
+                        .stderr
+                        .take()
+                        .ok_or_else(|| "command stderr pipe is unavailable".to_string())?;
+                    let stdout_reader = read_command_output(&mut stdout);
+                    let stderr_reader = read_command_output(&mut stderr);
+                    tokio::pin!(stdout_reader);
+                    tokio::pin!(stderr_reader);
+                    let (stdout, stderr) = tokio::select! {
+                        result = &mut stdout_reader => {
+                            let stdout = result?;
+                            let stderr = stderr_reader.await?;
+                            (stdout, stderr)
+                        }
+                        result = &mut stderr_reader => {
+                            let stderr = result?;
+                            let stdout = stdout_reader.await?;
+                            (stdout, stderr)
+                        }
+                    };
+                    let status = child.wait().await.map_err(|error| error.to_string())?;
+                    let output = if status.success() { stdout } else { stderr };
+                    if status.success() {
+                        Ok(String::from_utf8_lossy(&output).into_owned())
                     } else {
-                        Err(String::from_utf8_lossy(&out.stderr).into_owned())
+                        Err(String::from_utf8_lossy(&output).into_owned())
                     }
                 })
             },
@@ -116,6 +164,7 @@ pub const OPS_TOKEN_HEADER: &str = "x-anxietywatch-ops-token";
 /// Attempt duration used for the bounded systemd operation window.
 pub const SERVICE_OPERATION_EXPECTED_DURATION_S: i32 = 30;
 const MAX_DETAIL_BYTES: usize = 512;
+const MAX_COMMAND_OUTPUT_BYTES: usize = 256 * 1024;
 const SERVICE_OPERATION_TIMEOUT: Duration =
     Duration::from_secs(SERVICE_OPERATION_EXPECTED_DURATION_S as u64);
 
@@ -273,6 +322,113 @@ fn validate_capability(
     }
 }
 
+#[derive(Clone, Copy)]
+enum SecretExpectation {
+    Value,
+    Authorization,
+}
+
+fn redact_words(input: &str) -> String {
+    let mut output = Vec::new();
+    let mut pending = None;
+    let mut quoted = None;
+    for word in input.split_whitespace() {
+        if let Some(quote) = quoted {
+            if word.ends_with(quote) {
+                quoted = None;
+            }
+            continue;
+        }
+        if let Some(expectation) = pending {
+            if matches!(expectation, SecretExpectation::Authorization)
+                && word.eq_ignore_ascii_case("bearer")
+            {
+                continue;
+            }
+            if matches!(word, "=" | ":") {
+                continue;
+            }
+            output.push("[redacted]".to_string());
+            pending = None;
+            if let Some(quote) = word.chars().next()
+                && matches!(quote, '\'' | '"')
+                && !word.ends_with(quote)
+            {
+                quoted = Some(quote);
+            }
+            continue;
+        }
+        let lower = word.to_ascii_lowercase();
+        if lower == "token"
+            || lower == "token:"
+            || lower == "password"
+            || lower == "password:"
+            || lower == "secret"
+            || lower == "secret:"
+            || lower == "api_key"
+            || lower == "api_key:"
+            || lower == "cookie"
+            || lower == "cookie:"
+            || lower == "private_key"
+            || lower == "private_key:"
+        {
+            output.push(word.to_string());
+            pending = Some(SecretExpectation::Value);
+            continue;
+        }
+        if lower == "authorization" || lower == "authorization:" {
+            output.push(word.to_string());
+            pending = Some(SecretExpectation::Authorization);
+            continue;
+        }
+        if lower.contains("http://") || lower.contains("https://") {
+            output.push("[redacted-url]".to_string());
+            continue;
+        }
+        if lower.contains("/home/") || lower.contains("/users/") || lower.contains("/root/") {
+            output.push("[redacted-path]".to_string());
+            continue;
+        }
+        let mut redacted = None;
+        for marker in [
+            "token=",
+            "token:",
+            "password=",
+            "password:",
+            "secret=",
+            "secret:",
+            "api_key=",
+            "api_key:",
+            "cookie=",
+            "cookie:",
+            "private_key=",
+            "private_key:",
+            "authorization=",
+            "authorization:",
+        ] {
+            if let Some(index) = lower.find(marker) {
+                let prefix = word.get(..index + marker.len()).unwrap_or(word);
+                redacted = Some(format!("{prefix}[redacted]"));
+                let suffix = word.get(index + marker.len()..).unwrap_or("");
+                if let Some(quote) = suffix.chars().next()
+                    && matches!(quote, '\'' | '"')
+                    && !suffix.ends_with(quote)
+                {
+                    quoted = Some(quote);
+                }
+                if marker.starts_with("authorization") {
+                    pending = Some(SecretExpectation::Authorization);
+                } else if word.len() == index + marker.len() {
+                    pending = Some(SecretExpectation::Value);
+                }
+                break;
+            }
+        }
+        output.push(redacted.unwrap_or_else(|| word.to_string()));
+    }
+    output.join(" ")
+}
+
 /// Sanitize executor detail before storing or returning it.
 #[must_use]
 pub fn sanitize_detail(detail: &str, sensitive: Option<&str>) -> String {
@@ -280,9 +436,10 @@ pub fn sanitize_detail(detail: &str, sensitive: Option<&str>) -> String {
         || detail.to_string(),
         |value| detail.replace(value, "[redacted]"),
     );
+    let redacted = redact_words(&redacted);
     let mut sanitized = String::new();
     for character in redacted.chars() {
-        let character = if character.is_control() && !matches!(character, '\n' | '\r' | '\t') {
+        let character = if character.is_control() {
             ' '
         } else {
             character
