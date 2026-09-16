@@ -411,7 +411,9 @@ public struct RequestAuthenticator: Sendable {
   public func headers(
     body: Data,
     credential: StoredDeviceCredential,
-    now: Date
+    now: Date,
+    method: String = "POST",
+    path: String = "/api/v1/client/items"
   ) throws -> [String: String] {
     guard let host = origin.url.host else {
       throw EnrollmentError.invalidOrigin("authenticated request origin has no hostname")
@@ -422,8 +424,9 @@ public struct RequestAuthenticator: Sendable {
     let digest = Data(SHA256.hash(data: body)).base64EncodedString()
     let contentDigest = "sha-256=:\(digest):"
     let signatureInput = "sig1=(\"@method\" \"@authority\" \"@path\" \"content-digest\" \"content-type\" \"x-anxietywatch-api-version\" \"x-anxietywatch-client-id\" \"x-anxietywatch-key-id\" \"x-anxietywatch-request-id\");created=\(created);expires=\(expires)"
+    let signatureBase = "\"@method\": \(method)\n\"@authority\": \(host)\n\"@path\": \(path)\ncontent-digest: \(contentDigest)"
     let signature = try keyStore.sign(
-      Data(signatureInput.utf8),
+      Data(signatureBase.utf8),
       with: credential.keyReference
     ).base64EncodedString()
     return [
@@ -461,7 +464,13 @@ public final class URLSessionClientItemTransport: ClientItemTransport, @unchecke
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     let body = try JSONEncoder().encode(batch)
     request.httpBody = body
-    for (field, value) in try authenticator.headers(body: body, credential: credential, now: Date()) {
+    for (field, value) in try authenticator.headers(
+      body: body,
+      credential: credential,
+      now: Date(),
+      method: "POST",
+      path: "/api/v1/client/items"
+    ) {
       request.setValue(value, forHTTPHeaderField: field)
     }
     let (data, response) = try await session.data(for: request)
