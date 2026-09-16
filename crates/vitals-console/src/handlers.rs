@@ -2,6 +2,7 @@ use axum::extract::{Query, State};
 use axum::http::StatusCode;
 use axum::{Json, response::Html};
 use base64::Engine;
+use chrono::Utc;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
@@ -356,12 +357,10 @@ async fn process_envelope(
     }
 
     let record = envelope.record;
-    let content_hash = db::content_sha256(&record.content);
+    let actor = format!("client:{}", req.client_id);
 
-    // Apply idempotency rules (spec §2.3b).
-    let outcome =
-        db::process_domain_record(db, record.id, &record.kind, &record.content, &content_hash)
-            .await?;
+    // Apply immutable version and conflict rules.
+    let outcome = db::process_domain_record(db, &record, &actor).await?;
 
     match outcome {
         db::DomainRecordOutcome::Created { response } => {
@@ -471,6 +470,10 @@ pub async fn plaintext_test_handler(
         record: crate::models::DomainRecordPayload {
             id: record_id,
             kind: req.kind.clone(),
+            schema_version: crate::domain::CURRENT_SCHEMA_VERSION,
+            recorded_at: Utc::now().to_rfc3339(),
+            supersedes_id: None,
+            tombstone_target_id: None,
             content: req.content.clone(),
         },
     };

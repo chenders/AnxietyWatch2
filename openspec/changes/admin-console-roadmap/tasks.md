@@ -50,7 +50,7 @@ worktree/branch/commit/PR. `BLOCKED` tasks remain queued but must not be dispatc
 ### M5 records and recovery
 
 - [x] T-M5a — Decide domain-schema placement and record ownership · architecture-decision
-- [ ] T-M5b — Versioned domain schema and deliberate conflict resolution · implement-complex · **BLOCKED on T-M5a**
+- [x] T-M5b — Versioned domain schema and deliberate conflict resolution · implement-complex · **BLOCKED on T-M5a**
 - [ ] T-M5c — Records CRUD, prompt preview, selection visibility, and forms · implement-complex
 - [ ] T-M5d — Recovery history, restore evidence, and data-loss exposure · implement-complex
 - [ ] T-M5e — Projection rebuild/reprovision contract and verification · implement-complex

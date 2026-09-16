@@ -59,7 +59,7 @@ pub struct VersionView {
 // ---- Error response ----
 
 /// JSON error body returned on non-2xx responses.
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct ErrorResponse {
     /// Human-readable reason, naming the value that blocked the action.
     pub error: String,
@@ -118,10 +118,18 @@ pub struct EnvelopePayload {
 /// A domain record inside an envelope, before idempotency processing.
 #[derive(Deserialize, Serialize)]
 pub struct DomainRecordPayload {
-    /// Client-assigned record id.
+    /// Client-assigned record id; this identity is never reused for edits.
     pub id: uuid::Uuid,
-    /// Record kind, e.g. `test_entry`.
+    /// Record kind, e.g. `journal_entry` or `song_occurrence`.
     pub kind: String,
+    /// Version of the kind-specific content contract.
+    pub schema_version: u32,
+    /// iPhone capture time, never a server receipt-time substitute.
+    pub recorded_at: String,
+    /// New client identity that edits an earlier record.
+    pub supersedes_id: Option<uuid::Uuid>,
+    /// New client identity that tombstones an earlier record.
+    pub tombstone_target_id: Option<uuid::Uuid>,
     /// Record payload as arbitrary JSON.
     pub content: serde_json::Value,
 }
@@ -133,13 +141,21 @@ pub struct DomainRecordResponse {
     pub id: uuid::Uuid,
     /// Record kind as stored.
     pub kind: String,
+    /// Version of the kind-specific content contract.
+    pub schema_version: u32,
+    /// iPhone capture time stored with the record.
+    pub recorded_at: String,
+    /// New client identity that edits an earlier record.
+    pub supersedes_id: Option<uuid::Uuid>,
+    /// New client identity that tombstones an earlier record.
+    pub tombstone_target_id: Option<uuid::Uuid>,
     /// Record payload as stored.
     pub content: serde_json::Value,
     /// hex-encoded SHA-256 of canonical content JSON
     pub content_sha256: String,
     /// `YYYY-MM-DDTHH:MM:SS.fffZ` creation timestamp.
     pub created_at: String,
-    /// `YYYY-MM-DDTHH:MM:SS.fffZ` last-write timestamp.
+    /// Compatibility receipt timestamp; accepted records are never updated.
     pub updated_at: String,
     /// true if this request was a no-op replay
     pub replayed: bool,

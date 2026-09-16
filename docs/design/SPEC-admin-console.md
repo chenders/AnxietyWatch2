@@ -163,6 +163,15 @@ single property:
 | **Same id, *different* content** | **Not a replay — an edit or a conflict.** It is resolved deliberately: the write is rejected with a distinct conflict status, recorded as `rejected` on its attempt, and surfaced in the console for operator resolution — never silently overwritten. This is exactly what gen-1 does wrong: `ON CONFLICT (timestamp) DO UPDATE` cannot tell the two cases apart, so a second device's edit destroys the first with no signal |
 | **Same content, no id** | Rejected. Content-hash identity is tempting and wrong here — two genuinely separate journal entries with the same severity and empty notes are not the same event |
 
+For the versioned `domain` schema, an intentional edit is a new client UUID carrying
+`supersedes_id`; deletion is a new tombstone row carrying `tombstone_target_id`. Neither action
+updates or deletes the accepted row. A same-ID/different-content submission is retained in the
+conflict ledger with its incoming payload and actor/time evidence until an explicit resolution
+records the decision. Relationship rows use the same client identity and version rules for journal,
+medication/dose/follow-up, prescription/pharmacy, profile, therapy/conflict, lab, song/tag, and
+prompt-selection links. Song payloads retain manually editable lyrics; the Pi does not inherit an
+unowned external lyrics scraper from gen-1.
+
 **Scope.** The client-generated id applies to **domain records** — journal entries, songs, tags,
 severity ratings, doses. Pushed platform-store samples keep their ingest identity
 `(source, type, session_id, seq)` per Amendments 01/05/06 — which is idempotent by construction

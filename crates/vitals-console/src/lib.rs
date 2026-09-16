@@ -17,6 +17,8 @@ pub mod client_api;
 pub mod crypto;
 /// `PostgreSQL` access for attempts and domain records.
 pub mod db;
+/// Canonicalization and immutable metadata rules for domain records.
+pub mod domain;
 /// Route handlers and shared application state.
 pub mod handlers;
 /// HTTP response view-model types.
