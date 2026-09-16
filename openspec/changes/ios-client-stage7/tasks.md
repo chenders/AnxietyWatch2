@@ -41,7 +41,7 @@ dispatched before their named gate.
 
 ### Hardening and transition
 
-- [ ] T-I17 — Mobile security, privacy, accessibility, and release checks · review
+- [x] T-I17 — Mobile security, privacy, accessibility, and release checks · review
 - [ ] T-I18 — Physical-device background delivery, locked-state, energy, and panic-path acceptance · device-validation · **BLOCKED on T-I9/T-I13/T-I16**
 - [ ] T-I19 — Verified generation-one data migration · implement-complex · **BLOCKED on admin T-X5 and T-I8/T-I12**
 - [ ] T-I20 — End-to-end Stage 7 acceptance and beta rollout · review · **BLOCKED on T-I11–T-I19**

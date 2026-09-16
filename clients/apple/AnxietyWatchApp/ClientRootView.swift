@@ -33,6 +33,7 @@ struct ClientRootView: View {
       EnrollmentSurface()
         .tabItem { Label("Settings", systemImage: "gear") }
     }
+    .privacySensitive()
   }
 }
 
@@ -44,9 +45,11 @@ private struct EnrollmentSurface: View {
       Form {
         Section("Pi connection") {
           Label("Not enrolled", systemImage: "lock.shield")
+            .accessibilityLabel("Pi connection not enrolled")
           Text("Scan a one-time enrollment artifact from the private admin console to connect this iPhone.")
             .font(.footnote)
             .foregroundStyle(.secondary)
+            .accessibilityLabel("Scan a one-time enrollment artifact from the private admin console to connect this iPhone.")
         }
         Section {
           Button("Start recovery") { showingRecovery = true }
