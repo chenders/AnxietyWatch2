@@ -67,10 +67,12 @@ fn evidence_from_attempts(attempts: &[AttemptRow]) -> Evidence {
             .flatten()
     });
     let inflight = latest.and_then(|attempt| {
-        attempt.finished_at.is_none().then(|| Inflight {
-            started_epoch_s: epoch(attempt.started_at),
-            expected_duration_s: u32::try_from(attempt.expected_duration_s).unwrap_or(1),
-        })
+        attempt.finished_at.is_none().then(|| {
+            Some(Inflight {
+                started_epoch_s: epoch(attempt.started_at),
+                expected_duration_s: u32::try_from(attempt.expected_duration_s).ok()?,
+            })
+        })?
     });
     Evidence {
         last_attempt_epoch_s: latest.map(|attempt| epoch(attempt.started_at)),
