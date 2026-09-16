@@ -125,7 +125,19 @@ across the phone/Pi boundary silently.
 - Entry detail shows subject time, recorded time, sync state, and version/conflict state.
 - Editing creates a new immutable version; deletion creates a tombstone request.
 
-### 3.3 Medications and check-ins
+### 3.3 Songs
+
+- Provide a dedicated Songs section alongside Journal.
+- List songs referenced by journal entries with their available title, artist, album, artwork,
+  provider ID, lyrics state, and synchronization state.
+- Tapping a song opens a detail surface containing the complete metadata snapshot available to the
+  Pi/iPhone, the artwork, lyrics when present, lyrics provider and retrieval evidence, and explicit
+  pending/unavailable/unknown states when lyrics are not available.
+- A song detail surface never invents lyrics or treats a missing lyrics response as an empty lyric.
+- Journal entries link to this same song detail surface; the song record is not duplicated into a
+  second independent history.
+
+### 3.4 Medications and check-ins
 
 - Log a dose against a server-owned medication definition.
 - Show last-taken time to reduce accidental duplicate dosing, while clearly identifying stale data.
@@ -135,14 +147,14 @@ across the phone/Pi boundary silently.
 - Logging a safety-relevant dose must be acknowledged by the Pi before the app claims the server's
   monitoring window is armed. “Saved on this phone” and “arming acknowledged” are separate states.
 
-### 3.4 History and reports
+### 3.5 History and reports
 
 - Query server projections using opaque server cursors and explicit UTC windows.
 - Preserve null gaps; never interpolate physiological data or coerce absent values to zero.
 - Render server-produced analysis and clinical PDFs; the phone does not regenerate them.
 - Export/share uses a server-produced artifact and the standard iOS share sheet.
 
-### 3.5 Health access and sync
+### 3.6 Health access and sync
 
 Per HealthKit type, show these independent facts:
 
@@ -158,7 +170,7 @@ Per HealthKit type, show these independent facts:
 A type with no matching sample is not automatically broken: it may be denied, unmeasured, or simply
 absent. The UI states exactly which fact is known.
 
-### 3.6 Settings and diagnostics
+### 3.7 Settings and diagnostics
 
 - Server endpoint, authenticated device label, credential creation/revocation state, and TLS state.
 - Registry/API/app build versions.
