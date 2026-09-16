@@ -159,7 +159,9 @@ absent. The UI states exactly which fact is known.
 - Bounded redacted sync diagnostics with a user-initiated export.
 - HealthKit type selection and rationale before authorization.
 - Notification policy and system authorization state.
-- Privacy screen and a destructive local reset that does not imply server deletion.
+- Privacy screen, journal-mirror backup inclusion choice, and a destructive local reset that does not
+  imply server deletion. The backup choice is asked on first launch before journal use and remains
+  changeable in General Settings.
 
 ---
 
@@ -349,9 +351,10 @@ this single-owner health client.
 
 - Device credentials live in Keychain with a `ThisDeviceOnly` accessibility class appropriate for
   background delivery after first unlock; never `UserDefaults`, source, logs, or an export.
-- The durable outbox and cache use iOS Data Protection and are excluded from device backups. The
-  selected protection class must permit the documented background behavior and is verified on a
-  locked physical device.
+- The durable outbox and physiological projection cache use iOS Data Protection and are excluded from
+  device backups. The permanent journal/anxiety mirror also uses Data Protection, with backup inclusion
+  controlled by the user's first-launch choice and General Settings. The selected protection class must
+  permit the documented background behavior and is verified on a locked physical device.
 - An optional Face ID/Touch ID foreground privacy lock is separate from the background transport
   credential; enabling it must not turn a biometric boolean into the cryptographic access control.
 - Sensitive screens are obscured in the app-switcher snapshot.

@@ -27,6 +27,8 @@ journal/anxiety read mirror for offline history.
 
 - Keep credentials in the approved Keychain/Secure Enclave path. Never log credential values or put
   health/journal content in URLs, analytics, crash breadcrumbs, or diagnostics.
+- The permanent journal/anxiety mirror's backup inclusion is a user setting asked before first journal
+  use and changeable in General Settings. The temporary outbox remains excluded from backups.
 - First-draft LAN HTTP is permitted only by Amendment 10 to a configured private address; device
   signatures, enrollment approval, scoped credentials, replay IDs, and private-address validation
   remain mandatory. Do not add unsigned or shared-secret fallback.
