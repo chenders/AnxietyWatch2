@@ -113,6 +113,9 @@ pub struct Air11Status {
     /// Why event coverage is unavailable, without private protocol material.
     #[serde(default)]
     pub event_blocker: Option<String>,
+    /// Durable therapy-session identity, when lifecycle evidence exists.
+    #[serde(default)]
+    pub therapy_session_id: Option<u64>,
     /// Conservative therapy lifecycle state.
     #[serde(default)]
     pub therapy_state: crate::as11_session::TherapyState,
@@ -155,6 +158,7 @@ impl Default for Air11Status {
             event_truncated_notifications: 0,
             last_event_data_id: None,
             event_blocker: None,
+            therapy_session_id: None,
             therapy_state: crate::as11_session::TherapyState::Unknown,
             therapy_start_host_unix_micros: None,
             therapy_stop_host_unix_micros: None,
