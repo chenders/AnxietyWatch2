@@ -39,6 +39,8 @@ pub struct AppState {
     pub db_url: String,
     /// Injected system operations for the host-status collectors.
     pub sys_ops: crate::api::ops::SysOps,
+    /// Bounded host history used for disk projections.
+    pub host_history: crate::api::host::HostHistory,
     /// `PostgreSQL` access for the read API, injected for testability.
     pub db_ops: std::sync::Arc<dyn crate::api::postgres::DbOps>,
     /// Operator authentication state; mobile client routes use a separate protocol.
@@ -671,6 +673,7 @@ mod tests {
             test_routes_enabled: false,
             db_url: String::new(),
             sys_ops: crate::api::ops::SysOps::real(),
+            host_history: crate::api::host::HostHistory::default(),
             db_ops: std::sync::Arc::new(DummyDbOps),
             security: std::sync::Arc::new(crate::security::SecurityState::unconfigured()),
             ops_token: None,

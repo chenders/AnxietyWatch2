@@ -78,6 +78,7 @@ async fn main() {
         test_routes_enabled,
         db_url: db_url.clone(),
         sys_ops: SysOps::real(),
+        host_history: vitals_console::api::host::HostHistory::default(),
         db_ops: std::sync::Arc::new(vitals_console::api::postgres::PgDbOps { db_url }),
         security: std::sync::Arc::new(vitals_console::security::SecurityState::from_env()),
         ops_token: env::var("VITALS_CONSOLE_OPS_TOKEN")
