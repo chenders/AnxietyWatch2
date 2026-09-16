@@ -16,7 +16,7 @@ public enum TransportFailure: Error, Equatable, Sendable {
 
   public var isRetryable: Bool {
     switch self {
-    case .network, .http(_, _), .server(_, true, _): true
+    case .network, .http, .server(_, true, _): true
     case .server(_, false, _), .credentialExpired, .credentialRevoked, .incompatibleVersion, .responseTooLarge: false
     }
   }
@@ -423,7 +423,10 @@ public struct RequestAuthenticator: Sendable {
     let expires = created + 120
     let digest = Data(SHA256.hash(data: body)).base64EncodedString()
     let contentDigest = "sha-256=:\(digest):"
-    let signatureInput = "sig1=(\"@method\" \"@authority\" \"@path\" \"content-digest\" \"content-type\" \"x-anxietywatch-api-version\" \"x-anxietywatch-client-id\" \"x-anxietywatch-key-id\" \"x-anxietywatch-request-id\");created=\(created);expires=\(expires)"
+    let signatureInput =
+      "sig1=(\"@method\" \"@authority\" \"@path\" \"content-digest\" \"content-type\" " +
+      "\"x-anxietywatch-api-version\" \"x-anxietywatch-client-id\" \"x-anxietywatch-key-id\" " +
+      "\"x-anxietywatch-request-id\");created=\(created);expires=\(expires)"
     let signatureBase = "\"@method\": \(method)\n\"@authority\": \(host)\n\"@path\": \(path)\ncontent-digest: \(contentDigest)"
     let signature = try keyStore.sign(
       Data(signatureBase.utf8),

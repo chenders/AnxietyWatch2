@@ -1,7 +1,9 @@
 # Specification — AnxietyWatch2 Apple client (Stage 7)
 
 **Status:** implementation target; subordinate to accepted amendments
-**Scope:** iPhone app, companion watchOS Quick Log, and their HTTP contracts with the Pi
+**Scope:** eventual iPhone app, companion watchOS Quick Log, and their HTTP contracts with the Pi.
+The first draft is iPhone-only and follows [Amendment 10](../specs/2026-09-15-amendment-10-first-draft-lan-http.md)
+for private-LAN transport and deferred features.
 **Implementation home:** `clients/apple/` in this repository
 **Related:** [`GEN1-REASSESSMENT.md`](GEN1-REASSESSMENT.md) ·
 [`HOMEASSISTANT-PRIOR-ART.md`](HOMEASSISTANT-PRIOR-ART.md) ·
@@ -25,7 +27,9 @@ The Apple client exists because some capabilities are device-local or person-loc
 
 The Pi remains the system of record, analysis host, integration hub, and independent overnight
 monitor. The app is useful when the Pi is temporarily unreachable, but it is never part of the
-local detector-to-klaxon path.
+local detector-to-klaxon path. In the first draft, HealthKit, watchOS, reminders/notifications, and
+non-journal domain features are deferred; the app captures journal/anxiety records and reads Pi
+projections and prior records.
 
 ### 1.1 The three jobs
 
@@ -106,8 +110,9 @@ across the phone/Pi boundary silently.
 ### 3.2 Journal
 
 - Anxiety severity using the generation-one 1–10 scale and named bands.
-- Optional note, tags, song, and backdated subject time. Song search/enrichment runs on the Pi; the
-  phone records a selected server song ID or an offline free-form song stub for later resolution.
+- Optional note, tags, and song. The entry time is captured by the iPhone when the user saves it;
+  user-entered backdating is not supported. Song search/enrichment runs on the Pi; the phone records
+  a selected server song ID or an offline free-form song stub for later resolution.
 - Optional pain only after its scale and missing-value behavior are accepted in the domain schema.
 - Express Mode preserves one-tap anxiety capture. Optional secondary fields cannot delay the save.
 - Entry detail shows subject time, recorded time, sync state, and version/conflict state.
@@ -169,7 +174,8 @@ acceptable until then). Identity is never a timestamp or content hash.
 - Same ID + different content is a conflict, never an overwrite.
 - An edit has a new ID plus `supersedes` pointing to the previous version.
 - A removal is an append-only tombstone with its own ID and target ID.
-- Subject time and recorded time are separate UTC instants.
+- Subject time is the iPhone capture instant in the first draft. The Pi receipt instant is retained
+  separately as transport evidence and never replaces the entry time.
 
 The app retains an outbox item until it receives an item-level terminal acknowledgement. Batch-level
 HTTP success alone is insufficient.
@@ -250,8 +256,10 @@ The outbox is not a general mirror:
   fetched from the Pi and a cache can be evicted without data loss;
 - unacknowledged items are the unavoidable exception: they remain until acknowledged or the user
   explicitly accepts a named loss. They are never age-evicted to satisfy a storage limit;
-- logout/server replacement requires an explicit choice to keep or discard unsent records;
-- a local reset names the number and oldest age of unsent records it would destroy.
+- logout, reset, and server replacement always keep unsent records; queued items are never discarded
+  by these flows;
+- uploaded records can be deleted normally by creating a tombstone, which remains part of the Pi's
+  authoritative audit trail.
 
 There is no local HealthKit browser, local journal history database, local report archive, or local
 analysis over the outbox. Once the Pi acknowledges a write, the Pi is the only long-term owner.
@@ -296,21 +304,20 @@ schema, but physiological registry types still come from `registry.json`.
 
 ### 6.1 Enrollment contract
 
-[Amendment 09](../specs/2026-08-30-amendment-09-mobile-enrollment-and-tls.md) resolves the production
-authentication/TLS decision. The currently shipped `/api/envelope/register` remains localhost-test
-only and is **not** a remote enrollment or compatibility flow.
+[Amendment 09](../specs/2026-08-30-amendment-09-mobile-enrollment-and-tls.md) defines the eventual
+production authentication/TLS decision. [Amendment 10](../specs/2026-09-15-amendment-10-first-draft-lan-http.md)
+supersedes its public/TLS requirements for the first draft only. The currently shipped
+`/api/envelope/register` remains test-only and is **not** a remote enrollment or compatibility flow.
 
-Production uses a ten-minute single-use artifact created after recent operator authentication. The
-phone presents the normalized HTTPS origin and server identity before trust, generates a
-non-exportable Secure Enclave P-256 key, and receives a scoped 180-day per-device public-key
-credential. Requests use RFC 9421 signatures, content digests, bounded creation/expiry times, and a
-durable replay ID. Rotation signs a new key with the current key and never rewrites credential-neutral
-queued payloads; revocation/recovery preserves every unacknowledged item.
+The first draft uses a manually configured private-LAN Pi address over HTTP and has no away-from-home
+operation. It still requires a ten-minute single-use artifact created after recent operator
+authentication, a non-exportable Secure Enclave P-256 key, scoped per-device credentials, RFC 9421
+signatures, content digests, bounded creation/expiry times, and durable replay IDs. Rotation signs a
+new key with the current key and never rewrites credential-neutral queued payloads; revocation/recovery
+preserves every unacknowledged item.
 
-The public Caddy origin exposes only `/api/v1/client/*` over system-trusted TLS while axum remains on
-loopback and the admin origin remains WireGuard-only. ATS hostname validation is unchanged and
-certificate pinning is deliberately not used for the initial release; Amendment 09 records the
-rotation/availability rationale and revisit triggers.
+Before public or away-from-home use, the Amendment 09 Caddy HTTPS origin, ATS system trust, hostname
+validation, and no-cleartext gate must be restored.
 
 The app never embeds a production endpoint, bearer token, symmetric key, private key, or certificate
 exception in source or configuration committed to git.
@@ -348,10 +355,12 @@ this single-owner health client.
 
 ### 7.2 Network
 
-- App Transport Security remains enabled; production has no `NSAllowsArbitraryLoads` or cleartext
-  exception.
-- TLS uses system trust and hostname validation. Certificate pinning is not assumed: the enrollment
-  threat-model task must weigh it against certificate rotation and include backup pins if adopted.
+- The eventual production target keeps App Transport Security enabled with no cleartext exception.
+  The first draft is the explicit Amendment 10 exception: HTTP is allowed only to the configured
+  private-LAN address, and the UI labels it first-draft LAN-only transport.
+- Device signatures, scoped credentials, replay protection, and private-address validation remain
+  mandatory in LAN mode. HTTPS system trust and hostname validation return before public or
+  away-from-home use.
 - Requests have bounded connect/resource timeouts, body limits, and response decoding limits.
 - Secrets and health payloads never appear in URLs, analytics, crash breadcrumbs, or OSLog.
 
@@ -388,10 +397,9 @@ this single-owner health client.
 
 ### 9.1 Local prompts
 
-Dose and random check-ins are scheduled locally because delivery is person-facing and iOS-controlled.
-Policy comes from the Pi and is cached with a version. Every scheduled prompt has a stable ID and a
-recorded lifecycle: scheduled, delivered when observable, answered, declined, expired, or delivery
-unknown. Unknown is not converted to declined.
+Reminders and notifications are deferred from the first draft. The first draft schedules no journal,
+dose, check-in, or sync reminders. A later release may add person-facing prompts under a separately
+accepted notification policy; unknown delivery must never be converted to declined.
 
 ### 9.2 Remote alarm information
 
@@ -490,8 +498,9 @@ Stage 7 is complete only when:
    acknowledgement.
 6. Local check-in outcomes distinguish answered, declined, expired, and delivery unknown.
 7. The viewer presents stale caches as stale and preserves graph gaps.
-8. Production networking has no cleartext/ATS bypass; credentials are revocable and absent from logs,
-   backups, and diagnostic exports.
+8. The eventual production networking target has no cleartext/ATS bypass; the first draft's explicit
+   Amendment 10 LAN-only HTTP exception is private-address validated and retains signed requests.
+   Credentials are revocable and absent from logs, backups, and diagnostic exports.
 9. Accessibility and panic-path timing pass on physical devices.
 10. With the iPhone powered off, Pi collection, detection, and local alert acceptance remain green.
 11. The verified generation-one migration report has no unowned retained capability or unexplained
@@ -503,7 +512,7 @@ Stage 7 is complete only when:
 
 | Gate | Blocks | Owner |
 |---|---|---|
-| G-IOS-AUTH — LAN/tunnel/TLS/enrollment decision | production enrollment and writes | admin roadmap T-M2a + Stage 7 T-I1 |
+| G-IOS-AUTH — LAN/HTTPS/enrollment decision | production enrollment and writes; first-draft LAN writes follow Amendment 10 | admin roadmap T-M2a + Stage 7 T-I1 |
 | G-IOS-PROVENANCE — platform sub-provenance and identity | HealthKit payload/receiver | admin roadmap T-X3/T-X4 |
 | G-IOS-BEACON — status-beacon server contract | phone health beacon | admin roadmap T-X1/T-X2 |
 | G-IOS-RECORDS — domain schema/version ownership | journal, medication, check-in writes | admin roadmap T-M5a/T-M5b |

@@ -20,6 +20,7 @@ wins**. If you find a contradiction, report it rather than implementing either v
 | **07** | [The HTTP API and admin console are Rust, not Python](2026-08-05-amendment-07-api-in-rust.md) | **`language-choices.md` §1 row "HTTP API, admin, analysis → Python 3.12 + FastAPI", and §3 in full** | admin console M0–M2, web dashboard backend, client write API |
 | **08** | [Layout selection by live evaluation, not upfront choice](2026-08-06-amendment-08-layout-evaluation.md) | the implicit "pick a design direction before M1" in `SPEC-admin-console.md` §3.1 | admin console M1 (all three directions behind a runtime switcher), web dashboard (gains a plan home: port B/C onto the `model()` seam + switcher, gated on the vitalsd query path) |
 | **09** | [Production mobile enrollment, request authentication, and TLS topology](2026-08-30-amendment-09-mobile-enrollment-and-tls.md) | Amendment 02 mobile key custody; Amendment 07 client API; admin §9c bind/auth deferral; iOS §6.1 enrollment gate | T-I1, T-I2, T-I4, T-I5, T-I7, T-I17, T-I18, T-M2a, T-M2h |
+| **10** | [First-draft private-LAN transport](2026-09-15-amendment-10-first-draft-lan-http.md) | Amendment 09 §§2, 3.2, and 7 for the first-draft iPhone release; iOS §§6.1 and 7.2 | first-draft T-I1, T-I2, T-I4, T-I5, T-I7, T-M2a |
 | — | [C vs Rust evaluation](2026-08-03-c-vs-rust-evaluation.md) | the C11 decision | all code tasks |
 | — | [Review synthesis and fix tracker](../reviews/SYNTHESIS.md) | — | status of every finding |
 
@@ -124,13 +125,11 @@ heartbeat only tests the 555. See amendment 05 §2.
 
 ### Mobile enrollment and network trust
 
-**The public phone API is HTTPS-only and the admin console remains private** (amendment 09).
-`vitals-console` binds loopback behind Caddy: only `/api/v1/client/*` is public, while operator pages
-are WireGuard-only. Enrollment uses a ten-minute single-use console artifact and a non-exportable
-Secure Enclave P-256 key. Requests use RFC 9421 signatures plus durable replay IDs. ATS system trust
-and hostname validation apply; certificate pinning is deliberately rejected for the initial release
-because safe ACME rotation and backup-pin recovery are not operationally proven. The old plaintext
-`/api/envelope/register` route is test-only and never a production mobile flow.
+**The eventual public phone API is HTTPS-only and the admin console remains private** (amendment 09),
+but Amendment 10 permits the first draft to use HTTP only to a manually configured private-LAN Pi
+address. The first draft has no away-from-home endpoint. Device enrollment, Secure Enclave keys,
+RFC 9421 signatures, durable replay IDs, operator approval, and legacy-route exclusion remain in force.
+The production HTTPS/Caddy topology and no-cleartext gate return before public or away-from-home use.
 
 ### UI direction
 

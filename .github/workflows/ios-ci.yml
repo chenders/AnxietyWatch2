@@ -1,0 +1,100 @@
+name: iOS Client CI
+
+on:
+  push:
+    paths:
+      - "clients/apple/**"
+      - ".swiftlint.yml"
+      - ".github/instructions/swift.instructions.md"
+      - ".github/workflows/ios-ci.yml"
+      - "scripts/verify-ios-*.sh"
+      - "scripts/scan-public-info.sh"
+  pull_request:
+    paths:
+      - "clients/apple/**"
+      - ".swiftlint.yml"
+      - ".github/instructions/swift.instructions.md"
+      - ".github/workflows/ios-ci.yml"
+      - "scripts/verify-ios-*.sh"
+      - "scripts/scan-public-info.sh"
+
+concurrency:
+  group: ios-client-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify-and-test:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain info
+        run: |
+          xcode-select -p
+          xcodebuild -version
+          swift --version
+
+      - name: Install SwiftLint
+        run: |
+          if ! command -v swiftlint >/dev/null 2>&1; then
+            brew install swiftlint
+          fi
+          swiftlint version
+
+      - name: Verify project and security gates
+        run: |
+          set -euo pipefail
+          scripts/verify-ios-project.sh
+          scripts/verify-ios-release-security.sh
+          scripts/verify-ios-accessibility.sh
+          scripts/verify-ios-storage-security.sh
+          scripts/verify-ios-auth.sh
+          scripts/verify-ios-network-security.sh
+          scripts/verify-ios-no-analysis.sh
+          scripts/verify-ios-no-local-archive.sh
+          scripts/verify-ios-no-polling.sh
+          scripts/scan-public-info.sh
+
+      - name: Run SwiftLint
+        run: swiftlint lint --strict
+
+      - name: Test Swift packages
+        run: |
+          set -euo pipefail
+          for package in AWClientCore AWTransport AWOutbox AWHealthKit AWDomain; do
+            swift test --package-path "clients/apple/Packages/$package"
+          done
+
+      - name: Find iPhone simulator
+        id: simulator
+        run: |
+          set -euo pipefail
+          name=$(xcrun simctl list devices available -j \
+            | python3 -c 'import json,sys; d=json.load(sys.stdin)["devices"]; print(next((x["name"] for rt in d.values() for x in rt if x["name"].startswith("iPhone") and x["isAvailable"]), ""))')
+          if [ -z "$name" ]; then
+            echo "No available iPhone simulator found" >&2
+            exit 1
+          fi
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          echo "Using simulator: $name"
+
+      - name: Test iPhone app
+        env:
+          SIMULATOR_NAME: ${{ steps.simulator.outputs.name }}
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -project clients/apple/AnxietyWatch.xcodeproj \
+            -scheme AnxietyWatch-CI \
+            -destination "platform=iOS Simulator,name=$SIMULATOR_NAME" \
+            -derivedDataPath "$RUNNER_TEMP/AnxietyWatchDerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            2>&1 | tee "$RUNNER_TEMP/ios-client-test.log"
+          if grep -E '(^|:) warning:' "$RUNNER_TEMP/ios-client-test.log"; then
+            echo "Compiler warnings are not permitted"
+            exit 1
+          fi

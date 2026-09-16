@@ -1,0 +1,11 @@
+schemaVersion: 1
+sessionDefaults:
+  projectPath: clients/apple/AnxietyWatch.xcodeproj
+  scheme: AnxietyWatch
+  configuration: Debug
+  simulatorName: iPhone 17 Pro
+  useLatestOS: true
+  simulatorPlatform: iOS Simulator
+workflows:
+  - simulator
+  - device
