@@ -47,6 +47,12 @@ pub struct AppState {
     pub security: std::sync::Arc<crate::security::SecurityState>,
     /// Second capability required for destructive service operations.
     pub ops_token: Option<String>,
+    /// Stable server identity included in enrollment artifacts.
+    pub server_instance_id: Option<Uuid>,
+    /// Manually configured first-draft client origin included in enrollment artifacts.
+    pub client_origin: Option<String>,
+    /// Operator-visible server label included in enrollment artifacts.
+    pub server_display_label: String,
 }
 
 /// Require a database pool; return a named 503 when absent.
@@ -748,6 +754,9 @@ mod tests {
             db_ops: std::sync::Arc::new(DummyDbOps),
             security: std::sync::Arc::new(crate::security::SecurityState::unconfigured()),
             ops_token: None,
+            server_instance_id: None,
+            client_origin: None,
+            server_display_label: "test server".to_string(),
         }
     }
 

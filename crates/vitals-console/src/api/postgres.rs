@@ -429,6 +429,9 @@ mod tests {
             db_ops: db.clone(),
             security: std::sync::Arc::new(crate::security::SecurityState::unconfigured()),
             ops_token: None,
+            server_instance_id: None,
+            client_origin: None,
+            server_display_label: "test server".to_string(),
         };
 
         let resp = latest_handler(
@@ -455,6 +458,9 @@ mod tests {
             db_ops: db2,
             security: std::sync::Arc::new(crate::security::SecurityState::unconfigured()),
             ops_token: None,
+            server_instance_id: None,
+            client_origin: None,
+            server_display_label: "test server".to_string(),
         };
 
         let resp2 = latest_handler(

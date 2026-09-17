@@ -52,6 +52,8 @@ pub enum SecurityError {
     ExpiredSession,
     /// The state-changing request has no matching CSRF token.
     InvalidCSRF,
+    /// A sensitive operation lacks recent password reauthentication.
+    RecentAuthRequired,
     /// The request host is not the configured private admin origin.
     InvalidOrigin(String),
     /// The in-memory security state could not be accessed.
@@ -66,6 +68,7 @@ impl SecurityError {
             | Self::MissingSession
             | Self::ExpiredSession
             | Self::InvalidCSRF
+            | Self::RecentAuthRequired
             | Self::InvalidOrigin(_) => StatusCode::UNAUTHORIZED,
             Self::Throttled { .. } => StatusCode::TOO_MANY_REQUESTS,
         }
@@ -94,6 +97,9 @@ impl SecurityError {
             Self::InvalidCSRF => {
                 "admin request blocked: CSRF token is missing or invalid".to_string()
             }
+            Self::RecentAuthRequired => format!(
+                "sensitive admin action blocked: recent password authentication is older than {RECENT_AUTH_SECONDS}s"
+            ),
             Self::InvalidOrigin(value) => {
                 format!("admin request blocked: origin {value} is not allowlisted")
             }
@@ -326,6 +332,35 @@ impl SecurityState {
             .map_err(|_| SecurityError::Internal("session state lock is poisoned".to_string()))?;
         sessions.remove(&session_id);
         Ok(())
+    }
+
+    /// Require a valid admin session with recent password reauthentication.
+    ///
+    /// # Errors
+    ///
+    /// Returns the named session, origin, or recent-auth blocker.
+    pub fn require_recent_auth(
+        &self,
+        headers: &HeaderMap,
+        now: i64,
+    ) -> Result<crate::credentials::RecentAuth, SecurityError> {
+        self.authenticate(headers, &Method::GET, now)?;
+        let session_id =
+            cookie_value(headers, SESSION_COOKIE).ok_or(SecurityError::MissingSession)?;
+        let sessions = self
+            .sessions
+            .lock()
+            .map_err(|_| SecurityError::Internal("session state lock is poisoned".to_string()))?;
+        let session = sessions
+            .get(&session_id)
+            .ok_or(SecurityError::MissingSession)?;
+        let age = now.saturating_sub(session.recent_auth_at);
+        if !(0..=RECENT_AUTH_SECONDS).contains(&age) {
+            return Err(SecurityError::RecentAuthRequired);
+        }
+        Ok(crate::credentials::RecentAuth {
+            authenticated_at_epoch_s: session.recent_auth_at,
+        })
     }
 
     /// Report visible transport and recent-auth evidence without exposing secrets.
@@ -615,6 +650,23 @@ mod tests {
             security
                 .authenticate(&headers(&receipt, true), &Method::POST, 1_001)
                 .is_ok()
+        );
+    }
+
+    #[test]
+    fn security_recent_auth_is_required_for_sensitive_actions() {
+        let security = configured();
+        let receipt = security
+            .login("127.0.0.1", "correct horse", 1_500)
+            .expect("login");
+        let request_headers = headers(&receipt, false);
+        let recent = security
+            .require_recent_auth(&request_headers, 1_500)
+            .expect("recent authentication");
+        assert_eq!(recent.authenticated_at_epoch_s, 1_500);
+        assert_eq!(
+            security.require_recent_auth(&request_headers, 1_500 + RECENT_AUTH_SECONDS + 1),
+            Err(SecurityError::RecentAuthRequired)
         );
     }
 

@@ -85,6 +85,12 @@ async fn main() {
         ops_token: env::var("VITALS_CONSOLE_OPS_TOKEN")
             .ok()
             .filter(|token| !token.is_empty()),
+        server_instance_id: env::var("VITALS_CONSOLE_SERVER_INSTANCE_ID")
+            .ok()
+            .and_then(|value| value.parse().ok()),
+        client_origin: env::var("VITALS_CONSOLE_CLIENT_ORIGIN").ok(),
+        server_display_label: env::var("VITALS_CONSOLE_SERVER_DISPLAY_LABEL")
+            .unwrap_or_else(|_| "AnxietyWatch Pi".to_string()),
     };
 
     println!("Starting vitals-console on {bind_addr} (vitalsd socket: {socket_path})");
@@ -94,6 +100,10 @@ async fn main() {
 
     let app = Router::new()
         .merge(vitals_console::client_api::router::<AppState>())
+        .route(
+            "/api/admin/mobile/enrollment-artifacts",
+            post(vitals_console::client_api::admin_enrollment_artifact_handler),
+        )
         .route("/dashboard", get(dashboard_handler))
         .route("/dashboard/", get(dashboard_handler))
         .route("/api/health", get(health_handler))

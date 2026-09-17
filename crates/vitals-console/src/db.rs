@@ -5,6 +5,7 @@
 
 use axum::Json;
 use axum::http::StatusCode;
+use base64::Engine;
 use sqlx::PgPool;
 use subtle::ConstantTimeEq;
 use uuid::Uuid;
@@ -89,6 +90,100 @@ type EnrollmentArtifactRow = (
     chrono::DateTime<chrono::Utc>,
     Option<chrono::DateTime<chrono::Utc>>,
 );
+
+/// Plaintext enrollment artifact returned only to the authenticated creator once.
+pub struct MobileEnrollmentArtifact {
+    /// Single-use enrollment identifier.
+    pub enrollment_id: Uuid,
+    /// Server identity bound into the artifact.
+    pub server_instance_id: Uuid,
+    /// Artifact expiry in UTC.
+    pub expires_at: chrono::DateTime<chrono::Utc>,
+    /// Allowlisted device scopes.
+    pub scopes: Vec<String>,
+    /// Opaque token that is never stored in plaintext.
+    pub token: String,
+}
+
+/// Create a ten-minute enrollment artifact and persist only its token hash.
+///
+/// # Errors
+///
+/// Returns a validation, live-artifact limit, random-token, or database error.
+pub async fn create_mobile_enrollment_artifact(
+    pool: &PgPool,
+    server_instance_id: Uuid,
+    label: &str,
+    scopes: &[String],
+    actor: &str,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Result<MobileEnrollmentArtifact, String> {
+    validate_mobile_label(label)?;
+    let scope_refs: Vec<&str> = scopes.iter().map(String::as_str).collect();
+    let scopes = validate_mobile_scopes(&scope_refs)?;
+    let mut token_bytes = [0_u8; 32];
+    getrandom::getrandom(&mut token_bytes)
+        .map_err(|error| format!("enrollment token generation failed: {error}"))?;
+    let token = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(token_bytes);
+    let expires_at = now
+        .checked_add_signed(chrono::Duration::seconds(
+            crate::credentials::ENROLLMENT_LIFETIME_S,
+        ))
+        .ok_or_else(|| {
+            "enrollment artifact creation blocked: expiry overflowed UTC range".to_string()
+        })?;
+    let enrollment_id = Uuid::new_v4();
+    let mut transaction = pool
+        .begin()
+        .await
+        .map_err(|error| format!("enrollment artifact transaction failed: {error}"))?;
+    let live_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM enrollment_artifacts WHERE consumed_at IS NULL AND expires_at > $1",
+    )
+    .bind(now)
+    .fetch_one(&mut *transaction)
+    .await
+    .map_err(|error| format!("enrollment artifact limit lookup failed: {error}"))?;
+    if live_count >= 3 {
+        return Err(format!(
+            "enrollment artifact creation blocked: live_artifact_count={live_count}; maximum=3"
+        ));
+    }
+    sqlx::query(
+        "INSERT INTO enrollment_artifacts\
+         (enrollment_id, server_instance_id, token_hash, scopes, expires_at, created_by)\
+         VALUES ($1, $2, $3, $4, $5, $6)",
+    )
+    .bind(enrollment_id)
+    .bind(server_instance_id)
+    .bind(hash_enrollment_token(&token).as_slice())
+    .bind(&scopes)
+    .bind(expires_at)
+    .bind(actor)
+    .execute(&mut *transaction)
+    .await
+    .map_err(|error| format!("enrollment artifact insert failed: {error}"))?;
+    sqlx::query(
+        "INSERT INTO credential_audit (action, actor, reason)\
+         VALUES ('enrollment_created', $1, $2)",
+    )
+    .bind(actor)
+    .bind(format!("enrollment_id={enrollment_id}; label={label}"))
+    .execute(&mut *transaction)
+    .await
+    .map_err(|error| format!("enrollment artifact audit failed: {error}"))?;
+    transaction
+        .commit()
+        .await
+        .map_err(|error| format!("enrollment artifact commit failed: {error}"))?;
+    Ok(MobileEnrollmentArtifact {
+        enrollment_id,
+        server_instance_id,
+        expires_at,
+        scopes,
+        token,
+    })
+}
 
 /// Claim a single-use enrollment artifact and persist a public-key credential atomically.
 ///

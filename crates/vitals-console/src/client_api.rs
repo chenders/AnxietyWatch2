@@ -6,8 +6,8 @@
 use axum::Json;
 use axum::Router;
 use axum::body::Bytes;
-use axum::extract::{Extension, Query};
-use axum::http::{HeaderMap, StatusCode};
+use axum::extract::{Extension, Query, State};
+use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::IntoResponse;
 use axum::routing::{any, get, post};
 use base64::Engine;
@@ -154,6 +154,29 @@ pub struct EnrollmentClaimRequest {
     pub algorithm: String,
     /// Client build string for compatibility evidence.
     pub app_version: String,
+}
+
+/// One-time operator response containing an enrollment token that is never returned again.
+#[derive(Debug, Serialize, ToSchema)]
+struct AdminEnrollmentArtifactResponse {
+    api_major: u32,
+    origin: String,
+    server_instance_id: Uuid,
+    enrollment_id: Uuid,
+    server_display_label: String,
+    device_label: String,
+    scopes: Vec<String>,
+    expires_at: String,
+    token: String,
+}
+
+/// Validated request for creating a new one-time enrollment artifact.
+#[derive(Debug, Deserialize)]
+pub struct AdminEnrollmentArtifactRequest {
+    /// Operator-visible label for the device that will claim the artifact.
+    pub device_label: String,
+    /// Requested least-privilege mobile scopes.
+    pub scopes: Vec<String>,
 }
 
 /// Future successful enrollment result, included as a shared schema but not advertised as success.
@@ -898,6 +921,97 @@ async fn authenticate_mobile_request(
         )
     })?;
     Ok(())
+}
+
+/// Create a single-use enrollment artifact for a mobile device.
+///
+/// The browser middleware has already checked the session and CSRF token; this handler additionally
+/// requires password reauthentication within the bounded sensitive-action window. The response is
+/// explicitly non-cacheable because it contains the only plaintext token reveal.
+///
+/// # Errors
+///
+/// Returns a named authentication, configuration, validation, or database blocker.
+pub async fn admin_enrollment_artifact_handler(
+    State(state): State<crate::handlers::AppState>,
+    headers: HeaderMap,
+    Json(request): Json<AdminEnrollmentArtifactRequest>,
+) -> Result<axum::response::Response, ClientApiError> {
+    state
+        .security
+        .require_recent_auth(&headers, Utc::now().timestamp())
+        .map_err(|security_error| {
+            error(
+                StatusCode::UNAUTHORIZED,
+                "recent_auth_required",
+                "sensitive enrollment action requires recent operator reauthentication",
+                false,
+                format!("security={security_error:?}"),
+                Some(API_MAJOR),
+            )
+        })?;
+    let database = state.db.as_ref().ok_or_else(|| {
+        unavailable(
+            "enrollment_artifact_creation",
+            "VITALS_CONSOLE_DATABASE_URL",
+        )
+    })?;
+    let server_instance_id = state.server_instance_id.ok_or_else(|| {
+        unavailable(
+            "enrollment_artifact_creation",
+            "VITALS_CONSOLE_SERVER_INSTANCE_ID",
+        )
+    })?;
+    let origin = state.client_origin.clone().ok_or_else(|| {
+        unavailable(
+            "enrollment_artifact_creation",
+            "VITALS_CONSOLE_CLIENT_ORIGIN",
+        )
+    })?;
+    let artifact = crate::db::create_mobile_enrollment_artifact(
+        database,
+        server_instance_id,
+        &request.device_label,
+        &request.scopes,
+        crate::security::AUTHENTICATED_ACTOR,
+        Utc::now(),
+    )
+    .await
+    .map_err(|reason| {
+        let status = if reason.contains("blocked") || reason.contains("rejected") {
+            StatusCode::BAD_REQUEST
+        } else {
+            StatusCode::INTERNAL_SERVER_ERROR
+        };
+        error(
+            status,
+            "enrollment_artifact_creation_failed",
+            "enrollment artifact could not be created",
+            false,
+            reason,
+            Some(API_MAJOR),
+        )
+    })?;
+    let mut response = Json(AdminEnrollmentArtifactResponse {
+        api_major: API_MAJOR,
+        origin,
+        server_instance_id: artifact.server_instance_id,
+        enrollment_id: artifact.enrollment_id,
+        server_display_label: state.server_display_label,
+        device_label: request.device_label,
+        scopes: artifact.scopes,
+        expires_at: artifact.expires_at.to_rfc3339(),
+        token: artifact.token,
+    })
+    .into_response();
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("no-store, max-age=0"),
+    );
+    response
+        .headers_mut()
+        .insert(header::PRAGMA, HeaderValue::from_static("no-cache"));
+    Ok(response)
 }
 
 /// Discover API compatibility before enrollment.
