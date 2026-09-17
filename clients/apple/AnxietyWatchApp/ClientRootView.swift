@@ -247,6 +247,7 @@ private struct JournalSurface: View {
 
 private struct JournalCaptureSurface: View {
   @Environment(\.dismiss) private var dismiss
+  @EnvironmentObject private var runtime: AppClientRuntime
   let coordinator: JournalCaptureCoordinator?
   let onSaved: (JournalCommand, SongSearchResult?) -> Void
   @State private var selectedRating: UInt8?
@@ -291,7 +292,9 @@ private struct JournalCaptureSurface: View {
         }
       }
       .navigationTitle("New Journal Entry")
+#if os(iOS)
       .navigationBarTitleDisplayMode(.inline)
+#endif
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {
           Button("Cancel") { dismiss() }
@@ -452,7 +455,6 @@ private struct SongPickerSurface: View {
       Form {
         Section("Search the catalog") {
           TextField("Title or artist", text: $title)
-            .textInputAutocapitalization(.words)
             .onSubmit { Task { await search() } }
           Button {
             Task { await search() }
@@ -512,7 +514,9 @@ private struct SongPickerSurface: View {
         }
       }
       .navigationTitle("Song")
+#if os(iOS)
       .navigationBarTitleDisplayMode(.inline)
+#endif
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {
           Button("Cancel") { dismiss() }
@@ -702,7 +706,7 @@ private struct EnrollmentSurface: View {
             TextField("Device label", text: $deviceLabel)
               .textContentType(.name)
           }
-          Section("Confirmation") {
+          Section {
             Toggle("I confirm this server identity and origin", isOn: $accepted)
             Button {
               Task { await enroll() }
@@ -714,6 +718,8 @@ private struct EnrollmentSurface: View {
               }
             }
             .disabled(!accepted || artifactPreview == nil || isEnrolling)
+          } header: {
+            Text("Confirmation")
           } footer: {
             Text("The artifact is single-use. The private signing key remains in this device's Secure Enclave.")
           }
