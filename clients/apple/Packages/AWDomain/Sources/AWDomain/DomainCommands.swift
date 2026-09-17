@@ -7,6 +7,7 @@ public enum DomainCommandError: Error, Equatable, Sendable {
   case invalidSchemaVersion(UInt)
   case invalidRecordedAt(String)
   case invalidRating(UInt8)
+  case invalidSongReference
   case mixedVersionAndTombstone
   case selfReference
 }

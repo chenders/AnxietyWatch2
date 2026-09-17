@@ -108,6 +108,34 @@ func geniusFailureFallsBackToITunes() async throws {
   #expect(results.first?.provider == .itunes)
 }
 
+@Test("journal capture queues a referenced song before its journal entry")
+func captureQueuesSongReferenceBeforeJournal() async throws {
+  let sink = RecordingSink()
+  let coordinator = JournalCaptureCoordinator(sink: sink)
+  let songID = UUID(uuidString: "00000000-0000-7000-8000-000000000206")!
+  let journalID = UUID(uuidString: "00000000-0000-7000-8000-000000000207")!
+  let song = try SongCommand(
+    id: songID,
+    recordedAt: "2025-01-15T12:00:00Z",
+    title: "Track",
+    artist: "Artist",
+    provider: "itunes",
+    providerID: "itunes-1"
+  )
+  _ = try await coordinator.capture(
+    id: journalID,
+    capturedAt: Date(timeIntervalSince1970: 1_736_942_400),
+    anxietyRawValue: 5,
+    songID: songID,
+    song: song
+  )
+
+  let records = await sink.allRecords()
+  #expect(records.map(\.kind) == ["song", "journal_entry"])
+  #expect(records.first?.id == songID)
+  #expect(records.last?.id == journalID)
+}
+
 @Test("lyrics preserve pending, unavailable, unknown, and available states")
 func lyricsStatesRemainExplicit() {
   let states: [LyricsState] = [
@@ -139,6 +167,31 @@ private actor RecordingDrainTrigger: DomainDrainTrigger {
   }
 
   func count() -> Int { requestCount }
+}
+
+@Test("capture rejects a mismatched song reference")
+func captureRejectsMismatchedSongReference() async throws {
+  let sink = RecordingSink()
+  let coordinator = JournalCaptureCoordinator(sink: sink)
+  let song = try SongCommand(
+    id: UUID(uuidString: "00000000-0000-7000-8000-000000000208")!,
+    recordedAt: "2025-01-15T12:00:00Z",
+    title: "Track",
+    artist: "Artist"
+  )
+
+  do {
+    _ = try await coordinator.capture(
+      capturedAt: Date(timeIntervalSince1970: 1_736_942_400),
+      anxietyRawValue: 5,
+      songID: UUID(uuidString: "00000000-0000-7000-8000-000000000209")!,
+      song: song
+    )
+    Issue.record("mismatched song reference unexpectedly enqueued")
+  } catch let error as DomainCommandError {
+    #expect(error == .invalidSongReference)
+  }
+  #expect(await sink.allRecords().isEmpty)
 }
 
 @Test("capture reports queued only after enqueue and requests one immediate drain")

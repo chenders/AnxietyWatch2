@@ -365,8 +365,12 @@ public actor JournalCaptureCoordinator {
     note: String? = nil,
     tags: [String] = [],
     songID: UUID? = nil,
+    song: SongCommand? = nil,
     expressMode: Bool = false
   ) async throws -> JournalCaptureReceipt {
+    if let song, songID != song.id {
+      throw DomainCommandError.invalidSongReference
+    }
     let command = try JournalCommand.capture(
       id: id,
       capturedAt: capturedAt,
@@ -376,6 +380,9 @@ public actor JournalCaptureCoordinator {
       songID: songID,
       expressMode: expressMode
     )
+    if let song {
+      try await sink.enqueue(record: try song.record(), capturedAt: capturedAt)
+    }
     let record = try command.record()
     try await sink.enqueue(record: record, capturedAt: capturedAt)
     await drainTrigger?.requestImmediateDrain()

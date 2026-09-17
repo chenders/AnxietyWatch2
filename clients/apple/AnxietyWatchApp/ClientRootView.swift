@@ -76,7 +76,9 @@ actor AppDomainCommandSink: DomainCommandSink {
       capturedAt: capturedAt
     )
     try await outbox.enqueue(item)
-    try await journalMirror.put(record: record, syncState: .queued)
+    if record.kind == "journal_entry" || record.kind == "tombstone" {
+      try await journalMirror.put(record: record, syncState: .queued)
+    }
   }
 }
 
@@ -517,6 +519,21 @@ private struct JournalCaptureSurface: View {
         songID: expressMode ? nil : selectedSong?.id,
         expressMode: expressMode
       )
+      let songCommand: SongCommand?
+      if let selectedSong, !expressMode {
+        songCommand = try SongCommand(
+          id: selectedSong.id,
+          subjectAt: command.subjectAt,
+          recordedAt: command.recordedAt,
+          title: selectedSong.title,
+          artist: selectedSong.artist,
+          album: selectedSong.album,
+          provider: selectedSong.provider.rawValue,
+          providerID: selectedSong.providerID
+        )
+      } else {
+        songCommand = nil
+      }
       _ = try await coordinator.capture(
         id: command.id,
         capturedAt: capturedAt,
@@ -524,6 +541,7 @@ private struct JournalCaptureSurface: View {
         note: command.note,
         tags: command.tags,
         songID: command.songID,
+        song: songCommand,
         expressMode: command.expressMode
       )
       onSaved(command, expressMode ? nil : selectedSong)
