@@ -18,4 +18,17 @@ CREATE TABLE healthkit_sample_tombstones (
 CREATE INDEX healthkit_tombstones_time_idx
     ON healthkit_sample_tombstones (registry_type, deleted_at DESC);
 
+CREATE FUNCTION reject_healthkit_tombstone_mutation()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RAISE EXCEPTION 'healthkit_sample_tombstones is append-only; operation=% is forbidden', TG_OP;
+END;
+$$;
+
+CREATE TRIGGER healthkit_sample_tombstones_immutable
+    BEFORE UPDATE OR DELETE ON healthkit_sample_tombstones
+    FOR EACH ROW EXECUTE FUNCTION reject_healthkit_tombstone_mutation();
+
 COMMIT;
