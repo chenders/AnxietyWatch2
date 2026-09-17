@@ -6,10 +6,12 @@
 use axum::Json;
 use axum::http::StatusCode;
 use base64::Engine;
+use sha2::Digest;
 use sqlx::PgPool;
 use subtle::ConstantTimeEq;
 use uuid::Uuid;
 
+use crate::client_api::HealthBeaconRequest;
 use crate::credentials::{
     CREDENTIAL_LIFETIME_S, DeviceCredential, fingerprint_public_key, hash_enrollment_token,
     validate_mobile_label, validate_mobile_public_key, validate_mobile_scopes,
@@ -18,6 +20,118 @@ use crate::domain;
 use crate::models::{
     AttemptView, DomainRecordPayload, DomainRecordResponse, Effect, ErrorResponse, error_reply,
 };
+
+/// Return the most recent received status beacon for the Ingest health projection.
+///
+/// The receive time, rather than the client clock, is the freshness evidence used by the core
+/// liveness policy.
+///
+/// # Errors
+///
+/// Returns the database or stored type-facts decoding error.
+pub async fn latest_health_beacon(
+    pool: &PgPool,
+) -> Result<
+    Option<(
+        chrono::DateTime<chrono::Utc>,
+        Vec<crate::client_api::HealthTypeFact>,
+    )>,
+    sqlx::Error,
+> {
+    let row: Option<(chrono::DateTime<chrono::Utc>, serde_json::Value)> = sqlx::query_as(
+        "SELECT received_at, type_facts FROM mobile_status_beacons ORDER BY received_at DESC LIMIT 1",
+    )
+    .fetch_optional(pool)
+    .await?;
+    row.map(|(received_at, type_facts)| {
+        serde_json::from_value(type_facts)
+            .map(|facts| (received_at, facts))
+            .map_err(|error| sqlx::Error::Decode(Box::new(error)))
+    })
+    .transpose()
+}
+
+/// Store a status beacon without mixing operational facts into physiological samples.
+///
+/// The beacon id is client-scoped and content-addressed. Repeating the same beacon is a no-op;
+/// reusing its id for different content is a named conflict.
+///
+/// # Errors
+///
+/// Returns a persistence or timestamp conversion error.
+pub async fn store_health_beacon(
+    pool: &PgPool,
+    client_id: Uuid,
+    request: &HealthBeaconRequest,
+    body: &[u8],
+) -> Result<String, String> {
+    let digest = sha2::Sha256::digest(body);
+    let existing: Option<Vec<u8>> = sqlx::query_scalar(
+        "SELECT body_sha256 FROM mobile_status_beacons WHERE client_id = $1 AND beacon_id = $2",
+    )
+    .bind(client_id)
+    .bind(request.beacon_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|error| format!("status beacon lookup failed: {error}"))?;
+    if let Some(existing) = existing {
+        if existing.as_slice() == digest.as_slice() {
+            return Ok("replayed".to_string());
+        }
+        return Err(format!(
+            "status beacon {} conflicts with previously stored content",
+            request.beacon_id
+        ));
+    }
+
+    let asserted_at = chrono::DateTime::parse_from_rfc3339(&request.asserted_at)
+        .map_err(|error| format!("status asserted_at conversion failed: {error}"))?
+        .with_timezone(&chrono::Utc);
+    let changed_at = chrono::DateTime::parse_from_rfc3339(&request.changed_at)
+        .map_err(|error| format!("status changed_at conversion failed: {error}"))?
+        .with_timezone(&chrono::Utc);
+    let last_server_ack_at = request
+        .last_server_ack_at
+        .as_deref()
+        .map(chrono::DateTime::parse_from_rfc3339)
+        .transpose()
+        .map_err(|error| format!("status last_server_ack_at conversion failed: {error}"))?
+        .map(|instant| instant.with_timezone(&chrono::Utc));
+    let outbox_count = i64::try_from(request.outbox_count).map_err(|_| {
+        format!(
+            "status outbox_count={} exceeds BIGINT",
+            request.outbox_count
+        )
+    })?;
+    let oldest_outbox_age_s = request
+        .oldest_outbox_age_s
+        .map(i64::try_from)
+        .transpose()
+        .map_err(|_| "status oldest_outbox_age_s exceeds BIGINT".to_string())?;
+    let types = serde_json::to_value(&request.types)
+        .map_err(|error| format!("status type facts serialization failed: {error}"))?;
+    sqlx::query(
+        "INSERT INTO mobile_status_beacons \
+         (client_id, beacon_id, body_sha256, asserted_at, changed_at, app_version, registry_sha256,\
+          outbox_count, oldest_outbox_age_s, last_server_ack_at, type_facts)\
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
+    )
+    .bind(client_id)
+    .bind(request.beacon_id)
+    .bind(digest.as_slice())
+    .bind(asserted_at)
+    .bind(changed_at)
+    .bind(&request.app_version)
+    .bind(&request.registry_sha256)
+    .bind(outbox_count)
+    .bind(oldest_outbox_age_s)
+    .bind(last_server_ack_at)
+    .bind(types)
+    .execute(pool)
+    .await
+    .map_err(|error| format!("status beacon insert failed: {error}"))?;
+    Ok("accepted".to_string())
+}
 
 /// Register a client (upsert on `client_id`).
 ///

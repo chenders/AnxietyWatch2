@@ -491,8 +491,8 @@
         "tags": [
           "apple-client"
         ],
-        "summary": "Status-beacon placeholder. A valid request still returns a named gate.",
-        "description": "# Errors\n\nReturns a version error or the named T-X2 capability gate.",
+        "summary": "Accept an authenticated, idempotent operational phone status beacon.",
+        "description": "# Errors\n\nReturns a named version, authentication, validation, conflict, or persistence error.",
         "operationId": "client_beacon_handler",
         "parameters": [
           {
@@ -570,8 +570,18 @@
           "required": true
         },
         "responses": {
+          "200": {
+            "description": "Status beacon accepted or replayed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthBeaconResponse"
+                }
+              }
+            }
+          },
           "400": {
-            "description": "Missing or malformed API version",
+            "description": "Missing or malformed status beacon",
             "content": {
               "application/json": {
                 "schema": {
@@ -601,7 +611,7 @@
             }
           },
           "409": {
-            "description": "Durable request id was already admitted",
+            "description": "Durable request or beacon id was already admitted",
             "content": {
               "application/json": {
                 "schema": {
@@ -621,7 +631,7 @@
             }
           },
           "503": {
-            "description": "Status beacon is gated on T-X2",
+            "description": "Status beacon database unavailable",
             "content": {
               "application/json": {
                 "schema": {
@@ -1002,6 +1012,7 @@
           "app_version",
           "registry_sha256",
           "outbox_count",
+          "changed_at",
           "types"
         ],
         "properties": {
@@ -1017,6 +1028,10 @@
             "type": "string",
             "format": "uuid",
             "description": "Client-minted idempotency identifier for this assertion."
+          },
+          "changed_at": {
+            "type": "string",
+            "description": "Last time the phone changed any reported status fact."
           },
           "last_server_ack_at": {
             "type": [
@@ -1050,6 +1065,35 @@
               "$ref": "#/components/schemas/HealthTypeFact"
             },
             "description": "Per-HealthKit-type operational facts without measurements."
+          }
+        }
+      },
+      "HealthBeaconResponse": {
+        "type": "object",
+        "description": "Successful status-beacon admission response.",
+        "required": [
+          "api_version",
+          "beacon_id",
+          "status",
+          "server_time"
+        ],
+        "properties": {
+          "api_version": {
+            "type": "string",
+            "description": "API contract version that processed the beacon."
+          },
+          "beacon_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Client idempotency identifier copied from the request."
+          },
+          "server_time": {
+            "type": "string",
+            "description": "Server response instant in UTC."
+          },
+          "status": {
+            "type": "string",
+            "description": "`accepted` for a new assertion or `replayed` for identical content."
           }
         }
       },

@@ -23,10 +23,10 @@ doc = json.loads(openapi_path.read_text(encoding="utf-8"))
 expected_paths = {
     "/api/v1/client/enroll",
     "/api/v1/client/items",
+    "/api/v1/client/status",
     "/api/v1/client/openapi.json",
     "/api/v1/client/projections",
     "/api/v1/client/registry",
-    "/api/v1/client/status",
     "/api/v1/client/version",
 }
 if set(doc.get("paths", {})) != expected_paths:
@@ -40,6 +40,7 @@ implemented = {
     "/api/v1/client/openapi.json",
     "/api/v1/client/enroll",
     "/api/v1/client/items",
+    "/api/v1/client/status",
 }
 gated = expected_paths - implemented
 for path in implemented:

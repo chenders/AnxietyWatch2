@@ -1,6 +1,7 @@
 {
   "beacon_id": "00000000-0000-7000-8000-000000000320",
   "asserted_at": "2025-01-15T08:10:00.000Z",
+  "changed_at": "2025-01-15T08:09:30.000Z",
   "app_version": "0.1.0-fixture",
   "registry_sha256": "fixture-registry-digest",
   "outbox_count": 1,

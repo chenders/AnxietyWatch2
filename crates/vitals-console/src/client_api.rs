@@ -1,7 +1,7 @@
 //! Versioned Stage 7 Apple-client HTTP contract.
 //!
-//! Version and registry discovery plus database-backed enrollment are implemented. Writes, status
-//! beacons, and projections return stable unavailable errors until their owning tasks land.
+//! Version and registry discovery, enrollment, and authenticated status-beacon admission are
+//! implemented. Domain writes and projections remain gated until their owning tasks land.
 
 use axum::Json;
 use axum::Router;
@@ -56,6 +56,7 @@ const REGISTRY_JSON: &str = include_str!(concat!(
         ClientWriteResponse,
         ItemAcknowledgement,
         HealthBeaconRequest,
+        HealthBeaconResponse,
         HealthTypeFact,
         ProjectionQuery,
         ProjectionPage,
@@ -268,6 +269,8 @@ pub struct HealthBeaconRequest {
     pub oldest_outbox_age_s: Option<u64>,
     /// Most recent item-level server acknowledgement instant.
     pub last_server_ack_at: Option<String>,
+    /// Last time the phone changed any reported status fact.
+    pub changed_at: String,
     /// Per-HealthKit-type operational facts without measurements.
     pub types: Vec<HealthTypeFact>,
 }
@@ -293,6 +296,19 @@ pub struct HealthTypeFact {
     pub last_matching_sample_at: Option<String>,
     /// Last Pi item acknowledgement for this type.
     pub last_pi_ack_at: Option<String>,
+}
+
+/// Successful status-beacon admission response.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct HealthBeaconResponse {
+    /// API contract version that processed the beacon.
+    pub api_version: String,
+    /// Client idempotency identifier copied from the request.
+    pub beacon_id: Uuid,
+    /// `accepted` for a new assertion or `replayed` for identical content.
+    pub status: String,
+    /// Server response instant in UTC.
+    pub server_time: String,
 }
 
 /// Projection query uses UTC windows and an opaque server cursor.
@@ -1390,11 +1406,74 @@ pub async fn client_write_handler(
     }))
 }
 
-/// Status-beacon placeholder. A valid request still returns a named gate.
+/// Validate status facts without pretending that `HealthKit` exposes read authorization.
+fn validate_health_beacon(request: &HealthBeaconRequest) -> Result<(), String> {
+    if request.app_version.trim().is_empty() {
+        return Err("app_version is empty".to_string());
+    }
+    if request.registry_sha256.trim().is_empty() {
+        return Err("registry_sha256 is empty".to_string());
+    }
+    if request.types.len() > 256 {
+        return Err(format!("type_count={}; maximum=256", request.types.len()));
+    }
+    let asserted_at = chrono::DateTime::parse_from_rfc3339(&request.asserted_at)
+        .map_err(|error| format!("asserted_at is invalid: {error}"))?;
+    let changed_at = chrono::DateTime::parse_from_rfc3339(&request.changed_at)
+        .map_err(|error| format!("changed_at is invalid: {error}"))?;
+    if changed_at > asserted_at {
+        return Err(format!(
+            "changed_at={}; asserted_at={}; changed_at is later than asserted_at",
+            request.changed_at, request.asserted_at
+        ));
+    }
+    for instant in [request.last_server_ack_at.as_deref()]
+        .into_iter()
+        .flatten()
+    {
+        chrono::DateTime::parse_from_rfc3339(instant)
+            .map_err(|error| format!("status timestamp is invalid: {error}"))?;
+    }
+    for fact in &request.types {
+        if fact.healthkit_type.trim().is_empty() {
+            return Err("healthkit_type is empty".to_string());
+        }
+        let outcomes = [
+            fact.authorization_request_outcome.as_deref(),
+            fact.observer_registration_outcome.as_deref(),
+            fact.background_delivery_outcome.as_deref(),
+            fact.last_query_outcome.as_deref(),
+        ];
+        if outcomes
+            .iter()
+            .flatten()
+            .any(|outcome| outcome.to_ascii_lowercase().contains("granted"))
+        {
+            return Err(format!(
+                "healthkit_type={}; authorization outcome must not claim granted",
+                fact.healthkit_type
+            ));
+        }
+        for instant in [
+            fact.last_query_at.as_deref(),
+            fact.last_matching_sample_at.as_deref(),
+            fact.last_pi_ack_at.as_deref(),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            chrono::DateTime::parse_from_rfc3339(instant)
+                .map_err(|error| format!("status timestamp is invalid: {error}"))?;
+        }
+    }
+    Ok(())
+}
+
+/// Accept an authenticated, idempotent operational phone status beacon.
 ///
 /// # Errors
 ///
-/// Returns a version error or the named T-X2 capability gate.
+/// Returns a named version, authentication, validation, conflict, or persistence error.
 #[utoipa::path(
     post,
     path = "/api/v1/client/status",
@@ -1410,20 +1489,20 @@ pub async fn client_write_handler(
     ),
     request_body = HealthBeaconRequest,
     responses(
-        (status = 400, description = "Missing or malformed API version", body = ClientErrorResponse),
+        (status = 200, description = "Status beacon accepted or replayed", body = HealthBeaconResponse),
+        (status = 400, description = "Missing or malformed status beacon", body = ClientErrorResponse),
         (status = 401, description = "Missing or invalid request signature", body = ClientErrorResponse),
         (status = 403, description = "Credential scope does not permit this operation", body = ClientErrorResponse),
-        (status = 409, description = "Durable request id was already admitted", body = ClientErrorResponse),
+        (status = 409, description = "Durable request or beacon id was already admitted", body = ClientErrorResponse),
         (status = 426, description = "Incompatible API major", body = ClientErrorResponse),
-        (status = 503, description = "Status beacon is gated on T-X2", body = ClientErrorResponse)
+        (status = 503, description = "Status beacon database unavailable", body = ClientErrorResponse)
     )
 )]
-#[allow(clippy::unused_async, reason = "axum handlers must be async")]
 pub async fn client_beacon_handler(
     Extension(database): Extension<Option<sqlx::PgPool>>,
     headers: HeaderMap,
     body: Bytes,
-) -> Result<StatusCode, ClientApiError> {
+) -> Result<Json<HealthBeaconResponse>, ClientApiError> {
     validate_version(&headers)?;
     let database =
         database.ok_or_else(|| unavailable("status_beacon", "VITALS_CONSOLE_DATABASE_URL"))?;
@@ -1436,7 +1515,7 @@ pub async fn client_beacon_handler(
         "submit_platform_health",
     )
     .await?;
-    let _request: HealthBeaconRequest = serde_json::from_slice(&body).map_err(|decode_error| {
+    let request: HealthBeaconRequest = serde_json::from_slice(&body).map_err(|decode_error| {
         error(
             StatusCode::BAD_REQUEST,
             "status_body_invalid",
@@ -1446,7 +1525,40 @@ pub async fn client_beacon_handler(
             Some(API_MAJOR),
         )
     })?;
-    Err(unavailable("status_beacon", "T-X2"))
+    validate_health_beacon(&request).map_err(|reason| {
+        error(
+            StatusCode::BAD_REQUEST,
+            "status_body_invalid",
+            "status beacon contains invalid operational facts",
+            false,
+            reason,
+            Some(API_MAJOR),
+        )
+    })?;
+    let client_id = parse_uuid_header(&headers, "x-anxietywatch-client-id")?;
+    let outcome = crate::db::store_health_beacon(&database, client_id, &request, &body)
+        .await
+        .map_err(|reason| {
+            let status = if reason.contains("conflicts") {
+                StatusCode::CONFLICT
+            } else {
+                StatusCode::INTERNAL_SERVER_ERROR
+            };
+            error(
+                status,
+                "status_beacon_persistence_failed",
+                "status beacon could not be stored",
+                status == StatusCode::INTERNAL_SERVER_ERROR,
+                reason,
+                Some(API_MAJOR),
+            )
+        })?;
+    Ok(Json(HealthBeaconResponse {
+        api_version: format!("{API_MAJOR}.{API_MINOR}"),
+        beacon_id: request.beacon_id,
+        status: outcome,
+        server_time: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
+    }))
 }
 
 /// Projection placeholder. Its success schema is present but no 2xx response is advertised.
@@ -1537,6 +1649,46 @@ mod tests {
             .to_bytes();
         let value = serde_json::from_slice(&bytes).expect("response is JSON");
         (status, value)
+    }
+
+    #[test]
+    fn phone_status_fixture_accepts_unknown_healthkit_read_authorization() {
+        let request: HealthBeaconRequest = serde_json::from_str(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../api/fixtures/client-v1/health-beacon-request.json"
+        )))
+        .expect("health beacon fixture decodes");
+        assert!(validate_health_beacon(&request).is_ok());
+        assert_eq!(request.types[0].last_matching_sample_at, None);
+    }
+
+    #[test]
+    fn phone_status_rejects_a_granted_authorization_claim() {
+        let mut value: serde_json::Value = serde_json::from_str(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../api/fixtures/client-v1/health-beacon-request.json"
+        )))
+        .expect("health beacon fixture decodes");
+        value["types"][0]["authorization_request_outcome"] =
+            serde_json::Value::String("granted".to_string());
+        let request: HealthBeaconRequest =
+            serde_json::from_value(value).expect("modified beacon decodes");
+        let error = validate_health_beacon(&request).expect_err("granted must be rejected");
+        assert!(error.contains("must not claim granted"));
+    }
+
+    #[test]
+    fn phone_status_rejects_changed_time_after_assertion() {
+        let mut value: serde_json::Value = serde_json::from_str(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../api/fixtures/client-v1/health-beacon-request.json"
+        )))
+        .expect("health beacon fixture decodes");
+        value["changed_at"] = serde_json::Value::String("2025-01-15T08:11:00.000Z".to_string());
+        let request: HealthBeaconRequest =
+            serde_json::from_value(value).expect("modified beacon decodes");
+        let error = validate_health_beacon(&request).expect_err("later changed time must fail");
+        assert!(error.contains("later than asserted_at"));
     }
 
     #[tokio::test]
@@ -1696,17 +1848,18 @@ mod tests {
             .as_object()
             .expect("enrollment responses object");
         assert!(enrollment_responses.contains_key("201"));
-        for path in ["/api/v1/client/status", "/api/v1/client/projections"] {
-            let operations = value["paths"][path]
-                .as_object()
-                .expect("path has operation");
-            for operation in operations.values() {
-                let responses = operation["responses"]
-                    .as_object()
-                    .expect("responses object");
-                assert!(responses.keys().all(|status| !status.starts_with('2')));
-            }
-        }
+        let status_responses = value["paths"]["/api/v1/client/status"]["post"]["responses"]
+            .as_object()
+            .expect("status responses object");
+        assert!(status_responses.contains_key("200"));
+        let projection_responses = value["paths"]["/api/v1/client/projections"]["get"]["responses"]
+            .as_object()
+            .expect("projection responses object");
+        assert!(
+            projection_responses
+                .keys()
+                .all(|status| !status.starts_with('2'))
+        );
         let serialized = serde_json::to_string(&value).expect("OpenAPI JSON serializes");
         assert!(!serialized.contains("VitalsType"));
         assert!(!serialized.contains("VitalsSource"));

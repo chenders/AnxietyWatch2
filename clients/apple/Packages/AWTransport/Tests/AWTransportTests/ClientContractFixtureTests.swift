@@ -22,6 +22,17 @@ func enrollmentFixtureDecodes() throws {
   #expect(request.deviceLabel == "Fixture iPhone")
 }
 
+@Test("health beacon fixture preserves operational unknowns without granting access")
+func healthBeaconFixtureDecodes() throws {
+  let beacon = try JSONDecoder().decode(
+    HealthBeaconRequest.self,
+    from: fixture(named: "health-beacon-request.json")
+  )
+  #expect(beacon.changedAt == "2025-01-15T08:09:30.000Z")
+  #expect(beacon.types.first?.authorizationRequestOutcome == "request_completed_unknown_read_grant")
+  #expect(beacon.types.first?.lastMatchingSampleAt == nil)
+}
+
 @Test("shared item acknowledgement fixture preserves terminal wire status")
 func acknowledgementFixtureDecodes() throws {
   let response = try JSONDecoder().decode(

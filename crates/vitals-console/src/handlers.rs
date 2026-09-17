@@ -7,7 +7,9 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
 use vitals_core::liveness::{Evidence, evaluate};
-use vitals_registry::ALL_SOURCES;
+use vitals_registry::{ALL_SOURCES, VitalsSource};
+
+use crate::client_api::HealthTypeFact;
 
 use crate::client::get_health;
 use crate::crypto;
@@ -65,6 +67,61 @@ fn require_db(state: &AppState) -> Result<&sqlx::PgPool, (StatusCode, Json<Error
     })
 }
 
+#[derive(Debug, PartialEq, Eq)]
+enum PhoneFactState {
+    Live,
+    Unknown(String),
+    Failing(String),
+}
+
+fn phone_fact_state(facts: &[HealthTypeFact]) -> PhoneFactState {
+    if facts.is_empty() {
+        return PhoneFactState::Unknown("no per-type HealthKit status was reported".to_string());
+    }
+    let mut has_unmeasured = false;
+    for fact in facts {
+        let outcomes = [
+            fact.authorization_request_outcome.as_deref(),
+            fact.observer_registration_outcome.as_deref(),
+            fact.background_delivery_outcome.as_deref(),
+        ];
+        if let Some(outcome) = outcomes.iter().flatten().find(|outcome| {
+            let lower = outcome.to_ascii_lowercase();
+            lower.contains("denied") || lower.contains("failed") || lower.contains("failure")
+        }) {
+            return PhoneFactState::Failing(format!(
+                "healthkit_type={}; outcome={outcome}",
+                fact.healthkit_type
+            ));
+        }
+        if fact.last_matching_sample_at.is_none() {
+            has_unmeasured = true;
+        }
+        match fact.last_query_outcome.as_deref() {
+            Some(outcome) if outcome.to_ascii_lowercase().contains("failed") => {
+                return PhoneFactState::Failing(format!(
+                    "healthkit_type={}; query_outcome={outcome}",
+                    fact.healthkit_type
+                ));
+            }
+            Some(outcome) => {
+                let lower = outcome.to_ascii_lowercase();
+                if lower.contains("no_matching") || !lower.contains("success") {
+                    has_unmeasured = true;
+                }
+            }
+            None => has_unmeasured = true,
+        }
+    }
+    if has_unmeasured {
+        PhoneFactState::Unknown(
+            "HealthKit status has no matching sample or completed query".to_string(),
+        )
+    } else {
+        PhoneFactState::Live
+    }
+}
+
 /// GET /api/health
 ///
 /// Fetches the daemon's health over its Unix socket and derives a per-source
@@ -99,6 +156,14 @@ pub async fn health_handler(State(state): State<AppState>) -> Json<HealthView> {
             None,
             None,
         ),
+    };
+
+    let latest_phone_beacon = match state.db.as_ref() {
+        Some(database) => crate::db::latest_health_beacon(database)
+            .await
+            .ok()
+            .flatten(),
+        None => None,
     };
 
     // A pre-epoch clock must not fall back to zero: every age would render
@@ -158,9 +223,38 @@ pub async fn health_handler(State(state): State<AppState>) -> Json<HealthView> {
                     ));
                 }
             }
+        } else if source == VitalsSource::Healthkit {
+            if let Some((received_at, facts)) = latest_phone_beacon.as_ref() {
+                let received_s = received_at.timestamp();
+                evidence.last_attempt_epoch_s = Some(received_s);
+                match phone_fact_state(facts) {
+                    PhoneFactState::Live => evidence.last_success_epoch_s = Some(received_s),
+                    PhoneFactState::Unknown(_) => {}
+                    PhoneFactState::Failing(reason) => {
+                        evidence.last_attempt_failure = Some(reason);
+                    }
+                }
+            }
         }
 
-        let assertion = evaluate(now_s, core_cadence, &evidence);
+        let mut assertion = evaluate(now_s, core_cadence, &evidence);
+        if source == VitalsSource::Healthkit {
+            if let Some((_, facts)) = latest_phone_beacon.as_ref() {
+                match phone_fact_state(facts) {
+                    PhoneFactState::Live => {}
+                    PhoneFactState::Unknown(reason) => {
+                        assertion.state = vitals_core::liveness::HealthState::Unknown;
+                        assertion.reason = reason;
+                        assertion.degrade_deadline_epoch_s = None;
+                    }
+                    PhoneFactState::Failing(reason) => {
+                        assertion.state = vitals_core::liveness::HealthState::Failing;
+                        assertion.reason = reason;
+                        assertion.degrade_deadline_epoch_s = None;
+                    }
+                }
+            }
+        }
 
         let cm = config_and_mutes.get(&source.id());
         let is_configured = cm.is_none_or(|c| c.is_configured);
@@ -658,6 +752,62 @@ mod tests {
     use tower::util::ServiceExt; // for `oneshot`
     use vitals_proto::{Health, Liveness, Response, SourceHealth, check_frame_len, encode_frame};
     use vitals_registry::VitalsSource;
+
+    #[test]
+    fn phone_status_no_matching_sample_is_unknown() {
+        let fact = HealthTypeFact {
+            healthkit_type: "HKQuantityTypeIdentifierHeartRate".to_string(),
+            configured: true,
+            authorization_request_outcome: Some("request_completed_unknown_read_grant".to_string()),
+            observer_registration_outcome: Some("registered".to_string()),
+            background_delivery_outcome: Some("requested".to_string()),
+            last_query_outcome: Some("no_matching_sample".to_string()),
+            last_query_at: None,
+            last_matching_sample_at: None,
+            last_pi_ack_at: None,
+        };
+        assert_eq!(
+            phone_fact_state(&[fact]),
+            PhoneFactState::Unknown(
+                "HealthKit status has no matching sample or completed query".to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn phone_status_denial_is_failing() {
+        let fact = HealthTypeFact {
+            healthkit_type: "HKQuantityTypeIdentifierHeartRate".to_string(),
+            configured: true,
+            authorization_request_outcome: Some("denied".to_string()),
+            observer_registration_outcome: None,
+            background_delivery_outcome: None,
+            last_query_outcome: None,
+            last_query_at: None,
+            last_matching_sample_at: None,
+            last_pi_ack_at: None,
+        };
+        assert!(matches!(
+            phone_fact_state(&[fact]),
+            PhoneFactState::Failing(_)
+        ));
+    }
+
+    #[test]
+    fn phone_status_success_requires_a_successful_query() {
+        let fact = HealthTypeFact {
+            healthkit_type: "HKQuantityTypeIdentifierHeartRate".to_string(),
+            configured: true,
+            authorization_request_outcome: Some("request_completed_unknown_read_grant".to_string()),
+            observer_registration_outcome: Some("registered".to_string()),
+            background_delivery_outcome: Some("requested".to_string()),
+            last_query_outcome: Some("success_with_samples".to_string()),
+            last_query_at: None,
+            last_matching_sample_at: Some("2025-01-15T08:09:00.000Z".to_string()),
+            last_pi_ack_at: None,
+        };
+        assert_eq!(phone_fact_state(&[fact]), PhoneFactState::Live);
+    }
 
     struct DummyDbOps;
     #[async_trait::async_trait]

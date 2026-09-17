@@ -249,7 +249,9 @@ split, and the canonical sleep-stage mapping.
 
 The status beacon is operational evidence, stored separately from physiological samples. It contains
 no measurement values. It reports per-type facts from §3.5, app/build/registry version, outbox count
-and oldest age, last successful server acknowledgement, and timestamp of the current assertion.
+and oldest age, last successful server acknowledgement, and separate `reported_at` and `changed_at`
+timestamps. `changed_at` never follows `reported_at`; it records when the reported operational facts
+last changed.
 
 The beacon cannot claim the app is healthy after it stops running. The Pi owns silence detection and
 degrades the last beacon by cadence.
