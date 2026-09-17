@@ -20,13 +20,16 @@ public enum EnrollmentError: Error, Equatable, Sendable {
   case redirectRejected(String)
 }
 
-/// The only origin accepted by production enrollment: an HTTPS DNS origin on port 443.
+/// An enrollment origin accepted by the current transport profile: a DNS HTTPS origin on port 443
+/// for the eventual public deployment, or a private numeric LAN address over HTTP for the first
+/// draft. The latter is deliberately restricted to RFC 1918/4193 addresses.
 public struct ClientOrigin: Codable, Equatable, Hashable, Sendable {
   public let url: URL
 
   public init(_ url: URL) throws {
-    guard url.scheme?.lowercased() == "https" else {
-      throw EnrollmentError.invalidOrigin("scheme must be https; received \(url.scheme ?? "missing")")
+    let scheme = url.scheme?.lowercased()
+    guard scheme == "https" || scheme == "http" else {
+      throw EnrollmentError.invalidOrigin("scheme must be https or private-LAN http; received \(url.scheme ?? "missing")")
     }
     guard url.user == nil else {
       throw EnrollmentError.invalidOrigin("embedded user information is not allowed")
@@ -34,8 +37,17 @@ public struct ClientOrigin: Codable, Equatable, Hashable, Sendable {
     guard let host = url.host?.lowercased(), !host.isEmpty else {
       throw EnrollmentError.invalidOrigin("DNS hostname is missing")
     }
-    guard url.port == nil || url.port == 443 else {
-      throw EnrollmentError.invalidOrigin("port must be 443; received \(url.port ?? -1)")
+    if scheme == "https" {
+      guard url.port == nil || url.port == 443 else {
+        throw EnrollmentError.invalidOrigin("HTTPS port must be 443; received \(url.port ?? -1)")
+      }
+      guard !isIPv4Literal(host), !isPrivateIPv6(host) else {
+        throw EnrollmentError.invalidOrigin("HTTPS origin must use a DNS hostname; received \(host)")
+      }
+    } else {
+      guard isPrivateIPv4(host) || isPrivateIPv6(host) else {
+        throw EnrollmentError.invalidOrigin("HTTP origin must use a private LAN address; received \(host)")
+      }
     }
     guard url.path.isEmpty || url.path == "/" else {
       throw EnrollmentError.invalidOrigin("origin path must be empty or /; received \(url.path)")
@@ -43,19 +55,24 @@ public struct ClientOrigin: Codable, Equatable, Hashable, Sendable {
     guard url.query == nil, url.fragment == nil else {
       throw EnrollmentError.invalidOrigin("query and fragment are not allowed in an origin")
     }
-    guard !host.contains(":"), !isIPv4Literal(host), host != "localhost" else {
-      throw EnrollmentError.invalidOrigin("host must be a public DNS name; received \(host)")
-    }
-    guard host.unicodeScalars.allSatisfy({ $0.value < 128 }) else {
-      throw EnrollmentError.invalidOrigin("host must use ASCII DNS labels; received \(host)")
-    }
-
-    let labels = host.split(separator: ".", omittingEmptySubsequences: false)
-    guard labels.count >= 2, labels.allSatisfy(isValidDNSLabel) else {
-      throw EnrollmentError.invalidOrigin("host must contain valid DNS labels; received \(host)")
+    if scheme == "https" {
+      guard host != "localhost", host.unicodeScalars.allSatisfy({ $0.value < 128 }) else {
+        throw EnrollmentError.invalidOrigin("HTTPS host must use an ASCII DNS name; received \(host)")
+      }
+      let labels = host.split(separator: ".", omittingEmptySubsequences: false)
+      guard labels.count >= 2, labels.allSatisfy(isValidDNSLabel) else {
+        throw EnrollmentError.invalidOrigin("HTTPS host must contain valid DNS labels; received \(host)")
+      }
     }
 
-    self.url = URL(string: "https://\(host)")!
+    let normalizedHost = host.contains(":") ? "[\(host)]" : host
+    let normalizedPort = scheme == "https" && (url.port == nil || url.port == 443)
+      ? ""
+      : (url.port.map { ":\($0)" } ?? "")
+    guard let normalizedURL = URL(string: "\(scheme ?? "")://\(normalizedHost)\(normalizedPort)") else {
+      throw EnrollmentError.invalidOrigin("origin could not be normalized")
+    }
+    self.url = normalizedURL
   }
 
   public init(string: String) throws {
@@ -78,15 +95,34 @@ public struct ClientOrigin: Codable, Equatable, Hashable, Sendable {
   }
 }
 
-private func isIPv4Literal(_ host: String) -> Bool {
+private func ipv4Octets(_ host: String) -> [Int]? {
   let components = host.split(separator: ".", omittingEmptySubsequences: false)
-  guard components.count == 4 else { return false }
-  return components.allSatisfy { component in
-    guard !component.isEmpty, component.count <= 3, component.allSatisfy(\.isNumber),
-      let value = Int(component)
-    else { return false }
-    return value <= 255
+  guard components.count == 4 else { return nil }
+  let values = components.compactMap { component -> Int? in
+    guard !component.isEmpty, component.count <= 3, component.allSatisfy(\.isNumber) else {
+      return nil
+    }
+    return Int(component)
   }
+  guard values.count == 4, values.allSatisfy({ (0...255).contains($0) }) else { return nil }
+  return values
+}
+
+private func isIPv4Literal(_ host: String) -> Bool {
+  ipv4Octets(host) != nil
+}
+
+private func isPrivateIPv4(_ host: String) -> Bool {
+  guard let octets = ipv4Octets(host), let first = octets.first, let second = octets.dropFirst().first else {
+    return false
+  }
+  return first == 10 || (first == 172 && (16...31).contains(second))
+    || (first == 192 && second == 168)
+}
+
+private func isPrivateIPv6(_ host: String) -> Bool {
+  let normalized = host.lowercased()
+  return normalized.hasPrefix("fc") || normalized.hasPrefix("fd")
 }
 
 private func isValidDNSLabel(_ label: Substring) -> Bool {
@@ -500,8 +536,9 @@ private final class RedirectRejectingDelegate: NSObject, URLSessionTaskDelegate,
   }
 }
 
-/// TLS is delegated to URLSession's system trust and hostname validation. This class deliberately
-/// provides no trust override and rejects enrollment redirects.
+/// HTTPS trust is delegated to URLSession's system trust and hostname validation. The first-draft
+/// private-LAN HTTP profile has no TLS to validate. This class deliberately provides no trust
+/// override and rejects enrollment redirects.
 public final class URLSessionEnrollmentTransport: EnrollmentClaiming, @unchecked Sendable {
   private let origin: ClientOrigin
   private let session: URLSession
@@ -532,7 +569,7 @@ public final class URLSessionEnrollmentTransport: EnrollmentClaiming, @unchecked
     do {
       (data, response) = try await session.data(for: urlRequest)
     } catch {
-      throw EnrollmentError.serverRejected("TLS or network request failed: \(error.localizedDescription)")
+      throw EnrollmentError.serverRejected("enrollment network request failed: \(error.localizedDescription)")
     }
     guard data.count <= 128 * 1024 else {
       throw EnrollmentError.responseTooLarge("enrollment response was \(data.count) bytes")

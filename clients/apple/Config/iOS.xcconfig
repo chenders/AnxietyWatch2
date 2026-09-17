@@ -5,5 +5,6 @@ PRODUCT_BUNDLE_IDENTIFIER = com.groundeffectsoftware.AnxietyWatch
 GENERATE_INFOPLIST_FILE = YES
 INFOPLIST_KEY_CFBundleDisplayName = Anxiety Watch
 INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES
+INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsLocalNetworking = YES
 INFOPLIST_KEY_UILaunchScreen_Generation = YES
 CODE_SIGN_ENTITLEMENTS = AnxietyWatchApp/AnxietyWatchApp.entitlements

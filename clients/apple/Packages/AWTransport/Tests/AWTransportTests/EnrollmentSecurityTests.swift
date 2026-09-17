@@ -5,15 +5,22 @@ import Testing
 
 private let fixedNow = Date(timeIntervalSince1970: 1_735_689_600)
 
-@Test("production origin accepts HTTPS DNS port 443 only")
-func productionOriginValidation() throws {
-  let origin = try ClientOrigin(string: "https://CLIENT.example.com:443/")
-  #expect(origin.normalizedString == "https://client.example.com")
+@Test("origin validation accepts production HTTPS and private-LAN HTTP only")
+func originValidation() throws {
+  let production = try ClientOrigin(string: "https://CLIENT.example.com:443/")
+  #expect(production.normalizedString == "https://client.example.com")
+  let lan = try ClientOrigin(string: "http://192.168.1.42:8480/")
+  #expect(lan.normalizedString == "http://192.168.1.42:8480")
+  let lanIPv6 = try ClientOrigin(string: "http://[fd00::42]:8480")
+  #expect(lanIPv6.normalizedString == "http://[fd00::42]:8480")
 
   for value in [
     "http://client.example.com",
+    "http://8.8.8.8:8480",
+    "http://172.15.0.1:8480",
+    "http://[2001:db8::1]:8480",
     "https://192.0.2.10",
-    "https://[2001:db8::1]",
+    "https://[fd00::42]",
     "https://client.example.com:8443",
     "https://user:password@client.example.com",
     "https://client.example.com/path",
@@ -21,7 +28,7 @@ func productionOriginValidation() throws {
   ] {
     do {
       _ = try ClientOrigin(string: value)
-      Issue.record("accepted invalid production origin \(value)")
+      Issue.record("accepted invalid origin \(value)")
     } catch is EnrollmentError {
       // Expected: each invalid origin is rejected before any request can be made.
     }

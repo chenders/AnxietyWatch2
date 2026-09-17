@@ -11,7 +11,9 @@ final class SkeletonTests: XCTestCase {
 }
 
 final class EnrollmentUITests: XCTestCase {
-  func testProductionEnrollmentRejectsCleartextOrigin() {
+  func testFirstDraftEnrollmentAcceptsPrivateLanHttpOnly() throws {
+    XCTAssertNoThrow(try ClientOrigin(string: "http://192.168.1.42:8480"))
     XCTAssertThrowsError(try ClientOrigin(string: "http://client.example.com"))
+    XCTAssertThrowsError(try ClientOrigin(string: "http://8.8.8.8:8480"))
   }
 }
