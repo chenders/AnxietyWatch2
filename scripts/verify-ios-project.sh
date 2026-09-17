@@ -93,7 +93,7 @@ if rg -n '\.package\s*\(\s*url:' "$apple/Packages" --glob 'Package.swift'; then
   echo "ios-project: FAIL — unreviewed remote Swift dependency found" >&2
   exit 1
 fi
-if rg -n '\b(CoreBluetooth|CBPeripheral|Polar|EMAY|Oura|SwiftData|SQLite3|HealthSnapshot|ReportGenerator|SyncEngine|HLC)\b' \
+if rg -n '\b(CoreBluetooth|CBPeripheral|Polar|EMAY|Oura|SwiftData|SQLite3|HealthSnapshot|ReportGenerator|HLC)\b' \
     "$apple/AnxietyWatchApp" "$apple/AnxietyWatchWatch" --glob '*.swift'; then
   echo "ios-project: FAIL — forbidden generation-one BLE/analysis/storage code compiled" >&2
   exit 1

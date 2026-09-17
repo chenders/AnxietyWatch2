@@ -573,12 +573,12 @@ mod tests {
     #[test]
     fn sanitize_token_password_url_and_user_path() {
         let detail = sanitize_detail(
-            "token=\"abc def\" password: \"abc def\" --url=https://example.test/path path=/home/chris/private Authorization: Bearer secret api_key=key",
+            "token=\"abc def\" password: \"abc def\" --url=https://example.test/path path=/home/user/private Authorization: Bearer secret api_key=key",
             None,
         );
         assert!(!detail.contains("abc"));
         assert!(!detail.contains("https://"));
-        assert!(!detail.contains("/home/chris"));
+        assert!(!detail.contains("/home/user"));
         assert!(!detail.contains("secret"));
         assert!(!detail.contains("=key"));
         assert!(detail.contains("api_key=[redacted]"));

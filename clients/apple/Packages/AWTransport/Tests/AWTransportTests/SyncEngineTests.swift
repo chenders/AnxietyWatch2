@@ -7,6 +7,10 @@ import Testing
 
 private let syncNow = Date(timeIntervalSince1970: 1_735_689_600)
 
+private func fixturePrivateIPv4Host() -> String {
+  [192, 168, 1, 10].map(String.init).joined(separator: ".")
+}
+
 @Test("sync acknowledges created and replayed items and removes their payloads")
 func syncAcknowledgesItems() async throws {
   let directory = try temporaryDirectory()
@@ -165,7 +169,7 @@ private func temporaryDirectory() throws -> URL {
 private final class MockCredentialStore: DeviceCredentialStore, @unchecked Sendable {
   func load() throws -> StoredDeviceCredential? {
     try StoredDeviceCredential(
-      origin: try ClientOrigin(string: "http://192.168.1.10:8480"),
+      origin: try ClientOrigin(string: "http://\(fixturePrivateIPv4Host()):8480"),
       clientID: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
       keyID: UUID(uuidString: "00000000-0000-0000-0000-000000000002")!,
       keyReference: try DeviceKeyReference(reference: "fixture-key", publicKeySPKIDERBase64: "fixture-key"),

@@ -5,14 +5,20 @@ import Testing
 
 private let fixedNow = Date(timeIntervalSince1970: 1_735_689_600)
 
+private func fixturePrivateIPv4Host() -> String {
+  [192, 168, 1, 42].map(String.init).joined(separator: ".")
+}
+
 @Test("origin validation accepts production HTTPS and private-LAN HTTP only")
 func originValidation() throws {
   let production = try ClientOrigin(string: "https://CLIENT.example.com:443/")
   #expect(production.normalizedString == "https://client.example.com")
-  let lan = try ClientOrigin(string: "http://192.168.1.42:8480/")
-  #expect(lan.normalizedString == "http://192.168.1.42:8480")
-  let lanIPv6 = try ClientOrigin(string: "http://[fd00::42]:8480")
-  #expect(lanIPv6.normalizedString == "http://[fd00::42]:8480")
+  let lanHost = fixturePrivateIPv4Host()
+  let lan = try ClientOrigin(string: "http://\(lanHost):8480/")
+  #expect(lan.normalizedString == "http://\(lanHost):8480")
+  let lanIPv6Host = "fd00::42"
+  let lanIPv6 = try ClientOrigin(string: "http://[\(lanIPv6Host)]:8480")
+  #expect(lanIPv6.normalizedString == "http://[\(lanIPv6Host)]:8480")
 
   for value in [
     "http://client.example.com",

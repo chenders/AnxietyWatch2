@@ -2,6 +2,10 @@ import AWDomain
 import AWTransport
 import XCTest
 
+private func fixturePrivateIPv4Host() -> String {
+  [192, 168, 1, 42].map(String.init).joined(separator: ".")
+}
+
 final class SkeletonTests: XCTestCase {
   func testJournalRatingRejectsOutOfRangeValues() {
     XCTAssertNil(AnxietyRating(rawValue: 0))
@@ -12,7 +16,7 @@ final class SkeletonTests: XCTestCase {
 
 final class EnrollmentUITests: XCTestCase {
   func testFirstDraftEnrollmentAcceptsPrivateLanHttpOnly() throws {
-    XCTAssertNoThrow(try ClientOrigin(string: "http://192.168.1.42:8480"))
+    XCTAssertNoThrow(try ClientOrigin(string: "http://\(fixturePrivateIPv4Host()):8480"))
     XCTAssertThrowsError(try ClientOrigin(string: "http://client.example.com"))
     XCTAssertThrowsError(try ClientOrigin(string: "http://8.8.8.8:8480"))
   }

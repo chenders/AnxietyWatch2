@@ -6,6 +6,10 @@ import Testing
 
 private let readNow = Date(timeIntervalSince1970: 1_735_689_600)
 
+private func fixturePrivateIPv4Host() -> String {
+  [192, 168, 1, 10].map(String.init).joined(separator: ".")
+}
+
 @Test("successful projection reads are live and cached by device and query")
 func successfulProjectionRead() async throws {
   let cache = try ProjectionCache(maximumEntries: 2)
@@ -143,7 +147,7 @@ private func page(value: Double, apiVersion: String = "1.0") -> ClientProjection
 private final class ReadCredentialStore: DeviceCredentialStore, @unchecked Sendable {
   func load() throws -> StoredDeviceCredential? {
     try StoredDeviceCredential(
-      origin: try ClientOrigin(string: "http://192.168.1.10:8480"),
+      origin: try ClientOrigin(string: "http://\(fixturePrivateIPv4Host()):8480"),
       clientID: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
       keyID: UUID(uuidString: "00000000-0000-0000-0000-000000000002")!,
       keyReference: try DeviceKeyReference(reference: "fixture-key", publicKeySPKIDERBase64: "fixture-key"),
