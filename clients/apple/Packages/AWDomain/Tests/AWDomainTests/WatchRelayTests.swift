@@ -80,4 +80,9 @@ func watchQuickLogProducesJournalRecord() throws {
   #expect(record.kind == "journal_entry")
   #expect(record.recordedAt == item.capturedAt)
   #expect(record.content != .null)
+  if case .object(let content) = record.content {
+    #expect(content["watch_relay"] == .bool(true))
+  } else {
+    Issue.record("watch Quick Log record content was not an object")
+  }
 }

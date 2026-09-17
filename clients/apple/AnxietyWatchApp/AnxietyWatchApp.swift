@@ -342,6 +342,30 @@ final class AppClientRuntime: ObservableObject {
     syncStatus = status
   }
 
+  private func watchRelayIDs(in items: [OutboxItem]) -> Set<UUID> {
+    Set(items.compactMap { item in
+      guard item.recordClass == "journal_entry",
+        let envelope = try? JSONDecoder().decode(DomainEnvelope.self, from: item.payload),
+        case .object(let content) = envelope.record.content,
+        case .bool(true) = content["watch_relay"]
+      else { return nil }
+      return envelope.record.id
+    })
+  }
+
+#if canImport(WatchConnectivity)
+  private func notifyWatchRelayServerAcknowledgements(
+    for ids: Set<UUID>,
+    outbox: FileOutboxStore
+  ) async {
+    guard let remaining = try? await outbox.allItems() else { return }
+    let remainingIDs = watchRelayIDs(in: remaining)
+    for id in ids where !remainingIDs.contains(id) {
+      watchRelayReceiver.notifyServerAcknowledged(id: id)
+    }
+  }
+#endif
+
   func acceptWatchQuickLog(_ item: WatchQuickLog) async throws {
     guard let outbox, let journalMirror else {
       throw OutboxError.persistenceFailure("watch relay blocked: journal storage is unavailable")
@@ -409,14 +433,18 @@ final class AppClientRuntime: ObservableObject {
   }
 
   func drain() async {
-    guard let syncEngine else {
+    guard let syncEngine, let outbox else {
       syncStatus = isEnrolled
         ? "Sync blocked: the enrolled transport is not initialized."
         : "Sync unavailable: this iPhone is not enrolled."
       return
     }
+    let watchRelayIDsBeforeDrain = watchRelayIDs(in: (try? await outbox.allItems()) ?? [])
     do {
       let report = try await syncEngine.drain()
+#if canImport(WatchConnectivity)
+      await notifyWatchRelayServerAcknowledgements(for: watchRelayIDsBeforeDrain, outbox: outbox)
+#endif
       outboxItemCount = report.pendingAfter
       syncStatus = "Sync complete: \(report.acknowledged) acknowledged; \(report.pendingAfter) pending."
     } catch {
@@ -452,6 +480,16 @@ private final class AppWatchRelayReceiver: NSObject, WCSessionDelegate {
     guard WCSession.isSupported() else { return }
     WCSession.default.delegate = self
     WCSession.default.activate()
+  }
+
+  func notifyServerAcknowledged(id: UUID) {
+    guard WCSession.isSupported() else { return }
+    WCSession.default.transferUserInfo([
+      "type": "watch_quick_log_ack",
+      "id": id.uuidString.lowercased(),
+      "status": "server_acknowledged",
+      "accepted": true
+    ])
   }
 
   nonisolated func session(

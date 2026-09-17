@@ -43,7 +43,8 @@ public struct WatchQuickLog: Codable, Equatable, Identifiable, Sendable {
         "note": .null,
         "song_id": .null,
         "subject_at": .string(capturedAt),
-        "tags": .array([])
+        "tags": .array([]),
+        "watch_relay": .bool(true)
       ])
     )
   }

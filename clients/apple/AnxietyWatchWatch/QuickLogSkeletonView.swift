@@ -184,6 +184,23 @@ final class WatchRelayModel: NSObject, ObservableObject, WCSessionDelegate {
     }
   }
 
+  private func serverAcknowledged(_ rawID: String) {
+    guard let id = UUID(uuidString: rawID) else { return }
+    Task { @MainActor in
+      guard let store else {
+        status = "Server acknowledged, but Watch queue cleanup is unavailable."
+        return
+      }
+      do {
+        try await store.acknowledge(id: id)
+        await refresh()
+        status = "Server acknowledged Watch Quick Log."
+      } catch {
+        status = "Server acknowledged, but Watch queue cleanup was blocked."
+      }
+    }
+  }
+
   nonisolated func session(
     _ session: WCSession,
     activationDidCompleteWith activationState: WCSessionActivationState,
@@ -200,8 +217,13 @@ final class WatchRelayModel: NSObject, ObservableObject, WCSessionDelegate {
 
   nonisolated func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
     guard let rawID = userInfo["id"] as? String else { return }
+    let isServerAcknowledged = userInfo["status"] as? String == "server_acknowledged"
     Task { @MainActor in
-      self.acknowledgeFromPhone(rawID)
+      if isServerAcknowledged {
+        self.serverAcknowledged(rawID)
+      } else {
+        self.acknowledgeFromPhone(rawID)
+      }
     }
   }
 }
