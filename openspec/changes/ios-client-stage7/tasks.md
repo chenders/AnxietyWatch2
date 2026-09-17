@@ -23,7 +23,7 @@ dispatched before their named gate.
 
 ### HealthKit proxy
 
-- [ ] T-I8 — HealthKit authorization, per-type anchored queries, and parity types · implement-complex · **BLOCKED on T-I0/T-I6 and server T-X4**
+- [x] T-I8 — HealthKit authorization, per-type anchored queries, and parity types · implement-complex
 - [ ] T-I9 — Observer/background delivery and phone status beacon · implement-complex · **BLOCKED on T-I7/T-I8 and admin T-X1/T-X2**
 
 ### Viewer
@@ -160,7 +160,7 @@ No timer/poll/socket keeps the app alive.
 
 ### T-I8 — HealthKit authorization, per-type anchored queries, and parity types
 
-**Amends:** accepted platform-provenance and registry changes produced by T-X3/T-X4.
+**Amends:** accepted platform-provenance and registry changes produced by T-X3/T-X4, and Amendment 15.
 **Context budget:** 16 files / 25k tokens.
 **Reads:** `SPEC-ios-client.md` §3.5, §4.2, §5.4, §7.3 · T-I0 parity ledger · registry mappings · generation-one HealthKit manager, capture registry, access probe, and correction/lookback tests · T-I5/T-I6 interfaces.
 **Do:** Request read-only HealthKit access for the enabled registry subset with per-type rationale.

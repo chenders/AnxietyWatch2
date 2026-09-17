@@ -14,7 +14,7 @@ for suite in "$@"; do
     AWTransportTests)
       swift test --package-path clients/apple/Packages/AWTransport
       ;;
-    AWRegistryTests|AWHealthKitMapperTests)
+    AWRegistryTests|AWHealthKitMapperTests|AWHealthKitAuthorizationTests|AWAnchoredQueryTests|AWHealthKitParityTests)
       swift test --package-path clients/apple/Packages/AWHealthKit
       ;;
     AWOutboxTests)

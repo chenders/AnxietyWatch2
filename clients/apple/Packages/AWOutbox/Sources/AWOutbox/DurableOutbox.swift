@@ -134,6 +134,24 @@ public protocol DurableOutbox: Sendable {
 private struct PersistedOutbox: Codable {
   var items: [OutboxItem]
   var receipts: [OutboxReceipt]
+  var healthKitAnchors: [String: Data]
+
+  init(items: [OutboxItem] = [], receipts: [OutboxReceipt] = [], healthKitAnchors: [String: Data] = [:]) {
+    self.items = items
+    self.receipts = receipts
+    self.healthKitAnchors = healthKitAnchors
+  }
+
+  private enum CodingKeys: String, CodingKey {
+    case items, receipts, healthKitAnchors
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    items = try container.decode([OutboxItem].self, forKey: .items)
+    receipts = try container.decode([OutboxReceipt].self, forKey: .receipts)
+    healthKitAnchors = try container.decodeIfPresent([String: Data].self, forKey: .healthKitAnchors) ?? [:]
+  }
 }
 
 /// A small, atomic JSON store for temporary queued writes. It is not a history database and stores
@@ -171,6 +189,49 @@ public actor FileOutboxStore: DurableOutbox {
       throw OutboxError.invalidItem("item \(item.id) is already queued")
     }
     persisted.items.append(item)
+    try persist()
+  }
+
+  /// Return the committed HealthKit anchor for one platform type.
+  public func healthKitAnchor(for typeIdentifier: String) -> Data? {
+    persisted.healthKitAnchors[typeIdentifier]
+  }
+
+  /// Commit a platform-sample payload and its next anchor in one file replacement. An empty
+  /// payload still advances the anchor, while a non-empty payload remains queued until the normal
+  /// authenticated SyncEngine receives terminal acknowledgement.
+  public func enqueueHealthKitAndAdvanceAnchor(
+    payload: Data?,
+    itemID: UUID?,
+    capturedAt: Date,
+    typeIdentifier: String,
+    nextAnchorData: Data?
+  ) throws {
+    guard !typeIdentifier.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+      throw OutboxError.invalidItem("HealthKit anchor type identifier is empty")
+    }
+    var item: OutboxItem?
+    if let payload {
+      guard let itemID else {
+        throw OutboxError.invalidItem("HealthKit payload requires a batch identity")
+      }
+      item = try OutboxItem(
+        id: itemID,
+        recordClass: "platform_sample_batch",
+        schemaVersion: 1,
+        payload: payload,
+        capturedAt: capturedAt
+      )
+      guard !persisted.items.contains(where: { $0.id == itemID }) else {
+        throw OutboxError.invalidItem("HealthKit batch \(itemID) is already queued")
+      }
+    }
+    if let nextAnchorData {
+      persisted.healthKitAnchors[typeIdentifier] = nextAnchorData
+    } else {
+      persisted.healthKitAnchors.removeValue(forKey: typeIdentifier)
+    }
+    if let item { persisted.items.append(item) }
     try persist()
   }
 

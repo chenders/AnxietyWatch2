@@ -181,10 +181,125 @@ pub fn map_healthkit_sample(
             quantity_value(payload, "hrv_sdnn")?,
             "ms",
         ),
+        "HKQuantityTypeIdentifierOxygenSaturation" => (
+            VitalsType::Spo2,
+            quantity_value(payload, "oxygen_saturation")?,
+            "%",
+        ),
         "HKCategoryTypeIdentifierSleepAnalysis" => (
             VitalsType::SleepStage,
             sleep_stage_value(payload)?,
             "category",
+        ),
+        "HKQuantityTypeIdentifierRestingHeartRate" => (
+            VitalsType::RestingHr,
+            quantity_value(payload, "resting_heart_rate")?,
+            "count/min",
+        ),
+        "HKQuantityTypeIdentifierRespiratoryRate" => (
+            VitalsType::RespiratoryRate,
+            quantity_value(payload, "respiratory_rate")?,
+            "count/min",
+        ),
+        "HKQuantityTypeIdentifierAppleSleepingWristTemperature" => (
+            VitalsType::WristTemperature,
+            quantity_value(payload, "sleeping_wrist_temperature")?,
+            "degC",
+        ),
+        "HKQuantityTypeIdentifierStepCount" => (
+            VitalsType::StepCount,
+            quantity_value(payload, "step_count")?,
+            "count",
+        ),
+        "HKQuantityTypeIdentifierActiveEnergyBurned" => (
+            VitalsType::ActiveEnergy,
+            quantity_value(payload, "active_energy")?,
+            "kcal",
+        ),
+        "HKQuantityTypeIdentifierAppleExerciseTime" => (
+            VitalsType::ExerciseTime,
+            quantity_value(payload, "exercise_time")?,
+            "min",
+        ),
+        "HKQuantityTypeIdentifierEnvironmentalAudioExposure" => (
+            VitalsType::EnvironmentalAudio,
+            quantity_value(payload, "environmental_audio")?,
+            "dBASPL",
+        ),
+        "HKQuantityTypeIdentifierBloodPressureSystolic" => (
+            VitalsType::BpSystolic,
+            quantity_value(payload, "blood_pressure_systolic")?,
+            "mmHg",
+        ),
+        "HKQuantityTypeIdentifierBloodPressureDiastolic" => (
+            VitalsType::BpDiastolic,
+            quantity_value(payload, "blood_pressure_diastolic")?,
+            "mmHg",
+        ),
+        "HKQuantityTypeIdentifierBloodGlucose" => (
+            VitalsType::BloodGlucose,
+            quantity_value(payload, "blood_glucose")?,
+            "mg/dL",
+        ),
+        "HKQuantityTypeIdentifierVO2Max" => (
+            VitalsType::Vo2Max,
+            quantity_value(payload, "vo2_max")?,
+            "mL/kg*min",
+        ),
+        "HKQuantityTypeIdentifierWalkingHeartRateAverage" => (
+            VitalsType::WalkingHr,
+            quantity_value(payload, "walking_heart_rate")?,
+            "count/min",
+        ),
+        "HKQuantityTypeIdentifierHeadphoneAudioExposure" => (
+            VitalsType::HeadphoneAudio,
+            quantity_value(payload, "headphone_audio")?,
+            "dBASPL",
+        ),
+        "HKQuantityTypeIdentifierAppleWalkingSteadiness" => (
+            VitalsType::WalkingSteadiness,
+            quantity_value(payload, "walking_steadiness")?,
+            "%",
+        ),
+        "HKQuantityTypeIdentifierAtrialFibrillationBurden" => (
+            VitalsType::AfibBurden,
+            quantity_value(payload, "atrial_fibrillation_burden")?,
+            "%",
+        ),
+        "HKQuantityTypeIdentifierWalkingSpeed" => (
+            VitalsType::WalkingSpeed,
+            quantity_value(payload, "walking_speed")?,
+            "m/s",
+        ),
+        "HKQuantityTypeIdentifierWalkingStepLength" => (
+            VitalsType::WalkingStepLength,
+            quantity_value(payload, "walking_step_length")?,
+            "m",
+        ),
+        "HKQuantityTypeIdentifierWalkingDoubleSupportPercentage" => (
+            VitalsType::WalkingDoubleSupport,
+            quantity_value(payload, "walking_double_support")?,
+            "%",
+        ),
+        "HKQuantityTypeIdentifierWalkingAsymmetryPercentage" => (
+            VitalsType::WalkingAsymmetry,
+            quantity_value(payload, "walking_asymmetry")?,
+            "%",
+        ),
+        "HKQuantityTypeIdentifierTimeInDaylight" => (
+            VitalsType::TimeInDaylight,
+            quantity_value(payload, "time_in_daylight")?,
+            "min",
+        ),
+        "HKQuantityTypeIdentifierPhysicalEffort" => (
+            VitalsType::PhysicalEffort,
+            quantity_value(payload, "physical_effort")?,
+            "kcal/kg*hr",
+        ),
+        "HKQuantityTypeIdentifierBodyMass" => (
+            VitalsType::BodyMass,
+            quantity_value(payload, "body_mass")?,
+            "kg",
         ),
         unsupported => {
             return Err(HealthKitQuarantine::new(

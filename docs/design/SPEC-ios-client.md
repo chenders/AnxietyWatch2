@@ -27,9 +27,10 @@ The Apple client exists because some capabilities are device-local or person-loc
 
 The Pi remains the system of record, analysis host, integration hub, and independent overnight
 monitor. The app is useful when the Pi is temporarily unreachable, but it is never part of the
-local detector-to-klaxon path. In the first draft, HealthKit, watchOS, reminders/notifications, and
-non-journal domain features are deferred; the app captures journal/anxiety records and reads Pi
-projections and prior records.
+local detector-to-klaxon path. In the first release, HealthKit is a primary phone capability: the
+app requests read-only access, uploads source samples to the Pi, and exposes factual access/sync
+state. WatchOS, reminders/notifications, and non-journal domain features remain deferred. The app
+captures journal/anxiety records, uploads HealthKit samples, and reads Pi projections and prior records.
 
 ### 1.1 The three jobs
 
@@ -348,6 +349,9 @@ authentication, a non-exportable Secure Enclave P-256 key, scoped per-device cre
 signatures, content digests, bounded creation/expiry times, and durable replay IDs. Rotation signs a
 new key with the current key and never rewrites credential-neutral queued payloads; revocation/recovery
 preserves every unacknowledged item.
+
+Amendment 15 makes HealthKit part of the first release. HealthKit uses this same authenticated
+phone-to-Pi transport for bounded source-sample envelopes; it is not deferred.
 
 Before public or away-from-home use, the Amendment 09 Caddy HTTPS origin, ATS system trust, hostname
 validation, and no-cleartext gate must be restored.

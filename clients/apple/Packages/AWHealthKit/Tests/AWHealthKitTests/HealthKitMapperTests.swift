@@ -65,14 +65,14 @@ func quantityMappingPreservesTransportFacts() throws {
 @Test("AWHealthKitMapperTests reject unsupported, non-finite, and unknown metadata")
 func mapperRejectsUnsafeInputs() throws {
   let mapper = try HealthKitMapper(registry: validRegistry())
-  #expect(throws: HealthKitMappingError.unsupportedType("HKQuantityTypeIdentifierBloodGlucose")) {
+  #expect(throws: HealthKitMappingError.unsupportedType("HKQuantityTypeIdentifierBodyTemperature")) {
     let unsupported = HealthKitTransportSample(
       healthKitSampleUUID: UUID(),
-      healthKitType: PlatformTypeIdentifier(rawValue: "HKQuantityTypeIdentifierBloodGlucose")!,
+      healthKitType: PlatformTypeIdentifier(rawValue: "HKQuantityTypeIdentifierBodyTemperature")!,
       startAt: "2025-01-15T08:00:00Z",
       endAt: "2025-01-15T08:00:01Z",
       originalValue: 90,
-      originalUnit: "mg/dL",
+      originalUnit: "degC",
       queryBatchID: UUID(),
       recordedAt: "2025-01-15T08:01:00Z"
     )

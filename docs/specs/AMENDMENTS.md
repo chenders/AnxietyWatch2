@@ -25,6 +25,7 @@ wins**. If you find a contradiction, report it rather than implementing either v
 | **12** | [Provider-aware song search and provider-independent identity](2026-09-16-amendment-12-provider-aware-song-search.md) | first-draft song-search provider choice and song-catalog identity behavior | first-draft T-I11, T-I13, song metadata/Pi lyrics work |
 | **13** | [Platform-sample envelope and sub-provenance](2026-09-17-amendment-13-platform-sample-provenance.md) | platform-store identity and provenance decisions pending T-X3 | T-X3, T-X4, T-I6, T-I8, T-I19 |
 | **14** | [Phone-silence escalation](2026-09-17-amendment-14-phone-silence-escalation.md) | open question 1 and undefined phone-silence escalation | T-X1, T-M2e, T-M2f |
+| **15** | [HealthKit is a first-release phone capability](2026-09-17-amendment-15-healthkit-first-release.md) | Amendment 10's first-draft HealthKit deferral | T-I8, T-I9, T-I11, T-I18, T-I19, T-I20 |
 | — | [C vs Rust evaluation](2026-08-03-c-vs-rust-evaluation.md) | the C11 decision | all code tasks |
 | — | [Review synthesis and fix tracker](../reviews/SYNTHESIS.md) | — | status of every finding |
 

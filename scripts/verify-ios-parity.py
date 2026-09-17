@@ -307,7 +307,7 @@ def verify_source_sets(data: dict[str, object]) -> None:
             )
 
 
-def verify_healthkit_types(data: dict[str, object]) -> None:
+def verify_healthkit_types(data: dict[str, object], require_owned: bool = False) -> None:
     records = data.get("healthkit_types")
     if not isinstance(records, list):
         fail("healthkit_types must be a list")
@@ -326,6 +326,8 @@ def verify_healthkit_types(data: dict[str, object]) -> None:
         ids.append(identifier)
         if value["classification"] not in TYPE_CLASSIFICATIONS:
             fail(f"{identifier} has unknown classification {value['classification']!r}")
+        if require_owned and (not isinstance(value["owner"], str) or not value["owner"].strip()):
+            fail(f"{identifier} has no owner")
         evidence = value["evidence"]
         if not isinstance(evidence, list) or not all(
             isinstance(item, str) and ":" in item and not item.startswith("/") for item in evidence
@@ -443,8 +445,9 @@ def verify_report(root: Path) -> None:
 
 
 def main() -> None:
-    if len(sys.argv) != 2:
-        fail("usage: verify-ios-parity.py clients/apple/GEN1-PARITY.yaml")
+    if len(sys.argv) not in (2, 3) or (len(sys.argv) == 3 and sys.argv[2] != "--require-owned"):
+        fail("usage: verify-ios-parity.py clients/apple/GEN1-PARITY.yaml [--require-owned]")
+    require_owned = len(sys.argv) == 3
     root = Path(__file__).resolve().parent.parent
     ledger_path = Path(sys.argv[1])
     if not ledger_path.is_absolute():
@@ -455,7 +458,7 @@ def main() -> None:
     if loaded.get("schema_version") != 1:
         fail("schema_version must be 1")
     verify_source_sets(loaded)
-    verify_healthkit_types(loaded)
+    verify_healthkit_types(loaded, require_owned=require_owned)
     verify_capabilities(loaded)
     verify_aggregates(loaded)
     verify_fixtures(root, loaded)

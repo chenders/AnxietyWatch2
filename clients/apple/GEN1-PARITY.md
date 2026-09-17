@@ -4,6 +4,8 @@ This report is the readable companion to [`GEN1-PARITY.yaml`](GEN1-PARITY.yaml).
 the machine-checked ledger; this report explains the decisions. It inventories generation-one only—it
 does not authorize a type to ship. Every retained HealthKit type remains gated on an accepted
 `source.healthkit` registry mapping, canonical unit/range, sub-provenance contract, and Pi receiver.
+HealthKit source acquisition and upload are part of the first release; this gate prevents an
+unsupported type from being silently enabled, not a product deferral.
 
 ## Boundary
 
@@ -92,6 +94,14 @@ runtime and replaced, where retained, by Pi projections. This prevents an aggreg
 mistaken for a source sample merely because both appeared in generation one.
 
 ## User-visible capability decisions
+
+### First-release HealthKit behavior
+
+The iPhone requests read-only access for the enabled registry subset using the prior app's
+plain-language rationale flow. Because HealthKit deliberately hides read-grant status, the app shows
+request outcome, query outcome, last matching sample, outbox state, Pi acknowledgement, and Pi
+receiving state as separate facts. It never labels a type granted merely because the request sheet
+was shown or a status API returned `.unnecessary`.
 
 ### Retained on iPhone/watchOS
 

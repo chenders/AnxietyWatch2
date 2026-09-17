@@ -111,22 +111,63 @@ public struct HealthKitTransportSample: Codable, Equatable, Sendable {
   }
 }
 
+/// A deletion reported by an anchored HealthKit query. The Pi records a tombstone rather than
+/// deleting a sample row, preserving the platform's deletion fact for reconciliation.
+public struct HealthKitDeletedSample: Codable, Equatable, Sendable {
+  public let healthKitSampleUUID: UUID
+  public let healthKitType: PlatformTypeIdentifier
+  public let queryBatchID: UUID
+  public let recordedAt: String
+
+  public init(
+    healthKitSampleUUID: UUID,
+    healthKitType: PlatformTypeIdentifier,
+    queryBatchID: UUID,
+    recordedAt: String
+  ) {
+    self.healthKitSampleUUID = healthKitSampleUUID
+    self.healthKitType = healthKitType
+    self.queryBatchID = queryBatchID
+    self.recordedAt = recordedAt
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case healthKitSampleUUID = "healthkit_sample_uuid"
+    case healthKitType = "healthkit_type"
+    case queryBatchID = "query_batch_id"
+    case recordedAt = "recorded_at"
+  }
+}
+
 /// The platform-sample envelope content. Canonical conversion is server-owned.
 public struct HealthKitEnvelopePayload: Codable, Equatable, Sendable {
   public let `class`: String
   public let schemaVersion: UInt
   public let samples: [HealthKitTransportSample]
+  public let deletions: [HealthKitDeletedSample]
 
-  public init(samples: [HealthKitTransportSample]) {
+  public init(
+    samples: [HealthKitTransportSample],
+    deletions: [HealthKitDeletedSample] = []
+  ) {
     self.`class` = "platform_sample_batch"
     self.schemaVersion = 1
     self.samples = samples
+    self.deletions = deletions
   }
 
   enum CodingKeys: String, CodingKey {
     case `class`
     case schemaVersion = "schema_version"
-    case samples
+    case samples, deletions
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    `class` = try container.decode(String.self, forKey: .class)
+    schemaVersion = try container.decode(UInt.self, forKey: .schemaVersion)
+    samples = try container.decode([HealthKitTransportSample].self, forKey: .samples)
+    deletions = try container.decodeIfPresent([HealthKitDeletedSample].self, forKey: .deletions) ?? []
   }
 }
 
@@ -179,7 +220,30 @@ public struct HealthKitMapper: Sendable {
     switch identifier {
     case "HKQuantityTypeIdentifierHeartRate": return "hr"
     case "HKQuantityTypeIdentifierHeartRateVariabilitySDNN": return "hrv_rmssd"
+    case "HKQuantityTypeIdentifierOxygenSaturation": return "spo2"
     case "HKCategoryTypeIdentifierSleepAnalysis": return "sleep_stage"
+    case "HKQuantityTypeIdentifierRestingHeartRate": return "resting_hr"
+    case "HKQuantityTypeIdentifierRespiratoryRate": return "respiratory_rate"
+    case "HKQuantityTypeIdentifierAppleSleepingWristTemperature": return "wrist_temperature"
+    case "HKQuantityTypeIdentifierStepCount": return "step_count"
+    case "HKQuantityTypeIdentifierActiveEnergyBurned": return "active_energy"
+    case "HKQuantityTypeIdentifierAppleExerciseTime": return "exercise_time"
+    case "HKQuantityTypeIdentifierEnvironmentalAudioExposure": return "environmental_audio"
+    case "HKQuantityTypeIdentifierBloodPressureSystolic": return "bp_systolic"
+    case "HKQuantityTypeIdentifierBloodPressureDiastolic": return "bp_diastolic"
+    case "HKQuantityTypeIdentifierBloodGlucose": return "blood_glucose"
+    case "HKQuantityTypeIdentifierVO2Max": return "vo2_max"
+    case "HKQuantityTypeIdentifierWalkingHeartRateAverage": return "walking_hr"
+    case "HKQuantityTypeIdentifierHeadphoneAudioExposure": return "headphone_audio"
+    case "HKQuantityTypeIdentifierAppleWalkingSteadiness": return "walking_steadiness"
+    case "HKQuantityTypeIdentifierAtrialFibrillationBurden": return "afib_burden"
+    case "HKQuantityTypeIdentifierWalkingSpeed": return "walking_speed"
+    case "HKQuantityTypeIdentifierWalkingStepLength": return "walking_step_length"
+    case "HKQuantityTypeIdentifierWalkingDoubleSupportPercentage": return "walking_double_support"
+    case "HKQuantityTypeIdentifierWalkingAsymmetryPercentage": return "walking_asymmetry"
+    case "HKQuantityTypeIdentifierTimeInDaylight": return "time_in_daylight"
+    case "HKQuantityTypeIdentifierPhysicalEffort": return "physical_effort"
+    case "HKQuantityTypeIdentifierBodyMass": return "body_mass"
     default: throw HealthKitMappingError.unsupportedType(identifier)
     }
   }
@@ -196,9 +260,9 @@ public struct HealthKitMapper: Sendable {
     guard formatter.date(from: sample.recordedAt) != nil else {
       throw HealthKitMappingError.invalidRecordedAt(sample.recordedAt)
     }
-    guard sample.metadata.keys.allSatisfy(Self.allowedMetadata.contains) else {
+    guard sample.metadata.keys.allSatisfy(Self.allowedMetadataKeys.contains) else {
       let unknown = sample.metadata.keys
-        .filter { !Self.allowedMetadata.contains($0) }
+        .filter { !Self.allowedMetadataKeys.contains($0) }
         .sorted()
         .joined(separator: ",")
       throw HealthKitMappingError.unknownMetadata(unknown)
@@ -220,7 +284,7 @@ public struct HealthKitMapper: Sendable {
     }
   }
 
-  private static let allowedMetadata: Set<String> = [
+  public static let allowedMetadataKeys: Set<String> = [
     "HKMetadataKeyWasUserEntered",
     "HKMetadataKeySyncIdentifier",
     "HKMetadataKeySyncVersion",

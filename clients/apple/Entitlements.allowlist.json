@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "targets": {
-    "AnxietyWatchApp": [],
+    "AnxietyWatchApp": ["com.apple.developer.healthkit"],
     "AnxietyWatchWatch": []
   },
-  "reason": "The skeleton requests no capabilities. HealthKit and other entitlements are added only by their owning reviewed tasks."
+  "reason": "The iPhone reads HealthKit in the first release. It requests no HealthKit share/write access and the Watch holds no HealthKit entitlement."
 }
