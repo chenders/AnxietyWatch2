@@ -8,6 +8,7 @@ import SwiftUI
 final class AppClientRuntime: ObservableObject {
   @Published private(set) var isEnrolled = false
   @Published private(set) var syncStatus = "Sync is not initialized."
+  @Published private(set) var outboxItemCount = 0
   let songSearchCoordinator: SongSearchCoordinator
 
   private let credentialStore: KeychainCredentialStore
@@ -102,9 +103,18 @@ final class AppClientRuntime: ObservableObject {
 
   func observeDrainRequests() async {
     await reload()
+    await refreshOutboxState()
     for await _ in NotificationCenter.default.notifications(named: .domainOutboxNeedsDrain) {
       await drain()
     }
+  }
+
+  func refreshOutboxState() async {
+    guard let outbox else {
+      outboxItemCount = 0
+      return
+    }
+    outboxItemCount = (try? await outbox.snapshot().pendingCount) ?? 0
   }
 
   func drain() async {
@@ -116,8 +126,10 @@ final class AppClientRuntime: ObservableObject {
     }
     do {
       let report = try await syncEngine.drain()
+      outboxItemCount = report.pendingAfter
       syncStatus = "Sync complete: \(report.acknowledged) acknowledged; \(report.pendingAfter) pending."
     } catch {
+      await refreshOutboxState()
       syncStatus = "Sync blocked: \(error)"
     }
   }

@@ -85,14 +85,42 @@ private struct JournalListItem: Identifiable, Equatable {
 
 private struct RuntimeStatusSurface: View {
   @EnvironmentObject private var runtime: AppClientRuntime
+  @State private var isSyncing = false
 
   var body: some View {
     NavigationStack {
-      ContentUnavailableView(
-        runtime.isEnrolled ? "Pi Connected" : "Pi Not Enrolled",
-        systemImage: runtime.isEnrolled ? "checkmark.shield" : "heart.text.square",
-        description: Text(runtime.syncStatus)
-      )
+      Form {
+        Section("Pi connection") {
+          Label(
+            runtime.isEnrolled ? "Pi enrolled" : "Pi not enrolled",
+            systemImage: runtime.isEnrolled ? "checkmark.shield" : "heart.text.square"
+          )
+          .accessibilityLabel(runtime.isEnrolled ? "Pi enrolled" : "Pi not enrolled")
+          Text(runtime.syncStatus)
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+            .accessibilityLabel("Sync status: \(runtime.syncStatus)")
+        }
+        Section("Local delivery") {
+          LabeledContent("Outbox items", value: "\(runtime.outboxItemCount)")
+          Button {
+            Task {
+              isSyncing = true
+              await runtime.reload()
+              await runtime.drain()
+              await runtime.refreshOutboxState()
+              isSyncing = false
+            }
+          } label: {
+            if isSyncing {
+              ProgressView("Syncing…")
+            } else {
+              Label("Sync Now", systemImage: "arrow.triangle.2.circlepath")
+            }
+          }
+          .disabled(isSyncing || !runtime.isEnrolled)
+        }
+      }
       .navigationTitle("Today")
     }
   }
