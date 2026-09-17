@@ -18,7 +18,7 @@ dispatched before their named gate.
 
 - [x] T-I4 — Secure enrollment, Keychain credential lifecycle, and endpoint trust UI · implement-complex · **BLOCKED on T-I1**
 - [x] T-I5 — Temporary durable outbox and terminal-ack deletion · implement-complex
-- [ ] T-I6 — Registry-driven platform payload and sub-provenance client mapper · implement-complex · **BLOCKED on G-IOS-PROVENANCE / admin T-X3**
+- [x] T-I6 — Registry-driven platform payload and sub-provenance client mapper · implement-complex · **BLOCKED on G-IOS-PROVENANCE / admin T-X3**
 - [x] T-I7 — Immediate drain engine, retry taxonomy, rotation, and sync diagnostics · implement-complex · **BLOCKED on T-I2/T-I4/T-I5**
 
 ### HealthKit proxy

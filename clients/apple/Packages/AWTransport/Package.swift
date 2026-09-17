@@ -8,9 +8,10 @@ let package = Package(
   dependencies: [
     .package(path: "../AWDomain"),
     .package(path: "../AWOutbox"),
+    .package(path: "../AWHealthKit"),
   ],
   targets: [
-    .target(name: "AWTransport", dependencies: ["AWDomain", "AWOutbox"]),
+    .target(name: "AWTransport", dependencies: ["AWDomain", "AWOutbox", "AWHealthKit"]),
     .testTarget(name: "AWTransportTests", dependencies: ["AWTransport"]),
   ]
 )
