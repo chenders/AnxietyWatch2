@@ -418,29 +418,34 @@ public struct RequestAuthenticator: Sendable {
     guard let host = origin.url.host else {
       throw EnrollmentError.invalidOrigin("authenticated request origin has no hostname")
     }
+    let authorityHost = host.contains(":") ? "[\(host)]" : host
+    let authority = authorityHost + (origin.url.port.map { ":\($0)" } ?? "")
     let requestID = UUID()
     let created = Int(now.timeIntervalSince1970)
     let expires = created + 120
     let digest = Data(SHA256.hash(data: body)).base64EncodedString()
     let contentDigest = "sha-256=:\(digest):"
+    let contentType = "application/json"
     let signatureInput =
       "sig1=(\"@method\" \"@authority\" \"@path\" \"content-digest\" \"content-type\" " +
       "\"x-anxietywatch-api-version\" \"x-anxietywatch-client-id\" \"x-anxietywatch-key-id\" " +
       "\"x-anxietywatch-request-id\");created=\(created);expires=\(expires)"
-    let signatureBase = "\"@method\": \(method)\n\"@authority\": \(host)\n\"@path\": \(path)\ncontent-digest: \(contentDigest)"
+    let signatureParams = signatureInput.dropFirst(5)
+    let signatureBase = "\"@method\": \(method)\n\"@authority\": \(authority)\n\"@path\": \(path)\ncontent-digest: \(contentDigest)\ncontent-type: \(contentType)\nx-anxietywatch-api-version: 1\nx-anxietywatch-client-id: \(credential.clientID.uuidString.lowercased())\nx-anxietywatch-key-id: \(credential.keyID.uuidString.lowercased())\nx-anxietywatch-request-id: \(requestID.uuidString.lowercased())\n\"@signature-params\": \(signatureParams)"
     let signature = try keyStore.sign(
       Data(signatureBase.utf8),
       with: credential.keyReference
     ).base64EncodedString()
     return [
       "X-AnxietyWatch-API-Version": "1",
-      "X-AnxietyWatch-Client-ID": credential.clientID.uuidString,
-      "X-AnxietyWatch-Key-ID": credential.keyID.uuidString,
-      "X-AnxietyWatch-Request-ID": requestID.uuidString,
+      "X-AnxietyWatch-Client-ID": credential.clientID.uuidString.lowercased(),
+      "X-AnxietyWatch-Key-ID": credential.keyID.uuidString.lowercased(),
+      "X-AnxietyWatch-Request-ID": requestID.uuidString.lowercased(),
       "Content-Digest": contentDigest,
+      "Content-Type": contentType,
       "Signature-Input": signatureInput,
       "Signature": "sig1=:\(signature):",
-      "Host": host,
+      "Host": authority,
     ]
   }
 }

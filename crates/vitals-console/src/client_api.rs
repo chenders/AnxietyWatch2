@@ -5,12 +5,14 @@
 
 use axum::Json;
 use axum::Router;
+use axum::body::Bytes;
 use axum::extract::{Extension, Query};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::IntoResponse;
 use axum::routing::{any, get, post};
 use base64::Engine;
 use chrono::{SecondsFormat, Utc};
+use p256::ecdsa::signature::Verifier;
 use p256::elliptic_curve::sec1::ToEncodedPoint;
 use p256::pkcs8::DecodePublicKey;
 use serde::{Deserialize, Serialize};
@@ -429,6 +431,475 @@ fn unavailable(capability: &str, owner: &str) -> ClientApiError {
     )
 }
 
+const SIGNATURE_COVERED_COMPONENTS: &str = "(\"@method\" \"@authority\" \"@path\" \"content-digest\" \"content-type\" \"x-anxietywatch-api-version\" \"x-anxietywatch-client-id\" \"x-anxietywatch-key-id\" \"x-anxietywatch-request-id\")";
+
+type MobileCredentialRow = (
+    Vec<u8>,
+    Vec<String>,
+    chrono::DateTime<Utc>,
+    Option<chrono::DateTime<Utc>>,
+);
+
+struct MobileSignature {
+    client_id: Uuid,
+    key_id: Uuid,
+    request_id: Uuid,
+    created: i64,
+    expires: i64,
+    content_digest: String,
+    content_type: String,
+    api_version: String,
+    authority: String,
+    signature_params: String,
+    signature: Vec<u8>,
+}
+
+fn required_header<'a>(
+    headers: &'a HeaderMap,
+    name: &'static str,
+) -> Result<&'a str, ClientApiError> {
+    headers
+        .get(name)
+        .ok_or_else(|| {
+            error(
+                StatusCode::UNAUTHORIZED,
+                "request_signature_missing",
+                "required RFC 9421 request signature fields are absent",
+                false,
+                format!("{name}=missing"),
+                Some(API_MAJOR),
+            )
+        })?
+        .to_str()
+        .map_err(|_| {
+            error(
+                StatusCode::UNAUTHORIZED,
+                "request_signature_invalid",
+                "RFC 9421 request signature fields are not valid text",
+                false,
+                format!("{name}=non_text"),
+                Some(API_MAJOR),
+            )
+        })
+}
+
+fn parse_uuid_header(headers: &HeaderMap, name: &'static str) -> Result<Uuid, ClientApiError> {
+    let value = required_header(headers, name)?;
+    Uuid::parse_str(value).map_err(|_| {
+        error(
+            StatusCode::UNAUTHORIZED,
+            "request_signature_invalid",
+            "RFC 9421 request identity is not a UUID",
+            false,
+            format!("{name}={value}"),
+            Some(API_MAJOR),
+        )
+    })
+}
+
+fn parse_signature_input(value: &str) -> Result<(i64, i64, String), ClientApiError> {
+    let signature_params = value
+        .strip_prefix("sig1=")
+        .ok_or_else(|| {
+            error(
+                StatusCode::UNAUTHORIZED,
+                "request_signature_invalid",
+                "RFC 9421 signature label is invalid",
+                false,
+                "signature-input=missing-sig1".to_string(),
+                Some(API_MAJOR),
+            )
+        })?
+        .to_string();
+    let suffix = value.strip_prefix("sig1=").ok_or_else(|| {
+        error(
+            StatusCode::UNAUTHORIZED,
+            "request_signature_invalid",
+            "RFC 9421 signature label is invalid",
+            false,
+            "signature-input=missing-sig1".to_string(),
+            Some(API_MAJOR),
+        )
+    })?;
+    let suffix = suffix
+        .strip_prefix(SIGNATURE_COVERED_COMPONENTS)
+        .ok_or_else(|| {
+            error(
+                StatusCode::UNAUTHORIZED,
+                "request_signature_invalid",
+                "RFC 9421 covered components do not match the client profile",
+                false,
+                "signature-input=covered-components-mismatch".to_string(),
+                Some(API_MAJOR),
+            )
+        })?;
+    let suffix = suffix.strip_prefix(";created=").ok_or_else(|| {
+        error(
+            StatusCode::UNAUTHORIZED,
+            "request_signature_invalid",
+            "RFC 9421 created parameter is missing",
+            false,
+            "signature-input=created-missing".to_string(),
+            Some(API_MAJOR),
+        )
+    })?;
+    let (created_text, expires_text) = suffix.split_once(";expires=").ok_or_else(|| {
+        error(
+            StatusCode::UNAUTHORIZED,
+            "request_signature_invalid",
+            "RFC 9421 expires parameter is missing",
+            false,
+            "signature-input=expires-missing".to_string(),
+            Some(API_MAJOR),
+        )
+    })?;
+    let created = created_text.parse::<i64>().map_err(|_| {
+        error(
+            StatusCode::UNAUTHORIZED,
+            "request_signature_invalid",
+            "RFC 9421 created parameter is not an integer",
+            false,
+            format!("created={created_text}"),
+            Some(API_MAJOR),
+        )
+    })?;
+    let expires = expires_text.parse::<i64>().map_err(|_| {
+        error(
+            StatusCode::UNAUTHORIZED,
+            "request_signature_invalid",
+            "RFC 9421 expires parameter is not an integer",
+            false,
+            format!("expires={expires_text}"),
+            Some(API_MAJOR),
+        )
+    })?;
+    Ok((created, expires, signature_params))
+}
+
+fn decode_signature(value: &str) -> Result<Vec<u8>, ClientApiError> {
+    let encoded = value
+        .strip_prefix("sig1=:")
+        .and_then(|value| value.strip_suffix(':'))
+        .ok_or_else(|| {
+            error(
+                StatusCode::UNAUTHORIZED,
+                "request_signature_invalid",
+                "RFC 9421 signature value is invalid",
+                false,
+                "signature=invalid-label".to_string(),
+                Some(API_MAJOR),
+            )
+        })?;
+    base64::engine::general_purpose::STANDARD
+        .decode(encoded)
+        .map_err(|decode_error| {
+            error(
+                StatusCode::UNAUTHORIZED,
+                "request_signature_invalid",
+                "RFC 9421 signature value is not valid base64",
+                false,
+                format!("signature_encoding={decode_error}"),
+                Some(API_MAJOR),
+            )
+        })
+}
+
+fn mobile_signature(headers: &HeaderMap, body: &[u8]) -> Result<MobileSignature, ClientApiError> {
+    validate_version(headers)?;
+    let client_id = parse_uuid_header(headers, "x-anxietywatch-client-id")?;
+    let key_id = parse_uuid_header(headers, "x-anxietywatch-key-id")?;
+    let request_id = parse_uuid_header(headers, "x-anxietywatch-request-id")?;
+    let content_digest = required_header(headers, "content-digest")?.to_string();
+    let content_type = required_header(headers, "content-type")?.to_string();
+    let api_version = required_header(headers, VERSION_HEADER)?.to_string();
+    let authority = required_header(headers, "host")?.to_string();
+    let signature_input = required_header(headers, "signature-input")?;
+    let (created, expires, signature_params) = parse_signature_input(signature_input)?;
+    let now = Utc::now().timestamp();
+    if expires < created || expires.saturating_sub(created) > 120 {
+        return Err(error(
+            StatusCode::UNAUTHORIZED,
+            "client_signature_expired",
+            "request signature lifetime is outside the permitted bound",
+            false,
+            format!("created={created}; expires={expires}; maximum_lifetime=120"),
+            Some(API_MAJOR),
+        ));
+    }
+    if created.saturating_sub(now).abs() > 300 || expires.saturating_sub(now) < -300 {
+        return Err(error(
+            StatusCode::UNAUTHORIZED,
+            "client_clock_out_of_range",
+            "client request clock is outside the permitted skew",
+            false,
+            format!("created={created}; expires={expires}; server_now={now}; skew_limit=300"),
+            Some(API_MAJOR),
+        ));
+    }
+    let expected_digest = format!(
+        "sha-256=:{}:",
+        base64::engine::general_purpose::STANDARD.encode(sha2::Sha256::digest(body))
+    );
+    if content_digest != expected_digest {
+        return Err(error(
+            StatusCode::UNAUTHORIZED,
+            "content_digest_invalid",
+            "request body digest does not match the signed content",
+            false,
+            format!("request_id={request_id}; digest=mismatch"),
+            Some(API_MAJOR),
+        ));
+    }
+    let signature = decode_signature(required_header(headers, "signature")?)?;
+    Ok(MobileSignature {
+        client_id,
+        key_id,
+        request_id,
+        created,
+        expires,
+        content_digest,
+        content_type,
+        api_version,
+        authority,
+        signature_params,
+        signature,
+    })
+}
+
+/// Authenticate a signed mobile request and durably admit its request id.
+///
+/// The public key is loaded before body-specific work, the exact signed profile is verified, and
+/// replay admission, last-used evidence, and audit evidence commit in one database transaction.
+///
+/// # Errors
+///
+/// Returns a named authentication, scope, replay, clock, or database blocker.
+#[expect(
+    clippy::too_many_lines,
+    reason = "request admission keeps credential, signature, replay, and audit checks in one transaction boundary"
+)]
+async fn authenticate_mobile_request(
+    database: &sqlx::PgPool,
+    headers: &HeaderMap,
+    body: &[u8],
+    method: &str,
+    path: &str,
+    required_scope: &str,
+) -> Result<(), ClientApiError> {
+    let signature = mobile_signature(headers, body)?;
+    let credential: Option<MobileCredentialRow> = sqlx::query_as(
+        "SELECT public_key, scopes, expires_at, revoked_at FROM mobile_credentials\
+             WHERE client_id = $1 AND key_id = $2",
+    )
+    .bind(signature.client_id)
+    .bind(signature.key_id)
+    .fetch_optional(database)
+    .await
+    .map_err(|database_error| {
+        error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "mobile_authentication_unavailable",
+            "mobile credential lookup failed",
+            true,
+            format!("database={database_error}"),
+            Some(API_MAJOR),
+        )
+    })?;
+    let Some((public_key, scopes, expires_at, revoked_at)) = credential else {
+        return Err(error(
+            StatusCode::UNAUTHORIZED,
+            "credential_unknown",
+            "mobile credential is not recognized",
+            false,
+            format!(
+                "client_id={}; key_id={}",
+                signature.client_id, signature.key_id
+            ),
+            Some(API_MAJOR),
+        ));
+    };
+    if revoked_at.is_some() {
+        return Err(error(
+            StatusCode::UNAUTHORIZED,
+            "credential_revoked",
+            "mobile credential has been revoked",
+            false,
+            format!(
+                "client_id={}; key_id={}; state=revoked",
+                signature.client_id, signature.key_id
+            ),
+            Some(API_MAJOR),
+        ));
+    }
+    if expires_at <= Utc::now() {
+        return Err(error(
+            StatusCode::UNAUTHORIZED,
+            "credential_expired",
+            "mobile credential has expired",
+            false,
+            format!(
+                "client_id={}; key_id={}; expires_at={expires_at}",
+                signature.client_id, signature.key_id
+            ),
+            Some(API_MAJOR),
+        ));
+    }
+    if !scopes.iter().any(|scope| scope == required_scope) {
+        return Err(error(
+            StatusCode::FORBIDDEN,
+            "credential_scope_denied",
+            "mobile credential scope does not permit this operation",
+            false,
+            format!(
+                "client_id={}; required_scope={required_scope}",
+                signature.client_id
+            ),
+            Some(API_MAJOR),
+        ));
+    }
+    let verifying_key = p256::ecdsa::VerifyingKey::from_sec1_bytes(&public_key).map_err(|_| {
+        error(
+            StatusCode::UNAUTHORIZED,
+            "credential_invalid",
+            "stored mobile public key is invalid",
+            false,
+            format!(
+                "client_id={}; key_id={}; public_key=invalid",
+                signature.client_id, signature.key_id
+            ),
+            Some(API_MAJOR),
+        )
+    })?;
+    let ecdsa_signature = p256::ecdsa::Signature::from_der(&signature.signature).map_err(|_| {
+        error(
+            StatusCode::UNAUTHORIZED,
+            "request_signature_invalid",
+            "RFC 9421 signature is not a DER P-256 signature",
+            false,
+            format!("request_id={}", signature.request_id),
+            Some(API_MAJOR),
+        )
+    })?;
+    let signature_base = format!(
+        "\"@method\": {method}\n\"@authority\": {}\n\"@path\": {path}\ncontent-digest: {}\ncontent-type: {}\nx-anxietywatch-api-version: {}\nx-anxietywatch-client-id: {}\nx-anxietywatch-key-id: {}\nx-anxietywatch-request-id: {}\n\"@signature-params\": {}",
+        signature.authority,
+        signature.content_digest,
+        signature.content_type,
+        signature.api_version,
+        signature.client_id,
+        signature.key_id,
+        signature.request_id,
+        signature.signature_params
+    );
+    verifying_key
+        .verify(signature_base.as_bytes(), &ecdsa_signature)
+        .map_err(|_| {
+            error(
+                StatusCode::UNAUTHORIZED,
+                "request_signature_invalid",
+                "RFC 9421 signature verification failed",
+                false,
+                format!(
+                    "client_id={}; request_id={}",
+                    signature.client_id, signature.request_id
+                ),
+                Some(API_MAJOR),
+            )
+        })?;
+    let mut transaction = database.begin().await.map_err(|database_error| {
+        error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "mobile_authentication_unavailable",
+            "mobile request admission transaction failed",
+            true,
+            format!("database={database_error}"),
+            Some(API_MAJOR),
+        )
+    })?;
+    let admitted: Option<(Uuid,)> = sqlx::query_as(
+        "INSERT INTO mobile_request_replays (client_id, request_id, request_digest, expires_at)\
+         VALUES ($1, $2, $3, to_timestamp($4))\
+         ON CONFLICT (client_id, request_id) DO NOTHING\
+         RETURNING request_id",
+    )
+    .bind(signature.client_id)
+    .bind(signature.request_id)
+    .bind(sha2::Sha256::digest(body).as_slice())
+    .bind(signature.expires)
+    .fetch_optional(&mut *transaction)
+    .await
+    .map_err(|database_error| {
+        error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "mobile_authentication_unavailable",
+            "mobile request replay admission failed",
+            true,
+            format!("database={database_error}"),
+            Some(API_MAJOR),
+        )
+    })?;
+    if admitted.is_none() {
+        return Err(error(
+            StatusCode::CONFLICT,
+            "request_replayed",
+            "request id was already admitted",
+            false,
+            format!(
+                "client_id={}; request_id={}",
+                signature.client_id, signature.request_id
+            ),
+            Some(API_MAJOR),
+        ));
+    }
+    sqlx::query("UPDATE mobile_credentials SET last_used_at = to_timestamp($3) WHERE client_id = $1 AND key_id = $2")
+        .bind(signature.client_id)
+        .bind(signature.key_id)
+        .bind(signature.created)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|database_error| {
+            error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "mobile_authentication_unavailable",
+                "mobile credential use evidence could not be recorded",
+                true,
+                format!("database={database_error}"),
+                Some(API_MAJOR),
+            )
+        })?;
+    sqlx::query(
+        "INSERT INTO credential_audit (client_id, key_id, action, actor, reason)\
+         VALUES ($1, $2, 'used', $3, $4)",
+    )
+    .bind(signature.client_id)
+    .bind(signature.key_id)
+    .bind(format!("client-request:{}", signature.request_id))
+    .bind(format!("{method} {path}"))
+    .execute(&mut *transaction)
+    .await
+    .map_err(|database_error| {
+        error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "mobile_authentication_unavailable",
+            "mobile credential audit evidence could not be recorded",
+            true,
+            format!("database={database_error}"),
+            Some(API_MAJOR),
+        )
+    })?;
+    transaction.commit().await.map_err(|database_error| {
+        error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "mobile_authentication_unavailable",
+            "mobile request admission could not be committed",
+            true,
+            format!("database={database_error}"),
+            Some(API_MAJOR),
+        )
+    })?;
+    Ok(())
+}
+
 /// Discover API compatibility before enrollment.
 #[utoipa::path(
     get,
@@ -651,7 +1122,7 @@ pub async fn client_enroll_handler(
     ))
 }
 
-/// Item-write placeholder with item-level response schemas but no success advertisement.
+/// Authenticate an item-write request before the domain/platform capability gate is evaluated.
 ///
 /// # Errors
 ///
@@ -681,10 +1152,32 @@ pub async fn client_enroll_handler(
 )]
 #[allow(clippy::unused_async, reason = "axum handlers must be async")]
 pub async fn client_write_handler(
+    Extension(database): Extension<Option<sqlx::PgPool>>,
     headers: HeaderMap,
-    Json(_request): Json<ClientWriteBatch>,
+    body: Bytes,
 ) -> Result<Json<ClientWriteResponse>, ClientApiError> {
     validate_version(&headers)?;
+    let database =
+        database.ok_or_else(|| unavailable("item_writes", "VITALS_CONSOLE_DATABASE_URL"))?;
+    authenticate_mobile_request(
+        &database,
+        &headers,
+        body.as_ref(),
+        "POST",
+        "/api/v1/client/items",
+        "submit_domain_records",
+    )
+    .await?;
+    let _request: ClientWriteBatch = serde_json::from_slice(&body).map_err(|decode_error| {
+        error(
+            StatusCode::BAD_REQUEST,
+            "write_body_invalid",
+            "client write body does not match the versioned contract",
+            false,
+            format!("body_decode={decode_error}"),
+            Some(API_MAJOR),
+        )
+    })?;
     Err(unavailable("item_writes", "T-M5b_T-X2_T-X3_T-X4"))
 }
 
@@ -718,10 +1211,32 @@ pub async fn client_write_handler(
 )]
 #[allow(clippy::unused_async, reason = "axum handlers must be async")]
 pub async fn client_beacon_handler(
+    Extension(database): Extension<Option<sqlx::PgPool>>,
     headers: HeaderMap,
-    Json(_request): Json<HealthBeaconRequest>,
+    body: Bytes,
 ) -> Result<StatusCode, ClientApiError> {
     validate_version(&headers)?;
+    let database =
+        database.ok_or_else(|| unavailable("status_beacon", "VITALS_CONSOLE_DATABASE_URL"))?;
+    authenticate_mobile_request(
+        &database,
+        &headers,
+        body.as_ref(),
+        "POST",
+        "/api/v1/client/status",
+        "submit_platform_health",
+    )
+    .await?;
+    let _request: HealthBeaconRequest = serde_json::from_slice(&body).map_err(|decode_error| {
+        error(
+            StatusCode::BAD_REQUEST,
+            "status_body_invalid",
+            "status beacon body does not match the versioned contract",
+            false,
+            format!("body_decode={decode_error}"),
+            Some(API_MAJOR),
+        )
+    })?;
     Err(unavailable("status_beacon", "T-X2"))
 }
 
@@ -754,10 +1269,22 @@ pub async fn client_beacon_handler(
 )]
 #[allow(clippy::unused_async, reason = "axum handlers must be async")]
 pub async fn client_projections_handler(
+    Extension(database): Extension<Option<sqlx::PgPool>>,
     headers: HeaderMap,
     Query(_query): Query<ProjectionQuery>,
 ) -> Result<Json<ProjectionPage>, ClientApiError> {
     validate_version(&headers)?;
+    let database =
+        database.ok_or_else(|| unavailable("projections", "VITALS_CONSOLE_DATABASE_URL"))?;
+    authenticate_mobile_request(
+        &database,
+        &headers,
+        &[],
+        "GET",
+        "/api/v1/client/projections",
+        "read_projections",
+    )
+    .await?;
     Err(unavailable("projections", "admin_M3_M4"))
 }
 
@@ -882,7 +1409,7 @@ mod tests {
         assert!(
             body["blocker"]
                 .as_str()
-                .is_some_and(|v| v.contains("T-M5b"))
+                .is_some_and(|v| v.contains("VITALS_CONSOLE_DATABASE_URL"))
         );
     }
 

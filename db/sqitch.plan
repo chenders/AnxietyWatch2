@@ -23,3 +23,4 @@ operator_overrides [email_channel] 2026-09-19T12:02:00Z Chris Henderson <chender
 source_declarations [operator_overrides] 2026-09-19T12:03:00Z Chris Henderson <chenders@users.noreply.github.com> # optional-source declarations
 health_mutes [source_declarations] 2026-09-19T12:04:00Z Chris Henderson <chenders@users.noreply.github.com> # actor and time-bounded health mutes
 mobile_credentials [health_mutes] 2026-09-19T12:05:00Z Chris Henderson <chenders@users.noreply.github.com> # single-use enrollment and public-key device credentials
+mobile_request_replays [mobile_credentials] 2026-09-19T12:06:00Z Chris Henderson <chenders@users.noreply.github.com> # durable authenticated mobile request replay admissions

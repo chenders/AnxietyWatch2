@@ -86,7 +86,7 @@
         "tags": [
           "apple-client"
         ],
-        "summary": "Item-write placeholder with item-level response schemas but no success advertisement.",
+        "summary": "Authenticate an item-write request before the domain/platform capability gate is evaluated.",
         "description": "# Errors\n\nReturns a version error or the named domain/platform contract gate.",
         "operationId": "client_write_handler",
         "parameters": [
