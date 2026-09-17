@@ -293,16 +293,16 @@ public actor SyncEngine {
       seen.insert(item.id)
       switch acknowledgement.status {
       case "created":
+        try await updateState(for: item.id, state: .acknowledged)
         try await outbox.recordAcknowledgement(
           itemID: item.id, acknowledgedAt: now(), serverAttemptID: acknowledgement.code
         )
-        try await updateState(for: item.id, state: .acknowledged)
         acknowledged += 1
       case "replayed":
+        try await updateState(for: item.id, state: .acknowledged)
         try await outbox.recordAcknowledgement(
           itemID: item.id, acknowledgedAt: now(), serverAttemptID: acknowledgement.code
         )
-        try await updateState(for: item.id, state: .acknowledged)
         acknowledged += 1
         replayed += 1
       case "rejected":

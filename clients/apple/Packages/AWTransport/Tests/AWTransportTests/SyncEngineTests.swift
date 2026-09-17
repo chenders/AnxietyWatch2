@@ -49,6 +49,41 @@ func syncAcknowledgesItems() async throws {
   #expect(await stateSink.state(for: secondID) == .acknowledged)
 }
 
+@Test("mirror failure preserves an acknowledged payload for reconciliation")
+func mirrorFailurePreservesPayload() async throws {
+  let directory = try temporaryDirectory()
+  let outbox = try FileOutboxStore(directory: directory)
+  let id = UUID()
+  try await outbox.enqueue(try item(id: id, payload: Data("{}".utf8)))
+  let response = ClientWriteResponse(
+    apiVersion: "1.0",
+    batchID: UUID(),
+    acknowledgements: [
+      ItemAcknowledgement(itemID: id, status: "created", code: "new", message: "created", retryable: false)
+    ],
+    serverTime: "2026-01-01T00:00:01Z"
+  )
+  let engine = SyncEngine(
+    outbox: outbox,
+    credentialStore: MockCredentialStore(),
+    transport: MockItemTransport(response: response),
+    stateSink: FailingSyncStateSink(),
+    now: { syncNow }
+  )
+
+  do {
+    _ = try await engine.drain()
+    Issue.record("mirror failure unexpectedly allowed terminal deletion")
+  } catch let error as OutboxError {
+    #expect(error == .persistenceFailure("mirror unavailable"))
+  }
+  let allItems = try await outbox.allItems()
+  let stored = try #require(allItems.first)
+  #expect(stored.id == id)
+  #expect(stored.payload == Data("{}".utf8))
+  #expect(stored.state == .pending)
+}
+
 @Test("retryable transport failures preserve payloads and use bounded exponential backoff")
 func retryableTransportFailure() async throws {
   let directory = try temporaryDirectory()
@@ -188,6 +223,12 @@ private final class EmptyCredentialStore: DeviceCredentialStore, @unchecked Send
   func load() throws -> StoredDeviceCredential? { nil }
   func save(_ credential: StoredDeviceCredential) throws {}
   func delete() throws {}
+}
+
+private actor FailingSyncStateSink: DomainSyncStateSink {
+  func update(recordID: UUID, state: DomainSyncState) async throws {
+    throw OutboxError.persistenceFailure("mirror unavailable")
+  }
 }
 
 private actor MockSyncStateSink: DomainSyncStateSink {
