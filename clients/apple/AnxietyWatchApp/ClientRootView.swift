@@ -83,6 +83,7 @@ actor AppDomainCommandSink: DomainCommandSink {
 private struct JournalListItem: Identifiable, Equatable {
   let command: JournalCommand
   let syncState: DomainSyncState
+  let deleted: Bool
   var id: UUID { command.id }
 }
 
@@ -123,7 +124,7 @@ private func journalListItem(from entry: AppJournalMirrorEntry) -> JournalListIt
     songID: songID,
     expressMode: expressMode
   ) else { return nil }
-  return JournalListItem(command: command, syncState: entry.syncState)
+  return JournalListItem(command: command, syncState: entry.syncState, deleted: entry.deleted)
 }
 
 private struct RuntimeStatusSurface: View {
@@ -229,7 +230,7 @@ private struct JournalSurface: View {
       }
       .sheet(isPresented: $showingCapture) {
         JournalCaptureSurface(coordinator: coordinator) { command, song in
-          entries.insert(JournalListItem(command: command, syncState: .queued), at: 0)
+          entries.insert(JournalListItem(command: command, syncState: .queued, deleted: false), at: 0)
           if let song {
             let songID = catalog.add(song)
             catalog.addOccurrence(
@@ -245,11 +246,15 @@ private struct JournalSurface: View {
       .task {
         guard coordinator == nil else { return }
         do {
-          let mirroredEntries = try await runtime.journalMirrorEntries()
-          entries = mirroredEntries.compactMap(journalListItem(from:))
+          try await reloadMirror()
           coordinator = try runtime.makeJournalCaptureCoordinator()
         } catch {
           setupError = "Journal storage unavailable: \(error.localizedDescription)"
+        }
+      }
+      .onChange(of: runtime.syncStatus) { _, _ in
+        Task {
+          try? await reloadMirror()
         }
       }
       .alert("Journal backup setting required", isPresented: backupChoiceBinding) {
@@ -268,6 +273,11 @@ private struct JournalSurface: View {
         Text(setupError ?? "Journal storage is unavailable.")
       }
     }
+  }
+
+  private func reloadMirror() async throws {
+    let mirroredEntries = try await runtime.journalMirrorEntries()
+    entries = mirroredEntries.compactMap(journalListItem(from:))
   }
 
   private var backupChoiceBinding: Binding<Bool> {
@@ -650,7 +660,7 @@ private struct JournalEntryRow: View {
       VStack(alignment: .leading, spacing: 3) {
         Text(item.command.subjectAt)
           .font(.subheadline.bold())
-        Text(item.command.anxiety.band.rawValue)
+        Text(item.deleted ? "Deleted" : item.command.anxiety.band.rawValue)
           .font(.caption)
           .foregroundStyle(.secondary)
         if let note = item.command.note {
@@ -661,10 +671,10 @@ private struct JournalEntryRow: View {
         }
       }
       Spacer()
-      Text(item.syncState.rawValue)
+      Text(item.deleted ? "Deleted" : item.syncState.rawValue)
         .font(.caption2)
         .foregroundStyle(.secondary)
-        .accessibilityLabel("Sync state \(item.syncState.rawValue)")
+        .accessibilityLabel(item.deleted ? "Journal entry deleted" : "Sync state \(item.syncState.rawValue)")
     }
   }
 }
@@ -680,7 +690,11 @@ private struct JournalEntryDetailSurface: View {
         LabeledContent("Recorded time", value: item.command.recordedAt)
       }
       Section("Content") {
-        LabeledContent("Sync", value: item.syncState.rawValue)
+        LabeledContent("Sync", value: item.deleted ? "Deleted" : item.syncState.rawValue)
+        if item.deleted {
+          Text("This entry is retained as an immutable tombstone.")
+            .foregroundStyle(.secondary)
+        }
         if let note = item.command.note { Text(note) }
         if !item.command.tags.isEmpty { LabeledContent("Tags", value: item.command.tags.joined(separator: ", ")) }
       }

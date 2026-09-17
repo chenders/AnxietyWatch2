@@ -8,8 +8,26 @@ import SwiftUI
 struct AppJournalMirrorEntry: Codable, Equatable, Identifiable, Sendable {
   let record: DomainRecordPayload
   let syncState: DomainSyncState
+  let deleted: Bool
+
+  init(record: DomainRecordPayload, syncState: DomainSyncState, deleted: Bool = false) {
+    self.record = record
+    self.syncState = syncState
+    self.deleted = deleted
+  }
 
   var id: UUID { record.id }
+
+  private enum CodingKeys: String, CodingKey {
+    case record, syncState, deleted
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    record = try container.decode(DomainRecordPayload.self, forKey: .record)
+    syncState = try container.decode(DomainSyncState.self, forKey: .syncState)
+    deleted = try container.decodeIfPresent(Bool.self, forKey: .deleted) ?? false
+  }
 }
 
 actor AppJournalMirrorStore: DomainSyncStateSink {
@@ -76,14 +94,47 @@ actor AppJournalMirrorStore: DomainSyncStateSink {
   }
 
   func put(record: DomainRecordPayload, syncState: DomainSyncState) throws {
+    if let targetID = record.tombstoneTargetID {
+      if let targetIndex = persisted.entries.firstIndex(where: { $0.record.id == targetID }) {
+        let target = persisted.entries[targetIndex]
+        persisted.entries[targetIndex] = AppJournalMirrorEntry(
+          record: target.record,
+          syncState: target.syncState,
+          deleted: true
+        )
+      }
+      if let tombstoneIndex = persisted.entries.firstIndex(where: { $0.record.id == record.id }) {
+        let existing = persisted.entries[tombstoneIndex]
+        guard record.disposition(comparedWith: existing.record) != .conflict else {
+          throw OutboxError.invalidItem("journal mirror conflict: record \(record.id) has different content")
+        }
+        persisted.entries[tombstoneIndex] = AppJournalMirrorEntry(
+          record: existing.record,
+          syncState: syncState,
+          deleted: existing.deleted
+        )
+      } else {
+        persisted.entries.append(AppJournalMirrorEntry(record: record, syncState: syncState))
+      }
+      try persist()
+      return
+    }
+
+    let alreadyTombstoned = persisted.entries.contains { $0.record.tombstoneTargetID == record.id }
     if let index = persisted.entries.firstIndex(where: { $0.record.id == record.id }) {
       let existing = persisted.entries[index]
       guard record.disposition(comparedWith: existing.record) != .conflict else {
         throw OutboxError.invalidItem("journal mirror conflict: record \(record.id) has different content")
       }
-      persisted.entries[index] = AppJournalMirrorEntry(record: existing.record, syncState: syncState)
+      persisted.entries[index] = AppJournalMirrorEntry(
+        record: existing.record,
+        syncState: syncState,
+        deleted: existing.deleted || alreadyTombstoned
+      )
     } else {
-      persisted.entries.append(AppJournalMirrorEntry(record: record, syncState: syncState))
+      persisted.entries.append(
+        AppJournalMirrorEntry(record: record, syncState: syncState, deleted: alreadyTombstoned)
+      )
     }
     try persist()
   }
@@ -260,7 +311,8 @@ final class AppClientRuntime: ObservableObject {
   func reconcileJournalMirror() async {
     guard let outbox, let journalMirror else { return }
     do {
-      for item in try await outbox.allItems() where item.recordClass == "journal_entry" {
+      for item in try await outbox.allItems()
+      where item.recordClass == "journal_entry" || item.recordClass == "tombstone" {
         let envelope = try JSONDecoder().decode(DomainEnvelope.self, from: item.payload)
         let state: DomainSyncState
         switch item.state {
