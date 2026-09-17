@@ -142,6 +142,17 @@ public struct EnrollmentArtifact: Codable, Equatable, Sendable {
   public let scopes: [String]
   public let expiresAt: Date
 
+  private enum CodingKeys: String, CodingKey {
+    case apiMajor = "api_major"
+    case origin
+    case serverInstanceID = "server_instance_id"
+    case enrollmentID = "enrollment_id"
+    case token
+    case serverDisplayLabel = "server_display_label"
+    case scopes
+    case expiresAt = "expires_at"
+  }
+
   public init(
     apiMajor: UInt,
     origin: ClientOrigin,

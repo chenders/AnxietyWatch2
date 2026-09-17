@@ -563,17 +563,67 @@ private struct SongDetailSurface: View {
 }
 
 private struct EnrollmentSurface: View {
+  @State private var artifactText = ""
+  @State private var deviceLabel = "iPhone"
+  @State private var accepted = false
+  @State private var isEnrolling = false
+  @State private var statusMessage: String?
+  @State private var enrolled = false
   @State private var showingRecovery = false
 
   var body: some View {
     NavigationStack {
       Form {
         Section("Pi connection") {
-          Label("Not enrolled", systemImage: "lock.shield")
-            .accessibilityLabel("Pi connection not enrolled")
-          Text("Scan a one-time enrollment artifact from the private admin console to connect this iPhone.")
-            .font(.footnote)
+          Label(
+            enrolled ? "Enrolled on this device" : "Not enrolled",
+            systemImage: enrolled ? "checkmark.shield" : "lock.shield"
+          )
+          .accessibilityLabel(enrolled ? "Pi connection enrolled" : "Pi connection not enrolled")
+          if let preview = artifactPreview {
+            LabeledContent("Server", value: preview.serverDisplayLabel)
+            LabeledContent("Origin", value: preview.origin.normalizedString)
+            LabeledContent("Expires", value: preview.expiresAt.formatted())
+          } else if !enrolled {
+            Text("Paste the one-time enrollment artifact created by the private admin console.")
+              .font(.footnote)
+          }
         }
+
+        if !enrolled {
+          Section("One-time enrollment artifact") {
+            TextEditor(text: $artifactText)
+              .frame(minHeight: 120)
+              .font(.footnote.monospaced())
+              .accessibilityLabel("Enrollment artifact JSON")
+            TextField("Device label", text: $deviceLabel)
+              .textContentType(.name)
+          }
+          Section("Confirmation") {
+            Toggle("I confirm this server identity and origin", isOn: $accepted)
+            Button {
+              Task { await enroll() }
+            } label: {
+              if isEnrolling {
+                ProgressView("Enrolling…")
+              } else {
+                Label("Enroll this iPhone", systemImage: "arrow.right.circle")
+              }
+            }
+            .disabled(!accepted || artifactPreview == nil || isEnrolling)
+          } footer: {
+            Text("The artifact is single-use. The private signing key remains in this device's Secure Enclave.")
+          }
+        }
+
+        if let statusMessage {
+          Section("Enrollment status") {
+            Text(statusMessage)
+              .foregroundStyle(enrolled ? .secondary : .primary)
+              .accessibilityLabel("Enrollment status: \(statusMessage)")
+          }
+        }
+
         Section {
           Button("Start recovery") { showingRecovery = true }
         } footer: {
@@ -582,6 +632,49 @@ private struct EnrollmentSurface: View {
       }
       .navigationTitle("Settings")
       .sheet(isPresented: $showingRecovery) { RecoveryView() }
+    }
+  }
+
+  private var artifactPreview: EnrollmentArtifact? {
+    guard let data = artifactText.data(using: .utf8) else { return nil }
+    let decoder = JSONDecoder()
+    decoder.dateDecodingStrategy = .iso8601
+    return try? decoder.decode(EnrollmentArtifact.self, from: data)
+  }
+
+  private func enroll() async {
+    guard let artifact = artifactPreview else {
+      statusMessage = "Enrollment blocked: artifact JSON is invalid or incomplete."
+      return
+    }
+    isEnrolling = true
+    defer { isEnrolling = false }
+    do {
+      let confirmation = try EnrollmentConfirmation(
+        artifact: artifact,
+        confirmedOrigin: artifact.origin,
+        confirmedServerInstanceID: artifact.serverInstanceID,
+        accepted: accepted,
+        now: Date()
+      )
+      let keyStore = SecureEnclaveKeyStore()
+      let credentialStore = KeychainCredentialStore()
+      let transport = URLSessionEnrollmentTransport(origin: artifact.origin)
+      let coordinator = EnrollmentCoordinator(
+        keyStore: keyStore,
+        credentialStore: credentialStore,
+        transport: transport
+      )
+      _ = try await coordinator.enroll(
+        confirmation: confirmation,
+        deviceLabel: deviceLabel,
+        appVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "development"
+      )
+      enrolled = true
+      statusMessage = "Enrollment succeeded; this iPhone can now authenticate queued writes."
+      artifactText = ""
+    } catch {
+      statusMessage = "Enrollment failed: \(error)"
     }
   }
 }
