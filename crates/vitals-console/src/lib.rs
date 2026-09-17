@@ -25,6 +25,8 @@ pub mod domain;
 pub mod email;
 /// Route handlers and shared application state.
 pub mod handlers;
+/// Pure HealthKit source-sample decoding, provenance, and canonical mapping.
+pub mod healthkit;
 /// HTTP response view-model types.
 pub mod models;
 /// Operator authentication, CSRF, sessions, throttling, and request limits.
