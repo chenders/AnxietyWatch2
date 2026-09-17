@@ -8,6 +8,7 @@ import SwiftUI
 final class AppClientRuntime: ObservableObject {
   @Published private(set) var isEnrolled = false
   @Published private(set) var syncStatus = "Sync is not initialized."
+  let songSearchCoordinator: SongSearchCoordinator
 
   private let credentialStore: KeychainCredentialStore
   private let keyStore: SecureEnclaveKeyStore
@@ -19,6 +20,11 @@ final class AppClientRuntime: ObservableObject {
   init() {
     credentialStore = KeychainCredentialStore()
     keyStore = SecureEnclaveKeyStore()
+    songSearchCoordinator = SongSearchCoordinator(
+      geniusProxy: nil,
+      geniusDirect: nil,
+      itunes: URLSessionITunesSongSearchProvider()
+    )
     do {
       guard let support = FileManager.default.urls(
         for: .applicationSupportDirectory,

@@ -276,7 +276,7 @@ private struct JournalCaptureSurface: View {
         }
       }
       .sheet(isPresented: $showingSongPicker) {
-        SongPickerSurface { result in
+        SongPickerSurface(searchCoordinator: runtime.songSearchCoordinator) { result in
           selectedSong = result
           showingSongPicker = false
         }
@@ -410,14 +410,55 @@ private extension String {
 
 private struct SongPickerSurface: View {
   @Environment(\.dismiss) private var dismiss
+  let searchCoordinator: SongSearchCoordinator
   let onSelect: (SongSearchResult) -> Void
   @State private var title = ""
+  @State private var results: [SongSearchResult] = []
+  @State private var isSearching = false
+  @State private var searchError: String?
   @State private var artist = ""
   @State private var album = ""
 
   var body: some View {
     NavigationStack {
       Form {
+        Section("Search the catalog") {
+          TextField("Title or artist", text: $title)
+            .textInputAutocapitalization(.words)
+            .onSubmit { Task { await search() } }
+          Button {
+            Task { await search() }
+          } label: {
+            if isSearching {
+              ProgressView("Searching…")
+            } else {
+              Label("Search iTunes", systemImage: "magnifyingglass")
+            }
+          }
+          .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSearching)
+          if let searchError {
+            Text(searchError)
+              .font(.footnote)
+              .foregroundStyle(.secondary)
+          }
+        }
+        if !results.isEmpty {
+          Section("Results") {
+            ForEach(results) { result in
+              Button {
+                onSelect(result)
+              } label: {
+                VStack(alignment: .leading, spacing: 3) {
+                  Text(result.title)
+                  Text("\(result.artist) · \(result.album ?? "Album not provided")")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+              }
+              .accessibilityLabel("Select \(result.title) by \(result.artist)")
+            }
+          }
+        }
         Section("Offline song stub") {
           TextField("Title", text: $title)
           TextField("Artist", text: $artist)
@@ -449,6 +490,27 @@ private struct SongPickerSurface: View {
           Button("Cancel") { dismiss() }
         }
       }
+    }
+  }
+
+  private func search() async {
+    let query = title.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !query.isEmpty, !isSearching else { return }
+    isSearching = true
+    searchError = nil
+    defer { isSearching = false }
+    do {
+      results = try await searchCoordinator.search(
+        query: query,
+        capabilities: SongSearchCapabilities(
+          piReachable: false,
+          piGeniusAvailable: false,
+          directGeniusProvisioned: false
+        )
+      )
+    } catch {
+      results = []
+      searchError = "Song search unavailable: \(error)"
     }
   }
 }

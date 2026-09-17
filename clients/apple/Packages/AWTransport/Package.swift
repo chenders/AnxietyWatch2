@@ -7,10 +7,11 @@ let package = Package(
   products: [.library(name: "AWTransport", targets: ["AWTransport"])],
   dependencies: [
     .package(path: "../AWClientCore"),
+    .package(path: "../AWDomain"),
     .package(path: "../AWOutbox"),
   ],
   targets: [
-    .target(name: "AWTransport", dependencies: ["AWClientCore", "AWOutbox"]),
+    .target(name: "AWTransport", dependencies: ["AWClientCore", "AWDomain", "AWOutbox"]),
     .testTarget(name: "AWTransportTests", dependencies: ["AWTransport"]),
   ]
 )
