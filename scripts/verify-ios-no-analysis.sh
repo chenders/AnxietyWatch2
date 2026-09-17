@@ -4,7 +4,10 @@ set -euo pipefail
 root=$(git rev-parse --show-toplevel)
 cd "$root"
 
-if rg -n 'HealthKit|HKQuantity|HKCategory|CoreML|CreateML|MLModel|VNRecognize|PDFDocument|CGContext' \
+# HealthKit is an explicitly allowed first-release acquisition boundary (Amendment 15). Keep
+# it out of this local-analysis guard; the bridge is checked by the HealthKit parity and delivery
+# verifiers instead.
+if rg -n 'CoreML|CreateML|MLModel|VNRecognize|PDFDocument|CGContext' \
   clients/apple/Packages/AWTransport/Sources/AWTransport/ReadClient.swift \
   clients/apple/AnxietyWatchApp --glob '*.swift'; then
   echo "analysis verification failed: local HealthKit, analysis, or report generation found in read client" >&2
