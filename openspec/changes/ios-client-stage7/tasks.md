@@ -24,7 +24,7 @@ dispatched before their named gate.
 ### HealthKit proxy
 
 - [x] T-I8 — HealthKit authorization, per-type anchored queries, and parity types · implement-complex
-- [ ] T-I9 — Observer/background delivery and phone status beacon · implement-complex · **BLOCKED on T-I7/T-I8 and admin T-X1/T-X2**
+- [x] T-I9 — Observer/background delivery and phone status beacon · implement-complex · **BLOCKED on T-I7/T-I8 and admin T-X1/T-X2**
 
 ### Viewer
 

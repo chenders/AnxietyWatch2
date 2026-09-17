@@ -1,9 +1,13 @@
 import AWDomain
+import AWHealthKit
 import AWOutbox
 import AWTransport
 import Combine
 import Foundation
 import SwiftUI
+#if canImport(BackgroundTasks)
+import BackgroundTasks
+#endif
 #if canImport(WatchConnectivity)
 import WatchConnectivity
 #endif
@@ -186,6 +190,39 @@ actor AppJournalMirrorStore: DomainSyncStateSink {
   }
 }
 
+#if canImport(HealthKit)
+import HealthKit
+
+private actor AppHealthKitBatchStore: HealthKitBatchStore {
+  private let outbox: FileOutboxStore
+
+  init(outbox: FileOutboxStore) {
+    self.outbox = outbox
+  }
+
+  func anchorData(for typeIdentifier: String) async throws -> Data? {
+    await outbox.healthKitAnchor(for: typeIdentifier)
+  }
+
+  func commit(
+    _ payload: HealthKitEnvelopePayload,
+    typeIdentifier: String,
+    nextAnchorData: Data?,
+    capturedAt: Date
+  ) async throws {
+    let batchID = payload.samples.first?.queryBatchID ?? payload.deletions.first?.queryBatchID
+    let payloadData = try JSONEncoder().encode(payload)
+    try await outbox.enqueueHealthKitAndAdvanceAnchor(
+      payload: payload.samples.isEmpty && payload.deletions.isEmpty ? nil : payloadData,
+      itemID: batchID,
+      capturedAt: capturedAt,
+      typeIdentifier: typeIdentifier,
+      nextAnchorData: nextAnchorData
+    )
+  }
+}
+#endif
+
 @MainActor
 final class AppClientRuntime: ObservableObject {
   @Published private(set) var isEnrolled = false
@@ -193,6 +230,10 @@ final class AppClientRuntime: ObservableObject {
   @Published private(set) var outboxItemCount = 0
   @Published private(set) var journalBackupIncluded = false
   @Published private(set) var journalBackupChoiceRequired = true
+#if canImport(HealthKit)
+  @Published private(set) var healthKitAuthorizationFacts = HealthKitAuthorizationFacts()
+  @Published private(set) var healthKitFacts: [HealthKitTypeFacts] = []
+#endif
   let songSearchCoordinator: SongSearchCoordinator
 
   private let credentialStore: KeychainCredentialStore
@@ -202,6 +243,16 @@ final class AppClientRuntime: ObservableObject {
   private let journalMirror: AppJournalMirrorStore?
   private var syncEngine: SyncEngine?
   private var projectionService: ProjectionReadService?
+#if canImport(BackgroundTasks)
+  private let healthKitDrainTaskIdentifier = "com.groundeffectsoftware.AnxietyWatch.healthkit-drain"
+#endif
+#if canImport(HealthKit)
+  private let healthKitFactsStore: UserDefaultsHealthKitFactsStore
+  private let healthKitAuthorizationFactsStore: UserDefaultsHealthKitAuthorizationFactStore
+  private var healthKitCoordinator: HealthKitDeliveryCoordinator?
+  private var statusTransport: ClientStatusTransport?
+  private var registrySHA256 = "unknown"
+#endif
 #if canImport(WatchConnectivity)
   private let watchRelayReceiver = AppWatchRelayReceiver()
 #endif
@@ -209,6 +260,10 @@ final class AppClientRuntime: ObservableObject {
   init() {
     credentialStore = KeychainCredentialStore()
     keyStore = SecureEnclaveKeyStore()
+#if canImport(HealthKit)
+    healthKitFactsStore = UserDefaultsHealthKitFactsStore()
+    healthKitAuthorizationFactsStore = UserDefaultsHealthKitAuthorizationFactStore()
+#endif
     songSearchCoordinator = SongSearchCoordinator(
       geniusProxy: nil,
       geniusDirect: nil,
@@ -235,6 +290,16 @@ final class AppClientRuntime: ObservableObject {
     outbox = loadedOutbox
     journalMirror = loadedJournalMirror
     initializationError = loadError
+#if canImport(BackgroundTasks)
+    BGTaskScheduler.shared.register(forTaskWithIdentifier: healthKitDrainTaskIdentifier, using: nil) { [weak self] task in
+      guard let task = task as? BGAppRefreshTask else { return }
+      task.expirationHandler = { task.setTaskCompleted(success: false) }
+      Task { @MainActor [weak self] in
+        await self?.drain()
+        task.setTaskCompleted(success: true)
+      }
+    }
+#endif
   }
 
   func makeJournalCaptureCoordinator() throws -> JournalCaptureCoordinator {
@@ -254,6 +319,10 @@ final class AppClientRuntime: ObservableObject {
       isEnrolled = false
       syncEngine = nil
       projectionService = nil
+#if canImport(HealthKit)
+      healthKitCoordinator = nil
+      statusTransport = nil
+#endif
       syncStatus = "Sync unavailable: \(initializationError ?? "journal storage initialization failed")"
       return
     }
@@ -262,10 +331,19 @@ final class AppClientRuntime: ObservableObject {
         isEnrolled = false
         syncEngine = nil
         projectionService = nil
+#if canImport(HealthKit)
+        healthKitCoordinator = nil
+        statusTransport = nil
+#endif
         syncStatus = "Sync unavailable: this iPhone is not enrolled."
         return
       }
       let authenticator = RequestAuthenticator(keyStore: keyStore, origin: credential.origin)
+#if canImport(HealthKit)
+      if let previousHealthKitCoordinator = healthKitCoordinator {
+        await previousHealthKitCoordinator.stopObservers()
+      }
+#endif
       let writeTransport = URLSessionClientItemTransport(
         origin: credential.origin,
         authenticator: authenticator
@@ -287,12 +365,46 @@ final class AppClientRuntime: ObservableObject {
         credentialStore: credentialStore,
         transport: readTransport
       )
+#if canImport(HealthKit)
+      statusTransport = URLSessionClientStatusTransport(origin: credential.origin, authenticator: authenticator)
+      do {
+        let registryResponse = try await URLSessionRegistryTransport(
+          origin: credential.origin,
+          authenticator: authenticator
+        ).readRegistry(credential: credential)
+        registrySHA256 = registryResponse.registrySHA256
+        let coordinator = try HealthKitDeliveryCoordinator(
+          registry: registryResponse.document,
+          batchStore: AppHealthKitBatchStore(outbox: outbox),
+          factsStore: healthKitFactsStore,
+          authorizationFactsStore: healthKitAuthorizationFactsStore,
+          onCommit: { [weak self] _ in
+            NotificationCenter.default.post(name: .domainOutboxNeedsDrain, object: nil)
+#if canImport(BackgroundTasks)
+            Task { @MainActor [weak self] in self?.scheduleHealthKitDrain() }
+#endif
+          }
+        )
+        await coordinator.load()
+        await coordinator.startObservers()
+        healthKitCoordinator = coordinator
+        await refreshHealthKitState()
+      } catch {
+        healthKitCoordinator = nil
+        healthKitFacts = []
+        healthKitAuthorizationFacts = (try? await healthKitAuthorizationFactsStore.loadAuthorizationFacts()) ?? HealthKitAuthorizationFacts()
+      }
+#endif
       isEnrolled = true
       syncStatus = "Enrolled; waiting for a queued write or Sync Now."
     } catch {
       isEnrolled = false
       syncEngine = nil
       projectionService = nil
+#if canImport(HealthKit)
+      healthKitCoordinator = nil
+      statusTransport = nil
+#endif
       syncStatus = "Sync unavailable: credential setup failed."
     }
   }
@@ -318,6 +430,82 @@ final class AppClientRuntime: ObservableObject {
     outboxItemCount = (try? await outbox.snapshot().pendingCount) ?? 0
   }
 
+#if canImport(BackgroundTasks)
+  func scheduleHealthKitDrain() {
+    let request = BGAppRefreshTaskRequest(identifier: healthKitDrainTaskIdentifier)
+    request.earliestBeginDate = Date(timeIntervalSinceNow: 1)
+    try? BGTaskScheduler.shared.submit(request)
+  }
+#endif
+
+#if canImport(HealthKit)
+  func refreshHealthKitState() async {
+    guard let coordinator = healthKitCoordinator else {
+      healthKitFacts = []
+      healthKitAuthorizationFacts = (try? await healthKitAuthorizationFactsStore.loadAuthorizationFacts()) ?? HealthKitAuthorizationFacts()
+      return
+    }
+    healthKitFacts = await coordinator.facts()
+    healthKitAuthorizationFacts = await coordinator.authorizationFacts()
+  }
+
+  func requestHealthKitAccess() async {
+    guard let coordinator = healthKitCoordinator else {
+      syncStatus = "HealthKit unavailable: the Pi registry is not available."
+      return
+    }
+    let authorizationFacts = await coordinator.requestAuthorization()
+    healthKitAuthorizationFacts = authorizationFacts
+    await coordinator.startObservers()
+    await coordinator.syncAll()
+    await refreshHealthKitState()
+    await drain()
+  }
+
+  func sendStatusBeacon() async {
+    guard let statusTransport else { return }
+    let loadedCredential: StoredDeviceCredential?
+    do {
+      loadedCredential = try credentialStore.load()
+    } catch {
+      return
+    }
+    guard let credential = loadedCredential else { return }
+    guard let outbox else { return }
+    let snapshot = try? await outbox.snapshot()
+    let formatter = ISO8601DateFormatter()
+    let assertedAt = Date()
+    let factChangeDates = healthKitFacts.flatMap { [$0.lastQueryAt, $0.lastMatchingSampleAt, $0.lastPiAckAt].compactMap { $0 } }
+      + [healthKitAuthorizationFacts.attemptedAt].compactMap { $0 }
+    let changedAt = factChangeDates.max() ?? assertedAt
+    let beacon = HealthBeaconRequest(
+      beaconID: UUID(),
+      assertedAt: formatter.string(from: assertedAt),
+      changedAt: formatter.string(from: min(changedAt, assertedAt)),
+      appVersion: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown",
+      registrySHA256: registrySHA256,
+      outboxCount: UInt64(snapshot?.pendingCount ?? 0),
+      oldestOutboxAgeS: snapshot?.oldestPendingAt.map { UInt64(max(0, Date().timeIntervalSince($0))) },
+      lastServerAckAt: nil,
+      types: healthKitFacts.map { facts in
+        let formatter = ISO8601DateFormatter()
+        return HealthTypeFact(
+          healthKitType: facts.healthKitType,
+          configured: facts.configured,
+          authorizationRequestOutcome: facts.authorizationRequestOutcome,
+          observerRegistrationOutcome: facts.observerRegistrationOutcome,
+          backgroundDeliveryOutcome: facts.backgroundDeliveryOutcome,
+          lastQueryOutcome: facts.lastQueryOutcome,
+          lastQueryAt: facts.lastQueryAt.map(formatter.string),
+          lastMatchingSampleAt: facts.lastMatchingSampleAt.map(formatter.string),
+          lastPiAckAt: facts.lastPiAckAt.map(formatter.string)
+        )
+      }
+    )
+    _ = try? await statusTransport.send(beacon: beacon, credential: credential)
+  }
+#endif
+
   func reconcileJournalMirror() async {
     guard let outbox, let journalMirror else { return }
     do {
@@ -341,6 +529,15 @@ final class AppClientRuntime: ObservableObject {
   func setWatchRelayStatus(_ status: String) {
     syncStatus = status
   }
+
+#if canImport(HealthKit)
+  private func healthKitType(for item: OutboxItem) -> String? {
+    guard item.recordClass == "platform_sample_batch",
+      let payload = try? JSONDecoder().decode(HealthKitEnvelopePayload.self, from: item.payload)
+    else { return nil }
+    return payload.samples.first?.healthKitType.rawValue ?? payload.deletions.first?.healthKitType.rawValue
+  }
+#endif
 
   private func watchRelayIDs(in items: [OutboxItem]) -> Set<UUID> {
     Set(items.compactMap { item in
@@ -439,14 +636,32 @@ final class AppClientRuntime: ObservableObject {
         : "Sync unavailable: this iPhone is not enrolled."
       return
     }
-    let watchRelayIDsBeforeDrain = watchRelayIDs(in: (try? await outbox.allItems()) ?? [])
+    let itemsBeforeDrain = (try? await outbox.allItems()) ?? []
+    let watchRelayIDsBeforeDrain = watchRelayIDs(in: itemsBeforeDrain)
+#if canImport(HealthKit)
+    let healthKitBatchesBeforeDrain = Dictionary(uniqueKeysWithValues: itemsBeforeDrain.compactMap { item in
+      healthKitType(for: item).map { (item.id, $0) }
+    })
+#endif
     do {
       let report = try await syncEngine.drain()
+#if canImport(HealthKit)
+      if let coordinator = healthKitCoordinator {
+        let remainingIDs = Set(((try? await outbox.allItems()) ?? []).map(\.id))
+        for (itemID, typeIdentifier) in healthKitBatchesBeforeDrain where !remainingIDs.contains(itemID) {
+          await coordinator.recordPiAcknowledgement(for: typeIdentifier, at: Date())
+        }
+        await refreshHealthKitState()
+      }
+#endif
 #if canImport(WatchConnectivity)
       await notifyWatchRelayServerAcknowledgements(for: watchRelayIDsBeforeDrain, outbox: outbox)
 #endif
       outboxItemCount = report.pendingAfter
       syncStatus = "Sync complete: \(report.acknowledged) acknowledged; \(report.pendingAfter) pending."
+#if canImport(HealthKit)
+      await sendStatusBeacon()
+#endif
     } catch {
       await refreshOutboxState()
       syncStatus = "Sync blocked: \(error)"

@@ -26,10 +26,8 @@ struct ClientRootView: View {
         message: "History will render Pi projections and explicit gaps."
       )
       .tabItem { Label("History", systemImage: "chart.xyaxis.line") }
-      PlaceholderSurface(
-        title: "Health", systemImage: "heart.circle", message: "Health access is not configured."
-      )
-      .tabItem { Label("Health", systemImage: "heart.circle") }
+      HealthSurface()
+        .tabItem { Label("Health", systemImage: "heart.circle") }
       EnrollmentSurface()
         .tabItem { Label("Settings", systemImage: "gear") }
     }
@@ -127,6 +125,62 @@ private func journalListItem(from entry: AppJournalMirrorEntry) -> JournalListIt
     expressMode: expressMode
   ) else { return nil }
   return JournalListItem(command: command, syncState: entry.syncState, deleted: entry.deleted)
+}
+
+private struct HealthSurface: View {
+  @EnvironmentObject private var runtime: AppClientRuntime
+  @State private var isRequesting = false
+
+  var body: some View {
+    NavigationStack {
+      Form {
+        Section("Read-only HealthKit") {
+          Text("HealthKit read authorization is requested once per type. Apple does not expose whether a read was granted, so this screen reports requests, query results, and Pi acknowledgements separately.")
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+          Button {
+            Task {
+              isRequesting = true
+              await runtime.requestHealthKitAccess()
+              isRequesting = false
+            }
+          } label: {
+            if isRequesting { ProgressView("Requesting…") }
+            else { Label("Request HealthKit access", systemImage: "heart.text.square") }
+          }
+          .disabled(isRequesting || !runtime.isEnrolled)
+          if let outcome = runtime.healthKitAuthorizationFacts.outcome {
+            LabeledContent("Request outcome", value: outcome)
+          }
+          if let status = runtime.healthKitAuthorizationFacts.requestStatus {
+            LabeledContent("Apple request status", value: status)
+          }
+        }
+        Section("Per-type delivery") {
+          if runtime.healthKitFacts.isEmpty {
+            Text("HealthKit delivery is unknown until the enrolled Pi registry is available.")
+              .foregroundStyle(.secondary)
+          } else {
+            ForEach(runtime.healthKitFacts, id: \.healthKitType) { fact in
+              VStack(alignment: .leading, spacing: 4) {
+                Text(fact.healthKitType)
+                Text(fact.lastQueryOutcome ?? "not measured")
+                  .font(.footnote)
+                  .foregroundStyle(.secondary)
+                if let ack = fact.lastPiAckAt {
+                  Text("Pi acknowledged: \(ack.formatted(.dateTime))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+              }
+              .accessibilityElement(children: .combine)
+            }
+          }
+        }
+      }
+      .navigationTitle("Health")
+    }
+  }
 }
 
 private struct RuntimeStatusSurface: View {

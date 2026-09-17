@@ -213,7 +213,7 @@ public final class HealthKitAnchoredQueryEngine: @unchecked Sendable {
     )
   }
 
-  private static func objectType(for definition: HealthKitReadTypeDefinition) -> HKSampleType? {
+  public static func objectType(for definition: HealthKitReadTypeDefinition) -> HKSampleType? {
     switch definition.identifier {
     case "HKQuantityTypeIdentifierHeartRate": return HKQuantityType(.heartRate)
     case "HKQuantityTypeIdentifierHeartRateVariabilitySDNN": return HKQuantityType(.heartRateVariabilitySDNN)
@@ -291,6 +291,62 @@ public final class HealthKitAnchoredQueryEngine: @unchecked Sendable {
     let formatter = ISO8601DateFormatter()
     formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     return formatter.string(from: date)
+  }
+}
+
+/// Registers one observer and immediate background delivery request per enabled type. Callbacks do
+/// only bounded scheduling work; the callback always completes promptly.
+public final class HealthKitObserverCoordinator: @unchecked Sendable {
+  private let healthStore: HKHealthStore
+  private var queries: [HKObserverQuery] = []
+  private let lock = NSLock()
+
+  public init(healthStore: HKHealthStore = HKHealthStore()) {
+    self.healthStore = healthStore
+  }
+
+  public func start(
+    definitions: [HealthKitReadTypeDefinition],
+    onUpdate: @Sendable @escaping (String) -> Void,
+    onRegistration: @Sendable @escaping (String, String, String) -> Void
+  ) {
+    stop()
+    for definition in definitions {
+      guard let sampleType = HealthKitAnchoredQueryEngine.objectType(for: definition) else {
+        onRegistration(definition.identifier, "unsupported", "type is not supported by the bridge")
+        continue
+      }
+      let query = HKObserverQuery(sampleType: sampleType, predicate: nil) { _, completionHandler, error in
+        if let error {
+          onRegistration(definition.identifier, "failed", "observer query failed: \(error.localizedDescription)")
+        } else {
+          onUpdate(definition.identifier)
+        }
+        completionHandler()
+      }
+      healthStore.execute(query)
+      lock.lock()
+      queries.append(query)
+      lock.unlock()
+      onRegistration(definition.identifier, "registered", "observer query registered")
+      healthStore.enableBackgroundDelivery(for: sampleType, frequency: .immediate) { success, error in
+        if let error {
+          onRegistration(definition.identifier, "failed", "background delivery failed: \(error.localizedDescription)")
+        } else if success {
+          onRegistration(definition.identifier, "enabled", "immediate background delivery enabled")
+        } else {
+          onRegistration(definition.identifier, "failed", "background delivery returned false")
+        }
+      }
+    }
+  }
+
+  public func stop() {
+    lock.lock()
+    let active = queries
+    queries.removeAll()
+    lock.unlock()
+    for query in active { healthStore.stop(query) }
   }
 }
 #endif

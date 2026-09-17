@@ -33,6 +33,24 @@ func healthBeaconFixtureDecodes() throws {
   #expect(beacon.types.first?.lastMatchingSampleAt == nil)
 }
 
+@Test("status beacon fixtures preserve unknown and stale states without measurements")
+func statusBeaconFixtureSetDecodes() throws {
+  let names = [
+    "health-beacon-background-delivery.json",
+    "health-beacon-reboot.json",
+    "health-beacon-no-wake.json",
+    "health-beacon-locked.json",
+    "health-beacon-denied-type.json",
+    "health-beacon-unknown.json",
+    "health-beacon-stale.json",
+  ]
+  for name in names {
+    let beacon = try JSONDecoder().decode(HealthBeaconRequest.self, from: fixture(named: name))
+    #expect(!beacon.types.isEmpty)
+    #expect(beacon.types.allSatisfy { $0.lastMatchingSampleAt == nil || $0.lastQueryOutcome == "succeeded" })
+  }
+}
+
 @Test("shared item acknowledgement fixture preserves terminal wire status")
 func acknowledgementFixtureDecodes() throws {
   let response = try JSONDecoder().decode(

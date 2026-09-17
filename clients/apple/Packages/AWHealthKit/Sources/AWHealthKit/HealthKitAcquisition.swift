@@ -94,6 +94,26 @@ public protocol HealthKitAuthorizationRequesting: Sendable {
   func requestStatus(for types: [HealthKitReadTypeDefinition]) async -> String
 }
 
+/// Stores only the authorization request facts that HealthKit permits the app to retain.
+public final class UserDefaultsHealthKitAuthorizationFactStore: HealthKitAuthorizationFactStore, @unchecked Sendable {
+  private let defaults: UserDefaults
+  private let key: String
+
+  public init(defaults: UserDefaults = .standard, key: String = "healthkit.authorization-facts.v1") {
+    self.defaults = defaults
+    self.key = key
+  }
+
+  public func loadAuthorizationFacts() async throws -> HealthKitAuthorizationFacts {
+    guard let data = defaults.data(forKey: key) else { return HealthKitAuthorizationFacts() }
+    return try JSONDecoder().decode(HealthKitAuthorizationFacts.self, from: data)
+  }
+
+  public func saveAuthorizationFacts(_ facts: HealthKitAuthorizationFacts) async throws {
+    defaults.set(try JSONEncoder().encode(facts), forKey: key)
+  }
+}
+
 /// Coordinates the inventive but honest access flow: explain each type, offer the system sheet once,
 /// and retain the ask/result facts while never claiming that a read grant was observable.
 public actor HealthKitAuthorizationCoordinator {

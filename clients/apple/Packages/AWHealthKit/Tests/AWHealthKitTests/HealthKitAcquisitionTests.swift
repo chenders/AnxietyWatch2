@@ -86,6 +86,23 @@ private actor FailingAuthorizationClientFixture: HealthKitAuthorizationRequestin
   func requestStatus(for types: [HealthKitReadTypeDefinition]) async -> String { "status_failed" }
 }
 
+@Test("background delivery facts do not imply a read grant or a sample")
+func backgroundFactsRemainUnknownUntilMeasured() async throws {
+  let store = InMemoryHealthKitFactsStore([
+    HealthKitTypeFacts(healthKitType: "HKQuantityTypeIdentifierHeartRate")
+  ])
+  let before = try await store.loadHealthKitFacts()
+  #expect(before.first?.lastQueryOutcome == nil)
+  #expect(before.first?.lastMatchingSampleAt == nil)
+  var updated = before
+  updated[0].observerRegistrationOutcome = "registered"
+  updated[0].backgroundDeliveryOutcome = "enabled"
+  try await store.saveHealthKitFacts(updated)
+  let after = try await store.loadHealthKitFacts()
+  #expect(after.first?.backgroundDeliveryOutcome == "enabled")
+  #expect(after.first?.lastMatchingSampleAt == nil)
+}
+
 @Test("anchor codec preserves opaque anchor bytes")
 func anchorCodecIsLossless() {
   let input = Data([0, 1, 2, 127, 255])

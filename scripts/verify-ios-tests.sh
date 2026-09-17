@@ -14,7 +14,7 @@ for suite in "$@"; do
     AWTransportTests)
       swift test --package-path clients/apple/Packages/AWTransport
       ;;
-    AWRegistryTests|AWHealthKitMapperTests|AWHealthKitAuthorizationTests|AWAnchoredQueryTests|AWHealthKitParityTests)
+    AWRegistryTests|AWHealthKitMapperTests|AWHealthKitAuthorizationTests|AWAnchoredQueryTests|AWHealthKitParityTests|AWBackgroundDeliveryTests)
       swift test --package-path clients/apple/Packages/AWHealthKit
       ;;
     AWOutboxTests)
@@ -23,7 +23,7 @@ for suite in "$@"; do
     AWDomainContractTests|AWJournalTests|AWExpressModeUITests|AWSongInputTests|AWWatchRelayTests|AWWatchUITests)
       swift test --package-path clients/apple/Packages/AWDomain
       ;;
-    AWSyncEngineTests|AWTransportFaultTests|AWReadClientTests|AWProjectionCacheTests|AWUnknownStateTests)
+    AWSyncEngineTests|AWTransportFaultTests|AWReadClientTests|AWProjectionCacheTests|AWUnknownStateTests|AWStatusBeaconTests)
       swift test --package-path clients/apple/Packages/AWTransport
       ;;
     AWEnrollmentUITests)
