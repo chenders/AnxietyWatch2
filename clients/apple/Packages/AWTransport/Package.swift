@@ -6,12 +6,11 @@ let package = Package(
   platforms: [.macOS(.v14), .iOS(.v18), .watchOS(.v11)],
   products: [.library(name: "AWTransport", targets: ["AWTransport"])],
   dependencies: [
-    .package(path: "../AWClientCore"),
     .package(path: "../AWDomain"),
     .package(path: "../AWOutbox"),
   ],
   targets: [
-    .target(name: "AWTransport", dependencies: ["AWClientCore", "AWDomain", "AWOutbox"]),
+    .target(name: "AWTransport", dependencies: ["AWDomain", "AWOutbox"]),
     .testTarget(name: "AWTransportTests", dependencies: ["AWTransport"]),
   ]
 )

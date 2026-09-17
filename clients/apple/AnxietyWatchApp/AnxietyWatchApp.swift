@@ -214,6 +214,9 @@ final class AppClientRuntime: ObservableObject {
       geniusDirect: nil,
       itunes: URLSessionITunesSongSearchProvider()
     )
+    var loadedOutbox: FileOutboxStore?
+    var loadedJournalMirror: AppJournalMirrorStore?
+    var loadError: String?
     do {
       guard let support = FileManager.default.urls(
         for: .applicationSupportDirectory,
@@ -222,18 +225,16 @@ final class AppClientRuntime: ObservableObject {
         throw OutboxError.persistenceFailure("application support directory is unavailable")
       }
       let directory = support.appendingPathComponent("AnxietyWatch", isDirectory: true)
-      outbox = try FileOutboxStore(directory: directory)
-      journalMirror = try AppJournalMirrorStore(directory: directory)
-      journalBackupIncluded = false
-      journalBackupChoiceRequired = true
-      initializationError = nil
+      let localOutbox = try FileOutboxStore(directory: directory)
+      let localJournalMirror = try AppJournalMirrorStore(directory: directory)
+      loadedOutbox = localOutbox
+      loadedJournalMirror = localJournalMirror
     } catch {
-      outbox = nil
-      journalMirror = nil
-      journalBackupIncluded = false
-      journalBackupChoiceRequired = true
-      initializationError = error.localizedDescription
+      loadError = error.localizedDescription
     }
+    outbox = loadedOutbox
+    journalMirror = loadedJournalMirror
+    initializationError = loadError
   }
 
   func makeJournalCaptureCoordinator() throws -> JournalCaptureCoordinator {
@@ -426,6 +427,22 @@ final class AppClientRuntime: ObservableObject {
 }
 
 #if canImport(WatchConnectivity)
+private final class WatchRelayReply: @unchecked Sendable {
+  private let handler: ([String: Any]) -> Void
+
+  init(_ handler: @escaping ([String: Any]) -> Void) {
+    self.handler = handler
+  }
+
+  func accept(id: UUID) {
+    handler(["accepted": true, "id": id.uuidString.lowercased()])
+  }
+
+  func reject() {
+    handler(["accepted": false])
+  }
+}
+
 @MainActor
 private final class AppWatchRelayReceiver: NSObject, WCSessionDelegate {
   private weak var runtime: AppClientRuntime?
@@ -443,9 +460,16 @@ private final class AppWatchRelayReceiver: NSObject, WCSessionDelegate {
     error: (any Error)?
   ) {}
 
+  nonisolated func sessionDidBecomeInactive(_ session: WCSession) {}
+
+  nonisolated func sessionDidDeactivate(_ session: WCSession) {
+    session.activate()
+  }
+
   nonisolated func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
+    guard let item = Self.decode(userInfo) else { return }
     Task { @MainActor [weak self] in
-      await self?.receive(userInfo, reply: nil)
+      await self?.receive(item, reply: nil)
     }
   }
 
@@ -454,41 +478,46 @@ private final class AppWatchRelayReceiver: NSObject, WCSessionDelegate {
     didReceiveMessage message: [String: Any],
     replyHandler: @escaping ([String: Any]) -> Void
   ) {
+    let reply = WatchRelayReply(replyHandler)
+    guard let item = Self.decode(message) else {
+      reply.reject()
+      return
+    }
     Task { @MainActor [weak self] in
-      await self?.receive(message, reply: replyHandler)
+      await self?.receive(item, reply: reply)
     }
   }
 
-  private func receive(
-    _ message: [String: Any],
-    reply: (([String: Any]) -> Void)?
-  ) async {
+  nonisolated private static func decode(_ message: [String: Any]) -> WatchQuickLog? {
     guard message["type"] as? String == "watch_quick_log",
       let rawID = message["id"] as? String,
       let id = UUID(uuidString: rawID),
       let capturedAt = message["captured_at"] as? String,
       let rawAnxiety = message["anxiety"] as? Int,
-      let anxiety = UInt8(exactly: rawAnxiety),
-      let runtime
-    else {
-      reply?(["accepted": false])
+      let anxiety = UInt8(exactly: rawAnxiety)
+    else { return nil }
+    return try? WatchQuickLog(id: id, capturedAt: capturedAt, anxietyRawValue: anxiety)
+  }
+
+  private func receive(_ item: WatchQuickLog, reply: WatchRelayReply?) async {
+    guard let runtime else {
+      reply?.reject()
       return
     }
     do {
-      let item = try WatchQuickLog(id: id, capturedAt: capturedAt, anxietyRawValue: anxiety)
       try await runtime.acceptWatchQuickLog(item)
       runtime.setWatchRelayStatus("Watch Quick Log queued on iPhone; waiting for Pi acknowledgement.")
-      reply?(["accepted": true, "id": id.uuidString.lowercased()])
+      reply?.accept(id: item.id)
       if reply == nil {
         WCSession.default.transferUserInfo([
           "type": "watch_quick_log_ack",
-          "id": id.uuidString.lowercased(),
+          "id": item.id.uuidString.lowercased(),
           "accepted": true
         ])
       }
     } catch {
       runtime.setWatchRelayStatus("Watch Quick Log blocked: durable iPhone enqueue failed.")
-      reply?(["accepted": false])
+      reply?.reject()
     }
   }
 }

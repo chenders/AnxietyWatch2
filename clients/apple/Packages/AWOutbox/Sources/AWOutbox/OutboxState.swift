@@ -1,5 +1,3 @@
-import AWClientCore
-
 /// Delivery evidence only. Payload persistence and terminal deletion arrive in T-I5.
 public enum OutboxState: String, Codable, Equatable, Sendable {
   case pending
