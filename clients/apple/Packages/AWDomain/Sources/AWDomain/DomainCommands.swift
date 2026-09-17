@@ -8,6 +8,7 @@ public enum DomainCommandError: Error, Equatable, Sendable {
   case invalidRecordedAt(String)
   case invalidRating(UInt8)
   case invalidSongReference
+  case watchRelayConflict
   case mixedVersionAndTombstone
   case selfReference
 }
@@ -15,7 +16,7 @@ public enum DomainCommandError: Error, Equatable, Sendable {
 /// The first client/server domain-record schema revision.
 public let domainSchemaVersion: UInt = 1
 
-private func isValidUTCTimestamp(_ value: String) -> Bool {
+func isValidUTCTimestamp(_ value: String) -> Bool {
   let formatter = ISO8601DateFormatter()
   formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
   let date = formatter.date(from: value) ?? {

@@ -37,7 +37,7 @@ dispatched before their named gate.
 - [x] T-I13 — Journal rating, notes, tags, songs, and Express Mode · implement-complex · **BLOCKED on T-I5/T-I7/T-I12**
 - [ ] T-I14 — Medication doses and dose-triggered check-ins · implement-complex · **BLOCKED on T-I12 and server medication policy**
 - [ ] T-I15 — Random check-ins and notification-outcome evidence · implement-standard · **BLOCKED on T-I12**
-- [ ] T-I16 — watchOS Quick Log durable relay · implement-complex · **BLOCKED on T-I13**
+- [x] T-I16 — watchOS Quick Log durable relay · implement-complex · **BLOCKED on T-I13**
 
 ### Hardening and transition
 

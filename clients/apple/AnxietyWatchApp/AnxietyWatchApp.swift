@@ -4,6 +4,9 @@ import AWTransport
 import Combine
 import Foundation
 import SwiftUI
+#if canImport(WatchConnectivity)
+import WatchConnectivity
+#endif
 
 struct AppJournalMirrorEntry: Codable, Equatable, Identifiable, Sendable {
   let record: DomainRecordPayload
@@ -199,6 +202,9 @@ final class AppClientRuntime: ObservableObject {
   private let journalMirror: AppJournalMirrorStore?
   private var syncEngine: SyncEngine?
   private var projectionService: ProjectionReadService?
+#if canImport(WatchConnectivity)
+  private let watchRelayReceiver = AppWatchRelayReceiver()
+#endif
 
   init() {
     credentialStore = KeychainCredentialStore()
@@ -295,6 +301,9 @@ final class AppClientRuntime: ObservableObject {
     await reconcileJournalMirror()
     await refreshOutboxState()
     await refreshJournalBackupSetting()
+#if canImport(WatchConnectivity)
+    watchRelayReceiver.activate(runtime: self)
+#endif
     for await _ in NotificationCenter.default.notifications(named: .domainOutboxNeedsDrain) {
       await drain()
     }
@@ -326,6 +335,43 @@ final class AppClientRuntime: ObservableObject {
     } catch {
       syncStatus = "Journal mirror reconciliation blocked: \(error)"
     }
+  }
+
+  func setWatchRelayStatus(_ status: String) {
+    syncStatus = status
+  }
+
+  func acceptWatchQuickLog(_ item: WatchQuickLog) async throws {
+    guard let outbox, let journalMirror else {
+      throw OutboxError.persistenceFailure("watch relay blocked: journal storage is unavailable")
+    }
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    guard let capturedAt = formatter.date(from: item.capturedAt) else {
+      throw OutboxError.invalidItem("watch relay blocked: captured time is not valid UTC")
+    }
+    let record = try item.record()
+    let payload = try JSONEncoder().encode(DomainEnvelope(record: record))
+    if let existing = try await outbox.allItems().first(where: { $0.id == item.id }) {
+      guard existing.recordClass == record.kind,
+        existing.schemaVersion == record.schemaVersion,
+        let envelope = try? JSONDecoder().decode(DomainEnvelope.self, from: existing.payload),
+        envelope.record.disposition(comparedWith: record) == .replay
+      else {
+        throw OutboxError.invalidItem("watch relay blocked: record \(item.id) conflicts with queued content")
+      }
+      return
+    }
+    let outboxItem = try OutboxItem(
+      id: record.id,
+      recordClass: record.kind,
+      schemaVersion: record.schemaVersion,
+      payload: payload,
+      capturedAt: capturedAt
+    )
+    try await outbox.enqueue(outboxItem)
+    try await journalMirror.put(record: record, syncState: .queued)
+    NotificationCenter.default.post(name: .domainOutboxNeedsDrain, object: nil)
   }
 
   func journalMirrorEntries() async throws -> [AppJournalMirrorEntry] {
@@ -378,6 +424,75 @@ final class AppClientRuntime: ObservableObject {
     }
   }
 }
+
+#if canImport(WatchConnectivity)
+@MainActor
+private final class AppWatchRelayReceiver: NSObject, WCSessionDelegate {
+  private weak var runtime: AppClientRuntime?
+
+  func activate(runtime: AppClientRuntime) {
+    self.runtime = runtime
+    guard WCSession.isSupported() else { return }
+    WCSession.default.delegate = self
+    WCSession.default.activate()
+  }
+
+  nonisolated func session(
+    _ session: WCSession,
+    activationDidCompleteWith activationState: WCSessionActivationState,
+    error: (any Error)?
+  ) {}
+
+  nonisolated func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
+    Task { @MainActor [weak self] in
+      await self?.receive(userInfo, reply: nil)
+    }
+  }
+
+  nonisolated func session(
+    _ session: WCSession,
+    didReceiveMessage message: [String: Any],
+    replyHandler: @escaping ([String: Any]) -> Void
+  ) {
+    Task { @MainActor [weak self] in
+      await self?.receive(message, reply: replyHandler)
+    }
+  }
+
+  private func receive(
+    _ message: [String: Any],
+    reply: (([String: Any]) -> Void)?
+  ) async {
+    guard message["type"] as? String == "watch_quick_log",
+      let rawID = message["id"] as? String,
+      let id = UUID(uuidString: rawID),
+      let capturedAt = message["captured_at"] as? String,
+      let rawAnxiety = message["anxiety"] as? Int,
+      let anxiety = UInt8(exactly: rawAnxiety),
+      let runtime
+    else {
+      reply?(["accepted": false])
+      return
+    }
+    do {
+      let item = try WatchQuickLog(id: id, capturedAt: capturedAt, anxietyRawValue: anxiety)
+      try await runtime.acceptWatchQuickLog(item)
+      runtime.setWatchRelayStatus("Watch Quick Log queued on iPhone; waiting for Pi acknowledgement.")
+      reply?(["accepted": true, "id": id.uuidString.lowercased()])
+      if reply == nil {
+        WCSession.default.transferUserInfo([
+          "type": "watch_quick_log_ack",
+          "id": id.uuidString.lowercased(),
+          "accepted": true
+        ])
+      }
+    } catch {
+      runtime.setWatchRelayStatus("Watch Quick Log blocked: durable iPhone enqueue failed.")
+      reply?(["accepted": false])
+    }
+  }
+}
+#endif
 
 @main
 struct AnxietyWatchApp: App {
