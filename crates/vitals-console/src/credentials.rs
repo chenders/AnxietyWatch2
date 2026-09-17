@@ -138,8 +138,8 @@ impl CredentialStore {
         scopes: &[&str],
         now_epoch_s: i64,
     ) -> Result<EnrollmentArtifactReveal, String> {
-        validate_label(label)?;
-        let scopes = validate_scopes(scopes)?;
+        validate_mobile_label(label)?;
+        let scopes = validate_mobile_scopes(scopes)?;
         let mut token_bytes = [0_u8; 32];
         getrandom::getrandom(&mut token_bytes)
             .map_err(|error| format!("enrollment token generation failed: {error}"))?;
@@ -179,12 +179,8 @@ impl CredentialStore {
         label: &str,
         now_epoch_s: i64,
     ) -> Result<DeviceCredential, String> {
-        validate_label(label)?;
-        if p256::PublicKey::from_sec1_bytes(public_key).is_err() {
-            return Err(
-                "enrollment blocked: public key is not a valid uncompressed P-256 key".to_string(),
-            );
-        }
+        validate_mobile_label(label)?;
+        validate_mobile_public_key(public_key)?;
         let artifact = self.artifacts.get_mut(&enrollment_id).ok_or_else(|| {
             format!("enrollment blocked: enrollment_id={enrollment_id} is unknown")
         })?;
@@ -302,9 +298,8 @@ impl CredentialStore {
         now_epoch_s: i64,
     ) -> Result<DeviceCredential, String> {
         auth.require(now_epoch_s)?;
-        if p256::PublicKey::from_sec1_bytes(new_public_key).is_err() {
-            return Err("credential rotation blocked: replacement key is not a valid uncompressed P-256 key".to_string());
-        }
+        validate_mobile_public_key(new_public_key)
+            .map_err(|reason| format!("credential rotation blocked: {reason}"))?;
         let old = self
             .devices
             .get_mut(&(client_id, old_key_id))
@@ -335,7 +330,12 @@ impl CredentialStore {
     }
 }
 
-fn validate_label(label: &str) -> Result<(), String> {
+/// Validate an operator-visible device label before persistence.
+///
+/// # Errors
+///
+/// Returns the rejected character count when the label is empty or exceeds 80 characters.
+pub fn validate_mobile_label(label: &str) -> Result<(), String> {
     let length = label.chars().count();
     if (1..=80).contains(&length) {
         Ok(())
@@ -346,7 +346,12 @@ fn validate_label(label: &str) -> Result<(), String> {
     }
 }
 
-fn validate_scopes(scopes: &[&str]) -> Result<Vec<String>, String> {
+/// Validate and copy the least-privilege scopes granted to a device.
+///
+/// # Errors
+///
+/// Returns the first scope that is absent from the server allowlist, or reports an empty request.
+pub fn validate_mobile_scopes(scopes: &[&str]) -> Result<Vec<String>, String> {
     if scopes.is_empty() {
         return Err("enrollment blocked: no initial scopes were requested".to_string());
     }
@@ -364,12 +369,43 @@ fn validate_scopes(scopes: &[&str]) -> Result<Vec<String>, String> {
         .collect()
 }
 
-fn hash_token(token: &str) -> [u8; 32] {
+/// Hash an enrollment token for constant-time comparison and database storage.
+#[must_use]
+pub fn hash_enrollment_token(token: &str) -> [u8; 32] {
     Sha256::digest(token.as_bytes()).into()
 }
 
-fn fingerprint(public_key: &[u8]) -> String {
+/// Validate an uncompressed P-256 public key and name the blocking value.
+///
+/// # Errors
+///
+/// Returns the supplied byte length when the key is not a valid 65-byte SEC1 point.
+pub fn validate_mobile_public_key(public_key: &[u8]) -> Result<(), String> {
+    if public_key.len() == 65
+        && public_key.first() == Some(&0x04)
+        && p256::PublicKey::from_sec1_bytes(public_key).is_ok()
+    {
+        Ok(())
+    } else {
+        Err(format!(
+            "public key is not a valid uncompressed P-256 key: length={} bytes",
+            public_key.len()
+        ))
+    }
+}
+
+/// Return the stable public-key fingerprint stored beside a credential.
+#[must_use]
+pub fn fingerprint_public_key(public_key: &[u8]) -> String {
     hex::encode(Sha256::digest(public_key))
+}
+
+fn hash_token(token: &str) -> [u8; 32] {
+    hash_enrollment_token(token)
+}
+
+fn fingerprint(public_key: &[u8]) -> String {
+    fingerprint_public_key(public_key)
 }
 
 #[cfg(test)]

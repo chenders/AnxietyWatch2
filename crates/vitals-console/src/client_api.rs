@@ -1,16 +1,18 @@
 //! Versioned Stage 7 Apple-client HTTP contract.
 //!
-//! Only version and registry discovery are implemented. Enrollment, writes,
-//! status beacons, and projections deliberately return stable unavailable
-//! errors until their owning tasks land.
+//! Version and registry discovery plus database-backed enrollment are implemented. Writes, status
+//! beacons, and projections return stable unavailable errors until their owning tasks land.
 
 use axum::Json;
 use axum::Router;
-use axum::extract::Query;
+use axum::extract::{Extension, Query};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::IntoResponse;
 use axum::routing::{any, get, post};
+use base64::Engine;
 use chrono::{SecondsFormat, Utc};
+use p256::elliptic_curve::sec1::ToEncodedPoint;
+use p256::pkcs8::DecodePublicKey;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use utoipa::{IntoParams, OpenApi, ToSchema};
@@ -502,25 +504,36 @@ pub async fn client_registry_handler(
     }))
 }
 
-/// Enrollment contract placeholder. It never advertises a successful response.
+/// Claim an operator-created enrollment artifact and issue a scoped public-key credential.
+///
+/// The request is intentionally not signed: the single-use artifact is the enrollment proof and
+/// is transported only to the configured origin. The database transaction consumes the artifact
+/// and inserts the credential together, so a lost response cannot make the artifact reusable.
 ///
 /// # Errors
 ///
-/// Returns an incompatible-version error or the named T-I4/T-M2a capability gate.
+/// Returns a named version, validation, database, or consumed-artifact blocker.
 #[utoipa::path(
     post,
     path = "/api/v1/client/enroll",
     tag = "apple-client",
     request_body = EnrollmentClaimRequest,
     responses(
+        (status = 201, description = "Device credential issued", body = EnrollmentCredentialResponse),
+        (status = 400, description = "Malformed enrollment claim", body = ClientErrorResponse),
+        (status = 409, description = "Enrollment artifact already consumed", body = ClientErrorResponse),
         (status = 426, description = "Incompatible enrollment major", body = ClientErrorResponse),
-        (status = 503, description = "Enrollment is gated on T-I4/T-M2a", body = ClientErrorResponse)
+        (status = 503, description = "Enrollment database unavailable", body = ClientErrorResponse)
     )
 )]
-#[allow(clippy::unused_async, reason = "axum handlers must be async")]
+#[expect(
+    clippy::too_many_lines,
+    reason = "the enrollment boundary keeps decode, validation, persistence, and response mapping together"
+)]
 pub async fn client_enroll_handler(
+    Extension(database): Extension<Option<sqlx::PgPool>>,
     Json(request): Json<EnrollmentClaimRequest>,
-) -> Result<Json<EnrollmentCredentialResponse>, ClientApiError> {
+) -> Result<(StatusCode, Json<EnrollmentCredentialResponse>), ClientApiError> {
     if request.api_major != API_MAJOR {
         return Err(error(
             StatusCode::UPGRADE_REQUIRED,
@@ -534,7 +547,108 @@ pub async fn client_enroll_handler(
             Some(request.api_major),
         ));
     }
-    Err(unavailable("enrollment", "T-I4_and_T-M2a"))
+    if request.algorithm != "ecdsa-p256-sha256" {
+        return Err(error(
+            StatusCode::BAD_REQUEST,
+            "enrollment_algorithm_invalid",
+            "enrollment algorithm is not supported",
+            false,
+            format!(
+                "algorithm={}; required=ecdsa-p256-sha256",
+                request.algorithm
+            ),
+            Some(API_MAJOR),
+        ));
+    }
+    let database =
+        database.ok_or_else(|| unavailable("enrollment", "VITALS_CONSOLE_DATABASE_URL"))?;
+    let der = base64::engine::general_purpose::STANDARD
+        .decode(&request.public_key_spki_der_b64)
+        .map_err(|decode_error| {
+            error(
+                StatusCode::BAD_REQUEST,
+                "enrollment_public_key_invalid",
+                "enrollment public key is not valid base64",
+                false,
+                format!("public_key_encoding={decode_error}"),
+                Some(API_MAJOR),
+            )
+        })?;
+    let public_key = p256::PublicKey::from_public_key_der(&der).map_err(|key_error| {
+        error(
+            StatusCode::BAD_REQUEST,
+            "enrollment_public_key_invalid",
+            "enrollment public key is not a valid P-256 SPKI value",
+            false,
+            format!("public_key_der={key_error}"),
+            Some(API_MAJOR),
+        )
+    })?;
+    let public_key_sec1 = public_key.to_encoded_point(false);
+    let credential = crate::db::claim_mobile_credential(
+        &database,
+        request.enrollment_id,
+        &request.token,
+        request.server_instance_id,
+        public_key_sec1.as_bytes(),
+        &request.device_label,
+        Utc::now(),
+    )
+    .await
+    .map_err(|reason| {
+        let status = if reason.contains("already consumed") {
+            StatusCode::CONFLICT
+        } else if reason.contains("database")
+            || reason.contains("insert")
+            || reason.contains("commit")
+        {
+            StatusCode::INTERNAL_SERVER_ERROR
+        } else {
+            StatusCode::BAD_REQUEST
+        };
+        error(
+            status,
+            "enrollment_rejected",
+            "enrollment claim was not accepted",
+            false,
+            reason,
+            Some(API_MAJOR),
+        )
+    })?;
+    let issued_at =
+        chrono::DateTime::from_timestamp(credential.issued_at_epoch_s, 0).ok_or_else(|| {
+            error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "enrollment_time_invalid",
+                "issued credential time could not be represented",
+                false,
+                format!("issued_at_epoch_s={}", credential.issued_at_epoch_s),
+                Some(API_MAJOR),
+            )
+        })?;
+    let expires_at = chrono::DateTime::from_timestamp(credential.expires_at_epoch_s, 0)
+        .ok_or_else(|| {
+            error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "enrollment_time_invalid",
+                "credential expiry time could not be represented",
+                false,
+                format!("expires_at_epoch_s={}", credential.expires_at_epoch_s),
+                Some(API_MAJOR),
+            )
+        })?;
+    Ok((
+        StatusCode::CREATED,
+        Json(EnrollmentCredentialResponse {
+            api_version: format!("{API_MAJOR}.{API_MINOR}"),
+            client_id: credential.client_id,
+            key_id: credential.key_id,
+            scopes: credential.scopes,
+            issued_at: issued_at.to_rfc3339(),
+            expires_at: expires_at.to_rfc3339(),
+            server_time: Utc::now().to_rfc3339(),
+        }),
+    ))
 }
 
 /// Item-write placeholder with item-level response schemas but no success advertisement.
@@ -674,6 +788,7 @@ mod tests {
 
     async fn json_response(request: Request<Body>) -> (StatusCode, serde_json::Value) {
         let response = router::<()>()
+            .layer(axum::Extension(None::<sqlx::PgPool>))
             .oneshot(request)
             .await
             .expect("router responds");
@@ -689,7 +804,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn client_contract_version_and_registry_are_the_only_implemented_successes() {
+    async fn client_contract_version_and_registry_are_available_before_enrollment() {
         let version_request = Request::builder()
             .uri("/api/v1/client/version")
             .body(Body::empty())
@@ -731,7 +846,7 @@ mod tests {
         assert!(
             gated_body["blocker"]
                 .as_str()
-                .is_some_and(|value| value.contains("T-I4"))
+                .is_some_and(|value| value.contains("VITALS_CONSOLE_DATABASE_URL"))
         );
 
         let incompatible_fixture = fixture.replacen("\"api_major\": 1", "\"api_major\": 2", 1);
@@ -841,8 +956,11 @@ mod tests {
     #[test]
     fn client_contract_openapi_never_advertises_gated_successes_or_registry_enums() {
         let value = serde_json::to_value(ClientApiDoc::openapi()).expect("OpenAPI serializes");
+        let enrollment_responses = value["paths"]["/api/v1/client/enroll"]["post"]["responses"]
+            .as_object()
+            .expect("enrollment responses object");
+        assert!(enrollment_responses.contains_key("201"));
         for path in [
-            "/api/v1/client/enroll",
             "/api/v1/client/items",
             "/api/v1/client/status",
             "/api/v1/client/projections",

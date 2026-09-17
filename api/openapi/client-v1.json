@@ -14,8 +14,8 @@
         "tags": [
           "apple-client"
         ],
-        "summary": "Enrollment contract placeholder. It never advertises a successful response.",
-        "description": "# Errors\n\nReturns an incompatible-version error or the named T-I4/T-M2a capability gate.",
+        "summary": "Claim an operator-created enrollment artifact and issue a scoped public-key credential.",
+        "description": "The request is intentionally not signed: the single-use artifact is the enrollment proof and\nis transported only to the configured origin. The database transaction consumes the artifact\nand inserts the credential together, so a lost response cannot make the artifact reusable.\n\n# Errors\n\nReturns a named version, validation, database, or consumed-artifact blocker.",
         "operationId": "client_enroll_handler",
         "requestBody": {
           "content": {
@@ -28,6 +28,36 @@
           "required": true
         },
         "responses": {
+          "201": {
+            "description": "Device credential issued",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnrollmentCredentialResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed enrollment claim",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Enrollment artifact already consumed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientErrorResponse"
+                }
+              }
+            }
+          },
           "426": {
             "description": "Incompatible enrollment major",
             "content": {
@@ -39,7 +69,7 @@
             }
           },
           "503": {
-            "description": "Enrollment is gated on T-I4/T-M2a",
+            "description": "Enrollment database unavailable",
             "content": {
               "application/json": {
                 "schema": {

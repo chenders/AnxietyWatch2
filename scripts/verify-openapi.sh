@@ -34,7 +34,12 @@ if set(doc.get("paths", {})) != expected_paths:
 if doc.get("openapi") != "3.1.0":
     raise SystemExit("openapi: FAIL — expected OpenAPI 3.1.0")
 
-implemented = {"/api/v1/client/version", "/api/v1/client/registry", "/api/v1/client/openapi.json"}
+implemented = {
+    "/api/v1/client/version",
+    "/api/v1/client/registry",
+    "/api/v1/client/openapi.json",
+    "/api/v1/client/enroll",
+}
 gated = expected_paths - implemented
 for path in implemented:
     statuses = {
@@ -42,8 +47,11 @@ for path in implemented:
         for operation in doc["paths"][path].values()
         for status in operation.get("responses", {})
     }
-    if "200" not in statuses:
-        raise SystemExit(f"openapi: FAIL — implemented operation has no 200: {path}")
+    expected_success = "201" if path == "/api/v1/client/enroll" else "200"
+    if expected_success not in statuses:
+        raise SystemExit(
+            f"openapi: FAIL — implemented operation has no {expected_success}: {path}"
+        )
 for path in gated:
     statuses = {
         status

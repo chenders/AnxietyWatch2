@@ -6,8 +6,13 @@
 use axum::Json;
 use axum::http::StatusCode;
 use sqlx::PgPool;
+use subtle::ConstantTimeEq;
 use uuid::Uuid;
 
+use crate::credentials::{
+    CREDENTIAL_LIFETIME_S, DeviceCredential, fingerprint_public_key, hash_enrollment_token,
+    validate_mobile_label, validate_mobile_public_key, validate_mobile_scopes,
+};
 use crate::domain;
 use crate::models::{
     AttemptView, DomainRecordPayload, DomainRecordResponse, Effect, ErrorResponse, error_reply,
@@ -75,6 +80,132 @@ pub async fn register_client(
 
     let body = serde_json::json!({"client_id": client_id, "status": "registered"});
     Ok((StatusCode::CREATED, Json(body)))
+}
+
+type EnrollmentArtifactRow = (
+    Uuid,
+    Vec<u8>,
+    Vec<String>,
+    chrono::DateTime<chrono::Utc>,
+    Option<chrono::DateTime<chrono::Utc>>,
+);
+
+/// Claim a single-use enrollment artifact and persist a public-key credential atomically.
+///
+/// The caller supplies the uncompressed SEC1 public key decoded from the phone's SPKI value.
+/// `PostgreSQL` stores only the token hash and public key; the plaintext token is never persisted.
+///
+/// # Errors
+///
+/// Returns a named validation, artifact-state, or database failure. The transaction consumes the
+/// artifact only if the credential insert and audit row both succeed.
+pub async fn claim_mobile_credential(
+    pool: &PgPool,
+    enrollment_id: Uuid,
+    token: &str,
+    server_instance_id: Uuid,
+    public_key: &[u8],
+    label: &str,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Result<DeviceCredential, String> {
+    validate_mobile_label(label)?;
+    validate_mobile_public_key(public_key)?;
+    let mut transaction = pool
+        .begin()
+        .await
+        .map_err(|error| format!("mobile enrollment database transaction failed: {error}"))?;
+    let artifact: Option<EnrollmentArtifactRow> = sqlx::query_as(
+        "SELECT server_instance_id, token_hash, scopes, expires_at, consumed_at\
+         FROM enrollment_artifacts WHERE enrollment_id = $1 FOR UPDATE",
+    )
+    .bind(enrollment_id)
+    .fetch_optional(&mut *transaction)
+    .await
+    .map_err(|error| format!("mobile enrollment artifact lookup failed: {error}"))?;
+    let Some((artifact_server_id, token_hash, scopes, expires_at, consumed_at)) = artifact else {
+        return Err(format!(
+            "enrollment blocked: enrollment_id={enrollment_id} is unknown"
+        ));
+    };
+    if artifact_server_id != server_instance_id {
+        return Err(format!(
+            "enrollment blocked: server_instance_id={server_instance_id} does not match artifact"
+        ));
+    }
+    if expires_at <= now {
+        return Err(format!(
+            "enrollment blocked: enrollment_id={enrollment_id} expired_at={expires_at}"
+        ));
+    }
+    if consumed_at.is_some() {
+        return Err(format!(
+            "enrollment blocked: enrollment_id={enrollment_id} was already consumed"
+        ));
+    }
+    let expected_hash = hash_enrollment_token(token);
+    if !bool::from(token_hash.as_slice().ct_eq(expected_hash.as_slice())) {
+        return Err(format!(
+            "enrollment blocked: enrollment_id={enrollment_id} token did not match"
+        ));
+    }
+    let scope_refs: Vec<&str> = scopes.iter().map(String::as_str).collect();
+    let artifact_scopes = validate_mobile_scopes(&scope_refs)?;
+    let client_id = Uuid::new_v4();
+    let key_id = Uuid::new_v4();
+    let expires_at = now
+        .checked_add_signed(chrono::Duration::seconds(CREDENTIAL_LIFETIME_S))
+        .ok_or_else(|| "enrollment blocked: credential expiry overflowed UTC range".to_string())?;
+    sqlx::query(
+        "INSERT INTO mobile_credentials\
+         (client_id, key_id, label, public_key, public_key_fingerprint, scopes, issued_at, expires_at)\
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+    )
+    .bind(client_id)
+    .bind(key_id)
+    .bind(label)
+    .bind(public_key)
+    .bind(fingerprint_public_key(public_key))
+    .bind(&artifact_scopes)
+    .bind(now)
+    .bind(expires_at)
+    .execute(&mut *transaction)
+    .await
+    .map_err(|error| format!("mobile credential insert failed: {error}"))?;
+    sqlx::query(
+        "UPDATE enrollment_artifacts SET consumed_at = $2 WHERE enrollment_id = $1 AND consumed_at IS NULL",
+    )
+    .bind(enrollment_id)
+    .bind(now)
+    .execute(&mut *transaction)
+    .await
+    .map_err(|error| format!("mobile enrollment consume failed: {error}"))?;
+    sqlx::query(
+        "INSERT INTO credential_audit (client_id, key_id, action, actor, reason)\
+         VALUES ($1, $2, 'enrolled', $3, $4)",
+    )
+    .bind(client_id)
+    .bind(key_id)
+    .bind(format!("enrollment:{enrollment_id}"))
+    .bind("mobile public-key enrollment")
+    .execute(&mut *transaction)
+    .await
+    .map_err(|error| format!("mobile credential audit insert failed: {error}"))?;
+    transaction
+        .commit()
+        .await
+        .map_err(|error| format!("mobile enrollment commit failed: {error}"))?;
+    Ok(DeviceCredential {
+        client_id,
+        key_id,
+        label: label.to_string(),
+        public_key_fingerprint: fingerprint_public_key(public_key),
+        scopes: artifact_scopes,
+        issued_at_epoch_s: now.timestamp(),
+        expires_at_epoch_s: expires_at.timestamp(),
+        last_used_at_epoch_s: None,
+        revoked_at_epoch_s: None,
+        overlap_until_epoch_s: None,
+    })
 }
 
 /// Outcome of a domain-record write attempt.

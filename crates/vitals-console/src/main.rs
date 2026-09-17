@@ -131,6 +131,7 @@ async fn main() {
     };
 
     let security = state.security.clone();
+    let mobile_database = state.db.clone();
     let app = app
         .nest_service(
             "/console",
@@ -139,6 +140,7 @@ async fn main() {
                 .fallback(ServeFile::new(assets_path.join("index.html"))),
         )
         .with_state(state)
+        .layer(axum::Extension(mobile_database))
         .layer(RequestBodyLimitLayer::new(MAX_REQUEST_BODY_BYTES))
         .layer(middleware::from_fn_with_state(
             security,
