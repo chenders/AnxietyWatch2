@@ -205,7 +205,11 @@ private struct JournalSurface: View {
         .accessibilityLabel("Journal or Songs")
 
         if selectedSegment == 0 {
-          journalList
+          if runtime.journalBackupChoiceRequired {
+            backupChoicePrompt
+          } else {
+            journalList
+          }
         } else {
           songsList
         }
@@ -219,6 +223,7 @@ private struct JournalSurface: View {
             } label: {
               Label("New journal entry", systemImage: "plus")
             }
+            .disabled(runtime.journalBackupChoiceRequired)
           }
         }
       }
@@ -247,6 +252,16 @@ private struct JournalSurface: View {
           setupError = "Journal storage unavailable: \(error.localizedDescription)"
         }
       }
+      .alert("Journal backup setting required", isPresented: backupChoiceBinding) {
+        Button("Keep mirror out of backups") {
+          Task { await runtime.setJournalBackupIncluded(false) }
+        }
+        Button("Include mirror in backups") {
+          Task { await runtime.setJournalBackupIncluded(true) }
+        }
+      } message: {
+        Text("Choose whether the protected local journal mirror may be included in device backups before using Journal.")
+      }
       .alert("Journal unavailable", isPresented: setupErrorBinding) {
         Button("OK", role: .cancel) { setupError = nil }
       } message: {
@@ -255,10 +270,25 @@ private struct JournalSurface: View {
     }
   }
 
+  private var backupChoiceBinding: Binding<Bool> {
+    Binding(
+      get: { runtime.journalBackupChoiceRequired },
+      set: { _ in }
+    )
+  }
+
   private var setupErrorBinding: Binding<Bool> {
     Binding(
       get: { setupError != nil },
       set: { if !$0 { setupError = nil } }
+    )
+  }
+
+  private var backupChoicePrompt: some View {
+    ContentUnavailableView(
+      "Choose Journal Backup Setting",
+      systemImage: "externaldrive.badge.icloud",
+      description: Text("Journal capture is locked until you choose whether the protected local mirror may be included in device backups.")
     )
   }
 

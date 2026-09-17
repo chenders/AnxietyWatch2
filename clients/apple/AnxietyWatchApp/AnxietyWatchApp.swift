@@ -48,6 +48,10 @@ actor AppJournalMirrorStore: DomainSyncStateSink {
 
   func isBackupIncluded() -> Bool { backupIncluded }
 
+  func isBackupChoiceRequired() -> Bool {
+    !FileManager.default.fileExists(atPath: settingsURL.path)
+  }
+
   func setBackupIncluded(_ included: Bool) throws {
     let data = try JSONEncoder().encode(included)
     do {
@@ -134,6 +138,7 @@ final class AppClientRuntime: ObservableObject {
   @Published private(set) var syncStatus = "Sync is not initialized."
   @Published private(set) var outboxItemCount = 0
   @Published private(set) var journalBackupIncluded = false
+  @Published private(set) var journalBackupChoiceRequired = true
   let songSearchCoordinator: SongSearchCoordinator
 
   private let credentialStore: KeychainCredentialStore
@@ -163,11 +168,13 @@ final class AppClientRuntime: ObservableObject {
       outbox = try FileOutboxStore(directory: directory)
       journalMirror = try AppJournalMirrorStore(directory: directory)
       journalBackupIncluded = false
+      journalBackupChoiceRequired = true
       initializationError = nil
     } catch {
       outbox = nil
       journalMirror = nil
       journalBackupIncluded = false
+      journalBackupChoiceRequired = true
       initializationError = error.localizedDescription
     }
   }
@@ -281,9 +288,11 @@ final class AppClientRuntime: ObservableObject {
   func refreshJournalBackupSetting() async {
     guard let journalMirror else {
       journalBackupIncluded = false
+      journalBackupChoiceRequired = true
       return
     }
     journalBackupIncluded = await journalMirror.isBackupIncluded()
+    journalBackupChoiceRequired = await journalMirror.isBackupChoiceRequired()
   }
 
   func setJournalBackupIncluded(_ included: Bool) async {
@@ -294,6 +303,7 @@ final class AppClientRuntime: ObservableObject {
     do {
       try await journalMirror.setBackupIncluded(included)
       journalBackupIncluded = included
+      journalBackupChoiceRequired = false
     } catch {
       syncStatus = "Journal backup setting blocked: \(error)"
     }
