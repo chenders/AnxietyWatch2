@@ -241,7 +241,9 @@ Each transport sample includes, subject to the server contract established by T-
 
 Sub-provenance is mandatory. A Watch measurement, manually entered value, and third-party-app value
 must not collapse into an undifferentiated `healthkit` row. The server defines stable ingest identity
-and canonical conversion; the phone does not invent `(session_id, seq)`.
+and canonical conversion; the phone does not invent `(session_id, seq)`. Amendment 13 defines the
+platform-sample payload, the versioned `extra` provenance object, the lossless HealthKit UUID identity
+split, and the canonical sleep-stage mapping.
 
 ### 4.3 Status beacon
 

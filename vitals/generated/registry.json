@@ -72,6 +72,15 @@
         200.0
       ],
       "precision": 1.0
+    },
+    "sleep_stage": {
+      "id": 9,
+      "unit": "stage_code",
+      "range": [
+        0.0,
+        4.0
+      ],
+      "precision": 1.0
     }
   },
   "source": {
@@ -103,7 +112,8 @@
       "transport": "push",
       "provides": [
         "hr",
-        "hrv_rmssd"
+        "hrv_rmssd",
+        "sleep_stage"
       ],
       "cadence": {
         "expected_cadence_s": 21600

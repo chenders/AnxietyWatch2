@@ -23,6 +23,7 @@ wins**. If you find a contradiction, report it rather than implementing either v
 | **10** | [First-draft private-LAN transport](2026-09-15-amendment-10-first-draft-lan-http.md) | Amendment 09 §§2, 3.2, and 7 for the first-draft iPhone release; iOS §§6.1 and 7.2 | first-draft T-I1, T-I2, T-I4, T-I5, T-I7, T-M2a |
 | **11** | [Optional direct lyrics retrieval on the iPhone](2026-09-16-amendment-11-optional-direct-lyrics.md) | first-draft Pi-only Genius lyrics decision and iOS records/transport behavior | first-draft T-I4, T-I7, T-I11, T-I13, Pi lyrics/admin work |
 | **12** | [Provider-aware song search and provider-independent identity](2026-09-16-amendment-12-provider-aware-song-search.md) | first-draft song-search provider choice and song-catalog identity behavior | first-draft T-I11, T-I13, song metadata/Pi lyrics work |
+| **13** | [Platform-sample envelope and sub-provenance](2026-09-17-amendment-13-platform-sample-provenance.md) | platform-store identity and provenance decisions pending T-X3 | T-X3, T-X4, T-I6, T-I8, T-I19 |
 | — | [C vs Rust evaluation](2026-08-03-c-vs-rust-evaluation.md) | the C11 decision | all code tasks |
 | — | [Review synthesis and fix tracker](../reviews/SYNTHESIS.md) | — | status of every finding |
 
@@ -68,6 +69,9 @@ batch_id    BIGINT REFERENCES ingest_batch(id) -- NULL = did not arrive signed
   (amendment 06 §1.2). A source that is neither cannot be given a correct identity and must not be
   ingested. A retransmission reuses the same `seq` and dedupes correctly; a reconnect mints a **new
   `session_id`**, so there is no false dedup across a discontinuity.
+- **Platform-store samples use an opaque, lossless identity split** (amendment 13): the HealthKit
+  sample UUID's first and last eight bytes become `session_id` and `seq`. The pair is stable across
+  retries but is not chronological; sub-provenance remains in the versioned `extra` object.
 - **`session_id` must be unique across process restarts.** A per-process counter from 0 makes a
   restarted collector's first rows collide with a previous run's and `ON CONFLICT DO NOTHING` drops
   them silently. Near-total for BP, where `seq` is 0–3 every time.

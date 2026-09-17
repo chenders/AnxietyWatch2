@@ -25,6 +25,8 @@ pub enum VitalsType {
     BpDiastolic = 7,
     /// `bp_map` — `mmHg`, valid 40.0..200.0
     BpMap = 8,
+    /// `sleep_stage` — `stage_code`, valid 0.0..4.0
+    SleepStage = 9,
 }
 
 /// Where a sample came from. Provenance, and it must survive aggregation.
@@ -79,6 +81,7 @@ impl VitalsType {
             Self::BpSystolic => (50.0, 260.0),
             Self::BpDiastolic => (30.0, 160.0),
             Self::BpMap => (40.0, 200.0),
+            Self::SleepStage => (0.0, 4.0),
         }
     }
 
@@ -99,6 +102,7 @@ impl VitalsType {
             Self::BpSystolic => "mmHg",
             Self::BpDiastolic => "mmHg",
             Self::BpMap => "mmHg",
+            Self::SleepStage => "stage_code",
         }
     }
 
@@ -115,6 +119,7 @@ impl VitalsType {
             6 => Some(Self::BpSystolic),
             7 => Some(Self::BpDiastolic),
             8 => Some(Self::BpMap),
+            9 => Some(Self::SleepStage),
             _ => None,
         }
     }
@@ -168,7 +173,7 @@ impl VitalsSource {
 }
 
 /// Every type, for exhaustive iteration in tests and admin views.
-pub const ALL_TYPES: [VitalsType; 8] = [
+pub const ALL_TYPES: [VitalsType; 9] = [
     VitalsType::Hr,
     VitalsType::Spo2,
     VitalsType::Accel,
@@ -177,6 +182,7 @@ pub const ALL_TYPES: [VitalsType; 8] = [
     VitalsType::BpSystolic,
     VitalsType::BpDiastolic,
     VitalsType::BpMap,
+    VitalsType::SleepStage,
 ];
 
 /// Every source.

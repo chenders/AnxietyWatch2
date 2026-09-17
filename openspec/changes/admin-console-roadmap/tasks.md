@@ -67,7 +67,7 @@ worktree/branch/commit/PR. `BLOCKED` tasks remain queued but must not be dispatc
 
 - [ ] T-X1 — Decide phone-silence escalation path without a notification loop · architecture-decision
 - [ ] T-X2 — Phone health-access/status beacon through the envelope · implement-complex
-- [ ] T-X3 — Platform-sample envelope class and sub-provenance contract · architecture-decision
+- [x] T-X3 — Platform-sample envelope class and sub-provenance contract · architecture-decision
 - [ ] T-X4 — HealthKit sample receiver and canonical mapper · implement-complex · **BLOCKED on T-X3**
 - [ ] T-X5 — Historical backfill plan and verified one-time migration · implement-complex · **BLOCKED on T-M3a/T-X3**
 - [ ] T-X6 — Gen-1 decommission capability ledger · review

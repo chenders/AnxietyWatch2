@@ -49,6 +49,14 @@ unit = "mmHg"
 range = [40.0, 200.0]
 precision = 1.0
 
+# Canonical codes are defined by amendment 13: awake=0,
+# asleep_unspecified=1, core=2, deep=3, rem=4.
+[type.sleep_stage]
+id = 9
+unit = "stage_code"
+range = [0.0, 4.0]
+precision = 1.0
+
 [source.emay]
 id = 0
 transport = "ble"
@@ -67,7 +75,7 @@ expected_cadence_s = 1
 [source.healthkit]
 id = 2
 transport = "push"
-provides = ["hr", "hrv_rmssd"]
+provides = ["hr", "hrv_rmssd", "sleep_stage"]
 # §9b guess, awaiting measurement: real sync cadence on this install.
 expected_cadence_s = 21600
 
