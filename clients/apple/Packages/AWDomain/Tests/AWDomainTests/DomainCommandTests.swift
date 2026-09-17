@@ -31,6 +31,40 @@ func journalCommandBuildsImmutableRecord() throws {
   #expect(content["express_mode"] == .bool(true))
 }
 
+@Test("journal commands can be reconstructed only from UTC metadata")
+func journalCommandReconstructionValidatesTimes() throws {
+  guard let anxiety = AnxietyRating(rawValue: 5) else {
+    Issue.record("valid anxiety rating was unavailable")
+    return
+  }
+  let command = try JournalCommand(
+    id: UUID(uuidString: "00000000-0000-7000-8000-000000000110")!,
+    subjectAt: "2025-01-15T12:00:00Z",
+    recordedAt: "2025-01-15T12:00:01Z",
+    anxiety: anxiety,
+    note: nil,
+    tags: [],
+    songID: nil,
+    expressMode: false
+  )
+  #expect(command.anxiety.rawValue == 5)
+  do {
+    _ = try JournalCommand(
+      id: command.id,
+      subjectAt: "2025-01-15T12:00:00+02:00",
+      recordedAt: command.recordedAt,
+      anxiety: command.anxiety,
+      note: nil,
+      tags: [],
+      songID: nil,
+      expressMode: false
+    )
+    Issue.record("non-UTC journal subject time was accepted")
+  } catch let error as DomainCommandError {
+    #expect(error == .invalidRecordedAt("2025-01-15T12:00:00+02:00"))
+  }
+}
+
 @Test("invalid anxiety values are rejected rather than clamped")
 func journalCommandRejectsInvalidRating() {
   do {

@@ -183,6 +183,32 @@ public struct JournalCommand: Codable, Equatable, Sendable {
   public let songID: UUID?
   public let expressMode: Bool
 
+  public init(
+    id: UUID,
+    subjectAt: String,
+    recordedAt: String,
+    anxiety: AnxietyRating,
+    note: String?,
+    tags: [String],
+    songID: UUID?,
+    expressMode: Bool
+  ) throws {
+    guard isValidUTCTimestamp(subjectAt) else {
+      throw DomainCommandError.invalidRecordedAt(subjectAt)
+    }
+    guard isValidUTCTimestamp(recordedAt) else {
+      throw DomainCommandError.invalidRecordedAt(recordedAt)
+    }
+    self.id = id
+    self.subjectAt = subjectAt
+    self.recordedAt = recordedAt
+    self.anxiety = anxiety
+    self.note = note
+    self.tags = tags
+    self.songID = songID
+    self.expressMode = expressMode
+  }
+
   public static func capture(
     id: UUID = UUID(),
     capturedAt: Date,
@@ -195,7 +221,7 @@ public struct JournalCommand: Codable, Equatable, Sendable {
     guard let anxiety = AnxietyRating(rawValue: anxietyRawValue) else {
       throw DomainCommandError.invalidRating(anxietyRawValue)
     }
-    return Self(
+    return try Self(
       id: id,
       subjectAt: Self.utcString(capturedAt),
       recordedAt: Self.utcString(capturedAt),

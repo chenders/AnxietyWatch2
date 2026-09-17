@@ -59,9 +59,11 @@ struct AppImmediateDrainTrigger: DomainDrainTrigger {
 
 actor AppDomainCommandSink: DomainCommandSink {
   private let outbox: FileOutboxStore
+  private let journalMirror: AppJournalMirrorStore
 
-  init(outbox: FileOutboxStore) {
+  init(outbox: FileOutboxStore, journalMirror: AppJournalMirrorStore) {
     self.outbox = outbox
+    self.journalMirror = journalMirror
   }
 
   func enqueue(record: DomainRecordPayload, capturedAt: Date) async throws {
@@ -74,6 +76,7 @@ actor AppDomainCommandSink: DomainCommandSink {
       capturedAt: capturedAt
     )
     try await outbox.enqueue(item)
+    try await journalMirror.put(record: record, syncState: .queued)
   }
 }
 
@@ -81,6 +84,46 @@ private struct JournalListItem: Identifiable, Equatable {
   let command: JournalCommand
   let syncState: DomainSyncState
   var id: UUID { command.id }
+}
+
+private func journalListItem(from entry: AppJournalMirrorEntry) -> JournalListItem? {
+  guard entry.record.kind == "journal_entry",
+    case .object(let content) = entry.record.content,
+    case .string(let subjectAt)? = content["subject_at"],
+    case .number(let anxietyValue)? = content["anxiety"],
+    let anxietyRawValue = UInt8(exactly: anxietyValue),
+    let anxiety = AnxietyRating(rawValue: anxietyRawValue),
+    case .array(let tagValues)? = content["tags"],
+    case .bool(let expressMode)? = content["express_mode"]
+  else { return nil }
+  let tags = tagValues.compactMap { value -> String? in
+    guard case .string(let tag) = value else { return nil }
+    return tag
+  }
+  guard tags.count == tagValues.count else { return nil }
+  let note: String?
+  switch content["note"] {
+  case .string(let value): note = value
+  case .null, nil: note = nil
+  default: return nil
+  }
+  let songID: UUID?
+  switch content["song_id"] {
+  case .string(let value): songID = UUID(uuidString: value)
+  case .null, nil: songID = nil
+  default: return nil
+  }
+  guard let command = try? JournalCommand(
+    id: entry.record.id,
+    subjectAt: subjectAt,
+    recordedAt: entry.record.recordedAt,
+    anxiety: anxiety,
+    note: note,
+    tags: tags,
+    songID: songID,
+    expressMode: expressMode
+  ) else { return nil }
+  return JournalListItem(command: command, syncState: entry.syncState)
 }
 
 private struct RuntimeStatusSurface: View {
@@ -119,6 +162,20 @@ private struct RuntimeStatusSurface: View {
             }
           }
           .disabled(isSyncing || !runtime.isEnrolled)
+        }
+        Section("Journal privacy") {
+          Toggle(
+            "Include local journal mirror in backups",
+            isOn: Binding(
+              get: { runtime.journalBackupIncluded },
+              set: { included in
+                Task { await runtime.setJournalBackupIncluded(included) }
+              }
+            )
+          )
+          Text("The temporary outbox is always excluded. The local journal mirror remains protected and is excluded until you enable this setting.")
+            .font(.footnote)
+            .foregroundStyle(.secondary)
         }
       }
       .navigationTitle("Today")
@@ -183,6 +240,8 @@ private struct JournalSurface: View {
       .task {
         guard coordinator == nil else { return }
         do {
+          let mirroredEntries = try await runtime.journalMirrorEntries()
+          entries = mirroredEntries.compactMap(journalListItem(from:))
           coordinator = try runtime.makeJournalCaptureCoordinator()
         } catch {
           setupError = "Journal storage unavailable: \(error.localizedDescription)"
