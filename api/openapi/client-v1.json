@@ -86,8 +86,8 @@
         "tags": [
           "apple-client"
         ],
-        "summary": "Authenticate an item-write request before the domain/platform capability gate is evaluated.",
-        "description": "# Errors\n\nReturns a version error or the named domain/platform contract gate.",
+        "summary": "Authenticate and process a bounded batch of domain-record writes.",
+        "description": "# Errors\n\nReturns a version, authentication, body, or persistence error. Individual record validation and\nidempotency outcomes are returned as item acknowledgements.",
         "operationId": "client_write_handler",
         "parameters": [
           {
@@ -165,6 +165,16 @@
           "required": true
         },
         "responses": {
+          "200": {
+            "description": "Item-level domain write outcomes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientWriteResponse"
+                }
+              }
+            }
+          },
           "400": {
             "description": "Missing or malformed API version",
             "content": {
@@ -216,7 +226,7 @@
             }
           },
           "503": {
-            "description": "Writes are gated on domain/platform contracts",
+            "description": "Write database unavailable",
             "content": {
               "application/json": {
                 "schema": {

@@ -39,6 +39,7 @@ implemented = {
     "/api/v1/client/registry",
     "/api/v1/client/openapi.json",
     "/api/v1/client/enroll",
+    "/api/v1/client/items",
 }
 gated = expected_paths - implemented
 for path in implemented:

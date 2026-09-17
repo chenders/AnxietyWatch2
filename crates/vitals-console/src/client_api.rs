@@ -1122,11 +1122,12 @@ pub async fn client_enroll_handler(
     ))
 }
 
-/// Authenticate an item-write request before the domain/platform capability gate is evaluated.
+/// Authenticate and process a bounded batch of domain-record writes.
 ///
 /// # Errors
 ///
-/// Returns a version error or the named domain/platform contract gate.
+/// Returns a version, authentication, body, or persistence error. Individual record validation and
+/// idempotency outcomes are returned as item acknowledgements.
 #[utoipa::path(
     post,
     path = "/api/v1/client/items",
@@ -1146,11 +1147,15 @@ pub async fn client_enroll_handler(
         (status = 401, description = "Missing or invalid request signature", body = ClientErrorResponse),
         (status = 403, description = "Credential scope does not permit this operation", body = ClientErrorResponse),
         (status = 409, description = "Durable request id was already admitted", body = ClientErrorResponse),
+        (status = 200, description = "Item-level domain write outcomes", body = ClientWriteResponse),
         (status = 426, description = "Incompatible API major", body = ClientErrorResponse),
-        (status = 503, description = "Writes are gated on domain/platform contracts", body = ClientErrorResponse)
+        (status = 503, description = "Write database unavailable", body = ClientErrorResponse)
     )
 )]
-#[allow(clippy::unused_async, reason = "axum handlers must be async")]
+#[expect(
+    clippy::too_many_lines,
+    reason = "item acknowledgement mapping keeps every terminal domain outcome explicit"
+)]
 pub async fn client_write_handler(
     Extension(database): Extension<Option<sqlx::PgPool>>,
     headers: HeaderMap,
@@ -1168,7 +1173,7 @@ pub async fn client_write_handler(
         "submit_domain_records",
     )
     .await?;
-    let _request: ClientWriteBatch = serde_json::from_slice(&body).map_err(|decode_error| {
+    let request: ClientWriteBatch = serde_json::from_slice(&body).map_err(|decode_error| {
         error(
             StatusCode::BAD_REQUEST,
             "write_body_invalid",
@@ -1178,7 +1183,97 @@ pub async fn client_write_handler(
             Some(API_MAJOR),
         )
     })?;
-    Err(unavailable("item_writes", "T-M5b_T-X2_T-X3_T-X4"))
+    if request.items.is_empty() || request.items.len() > 100 {
+        return Err(error(
+            StatusCode::BAD_REQUEST,
+            "write_batch_invalid",
+            "client write batch must contain 1 through 100 items",
+            false,
+            format!("item_count={}; allowed=1..=100", request.items.len()),
+            Some(API_MAJOR),
+        ));
+    }
+    let client_id = parse_uuid_header(&headers, "x-anxietywatch-client-id")?;
+    let actor = format!("mobile-client:{client_id}");
+    let mut acknowledgements = Vec::with_capacity(request.items.len());
+    for item in request.items {
+        let acknowledgement =
+            match serde_json::from_value::<crate::models::EnvelopePayload>(item.content) {
+                Ok(envelope)
+                    if envelope.class == "domain_record"
+                        && item.schema_version > 0
+                        && item.id == envelope.record.id =>
+                {
+                    match crate::db::process_domain_record(&database, &envelope.record, &actor)
+                        .await
+                    {
+                        Ok(crate::db::DomainRecordOutcome::Created { .. }) => ItemAcknowledgement {
+                            item_id: item.id,
+                            status: "created".to_string(),
+                            code: Some("domain_record_created".to_string()),
+                            message: "domain record created".to_string(),
+                            retryable: false,
+                        },
+                        Ok(crate::db::DomainRecordOutcome::Replayed { .. }) => {
+                            ItemAcknowledgement {
+                                item_id: item.id,
+                                status: "replayed".to_string(),
+                                code: Some("domain_record_replayed".to_string()),
+                                message:
+                                    "domain record was already accepted with identical content"
+                                        .to_string(),
+                                retryable: false,
+                            }
+                        }
+                        Ok(crate::db::DomainRecordOutcome::Conflict { id }) => {
+                            ItemAcknowledgement {
+                                item_id: item.id,
+                                status: "conflict".to_string(),
+                                code: Some("domain_record_conflict".to_string()),
+                                message: format!(
+                                    "domain record {id} conflicts with existing content"
+                                ),
+                                retryable: false,
+                            }
+                        }
+                        Err((_, response)) => ItemAcknowledgement {
+                            item_id: item.id,
+                            status: "rejected".to_string(),
+                            code: Some("domain_record_rejected".to_string()),
+                            message: response.0.error,
+                            retryable: false,
+                        },
+                    }
+                }
+                Ok(envelope) => ItemAcknowledgement {
+                    item_id: item.id,
+                    status: "rejected".to_string(),
+                    code: Some("item_identity_invalid".to_string()),
+                    message: if envelope.class != "domain_record" {
+                        format!("item class {} is not supported", envelope.class)
+                    } else if item.schema_version == 0 {
+                        "item schema version must be positive".to_string()
+                    } else {
+                        format!("item id {} does not match its domain record id", item.id)
+                    },
+                    retryable: false,
+                },
+                Err(decode_error) => ItemAcknowledgement {
+                    item_id: item.id,
+                    status: "rejected".to_string(),
+                    code: Some("item_content_invalid".to_string()),
+                    message: format!("item content is not a domain envelope: {decode_error}"),
+                    retryable: false,
+                },
+            };
+        acknowledgements.push(acknowledgement);
+    }
+    Ok(Json(ClientWriteResponse {
+        api_version: format!("{API_MAJOR}.{API_MINOR}"),
+        batch_id: request.batch_id,
+        acknowledgements,
+        server_time: Utc::now().to_rfc3339(),
+    }))
 }
 
 /// Status-beacon placeholder. A valid request still returns a named gate.
@@ -1487,11 +1582,7 @@ mod tests {
             .as_object()
             .expect("enrollment responses object");
         assert!(enrollment_responses.contains_key("201"));
-        for path in [
-            "/api/v1/client/items",
-            "/api/v1/client/status",
-            "/api/v1/client/projections",
-        ] {
+        for path in ["/api/v1/client/status", "/api/v1/client/projections"] {
             let operations = value["paths"][path]
                 .as_object()
                 .expect("path has operation");
