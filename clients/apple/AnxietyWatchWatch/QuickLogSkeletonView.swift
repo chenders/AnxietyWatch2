@@ -112,6 +112,8 @@ final class WatchRelayModel: NSObject, ObservableObject, WCSessionDelegate {
         await refresh()
         send(item)
         WKInterfaceDevice.current().play(.success)
+      } catch DomainCommandError.watchRelayQueueFull(let count) {
+        status = "Quick Log blocked: Watch queue is full at \(count) items; connect the iPhone to relay entries."
       } catch {
         status = "Quick Log blocked: capture could not be durably queued."
       }

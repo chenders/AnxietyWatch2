@@ -51,15 +51,32 @@ public struct WatchQuickLog: Codable, Equatable, Identifiable, Sendable {
 
 /// Pure queue behavior used by the watch persistence adapter and its tests.
 public struct WatchRelayQueue: Codable, Equatable, Sendable {
+  public static let maximumItems = 100
   public private(set) var items: [WatchQuickLog]
 
   public init(items: [WatchQuickLog] = []) {
     self.items = items
   }
 
+  private enum CodingKeys: String, CodingKey {
+    case items
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    let decoded = try container.decode([WatchQuickLog].self, forKey: .items)
+    guard decoded.count <= Self.maximumItems else {
+      throw DomainCommandError.watchRelayQueueFull(decoded.count)
+    }
+    items = decoded
+  }
+
   /// Re-delivery of the same watch ID is a no-op; a different payload is a conflict.
   public mutating func enqueue(_ item: WatchQuickLog) throws {
     guard let existing = items.first(where: { $0.id == item.id }) else {
+      guard items.count < Self.maximumItems else {
+        throw DomainCommandError.watchRelayQueueFull(Self.maximumItems)
+      }
       items.append(item)
       return
     }

@@ -31,6 +31,43 @@ func watchRelayQueueRejectsConflict() throws {
   #expect(queue.items == [first])
 }
 
+@Test("watch relay queue is bounded without dropping pending logs")
+func watchRelayQueueRejectsOverflow() throws {
+  var queue = WatchRelayQueue()
+  for index in 0..<WatchRelayQueue.maximumItems {
+    let id = UUID(uuidString: String(format: "00000000-0000-7000-8000-%012x", index + 1))!
+    try queue.enqueue(
+      WatchQuickLog(id: id, capturedAt: "2025-01-15T12:00:00Z", anxietyRawValue: 5)
+    )
+  }
+  let overflowID = UUID(uuidString: "00000000-0000-7000-8000-00000000ffff")!
+  let overflow = try WatchQuickLog(
+    id: overflowID,
+    capturedAt: "2025-01-15T12:00:00Z",
+    anxietyRawValue: 5
+  )
+
+  #expect(throws: DomainCommandError.watchRelayQueueFull(WatchRelayQueue.maximumItems)) {
+    try queue.enqueue(overflow)
+  }
+  #expect(queue.items.count == WatchRelayQueue.maximumItems)
+}
+
+@Test("watch relay rejects an oversized persisted queue")
+func watchRelayQueueRejectsOversizedPersistence() throws {
+  var items: [WatchQuickLog] = []
+  for index in 0...WatchRelayQueue.maximumItems {
+    let id = UUID(uuidString: String(format: "00000000-0000-7000-8000-%012x", index + 1))!
+    items.append(
+      try WatchQuickLog(id: id, capturedAt: "2025-01-15T12:00:00Z", anxietyRawValue: 5)
+    )
+  }
+  let data = try JSONEncoder().encode(["items": items])
+  #expect(throws: DomainCommandError.watchRelayQueueFull(WatchRelayQueue.maximumItems + 1)) {
+    try JSONDecoder().decode(WatchRelayQueue.self, from: data)
+  }
+}
+
 @Test("watch quick log produces an express journal record")
 func watchQuickLogProducesJournalRecord() throws {
   let item = try WatchQuickLog(

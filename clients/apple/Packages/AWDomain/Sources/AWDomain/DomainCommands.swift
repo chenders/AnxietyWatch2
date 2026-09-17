@@ -9,6 +9,7 @@ public enum DomainCommandError: Error, Equatable, Sendable {
   case invalidRating(UInt8)
   case invalidSongReference
   case watchRelayConflict
+  case watchRelayQueueFull(Int)
   case mixedVersionAndTombstone
   case selfReference
 }
