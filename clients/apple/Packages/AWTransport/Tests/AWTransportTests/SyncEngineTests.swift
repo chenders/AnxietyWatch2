@@ -157,6 +157,7 @@ private func temporaryDirectory() throws -> URL {
 private final class MockCredentialStore: DeviceCredentialStore, @unchecked Sendable {
   func load() throws -> StoredDeviceCredential? {
     try StoredDeviceCredential(
+      origin: try ClientOrigin(string: "http://192.168.1.10:8480"),
       clientID: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
       keyID: UUID(uuidString: "00000000-0000-0000-0000-000000000002")!,
       keyReference: try DeviceKeyReference(reference: "fixture-key", publicKeySPKIDERBase64: "fixture-key"),

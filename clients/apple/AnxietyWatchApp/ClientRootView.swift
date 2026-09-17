@@ -7,13 +7,13 @@ import SwiftUI
 /// Stage 7 keeps subjective records on the phone only as protected outbox/mirror data and sends
 /// authoritative history and enrichment work to the Pi.
 struct ClientRootView: View {
+  @EnvironmentObject private var runtime: AppClientRuntime
+  @Environment(\.scenePhase) private var scenePhase
+
   var body: some View {
     TabView {
-      PlaceholderSurface(
-        title: "Today", systemImage: "heart.text.square",
-        message: "Pi status is unknown until this device is enrolled."
-      )
-      .tabItem { Label("Today", systemImage: "heart.text.square") }
+      RuntimeStatusSurface()
+        .tabItem { Label("Today", systemImage: "heart.text.square") }
       JournalSurface()
         .tabItem { Label("Journal", systemImage: "book") }
       PlaceholderSurface(
@@ -34,31 +34,34 @@ struct ClientRootView: View {
         .tabItem { Label("Settings", systemImage: "gear") }
     }
     .privacySensitive()
+    .task {
+      await runtime.observeDrainRequests()
+    }
+    .onChange(of: scenePhase) { _, phase in
+      guard phase == .active else { return }
+      Task {
+        await runtime.reload()
+        await runtime.drain()
+      }
+    }
   }
 }
 
-private extension Notification.Name {
+extension Notification.Name {
   static let domainOutboxNeedsDrain = Notification.Name("AnxietyWatch.domainOutboxNeedsDrain")
 }
 
-private struct AppImmediateDrainTrigger: DomainDrainTrigger {
+struct AppImmediateDrainTrigger: DomainDrainTrigger {
   func requestImmediateDrain() async {
     NotificationCenter.default.post(name: .domainOutboxNeedsDrain, object: nil)
   }
 }
 
-private actor AppDomainCommandSink: DomainCommandSink {
+actor AppDomainCommandSink: DomainCommandSink {
   private let outbox: FileOutboxStore
 
-  init() throws {
-    guard let support = FileManager.default.urls(
-      for: .applicationSupportDirectory,
-      in: .userDomainMask
-    ).first else {
-      throw OutboxError.persistenceFailure("application support directory is unavailable")
-    }
-    let directory = support.appendingPathComponent("AnxietyWatch", isDirectory: true)
-    outbox = try FileOutboxStore(directory: directory)
+  init(outbox: FileOutboxStore) {
+    self.outbox = outbox
   }
 
   func enqueue(record: DomainRecordPayload, capturedAt: Date) async throws {
@@ -80,12 +83,27 @@ private struct JournalListItem: Identifiable, Equatable {
   var id: UUID { command.id }
 }
 
+private struct RuntimeStatusSurface: View {
+  @EnvironmentObject private var runtime: AppClientRuntime
+
+  var body: some View {
+    NavigationStack {
+      ContentUnavailableView(
+        runtime.isEnrolled ? "Pi Connected" : "Pi Not Enrolled",
+        systemImage: runtime.isEnrolled ? "checkmark.shield" : "heart.text.square",
+        description: Text(runtime.syncStatus)
+      )
+      .navigationTitle("Today")
+    }
+  }
+}
+
 private struct JournalSurface: View {
   @State private var showingCapture = false
   @State private var selectedSegment = 0
+  @EnvironmentObject private var runtime: AppClientRuntime
   @State private var entries: [JournalListItem] = []
   @State private var catalog = SongCatalog()
-  @State private var sink: AppDomainCommandSink?
   @State private var coordinator: JournalCaptureCoordinator?
   @State private var setupError: String?
 
@@ -137,12 +155,7 @@ private struct JournalSurface: View {
       .task {
         guard coordinator == nil else { return }
         do {
-          let createdSink = try AppDomainCommandSink()
-          sink = createdSink
-          coordinator = JournalCaptureCoordinator(
-            sink: createdSink,
-            drainTrigger: AppImmediateDrainTrigger()
-          )
+          coordinator = try runtime.makeJournalCaptureCoordinator()
         } catch {
           setupError = "Journal storage unavailable: \(error.localizedDescription)"
         }
@@ -563,12 +576,12 @@ private struct SongDetailSurface: View {
 }
 
 private struct EnrollmentSurface: View {
+  @EnvironmentObject private var runtime: AppClientRuntime
   @State private var artifactText = ""
   @State private var deviceLabel = "iPhone"
   @State private var accepted = false
   @State private var isEnrolling = false
   @State private var statusMessage: String?
-  @State private var enrolled = false
   @State private var showingRecovery = false
 
   var body: some View {
@@ -576,21 +589,21 @@ private struct EnrollmentSurface: View {
       Form {
         Section("Pi connection") {
           Label(
-            enrolled ? "Enrolled on this device" : "Not enrolled",
-            systemImage: enrolled ? "checkmark.shield" : "lock.shield"
+            runtime.isEnrolled ? "Enrolled on this device" : "Not enrolled",
+            systemImage: runtime.isEnrolled ? "checkmark.shield" : "lock.shield"
           )
-          .accessibilityLabel(enrolled ? "Pi connection enrolled" : "Pi connection not enrolled")
+          .accessibilityLabel(runtime.isEnrolled ? "Pi connection enrolled" : "Pi connection not enrolled")
           if let preview = artifactPreview {
             LabeledContent("Server", value: preview.serverDisplayLabel)
             LabeledContent("Origin", value: preview.origin.normalizedString)
             LabeledContent("Expires", value: preview.expiresAt.formatted())
-          } else if !enrolled {
+          } else if !runtime.isEnrolled {
             Text("Paste the one-time enrollment artifact created by the private admin console.")
               .font(.footnote)
           }
         }
 
-        if !enrolled {
+        if !runtime.isEnrolled {
           Section("One-time enrollment artifact") {
             TextEditor(text: $artifactText)
               .frame(minHeight: 120)
@@ -619,7 +632,7 @@ private struct EnrollmentSurface: View {
         if let statusMessage {
           Section("Enrollment status") {
             Text(statusMessage)
-              .foregroundStyle(enrolled ? .secondary : .primary)
+              .foregroundStyle(runtime.isEnrolled ? .secondary : .primary)
               .accessibilityLabel("Enrollment status: \(statusMessage)")
           }
         }
@@ -670,7 +683,7 @@ private struct EnrollmentSurface: View {
         deviceLabel: deviceLabel,
         appVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "development"
       )
-      enrolled = true
+      await runtime.reload()
       statusMessage = "Enrollment succeeded; this iPhone can now authenticate queued writes."
       artifactText = ""
     } catch {

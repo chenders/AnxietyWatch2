@@ -154,6 +154,7 @@ func enrollmentStoresCredential() async throws {
   )
 
   #expect(credential.keyReference.reference == "fixture-key")
+  #expect(credential.origin == origin)
   #expect(credentialStore.saved?.clientID == credential.clientID)
   #expect(transport.request?.algorithm == "ecdsa-p256-sha256")
   #expect(transport.request?.serverInstanceID == artifact.serverInstanceID)

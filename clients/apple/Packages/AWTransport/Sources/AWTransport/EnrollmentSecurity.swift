@@ -237,6 +237,8 @@ public protocol DeviceCredentialStore: Sendable {
 }
 
 public struct StoredDeviceCredential: Codable, Equatable, Sendable {
+  /// The manually confirmed server origin used for authenticated reads and writes.
+  public let origin: ClientOrigin
   public let clientID: UUID
   public let keyID: UUID
   public let keyReference: DeviceKeyReference
@@ -246,6 +248,7 @@ public struct StoredDeviceCredential: Codable, Equatable, Sendable {
   public let serverTime: String
 
   public init(
+    origin: ClientOrigin,
     clientID: UUID,
     keyID: UUID,
     keyReference: DeviceKeyReference,
@@ -258,6 +261,7 @@ public struct StoredDeviceCredential: Codable, Equatable, Sendable {
     guard !issuedAt.isEmpty, !expiresAt.isEmpty, !serverTime.isEmpty else {
       throw EnrollmentError.invalidArtifact("credential timestamps are incomplete")
     }
+    self.origin = origin
     self.clientID = clientID
     self.keyID = keyID
     self.keyReference = keyReference
@@ -355,6 +359,7 @@ public actor EnrollmentCoordinator {
         )
       }
       let credential = try StoredDeviceCredential(
+        origin: artifact.origin,
         clientID: response.clientID,
         keyID: response.keyID,
         keyReference: key,

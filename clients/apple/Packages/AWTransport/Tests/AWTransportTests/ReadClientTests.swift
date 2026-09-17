@@ -143,6 +143,7 @@ private func page(value: Double, apiVersion: String = "1.0") -> ClientProjection
 private final class ReadCredentialStore: DeviceCredentialStore, @unchecked Sendable {
   func load() throws -> StoredDeviceCredential? {
     try StoredDeviceCredential(
+      origin: try ClientOrigin(string: "http://192.168.1.10:8480"),
       clientID: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
       keyID: UUID(uuidString: "00000000-0000-0000-0000-000000000002")!,
       keyReference: try DeviceKeyReference(reference: "fixture-key", publicKeySPKIDERBase64: "fixture-key"),
