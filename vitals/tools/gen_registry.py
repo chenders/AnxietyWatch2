@@ -240,8 +240,13 @@ def emit_rust(reg: Registry) -> str:
         + (" (indication)" if s.indication else "")
         + f"\n    {s.rust_variant} = {s.id},"
         for s in reg.sources)
+    def rust_float(value: float) -> str:
+        if value.is_integer():
+            return f"{int(value):_}.0"
+        return repr(value)
+
     type_ranges = "\n".join(
-        f"            Self::{t.rust_variant} => ({t.range_lo!r}, {t.range_hi!r}),"
+        f"            Self::{t.rust_variant} => ({rust_float(t.range_lo)}, {rust_float(t.range_hi)}),"
         for t in reg.types)
     type_units = "\n".join(
         f'            Self::{t.rust_variant} => "{t.unit}",' for t in reg.types)

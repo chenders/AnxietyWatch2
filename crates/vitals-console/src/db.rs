@@ -447,6 +447,171 @@ type DomainRecordRow = (
     Option<Uuid>,
 );
 
+/// Process one complete `HealthKit` anchored page in one database transaction.
+///
+/// All samples are validated before the transaction starts. A duplicate page is a replay when no
+/// sample or deletion tombstone was newly inserted; `PostgreSQL` identity constraints make retries
+/// safe without using a timestamp as identity.
+///
+/// # Errors
+///
+/// Returns a named 400 quarantine reason for invalid platform data, or a 500 persistence error.
+#[expect(
+    clippy::too_many_lines,
+    reason = "the transactional HealthKit ingest path keeps validation and append-only commit together"
+)]
+pub async fn process_healthkit_batch(
+    pool: &PgPool,
+    payload: &crate::healthkit::HealthKitBatchPayload,
+    client_id: Uuid,
+) -> Result<bool, (StatusCode, Json<ErrorResponse>)> {
+    if payload.class != "platform_sample_batch" {
+        return Err(error_reply(
+            StatusCode::BAD_REQUEST,
+            format!("healthkit batch class is not supported: {}", payload.class),
+        ));
+    }
+    if payload.schema_version != 1 {
+        return Err(error_reply(
+            StatusCode::BAD_REQUEST,
+            format!(
+                "healthkit batch schema_version is unsupported: {}",
+                payload.schema_version
+            ),
+        ));
+    }
+    if payload.samples.is_empty() && payload.deletions.is_empty() {
+        return Err(error_reply(
+            StatusCode::BAD_REQUEST,
+            "healthkit batch contains no samples or deletion facts",
+        ));
+    }
+
+    let mut mapped_samples = Vec::with_capacity(payload.samples.len());
+    for sample in &payload.samples {
+        let mapped = crate::healthkit::map_healthkit_sample(sample).map_err(|quarantine| {
+            error_reply(
+                StatusCode::BAD_REQUEST,
+                format!(
+                    "HealthKit sample quarantined: {} ({})",
+                    quarantine.code, quarantine.detail
+                ),
+            )
+        })?;
+        let timestamp = chrono::DateTime::from_timestamp_micros(mapped.timestamp_unix_micros)
+            .ok_or_else(|| {
+                error_reply(
+                    StatusCode::BAD_REQUEST,
+                    format!(
+                        "HealthKit sample timestamp is outside PostgreSQL range: {}",
+                        sample.start_at
+                    ),
+                )
+            })?;
+        mapped_samples.push((mapped, timestamp));
+    }
+
+    let mut mapped_deletions = Vec::with_capacity(payload.deletions.len());
+    for deletion in &payload.deletions {
+        let registry_type =
+            crate::healthkit::registry_type_for_healthkit_identifier(&deletion.healthkit_type)
+                .ok_or_else(|| {
+                    error_reply(
+                        StatusCode::BAD_REQUEST,
+                        format!(
+                            "HealthKit deletion type is unsupported: {}",
+                            deletion.healthkit_type
+                        ),
+                    )
+                })?;
+        let recorded_at = chrono::DateTime::parse_from_rfc3339(&deletion.recorded_at)
+            .map(|value| value.with_timezone(&chrono::Utc))
+            .map_err(|error| {
+                error_reply(
+                    StatusCode::BAD_REQUEST,
+                    format!("HealthKit deletion recorded_at is not RFC3339: {error}"),
+                )
+            })?;
+        let extra = serde_json::to_vec(&serde_json::json!({
+            "schema": 1,
+            "platform": "healthkit",
+            "sample_id": deletion.healthkit_sample_uuid,
+            "healthkit_type": deletion.healthkit_type,
+            "deletion": true,
+        }))
+        .map_err(|error| {
+            error_reply(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("HealthKit deletion provenance encoding failed: {error}"),
+            )
+        })?;
+        mapped_deletions.push((deletion, registry_type, recorded_at, extra));
+    }
+
+    let mut tx = pool.begin().await.map_err(|error| {
+        error_reply(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("db error beginning HealthKit batch transaction: {error}"),
+        )
+    })?;
+    let node_id = client_id.as_bytes().to_vec();
+    let mut inserted = false;
+    for (sample, timestamp) in mapped_samples {
+        let result = sqlx::query(
+            "INSERT INTO samples (source, type, session_id, seq, timestamp, value, extra, node_id) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT DO NOTHING",
+        )
+        .bind(sample.source.id())
+        .bind(sample.r#type.id())
+        .bind(sample.session_id)
+        .bind(sample.seq)
+        .bind(timestamp)
+        .bind(sample.value)
+        .bind(sample.extra)
+        .bind(&node_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|error| {
+            error_reply(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("db error inserting HealthKit sample: {error}"),
+            )
+        })?;
+        inserted |= result.rows_affected() == 1;
+    }
+    for (deletion, registry_type, recorded_at, extra) in mapped_deletions {
+        let result = sqlx::query(
+            "INSERT INTO healthkit_sample_tombstones \
+             (healthkit_sample_uuid, healthkit_type, registry_type, deleted_at, query_batch_id, recorded_at, node_id, extra) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT DO NOTHING",
+        )
+        .bind(deletion.healthkit_sample_uuid)
+        .bind(&deletion.healthkit_type)
+        .bind(registry_type.id())
+        .bind(recorded_at)
+        .bind(deletion.query_batch_id)
+        .bind(recorded_at)
+        .bind(&node_id)
+        .bind(extra)
+        .execute(&mut *tx)
+        .await
+        .map_err(|error| {
+            error_reply(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("db error inserting HealthKit deletion tombstone: {error}"),
+            )
+        })?;
+        inserted |= result.rows_affected() == 1;
+    }
+    tx.commit().await.map_err(|error| {
+        error_reply(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("db error committing HealthKit batch: {error}"),
+        )
+    })?;
+    Ok(inserted)
+}
+
 /// Process a domain record, applying immutable version and conflict rules.
 ///
 /// Same identity and hash is an audited no-op replay. Same identity with a

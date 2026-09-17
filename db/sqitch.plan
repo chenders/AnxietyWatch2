@@ -26,3 +26,4 @@ mobile_credentials [health_mutes] 2026-09-19T12:05:00Z Chris Henderson <chenders
 mobile_request_replays [mobile_credentials] 2026-09-19T12:06:00Z Chris Henderson <chenders@users.noreply.github.com> # durable authenticated mobile request replay admissions
 mobile_status_beacons [mobile_request_replays] 2026-09-19T12:07:00Z Chris Henderson <chenders@users.noreply.github.com> # append-only operational phone status assertions
 telemetry [mobile_status_beacons] 2026-09-19T12:08:00Z Chris Henderson <chenders@users.noreply.github.com> # opt-in bounded operational telemetry configuration
+healthkit_tombstones [telemetry] 2026-09-19T12:09:00Z Chris Henderson <chenders@users.noreply.github.com> # append-only HealthKit deletion facts

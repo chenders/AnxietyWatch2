@@ -6,11 +6,12 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use utoipa::ToSchema;
 use uuid::Uuid;
 use vitals_registry::{VitalsSource, VitalsType};
 
 /// One source sample as sent by the Apple client.
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct HealthKitSamplePayload {
     /// Synthetic-fixture marker, ignored by the mapper.
@@ -51,8 +52,79 @@ pub struct HealthKitSamplePayload {
     pub recorded_at: String,
 }
 
+/// A bounded anchored-query envelope. Samples and deletion facts are committed together by the
+/// authenticated receiver; an empty envelope is not sent by the phone.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct HealthKitBatchPayload {
+    /// Envelope class discriminator.
+    pub class: String,
+    /// Envelope schema version.
+    pub schema_version: u32,
+    /// Source samples in this query page.
+    #[serde(default)]
+    pub samples: Vec<HealthKitSamplePayload>,
+    /// Deletion facts in this query page.
+    #[serde(default)]
+    pub deletions: Vec<HealthKitDeletionPayload>,
+}
+
+/// A `HealthKit` deletion fact. The server records a tombstone and never deletes a sample row.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct HealthKitDeletionPayload {
+    /// Stable deleted `HealthKit` sample UUID.
+    pub healthkit_sample_uuid: Uuid,
+    /// Original `HealthKit` category or quantity identifier.
+    pub healthkit_type: String,
+    /// Query operation identity.
+    pub query_batch_id: Uuid,
+    /// Phone record instant.
+    pub recorded_at: String,
+}
+
+/// Map a `HealthKit` identifier to its generated registry type without requiring a value.
+#[must_use]
+pub fn registry_type_for_healthkit_identifier(identifier: &str) -> Option<VitalsType> {
+    match identifier {
+        "HKQuantityTypeIdentifierHeartRate" => Some(VitalsType::Hr),
+        "HKQuantityTypeIdentifierHeartRateVariabilitySDNN" => Some(VitalsType::HrvRmssd),
+        "HKQuantityTypeIdentifierOxygenSaturation" => Some(VitalsType::Spo2),
+        "HKCategoryTypeIdentifierSleepAnalysis" => Some(VitalsType::SleepStage),
+        "HKQuantityTypeIdentifierRestingHeartRate" => Some(VitalsType::RestingHr),
+        "HKQuantityTypeIdentifierRespiratoryRate" => Some(VitalsType::RespiratoryRate),
+        "HKQuantityTypeIdentifierAppleSleepingWristTemperature" => {
+            Some(VitalsType::WristTemperature)
+        }
+        "HKQuantityTypeIdentifierStepCount" => Some(VitalsType::StepCount),
+        "HKQuantityTypeIdentifierActiveEnergyBurned" => Some(VitalsType::ActiveEnergy),
+        "HKQuantityTypeIdentifierAppleExerciseTime" => Some(VitalsType::ExerciseTime),
+        "HKQuantityTypeIdentifierEnvironmentalAudioExposure" => {
+            Some(VitalsType::EnvironmentalAudio)
+        }
+        "HKQuantityTypeIdentifierBloodPressureSystolic" => Some(VitalsType::BpSystolic),
+        "HKQuantityTypeIdentifierBloodPressureDiastolic" => Some(VitalsType::BpDiastolic),
+        "HKQuantityTypeIdentifierBloodGlucose" => Some(VitalsType::BloodGlucose),
+        "HKQuantityTypeIdentifierVO2Max" => Some(VitalsType::Vo2Max),
+        "HKQuantityTypeIdentifierWalkingHeartRateAverage" => Some(VitalsType::WalkingHr),
+        "HKQuantityTypeIdentifierHeadphoneAudioExposure" => Some(VitalsType::HeadphoneAudio),
+        "HKQuantityTypeIdentifierAppleWalkingSteadiness" => Some(VitalsType::WalkingSteadiness),
+        "HKQuantityTypeIdentifierAtrialFibrillationBurden" => Some(VitalsType::AfibBurden),
+        "HKQuantityTypeIdentifierWalkingSpeed" => Some(VitalsType::WalkingSpeed),
+        "HKQuantityTypeIdentifierWalkingStepLength" => Some(VitalsType::WalkingStepLength),
+        "HKQuantityTypeIdentifierWalkingDoubleSupportPercentage" => {
+            Some(VitalsType::WalkingDoubleSupport)
+        }
+        "HKQuantityTypeIdentifierWalkingAsymmetryPercentage" => Some(VitalsType::WalkingAsymmetry),
+        "HKQuantityTypeIdentifierTimeInDaylight" => Some(VitalsType::TimeInDaylight),
+        "HKQuantityTypeIdentifierPhysicalEffort" => Some(VitalsType::PhysicalEffort),
+        "HKQuantityTypeIdentifierBodyMass" => Some(VitalsType::BodyMass),
+        _ => None,
+    }
+}
+
 /// `HealthKit` source revision fields retained as sub-provenance.
-#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SourceRevision {
     /// Source application bundle identifier.
@@ -70,7 +142,7 @@ pub struct SourceRevision {
 }
 
 /// `HealthKit` device metadata retained as sub-provenance.
-#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct DeviceMetadata {
     /// Manufacturer, when reported.
@@ -151,6 +223,10 @@ pub fn decode_healthkit_payload(
 ///
 /// Returns a named quarantine reason when the interval, value, unit, type, or provenance cannot be
 /// validated against the accepted `HealthKit` contract.
+#[expect(
+    clippy::too_many_lines,
+    reason = "the registry mapping keeps each supported HealthKit identifier and validation path explicit"
+)]
 pub fn map_healthkit_sample(
     payload: &HealthKitSamplePayload,
 ) -> Result<MappedHealthKitSample, HealthKitQuarantine> {

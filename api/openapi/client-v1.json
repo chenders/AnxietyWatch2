@@ -86,7 +86,7 @@
         "tags": [
           "apple-client"
         ],
-        "summary": "Authenticate and process a bounded batch of domain-record writes.",
+        "summary": "Authenticate and process a bounded batch of domain-record or platform-sample writes.",
         "description": "# Errors\n\nReturns a version, authentication, body, or persistence error. Individual record validation and\nidempotency outcomes are returned as item acknowledgements.",
         "operationId": "client_write_handler",
         "parameters": [
@@ -903,6 +903,41 @@
           }
         }
       },
+      "DeviceMetadata": {
+        "type": "object",
+        "description": "`HealthKit` device metadata retained as sub-provenance.",
+        "properties": {
+          "hardware_version": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Hardware version, when reported."
+          },
+          "manufacturer": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Manufacturer, when reported."
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Model, when reported."
+          },
+          "os_version": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Operating-system version, when reported."
+          }
+        },
+        "additionalProperties": false
+      },
       "EnrollmentClaimRequest": {
         "type": "object",
         "description": "Future one-time enrollment claim. Unknown JSON fields are intentionally ignored.",
@@ -1096,6 +1131,173 @@
             "description": "`accepted` for a new assertion or `replayed` for identical content."
           }
         }
+      },
+      "HealthKitBatchPayload": {
+        "type": "object",
+        "description": "A bounded anchored-query envelope. Samples and deletion facts are committed together by the\nauthenticated receiver; an empty envelope is not sent by the phone.",
+        "required": [
+          "class",
+          "schema_version"
+        ],
+        "properties": {
+          "class": {
+            "type": "string",
+            "description": "Envelope class discriminator."
+          },
+          "deletions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HealthKitDeletionPayload"
+            },
+            "description": "Deletion facts in this query page."
+          },
+          "samples": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HealthKitSamplePayload"
+            },
+            "description": "Source samples in this query page."
+          },
+          "schema_version": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Envelope schema version.",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "HealthKitDeletionPayload": {
+        "type": "object",
+        "description": "A `HealthKit` deletion fact. The server records a tombstone and never deletes a sample row.",
+        "required": [
+          "healthkit_sample_uuid",
+          "healthkit_type",
+          "query_batch_id",
+          "recorded_at"
+        ],
+        "properties": {
+          "healthkit_sample_uuid": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Stable deleted `HealthKit` sample UUID."
+          },
+          "healthkit_type": {
+            "type": "string",
+            "description": "Original `HealthKit` category or quantity identifier."
+          },
+          "query_batch_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Query operation identity."
+          },
+          "recorded_at": {
+            "type": "string",
+            "description": "Phone record instant."
+          }
+        },
+        "additionalProperties": false
+      },
+      "HealthKitSamplePayload": {
+        "type": "object",
+        "description": "One source sample as sent by the Apple client.",
+        "required": [
+          "healthkit_sample_uuid",
+          "healthkit_type",
+          "start_at",
+          "end_at",
+          "query_batch_id",
+          "recorded_at"
+        ],
+        "properties": {
+          "device": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/DeviceMetadata",
+                "description": "`HealthKit` device metadata."
+              }
+            ]
+          },
+          "end_at": {
+            "type": "string",
+            "description": "Exclusive UTC interval end."
+          },
+          "fixture": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Synthetic-fixture marker, ignored by the mapper."
+          },
+          "healthkit_sample_uuid": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Stable `HealthKit` source identifier."
+          },
+          "healthkit_type": {
+            "type": "string",
+            "description": "Original `HealthKit` type identifier."
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Allowlisted `HealthKit` metadata fields.",
+            "additionalProperties": {},
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "original_category": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Original `HealthKit` category value, present for category samples."
+          },
+          "original_unit": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Original `HealthKit` unit identifier, present for quantity samples."
+          },
+          "original_value": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "Original numeric value, present for quantity samples."
+          },
+          "query_batch_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Client batch identity from the query or observer operation."
+          },
+          "record_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Client item identity, validated by the outer receiver."
+          },
+          "recorded_at": {
+            "type": "string",
+            "description": "Instant at which the phone recorded the item."
+          },
+          "source_revision": {
+            "$ref": "#/components/schemas/SourceRevision",
+            "description": "`HealthKit` source revision."
+          },
+          "start_at": {
+            "type": "string",
+            "description": "Inclusive UTC interval start."
+          }
+        },
+        "additionalProperties": false
       },
       "HealthTypeFact": {
         "type": "object",
@@ -1338,6 +1540,41 @@
             "description": "Server observation time in UTC."
           }
         }
+      },
+      "SourceRevision": {
+        "type": "object",
+        "description": "`HealthKit` source revision fields retained as sub-provenance.",
+        "properties": {
+          "bundle_identifier": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Source application bundle identifier."
+          },
+          "product_type": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Device product type reported by `HealthKit`."
+          },
+          "source_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Human-readable source name."
+          },
+          "version": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Source application version."
+          }
+        },
+        "additionalProperties": false
       }
     }
   },

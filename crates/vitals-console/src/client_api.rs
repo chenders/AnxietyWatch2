@@ -1,7 +1,7 @@
 //! Versioned Stage 7 Apple-client HTTP contract.
 //!
-//! Version and registry discovery, enrollment, and authenticated status-beacon admission are
-//! implemented. Domain writes and projections remain gated until their owning tasks land.
+//! Version, registry discovery, enrollment, authenticated platform/domain writes, and status-beacon
+//! admission share one signed request profile. Physiological canonicalization remains server-owned.
 
 use axum::Json;
 use axum::Router;
@@ -53,6 +53,11 @@ const REGISTRY_JSON: &str = include_str!(concat!(
         EnrollmentCredentialResponse,
         ClientWriteBatch,
         ClientWriteItem,
+        crate::healthkit::HealthKitBatchPayload,
+        crate::healthkit::HealthKitSamplePayload,
+        crate::healthkit::HealthKitDeletionPayload,
+        crate::healthkit::SourceRevision,
+        crate::healthkit::DeviceMetadata,
         ClientWriteResponse,
         ItemAcknowledgement,
         HealthBeaconRequest,
@@ -723,8 +728,8 @@ async fn authenticate_mobile_request(
     body: &[u8],
     method: &str,
     path: &str,
-    required_scope: &str,
-) -> Result<(), ClientApiError> {
+    required_scopes: &[&str],
+) -> Result<Vec<String>, ClientApiError> {
     let signature = mobile_signature(headers, body)?;
     let credential: Option<MobileCredentialRow> = sqlx::query_as(
         "SELECT public_key, scopes, expires_at, revoked_at FROM mobile_credentials\
@@ -783,15 +788,19 @@ async fn authenticate_mobile_request(
             Some(API_MAJOR),
         ));
     }
-    if !scopes.iter().any(|scope| scope == required_scope) {
+    if !required_scopes
+        .iter()
+        .any(|required| scopes.iter().any(|scope| scope == required))
+    {
         return Err(error(
             StatusCode::FORBIDDEN,
             "credential_scope_denied",
             "mobile credential scope does not permit this operation",
             false,
             format!(
-                "client_id={}; required_scope={required_scope}",
-                signature.client_id
+                "client_id={}; required_scopes={}",
+                signature.client_id,
+                required_scopes.join("|")
             ),
             Some(API_MAJOR),
         ));
@@ -936,7 +945,7 @@ async fn authenticate_mobile_request(
             Some(API_MAJOR),
         )
     })?;
-    Ok(())
+    Ok(scopes)
 }
 
 /// Create a single-use enrollment artifact for a mobile device.
@@ -1252,7 +1261,43 @@ pub async fn client_enroll_handler(
     ))
 }
 
-/// Authenticate and process a bounded batch of domain-record writes.
+fn healthkit_batch_identity_matches(
+    payload: &crate::healthkit::HealthKitBatchPayload,
+    item_id: Uuid,
+) -> bool {
+    let sample_ids = payload
+        .samples
+        .iter()
+        .map(|sample| sample.query_batch_id)
+        .chain(
+            payload
+                .deletions
+                .iter()
+                .map(|deletion| deletion.query_batch_id),
+        );
+    let mut count = 0;
+    for batch_id in sample_ids {
+        if batch_id != item_id {
+            return false;
+        }
+        count += 1;
+    }
+    count > 0
+}
+
+fn required_write_scope(item_class: &str) -> &'static str {
+    if item_class == "platform_sample_batch" {
+        "submit_platform_health"
+    } else {
+        "submit_domain_records"
+    }
+}
+
+fn has_scope(scopes: &[String], required: &str) -> bool {
+    scopes.iter().any(|scope| scope == required)
+}
+
+/// Authenticate and process a bounded batch of domain-record or platform-sample writes.
 ///
 /// # Errors
 ///
@@ -1294,13 +1339,13 @@ pub async fn client_write_handler(
     validate_version(&headers)?;
     let database =
         database.ok_or_else(|| unavailable("item_writes", "VITALS_CONSOLE_DATABASE_URL"))?;
-    authenticate_mobile_request(
+    let scopes = authenticate_mobile_request(
         &database,
         &headers,
         body.as_ref(),
         "POST",
         "/api/v1/client/items",
-        "submit_domain_records",
+        &["submit_domain_records", "submit_platform_health"],
     )
     .await?;
     let request: ClientWriteBatch = serde_json::from_slice(&body).map_err(|decode_error| {
@@ -1327,7 +1372,67 @@ pub async fn client_write_handler(
     let actor = format!("mobile-client:{client_id}");
     let mut acknowledgements = Vec::with_capacity(request.items.len());
     for item in request.items {
-        let acknowledgement =
+        let required_scope = required_write_scope(&item.class);
+        let acknowledgement = if !has_scope(&scopes, required_scope) {
+            ItemAcknowledgement {
+                item_id: item.id,
+                status: "rejected".to_string(),
+                code: Some("credential_scope_denied".to_string()),
+                message: format!("item requires scope={required_scope}"),
+                retryable: false,
+            }
+        } else if item.class == "platform_sample_batch" {
+            match serde_json::from_value::<crate::healthkit::HealthKitBatchPayload>(
+                item.content.clone(),
+            ) {
+                Ok(payload)
+                    if payload.class == "platform_sample_batch"
+                        && payload.schema_version == item.schema_version
+                        && healthkit_batch_identity_matches(&payload, item.id) =>
+                {
+                    match crate::db::process_healthkit_batch(&database, &payload, client_id).await {
+                        Ok(true) => ItemAcknowledgement {
+                            item_id: item.id,
+                            status: "created".to_string(),
+                            code: Some("healthkit_batch_created".to_string()),
+                            message: "HealthKit batch accepted".to_string(),
+                            retryable: false,
+                        },
+                        Ok(false) => ItemAcknowledgement {
+                            item_id: item.id,
+                            status: "replayed".to_string(),
+                            code: Some("healthkit_batch_replayed".to_string()),
+                            message: "HealthKit batch was already accepted".to_string(),
+                            retryable: false,
+                        },
+                        Err((_, response)) => ItemAcknowledgement {
+                            item_id: item.id,
+                            status: "rejected".to_string(),
+                            code: Some("healthkit_batch_rejected".to_string()),
+                            message: response.0.error,
+                            retryable: false,
+                        },
+                    }
+                }
+                Ok(payload) => ItemAcknowledgement {
+                    item_id: item.id,
+                    status: "rejected".to_string(),
+                    code: Some("healthkit_batch_identity_invalid".to_string()),
+                    message: format!(
+                        "HealthKit batch class/schema/identity is invalid: {}",
+                        payload.class
+                    ),
+                    retryable: false,
+                },
+                Err(decode_error) => ItemAcknowledgement {
+                    item_id: item.id,
+                    status: "rejected".to_string(),
+                    code: Some("healthkit_batch_content_invalid".to_string()),
+                    message: format!("HealthKit batch is malformed: {decode_error}"),
+                    retryable: false,
+                },
+            }
+        } else {
             match serde_json::from_value::<crate::models::EnvelopePayload>(item.content) {
                 Ok(envelope)
                     if envelope.class == "domain_record"
@@ -1395,7 +1500,8 @@ pub async fn client_write_handler(
                     message: format!("item content is not a domain envelope: {decode_error}"),
                     retryable: false,
                 },
-            };
+            }
+        };
         acknowledgements.push(acknowledgement);
     }
     Ok(Json(ClientWriteResponse {
@@ -1512,7 +1618,7 @@ pub async fn client_beacon_handler(
         body.as_ref(),
         "POST",
         "/api/v1/client/status",
-        "submit_platform_health",
+        &["submit_platform_health"],
     )
     .await?;
     let request: HealthBeaconRequest = serde_json::from_slice(&body).map_err(|decode_error| {
@@ -1603,7 +1709,7 @@ pub async fn client_projections_handler(
         &[],
         "GET",
         "/api/v1/client/projections",
-        "read_projections",
+        &["read_projections"],
     )
     .await?;
     Err(unavailable("projections", "admin_M3_M4"))
@@ -1660,6 +1766,59 @@ mod tests {
         .expect("health beacon fixture decodes");
         assert!(validate_health_beacon(&request).is_ok());
         assert_eq!(request.types[0].last_matching_sample_at, None);
+    }
+
+    #[test]
+    fn write_items_require_the_scope_for_their_payload_class() {
+        let platform_only = vec!["submit_platform_health".to_string()];
+        let domain_only = vec!["submit_domain_records".to_string()];
+        assert!(has_scope(
+            &platform_only,
+            required_write_scope("platform_sample_batch")
+        ));
+        assert!(!has_scope(
+            &platform_only,
+            required_write_scope("domain_record")
+        ));
+        assert!(has_scope(
+            &domain_only,
+            required_write_scope("domain_record")
+        ));
+        assert!(!has_scope(
+            &domain_only,
+            required_write_scope("platform_sample_batch")
+        ));
+    }
+
+    #[test]
+    fn healthkit_batch_fixture_decodes_as_a_platform_write() {
+        let request: ClientWriteBatch = serde_json::from_str(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../api/fixtures/client-v1/healthkit-batch-request.json"
+        )))
+        .expect("HealthKit batch fixture decodes");
+        let item = &request.items[0];
+        let payload: crate::healthkit::HealthKitBatchPayload =
+            serde_json::from_value(item.content.clone()).expect("HealthKit content decodes");
+        assert_eq!(item.class, "platform_sample_batch");
+        assert!(healthkit_batch_identity_matches(&payload, item.id));
+    }
+
+    #[test]
+    fn healthkit_batch_identity_is_bound_to_every_page_entry() {
+        let sample: crate::healthkit::HealthKitSamplePayload = serde_json::from_slice(
+            include_bytes!("../../../clients/apple/Fixtures/GEN1/healthkit-quantity-sample.json"),
+        )
+        .expect("HealthKit fixture decodes");
+        let batch_id = sample.query_batch_id;
+        let payload = crate::healthkit::HealthKitBatchPayload {
+            class: "platform_sample_batch".to_string(),
+            schema_version: 1,
+            samples: vec![sample],
+            deletions: vec![],
+        };
+        assert!(healthkit_batch_identity_matches(&payload, batch_id));
+        assert!(!healthkit_batch_identity_matches(&payload, Uuid::nil()));
     }
 
     #[test]
