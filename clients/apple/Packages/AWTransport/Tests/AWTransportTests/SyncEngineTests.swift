@@ -1,3 +1,4 @@
+import AWDomain
 import AWOutbox
 import Foundation
 import Testing
@@ -24,10 +25,12 @@ func syncAcknowledgesItems() async throws {
     ],
     serverTime: "2026-01-01T00:00:01Z"
   ))
+  let stateSink = MockSyncStateSink()
   let engine = SyncEngine(
     outbox: outbox,
     credentialStore: credentialStore,
     transport: transport,
+    stateSink: stateSink,
     configuration: try SyncConfiguration(jitter: { _ in 0 }),
     now: { syncNow }
   )
@@ -38,6 +41,8 @@ func syncAcknowledgesItems() async throws {
   #expect(report.replayed == 1)
   #expect(report.pendingAfter == 0)
   #expect(transport.sent?.items.count == 2)
+  #expect(await stateSink.state(for: firstID) == .acknowledged)
+  #expect(await stateSink.state(for: secondID) == .acknowledged)
 }
 
 @Test("retryable transport failures preserve payloads and use bounded exponential backoff")
@@ -47,10 +52,12 @@ func retryableTransportFailure() async throws {
   let id = UUID()
   try await outbox.enqueue(try item(id: id, payload: Data("{}".utf8)))
   let transport = MockItemTransport(error: .http(status: 503, retryAfter: nil))
+  let stateSink = MockSyncStateSink()
   let engine = SyncEngine(
     outbox: outbox,
     credentialStore: MockCredentialStore(),
     transport: transport,
+    stateSink: stateSink,
     configuration: try SyncConfiguration(jitter: { _ in 0 }),
     now: { syncNow }
   )
@@ -62,6 +69,7 @@ func retryableTransportFailure() async throws {
   #expect(stored.payload == Data("{}".utf8))
   #expect(stored.attemptCount == 1)
   #expect(stored.nextEligibleAttemptAt == syncNow.addingTimeInterval(1))
+  #expect(await stateSink.state(for: id) == .queued)
 }
 
 @Test("retry-after is honored without exceeding the configured ceiling")
@@ -176,6 +184,18 @@ private final class EmptyCredentialStore: DeviceCredentialStore, @unchecked Send
   func load() throws -> StoredDeviceCredential? { nil }
   func save(_ credential: StoredDeviceCredential) throws {}
   func delete() throws {}
+}
+
+private actor MockSyncStateSink: DomainSyncStateSink {
+  private var states: [UUID: DomainSyncState] = [:]
+
+  func update(recordID: UUID, state: DomainSyncState) async throws {
+    states[recordID] = state
+  }
+
+  func state(for recordID: UUID) -> DomainSyncState? {
+    states[recordID]
+  }
 }
 
 private final class MockItemTransport: ClientItemTransport, @unchecked Sendable {

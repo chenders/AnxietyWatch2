@@ -12,7 +12,7 @@ struct AppJournalMirrorEntry: Codable, Equatable, Identifiable, Sendable {
   var id: UUID { record.id }
 }
 
-actor AppJournalMirrorStore {
+actor AppJournalMirrorStore: DomainSyncStateSink {
   private struct Persisted: Codable {
     var entries: [AppJournalMirrorEntry]
   }
@@ -60,6 +60,15 @@ actor AppJournalMirrorStore {
     }
     backupIncluded = included
     try Self.protect(fileURL, includeInBackup: included)
+  }
+
+  func update(recordID: UUID, state: DomainSyncState) throws {
+    guard let index = persisted.entries.firstIndex(where: { $0.record.id == recordID }) else { return }
+    persisted.entries[index] = AppJournalMirrorEntry(
+      record: persisted.entries[index].record,
+      syncState: state
+    )
+    try persist()
   }
 
   func put(record: DomainRecordPayload, syncState: DomainSyncState) throws {
@@ -176,11 +185,11 @@ final class AppClientRuntime: ObservableObject {
   }
 
   func reload() async {
-    guard let outbox else {
+    guard let outbox, let journalMirror else {
       isEnrolled = false
       syncEngine = nil
       projectionService = nil
-      syncStatus = "Sync unavailable: \(initializationError ?? "outbox initialization failed")"
+      syncStatus = "Sync unavailable: \(initializationError ?? "journal storage initialization failed")"
       return
     }
     do {
@@ -199,7 +208,8 @@ final class AppClientRuntime: ObservableObject {
       syncEngine = SyncEngine(
         outbox: outbox,
         credentialStore: credentialStore,
-        transport: writeTransport
+        transport: writeTransport,
+        stateSink: journalMirror
       )
       let cache = try ProjectionCache()
       let readTransport = URLSessionProjectionTransport(
@@ -224,6 +234,7 @@ final class AppClientRuntime: ObservableObject {
 
   func observeDrainRequests() async {
     await reload()
+    await reconcileJournalMirror()
     await refreshOutboxState()
     await refreshJournalBackupSetting()
     for await _ in NotificationCenter.default.notifications(named: .domainOutboxNeedsDrain) {
@@ -237,6 +248,25 @@ final class AppClientRuntime: ObservableObject {
       return
     }
     outboxItemCount = (try? await outbox.snapshot().pendingCount) ?? 0
+  }
+
+  func reconcileJournalMirror() async {
+    guard let outbox, let journalMirror else { return }
+    do {
+      for item in try await outbox.allItems() where item.recordClass == "journal_entry" {
+        let envelope = try JSONDecoder().decode(DomainEnvelope.self, from: item.payload)
+        let state: DomainSyncState
+        switch item.state {
+        case .pending, .retryable: state = .queued
+        case .rejected: state = .unavailable
+        case .conflict: state = .conflict
+        case .acknowledged: state = .acknowledged
+        }
+        try await journalMirror.put(record: envelope.record, syncState: state)
+      }
+    } catch {
+      syncStatus = "Journal mirror reconciliation blocked: \(error)"
+    }
   }
 
   func journalMirrorEntries() async throws -> [AppJournalMirrorEntry] {

@@ -1,3 +1,4 @@
+import AWDomain
 import AWOutbox
 import Foundation
 
@@ -58,6 +59,11 @@ public protocol ClientItemTransport: Sendable {
     batch: ClientWriteBatch,
     credential: StoredDeviceCredential
   ) async throws -> ClientWriteResponse
+}
+
+/// Receives terminal and retry evidence for records retained in the protected local mirror.
+public protocol DomainSyncStateSink: Sendable {
+  func update(recordID: UUID, state: DomainSyncState) async throws
 }
 
 public struct SyncConfiguration: Sendable {
@@ -150,6 +156,7 @@ public actor SyncEngine {
   private let outbox: any DurableOutbox
   private let credentialStore: any DeviceCredentialStore
   private let transport: any ClientItemTransport
+  private let stateSink: (any DomainSyncStateSink)?
   private let configuration: SyncConfiguration
   private let now: @Sendable () -> Date
 
@@ -157,12 +164,14 @@ public actor SyncEngine {
     outbox: any DurableOutbox,
     credentialStore: any DeviceCredentialStore,
     transport: any ClientItemTransport,
+    stateSink: (any DomainSyncStateSink)? = nil,
     configuration: SyncConfiguration = .standard,
     now: @escaping @Sendable () -> Date = { Date() }
   ) {
     self.outbox = outbox
     self.credentialStore = credentialStore
     self.transport = transport
+    self.stateSink = stateSink
     self.configuration = configuration
     self.now = now
   }
@@ -225,6 +234,7 @@ public actor SyncEngine {
           occurredAt: now()
         )
         try await outbox.recordRejected(itemID: item.id, failure: failure)
+        try await updateState(for: item.id, state: .unavailable)
         rejected += 1
       }
     }
@@ -286,11 +296,13 @@ public actor SyncEngine {
         try await outbox.recordAcknowledgement(
           itemID: item.id, acknowledgedAt: now(), serverAttemptID: acknowledgement.code
         )
+        try await updateState(for: item.id, state: .acknowledged)
         acknowledged += 1
       case "replayed":
         try await outbox.recordAcknowledgement(
           itemID: item.id, acknowledgedAt: now(), serverAttemptID: acknowledgement.code
         )
+        try await updateState(for: item.id, state: .acknowledged)
         acknowledged += 1
         replayed += 1
       case "rejected":
@@ -300,6 +312,7 @@ public actor SyncEngine {
           occurredAt: now()
         )
         try await outbox.recordRejected(itemID: item.id, failure: failure)
+        try await updateState(for: item.id, state: .unavailable)
         rejected += 1
       case "conflict":
         let failure = try OutboxFailure(
@@ -308,6 +321,7 @@ public actor SyncEngine {
           occurredAt: now()
         )
         try await outbox.recordConflict(itemID: item.id, failure: failure)
+        try await updateState(for: item.id, state: .conflict)
         conflicts += 1
       case "retryable":
         let failure = try OutboxFailure(
@@ -320,6 +334,7 @@ public actor SyncEngine {
           failure: failure,
           nextAttemptAt: nextAttempt(for: item, retryAfter: nil)
         )
+        try await updateState(for: item.id, state: .queued)
         retryable += 1
       default:
         let failure = try OutboxFailure(
@@ -332,6 +347,7 @@ public actor SyncEngine {
           failure: failure,
           nextAttemptAt: nextAttempt(for: item, retryAfter: nil)
         )
+        try await updateState(for: item.id, state: .queued)
         retryable += 1
       }
     }
@@ -347,6 +363,7 @@ public actor SyncEngine {
         failure: failure,
         nextAttemptAt: nextAttempt(for: item, retryAfter: nil)
       )
+      try await updateState(for: item.id, state: .queued)
       retryable += 1
     }
 
@@ -371,13 +388,19 @@ public actor SyncEngine {
           failure: classified,
           nextAttemptAt: nextAttempt(for: item, retryAfter: failure.retryAfter)
         )
+        try await updateState(for: item.id, state: .queued)
       }
     } else {
       for item in items {
         let classified = try OutboxFailure(code: failure.code, reason: failure.reason, occurredAt: now())
         try await outbox.recordRejected(itemID: item.id, failure: classified)
+        try await updateState(for: item.id, state: .unavailable)
       }
     }
+  }
+
+  private func updateState(for recordID: UUID, state: DomainSyncState) async throws {
+    try await stateSink?.update(recordID: recordID, state: state)
   }
 
   private func nextAttempt(for item: OutboxItem, retryAfter: TimeInterval?) -> Date {
