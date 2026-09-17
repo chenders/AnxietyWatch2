@@ -133,9 +133,10 @@ core, with the predictable result. See §8b.
   itself a degradable condition for any source expected to produce new data.
 - **Silence is a reportable event.** The phone cannot notify about a sync it never woke up to
   attempt. **"Source X has been silent for N intervals" is a condition the Pi owns**, and today it
-  exists nowhere in either generation. It surfaces on the Overview and the bedside display; it does
-  not need to be a push notification, and specifically must not be delivered only to the device whose
-  silence is being reported.
+  exists nowhere in either generation. It surfaces on the Overview and the bedside display. Per
+  Amendment 14, phone silence escalates after two missed expected intervals through the configured
+  outbound email channel, with one transition notice, coalesced hourly reminders, and one recovery
+  notice; it is never sent through APNs to the phone being reported.
 
 ### 2.3b Writes are idempotent on content
 
@@ -531,6 +532,8 @@ rather than vanishing from a lock screen.
   redundant copy of an alarm that has already fired locally.
 - **Rate-limited and coalesced.** A source that has been silent for nine days must produce one
   message, not one per check. Digest by default; immediate only for state changes that matter.
+  Amendment 14 specifies the phone-silence policy: two missed expected intervals before the
+  transition email, reminders no more often than hourly, and one recovery email.
 - **The failure is visible.** A send that fails leaves an attempt record (§2.3) and degrades the
   channel's state. A notification channel that silently stops is worse than none, because it is
   trusted.
@@ -924,9 +927,9 @@ early spends judgement on incomplete information and then anchors everything aft
 
 ## 10. Open questions
 
-1. **Where does the phone-silence notice escalate?** It is the Pi's job (§2.3), but the Pi notifying
-   about the phone that also carries Pi notifications needs a defined escalation path that does not
-   loop.
+1. **Resolved by Amendment 14:** phone silence escalates through Pi-owned outbound email after two
+   missed expected intervals, with coalesced hourly reminders and one recovery notice; APNs is not
+   used because notifying the phone being reported would create a loop.
 2. **Retention.** Several high-volume tables have no pruning job in either generation. Does the
    console show retention state, trigger compaction, or both?
 3. **How much of Records migrates at all?** **Decided for the iPhone-first MVP:** journal and

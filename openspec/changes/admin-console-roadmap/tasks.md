@@ -65,7 +65,7 @@ worktree/branch/commit/PR. `BLOCKED` tasks remain queued but must not be dispatc
 
 ### Cross-plan obligations
 
-- [ ] T-X1 — Decide phone-silence escalation path without a notification loop · architecture-decision
+- [x] T-X1 — Decide phone-silence escalation path without a notification loop · architecture-decision
 - [ ] T-X2 — Phone health-access/status beacon through the envelope · implement-complex
 - [x] T-X3 — Platform-sample envelope class and sub-provenance contract · architecture-decision
 - [x] T-X4 — HealthKit sample receiver and canonical mapper · implement-complex · **BLOCKED on T-X3**
@@ -176,7 +176,7 @@ unknown/absent, never zero. Every threshold and freshness age is visible and tes
 
 ### T-M2e — Silence detector daemon using the core evaluator
 
-**Amends:** 07.
+**Amends:** 07, 14.
 
 **Reads:** `docs/design/SPEC-admin-console.md` §2.2–§2.6, §3.1 M2, §8b transition logging/jitter/evidence · `crates/vitals-core/src/liveness.rs` · attempt/status schemas · registry cadence API · daemon unit conventions.
 
@@ -184,23 +184,27 @@ unknown/absent, never zero. Every threshold and freshness age is visible and tes
 `vitals_core::liveness::evaluate` directly. It must not duplicate precedence or cadence. Persist
 status observations with distinct reported/changed times; emit one transition on failure and one on
 recovery; jitter repeats; honour declared-absent and unexpired operator mutes without relabelling
-them healthy. Produce notification events for T-M2f, coalesced by transition identity. Fixed-time
-unit/integration tests cover silent phone, stale collector, failing attempts, recovery, mute expiry,
-and process restart.
+them healthy. Produce notification events for T-M2f, coalesced by transition identity; for phone
+silence, emit the Amendment 14 transition after two missed expected intervals and never target APNs.
+Fixed-time unit/integration tests cover silent phone, stale collector, failing attempts, recovery,
+mute expiry, and process restart.
 
 **Verify:** `cd "$(git rev-parse --show-toplevel)" && cargo test -p vitals-console silence_ && cargo clippy --workspace --all-targets -- -D warnings && cargo fmt --all -- --check`
 
 ### T-M2f — Outbound email configuration, sender, coalescing, and test loop
 
-**Amends:** 07.
+**Amends:** 07, 14.
 
 **Reads:** `docs/design/SPEC-admin-console.md` §4.9b, §7 S7/S8, §9 M2 criterion 13 · attempt schema · encryption-at-rest amendment 02 · T-M2e notification events.
 
 **Do:** Store Gmail app password encrypted, write-only, presence/last-4 only. Fixed
 `smtp.gmail.com:587` STARTTLS; configure from/destination. Record attempts before test/send. Add
 rate-limited/coalesced digest behaviour and immediate meaningful transitions; failures degrade the
-channel. Configured-never-tested is `UNKNOWN`. Email never blocks ingest or joins alarm independence.
-Use an injected SMTP client and protocol-level test fixture; no live credentials in tests.
+channel. Configured-never-tested is `UNKNOWN`. Implement Amendment 14 phone-silence delivery as
+one transition email after two missed expected intervals, reminders no more often than hourly, and
+one recovery email. Do not send phone-silence notices through APNs. Email never blocks ingest or
+joins alarm independence. Use an injected SMTP client and protocol-level test fixture; no live
+credentials in tests.
 
 **Verify:** `cd "$(git rev-parse --show-toplevel)" && cargo test -p vitals-console email_ && cargo clippy --workspace --all-targets -- -D warnings && cargo fmt --all -- --check`
 
