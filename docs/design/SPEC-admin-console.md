@@ -649,7 +649,9 @@ worst exactly on the high-severity signals, a symbol-only column with no text al
 
 Capabilities that exist **today** and have no home in the gen-2 plan. Each needs an owner before
 generation 1 is decommissioned — and the checklist is worth writing **now, while gen-1 is still
-running and inspectable**, not after the box is off.
+running and inspectable**, not after the box is off. The assigned evidence ledger is
+[`2026-09-17-gen1-capability-ledger.md`](../specs/2026-09-17-gen1-capability-ledger.md); it is the
+gate for decommissioning rather than a claim that the migration is complete.
 
 | Capability | Risk if dropped |
 |---|---|
