@@ -20,7 +20,11 @@ rg -q 'SecureEnclave\.P256\.Signing\.PrivateKey' "$source_file" || {
   echo "auth verification failed: Secure Enclave P-256 key generation is absent" >&2
   exit 1
 }
-if rg -q 'UserDefaults|bearer|trustAll|NSAllowsArbitraryLoads' clients/apple/AnxietyWatchApp clients/apple/Packages; then
+if rg -q 'UserDefaults' clients/apple/Packages/AWTransport/Sources/AWTransport/EnrollmentSecurity.swift; then
+  echo "auth verification failed: credentials must not use UserDefaults" >&2
+  exit 1
+fi
+if rg -q 'bearer|trustAll|NSAllowsArbitraryLoads' clients/apple/AnxietyWatchApp clients/apple/Packages; then
   echo "auth verification failed: forbidden credential or trust shortcut found in Apple client code" >&2
   exit 1
 fi

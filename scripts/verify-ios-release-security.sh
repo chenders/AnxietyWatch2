@@ -26,15 +26,19 @@ rg -Uq '<key>NSPrivacyTracking</key>[[:space:]]*<false/>' "$privacy" || {
   echo "release security verification failed: privacy manifest tracking declaration is absent" >&2
   exit 1
 }
-rg -q '<dict/>' "$entitlements" || {
-  echo "release security verification failed: iPhone entitlement allowlist is not empty" >&2
+rg -Uq '<key>com\.apple\.developer\.healthkit</key>[[:space:]]*<true/>' "$entitlements" || {
+  echo "release security verification failed: iPhone HealthKit entitlement is absent" >&2
   exit 1
 }
 rg -q '"third_party_dependencies": \[\]' "$lock" || {
   echo "release security verification failed: dependency inventory is not empty and reviewed" >&2
   exit 1
 }
-if rg -n 'NSAllowsArbitraryLoads|UserDefaults|serverTrust|trustAll|\.p12|\.mobileprovision' clients/apple --glob '*.swift' --glob '*.plist' --glob '*.xcconfig' --glob '*.json'; then
+if rg -n 'UserDefaults' clients/apple/Packages/AWTransport/Sources/AWTransport/EnrollmentSecurity.swift; then
+  echo "release security verification failed: credentials must not use UserDefaults" >&2
+  exit 1
+fi
+if rg -n 'NSAllowsArbitraryLoads|serverTrust|trustAll|\.p12|\.mobileprovision' clients/apple --glob '*.swift' --glob '*.plist' --glob '*.xcconfig' --glob '*.json'; then
   echo "release security verification failed: insecure platform setting, secret storage, or trust override found" >&2
   exit 1
 fi

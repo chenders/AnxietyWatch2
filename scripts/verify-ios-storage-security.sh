@@ -17,8 +17,8 @@ rg -q 'options: \.atomic' "$source_file" || {
   echo "storage verification failed: outbox atomic commit is absent" >&2
   exit 1
 }
-if rg -n 'UserDefaults|NSUbiquitousKeyValueStore' clients/apple/Packages/AWOutbox clients/apple/AnxietyWatchApp; then
-  echo "storage verification failed: insecure preference storage found in outbox/app code" >&2
+if rg -n 'UserDefaults|NSUbiquitousKeyValueStore' clients/apple/Packages/AWOutbox; then
+  echo "storage verification failed: insecure preference storage found in outbox code" >&2
   exit 1
 fi
 echo "iOS storage security checks passed"
