@@ -30,6 +30,7 @@ set -eu
 CONNECTOR_DEADLINE=60   # half-second ticks -> 30s to find a connected output
 DISPLAY_DEADLINE=40     # half-second ticks -> 20s for cage to open a display
 PANEL_KIOSK_OUTPUT=${PANEL_KIOSK_OUTPUT:-auto}
+PANEL_KIOSK_SCALE=${PANEL_KIOSK_SCALE:-4.5}
 : "${XDG_RUNTIME_DIR:=/run/user/$(id -u)}"
 
 # plymouth holds the DRM master and, with no display manager installed to tell
@@ -48,6 +49,8 @@ find_output() {
         candidate=${connector%%-*}
         if [ -e "/dev/dri/$candidate" ]; then
             card=$candidate
+            output_name=${connector#*-}
+            selected_output=$kind
             return 0
         fi
     done
@@ -56,6 +59,8 @@ find_output() {
 
 card=""
 connector=""
+output_name=""
+selected_output=""
 i=0
 while [ "$i" -lt "$CONNECTOR_DEADLINE" ]; do
     case "$PANEL_KIOSK_OUTPUT" in
@@ -88,7 +93,7 @@ fi
 
 WLR_DRM_DEVICES="/dev/dri/$card"
 export WLR_DRM_DEVICES
-echo "panel-kiosk: $connector connected; WLR_DRM_DEVICES=$WLR_DRM_DEVICES" >&2
+echo "panel-kiosk: $connector connected; WLR_DRM_DEVICES=$WLR_DRM_DEVICES; output=$selected_output; scale=${PANEL_KIOSK_SCALE}" >&2
 
 # ---- 2. start cage, then prove it actually opened a display ----------------
 /usr/bin/cage -- "$@" &
@@ -99,7 +104,24 @@ while [ "$j" -lt "$DISPLAY_DEADLINE" ]; do
     for sock in "$XDG_RUNTIME_DIR"/wayland-*; do
         case "$sock" in *.lock) continue ;; esac
         if [ -S "$sock" ]; then
-            echo "panel-kiosk: compositor up on $(basename "$sock")" >&2
+            wayland_display=$(basename "$sock")
+            if [ "$selected_output" = HDMI ]; then
+                if ! command -v wlr-randr >/dev/null 2>&1; then
+                    echo "panel-kiosk: HDMI scaling requires wlr-randr" >&2
+                    kill "$cage_pid" 2>/dev/null || true
+                    wait "$cage_pid" 2>/dev/null || true
+                    exit 1
+                fi
+                if ! XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" WAYLAND_DISPLAY="$wayland_display" \
+                    wlr-randr --output "$output_name" --scale "$PANEL_KIOSK_SCALE"; then
+                    # A crashed Cage can leave a stale socket behind. Keep
+                    # looking for the live compositor rather than treating it
+                    # as proof that this launch failed.
+                    echo "panel-kiosk: $wayland_display is not a live compositor; continuing" >&2
+                    continue
+                fi
+            fi
+            echo "panel-kiosk: compositor up on $wayland_display; output=$selected_output; scale=${PANEL_KIOSK_SCALE}" >&2
             # Hand the rest of the run back to cage; its exit status is ours.
             wait "$cage_pid"
             exit $?
