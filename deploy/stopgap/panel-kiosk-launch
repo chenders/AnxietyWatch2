@@ -1,6 +1,7 @@
 #!/bin/sh
-# Launch cage on the DRM card that has the DSI panel, and refuse to pretend a
-# black screen is a running kiosk.
+# Launch cage on the DRM card that has the requested connected display, and
+# refuse to pretend a black screen is a running kiosk. DSI is preferred in
+# auto mode; HDMI is the fallback for a TV or monitor without the panel.
 #
 # Three cold-boot failures produced this script, in order:
 #
@@ -26,8 +27,9 @@
 
 set -eu
 
-CONNECTOR_DEADLINE=60   # half-second ticks -> 30s to find a connected DSI
+CONNECTOR_DEADLINE=60   # half-second ticks -> 30s to find a connected output
 DISPLAY_DEADLINE=40     # half-second ticks -> 20s for cage to open a display
+PANEL_KIOSK_OUTPUT=${PANEL_KIOSK_OUTPUT:-auto}
 : "${XDG_RUNTIME_DIR:=/run/user/$(id -u)}"
 
 # plymouth holds the DRM master and, with no display manager installed to tell
@@ -36,27 +38,48 @@ if command -v plymouth >/dev/null 2>&1; then
     plymouth quit >/dev/null 2>&1 || true
 fi
 
-# ---- 1. find a connected DSI connector and the card that owns it ------------
-card=""
-i=0
-while [ "$i" -lt "$CONNECTOR_DEADLINE" ]; do
-    for status in /sys/class/drm/card*-DSI-*/status; do
+# ---- 1. find a connected output and the card that owns it -------------------
+find_output() {
+    kind=$1
+    for status in /sys/class/drm/card*-"$kind"-*/status; do
         [ -r "$status" ] || continue
         [ "$(cat "$status")" = "connected" ] || continue
-        connector=$(basename "$(dirname "$status")")   # card1-DSI-2
-        candidate=${connector%%-*}                     # card1
+        connector=$(basename "$(dirname "$status")")
+        candidate=${connector%%-*}
         if [ -e "/dev/dri/$candidate" ]; then
             card=$candidate
-            break
+            return 0
         fi
     done
+    return 1
+}
+
+card=""
+connector=""
+i=0
+while [ "$i" -lt "$CONNECTOR_DEADLINE" ]; do
+    case "$PANEL_KIOSK_OUTPUT" in
+        dsi)
+            find_output DSI || true
+            ;;
+        hdmi)
+            find_output HDMI || true
+            ;;
+        auto)
+            find_output DSI || find_output HDMI || true
+            ;;
+        *)
+            echo "panel-kiosk: invalid PANEL_KIOSK_OUTPUT=$PANEL_KIOSK_OUTPUT; use auto, dsi, or hdmi" >&2
+            exit 2
+            ;;
+    esac
     [ -n "$card" ] && break
     i=$((i + 1))
     sleep 0.5
 done
 
 if [ -z "$card" ]; then
-    echo "panel-kiosk: no connected DSI connector with a DRM node after 30s. Connectors:" >&2
+    echo "panel-kiosk: no connected $PANEL_KIOSK_OUTPUT output with a DRM node after 30s. Connectors:" >&2
     for s in /sys/class/drm/card*/status; do
         [ -r "$s" ] && echo "  $s = $(cat "$s")" >&2
     done
