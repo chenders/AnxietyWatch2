@@ -96,11 +96,10 @@ ssh "$PI_HOST" 'curl -fsS http://127.0.0.1:8975/index.html >/dev/null && echo se
 ssh "$PI_HOST" 'systemctl is-active panel-kiosk'
 
 # Optional output selection. Auto prefers a connected DSI panel and falls back
-# to HDMI. HDMI automatically scales the fixed 800×480 panel to fill a 16:9 TV;
-# override the default 4.5× scale only if the display needs it:
+# to HDMI. The HDMI output remains at native scale; the bedside page fits its
+# fixed 800×480 layout to the TV without shrinking the DRM scanout plane:
 #   [Service]
 #   Environment=PANEL_KIOSK_OUTPUT=hdmi
-#   Environment=PANEL_KIOSK_SCALE=4.5
 ```
 
 A stale `status.json` is not a failure of this stopgap — the panel is designed to
