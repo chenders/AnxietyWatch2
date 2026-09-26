@@ -22,7 +22,7 @@ three trees. The repositories visibly diverge:
 - `aw2-wellue-fix` contains the provisional Wellue collector and unit
   `[aw2-wellue-fix/crates/wellue-collector/src/main.rs:211-264,517-629; aw2-wellue-fix/deploy/wellue-collector.service:1-35]`.
 
-**Answer:** the rewrite brief's primary context is `/Users/chris/Source/AnxietyWatch2`, but the
+**Answer:** the rewrite brief's primary context is `$HOME/Source/AnxietyWatch2`, but the
 currently inspected source is a multi-repository/divergent implementation. The authoritative
 *future* deployment source is **UNKNOWN** and requires an owner decision before migration.
 

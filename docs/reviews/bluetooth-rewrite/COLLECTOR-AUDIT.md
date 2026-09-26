@@ -1,6 +1,6 @@
 # Linux Bluetooth / BlueZ collector audit
 
-**Scope:** static audit of `/Users/chris/Source/AnxietyWatch2`, `/Users/chris/Source/aw2-air11`, and `/Users/chris/Source/aw2-wellue-fix`. This document is an investigation report and rewrite plan, not an implementation.
+**Scope:** static audit of `$HOME/Source/AnxietyWatch2`, `$HOME/Source/aw2-air11`, and `$HOME/Source/aw2-wellue-fix`. This document is an investigation report and rewrite plan, not an implementation.
 
 **Safety status:** no Pi connection, physical action, service/config/udev/firmware change, Wellue re-enable, or H10 acceptance claim was made. Full device addresses and credentials are intentionally omitted.
 

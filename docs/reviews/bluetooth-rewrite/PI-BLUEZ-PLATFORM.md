@@ -54,7 +54,7 @@ snapshot:
 
 ```text
 USB: 0a12:0001 Cambridge Silicon Radio Bluetooth Dongle (HCI mode)
-Sena: BD address 00:01:95:C9:AF:00, hci1, Bus: USB, UP RUNNING
+Sena: BD address 00:01:95:XX:XX:XX, hci1, Bus: USB, UP RUNNING
        HCI/LMP 4.0, manufacturer Cambridge Silicon Radio (10)
 Onboard: hci0, Bus: UART
 ```
@@ -75,7 +75,7 @@ references were wrong. The follow-up documentation commit is `1c63b93`.
 The later T-S5 record at `AnxietyWatch2/docs/status-updates/2026-09-05T18-16-00-0700-ts5-linux-and-pi-acceptance.md:76-92`
 reports:
 
-- exactly one controller, `hci0`, with address `00:01:95:C9:AF:00`;
+- exactly one controller, `hci0`, with address `00:01:95:XX:XX:XX`;
 - the required Sena `hci1` was not present;
 - G1 was not green, and no `dtoverlay=disable-bt` action was made.
 
@@ -89,7 +89,7 @@ changed test state; it does not establish the state now.
 **Current topology conclusion:** the current controller count, onboard-overlay state, USB adapter
 presence, controller BD address, bus, kernel version, BlueZ version, and adapter power/rfkill state
 all require a fresh, authorized physical/runtime check. Do not describe `hci0`, `hci1`, or
-`00:01:95:C9:AF:00` as the current controller without that check.
+`00:01:95:XX:XX:XX` as the current controller without that check.
 
 ### Multi-controller assumptions found in the repository
 

@@ -14,9 +14,9 @@ The investigation brief names three divergent repositories:
 
 | Repository | Evidence role | Authority conclusion |
 |---|---|---|
-| `/Users/chris/Source/AnxietyWatch2` | Primary design/deployment tree; durable EMAY and historical stopgaps | Not sufficient alone: it does not contain the current `vitals-collectors` production crate or current AirSense/Wellue sources. |
-| `/Users/chris/Source/aw2-air11` | Production Rust BP/H10/AirSense collectors and related deployment | Contains the production collector paths inspected by the audit, but the installed revision is not established. |
-| `/Users/chris/Source/aw2-wellue-fix` | Provisional Wellue collector, probe, deployment, and hardware/G1 history | Wellue remains disabled; this is not evidence that its unit is enabled on the Pi. |
+| `$HOME/Source/AnxietyWatch2` | Primary design/deployment tree; durable EMAY and historical stopgaps | Not sufficient alone: it does not contain the current `vitals-collectors` production crate or current AirSense/Wellue sources. |
+| `$HOME/Source/aw2-air11` | Production Rust BP/H10/AirSense collectors and related deployment | Contains the production collector paths inspected by the audit, but the installed revision is not established. |
+| `$HOME/Source/aw2-wellue-fix` | Provisional Wellue collector, probe, deployment, and hardware/G1 history | Wellue remains disabled; this is not evidence that its unit is enabled on the Pi. |
 
 **Authoritative deployed artifact: UNKNOWN.** No checked-in file proves which repository, branch, commit,
 sync artifact, or systemd unit set is installed on the current Pi. A runtime qualification must record:

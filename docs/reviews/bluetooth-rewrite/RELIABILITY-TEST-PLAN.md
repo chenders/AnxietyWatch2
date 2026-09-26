@@ -10,17 +10,17 @@
 |---|---|
 | The appliance has five relevant BLE sources: A&D BP, AirSense 11, EMAY, Wellue/Viatom, and Polar H10. The controller identity must not be assumed. | `docs/reviews/bluetooth-rewrite/BRIEF.md:11` |
 | The incident was cross-collector contention: absent Wellue discovery remained active, `bluetoothctl show` reported `Discovering: yes`, BP was paired/trusted but disconnected, and after Wellue stopped, BP frames became durable without a BP restart or manual `Connect`. | `docs/reviews/bluetooth-rewrite/BRIEF.md:14-21` |
-| BP is intentionally not allowed to call `Device1.Connect`; it waits for privileged/kernel autoconnect, and its frames must be durable before acknowledgement. | `docs/reviews/bluetooth-rewrite/BRIEF.md:13`; `/Users/chris/Source/aw2-air11/crates/vitals-collectors/src/bin/bp_collector.rs:1-16,276-301` |
-| The current BP implementation journals and fsyncs each raw frame before decode, then requests `sync: true` from vitalsd. | `/Users/chris/Source/aw2-air11/crates/vitals-collectors/src/bin/bp_collector.rs:87-122,208-241` |
-| Existing collectors independently open BlueZ sessions, select an adapter, power it, and operate on devices. | `/Users/chris/Source/aw2-air11/crates/vitals-collectors/src/bin/bp_collector.rs:251-255`; `/Users/chris/Source/aw2-air11/crates/vitals-collectors/src/bin/h10_collector.rs:414-438`; `/Users/chris/Source/aw2-air11/crates/vitals-collectors/src/as11_bluez.rs:387-419`; `/Users/chris/Source/AnxietyWatch2/crates/emay-collector/src/main.rs:1367-1385` |
-| H10 has both a `Connected` watchdog and notification-idle watchdog because BlueZ can report a stale link while the notification future remains pending. | `/Users/chris/Source/aw2-air11/crates/vitals-collectors/src/h10_reconnect.rs:1-67,105-168`; `/Users/chris/Source/aw2-air11/crates/vitals-collectors/src/bin/h10_collector.rs:384-412` |
-| AirSense has a bounded discovery fallback, but its transport still owns direct connection/discovery behavior. | `/Users/chris/Source/aw2-air11/crates/vitals-collectors/src/as11_bluez.rs:387-419,688-750` |
-| Wellue's local mitigation is a 10-second discovery window and one-minute retry, but the collector still performs discovery itself. | `/Users/chris/Source/aw2-wellue-fix/crates/wellue-collector/src/main.rs:30-47,211-238,613-651` |
-| Wellue's adapter reset is a collector-local recovery path, not a global adapter policy. | `/Users/chris/Source/aw2-wellue-fix/crates/wellue-collector/src/main.rs:457-505` |
-| The Wellue replay is synthetic and explicitly marked; its offline vertical slice does not prove a physical Wellue protocol or coexistence. | `/Users/chris/Source/aw2-wellue-fix/crates/wellue-replay/src/main.rs:1-15,237-258`; `/Users/chris/Source/aw2-wellue-fix/scripts/wellue-replay-test.sh:1-55`; `/Users/chris/Source/aw2-wellue-fix/docs/setup-logs/wellue-ks60f.md:36-44,88-103` |
-| H10 connection behavior and dropout characteristics require physical testing; concurrent H10 and EMAY links may induce loss. | `/Users/chris/Source/aw2-air11/docs/hardware/POLAR_H10.md:3-5,48-57` |
-| Fresh H10 measurements were absent in the available evidence; `hr=0` was rejected and acceptance was not claimed. | `/Users/chris/Source/aw2-air11/docs/status-updates/2026-09-13T05-40-43Z.md:5-7`; `/Users/chris/Source/aw2-air11/docs/status-updates/2026-09-13T05-48-11Z.md:1-10` |
-| The current deployment evidence is internally inconsistent about adapter numbering: the design gate speaks of Sena as `hci1`, while the BP udev/unit paths target `hci0`. | `/Users/chris/Source/AnxietyWatch2/openspec/changes/pi5-vitals-core/design.md:177-180`; `/Users/chris/Source/aw2-air11/deploy/99-vitals-bp-autoconnect.rules:1-4`; `/Users/chris/Source/aw2-air11/deploy/vitals-bp-autoconnect.service:1-20` |
+| BP is intentionally not allowed to call `Device1.Connect`; it waits for privileged/kernel autoconnect, and its frames must be durable before acknowledgement. | `docs/reviews/bluetooth-rewrite/BRIEF.md:13`; `$HOME/Source/aw2-air11/crates/vitals-collectors/src/bin/bp_collector.rs:1-16,276-301` |
+| The current BP implementation journals and fsyncs each raw frame before decode, then requests `sync: true` from vitalsd. | `$HOME/Source/aw2-air11/crates/vitals-collectors/src/bin/bp_collector.rs:87-122,208-241` |
+| Existing collectors independently open BlueZ sessions, select an adapter, power it, and operate on devices. | `$HOME/Source/aw2-air11/crates/vitals-collectors/src/bin/bp_collector.rs:251-255`; `$HOME/Source/aw2-air11/crates/vitals-collectors/src/bin/h10_collector.rs:414-438`; `$HOME/Source/aw2-air11/crates/vitals-collectors/src/as11_bluez.rs:387-419`; `$HOME/Source/AnxietyWatch2/crates/emay-collector/src/main.rs:1367-1385` |
+| H10 has both a `Connected` watchdog and notification-idle watchdog because BlueZ can report a stale link while the notification future remains pending. | `$HOME/Source/aw2-air11/crates/vitals-collectors/src/h10_reconnect.rs:1-67,105-168`; `$HOME/Source/aw2-air11/crates/vitals-collectors/src/bin/h10_collector.rs:384-412` |
+| AirSense has a bounded discovery fallback, but its transport still owns direct connection/discovery behavior. | `$HOME/Source/aw2-air11/crates/vitals-collectors/src/as11_bluez.rs:387-419,688-750` |
+| Wellue's local mitigation is a 10-second discovery window and one-minute retry, but the collector still performs discovery itself. | `$HOME/Source/aw2-wellue-fix/crates/wellue-collector/src/main.rs:30-47,211-238,613-651` |
+| Wellue's adapter reset is a collector-local recovery path, not a global adapter policy. | `$HOME/Source/aw2-wellue-fix/crates/wellue-collector/src/main.rs:457-505` |
+| The Wellue replay is synthetic and explicitly marked; its offline vertical slice does not prove a physical Wellue protocol or coexistence. | `$HOME/Source/aw2-wellue-fix/crates/wellue-replay/src/main.rs:1-15,237-258`; `$HOME/Source/aw2-wellue-fix/scripts/wellue-replay-test.sh:1-55`; `$HOME/Source/aw2-wellue-fix/docs/setup-logs/wellue-ks60f.md:36-44,88-103` |
+| H10 connection behavior and dropout characteristics require physical testing; concurrent H10 and EMAY links may induce loss. | `$HOME/Source/aw2-air11/docs/hardware/POLAR_H10.md:3-5,48-57` |
+| Fresh H10 measurements were absent in the available evidence; `hr=0` was rejected and acceptance was not claimed. | `$HOME/Source/aw2-air11/docs/status-updates/2026-09-13T05-40-43Z.md:5-7`; `$HOME/Source/aw2-air11/docs/status-updates/2026-09-13T05-48-11Z.md:1-10` |
+| The current deployment evidence is internally inconsistent about adapter numbering: the design gate speaks of Sena as `hci1`, while the BP udev/unit paths target `hci0`. | `$HOME/Source/AnxietyWatch2/openspec/changes/pi5-vitals-core/design.md:177-180`; `$HOME/Source/aw2-air11/deploy/99-vitals-bp-autoconnect.rules:1-4`; `$HOME/Source/aw2-air11/deploy/vitals-bp-autoconnect.service:1-20` |
 
 ### Governing constraints
 
@@ -104,7 +104,7 @@ Required cases:
 - concurrent source failures do not cancel unrelated source sessions;
 - a stale source is unknown, not good; an absent optional source does not become a healthy source.
 
-Existing seams to preserve and move behind the shared policy include `DeviceProbe`/`CaptureBackend` in `/Users/chris/Source/AnxietyWatch2/crates/hr-spike/src/main.rs:325-386`, `CollectorBackend` in `/Users/chris/Source/AnxietyWatch2/crates/emay-collector/src/main.rs:88-108`, `bp_build::samples` in `/Users/chris/Source/aw2-air11/crates/vitals-collectors/src/bp_build.rs:1-50`, and `assess_link`/`ReconnectBackoff` in `/Users/chris/Source/aw2-air11/crates/vitals-collectors/src/h10_reconnect.rs:56-168`.
+Existing seams to preserve and move behind the shared policy include `DeviceProbe`/`CaptureBackend` in `$HOME/Source/AnxietyWatch2/crates/hr-spike/src/main.rs:325-386`, `CollectorBackend` in `$HOME/Source/AnxietyWatch2/crates/emay-collector/src/main.rs:88-108`, `bp_build::samples` in `$HOME/Source/aw2-air11/crates/vitals-collectors/src/bp_build.rs:1-50`, and `assess_link`/`ReconnectBackoff` in `$HOME/Source/aw2-air11/crates/vitals-collectors/src/h10_reconnect.rs:56-168`.
 
 ### L1 — decoder, identity, and replay tests
 
@@ -112,7 +112,7 @@ Existing seams to preserve and move behind the shared policy include `DeviceProb
 - Verify per-source row counts, canonical units, timestamps, source/type enums, restart-safe session ids, and sequence semantics against fixed timestamps.
 - Replay every synced raw journal twice. The second replay must deduplicate by `(source,type,session_id,seq)` without dropping a legitimate reconnect session.
 - Extend the existing Wellue replay only as synthetic evidence; every result remains tagged `synthetic=true` and cannot satisfy physical Wellue acceptance.
-- Required existing references: `/Users/chris/Source/aw2-air11/crates/vitals-collectors/src/bp_build.rs:50-169`; `/Users/chris/Source/aw2-air11/crates/vitals-collectors/src/h10_build.rs:40-250`; `/Users/chris/Source/aw2-wellue-fix/crates/wellue-replay/src/main.rs:1-15,237-258`.
+- Required existing references: `$HOME/Source/aw2-air11/crates/vitals-collectors/src/bp_build.rs:50-169`; `$HOME/Source/aw2-air11/crates/vitals-collectors/src/h10_build.rs:40-250`; `$HOME/Source/aw2-wellue-fix/crates/wellue-replay/src/main.rs:1-15,237-258`.
 
 ### L2 — BlueZ/D-Bus fake and contract tests
 
@@ -255,7 +255,7 @@ A rewrite candidate is not accepted unless every applicable command exits zero a
 | P7 reboot/hotplug | Separate authorized run proving adapter reappearance, manager recovery, BP accept-list restoration, new sessions, and no duplicate units | Not run |
 | P8 physical source gates | Fresh BP measurement, H10 nonzero HR/RR, EMAY live/stored evidence, AirSense bounded read-only evidence, Wellue only after its gate | Not run; H10 and Wellue acceptance not claimed |
 
-The existing Pi transfer helper correctly states that BlueZ/systemd/PostgreSQL work must run on Linux/Pi rather than macOS: `/Users/chris/Source/aw2-air11/scripts/sync-to-pi.sh:1-29`. It must not be used to perform this investigation’s prohibited runtime changes.
+The existing Pi transfer helper correctly states that BlueZ/systemd/PostgreSQL work must run on Linux/Pi rather than macOS: `$HOME/Source/aw2-air11/scripts/sync-to-pi.sh:1-29`. It must not be used to perform this investigation’s prohibited runtime changes.
 
 ## 9. Staged migration, canaries, and rollback
 
@@ -351,38 +351,38 @@ Trigger rollback on any unacknowledged BP frame, unexpected `Discovering=yes`, m
 
 **AnxietyWatch2 early/stopgap BlueZ entry points**
 
-- `/Users/chris/Source/AnxietyWatch2/crates/hr-spike/src/main.rs` — `DeviceProbe`, `CaptureBackend`, discovery, service wait, notification loop, and Linux backend (`:135-142,207-285,325-411`).
-- `/Users/chris/Source/AnxietyWatch2/crates/emay-spike/src/main.rs` — discovery and bidirectional test backend (`:329-432,565-620`).
-- `/Users/chris/Source/AnxietyWatch2/crates/emay-collector/src/main.rs` — `CollectorBackend` and production BlueZ backend (`:88-108,1358-1437`).
-- `/Users/chris/Source/AnxietyWatch2/deploy/stopgap/vitals-bp-connect` — legacy Python D-Bus BP bridge (`:44-55,99-149,183-200`).
-- `/Users/chris/Source/AnxietyWatch2/deploy/stopgap/vitals-bp-connect.service` and `deploy/vitals-emay.service` — stopgap ownership/order.
+- `$HOME/Source/AnxietyWatch2/crates/hr-spike/src/main.rs` — `DeviceProbe`, `CaptureBackend`, discovery, service wait, notification loop, and Linux backend (`:135-142,207-285,325-411`).
+- `$HOME/Source/AnxietyWatch2/crates/emay-spike/src/main.rs` — discovery and bidirectional test backend (`:329-432,565-620`).
+- `$HOME/Source/AnxietyWatch2/crates/emay-collector/src/main.rs` — `CollectorBackend` and production BlueZ backend (`:88-108,1358-1437`).
+- `$HOME/Source/AnxietyWatch2/deploy/stopgap/vitals-bp-connect` — legacy Python D-Bus BP bridge (`:44-55,99-149,183-200`).
+- `$HOME/Source/AnxietyWatch2/deploy/stopgap/vitals-bp-connect.service` and `deploy/vitals-emay.service` — stopgap ownership/order.
 
 **aw2-air11 current collectors and deployment**
 
-- `/Users/chris/Source/aw2-air11/crates/vitals-collectors/src/bin/bp_collector.rs`
-- `/Users/chris/Source/aw2-air11/crates/vitals-collectors/src/bp_build.rs`
-- `/Users/chris/Source/aw2-air11/crates/vitals-collectors/src/bin/h10_collector.rs`
-- `/Users/chris/Source/aw2-air11/crates/vitals-collectors/src/h10_build.rs`
-- `/Users/chris/Source/aw2-air11/crates/vitals-collectors/src/h10_reconnect.rs`
-- `/Users/chris/Source/aw2-air11/crates/vitals-collectors/src/as11_bluez.rs`
-- `/Users/chris/Source/aw2-air11/crates/vitals-collectors/src/as11_onboarding.rs`
-- `/Users/chris/Source/aw2-air11/crates/vitals-collectors/src/as11_status.rs`
-- `/Users/chris/Source/aw2-air11/deploy/vitals-bp.service`
-- `/Users/chris/Source/aw2-air11/deploy/vitals-bp-autoconnect.service`
-- `/Users/chris/Source/aw2-air11/deploy/99-vitals-bp-autoconnect.rules`
-- `/Users/chris/Source/aw2-air11/deploy/vitals-h10.service`
-- `/Users/chris/Source/aw2-air11/deploy/vitals-air11.service`
-- `/Users/chris/Source/aw2-air11/scripts/sync-to-pi.sh`
-- `/Users/chris/Source/aw2-air11/scripts/air11-pi-acceptance.sh`
+- `$HOME/Source/aw2-air11/crates/vitals-collectors/src/bin/bp_collector.rs`
+- `$HOME/Source/aw2-air11/crates/vitals-collectors/src/bp_build.rs`
+- `$HOME/Source/aw2-air11/crates/vitals-collectors/src/bin/h10_collector.rs`
+- `$HOME/Source/aw2-air11/crates/vitals-collectors/src/h10_build.rs`
+- `$HOME/Source/aw2-air11/crates/vitals-collectors/src/h10_reconnect.rs`
+- `$HOME/Source/aw2-air11/crates/vitals-collectors/src/as11_bluez.rs`
+- `$HOME/Source/aw2-air11/crates/vitals-collectors/src/as11_onboarding.rs`
+- `$HOME/Source/aw2-air11/crates/vitals-collectors/src/as11_status.rs`
+- `$HOME/Source/aw2-air11/deploy/vitals-bp.service`
+- `$HOME/Source/aw2-air11/deploy/vitals-bp-autoconnect.service`
+- `$HOME/Source/aw2-air11/deploy/99-vitals-bp-autoconnect.rules`
+- `$HOME/Source/aw2-air11/deploy/vitals-h10.service`
+- `$HOME/Source/aw2-air11/deploy/vitals-air11.service`
+- `$HOME/Source/aw2-air11/scripts/sync-to-pi.sh`
+- `$HOME/Source/aw2-air11/scripts/air11-pi-acceptance.sh`
 
 **aw2-wellue-fix provisional source**
 
-- `/Users/chris/Source/aw2-wellue-fix/crates/wellue-collector/src/main.rs`
-- `/Users/chris/Source/aw2-wellue-fix/crates/wellue-probe/src/main.rs`
-- `/Users/chris/Source/aw2-wellue-fix/crates/wellue-replay/src/main.rs`
-- `/Users/chris/Source/aw2-wellue-fix/scripts/wellue-replay-test.sh`
-- `/Users/chris/Source/aw2-wellue-fix/deploy/wellue-collector.service`
-- `/Users/chris/Source/aw2-wellue-fix/docs/hardware/WELLUE_KS60F.md`
-- `/Users/chris/Source/aw2-wellue-fix/docs/setup-logs/wellue-ks60f.md`
+- `$HOME/Source/aw2-wellue-fix/crates/wellue-collector/src/main.rs`
+- `$HOME/Source/aw2-wellue-fix/crates/wellue-probe/src/main.rs`
+- `$HOME/Source/aw2-wellue-fix/crates/wellue-replay/src/main.rs`
+- `$HOME/Source/aw2-wellue-fix/scripts/wellue-replay-test.sh`
+- `$HOME/Source/aw2-wellue-fix/deploy/wellue-collector.service`
+- `$HOME/Source/aw2-wellue-fix/docs/hardware/WELLUE_KS60F.md`
+- `$HOME/Source/aw2-wellue-fix/docs/setup-logs/wellue-ks60f.md`
 
 No file in these implementation/deployment lists should be changed as part of this investigation. The next change is blocked on the unresolved controller/ownership facts and the physical/runtime gates above.

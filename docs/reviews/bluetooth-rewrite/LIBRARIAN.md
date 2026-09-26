@@ -6,9 +6,9 @@ Wellue re-enable, or runtime/config/code change was performed.
 
 **Repositories inspected:**
 
-- Primary: `/Users/chris/Source/AnxietyWatch2` (`AnxietyWatch2` below).
-- Related: `/Users/chris/Source/aw2-air11` (`aw2-air11`) and
-  `/Users/chris/Source/aw2-wellue-fix` (`aw2-wellue-fix`).
+- Primary: `$HOME/Source/AnxietyWatch2` (`AnxietyWatch2` below).
+- Related: `$HOME/Source/aw2-air11` (`aw2-air11`) and
+  `$HOME/Source/aw2-wellue-fix` (`aw2-wellue-fix`).
 
 The primary checkout currently does **not** contain `crates/vitals-collectors/`,
 `bp_collector.rs`, `h10_collector.rs`, AirSense sources, or the production Wellue crate.

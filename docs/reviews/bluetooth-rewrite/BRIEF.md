@@ -12,9 +12,9 @@ All findings must be evidence-backed. Distinguish observed facts, code observati
 - The current Pi is `chris@192.168.1.48`. Do not perform physical actions or change services during this investigation.
 - BP amendment rule: the BP collector must not call `Device1.Connect`; it waits for privileged/kernel autoconnect. BP frames are durable before acknowledgement because the cuff data is not reconstructible.
 - A recent live incident demonstrated cross-collector contention:
-  - `wellue-collector` repeatedly attempted discovery for configured target `00:00:00:03:E3:F1` while the device was absent.
+  - `wellue-collector` repeatedly attempted discovery for configured target `00:00:00:XX:XX:XX` while the device was absent.
   - `bluetoothctl show` reported the adapter `Discovering: yes`.
-  - BP target `00:09:1F:98:EB:CF` was paired/trusted but `Connected: no`; BP had no recent log entries and was waiting for autoconnect.
+  - BP target `00:09:1F:XX:XX:XX` was paired/trusted but `Connected: no`; BP had no recent log entries and was waiting for autoconnect.
   - `wellue-collector` was then stopped and disabled temporarily. Discovery changed to `no` immediately.
   - Without restarting BP or manually calling `Connect`, the BP collector logged frames 8 and 9 durable in the vitalsd spool, and PostgreSQL showed fresh source 6 rows at the same timestamp (systolic/diastolic/MAP/pulse values).
   - This is strong evidence of an adapter/discovery arbitration defect, not merely an isolated cuff failure.
@@ -26,7 +26,7 @@ All findings must be evidence-backed. Distinguish observed facts, code observati
 ## Repository/code locations to inspect
 
 Primary appliance repository:
-- `/Users/chris/Source/AnxietyWatch2`
+- `$HOME/Source/AnxietyWatch2`
 - Rust collectors: `crates/vitals-collectors/`
 - deployment/systemd/udev: `deploy/`, `deploy/stopgap/`
 - shared decode/core crates: `crates/vitals-decode/`, `crates/vitals-core/`, `crates/vitalsd/`
@@ -34,8 +34,8 @@ Primary appliance repository:
 - relevant docs/specs: `docs/specs/AMENDMENTS.md`, amendment 06, amendment 17, `docs/design/`, `openspec/`
 
 Related repositories:
-- `/Users/chris/Source/aw2-air11`
-- `/Users/chris/Source/aw2-wellue-fix`
+- `$HOME/Source/aw2-air11`
+- `$HOME/Source/aw2-wellue-fix`
 
 Known relevant files from prior work include:
 - `crates/vitals-collectors/src/bin/bp_collector.rs`
