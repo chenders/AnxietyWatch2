@@ -6,7 +6,7 @@ runner first, then progressively more capable dry runs, then backup, then one mi
 observation decision.
 
 - [x] **T-R0 — Record the deployment boundary and staged rollout contract**
-- [ ] **T-R1 — Bootstrap and prove the native ARM64 runner**
+- [x] **T-R1 — Bootstrap and prove the native ARM64 runner**
 - [ ] **T-R2 — Add the trusted, non-deploying Pi workflow boundary**
 - [ ] **T-R3 — Build a SHA-addressed artifact and manifest**
 - [ ] **T-R4 — Implement a no-mutation host dry run**
@@ -74,7 +74,7 @@ network value is committed
 5. Dispatch the manual smoke workflow and retain its run URL/commit/runner/toolchain evidence in the
    host receipt without recording credentials.
 
-**Verify:** `ssh "$PI_HOST" 'set -e; id github-vitals; systemctl is-active --quiet github-vitals-runner; test "$(uname -m)" = aarch64; sudo -u github-vitals -H rustup run 1.97.1 cargo --version; test ! -e /var/run/docker.sock || ! groups github-vitals | grep -qw docker; test -s /var/lib/github-vitals/bootstrap-receipt.json'`
+**Verify:** `ssh "$PI_HOST" 'set -e; id github-vitals; systemctl is-active --quiet github-vitals-runner; test "$(uname -m)" = aarch64; sudo -u github-vitals -H env RUSTUP_HOME=/var/lib/github-vitals/.rustup CARGO_HOME=/var/lib/github-vitals/.cargo PATH=/var/lib/github-vitals/.cargo/bin:/usr/local/bin:/usr/bin:/bin rustup run 1.97.1 cargo --version; test ! -e /var/run/docker.sock || sudo -u github-vitals test ! -r /var/run/docker.sock; sudo test -s /var/lib/github-vitals/bootstrap-receipt.json'`
 
 **Expect:** exit 0; an unprivileged ARM64 runner is active, has the pinned toolchain, cannot use the
 Docker socket, and has a bootstrap receipt. A green job alone is insufficient.
