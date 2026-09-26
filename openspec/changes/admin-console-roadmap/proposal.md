@@ -22,7 +22,7 @@ queue names that dependency and puts contract work before UI work.
   contradiction.
 - Queue M4 jobs, statistics, cost/egress accounting, AI review, and clinical PDF generation.
 - Queue M5 versioned domain records and recovery surfaces.
-- Queue M6 alarm-channel contracts, evidence, independent tests, and its final screen.
+- Queue M6 alarm-channel contracts, evidence, independent tests, its final screen, and operator-directed APNs messages to selected users or all active registered phones.
 - Queue cross-plan dependencies named by the design: phone health-status beacon, platform-sample
   envelope/provenance, historical backfill, and migration/decommission evidence.
 - Provide a traceability table from every normative design section, security control, acceptance
@@ -34,7 +34,7 @@ queue names that dependency and puts contract work before UI work.
 ## Impact
 
 - Adds planning and acceptance contracts only; production code and deployment are unchanged.
-- Establishes 45 independently dispatchable tasks across M1 closeout, M2–M6, and cross-plan work.
+- Establishes 46 independently dispatchable tasks across M1 closeout, M2–M6, and cross-plan work.
 - Records the expected generation-1 admin workflows and their explicit generation-2 owners/drops.
 - Makes unresolved operator decisions and architecture contradictions explicit blockers rather than
   implicit assumptions.

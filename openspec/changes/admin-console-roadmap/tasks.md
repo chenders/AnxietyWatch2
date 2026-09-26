@@ -8,21 +8,21 @@ worktree/branch/commit/PR. `BLOCKED` tasks remain queued but must not be dispatc
 
 ### M1 closeout
 
-- [ ] T-M1c — M1 behavioural acceptance and accessibility regression suite · implement-complex · review
+- [x] T-M1c — M1 behavioural acceptance and accessibility regression suite · implement-complex · review
 - [ ] T-M1d — Live direction determination · operator-judgment · **BLOCKED on real-use evaluation**
 - [ ] T-M1e — Prune losing console/dashboard directions · mechanical · **BLOCKED on T-M1d**
 
 ### M2 operations
 
-- [ ] T-M2a — Bind/auth posture and security middleware (S1–S5) · implement-complex · review
-- [ ] T-M2b — Authenticated allowlisted audited service operations · implement-complex · review
-- [ ] T-M2c — Service detail, sanitised logs, and crash-loop health · implement-complex · review
-- [ ] T-M2d — Host history and diagnostics · implement-standard · review
-- [ ] T-M2e — Silence detector daemon using the core evaluator · implement-complex · review
-- [ ] T-M2f — Outbound email configuration, sender, coalescing, and test loop · implement-complex · review
-- [ ] T-M2g — Operator overrides, optional-source declarations, and expiring mutes · implement-complex · review
-- [ ] T-M2h — Credentials, audit/config UI, and one-time key reveal · implement-complex · review
-- [ ] T-M2i — Optional OpenTelemetry/OTLP exporter and test loop · implement-complex · review
+- [x] T-M2a — Bind/auth posture and security middleware (S1–S5) · implement-complex · review
+- [x] T-M2b — Authenticated allowlisted audited service operations · implement-complex · review
+- [x] T-M2c — Service detail, sanitised logs, and crash-loop health · implement-complex · review
+- [x] T-M2d — Host history and diagnostics · implement-standard · review
+- [x] T-M2e — Silence detector daemon using the core evaluator · implement-complex · review
+- [x] T-M2f — Outbound email configuration, sender, coalescing, and test loop · implement-complex · review
+- [x] T-M2g — Operator overrides, optional-source declarations, and expiring mutes · implement-complex · review
+- [x] T-M2h — Credentials, audit/config UI, and one-time key reveal · implement-complex · review
+- [x] T-M2i — Optional OpenTelemetry/OTLP exporter and test loop · implement-complex · review
 - [ ] T-M2j — Services and Config screens in the surviving direction · implement-standard · **BLOCKED on T-M1e**
 - [ ] T-M2k — M2 milestone acceptance suite · implement-complex · review
 
@@ -49,8 +49,8 @@ worktree/branch/commit/PR. `BLOCKED` tasks remain queued but must not be dispatc
 
 ### M5 records and recovery
 
-- [ ] T-M5a — Decide domain-schema placement and record ownership · architecture-decision
-- [ ] T-M5b — Versioned domain schema and deliberate conflict resolution · implement-complex · **BLOCKED on T-M5a**
+- [x] T-M5a — Decide domain-schema placement and record ownership · architecture-decision
+- [x] T-M5b — Versioned domain schema and deliberate conflict resolution · implement-complex · **BLOCKED on T-M5a**
 - [ ] T-M5c — Records CRUD, prompt preview, selection visibility, and forms · implement-complex
 - [ ] T-M5d — Recovery history, restore evidence, and data-loss exposure · implement-complex
 - [ ] T-M5e — Projection rebuild/reprovision contract and verification · implement-complex
@@ -62,15 +62,16 @@ worktree/branch/commit/PR. `BLOCKED` tasks remain queued but must not be dispatc
 - [ ] T-M6b — Local klaxon evidence and independent test operation · implement-complex
 - [ ] T-M6c — Remote push evidence, token age, sweep, and test operation · implement-complex
 - [ ] T-M6d — Alarm screen and M6 acceptance suite · implement-complex · **BLOCKED on T-M6a–T-M6c**
+- [ ] T-M6e — Operator-directed APNs targeting, fanout, and delivery ledger · implement-complex · **BLOCKED on T-M6a/T-M6c**
 
 ### Cross-plan obligations
 
-- [ ] T-X1 — Decide phone-silence escalation path without a notification loop · architecture-decision
-- [ ] T-X2 — Phone health-access/status beacon through the envelope · implement-complex
-- [ ] T-X3 — Platform-sample envelope class and sub-provenance contract · architecture-decision
-- [ ] T-X4 — HealthKit sample receiver and canonical mapper · implement-complex · **BLOCKED on T-X3**
+- [x] T-X1 — Decide phone-silence escalation path without a notification loop · architecture-decision
+- [x] T-X2 — Phone health-access/status beacon through the envelope · implement-complex
+- [x] T-X3 — Platform-sample envelope class and sub-provenance contract · architecture-decision
+- [x] T-X4 — HealthKit sample receiver and canonical mapper · implement-complex · **BLOCKED on T-X3**
 - [ ] T-X5 — Historical backfill plan and verified one-time migration · implement-complex · **BLOCKED on T-M3a/T-X3**
-- [ ] T-X6 — Gen-1 decommission capability ledger · review
+- [x] T-X6 — Gen-1 decommission capability ledger · review
 
 ---
 
@@ -176,7 +177,7 @@ unknown/absent, never zero. Every threshold and freshness age is visible and tes
 
 ### T-M2e — Silence detector daemon using the core evaluator
 
-**Amends:** 07.
+**Amends:** 07, 14.
 
 **Reads:** `docs/design/SPEC-admin-console.md` §2.2–§2.6, §3.1 M2, §8b transition logging/jitter/evidence · `crates/vitals-core/src/liveness.rs` · attempt/status schemas · registry cadence API · daemon unit conventions.
 
@@ -184,23 +185,27 @@ unknown/absent, never zero. Every threshold and freshness age is visible and tes
 `vitals_core::liveness::evaluate` directly. It must not duplicate precedence or cadence. Persist
 status observations with distinct reported/changed times; emit one transition on failure and one on
 recovery; jitter repeats; honour declared-absent and unexpired operator mutes without relabelling
-them healthy. Produce notification events for T-M2f, coalesced by transition identity. Fixed-time
-unit/integration tests cover silent phone, stale collector, failing attempts, recovery, mute expiry,
-and process restart.
+them healthy. Produce notification events for T-M2f, coalesced by transition identity; for phone
+silence, emit the Amendment 14 transition after two missed expected intervals and never target APNs.
+Fixed-time unit/integration tests cover silent phone, stale collector, failing attempts, recovery,
+mute expiry, and process restart.
 
 **Verify:** `cd "$(git rev-parse --show-toplevel)" && cargo test -p vitals-console silence_ && cargo clippy --workspace --all-targets -- -D warnings && cargo fmt --all -- --check`
 
 ### T-M2f — Outbound email configuration, sender, coalescing, and test loop
 
-**Amends:** 07.
+**Amends:** 07, 14.
 
 **Reads:** `docs/design/SPEC-admin-console.md` §4.9b, §7 S7/S8, §9 M2 criterion 13 · attempt schema · encryption-at-rest amendment 02 · T-M2e notification events.
 
 **Do:** Store Gmail app password encrypted, write-only, presence/last-4 only. Fixed
 `smtp.gmail.com:587` STARTTLS; configure from/destination. Record attempts before test/send. Add
 rate-limited/coalesced digest behaviour and immediate meaningful transitions; failures degrade the
-channel. Configured-never-tested is `UNKNOWN`. Email never blocks ingest or joins alarm independence.
-Use an injected SMTP client and protocol-level test fixture; no live credentials in tests.
+channel. Configured-never-tested is `UNKNOWN`. Implement Amendment 14 phone-silence delivery as
+one transition email after two missed expected intervals, reminders no more often than hourly, and
+one recovery email. Do not send phone-silence notices through APNs. Email never blocks ingest or
+joins alarm independence. Use an injected SMTP client and protocol-level test fixture; no live
+credentials in tests.
 
 **Verify:** `cd "$(git rev-parse --show-toplevel)" && cargo test -p vitals-console email_ && cargo clippy --workspace --all-targets -- -D warnings && cargo fmt --all -- --check`
 
@@ -582,6 +587,24 @@ channels, evidence/freshness/dependency tier, and independent confirmed tests. A
 proving never-tested, stale, failed, and successful-test states.
 
 **Verify:** `cd "$(git rev-parse --show-toplevel)" && scripts/verify-admin-m6.sh`
+
+### T-M6e — Operator-directed APNs targeting, fanout, and delivery ledger
+
+**Amends:** accepted Amendment 16; preserves Amendment 14.
+
+**Reads:** design §4.10/§4.10a, Amendment 16, Amendment 14, T-M6a protocol, mobile enrollment/API
+contract, and T-I22.
+
+**Do:** Add the protected APNs provider configuration and authenticated mobile registration path.
+Support one-device, one-user, and every-active-device targets scoped to this server instance. Resolve
+and display the recipient snapshot before confirmation; record zero-recipient outcomes explicitly.
+Implement bounded idempotent sends, invalid-token revocation, transient retry, minimal payload
+redaction, audit records, test-vs-real separation, and distinct APNs accepted/delivered/displayed/
+acknowledged facts. Expose token age, authorization state, provider state, last sweep/send, and
+failure reasons without returning tokens or private keys. Never route phone-silence escalation
+through APNs.
+
+**Verify:** `cd "$(git rev-parse --show-toplevel)" && scripts/verify-remote-apns.sh`
 
 ### T-X1 — Decide phone-silence escalation path
 

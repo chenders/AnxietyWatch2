@@ -8,7 +8,7 @@ pub struct SourceHealthView {
     pub id: i32,
     /// Source name, as the registry enum's debug name.
     pub name: String,
-    /// Derived health state: `Live`, `Failing`, or `Unknown`.
+    /// Derived health state: `Live`, `Failing`, `Unknown`, or `NOT_CONFIGURED`.
     pub state: String,
     /// Why the state is what it is, naming the value and its threshold.
     pub reason: String,
@@ -18,6 +18,14 @@ pub struct SourceHealthView {
     pub observation_age_s: Option<u64>,
     /// The daemon's own liveness verdict, before local re-evaluation.
     pub raw_liveness: Option<Liveness>,
+    /// Whether this source is expected to exist.
+    pub is_configured: bool,
+    /// If muted, the ISO 8601 expiry timestamp.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub muted_until: Option<String>,
+    /// If muted, who muted it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub muted_by: Option<String>,
 }
 
 /// Whether the `vitalsd` daemon answered the health request.
@@ -50,16 +58,22 @@ pub struct HealthView {
 pub struct VersionView {
     /// Crate version from `Cargo.toml`.
     pub version: &'static str,
-    /// Value of `GIT_DESCRIBE` at build time, when set.
-    pub git: Option<&'static str>,
-    /// Milestone note on what this build ships.
-    pub note: &'static str,
+    /// Exact Git commit embedded by `build.rs`, or `UNKNOWN` if Git was unavailable.
+    pub git_commit: &'static str,
+    /// Build time as UTC epoch seconds, or `UNKNOWN` if the build clock failed.
+    pub build_epoch_s: &'static str,
+    /// Sqitch's currently deployed change id, when measured from `PostgreSQL`.
+    pub schema_revision: Option<String>,
+    /// Number of planned Sqitch changes absent from the deployed schema.
+    pub pending_migrations: Option<u64>,
+    /// Why schema identity is absent, when it could not be measured.
+    pub schema_unmeasured_reason: Option<String>,
 }
 
 // ---- Error response ----
 
 /// JSON error body returned on non-2xx responses.
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct ErrorResponse {
     /// Human-readable reason, naming the value that blocked the action.
     pub error: String,
@@ -118,10 +132,18 @@ pub struct EnvelopePayload {
 /// A domain record inside an envelope, before idempotency processing.
 #[derive(Deserialize, Serialize)]
 pub struct DomainRecordPayload {
-    /// Client-assigned record id.
+    /// Client-assigned record id; this identity is never reused for edits.
     pub id: uuid::Uuid,
-    /// Record kind, e.g. `test_entry`.
+    /// Record kind, e.g. `journal_entry` or `song_occurrence`.
     pub kind: String,
+    /// Version of the kind-specific content contract.
+    pub schema_version: u32,
+    /// iPhone capture time, never a server receipt-time substitute.
+    pub recorded_at: String,
+    /// New client identity that edits an earlier record.
+    pub supersedes_id: Option<uuid::Uuid>,
+    /// New client identity that tombstones an earlier record.
+    pub tombstone_target_id: Option<uuid::Uuid>,
     /// Record payload as arbitrary JSON.
     pub content: serde_json::Value,
 }
@@ -133,13 +155,21 @@ pub struct DomainRecordResponse {
     pub id: uuid::Uuid,
     /// Record kind as stored.
     pub kind: String,
+    /// Version of the kind-specific content contract.
+    pub schema_version: u32,
+    /// iPhone capture time stored with the record.
+    pub recorded_at: String,
+    /// New client identity that edits an earlier record.
+    pub supersedes_id: Option<uuid::Uuid>,
+    /// New client identity that tombstones an earlier record.
+    pub tombstone_target_id: Option<uuid::Uuid>,
     /// Record payload as stored.
     pub content: serde_json::Value,
     /// hex-encoded SHA-256 of canonical content JSON
     pub content_sha256: String,
     /// `YYYY-MM-DDTHH:MM:SS.fffZ` creation timestamp.
     pub created_at: String,
-    /// `YYYY-MM-DDTHH:MM:SS.fffZ` last-write timestamp.
+    /// Compatibility receipt timestamp; accepted records are never updated.
     pub updated_at: String,
     /// true if this request was a no-op replay
     pub replayed: bool,
@@ -152,7 +182,7 @@ pub struct DomainRecordResponse {
 /// This is stored as JSONB in the attempts.effect column and returned in
 /// attempt views so that "the sync succeeded" is not mistaken for progress
 /// when every record was a no-op replay (spec §2.3b).
-#[derive(Serialize, Deserialize, Clone, Default)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct Effect {
     /// Records newly created by this attempt.
     pub created: i32,

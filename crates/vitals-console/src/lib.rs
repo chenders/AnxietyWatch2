@@ -9,17 +9,33 @@
 
 /// Real-data read API: sample queries, host status, and recovery state.
 pub mod api;
+/// APNs provider configuration and minimal payload safety contracts.
+pub mod apns;
 /// Client for the `vitalsd` Unix-socket protocol.
 pub mod client;
 /// Versioned Apple-client routes and generated OpenAPI contract.
 pub mod client_api;
+/// Operator-authorized mobile enrollment and public-key credential lifecycle.
+pub mod credentials;
 /// Secretbox envelope encryption for the legacy loopback test API.
 pub mod crypto;
 /// `PostgreSQL` access for attempts and domain records.
 pub mod db;
+/// Canonicalization and immutable metadata rules for domain records.
+pub mod domain;
+/// Gmail STARTTLS notification channel and encrypted app-password handling.
+pub mod email;
 /// Route handlers and shared application state.
 pub mod handlers;
+/// Pure HealthKit source-sample decoding, provenance, and canonical mapping.
+pub mod healthkit;
 /// HTTP response view-model types.
 pub mod models;
+/// Operator authentication, CSRF, sessions, throttling, and request limits.
+pub mod security;
+/// Pure off-page source silence detection and notification coalescing.
+pub mod silence;
+/// Opt-in bounded OpenTelemetry-compatible operational metrics.
+pub mod telemetry;
 /// The deliberately-crude envelope test page (not part of the console).
 pub mod test_page;

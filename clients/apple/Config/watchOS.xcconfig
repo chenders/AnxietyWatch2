@@ -4,6 +4,6 @@ TARGETED_DEVICE_FAMILY = 4
 PRODUCT_BUNDLE_IDENTIFIER = com.groundeffectsoftware.AnxietyWatch.Stage7.watchkitapp
 GENERATE_INFOPLIST_FILE = YES
 INFOPLIST_KEY_CFBundleDisplayName = Anxiety Watch
-INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.groundeffectsoftware.AnxietyWatch.Stage7
+INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.groundeffectsoftware.AnxietyWatch
 CODE_SIGN_ENTITLEMENTS = AnxietyWatchWatch/AnxietyWatchWatch.entitlements
 SKIP_INSTALL = YES

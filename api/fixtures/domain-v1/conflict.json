@@ -1,0 +1,11 @@
+{
+  "record_id": "0192f6c1-7a00-7000-8000-000000000001",
+  "incoming_kind": "journal_entry",
+  "incoming_schema_version": 1,
+  "incoming_content": {
+    "anxiety": 8,
+    "note": "A concurrent edit must not replace the accepted entry."
+  },
+  "status": "open",
+  "actor": "client:0192f6c1-7a00-7000-8000-000000000010"
+}

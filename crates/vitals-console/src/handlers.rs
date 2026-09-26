@@ -2,11 +2,14 @@ use axum::extract::{Query, State};
 use axum::http::StatusCode;
 use axum::{Json, response::Html};
 use base64::Engine;
+use chrono::Utc;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
 use vitals_core::liveness::{Evidence, evaluate};
-use vitals_registry::ALL_SOURCES;
+use vitals_registry::{ALL_SOURCES, VitalsSource};
+
+use crate::client_api::HealthTypeFact;
 
 use crate::client::get_health;
 use crate::crypto;
@@ -38,8 +41,20 @@ pub struct AppState {
     pub db_url: String,
     /// Injected system operations for the host-status collectors.
     pub sys_ops: crate::api::ops::SysOps,
+    /// Bounded host history used for disk projections.
+    pub host_history: crate::api::host::HostHistory,
     /// `PostgreSQL` access for the read API, injected for testability.
     pub db_ops: std::sync::Arc<dyn crate::api::postgres::DbOps>,
+    /// Operator authentication state; mobile client routes use a separate protocol.
+    pub security: std::sync::Arc<crate::security::SecurityState>,
+    /// Second capability required for destructive service operations.
+    pub ops_token: Option<String>,
+    /// Stable server identity included in enrollment artifacts.
+    pub server_instance_id: Option<Uuid>,
+    /// Manually configured first-draft client origin included in enrollment artifacts.
+    pub client_origin: Option<String>,
+    /// Operator-visible server label included in enrollment artifacts.
+    pub server_display_label: String,
 }
 
 /// Require a database pool; return a named 503 when absent.
@@ -52,11 +67,78 @@ fn require_db(state: &AppState) -> Result<&sqlx::PgPool, (StatusCode, Json<Error
     })
 }
 
+#[derive(Debug, PartialEq, Eq)]
+enum PhoneFactState {
+    Live,
+    Unknown(String),
+    Failing(String),
+}
+
+fn phone_fact_state(facts: &[HealthTypeFact]) -> PhoneFactState {
+    if facts.is_empty() {
+        return PhoneFactState::Unknown("no per-type HealthKit status was reported".to_string());
+    }
+    let mut has_unmeasured = false;
+    for fact in facts {
+        let outcomes = [
+            fact.authorization_request_outcome.as_deref(),
+            fact.observer_registration_outcome.as_deref(),
+            fact.background_delivery_outcome.as_deref(),
+        ];
+        if let Some(outcome) = outcomes.iter().flatten().find(|outcome| {
+            let lower = outcome.to_ascii_lowercase();
+            lower.contains("denied") || lower.contains("failed") || lower.contains("failure")
+        }) {
+            return PhoneFactState::Failing(format!(
+                "healthkit_type={}; outcome={outcome}",
+                fact.healthkit_type
+            ));
+        }
+        if fact.last_matching_sample_at.is_none() {
+            has_unmeasured = true;
+        }
+        match fact.last_query_outcome.as_deref() {
+            Some(outcome) if outcome.to_ascii_lowercase().contains("failed") => {
+                return PhoneFactState::Failing(format!(
+                    "healthkit_type={}; query_outcome={outcome}",
+                    fact.healthkit_type
+                ));
+            }
+            Some(outcome) => {
+                let lower = outcome.to_ascii_lowercase();
+                if lower.contains("no_matching") || !lower.contains("success") {
+                    has_unmeasured = true;
+                }
+            }
+            None => has_unmeasured = true,
+        }
+    }
+    if has_unmeasured {
+        PhoneFactState::Unknown(
+            "HealthKit status has no matching sample or completed query".to_string(),
+        )
+    } else {
+        PhoneFactState::Live
+    }
+}
+
 /// GET /api/health
 ///
 /// Fetches the daemon's health over its Unix socket and derives a per-source
 /// state with the local liveness evaluator.
+#[allow(clippy::too_many_lines)]
+#[expect(
+    clippy::collapsible_if,
+    reason = "easier to read without nesting lets on stable rust"
+)]
 pub async fn health_handler(State(state): State<AppState>) -> Json<HealthView> {
+    let mut config_and_mutes = std::collections::HashMap::new();
+    if let Some(ref db) = state.db {
+        if let Ok(map) = crate::db::get_config_and_mutes(db).await {
+            config_and_mutes = map;
+        }
+    }
+
     let daemon_health = get_health(&state.socket_path).await;
 
     let (vitalsd, uptime, degraded, heartbeat_pulsing, daemon_sources) = match daemon_health {
@@ -74,6 +156,14 @@ pub async fn health_handler(State(state): State<AppState>) -> Json<HealthView> {
             None,
             None,
         ),
+    };
+
+    let latest_phone_beacon = match state.db.as_ref() {
+        Some(database) => crate::db::latest_health_beacon(database)
+            .await
+            .ok()
+            .flatten(),
+        None => None,
     };
 
     // A pre-epoch clock must not fall back to zero: every age would render
@@ -133,14 +223,54 @@ pub async fn health_handler(State(state): State<AppState>) -> Json<HealthView> {
                     ));
                 }
             }
+        } else if source == VitalsSource::Healthkit {
+            if let Some((received_at, facts)) = latest_phone_beacon.as_ref() {
+                let received_s = received_at.timestamp();
+                evidence.last_attempt_epoch_s = Some(received_s);
+                match phone_fact_state(facts) {
+                    PhoneFactState::Live => evidence.last_success_epoch_s = Some(received_s),
+                    PhoneFactState::Unknown(_) => {}
+                    PhoneFactState::Failing(reason) => {
+                        evidence.last_attempt_failure = Some(reason);
+                    }
+                }
+            }
         }
 
-        let assertion = evaluate(now_s, core_cadence, &evidence);
+        let mut assertion = evaluate(now_s, core_cadence, &evidence);
+        if source == VitalsSource::Healthkit {
+            if let Some((_, facts)) = latest_phone_beacon.as_ref() {
+                match phone_fact_state(facts) {
+                    PhoneFactState::Live => {}
+                    PhoneFactState::Unknown(reason) => {
+                        assertion.state = vitals_core::liveness::HealthState::Unknown;
+                        assertion.reason = reason;
+                        assertion.degrade_deadline_epoch_s = None;
+                    }
+                    PhoneFactState::Failing(reason) => {
+                        assertion.state = vitals_core::liveness::HealthState::Failing;
+                        assertion.reason = reason;
+                        assertion.degrade_deadline_epoch_s = None;
+                    }
+                }
+            }
+        }
 
-        let state_str = match assertion.state {
-            vitals_core::liveness::HealthState::Live => "Live",
-            vitals_core::liveness::HealthState::Failing => "Failing",
-            vitals_core::liveness::HealthState::Unknown => "Unknown",
+        let cm = config_and_mutes.get(&source.id());
+        let is_configured = cm.is_none_or(|c| c.is_configured);
+        let muted_until = cm
+            .and_then(|c| c.muted_until.as_ref())
+            .map(chrono::DateTime::to_rfc3339);
+        let muted_by = cm.and_then(|c| c.muted_by.clone());
+
+        let state_str = if is_configured {
+            match assertion.state {
+                vitals_core::liveness::HealthState::Live => "Live",
+                vitals_core::liveness::HealthState::Failing => "Failing",
+                vitals_core::liveness::HealthState::Unknown => "Unknown",
+            }
+        } else {
+            "NOT_CONFIGURED"
         };
 
         source_views.push(SourceHealthView {
@@ -151,6 +281,9 @@ pub async fn health_handler(State(state): State<AppState>) -> Json<HealthView> {
             degrade_deadline_epoch_s: assertion.degrade_deadline_epoch_s,
             observation_age_s,
             raw_liveness,
+            is_configured,
+            muted_until,
+            muted_by,
         });
     }
 
@@ -176,17 +309,21 @@ pub async fn dashboard_handler() -> Html<&'static str> {
 
 /// GET /api/version
 ///
-/// Renders the crate version, `GIT_DESCRIBE` when built from a tag, and a
-/// milestone note.
-#[expect(
-    clippy::unused_async,
-    reason = "axum handlers must be async to satisfy the Handler trait"
-)]
-pub async fn version_handler() -> Json<VersionView> {
+/// Renders build identity embedded by `build.rs` and schema identity measured
+/// from the deployed Sqitch metadata.
+pub async fn version_handler(State(state): State<AppState>) -> Json<VersionView> {
+    let (schema_revision, pending_migrations, schema_unmeasured_reason) =
+        match state.db_ops.get_schema_identity().await {
+            Ok((revision, pending)) => (Some(revision), Some(pending), None),
+            Err(reason) => (None, None, Some(reason)),
+        };
     Json(VersionView {
         version: env!("CARGO_PKG_VERSION"),
-        git: option_env!("GIT_DESCRIBE"),
-        note: "attempts schema: deployed in this milestone",
+        git_commit: env!("VITALS_BUILD_COMMIT"),
+        build_epoch_s: env!("VITALS_BUILD_EPOCH_S"),
+        schema_revision,
+        pending_migrations,
+        schema_unmeasured_reason,
     })
 }
 
@@ -194,10 +331,9 @@ pub async fn version_handler() -> Json<VersionView> {
 
 /// POST /api/envelope/register
 ///
-/// Register a client for the envelope write API. The bind default is
-/// 127.0.0.1 and the auth posture is an open decision (spec §9c) — see the
-/// design document for the bind and auth posture decision deferred to the
-/// point of use.
+/// Register a legacy client for the loopback-only envelope test API. Production
+/// uses the versioned signed-device client routes; this handler is mounted only
+/// when `VITALS_CONSOLE_TEST_ROUTES=1`.
 ///
 /// # Errors
 /// 400 on invalid base64 or a secret that is not 32 bytes; 503 when the
@@ -356,12 +492,10 @@ async fn process_envelope(
     }
 
     let record = envelope.record;
-    let content_hash = db::content_sha256(&record.content);
+    let actor = format!("client:{}", req.client_id);
 
-    // Apply idempotency rules (spec §2.3b).
-    let outcome =
-        db::process_domain_record(db, record.id, &record.kind, &record.content, &content_hash)
-            .await?;
+    // Apply immutable version and conflict rules.
+    let outcome = db::process_domain_record(db, &record, &actor).await?;
 
     match outcome {
         db::DomainRecordOutcome::Created { response } => {
@@ -471,6 +605,10 @@ pub async fn plaintext_test_handler(
         record: crate::models::DomainRecordPayload {
             id: record_id,
             kind: req.kind.clone(),
+            schema_version: crate::domain::CURRENT_SCHEMA_VERSION,
+            recorded_at: Utc::now().to_rfc3339(),
+            supersedes_id: None,
+            tombstone_target_id: None,
             content: req.content.clone(),
         },
     };
@@ -545,6 +683,51 @@ pub async fn plaintext_test_handler(
     }
 }
 
+#[expect(
+    clippy::unused_async,
+    reason = "axum handlers must be async to satisfy the Handler trait"
+)]
+/// POST /api/health/mutes
+///
+/// Sets a time-bounded mute on a health condition. Mutes expire to underlying health.
+/// Currently fails closed as auth is not available.
+pub async fn health_mute_handler() -> (StatusCode, Json<ErrorResponse>) {
+    error_reply(
+        StatusCode::FORBIDDEN,
+        "mutation blocked: auth interface not yet available",
+    )
+}
+
+#[expect(
+    clippy::unused_async,
+    reason = "axum handlers must be async to satisfy the Handler trait"
+)]
+/// POST /api/config/declarations
+///
+/// Declares whether an optional source is configured.
+/// Currently fails closed as auth is not available.
+pub async fn source_declaration_handler() -> (StatusCode, Json<ErrorResponse>) {
+    error_reply(
+        StatusCode::FORBIDDEN,
+        "mutation blocked: auth interface not yet available",
+    )
+}
+
+#[expect(
+    clippy::unused_async,
+    reason = "axum handlers must be async to satisfy the Handler trait"
+)]
+/// POST /api/config/overrides
+///
+/// Sets operator display overrides for registry values. Upgrades do not overwrite values.
+/// Currently fails closed as auth is not available.
+pub async fn operator_override_handler() -> (StatusCode, Json<ErrorResponse>) {
+    error_reply(
+        StatusCode::FORBIDDEN,
+        "mutation blocked: auth interface not yet available",
+    )
+}
+
 // ---- Tests ----
 
 #[cfg(test)]
@@ -570,9 +753,68 @@ mod tests {
     use vitals_proto::{Health, Liveness, Response, SourceHealth, check_frame_len, encode_frame};
     use vitals_registry::VitalsSource;
 
+    #[test]
+    fn phone_status_no_matching_sample_is_unknown() {
+        let fact = HealthTypeFact {
+            healthkit_type: "HKQuantityTypeIdentifierHeartRate".to_string(),
+            configured: true,
+            authorization_request_outcome: Some("request_completed_unknown_read_grant".to_string()),
+            observer_registration_outcome: Some("registered".to_string()),
+            background_delivery_outcome: Some("requested".to_string()),
+            last_query_outcome: Some("no_matching_sample".to_string()),
+            last_query_at: None,
+            last_matching_sample_at: None,
+            last_pi_ack_at: None,
+        };
+        assert_eq!(
+            phone_fact_state(&[fact]),
+            PhoneFactState::Unknown(
+                "HealthKit status has no matching sample or completed query".to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn phone_status_denial_is_failing() {
+        let fact = HealthTypeFact {
+            healthkit_type: "HKQuantityTypeIdentifierHeartRate".to_string(),
+            configured: true,
+            authorization_request_outcome: Some("denied".to_string()),
+            observer_registration_outcome: None,
+            background_delivery_outcome: None,
+            last_query_outcome: None,
+            last_query_at: None,
+            last_matching_sample_at: None,
+            last_pi_ack_at: None,
+        };
+        assert!(matches!(
+            phone_fact_state(&[fact]),
+            PhoneFactState::Failing(_)
+        ));
+    }
+
+    #[test]
+    fn phone_status_success_requires_a_successful_query() {
+        let fact = HealthTypeFact {
+            healthkit_type: "HKQuantityTypeIdentifierHeartRate".to_string(),
+            configured: true,
+            authorization_request_outcome: Some("request_completed_unknown_read_grant".to_string()),
+            observer_registration_outcome: Some("registered".to_string()),
+            background_delivery_outcome: Some("requested".to_string()),
+            last_query_outcome: Some("success_with_samples".to_string()),
+            last_query_at: None,
+            last_matching_sample_at: Some("2025-01-15T08:09:00.000Z".to_string()),
+            last_pi_ack_at: None,
+        };
+        assert_eq!(phone_fact_state(&[fact]), PhoneFactState::Live);
+    }
+
     struct DummyDbOps;
     #[async_trait::async_trait]
     impl crate::api::postgres::DbOps for DummyDbOps {
+        async fn get_schema_identity(&self) -> Result<(String, u64), String> {
+            Ok(("fixture-change".to_string(), 0))
+        }
         async fn get_latest(&self, _s: i32, _t: i32) -> Result<Option<(i64, f64)>, String> {
             Ok(None)
         }
@@ -635,6 +877,22 @@ mod tests {
         }
     }
 
+    fn assert_registry_census(sources: &[Value]) {
+        assert_eq!(
+            sources.len(),
+            ALL_SOURCES.len(),
+            "health view must left-join every registry source"
+        );
+        for source in ALL_SOURCES {
+            assert!(
+                sources
+                    .iter()
+                    .any(|view| view["id"] == source.id() && view["name"] == format!("{source:?}")),
+                "registry source {source:?} disappeared from health view"
+            );
+        }
+    }
+
     fn test_state(socket_path: PathBuf) -> AppState {
         AppState {
             socket_path,
@@ -642,7 +900,13 @@ mod tests {
             test_routes_enabled: false,
             db_url: String::new(),
             sys_ops: crate::api::ops::SysOps::real(),
+            host_history: crate::api::host::HostHistory::default(),
             db_ops: std::sync::Arc::new(DummyDbOps),
+            security: std::sync::Arc::new(crate::security::SecurityState::unconfigured()),
+            ops_token: None,
+            server_instance_id: None,
+            client_origin: None,
+            server_display_label: "test server".to_string(),
         }
     }
 
@@ -671,6 +935,17 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_version_reports_embedded_build_and_measured_schema_identity() {
+        let Json(version) = version_handler(State(test_state(PathBuf::new()))).await;
+        assert_eq!(version.version, env!("CARGO_PKG_VERSION"));
+        assert_eq!(version.git_commit, env!("VITALS_BUILD_COMMIT"));
+        assert_eq!(version.build_epoch_s, env!("VITALS_BUILD_EPOCH_S"));
+        assert_eq!(version.schema_revision.as_deref(), Some("fixture-change"));
+        assert_eq!(version.pending_migrations, Some(0));
+        assert_eq!(version.schema_unmeasured_reason, None);
+    }
+
+    #[tokio::test]
     async fn test_unreachable_socket() {
         let dir = tempdir().unwrap();
         let socket_path = dir.path().join("vitalsd.sock");
@@ -693,10 +968,7 @@ mod tests {
         assert!(json["vitalsd"].get("unreachable").is_some());
 
         let sources = json["sources"].as_array().unwrap();
-        assert!(
-            !sources.is_empty(),
-            "must not return an empty list of sources"
-        );
+        assert_registry_census(sources);
     }
 
     #[tokio::test]
@@ -747,6 +1019,7 @@ mod tests {
         assert_eq!(json["vitalsd"], "reachable");
 
         let sources = json["sources"].as_array().unwrap();
+        assert_registry_census(sources);
 
         // Find Emay (a)
         let emay = sources.iter().find(|s| s["name"] == "Emay").unwrap();

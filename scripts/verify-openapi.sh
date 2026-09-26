@@ -23,18 +23,30 @@ doc = json.loads(openapi_path.read_text(encoding="utf-8"))
 expected_paths = {
     "/api/v1/client/enroll",
     "/api/v1/client/items",
+    "/api/v1/client/status",
     "/api/v1/client/openapi.json",
     "/api/v1/client/projections",
     "/api/v1/client/registry",
-    "/api/v1/client/status",
     "/api/v1/client/version",
+    "/api/v1/client/notifications/apns/registration",
+    "/api/v1/client/notifications/apns/outcomes",
 }
 if set(doc.get("paths", {})) != expected_paths:
     raise SystemExit("openapi: FAIL — explicit client path set changed")
 if doc.get("openapi") != "3.1.0":
     raise SystemExit("openapi: FAIL — expected OpenAPI 3.1.0")
 
-implemented = {"/api/v1/client/version", "/api/v1/client/registry", "/api/v1/client/openapi.json"}
+implemented = {
+    "/api/v1/client/version",
+    "/api/v1/client/registry",
+    "/api/v1/client/openapi.json",
+    "/api/v1/client/enroll",
+    "/api/v1/client/items",
+    "/api/v1/client/status",
+    "/api/v1/client/notifications/apns/registration",
+    "/api/v1/client/notifications/apns/outcomes",
+    "/api/v1/client/projections",
+}
 gated = expected_paths - implemented
 for path in implemented:
     statuses = {
@@ -42,8 +54,11 @@ for path in implemented:
         for operation in doc["paths"][path].values()
         for status in operation.get("responses", {})
     }
-    if "200" not in statuses:
-        raise SystemExit(f"openapi: FAIL — implemented operation has no 200: {path}")
+    expected_success = "201" if path == "/api/v1/client/enroll" else "200"
+    if expected_success not in statuses:
+        raise SystemExit(
+            f"openapi: FAIL — implemented operation has no {expected_success}: {path}"
+        )
 for path in gated:
     statuses = {
         status
@@ -57,6 +72,8 @@ signed_paths = {
     "/api/v1/client/items",
     "/api/v1/client/status",
     "/api/v1/client/projections",
+    "/api/v1/client/notifications/apns/registration",
+    "/api/v1/client/notifications/apns/outcomes",
 }
 required_signature_headers = {
     "X-AnxietyWatch-API-Version",
@@ -91,6 +108,10 @@ required_schemas = {
     "EnrollmentClaimRequest",
     "EnrollmentCredentialResponse",
     "HealthBeaconRequest",
+    "ApnsRegistrationRequest",
+    "ApnsRegistrationResponse",
+    "ApnsOutcomeRequest",
+    "ApnsOutcomeResponse",
     "ItemAcknowledgement",
     "ProjectionPage",
     "RegistryDiscoveryResponse",
@@ -124,10 +145,22 @@ expected_fixtures = {
     "error-request-replayed.json",
     "error-unavailable.json",
     "error-version-incompatible.json",
+    "health-beacon-background-delivery.json",
+    "health-beacon-denied-type.json",
+    "health-beacon-locked.json",
+    "health-beacon-no-wake.json",
+    "health-beacon-reboot.json",
     "health-beacon-request.json",
+    "health-beacon-stale.json",
+    "health-beacon-unknown.json",
+    "healthkit-batch-request.json",
     "projection-response.json",
     "write-batch-ack-response.json",
     "write-batch-request.json",
+    "apns-registration-request.json",
+    "apns-registration-response.json",
+    "apns-outcome-request.json",
+    "apns-outcome-response.json",
 }
 actual_fixtures = {path.name for path in fixture_dir.glob("*.json")}
 if actual_fixtures != expected_fixtures:

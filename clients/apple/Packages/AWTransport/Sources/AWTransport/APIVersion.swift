@@ -1,5 +1,3 @@
-import AWClientCore
-
 public struct APIVersion: Equatable, Sendable {
   public let major: UInt
   public let minor: UInt

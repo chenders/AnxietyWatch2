@@ -14,8 +14,8 @@
         "tags": [
           "apple-client"
         ],
-        "summary": "Enrollment contract placeholder. It never advertises a successful response.",
-        "description": "# Errors\n\nReturns an incompatible-version error or the named T-I4/T-M2a capability gate.",
+        "summary": "Claim an operator-created enrollment artifact and issue a scoped public-key credential.",
+        "description": "The request is intentionally not signed: the single-use artifact is the enrollment proof and\nis transported only to the configured origin. The database transaction consumes the artifact\nand inserts the credential together, so a lost response cannot make the artifact reusable.\n\n# Errors\n\nReturns a named version, validation, database, or consumed-artifact blocker.",
         "operationId": "client_enroll_handler",
         "requestBody": {
           "content": {
@@ -28,6 +28,36 @@
           "required": true
         },
         "responses": {
+          "201": {
+            "description": "Device credential issued",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnrollmentCredentialResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed enrollment claim",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Enrollment artifact already consumed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientErrorResponse"
+                }
+              }
+            }
+          },
           "426": {
             "description": "Incompatible enrollment major",
             "content": {
@@ -39,7 +69,7 @@
             }
           },
           "503": {
-            "description": "Enrollment is gated on T-I4/T-M2a",
+            "description": "Enrollment database unavailable",
             "content": {
               "application/json": {
                 "schema": {
@@ -56,8 +86,8 @@
         "tags": [
           "apple-client"
         ],
-        "summary": "Item-write placeholder with item-level response schemas but no success advertisement.",
-        "description": "# Errors\n\nReturns a version error or the named domain/platform contract gate.",
+        "summary": "Authenticate and process a bounded batch of domain-record or platform-sample writes.",
+        "description": "# Errors\n\nReturns a version, authentication, body, or persistence error. Individual record validation and\nidempotency outcomes are returned as item acknowledgements.",
         "operationId": "client_write_handler",
         "parameters": [
           {
@@ -135,6 +165,16 @@
           "required": true
         },
         "responses": {
+          "200": {
+            "description": "Item-level domain write outcomes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientWriteResponse"
+                }
+              }
+            }
+          },
           "400": {
             "description": "Missing or malformed API version",
             "content": {
@@ -186,7 +226,291 @@
             }
           },
           "503": {
-            "description": "Writes are gated on domain/platform contracts",
+            "description": "Write database unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/client/notifications/apns/outcomes": {
+      "post": {
+        "tags": [
+          "apple-client"
+        ],
+        "summary": "Admit a client-observed display or acknowledgement fact without inferring provider delivery.",
+        "description": "# Errors\n\nReturns a named version, authentication, or unavailable-ledger blocker.",
+        "operationId": "client_apns_outcome_handler",
+        "parameters": [
+          {
+            "name": "X-AnxietyWatch-API-Version",
+            "in": "header",
+            "description": "Supported API major",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-AnxietyWatch-Client-ID",
+            "in": "header",
+            "description": "Enrolled client UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-AnxietyWatch-Key-ID",
+            "in": "header",
+            "description": "Active P-256 key UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-AnxietyWatch-Request-ID",
+            "in": "header",
+            "description": "Fresh replay-protection UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Content-Digest",
+            "in": "header",
+            "description": "RFC 9530 body digest",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Signature-Input",
+            "in": "header",
+            "description": "RFC 9421 covered components and times",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Signature",
+            "in": "header",
+            "description": "RFC 9421 ecdsa-p256-sha256 signature",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApnsOutcomeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Outcome fact accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApnsOutcomeResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed outcome fact",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid request signature",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Credential scope denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Durable request id was already admitted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Outcome ledger unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/client/notifications/apns/registration": {
+      "post": {
+        "tags": [
+          "apple-client"
+        ],
+        "summary": "Admit authenticated APNs registration facts from an enrolled iPhone.",
+        "description": "# Errors\n\nReturns a named version, authentication, validation, configuration, or persistence blocker.",
+        "operationId": "client_apns_registration_handler",
+        "parameters": [
+          {
+            "name": "X-AnxietyWatch-API-Version",
+            "in": "header",
+            "description": "Supported API major",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-AnxietyWatch-Client-ID",
+            "in": "header",
+            "description": "Enrolled client UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-AnxietyWatch-Key-ID",
+            "in": "header",
+            "description": "Active P-256 key UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-AnxietyWatch-Request-ID",
+            "in": "header",
+            "description": "Fresh replay-protection UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Content-Digest",
+            "in": "header",
+            "description": "RFC 9530 body digest",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Signature-Input",
+            "in": "header",
+            "description": "RFC 9421 covered components and times",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Signature",
+            "in": "header",
+            "description": "RFC 9421 ecdsa-p256-sha256 signature",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApnsRegistrationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Registration facts accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApnsRegistrationResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid request signature",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Credential scope denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Durable request id was already admitted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Registration persistence or token protection unavailable",
             "content": {
               "application/json": {
                 "schema": {
@@ -224,8 +548,8 @@
         "tags": [
           "apple-client"
         ],
-        "summary": "Projection placeholder. Its success schema is present but no 2xx response is advertised.",
-        "description": "# Errors\n\nReturns a version error or the named M3/M4 capability gate.",
+        "summary": "Returns a version error or the authenticated projection page.",
+        "description": "# Errors\n\nReturns a named error for incompatible versions, failed request authentication, invalid\nregistry metrics or windows, unavailable storage, or a failed projection query.",
         "operationId": "client_projections_handler",
         "parameters": [
           {
@@ -320,6 +644,16 @@
           }
         ],
         "responses": {
+          "200": {
+            "description": "Authenticated projection page",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectionPage"
+                }
+              }
+            }
+          },
           "400": {
             "description": "Missing or malformed API version",
             "content": {
@@ -371,7 +705,7 @@
             }
           },
           "503": {
-            "description": "Projections are gated on M3/M4",
+            "description": "Projection storage is unavailable",
             "content": {
               "application/json": {
                 "schema": {
@@ -451,8 +785,8 @@
         "tags": [
           "apple-client"
         ],
-        "summary": "Status-beacon placeholder. A valid request still returns a named gate.",
-        "description": "# Errors\n\nReturns a version error or the named T-X2 capability gate.",
+        "summary": "Accept an authenticated, idempotent operational phone status beacon.",
+        "description": "# Errors\n\nReturns a named version, authentication, validation, conflict, or persistence error.",
         "operationId": "client_beacon_handler",
         "parameters": [
           {
@@ -530,8 +864,18 @@
           "required": true
         },
         "responses": {
+          "200": {
+            "description": "Status beacon accepted or replayed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthBeaconResponse"
+                }
+              }
+            }
+          },
           "400": {
-            "description": "Missing or malformed API version",
+            "description": "Missing or malformed status beacon",
             "content": {
               "application/json": {
                 "schema": {
@@ -561,7 +905,7 @@
             }
           },
           "409": {
-            "description": "Durable request id was already admitted",
+            "description": "Durable request or beacon id was already admitted",
             "content": {
               "application/json": {
                 "schema": {
@@ -581,7 +925,7 @@
             }
           },
           "503": {
-            "description": "Status beacon is gated on T-X2",
+            "description": "Status beacon database unavailable",
             "content": {
               "application/json": {
                 "schema": {
@@ -617,6 +961,143 @@
   },
   "components": {
     "schemas": {
+      "ApnsOutcomeRequest": {
+        "type": "object",
+        "description": "Client-observed APNs display or acknowledgement fact.",
+        "required": [
+          "message_id",
+          "outcome",
+          "observed_at"
+        ],
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Immutable operator-message identifier."
+          },
+          "observed_at": {
+            "type": "string",
+            "description": "Observation instant in UTC."
+          },
+          "outcome": {
+            "type": "string",
+            "description": "Client-observed `displayed` or `acknowledged` fact."
+          }
+        }
+      },
+      "ApnsOutcomeResponse": {
+        "type": "object",
+        "description": "APNs outcome admission response.",
+        "required": [
+          "api_version",
+          "message_id",
+          "status",
+          "server_time"
+        ],
+        "properties": {
+          "api_version": {
+            "type": "string",
+            "description": "API contract version."
+          },
+          "message_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Immutable operator-message identifier."
+          },
+          "server_time": {
+            "type": "string",
+            "description": "Server response instant in UTC."
+          },
+          "status": {
+            "type": "string",
+            "description": "Admission state."
+          }
+        }
+      },
+      "ApnsRegistrationRequest": {
+        "type": "object",
+        "description": "Authenticated iPhone APNs registration facts.",
+        "required": [
+          "device_id",
+          "environment",
+          "app_identifier",
+          "app_version",
+          "build",
+          "authorization_status",
+          "alerts_enabled",
+          "sounds_enabled",
+          "badges_enabled"
+        ],
+        "properties": {
+          "alerts_enabled": {
+            "type": "boolean",
+            "description": "Whether iOS allows alert presentation."
+          },
+          "app_identifier": {
+            "type": "string",
+            "description": "App bundle identifier."
+          },
+          "app_version": {
+            "type": "string",
+            "description": "User-visible app version."
+          },
+          "authorization_status": {
+            "type": "string",
+            "description": "iOS notification authorization state."
+          },
+          "badges_enabled": {
+            "type": "boolean",
+            "description": "Whether iOS allows badge updates."
+          },
+          "build": {
+            "type": "string",
+            "description": "Build identifier."
+          },
+          "device_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Authenticated device identity; must equal the signed client id."
+          },
+          "environment": {
+            "type": "string",
+            "description": "APNs environment selected by the signed app build."
+          },
+          "sounds_enabled": {
+            "type": "boolean",
+            "description": "Whether iOS allows notification sounds."
+          },
+          "token": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Lowercase hexadecimal APNs token, absent when iOS has not supplied one."
+          }
+        }
+      },
+      "ApnsRegistrationResponse": {
+        "type": "object",
+        "description": "APNs registration admission response.",
+        "required": [
+          "api_version",
+          "status",
+          "server_time"
+        ],
+        "properties": {
+          "api_version": {
+            "type": "string",
+            "description": "API contract version."
+          },
+          "server_time": {
+            "type": "string",
+            "description": "Server response instant in UTC."
+          },
+          "status": {
+            "type": "string",
+            "description": "`registered` or `refreshed`."
+          }
+        }
+      },
       "ClientAuthHeaders": {
         "type": "object",
         "description": "RFC 9421 request-authentication fields fixed by Amendment 09.",
@@ -853,6 +1334,41 @@
           }
         }
       },
+      "DeviceMetadata": {
+        "type": "object",
+        "description": "`HealthKit` device metadata retained as sub-provenance.",
+        "properties": {
+          "hardware_version": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Hardware version, when reported."
+          },
+          "manufacturer": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Manufacturer, when reported."
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Model, when reported."
+          },
+          "os_version": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Operating-system version, when reported."
+          }
+        },
+        "additionalProperties": false
+      },
       "EnrollmentClaimRequest": {
         "type": "object",
         "description": "Future one-time enrollment claim. Unknown JSON fields are intentionally ignored.",
@@ -962,6 +1478,7 @@
           "app_version",
           "registry_sha256",
           "outbox_count",
+          "changed_at",
           "types"
         ],
         "properties": {
@@ -977,6 +1494,10 @@
             "type": "string",
             "format": "uuid",
             "description": "Client-minted idempotency identifier for this assertion."
+          },
+          "changed_at": {
+            "type": "string",
+            "description": "Last time the phone changed any reported status fact."
           },
           "last_server_ack_at": {
             "type": [
@@ -1012,6 +1533,202 @@
             "description": "Per-HealthKit-type operational facts without measurements."
           }
         }
+      },
+      "HealthBeaconResponse": {
+        "type": "object",
+        "description": "Successful status-beacon admission response.",
+        "required": [
+          "api_version",
+          "beacon_id",
+          "status",
+          "server_time"
+        ],
+        "properties": {
+          "api_version": {
+            "type": "string",
+            "description": "API contract version that processed the beacon."
+          },
+          "beacon_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Client idempotency identifier copied from the request."
+          },
+          "server_time": {
+            "type": "string",
+            "description": "Server response instant in UTC."
+          },
+          "status": {
+            "type": "string",
+            "description": "`accepted` for a new assertion or `replayed` for identical content."
+          }
+        }
+      },
+      "HealthKitBatchPayload": {
+        "type": "object",
+        "description": "A bounded anchored-query envelope. Samples and deletion facts are committed together by the\nauthenticated receiver; an empty envelope is not sent by the phone.",
+        "required": [
+          "class",
+          "schema_version"
+        ],
+        "properties": {
+          "class": {
+            "type": "string",
+            "description": "Envelope class discriminator."
+          },
+          "deletions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HealthKitDeletionPayload"
+            },
+            "description": "Deletion facts in this query page."
+          },
+          "samples": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HealthKitSamplePayload"
+            },
+            "description": "Source samples in this query page."
+          },
+          "schema_version": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Envelope schema version.",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "HealthKitDeletionPayload": {
+        "type": "object",
+        "description": "A `HealthKit` deletion fact. The server records a tombstone and never deletes a sample row.",
+        "required": [
+          "healthkit_sample_uuid",
+          "healthkit_type",
+          "query_batch_id",
+          "recorded_at"
+        ],
+        "properties": {
+          "healthkit_sample_uuid": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Stable deleted `HealthKit` sample UUID."
+          },
+          "healthkit_type": {
+            "type": "string",
+            "description": "Original `HealthKit` category or quantity identifier."
+          },
+          "query_batch_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Query operation identity."
+          },
+          "recorded_at": {
+            "type": "string",
+            "description": "Phone record instant."
+          }
+        },
+        "additionalProperties": false
+      },
+      "HealthKitSamplePayload": {
+        "type": "object",
+        "description": "One source sample as sent by the Apple client.",
+        "required": [
+          "healthkit_sample_uuid",
+          "healthkit_type",
+          "start_at",
+          "end_at",
+          "query_batch_id",
+          "recorded_at"
+        ],
+        "properties": {
+          "device": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/DeviceMetadata",
+                "description": "`HealthKit` device metadata."
+              }
+            ]
+          },
+          "end_at": {
+            "type": "string",
+            "description": "Exclusive UTC interval end."
+          },
+          "fixture": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Synthetic-fixture marker, ignored by the mapper."
+          },
+          "healthkit_sample_uuid": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Stable `HealthKit` source identifier."
+          },
+          "healthkit_type": {
+            "type": "string",
+            "description": "Original `HealthKit` type identifier."
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Allowlisted `HealthKit` metadata fields.",
+            "additionalProperties": {},
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "original_category": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Original `HealthKit` category value, present for category samples."
+          },
+          "original_unit": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Original `HealthKit` unit identifier, present for quantity samples."
+          },
+          "original_value": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "Original numeric value, present for quantity samples."
+          },
+          "query_batch_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Client batch identity from the query or observer operation."
+          },
+          "record_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Client item identity, validated by the outer receiver."
+          },
+          "recorded_at": {
+            "type": "string",
+            "description": "Instant at which the phone recorded the item."
+          },
+          "source_revision": {
+            "$ref": "#/components/schemas/SourceRevision",
+            "description": "`HealthKit` source revision."
+          },
+          "start_at": {
+            "type": "string",
+            "description": "Inclusive UTC interval start."
+          }
+        },
+        "additionalProperties": false
       },
       "HealthTypeFact": {
         "type": "object",
@@ -1254,6 +1971,41 @@
             "description": "Server observation time in UTC."
           }
         }
+      },
+      "SourceRevision": {
+        "type": "object",
+        "description": "`HealthKit` source revision fields retained as sub-provenance.",
+        "properties": {
+          "bundle_identifier": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Source application bundle identifier."
+          },
+          "product_type": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Device product type reported by `HealthKit`."
+          },
+          "source_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Human-readable source name."
+          },
+          "version": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Source application version."
+          }
+        },
+        "additionalProperties": false
       }
     }
   },

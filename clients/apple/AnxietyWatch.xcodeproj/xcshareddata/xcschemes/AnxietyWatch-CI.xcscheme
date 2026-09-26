@@ -48,6 +48,20 @@
                ReferencedContainer = "container:AnxietyWatch.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
+         <BuildActionEntry
+            buildForTesting = "YES"
+            buildForRunning = "NO"
+            buildForProfiling = "NO"
+            buildForArchiving = "NO"
+            buildForAnalyzing = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "AF11BB22CC33DD44EE55FF66"
+               BuildableName = "AnxietyWatchAppUITests.xctest"
+               BlueprintName = "AnxietyWatchAppUITests"
+               ReferencedContainer = "container:AnxietyWatch.xcodeproj">
+            </BuildableReference>
+         </BuildActionEntry>
       </BuildActionEntries>
    </BuildAction>
    <TestAction
@@ -63,6 +77,16 @@
                BlueprintIdentifier = "D499996135CF022B6D05FC68"
                BuildableName = "AnxietyWatchAppTests.xctest"
                BlueprintName = "AnxietyWatchAppTests"
+               ReferencedContainer = "container:AnxietyWatch.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
+         <TestableReference
+            skipped = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "AF11BB22CC33DD44EE55FF66"
+               BuildableName = "AnxietyWatchAppUITests.xctest"
+               BlueprintName = "AnxietyWatchAppUITests"
                ReferencedContainer = "container:AnxietyWatch.xcodeproj">
             </BuildableReference>
          </TestableReference>

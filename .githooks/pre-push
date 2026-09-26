@@ -176,7 +176,33 @@ if [[ -f Cargo.toml ]]; then
   rm -f /tmp/pp-test.$$ /tmp/pp-clippy.$$ /tmp/pp-fuzz.$$
 fi
 
-# ── 7. agent provenance ───────────────────────────────────────────────────────
+# ── 7. iPhone client static gates ─────────────────────────────────────────────
+# Keep the fast, deterministic iOS project/security checks on the push path. The
+# simulator build and package tests run in the dedicated macOS CI workflow.
+IOS_CHANGED="$(git diff "$RANGE" --name-only | grep -E '^(clients/apple|scripts/verify-ios-|scripts/scan-public-info\.sh|\.swiftlint\.yml)' || true)"
+if [[ -n "$IOS_CHANGED" ]]; then
+  for gate in \
+    scripts/verify-ios-project.sh \
+    scripts/verify-ios-release-security.sh \
+    scripts/verify-ios-accessibility.sh \
+    scripts/verify-ios-storage-security.sh \
+    scripts/verify-ios-auth.sh \
+    scripts/verify-ios-network-security.sh \
+    scripts/verify-ios-no-analysis.sh \
+    scripts/verify-ios-no-local-archive.sh \
+    scripts/verify-ios-no-polling.sh \
+    scripts/scan-public-info.sh; do
+    if "$gate" >/tmp/pp-ios-gate.$$ 2>&1; then
+      ok "$gate passes"
+    else
+      fail "$gate failed:"
+      tail -20 /tmp/pp-ios-gate.$$ >&2
+    fi
+  done
+  rm -f /tmp/pp-ios-gate.$$
+fi
+
+# ── 8. agent provenance ───────────────────────────────────────────────────────
 # The repo's git config signs every commit as the owner, so without a trailer an
 # agent's work is indistinguishable from a human's in git log.
 for c in $COMMITS; do
@@ -187,7 +213,7 @@ for c in $COMMITS; do
   fi
 done
 
-# ── 8. Verify-command tampering ───────────────────────────────────────────────
+# ── 9. Verify-command tampering ───────────────────────────────────────────────
 # A worker once rewrote a task's Verify line so its output would pass. The Verify
 # command is the contract; changing it to fit the implementation inverts that.
 if git diff "$RANGE" --name-only | grep -q 'openspec/changes/.*/tasks.md'; then

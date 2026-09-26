@@ -22,6 +22,35 @@ func enrollmentFixtureDecodes() throws {
   #expect(request.deviceLabel == "Fixture iPhone")
 }
 
+@Test("health beacon fixture preserves operational unknowns without granting access")
+func healthBeaconFixtureDecodes() throws {
+  let beacon = try JSONDecoder().decode(
+    HealthBeaconRequest.self,
+    from: fixture(named: "health-beacon-request.json")
+  )
+  #expect(beacon.changedAt == "2025-01-15T08:09:30.000Z")
+  #expect(beacon.types.first?.authorizationRequestOutcome == "request_completed_unknown_read_grant")
+  #expect(beacon.types.first?.lastMatchingSampleAt == nil)
+}
+
+@Test("status beacon fixtures preserve unknown and stale states without measurements")
+func statusBeaconFixtureSetDecodes() throws {
+  let names = [
+    "health-beacon-background-delivery.json",
+    "health-beacon-reboot.json",
+    "health-beacon-no-wake.json",
+    "health-beacon-locked.json",
+    "health-beacon-denied-type.json",
+    "health-beacon-unknown.json",
+    "health-beacon-stale.json",
+  ]
+  for name in names {
+    let beacon = try JSONDecoder().decode(HealthBeaconRequest.self, from: fixture(named: name))
+    #expect(!beacon.types.isEmpty)
+    #expect(beacon.types.allSatisfy { $0.lastMatchingSampleAt == nil || $0.lastQueryOutcome == "succeeded" })
+  }
+}
+
 @Test("shared item acknowledgement fixture preserves terminal wire status")
 func acknowledgementFixtureDecodes() throws {
   let response = try JSONDecoder().decode(
@@ -44,6 +73,34 @@ func requestFixtureIsForwardCompatible() throws {
   } else {
     Issue.record("fixture content was not preserved as an object")
   }
+}
+
+@Test("APNs registration and outcome fixtures preserve separate delivery facts")
+func apnsFixturesDecode() throws {
+  let registration = try JSONDecoder().decode(
+    APNsRegistrationRequest.self,
+    from: fixture(named: "apns-registration-request.json")
+  )
+  #expect(registration.environment == "sandbox")
+  #expect(registration.authorizationStatus == "authorized")
+  #expect(registration.token == "a1b2c3d4")
+
+  let registrationResponse = try JSONDecoder().decode(
+    APNsRegistrationResponse.self,
+    from: fixture(named: "apns-registration-response.json")
+  )
+  #expect(registrationResponse.status == "accepted")
+
+  let outcome = try JSONDecoder().decode(
+    APNsOutcomeRequest.self,
+    from: fixture(named: "apns-outcome-request.json")
+  )
+  #expect(outcome.outcome == .displayed)
+  let outcomeResponse = try JSONDecoder().decode(
+    APNsOutcomeResponse.self,
+    from: fixture(named: "apns-outcome-response.json")
+  )
+  #expect(outcomeResponse.status == "accepted")
 }
 
 @Test("unknown future error fields do not turn an incompatible major into success")

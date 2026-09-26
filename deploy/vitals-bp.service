@@ -1,7 +1,8 @@
 [Unit]
 Description=A&D UA-651BLE blood pressure collector
-After=bluetooth.service vitalsd.service
+After=bluetooth.service vitalsd.service vitals-bp-autoconnect.service
 Requires=bluetooth.service vitalsd.service
+Wants=vitals-bp-autoconnect.service
 
 [Service]
 Type=simple

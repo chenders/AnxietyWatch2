@@ -49,6 +49,134 @@ unit = "mmHg"
 range = [40.0, 200.0]
 precision = 1.0
 
+# Canonical codes are defined by amendment 13: awake=0,
+# asleep_unspecified=1, core=2, deep=3, rem=4.
+[type.sleep_stage]
+id = 9
+unit = "stage_code"
+range = [0.0, 4.0]
+precision = 1.0
+
+[type.resting_hr]
+id = 10
+unit = "bpm"
+range = [20.0, 250.0]
+precision = 1.0
+
+[type.respiratory_rate]
+id = 11
+unit = "breaths/min"
+range = [1.0, 100.0]
+precision = 0.1
+
+[type.wrist_temperature]
+id = 12
+unit = "degC"
+range = [-20.0, 60.0]
+precision = 0.01
+
+[type.step_count]
+id = 13
+unit = "count"
+range = [0.0, 1000000.0]
+precision = 1.0
+
+[type.active_energy]
+id = 14
+unit = "kcal"
+range = [0.0, 100000.0]
+precision = 0.1
+
+[type.exercise_time]
+id = 15
+unit = "min"
+range = [0.0, 1440.0]
+precision = 0.1
+
+[type.environmental_audio]
+id = 16
+unit = "dBASPL"
+range = [0.0, 200.0]
+precision = 0.1
+
+[type.blood_glucose]
+id = 17
+unit = "mg/dL"
+range = [1.0, 1000.0]
+precision = 0.1
+
+[type.vo2_max]
+id = 18
+unit = "mL/kg*min"
+range = [1.0, 150.0]
+precision = 0.1
+
+[type.walking_hr]
+id = 19
+unit = "bpm"
+range = [20.0, 250.0]
+precision = 1.0
+
+[type.headphone_audio]
+id = 20
+unit = "dBASPL"
+range = [0.0, 200.0]
+precision = 0.1
+
+[type.walking_steadiness]
+id = 21
+unit = "percent"
+range = [0.0, 100.0]
+precision = 0.1
+
+[type.afib_burden]
+id = 22
+unit = "percent"
+range = [0.0, 100.0]
+precision = 0.1
+
+[type.walking_speed]
+id = 23
+unit = "m/s"
+range = [0.0, 20.0]
+precision = 0.01
+
+[type.walking_step_length]
+id = 24
+unit = "m"
+range = [0.0, 5.0]
+precision = 0.001
+
+[type.walking_double_support]
+id = 25
+unit = "percent"
+range = [0.0, 100.0]
+precision = 0.1
+
+[type.walking_asymmetry]
+id = 26
+unit = "percent"
+range = [0.0, 100.0]
+precision = 0.1
+
+[type.time_in_daylight]
+id = 27
+unit = "min"
+range = [0.0, 1440.0]
+precision = 0.1
+
+[type.physical_effort]
+id = 28
+unit = "kcal/kg*hr"
+range = [0.0, 100.0]
+precision = 0.01
+
+[type.body_mass]
+id = 29
+unit = "kg"
+range = [0.1, 500.0]
+precision = 0.01
+
 [source.emay]
 id = 0
 transport = "ble"
@@ -67,7 +195,7 @@ expected_cadence_s = 1
 [source.healthkit]
 id = 2
 transport = "push"
-provides = ["hr", "hrv_rmssd"]
+provides = ["hr", "hrv_rmssd", "spo2", "sleep_stage", "resting_hr", "respiratory_rate", "wrist_temperature", "step_count", "active_energy", "exercise_time", "environmental_audio", "blood_glucose", "bp_systolic", "bp_diastolic", "vo2_max", "walking_hr", "headphone_audio", "walking_steadiness", "afib_burden", "walking_speed", "walking_step_length", "walking_double_support", "walking_asymmetry", "time_in_daylight", "physical_effort", "body_mass"]
 # §9b guess, awaiting measurement: real sync cadence on this install.
 expected_cadence_s = 21600
 

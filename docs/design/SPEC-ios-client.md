@@ -1,7 +1,9 @@
 # Specification — AnxietyWatch2 Apple client (Stage 7)
 
 **Status:** implementation target; subordinate to accepted amendments
-**Scope:** iPhone app, companion watchOS Quick Log, and their HTTP contracts with the Pi
+**Scope:** eventual iPhone app, companion watchOS Quick Log, and their HTTP contracts with the Pi.
+The first draft is iPhone-only and follows [Amendment 10](../specs/2026-09-15-amendment-10-first-draft-lan-http.md)
+for private-LAN transport and deferred features.
 **Implementation home:** `clients/apple/` in this repository
 **Related:** [`GEN1-REASSESSMENT.md`](GEN1-REASSESSMENT.md) ·
 [`HOMEASSISTANT-PRIOR-ART.md`](HOMEASSISTANT-PRIOR-ART.md) ·
@@ -25,21 +27,32 @@ The Apple client exists because some capabilities are device-local or person-loc
 
 The Pi remains the system of record, analysis host, integration hub, and independent overnight
 monitor. The app is useful when the Pi is temporarily unreachable, but it is never part of the
-local detector-to-klaxon path.
+local detector-to-klaxon path. In the first release, HealthKit is a primary phone capability: the
+app requests read-only access, uploads source samples to the Pi, and exposes factual access/sync
+state. WatchOS, local reminders, and non-journal domain features remain deferred. Operator-directed
+remote APNs notifications are in first-release scope under [Amendment 16](../specs/2026-09-18-amendment-16-operator-directed-apns.md).
+The app captures journal/anxiety records, uploads HealthKit samples, receives protected Pi-directed
+notifications, reads Pi projections and prior records, and may operate an explicit BLE source relay
+for the mobility-indicator feature defined by [Amendment 17](../specs/2026-09-22-amendment-17-iphone-ble-mobility-relay.md).
 
-### 1.1 The three jobs
+### 1.1 The four jobs
 
 | Job | Phone responsibility | Pi responsibility |
 |---|---|---|
 | HealthKit bridge in | request narrowly scoped read access, query, normalize transport payloads, enqueue, retry | authenticate, map to registry types/units, validate, store, expose receiving state |
 | Journal in | capture reports and doses, schedule local prompts, enqueue immutable versions | own authoritative records, conflict history, policy, analysis, export |
 | Viewer out | render server projections and explicit stale/unknown states | compute projections, analysis, reports, and evidence ages |
+| BLE mobility relay | receive supported sensor notifications, forward bounded frames, receive Pi state over LAN, and mirror it to the BLE bracelet | validate/decode/store/analyse source data and publish the authoritative indicator state |
+
+The BLE relay is a transport role, not local ownership. Its expected feasibility is yes for an active
+measured mode, not an unconditional iOS background guarantee.
 
 ### 1.2 Explicit non-goals
 
 The Stage 7 app does **not**:
 
-- hold Polar H10, EMAY, cuff, or Oura BLE sessions;
+- hold unbounded or legacy-generation BLE collector sessions; it may hold an explicit, supported
+  source-relay session only under Amendment 17;
 - compute authoritative baselines, CNS risk tiers, correlations, or clinical reports;
 - write any data back to HealthKit;
 - maintain a second authoritative health database;
@@ -52,9 +65,10 @@ The Stage 7 app does **not**:
 
 ## 2. Binding product decisions
 
-1. **Server authority.** The Pi owns durable truth. Local persistence is limited to a durable,
-   temporary write outbox, server-issued read cursors, settings, and bounded display caches. The app
-   has no local archive, analysis store, or user-facing “device history.”
+1. **Server authority.** The Pi owns authoritative durable truth. Local persistence includes a durable
+   temporary write outbox, server-issued read cursors, settings, bounded physiological display caches,
+   and a permanent Data-Protected journal/anxiety mirror for offline reading and reconciliation. The
+   journal mirror is not authoritative and is never used for local analysis.
 2. **Upload at the earliest opportunity.** A new journal/song/rating/dose/check-in or HealthKit
    observer result triggers a drain immediately when iOS permits network work. Foreground entry,
    connectivity restoration, app activation, HealthKit background delivery, and scheduled background
@@ -62,8 +76,9 @@ The Stage 7 app does **not**:
 3. **One-way writes, ordinary reads.** Phone-to-Pi is an idempotent enrichment push. Pi-to-phone is a
    query/projection API. Generation one's bidirectional CRDT is not ported.
 4. **Batch transport, not batch delay.** HealthKit and domain writes use bounded HTTPS batches to
-   reduce overhead, but the first item starts a drain immediately. A live socket is a later
-   optimization only after a measured latency requirement has a consumer.
+   reduce overhead, but the first item starts a drain immediately. A live socket remains disallowed
+   for ordinary sync; Amendment 17 permits a time-bounded authenticated stream only while the
+   opt-in BLE mobility relay is active and only after its latency requirement is measured.
 5. **Watch relays through iPhone.** The first watchOS client uses `WatchConnectivity`; it holds no Pi
    credential. Direct watch-to-Pi communication is deferred unless measured delivery failures prove
    the relay inadequate.
@@ -72,8 +87,9 @@ The Stage 7 app does **not**:
    remains the final validator.
 7. **No generated Swift registry.** Registry JSON is decoded into client models and cached with its
    version. Unknown entries are preserved for diagnostics and not guessed into known types.
-8. **No BLE compatibility mode.** Generation-one BLE services are removed rather than hidden behind
-   a default-off switch.
+8. **No legacy BLE compatibility mode.** Generation-one BLE services are removed rather than hidden
+   behind a default-off switch. The Amendment 17 mobility relay is a separately named, opt-in source
+   transport with its own identity, stale-state, security, and physical-device acceptance contract.
 9. **HealthKit reads only.** The app requests only enabled read types and has no HealthKit share/write
    authorization.
 10. **Facts, not permission guesses.** HealthKit does not reveal whether read permission was granted.
@@ -82,8 +98,8 @@ The Stage 7 app does **not**:
 11. **Existing app knowledge, new narrow tree.** Selected generation-one UI and behavior are imported
     into `clients/apple/` with provenance. The old `Services/` tree is not copied wholesale.
 12. **Native-first implementation.** Swift, SwiftUI, structured concurrency, `URLSession`, HealthKit,
-    `BGTaskScheduler`, UserNotifications, and WatchConnectivity are the defaults. A third-party
-    dependency requires a license, privacy, maintenance, and necessity record.
+    CoreBluetooth, Network, `BGTaskScheduler`, UserNotifications, and WatchConnectivity are the
+    defaults. A third-party dependency requires a license, privacy, maintenance, and necessity record.
 13. **Missing is never zero.** This applies to HealthKit values, journal fields, check-ins, graph
     gaps, and server state.
 
@@ -106,14 +122,37 @@ across the phone/Pi boundary silently.
 ### 3.2 Journal
 
 - Anxiety severity using the generation-one 1–10 scale and named bands.
-- Optional note, tags, song, and backdated subject time. Song search/enrichment runs on the Pi; the
-  phone records a selected server song ID or an offline free-form song stub for later resolution.
+- Optional note, tags, and song. The entry time is captured by the iPhone when the user saves it;
+  user-entered backdating is not supported. Search uses the Pi Genius proxy when its key is available,
+  or direct Genius when the owner has explicitly provisioned the key to the iPhone; otherwise it uses
+  the no-login/no-secret Apple/iTunes Search API. Genius failures fall back to iTunes with the
+  provider shown. The mirror retains title, artist, album, provider metadata, artwork URL, and a small
+  local thumbnail for offline display. A manual free-form song stub remains available offline. The Pi
+  may enrich the synced record with Genius.com lyrics using its key, controlled by a Pi-admin global
+  setting that defaults to automatic; without a key, it is off and disabled with a guided setup note.
+  Public-release credentials, licensing, disclosure, and optional AI analysis require a separate
+  future decision.
 - Optional pain only after its scale and missing-value behavior are accepted in the domain schema.
 - Express Mode preserves one-tap anxiety capture. Optional secondary fields cannot delay the save.
 - Entry detail shows subject time, recorded time, sync state, and version/conflict state.
 - Editing creates a new immutable version; deletion creates a tombstone request.
 
-### 3.3 Medications and check-ins
+### 3.3 Songs
+
+- Provide a dedicated Songs section alongside Journal.
+- List songs referenced by journal entries with their available title, artist, album, artwork,
+  provider ID, lyrics state, and synchronization state.
+- Tapping a song opens a detail surface containing the complete metadata snapshot available to the
+  Pi/iPhone, the artwork, lyrics when present, lyrics provider and retrieval evidence, and explicit
+  pending/unavailable/unknown states when lyrics are not available.
+- A song detail surface never invents lyrics or treats a missing lyrics response as an empty lyric.
+- Journal entries link to this same song detail surface through a SongOccurrence-style relationship
+  carrying the entry timestamp and `journal` source; the first draft permits one linked song per
+  entry. The song record is not duplicated into a second independent history.
+- Preserve the previous app's catalog behavior: deduplicate logical songs, sort by most recent
+  activity and then title, and show occurrence count, last-used time, and occurrence history.
+
+### 3.4 Medications and check-ins
 
 - Log a dose against a server-owned medication definition.
 - Show last-taken time to reduce accidental duplicate dosing, while clearly identifying stale data.
@@ -123,14 +162,14 @@ across the phone/Pi boundary silently.
 - Logging a safety-relevant dose must be acknowledged by the Pi before the app claims the server's
   monitoring window is armed. “Saved on this phone” and “arming acknowledged” are separate states.
 
-### 3.4 History and reports
+### 3.5 History and reports
 
 - Query server projections using opaque server cursors and explicit UTC windows.
 - Preserve null gaps; never interpolate physiological data or coerce absent values to zero.
 - Render server-produced analysis and clinical PDFs; the phone does not regenerate them.
 - Export/share uses a server-produced artifact and the standard iOS share sheet.
 
-### 3.5 Health access and sync
+### 3.6 Health access and sync
 
 Per HealthKit type, show these independent facts:
 
@@ -146,14 +185,16 @@ Per HealthKit type, show these independent facts:
 A type with no matching sample is not automatically broken: it may be denied, unmeasured, or simply
 absent. The UI states exactly which fact is known.
 
-### 3.6 Settings and diagnostics
+### 3.7 Settings and diagnostics
 
 - Server endpoint, authenticated device label, credential creation/revocation state, and TLS state.
 - Registry/API/app build versions.
 - Bounded redacted sync diagnostics with a user-initiated export.
 - HealthKit type selection and rationale before authorization.
 - Notification policy and system authorization state.
-- Privacy screen and a destructive local reset that does not imply server deletion.
+- Privacy screen, journal-mirror backup inclusion choice, and a destructive local reset that does not
+  imply server deletion. The backup choice is asked on first launch before journal use and remains
+  changeable in General Settings.
 
 ---
 
@@ -169,7 +210,8 @@ acceptable until then). Identity is never a timestamp or content hash.
 - Same ID + different content is a conflict, never an overwrite.
 - An edit has a new ID plus `supersedes` pointing to the previous version.
 - A removal is an append-only tombstone with its own ID and target ID.
-- Subject time and recorded time are separate UTC instants.
+- Subject time is the iPhone capture instant in the first draft. The Pi receipt instant is retained
+  separately as transport evidence and never replaces the entry time.
 
 The app retains an outbox item until it receives an item-level terminal acknowledgement. Batch-level
 HTTP success alone is insufficient.
@@ -210,13 +252,17 @@ Each transport sample includes, subject to the server contract established by T-
 
 Sub-provenance is mandatory. A Watch measurement, manually entered value, and third-party-app value
 must not collapse into an undifferentiated `healthkit` row. The server defines stable ingest identity
-and canonical conversion; the phone does not invent `(session_id, seq)`.
+and canonical conversion; the phone does not invent `(session_id, seq)`. Amendment 13 defines the
+platform-sample payload, the versioned `extra` provenance object, the lossless HealthKit UUID identity
+split, and the canonical sleep-stage mapping.
 
 ### 4.3 Status beacon
 
 The status beacon is operational evidence, stored separately from physiological samples. It contains
 no measurement values. It reports per-type facts from §3.5, app/build/registry version, outbox count
-and oldest age, last successful server acknowledgement, and timestamp of the current assertion.
+and oldest age, last successful server acknowledgement, and separate `reported_at` and `changed_at`
+timestamps. `changed_at` never follows `reported_at`; it records when the reported operational facts
+last changed.
 
 The beacon cannot claim the app is healthy after it stops running. The Pi owns silence detection and
 degrades the last beacon by cadence.
@@ -226,9 +272,10 @@ degrades the last beacon by cadence.
 - Read APIs return server-computed projections with `observed_at`, `generated_at`, and explicit
   coverage/gap metadata.
 - Pagination uses opaque server cursors, never client-computed timestamps.
-- Cache entries carry endpoint, authenticated client, schema version, response generation time, and
-  expiration. A cache from another server/account is never reused.
-- Cached content can remain visible while stale only with a persistent stale state and its age.
+- Physiological projection cache entries carry endpoint, authenticated client, schema version,
+  response generation time, and expiration. A cache from another server/account is never reused.
+- Physiological cached content can remain visible while stale only with a persistent stale state and
+  its age. Journal/anxiety history is held in the permanent local mirror and reconciled from the Pi.
 
 ---
 
@@ -242,19 +289,24 @@ eligible attempt, and last classified error.
 
 The outbox is not a general mirror:
 
-- an acknowledged raw HealthKit or domain payload is deleted from local persistence in the same
-  transaction that records its terminal acknowledgement;
+- an acknowledged raw HealthKit payload is deleted from local persistence in the same transaction
+  that records its terminal acknowledgement;
+- acknowledged journal/anxiety payloads are reconciled into the permanent local mirror after terminal
+  acknowledgement; the mirror stores the content needed for offline history and version reconciliation;
 - a bounded receipt may retain only record ID, outcome, acknowledgement time, and server attempt ID
-  — never the HealthKit value, journal text, song text, or dose content;
-- server read responses use bounded, expiring caches, not replication tables; viewer history is
-  fetched from the Pi and a cache can be evicted without data loss;
+  — never HealthKit values or journal content outside the protected mirror;
+- physiological server read responses use bounded, expiring caches; journal/anxiety history uses the
+  protected local mirror and is reconciled from the Pi when reachable;
 - unacknowledged items are the unavoidable exception: they remain until acknowledged or the user
   explicitly accepts a named loss. They are never age-evicted to satisfy a storage limit;
-- logout/server replacement requires an explicit choice to keep or discard unsent records;
-- a local reset names the number and oldest age of unsent records it would destroy.
+- logout, reset, and server replacement always keep unsent records; queued items are never discarded
+  by these flows;
+- uploaded records can be deleted normally by creating a tombstone, which remains part of the Pi's
+  authoritative audit trail.
 
-There is no local HealthKit browser, local journal history database, local report archive, or local
-analysis over the outbox. Once the Pi acknowledges a write, the Pi is the only long-term owner.
+There is no local HealthKit browser, local report archive, or local analysis over the outbox or
+journal mirror. Once the Pi acknowledges a write, the Pi remains the authoritative long-term owner;
+the iPhone's journal mirror is a recoverable convenience replica.
 
 ### 5.2 Retry
 
@@ -273,9 +325,11 @@ HealthKit observer callbacks enqueue work and complete promptly. They do not per
 network transfers. `BGAppRefreshTask` and, where justified, `BGProcessingTask` drain bounded batches.
 Foreground activation and explicit user actions also trigger a drain.
 
-No one-second timers, permanent sockets, background audio, location abuse, or BLE keep-alive are
-permitted. iOS background execution is best effort; the Pi's status-beacon silence detector is the
-source of truth about whether delivery is happening.
+No one-second timers, permanent ordinary-sync sockets, background audio, location abuse, or BLE
+keep-alive intended to defeat suspension are permitted. An Amendment 17 relay may use a bounded
+stream while explicitly active, but iOS background execution remains best effort. The relay must
+report suspended, disconnected, and stale states; the Pi's status/relay silence detector is the source
+of truth about whether delivery is happening.
 
 ### 5.4 HealthKit anchoring
 
@@ -296,21 +350,55 @@ schema, but physiological registry types still come from `registry.json`.
 
 ### 6.1 Enrollment contract
 
-[Amendment 09](../specs/2026-08-30-amendment-09-mobile-enrollment-and-tls.md) resolves the production
-authentication/TLS decision. The currently shipped `/api/envelope/register` remains localhost-test
-only and is **not** a remote enrollment or compatibility flow.
+[Amendment 09](../specs/2026-08-30-amendment-09-mobile-enrollment-and-tls.md) defines the eventual
+production authentication/TLS decision. [Amendment 10](../specs/2026-09-15-amendment-10-first-draft-lan-http.md)
+supersedes its public/TLS requirements for the first draft only. The currently shipped
+`/api/envelope/register` remains test-only and is **not** a remote enrollment or compatibility flow.
 
-Production uses a ten-minute single-use artifact created after recent operator authentication. The
-phone presents the normalized HTTPS origin and server identity before trust, generates a
-non-exportable Secure Enclave P-256 key, and receives a scoped 180-day per-device public-key
-credential. Requests use RFC 9421 signatures, content digests, bounded creation/expiry times, and a
-durable replay ID. Rotation signs a new key with the current key and never rewrites credential-neutral
-queued payloads; revocation/recovery preserves every unacknowledged item.
+The first draft uses a manually configured private-LAN Pi address over HTTP and has no away-from-home
+operation. It still requires a ten-minute single-use artifact created after recent operator
+authentication, a non-exportable Secure Enclave P-256 key, scoped per-device credentials, RFC 9421
+signatures, content digests, bounded creation/expiry times, and durable replay IDs. Rotation signs a
+new key with the current key and never rewrites credential-neutral queued payloads; revocation/recovery
+preserves every unacknowledged item.
 
-The public Caddy origin exposes only `/api/v1/client/*` over system-trusted TLS while axum remains on
-loopback and the admin origin remains WireGuard-only. ATS hostname validation is unchanged and
-certificate pinning is deliberately not used for the initial release; Amendment 09 records the
-rotation/availability rationale and revisit triggers.
+Amendment 15 makes HealthKit part of the first release. HealthKit uses this same authenticated
+phone-to-Pi transport for bounded source-sample envelopes; it is not deferred.
+
+### 6.3 BLE mobility relay
+
+Under Amendment 17, an explicitly enabled iPhone may act as a CoreBluetooth central for a supported
+physiological device and forward sensor-identifiable frames over an authenticated private-LAN stream
+to the Pi. It may also receive the Pi's small authenticated indicator-state messages over the LAN and
+mirror them to the existing BLE nRF52840 NeoPixel bracelet using bounded GATT writes. The relay
+preserves source provenance and stable sequence/session identity; it does not invent identity from
+host arrival time, perform authoritative decoding/analysis, or become durable source storage. The Pi
+receives the source stream through a dedicated relay ingress and applies the existing registry,
+decoder, append-only ingest, and analysis contracts.
+
+The prototype starts with the existing authenticated private-LAN client transport: small bounded
+source-frame batches are sent by ordinary request, and the Pi response may include its latest
+condition. A source frame preserves source identity, BLE/relay session identity, monotonic sequence,
+phone receipt timestamp, raw payload, and explicit acknowledgement or rejection. A persistent stream is
+future work only if measurements show request/response latency is inadequate. In the first-draft
+private-LAN HTTP mode, the request is authenticated/signed but the response condition is not
+cryptographically authenticated unless the Pi signs that object or HTTPS is used; documentation must
+not call the whole exchange mutually authenticated. This is acceptable for a convenience prototype,
+not for a safety decision.
+
+The Pi-to-iPhone indicator state carries a monotonic sequence, Pi observation/generation timestamp,
+condition, freshness, and expiry. A compact prototype message such as
+`AW2,1,AB12,1042,1790085000,15,GREEN,FRESH` is sufficient. The iPhone reduces validity by observed
+relay delay and never restarts the full validity period merely because it received an old response.
+The bracelet preserves those fields and independently expires into stale/unknown if updates stop. If
+the phone, sensor, Wi-Fi, or Pi is unavailable, the
+state is visibly non-reassuring and the Pi records the gap. The bracelet is an ambient convenience
+display, not an alarm path or system of record. A Wi-Fi bracelet is deferred unless a later measured
+requirement justifies it. The transport, bracelet protocol, and physical evidence are owned by T-I23;
+ordinary journal and HealthKit sync remain bounded HTTP delivery.
+
+Before public or away-from-home use, the Amendment 09 Caddy HTTPS origin, ATS system trust, hostname
+validation, and no-cleartext gate must be restored.
 
 The app never embeds a production endpoint, bearer token, symmetric key, private key, or certificate
 exception in source or configuration committed to git.
@@ -337,9 +425,10 @@ this single-owner health client.
 
 - Device credentials live in Keychain with a `ThisDeviceOnly` accessibility class appropriate for
   background delivery after first unlock; never `UserDefaults`, source, logs, or an export.
-- The durable outbox and cache use iOS Data Protection and are excluded from device backups. The
-  selected protection class must permit the documented background behavior and is verified on a
-  locked physical device.
+- The durable outbox and physiological projection cache use iOS Data Protection and are excluded from
+  device backups. The permanent journal/anxiety mirror also uses Data Protection, with backup inclusion
+  controlled by the user's first-launch choice and General Settings. The selected protection class must
+  permit the documented background behavior and is verified on a locked physical device.
 - An optional Face ID/Touch ID foreground privacy lock is separate from the background transport
   credential; enabling it must not turn a biometric boolean into the cryptographic access control.
 - Sensitive screens are obscured in the app-switcher snapshot.
@@ -348,10 +437,12 @@ this single-owner health client.
 
 ### 7.2 Network
 
-- App Transport Security remains enabled; production has no `NSAllowsArbitraryLoads` or cleartext
-  exception.
-- TLS uses system trust and hostname validation. Certificate pinning is not assumed: the enrollment
-  threat-model task must weigh it against certificate rotation and include backup pins if adopted.
+- The eventual production target keeps App Transport Security enabled with no cleartext exception.
+  The first draft is the explicit Amendment 10 exception: HTTP is allowed only to the configured
+  private-LAN address, and the UI labels it first-draft LAN-only transport.
+- Device signatures, scoped credentials, replay protection, and private-address validation remain
+  mandatory in LAN mode. HTTPS system trust and hostname validation return before public or
+  away-from-home use.
 - Requests have bounded connect/resource timeouts, body limits, and response decoding limits.
 - Secrets and health payloads never appear in URLs, analytics, crash breadcrumbs, or OSLog.
 
@@ -360,9 +451,10 @@ this single-owner health client.
 - HealthKit access is opt-in per type with a plain-language purpose shown before the system sheet.
 - The app requests read-only access to the enabled subset and remains useful when any subset is
   denied or absent.
-- No tracking permission, contacts, location, microphone, camera, or Bluetooth permission is added
-  unless a separately specified feature requires it. OCR may request camera/photo access only at
-  point of use.
+- No tracking permission, contacts, location, microphone, or camera permission is added unless a
+  separately specified feature requires it. The Amendment 17 relay may request Bluetooth and local
+  network permission only when the user enables the relay. OCR may request camera/photo access only
+  at point of use.
 - Third-party code is pinned and inventoried; an SBOM and privacy-manifest review gate every release.
 - The privacy screen identifies what stays on device, what is sent to the Pi, and what server export
   or deletion operations exist.
@@ -388,16 +480,26 @@ this single-owner health client.
 
 ### 9.1 Local prompts
 
-Dose and random check-ins are scheduled locally because delivery is person-facing and iOS-controlled.
-Policy comes from the Pi and is cached with a version. Every scheduled prompt has a stable ID and a
-recorded lifecycle: scheduled, delivered when observable, answered, declined, expired, or delivery
-unknown. Unknown is not converted to declined.
+Local journal, dose, check-in, and sync reminders remain deferred from the first draft. Operator-directed
+remote APNs messages are not deferred; they are specified in §9.2 and Amendment 16. A later release
+may add person-facing local prompts under a separately accepted notification policy; unknown delivery
+must never be converted to declined.
 
-### 9.2 Remote alarm information
+### 9.2 Remote APNs messages and alarm information
 
-Remote notifications may report the Pi's alarm state when the M6 channel contract exists, but they
-are a redundant convenience, not proof that the local alarm worked. Notification receipt, display,
-and acknowledgement are separate evidence. The app cannot silently clear the local tier.
+Under [Amendment 16](../specs/2026-09-18-amendment-16-operator-directed-apns.md), the Pi may send
+an operator-directed APNs message to one selected active device, all active devices for a selected
+user, or every active non-revoked phone registered with the Pi. The app registers its APNs token and
+authorization/liveness facts through the authenticated mobile API. The Pi resolves and records the
+recipient snapshot before sending; a broadcast never silently expands after confirmation.
+
+Payloads are minimal and contain no HealthKit values, journal text, medication details, credentials,
+or enrollment material. The app re-fetches protected content after unlock when a message includes a
+protected category or deep link. APNs acceptance, device delivery, display, and acknowledgement are
+separate facts. Invalid/revoked tokens are removed from future fanout with the provider reason
+recorded. A remote alarm message is redundant convenience, not proof that the local alarm worked,
+and the app cannot silently clear the local tier. Amendment 14's phone-silence condition never uses
+APNs to notify the phone being reported.
 
 ### 9.3 Watch Quick Log
 
@@ -465,14 +567,17 @@ retained where the reassessment requires them.
 - Security checks: committed-secret scan, ATS configuration, Keychain accessibility, backup
   exclusion, log redaction, dependency audit, privacy manifest, and release entitlement diff.
 - Performance/energy: bounded history rendering, no polling loop, observer debounce, background batch
-  size, launch responsiveness, and overnight battery impact.
+  size, launch responsiveness, overnight battery impact, and Amendment 17 BLE-to-Pi/indicator
+  latency, jitter, reconnect, stale-age, and battery evidence.
 
 ### 12.2 Physical-device gates
 
 Simulator tests do not prove HealthKit background delivery, notification behavior, locked-device data
-protection, WatchConnectivity, energy use, or credential persistence. Milestone acceptance therefore
-runs on the owner's iPhone and Apple Watch using fixed reference fixtures plus explicitly identified
-personal-data checks that are never committed.
+protection, WatchConnectivity, energy use, credential persistence, or BLE relay behavior. Milestone
+acceptance therefore runs on the owner's iPhone and Apple Watch using fixed reference fixtures plus
+explicitly identified personal-data checks that are never committed. The relay also requires physical
+sensor, Pi, LAN, and indicator evidence under Amendment 17; foreground and locked/background results
+are reported separately.
 
 ### 12.3 Stage 7 completion
 
@@ -490,12 +595,21 @@ Stage 7 is complete only when:
    acknowledgement.
 6. Local check-in outcomes distinguish answered, declined, expired, and delivery unknown.
 7. The viewer presents stale caches as stale and preserves graph gaps.
-8. Production networking has no cleartext/ATS bypass; credentials are revocable and absent from logs,
-   backups, and diagnostic exports.
+8. The eventual production networking target has no cleartext/ATS bypass; the first draft's explicit
+   Amendment 10 LAN-only HTTP exception is private-address validated and retains signed requests.
+   Credentials are revocable and absent from logs, backups, and diagnostic exports.
 9. Accessibility and panic-path timing pass on physical devices.
 10. With the iPhone powered off, Pi collection, detection, and local alert acceptance remain green.
 11. The verified generation-one migration report has no unowned retained capability or unexplained
     record-count/date discrepancy.
+12. A physical device proves an authenticated Pi-directed APNs test can target one device and the
+    all-active-registered-device scope, with minimal payloads and separate APNs acceptance, display,
+    and acknowledgement evidence; invalid/revoked token handling and zero-recipient behavior are
+    also verified.
+13. If the Amendment 17 relay is enabled, physical evidence proves the declared BLE-to-Pi and
+    Pi-to-indicator latency/jitter, reconnect and stale/unknown behavior, iOS lifecycle limits, and
+    phone-absent Pi alarm independence. Without that evidence the relay remains experimental and
+    cannot display a reassuring state outside its measured mode.
 
 ---
 
@@ -503,13 +617,14 @@ Stage 7 is complete only when:
 
 | Gate | Blocks | Owner |
 |---|---|---|
-| G-IOS-AUTH — LAN/tunnel/TLS/enrollment decision | production enrollment and writes | admin roadmap T-M2a + Stage 7 T-I1 |
+| G-IOS-AUTH — LAN/HTTPS/enrollment decision | production enrollment and writes; first-draft LAN writes follow Amendment 10 | admin roadmap T-M2a + Stage 7 T-I1 |
 | G-IOS-PROVENANCE — platform sub-provenance and identity | HealthKit payload/receiver | admin roadmap T-X3/T-X4 |
 | G-IOS-BEACON — status-beacon server contract | phone health beacon | admin roadmap T-X1/T-X2 |
 | G-IOS-RECORDS — domain schema/version ownership | journal, medication, check-in writes | admin roadmap T-M5a/T-M5b |
 | G-IOS-REPORTS — read/report APIs | complete viewer | admin roadmap M3/M4 |
 | G-IOS-MIGRATION — verified backfill contract | gen-1 decommission | admin roadmap T-X5/T-X6 |
 | G-IOS-ALARM-PUSH — remote channel protocol | remote alarm presentation only | admin roadmap M6 |
+| G-IOS-BLE-RELAY — bounded mobility relay contract | opt-in BLE source relay and indicator state | Stage 7 T-I23 + Pi relay owner |
 
 Blocked features remain absent or explicitly unavailable. They are never mocked into a production
 success state to make the app look complete.

@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>APNs send · AnxietyWatch2 console</title>
+  <link rel="stylesheet" href="/console/base.css">
+  <link rel="stylesheet" href="/console/mobile-enrollment.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="top"><a class="brand" href="/console/">AnxietyWatch2 <span>console</span></a>
+    <nav aria-label="Console screens"><a href="/console/">Overview</a><a href="/console/mobile-enrollment.html">Mobile enrollment</a><a aria-current="page" href="/console/apns-send.html">APNs send</a></nav>
+  </header>
+  <main id="main" class="enrollment-panel" style="max-width:48rem;margin:2rem auto">
+    <h1>Operator-directed APNs send</h1>
+    <section id="login-panel"><h2>Operator authentication</h2><form id="login-form"><label for="password">Admin password</label><input id="password" type="password" required><button>Sign in</button></form></section>
+    <section id="send-panel" hidden><h2>Confirmed test send</h2>
+      <form id="send-form">
+        <label for="recipient-scope">Recipient scope</label><select id="recipient-scope"><option value="device">One device</option><option value="user">Every active phone for one user</option><option value="all_active">Every active phone on this Pi</option></select>
+        <label for="user-id">User ID (user scope)</label><input id="user-id" type="text" placeholder="UUID">
+        <label for="device-id">Device ID</label><input id="device-id" type="text" value="b74997d1-41e0-47f9-843d-05c56ee0f64d" required>
+        <label for="confirmed-count">Measured recipient count</label><input id="confirmed-count" type="number" min="0" value="1" readonly>
+        <label for="payload-class">Payload class</label><input id="payload-class" type="text" value="operator_message" required>
+        <label for="category">Category</label><input id="category" type="text" value="operator_test">
+        <label><input id="is-test" type="checkbox" checked> Test send</label>
+        <button type="submit">Send sandbox notification</button>
+      </form>
+    </section>
+    <p id="status" role="status" aria-live="polite">Not authenticated.</p>
+  </main>
+  <script src="/console/apns-send.js?v=2"></script>
+</body>
+</html>

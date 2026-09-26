@@ -25,6 +25,48 @@ pub enum VitalsType {
     BpDiastolic = 7,
     /// `bp_map` — `mmHg`, valid 40.0..200.0
     BpMap = 8,
+    /// `sleep_stage` — `stage_code`, valid 0.0..4.0
+    SleepStage = 9,
+    /// `resting_hr` — `bpm`, valid 20.0..250.0
+    RestingHr = 10,
+    /// `respiratory_rate` — `breaths/min`, valid 1.0..100.0
+    RespiratoryRate = 11,
+    /// `wrist_temperature` — `degC`, valid -20.0..60.0
+    WristTemperature = 12,
+    /// `step_count` — `count`, valid 0.0..1000000.0
+    StepCount = 13,
+    /// `active_energy` — `kcal`, valid 0.0..100000.0
+    ActiveEnergy = 14,
+    /// `exercise_time` — `min`, valid 0.0..1440.0
+    ExerciseTime = 15,
+    /// `environmental_audio` — `dBASPL`, valid 0.0..200.0
+    EnvironmentalAudio = 16,
+    /// `blood_glucose` — `mg/dL`, valid 1.0..1000.0
+    BloodGlucose = 17,
+    /// `vo2_max` — `mL/kg*min`, valid 1.0..150.0
+    Vo2Max = 18,
+    /// `walking_hr` — `bpm`, valid 20.0..250.0
+    WalkingHr = 19,
+    /// `headphone_audio` — `dBASPL`, valid 0.0..200.0
+    HeadphoneAudio = 20,
+    /// `walking_steadiness` — `percent`, valid 0.0..100.0
+    WalkingSteadiness = 21,
+    /// `afib_burden` — `percent`, valid 0.0..100.0
+    AfibBurden = 22,
+    /// `walking_speed` — `m/s`, valid 0.0..20.0
+    WalkingSpeed = 23,
+    /// `walking_step_length` — `m`, valid 0.0..5.0
+    WalkingStepLength = 24,
+    /// `walking_double_support` — `percent`, valid 0.0..100.0
+    WalkingDoubleSupport = 25,
+    /// `walking_asymmetry` — `percent`, valid 0.0..100.0
+    WalkingAsymmetry = 26,
+    /// `time_in_daylight` — `min`, valid 0.0..1440.0
+    TimeInDaylight = 27,
+    /// `physical_effort` — `kcal/kg*hr`, valid 0.0..100.0
+    PhysicalEffort = 28,
+    /// `body_mass` — `kg`, valid 0.1..500.0
+    BodyMass = 29,
 }
 
 /// Where a sample came from. Provenance, and it must survive aggregation.
@@ -79,6 +121,27 @@ impl VitalsType {
             Self::BpSystolic => (50.0, 260.0),
             Self::BpDiastolic => (30.0, 160.0),
             Self::BpMap => (40.0, 200.0),
+            Self::SleepStage => (0.0, 4.0),
+            Self::RestingHr => (20.0, 250.0),
+            Self::RespiratoryRate => (1.0, 100.0),
+            Self::WristTemperature => (-20.0, 60.0),
+            Self::StepCount => (0.0, 1_000_000.0),
+            Self::ActiveEnergy => (0.0, 100_000.0),
+            Self::ExerciseTime => (0.0, 1_440.0),
+            Self::EnvironmentalAudio => (0.0, 200.0),
+            Self::BloodGlucose => (1.0, 1_000.0),
+            Self::Vo2Max => (1.0, 150.0),
+            Self::WalkingHr => (20.0, 250.0),
+            Self::HeadphoneAudio => (0.0, 200.0),
+            Self::WalkingSteadiness => (0.0, 100.0),
+            Self::AfibBurden => (0.0, 100.0),
+            Self::WalkingSpeed => (0.0, 20.0),
+            Self::WalkingStepLength => (0.0, 5.0),
+            Self::WalkingDoubleSupport => (0.0, 100.0),
+            Self::WalkingAsymmetry => (0.0, 100.0),
+            Self::TimeInDaylight => (0.0, 1_440.0),
+            Self::PhysicalEffort => (0.0, 100.0),
+            Self::BodyMass => (0.1, 500.0),
         }
     }
 
@@ -99,6 +162,27 @@ impl VitalsType {
             Self::BpSystolic => "mmHg",
             Self::BpDiastolic => "mmHg",
             Self::BpMap => "mmHg",
+            Self::SleepStage => "stage_code",
+            Self::RestingHr => "bpm",
+            Self::RespiratoryRate => "breaths/min",
+            Self::WristTemperature => "degC",
+            Self::StepCount => "count",
+            Self::ActiveEnergy => "kcal",
+            Self::ExerciseTime => "min",
+            Self::EnvironmentalAudio => "dBASPL",
+            Self::BloodGlucose => "mg/dL",
+            Self::Vo2Max => "mL/kg*min",
+            Self::WalkingHr => "bpm",
+            Self::HeadphoneAudio => "dBASPL",
+            Self::WalkingSteadiness => "percent",
+            Self::AfibBurden => "percent",
+            Self::WalkingSpeed => "m/s",
+            Self::WalkingStepLength => "m",
+            Self::WalkingDoubleSupport => "percent",
+            Self::WalkingAsymmetry => "percent",
+            Self::TimeInDaylight => "min",
+            Self::PhysicalEffort => "kcal/kg*hr",
+            Self::BodyMass => "kg",
         }
     }
 
@@ -115,6 +199,27 @@ impl VitalsType {
             6 => Some(Self::BpSystolic),
             7 => Some(Self::BpDiastolic),
             8 => Some(Self::BpMap),
+            9 => Some(Self::SleepStage),
+            10 => Some(Self::RestingHr),
+            11 => Some(Self::RespiratoryRate),
+            12 => Some(Self::WristTemperature),
+            13 => Some(Self::StepCount),
+            14 => Some(Self::ActiveEnergy),
+            15 => Some(Self::ExerciseTime),
+            16 => Some(Self::EnvironmentalAudio),
+            17 => Some(Self::BloodGlucose),
+            18 => Some(Self::Vo2Max),
+            19 => Some(Self::WalkingHr),
+            20 => Some(Self::HeadphoneAudio),
+            21 => Some(Self::WalkingSteadiness),
+            22 => Some(Self::AfibBurden),
+            23 => Some(Self::WalkingSpeed),
+            24 => Some(Self::WalkingStepLength),
+            25 => Some(Self::WalkingDoubleSupport),
+            26 => Some(Self::WalkingAsymmetry),
+            27 => Some(Self::TimeInDaylight),
+            28 => Some(Self::PhysicalEffort),
+            29 => Some(Self::BodyMass),
             _ => None,
         }
     }
@@ -168,7 +273,7 @@ impl VitalsSource {
 }
 
 /// Every type, for exhaustive iteration in tests and admin views.
-pub const ALL_TYPES: [VitalsType; 8] = [
+pub const ALL_TYPES: [VitalsType; 29] = [
     VitalsType::Hr,
     VitalsType::Spo2,
     VitalsType::Accel,
@@ -177,6 +282,27 @@ pub const ALL_TYPES: [VitalsType; 8] = [
     VitalsType::BpSystolic,
     VitalsType::BpDiastolic,
     VitalsType::BpMap,
+    VitalsType::SleepStage,
+    VitalsType::RestingHr,
+    VitalsType::RespiratoryRate,
+    VitalsType::WristTemperature,
+    VitalsType::StepCount,
+    VitalsType::ActiveEnergy,
+    VitalsType::ExerciseTime,
+    VitalsType::EnvironmentalAudio,
+    VitalsType::BloodGlucose,
+    VitalsType::Vo2Max,
+    VitalsType::WalkingHr,
+    VitalsType::HeadphoneAudio,
+    VitalsType::WalkingSteadiness,
+    VitalsType::AfibBurden,
+    VitalsType::WalkingSpeed,
+    VitalsType::WalkingStepLength,
+    VitalsType::WalkingDoubleSupport,
+    VitalsType::WalkingAsymmetry,
+    VitalsType::TimeInDaylight,
+    VitalsType::PhysicalEffort,
+    VitalsType::BodyMass,
 ];
 
 /// Every source.

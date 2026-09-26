@@ -8,5 +8,5 @@ git -C "$ROOT" config core.hooksPath .githooks
 chmod +x "$ROOT/.githooks/"* 2>/dev/null || true
 echo "hooks installed: $(git -C "$ROOT" config core.hooksPath)"
 echo "gates: no-push-to-main · secrets · capture artifacts · build junk ·"
-echo "       generated-files-current · build+ctest · agent provenance ·"
-echo "       Verify-command tampering"
+echo "       generated-files-current · build+ctest · iOS static gates ·"
+echo "       agent provenance · Verify-command tampering"

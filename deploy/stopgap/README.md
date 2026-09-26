@@ -1,8 +1,8 @@
 # Stopgap — real EMAY numbers on the bedside panel, at boot
 
-Gets a live SpO₂ and pulse onto the 7″ DSI panel **without** the storage, query
-or detection paths. It wires the sensor process straight to the browser and
-bypasses the architecture on purpose.
+Gets a live SpO₂ and pulse onto the connected DSI panel or HDMI TV **without**
+the storage, query or detection paths. It wires the sensor process straight to
+the browser and bypasses the architecture on purpose.
 
 **What this is not.** There is no CNS detection here, no tier machine, no alarm,
 and no storage — nothing is written down and nothing is watching the numbers.
@@ -21,7 +21,7 @@ real data?*
         ▼
   python http.server on 127.0.0.1:8975
         │
-  cage + chromium --kiosk  ──▶  DSI panel
+  cage + chromium --kiosk  ──▶  DSI panel (preferred) or HDMI TV
 ```
 
 **Updating the panel is `git pull`.** It was previously a copy under
@@ -94,6 +94,12 @@ ssh "$PI_HOST" 'curl -fsS http://127.0.0.1:8975/index.html >/dev/null && echo se
 
 # 3. Something is actually on the screen.
 ssh "$PI_HOST" 'systemctl is-active panel-kiosk'
+
+# Optional output selection. Auto prefers a connected DSI panel and falls back
+# to HDMI. The HDMI output remains at native scale; the bedside page fits its
+# fixed 800×480 layout to the TV without shrinking the DRM scanout plane:
+#   [Service]
+#   Environment=PANEL_KIOSK_OUTPUT=hdmi
 ```
 
 A stale `status.json` is not a failure of this stopgap — the panel is designed to
@@ -103,8 +109,9 @@ comes off your finger at 2 a.m. the panel must not keep showing 97.
 
 ## Deployed and verified on the Pi, 2026-08-04
 
-Running: EMAY `SleepO2 device` at 1 Hz, SpO₂ and pulse on the DSI panel, all
-three units enabled and pulled in by `graphical.target`.
+Running: EMAY `SleepO2 device` at 1 Hz, SpO₂ and pulse on the connected display,
+all three units enabled and pulled in by `graphical.target`. The launcher prefers
+DSI and falls back to HDMI when the TV is connected without the bedside panel.
 
 Three things the first deploy found, all now fixed in the units above:
 

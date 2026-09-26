@@ -19,7 +19,7 @@ REQUIRED = [
     CHANGE / "specs/apple-client/spec.md",
 ]
 TASK_FIELDS = ("**Amends:**", "**Context budget:**", "**Reads:**", "**Do:**", "**Verify:**")
-EXPECTED_IDS = {f"T-I{number}" for number in range(22)}
+EXPECTED_IDS = {f"T-I{number}" for number in range(24)}
 
 
 def fail(message: str) -> None:
@@ -112,7 +112,7 @@ def main() -> None:
     check_spec()
     check_tasks()
     check_local_links()
-    print("ios-client-plan: PASS — spec, 22 task contracts, traceability, and links are complete")
+    print("ios-client-plan: PASS — spec, 24 task contracts, traceability, and links are complete")
 
 
 if __name__ == "__main__":

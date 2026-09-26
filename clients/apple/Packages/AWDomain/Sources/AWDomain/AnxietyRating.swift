@@ -1,5 +1,3 @@
-import AWClientCore
-
 /// Generation-one's retained 1...10 anxiety scale. Invalid values are rejected, never clamped.
 public struct AnxietyRating: RawRepresentable, Codable, Comparable, Sendable {
   public let rawValue: UInt8
