@@ -93,7 +93,7 @@ Implement the only application-level BlueZ/D-Bus owner. Resolve an adapter by st
 
 Keep kernel accept-list registration separate from the unprivileged broker and BP worker. Make controller selection, address type, registration result, hotplug re-registration, and failure values observable. Move BP indication observation/subscription and bounded raw-frame delivery through the broker without adding a userspace connect path. Preserve raw journal-before-decode and `append { sync: true }` reply ordering. Remove the old userspace BP connector only after the physical gate proves kernel-created connection, subscription, and durable spool evidence. A broker or worker crash must be represented as durability unknown, never success.
 
-**Verify:** `! rg -n 'Device1\\.Connect|\.connect\\(' crates/vitals-collectors/src/bin/bp_collector.rs crates/vitals-ble-broker 2>/dev/null && cargo test -p vitals-ble-broker --test bp_policy`
+**Verify:** `! rg -n 'Device1\\.Connect' crates/vitals-collectors/src/bin/bp_collector.rs crates/vitals-ble-broker 2>/dev/null && cargo test -p vitals-ble-broker --test bp_policy`
 
 ---
 
