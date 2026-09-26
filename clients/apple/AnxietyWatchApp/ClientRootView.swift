@@ -904,7 +904,7 @@ private struct SongArtworkView: View {
     ZStack {
       Color(red: 0.15, green: 0.16, blue: 0.17)
       Image(systemName: "music.note")
-        .font(.system(size: max(16, size * 0.32), weight: .medium))
+        .font(.title.weight(.medium))
         .foregroundStyle(Color(red: 0.78, green: 0.70, blue: 0.59))
     }
     .accessibilityHidden(true)
