@@ -36,10 +36,11 @@ PostgreSQL/Sqitch/pgBackRest operations, and no container in the life-safety pat
   are migrated.
 
 The checked-in units currently name `vitalsd`, `vitals-spool-drain`, `vitals-console`, H10/BP
-collectors, and a silence detector. The workspace currently exposes several libraries and binaries,
-but the collector and silence-detector service targets must be reconciled with actual build outputs
-before a full-fleet deployment can be claimed. The deployment tool must fail with the missing target
-name and expected package, never omit it.
+collectors, and a silence detector. The H10/BP collector sources are present as auto-discovered
+binaries in `vitals-collectors`, while the checked-in `silence-detector.service` still has no
+corresponding workspace package. A full-fleet deployment cannot be claimed until that remaining
+mapping is reconciled. The deployment tool must fail with the missing target name and expected
+package, never omit it.
 
 ## 3. Proposed topology
 

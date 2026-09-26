@@ -19,6 +19,7 @@ const BINARY_SPECS: &[BinarySpec] = &[
         destination: "bin/vitalsd",
         unit: "vitalsd.service",
         package: "vitalsd",
+        available: true,
     },
     BinarySpec {
         name: "vitals-spool-drain",
@@ -26,6 +27,7 @@ const BINARY_SPECS: &[BinarySpec] = &[
         destination: "bin/vitals-spool-drain",
         unit: "vitals-spool-drain.service",
         package: "vitals-drain",
+        available: true,
     },
     BinarySpec {
         name: "vitals-console",
@@ -33,6 +35,7 @@ const BINARY_SPECS: &[BinarySpec] = &[
         destination: "bin/vitals-console",
         unit: "vitals-console.service",
         package: "vitals-console",
+        available: true,
     },
     BinarySpec {
         name: "h10-collector",
@@ -40,6 +43,7 @@ const BINARY_SPECS: &[BinarySpec] = &[
         destination: "bin/h10-collector",
         unit: "vitals-h10.service",
         package: "vitals-collectors",
+        available: true,
     },
     BinarySpec {
         name: "bp-collector",
@@ -47,6 +51,7 @@ const BINARY_SPECS: &[BinarySpec] = &[
         destination: "bin/bp-collector",
         unit: "vitals-bp.service",
         package: "vitals-collectors",
+        available: true,
     },
     BinarySpec {
         name: "silence-detector",
@@ -54,6 +59,7 @@ const BINARY_SPECS: &[BinarySpec] = &[
         destination: "bin/silence-detector",
         unit: "silence-detector.service",
         package: "not present in workspace",
+        available: false,
     },
 ];
 
@@ -76,6 +82,7 @@ struct BinarySpec {
     destination: &'static str,
     unit: &'static str,
     package: &'static str,
+    available: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -167,18 +174,10 @@ fn build_manifest(
     let mut blockers = Vec::new();
     for spec in BINARY_SPECS {
         let path = root.join(spec.source);
-        if path.is_file() {
+        if spec.available && path.is_file() {
             files.push(artifact_file(root, &path, spec.destination, "binary")?);
         } else {
-            blockers.push(Blocker {
-                kind: "missing_artifact".to_owned(),
-                subject: spec.name.to_owned(),
-                value: spec.source.to_owned(),
-                reason: format!(
-                    "{} references {}, but the expected package {} did not produce it",
-                    spec.unit, spec.name, spec.package
-                ),
-            });
+            blockers.push(missing_blocker(spec));
         }
     }
 
@@ -225,6 +224,18 @@ fn build_manifest(
         files,
         blockers,
     })
+}
+
+fn missing_blocker(spec: &BinarySpec) -> Blocker {
+    Blocker {
+        kind: "missing_artifact".to_owned(),
+        subject: spec.name.to_owned(),
+        value: spec.source.to_owned(),
+        reason: format!(
+            "{} references {}, but the expected package {} did not produce it",
+            spec.unit, spec.name, spec.package
+        ),
+    }
 }
 
 fn artifact_file(
@@ -389,7 +400,8 @@ fn rustc_version() -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        ArtifactFile, Manifest, sha256_file, validate_manifest, validate_relative_path, verify_hash,
+        ArtifactFile, BINARY_SPECS, Manifest, missing_blocker, sha256_file, validate_manifest,
+        validate_relative_path, verify_hash,
     };
     use std::fs;
     use tempfile::tempdir;
@@ -451,9 +463,14 @@ mod tests {
     #[test]
     fn reports_missing_target_as_a_blocker_instead_of_omitting_it()
     -> Result<(), Box<dyn std::error::Error>> {
-        let directory = tempdir()?;
-        let missing = directory.path().join("missing-binary");
-        assert!(!missing.exists());
+        let spec = BINARY_SPECS
+            .iter()
+            .find(|candidate| candidate.name == "silence-detector")
+            .ok_or("silence-detector spec missing")?;
+        let blocker = missing_blocker(spec);
+        assert_eq!(blocker.kind, "missing_artifact");
+        assert_eq!(blocker.subject, "silence-detector");
+        assert!(blocker.reason.contains("not present in workspace"));
         Ok(())
     }
 

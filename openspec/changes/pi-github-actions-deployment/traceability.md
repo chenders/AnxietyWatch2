@@ -16,9 +16,9 @@
 - The runner cannot be considered installed until a real ARM64 Pi run proves the labels, account,
   systemd service, and smoke workflow.
 - The full service fleet cannot be considered deployable until every `ExecStart` maps to a built
-  workspace artifact. At the time of planning, `h10-collector`, `bp-collector`, and
-  `silence-detector` are named by checked-in units but are not obvious workspace binaries; the
-  inventory task must resolve that fact from the actual build graph.
+  workspace artifact. H10 and BP are auto-discovered binaries in `vitals-collectors`; the checked-in
+  `silence-detector.service` still has no corresponding workspace package. The inventory task must
+  resolve that remaining mapping from the actual build graph.
 - A backup file without successful restore evidence does not open T-R7.
 - A healthy process without fresh data-path evidence does not open T-R7.
 - Passing dry runs do not authorize a real deployment; T-R7 remains operator-gated.
