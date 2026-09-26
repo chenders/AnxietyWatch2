@@ -18,7 +18,11 @@ import tempfile
 import time
 from urllib.request import Request, urlopen
 
-DEFAULT_API = "http://127.0.0.1:8480/api/air11"
+# The console deliberately binds to the Pi's private-LAN address, not loopback.
+# Keep the overrideable environment variable for deployments with another
+# address, while making the shipped bedside service work without extra setup.
+DEFAULT_API = "http://pi-host:8480/api/air11"
+DEFAULT_STATUS = pathlib.Path("/run/vitals-air11/status.json")
 DEFAULT_OUTPUT = pathlib.Path(
     "$HOME/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical/cpap_status.json"
 )
@@ -84,6 +88,29 @@ def latest_values(document: dict[str, object]) -> dict[str, object]:
     return output
 
 
+def local_status_values(document: dict[str, object]) -> dict[str, object]:
+    therapy_state = document.get("therapy_state")
+    link_state = document.get("link_state")
+    receipt = document.get("last_host_receipt_unix_micros")
+    sample_at = float(receipt) / 1_000_000.0 if finite(receipt) else None
+    active = therapy_state == "active" and link_state == "streaming"
+    status = therapy_state if isinstance(therapy_state, str) else "unknown"
+    return {
+        "schema": 1,
+        "written_at": time.time(),
+        "sample_at": sample_at,
+        "on": active,
+        "therapy_on": active,
+        "session_active": active,
+        "status": status,
+        "respiratory_rate": None,
+        "leak_lpm": None,
+        "pressure_cmh2o": None,
+        "source": "resmed_air11",
+        "blocker": document.get("blocker"),
+    }
+
+
 def publish(path: pathlib.Path, document: dict[str, object]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     descriptor, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
@@ -102,7 +129,8 @@ def publish(path: pathlib.Path, document: dict[str, object]) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--api", default=os.environ.get("CPAP_API_URL", DEFAULT_API))
+    parser.add_argument("--api", default=os.environ.get("CPAP_API_URL"))
+    parser.add_argument("--status", type=pathlib.Path, default=pathlib.Path(os.environ.get("CPAP_STATUS_PATH", DEFAULT_STATUS)))
     parser.add_argument("--output", type=pathlib.Path, default=pathlib.Path(os.environ.get("CPAP_STATUS_JSON", DEFAULT_OUTPUT)))
     parser.add_argument("--interval", type=float, default=float(os.environ.get("CPAP_STATUS_INTERVAL_SECONDS", "2")))
     args = parser.parse_args()
@@ -110,7 +138,13 @@ def main() -> int:
         parser.error("--interval must be finite and positive")
     while True:
         try:
-            document = latest_values(fetch_status(args.api))
+            if args.api:
+                document = latest_values(fetch_status(args.api))
+            else:
+                raw = json.loads(args.status.read_text(encoding="utf-8"))
+                if not isinstance(raw, dict):
+                    raise ValueError("AirSense local status did not return an object")
+                document = local_status_values(raw)
         except (OSError, ValueError, TypeError, json.JSONDecodeError) as error:
             document = {"schema": 1, "written_at": time.time(), "error": str(error), "status": "unknown"}
         publish(args.output, document)

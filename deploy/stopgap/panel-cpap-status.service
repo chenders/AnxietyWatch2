@@ -6,6 +6,7 @@ Wants=vitals-air11.service panel-http.service
 [Service]
 Type=simple
 User=pi-user
+SupplementaryGroups=vitals
 ExecStart=/usr/local/bin/panel-cpap-status
 Restart=always
 RestartSec=5
