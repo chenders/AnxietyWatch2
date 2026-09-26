@@ -4,35 +4,57 @@
 //! and `VITALS_CONSOLE_DATABASE_URL` (write API) from the environment, builds
 //! the application state, and serves the console routes.
 
-use axum::{Router, routing::get, routing::post};
+use axum::{Router, middleware, routing::get, routing::post};
 use std::env;
+use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
+use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::services::{ServeDir, ServeFile};
+use uuid::Uuid;
 use vitals_console::api::clock::clock_handler;
 use vitals_console::api::display::display_handler;
 use vitals_console::api::host::host_handler;
 use vitals_console::api::ops::SysOps;
+use vitals_console::api::ops::service_operation_handler;
 use vitals_console::api::postgres::{latest_handler, nightly_handler};
 use vitals_console::api::query::query_handler;
 use vitals_console::api::recovery::recovery_handler;
 use vitals_console::api::services::services_handler;
 use vitals_console::handlers::{
     AppState, attempts_handler, dashboard_handler, envelope_handler, health_handler,
-    plaintext_test_handler, register_handler, test_page_handler, version_handler,
+    health_mute_handler, operator_override_handler, plaintext_test_handler, register_handler,
+    source_declaration_handler, test_page_handler, version_handler,
+};
+use vitals_console::security::{
+    MAX_REQUEST_BODY_BYTES, login_handler, logout_handler, security_handler, security_middleware,
 };
 
 #[tokio::main]
+#[allow(
+    clippy::too_many_lines,
+    reason = "startup keeps bind, route, and middleware assembly in one auditable sequence"
+)]
 async fn main() {
     let bind_addr =
         env::var("VITALS_CONSOLE_BIND").unwrap_or_else(|_| "127.0.0.1:8480".to_string());
     let socket_path =
         env::var("VITALSD_SOCKET").unwrap_or_else(|_| "/run/vitals/vitalsd.sock".to_string());
     let test_routes_enabled = env::var("VITALS_CONSOLE_TEST_ROUTES").is_ok_and(|v| v == "1");
-    if test_routes_enabled
-        && !(bind_addr.starts_with("127.0.0.1:") || bind_addr.starts_with("[::1]:"))
-    {
+    let loopback_bind = bind_addr.starts_with("127.0.0.1:") || bind_addr.starts_with("[::1]:");
+    let private_lan_bind = bind_addr.parse::<SocketAddr>().is_ok_and(|address| {
+        if address.ip().is_loopback() || address.ip().is_unspecified() {
+            return false;
+        }
+        match address.ip() {
+            IpAddr::V4(ip) => ip.is_private(),
+            IpAddr::V6(ip) => ip.is_unique_local(),
+        }
+    });
+    let private_lan_enabled =
+        env::var("VITALS_CONSOLE_PRIVATE_LAN").is_ok_and(|value| value == "1");
+    if !(loopback_bind || private_lan_enabled && private_lan_bind) {
         eprintln!(
-            "vitals-console: test routes require loopback bind; VITALS_CONSOLE_BIND={bind_addr}"
+            "vitals-console: bind blocked: VITALS_CONSOLE_BIND={bind_addr} is not loopback or an explicitly enabled private-LAN address"
         );
         std::process::exit(64);
     }
@@ -63,13 +85,72 @@ async fn main() {
     let db_url = env::var("DATABASE_URL")
         .unwrap_or_else(|_| "host=/var/run/postgresql user=vitals dbname=vitals".to_string());
 
+    let apns_owner_user_id: Option<Uuid> = env::var("VITALS_CONSOLE_APNS_OWNER_USER_ID")
+        .ok()
+        .and_then(|value| value.parse().ok());
+
+    let apns_token_protector = match env::var("VITALS_CONSOLE_APNS_TOKEN_KEY") {
+        Ok(value) if !value.is_empty() => {
+            match vitals_console::apns::ApnsTokenProtector::from_base64(&value) {
+                Ok(protector) => Some(protector),
+                Err(error) => {
+                    eprintln!("vitals-console: APNs token protection disabled: {error}");
+                    None
+                }
+            }
+        }
+        _ => None,
+    };
+
+    let apns_provider =
+        if let (Ok(environment), Ok(team_id), Ok(key_id), Ok(bundle_id), Ok(private_key_path)) = (
+            env::var("VITALS_CONSOLE_APNS_ENVIRONMENT"),
+            env::var("VITALS_CONSOLE_APNS_TEAM_ID"),
+            env::var("VITALS_CONSOLE_APNS_KEY_ID"),
+            env::var("VITALS_CONSOLE_APNS_BUNDLE_ID"),
+            env::var("VITALS_CONSOLE_APNS_PRIVATE_KEY_PATH"),
+        ) {
+            match vitals_console::apns::ApnsProviderConfig::from_values(
+                &environment,
+                &team_id,
+                &key_id,
+                &bundle_id,
+                &private_key_path,
+            )
+            .and_then(vitals_console::apns::ApnsProvider::from_config)
+            {
+                Ok(provider) => {
+                    eprintln!("vitals-console: APNs provider configured");
+                    Some(provider)
+                }
+                Err(error) => {
+                    eprintln!("vitals-console: APNs provider disabled: {error}");
+                    None
+                }
+            }
+        } else {
+            eprintln!("vitals-console: APNs provider disabled: configuration is incomplete");
+            None
+        };
+
     let state = AppState {
         socket_path: PathBuf::from(&socket_path),
         db,
         test_routes_enabled,
         db_url: db_url.clone(),
         sys_ops: SysOps::real(),
+        host_history: vitals_console::api::host::HostHistory::default(),
         db_ops: std::sync::Arc::new(vitals_console::api::postgres::PgDbOps { db_url }),
+        security: std::sync::Arc::new(vitals_console::security::SecurityState::from_env()),
+        ops_token: env::var("VITALS_CONSOLE_OPS_TOKEN")
+            .ok()
+            .filter(|token| !token.is_empty()),
+        server_instance_id: env::var("VITALS_CONSOLE_SERVER_INSTANCE_ID")
+            .ok()
+            .and_then(|value| value.parse().ok()),
+        client_origin: env::var("VITALS_CONSOLE_CLIENT_ORIGIN").ok(),
+        server_display_label: env::var("VITALS_CONSOLE_SERVER_DISPLAY_LABEL")
+            .unwrap_or_else(|_| "AnxietyWatch Pi".to_string()),
     };
 
     println!("Starting vitals-console on {bind_addr} (vitalsd socket: {socket_path})");
@@ -79,20 +160,42 @@ async fn main() {
 
     let app = Router::new()
         .merge(vitals_console::client_api::router::<AppState>())
+        .route(
+            "/api/admin/mobile/enrollment-artifacts",
+            post(vitals_console::client_api::admin_enrollment_artifact_handler),
+        )
+        .route(
+            "/api/admin/notifications/apns/recipients",
+            post(vitals_console::client_api::admin_apns_recipient_preview_handler),
+        )
+        .route(
+            "/api/admin/notifications/apns/send",
+            post(vitals_console::client_api::admin_apns_send_handler),
+        )
         .route("/dashboard", get(dashboard_handler))
         .route("/dashboard/", get(dashboard_handler))
         .route("/api/health", get(health_handler))
+        .route("/api/health/mutes", post(health_mute_handler))
+        .route("/api/config/declarations", post(source_declaration_handler))
+        .route("/api/config/overrides", post(operator_override_handler))
         .route("/api/version", get(version_handler))
         .route("/api/query", get(query_handler))
         .route("/api/latest", get(latest_handler))
         .route("/api/nightly", get(nightly_handler))
         .route("/api/services", get(services_handler))
+        .route(
+            "/api/services/:unit/:action",
+            post(service_operation_handler),
+        )
         .route("/api/host", get(host_handler))
         .route("/api/display", get(display_handler))
         .route("/api/recovery", get(recovery_handler))
         .route("/api/clock", get(clock_handler))
         .route("/api/envelope", post(envelope_handler))
-        .route("/api/attempts", get(attempts_handler));
+        .route("/api/attempts", get(attempts_handler))
+        .route("/api/admin/login", post(login_handler))
+        .route("/api/admin/logout", post(logout_handler))
+        .route("/api/admin/security", get(security_handler));
 
     // Amendment 09 retires caller-chosen secret registration and plaintext
     // helpers from production. They exist only on an explicitly enabled
@@ -105,6 +208,9 @@ async fn main() {
         app
     };
 
+    let security = state.security.clone();
+    let mobile_database = state.db.clone();
+    let mobile_server_instance_id = state.server_instance_id;
     let app = app
         .nest_service(
             "/console",
@@ -112,7 +218,17 @@ async fn main() {
                 .append_index_html_on_directories(true)
                 .fallback(ServeFile::new(assets_path.join("index.html"))),
         )
-        .with_state(state);
+        .with_state(state)
+        .layer(axum::Extension(mobile_database))
+        .layer(axum::Extension(mobile_server_instance_id))
+        .layer(axum::Extension(apns_owner_user_id))
+        .layer(axum::Extension(apns_token_protector))
+        .layer(axum::Extension(apns_provider))
+        .layer(RequestBodyLimitLayer::new(MAX_REQUEST_BODY_BYTES))
+        .layer(middleware::from_fn_with_state(
+            security,
+            security_middleware,
+        ));
 
     let listener = match tokio::net::TcpListener::bind(&bind_addr).await {
         Ok(l) => l,
@@ -121,7 +237,12 @@ async fn main() {
             std::process::exit(64);
         }
     };
-    if let Err(e) = axum::serve(listener, app).await {
+    if let Err(e) = axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await
+    {
         eprintln!("vitals-console: server exited: {e}");
         std::process::exit(70);
     }

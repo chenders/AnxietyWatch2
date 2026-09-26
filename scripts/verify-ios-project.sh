@@ -84,16 +84,22 @@ if grep -q 'TARGETED_DEVICE_FAMILY = "1,2"' "$project" || \
   exit 1
 fi
 
-if rg -n '^\s*import (SwiftUI|HealthKit|WatchConnectivity|SwiftData|CoreData|CoreBluetooth|SQLite3)\b' \
+if rg -n '^\s*import (SwiftUI|WatchConnectivity|SwiftData|CoreData|CoreBluetooth|SQLite3)\b' \
     "$apple/Packages" --glob '*.swift'; then
   echo "ios-project: FAIL — pure package imports an Apple UI/device/persistence framework" >&2
+  exit 1
+fi
+if rg -n '^\s*import HealthKit\b' \
+    "$apple/Packages/AWClientCore" "$apple/Packages/AWTransport" "$apple/Packages/AWOutbox" \
+    "$apple/Packages/AWDomain" --glob '*.swift'; then
+  echo "ios-project: FAIL — a non-HealthKit package imports HealthKit" >&2
   exit 1
 fi
 if rg -n '\.package\s*\(\s*url:' "$apple/Packages" --glob 'Package.swift'; then
   echo "ios-project: FAIL — unreviewed remote Swift dependency found" >&2
   exit 1
 fi
-if rg -n '\b(CoreBluetooth|CBPeripheral|Polar|EMAY|Oura|SwiftData|SQLite3|HealthSnapshot|ReportGenerator|SyncEngine|HLC)\b' \
+if rg -n '\b(CoreBluetooth|CBPeripheral|Polar|EMAY|Oura|SwiftData|SQLite3|HealthSnapshot|ReportGenerator|HLC)\b' \
     "$apple/AnxietyWatchApp" "$apple/AnxietyWatchWatch" --glob '*.swift'; then
   echo "ios-project: FAIL — forbidden generation-one BLE/analysis/storage code compiled" >&2
   exit 1
@@ -111,13 +117,19 @@ import sys
 from pathlib import Path
 
 apple = Path(sys.argv[1])
-for relative in (
-    "AnxietyWatchApp/AnxietyWatchApp.entitlements",
-    "AnxietyWatchWatch/AnxietyWatchWatch.entitlements",
-):
+expected_entitlements = {
+    "AnxietyWatchApp/AnxietyWatchApp.entitlements": {
+        "com.apple.developer.healthkit": True,
+        "com.apple.developer.healthkit.background-delivery": True,
+        "aps-environment": "$(APS_ENVIRONMENT)",
+    },
+    "AnxietyWatchWatch/AnxietyWatchWatch.entitlements": {},
+}
+for relative in expected_entitlements:
     with (apple / relative).open("rb") as handle:
-        if plistlib.load(handle) != {}:
-            raise SystemExit(f"ios-project: FAIL — entitlement allowlist is not empty: {relative}")
+        entitlements = plistlib.load(handle)
+    if entitlements != expected_entitlements[relative]:
+        raise SystemExit(f"ios-project: FAIL — unexpected entitlements: {relative}")
 for relative in (
     "AnxietyWatchApp/PrivacyInfo.xcprivacy",
     "AnxietyWatchWatch/PrivacyInfo.xcprivacy",
@@ -136,11 +148,18 @@ lock = json.loads((apple / "Dependencies.lock.json").read_text())
 if lock.get("schema_version") != 1 or lock.get("third_party_dependencies") != []:
     raise SystemExit("ios-project: FAIL — dependency lock must explicitly contain no third-party code")
 allowlist = json.loads((apple / "Entitlements.allowlist.json").read_text())
-if allowlist.get("targets") != {"AnxietyWatchApp": [], "AnxietyWatchWatch": []}:
-    raise SystemExit("ios-project: FAIL — entitlement allowlist differs from empty target entitlements")
+if allowlist.get("targets") != {
+    "AnxietyWatchApp": [
+        "aps-environment",
+        "com.apple.developer.healthkit",
+        "com.apple.developer.healthkit.background-delivery",
+    ],
+    "AnxietyWatchWatch": [],
+}:
+    raise SystemExit("ios-project: FAIL — entitlement allowlist differs from HealthKit-only target entitlements")
 fixture = json.loads((apple / "Fixtures/Public/skeleton-state.json").read_text())
 if fixture.get("fixture") is not True or fixture.get("contains_personal_data") is not False:
     raise SystemExit("ios-project: FAIL — public skeleton fixture is not explicitly synthetic")
 PY
 
-printf 'ios-project: PASS — iPhone/watch targets, 5 pure packages, schemes, privacy, support, and empty capabilities verified\n'
+printf 'ios-project: PASS — iPhone/watch targets, 5 packages, schemes, privacy, support, HealthKit, and APNs capabilities verified\n'

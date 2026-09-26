@@ -1,0 +1,23 @@
+{
+  "beacon_id": "00000000-0000-7000-8000-000000000323",
+  "asserted_at": "2025-01-15T11:10:00.000Z",
+  "changed_at": "2025-01-15T11:10:00.000Z",
+  "app_version": "0.1.0-fixture",
+  "registry_sha256": "fixture-registry-digest",
+  "outbox_count": 0,
+  "oldest_outbox_age_s": null,
+  "last_server_ack_at": null,
+  "types": [
+    {
+      "healthkit_type": "HKQuantityTypeIdentifierBloodGlucose",
+      "configured": true,
+      "authorization_request_outcome": "requested",
+      "observer_registration_outcome": "registered",
+      "background_delivery_outcome": "failed: permission denied",
+      "last_query_outcome": "failed: authorization unavailable",
+      "last_query_at": "2025-01-15T11:09:00.000Z",
+      "last_matching_sample_at": null,
+      "last_pi_ack_at": null
+    }
+  ]
+}

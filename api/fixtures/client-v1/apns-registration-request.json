@@ -1,0 +1,13 @@
+{
+  "device_id": "00000000-0000-0000-0000-000000000101",
+  "token": "a1b2c3d4",
+  "environment": "sandbox",
+  "app_identifier": "com.example.AnxietyWatch",
+  "app_version": "1.2.3",
+  "build": "42",
+  "authorization_status": "authorized",
+  "alerts_enabled": true,
+  "sounds_enabled": false,
+  "badges_enabled": true,
+  "future_field": "preserved by the server boundary"
+}

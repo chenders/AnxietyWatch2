@@ -24,6 +24,11 @@
 -- a byte offset in the spool, and no two writers share a key because sources
 -- partition the key space by construction. node_id stays — it is provenance.
 --
+-- Platform-store sub-provenance is a versioned UTF-8 JSON object in `extra` (amendment 13).
+-- Its HealthKit sample UUID is also losslessly split across session_id/seq for stable retry
+-- identity; those fields are opaque for platform samples and are not a time cursor. Keeping
+-- this in the generic extra column avoids a second HealthKit table and preserves COPY order.
+--
 -- There is no shared staging table. The drainer creates a private TEMP table per
 -- transaction (amendment 04 §6); a shared UNLOGGED one lets two drainers
 -- interleave COPY and commit a partial batch while the other's rows are lost.

@@ -1,0 +1,32 @@
+# Amendment 09 route split.
+# Supply CLIENT_HOST and ADMIN_HOST through Caddy's root-only environment.
+# The admin hostname must resolve only inside the WireGuard tunnel.
+
+{$CLIENT_HOST} {
+    # Only the versioned mobile client origin is public. No admin, test,
+    # legacy envelope, or service-operation route is reachable here.
+    @mobile path /api/v1/client/*
+    handle @mobile {
+        request_body {
+            max_size 1MB
+        }
+        reverse_proxy 127.0.0.1:8480
+    }
+    handle {
+        respond "not found" 404
+    }
+}
+
+{$ADMIN_HOST} {
+    # Replace this range with the appliance's WireGuard address pool.
+    @wireguard remote_ip 10.77.0.0/24
+    handle @wireguard {
+        request_body {
+            max_size 1MB
+        }
+        reverse_proxy 127.0.0.1:8480
+    }
+    handle {
+        respond "admin origin requires WireGuard" 403
+    }
+}

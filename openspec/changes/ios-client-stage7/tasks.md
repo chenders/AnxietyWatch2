@@ -16,35 +16,43 @@ dispatched before their named gate.
 
 ### Reliable temporary delivery
 
-- [ ] T-I4 — Secure enrollment, Keychain credential lifecycle, and endpoint trust UI · implement-complex · **BLOCKED on T-I1**
-- [ ] T-I5 — Temporary durable outbox and terminal-ack deletion · implement-complex
-- [ ] T-I6 — Registry-driven platform payload and sub-provenance client mapper · implement-complex · **BLOCKED on G-IOS-PROVENANCE / admin T-X3**
-- [ ] T-I7 — Immediate drain engine, retry taxonomy, rotation, and sync diagnostics · implement-complex · **BLOCKED on T-I2/T-I4/T-I5**
+- [x] T-I4 — Secure enrollment, Keychain credential lifecycle, and endpoint trust UI · implement-complex · **BLOCKED on T-I1**
+- [x] T-I5 — Temporary durable outbox and terminal-ack deletion · implement-complex
+- [x] T-I6 — Registry-driven platform payload and sub-provenance client mapper · implement-complex · **BLOCKED on G-IOS-PROVENANCE / admin T-X3**
+- [x] T-I7 — Immediate drain engine, retry taxonomy, rotation, and sync diagnostics · implement-complex · **BLOCKED on T-I2/T-I4/T-I5**
 
 ### HealthKit proxy
 
-- [ ] T-I8 — HealthKit authorization, per-type anchored queries, and parity types · implement-complex · **BLOCKED on T-I0/T-I6 and server T-X4**
-- [ ] T-I9 — Observer/background delivery and phone status beacon · implement-complex · **BLOCKED on T-I7/T-I8 and admin T-X1/T-X2**
+- [x] T-I8 — HealthKit authorization, per-type anchored queries, and parity types · implement-complex
+- [x] T-I9 — Observer/background delivery and phone status beacon · implement-complex · **BLOCKED on T-I7/T-I8 and admin T-X1/T-X2**
 
 ### Viewer
 
-- [ ] T-I10 — Pi read client, expiring projection cache, and unknown/stale model · implement-complex · **BLOCKED on T-I2**
+- [x] T-I10 — Pi read client, expiring projection cache, and unknown/stale model · implement-complex · **BLOCKED on T-I2**
 - [ ] T-I11 — Today, history, report, health-access, and diagnostics surfaces · implement-complex · **BLOCKED on T-I9/T-I10 and required M3/M4 APIs**
 
 ### Subjective input
 
-- [ ] T-I12 — Domain command/version/tombstone client contract · implement-complex · **BLOCKED on G-IOS-RECORDS / admin T-M5a/T-M5b**
-- [ ] T-I13 — Journal rating, notes, tags, songs, and Express Mode · implement-complex · **BLOCKED on T-I5/T-I7/T-I12**
+- [x] T-I12 — Domain command/version/tombstone client contract · implement-complex · **BLOCKED on G-IOS-RECORDS / admin T-M5a/T-M5b**
+- [x] T-I13 — Journal rating, notes, tags, songs, and Express Mode · implement-complex · **BLOCKED on T-I5/T-I7/T-I12**
 - [ ] T-I14 — Medication doses and dose-triggered check-ins · implement-complex · **BLOCKED on T-I12 and server medication policy**
 - [ ] T-I15 — Random check-ins and notification-outcome evidence · implement-standard · **BLOCKED on T-I12**
-- [ ] T-I16 — watchOS Quick Log durable relay · implement-complex · **BLOCKED on T-I13**
+- [x] T-I16 — watchOS Quick Log durable relay · implement-complex · **BLOCKED on T-I13**
+
+### Remote notification delivery
+
+- [ ] T-I22 — APNs registration, targeted delivery, and all-registered-phone fanout · implement-complex · **BLOCKED on Amendment 16/admin T-M6e and T-I4/T-I7**
+
+### Mobility relay
+
+- [ ] T-I23 — Opt-in BLE-to-iPhone-to-LAN relay and ambient indicator contract · implement-complex · **BLOCKED on Amendment 17 / G-IOS-BLE-RELAY**
 
 ### Hardening and transition
 
-- [ ] T-I17 — Mobile security, privacy, accessibility, and release checks · review
-- [ ] T-I18 — Physical-device background delivery, locked-state, energy, and panic-path acceptance · device-validation · **BLOCKED on T-I9/T-I13/T-I16**
+- [x] T-I17 — Mobile security, privacy, accessibility, and release checks · review
+- [ ] T-I18 — Physical-device background delivery, locked-state, energy, and panic-path acceptance · device-validation · **BLOCKED on T-I9/T-I13/T-I16/T-I22**
 - [ ] T-I19 — Verified generation-one data migration · implement-complex · **BLOCKED on admin T-X5 and T-I8/T-I12**
-- [ ] T-I20 — End-to-end Stage 7 acceptance and beta rollout · review · **BLOCKED on T-I11–T-I19**
+- [ ] T-I20 — End-to-end Stage 7 acceptance and beta rollout · review · **BLOCKED on T-I11–T-I19 and T-I22**
 - [ ] T-I21 — Generation-one decommission ledger and deletion of obsolete services · review · **BLOCKED on T-I20 and admin T-X6**
 
 ---
@@ -101,8 +109,9 @@ not generate physiological enum constants—the registry remains JSON.
 `AWClientCore`, `AWTransport`, `AWOutbox`, `AWHealthKit`, and `AWDomain`. Record minimum OS/device
 support from actual owner hardware; do not raise it silently. Import only selected reusable UI/value
 code with source provenance. Add CI/test schemes, deterministic build settings, privacy manifest,
-empty entitlement allowlist, dependency lock, and a no-personal-data fixture bundle. No BLE, local
-analysis, local report, or legacy sync target may compile.
+empty entitlement allowlist, dependency lock, and a no-personal-data fixture bundle. No legacy BLE
+collector, local analysis, local report, or legacy sync target may compile; T-I23 is a separate,
+opt-in relay capability and is not a compatibility mode.
 **Verify:** `cd "$(git rev-parse --show-toplevel)" && scripts/verify-ios-project.sh && swift test --package-path clients/apple/Packages/AWClientCore && scripts/scan-public-info.sh`
 
 ### T-I4 — Secure enrollment, Keychain credential lifecycle, and endpoint trust UI
@@ -160,7 +169,7 @@ No timer/poll/socket keeps the app alive.
 
 ### T-I8 — HealthKit authorization, per-type anchored queries, and parity types
 
-**Amends:** accepted platform-provenance and registry changes produced by T-X3/T-X4.
+**Amends:** accepted platform-provenance and registry changes produced by T-X3/T-X4, and Amendment 15.
 **Context budget:** 16 files / 25k tokens.
 **Reads:** `SPEC-ios-client.md` §3.5, §4.2, §5.4, §7.3 · T-I0 parity ledger · registry mappings · generation-one HealthKit manager, capture registry, access probe, and correction/lookback tests · T-I5/T-I6 interfaces.
 **Do:** Request read-only HealthKit access for the enabled registry subset with per-type rationale.
@@ -271,6 +280,21 @@ Test disconnected phone, duplicate delivery, process death, queue pressure, Voic
 second physical-device capture.
 **Verify:** `cd "$(git rev-parse --show-toplevel)" && scripts/verify-ios-tests.sh AWWatchRelayTests AWWatchUITests && scripts/verify-ios-watch-boundary.sh`
 
+### T-I22 — APNs registration, targeted delivery, and all-registered-phone fanout
+
+**Amends:** accepted Amendment 16; preserves Amendment 14's phone-silence exclusion.
+**Context budget:** 18 files / 28k tokens plus physical-device evidence.
+**Reads:** Amendment 16 · Amendment 14 · `SPEC-ios-client.md` §6–§9 · mobile enrollment/API contract ·
+admin T-M6a/T-M6c/T-M6e · existing Keychain and transport tests.
+**Do:** Request notification authorization with a minimal rationale, register the APNs token and
+authorization facts through the authenticated Pi API, handle token rotation and revocation, and
+receive operator-directed messages for one device, one user, and every active phone registered with
+the same Pi. Keep payloads minimal and re-fetch protected content after unlock. Report APNs accepted,
+delivered, displayed, and acknowledged as separate outcomes; never claim display from provider
+acceptance. Test invalid/stale tokens, offline/locked/force-quit behavior, duplicate message IDs,
+no-recipient fanout, redaction, accessibility, and privacy settings on a physical device.
+**Verify:** `cd "$(git rev-parse --show-toplevel)" && scripts/verify-ios-apns.sh artifacts/ios-stage7-apns-evidence.json`
+
 ### T-I17 — Mobile security, privacy, accessibility, and release checks
 
 **Amends:** 02 and 09.
@@ -287,16 +311,18 @@ security theater without a separate threat decision.
 
 ### T-I18 — Physical-device background delivery, locked-state, energy, and panic-path acceptance
 
-**Amends:** 09 physical-device authentication/network acceptance.
+**Amends:** 09 physical-device authentication/network acceptance and Amendment 17's relay lifecycle
+acceptance.
 **Context budget:** 12 files / 16k tokens plus device evidence.
-**Reads:** Amendment 09 acceptance mapping · `SPEC-ios-client.md` §5, §8, §12.2 · T-I8/T-I9/T-I13/T-I16 acceptance tests · owner device/OS matrix from T-I3.
+**Reads:** Amendment 09 acceptance mapping · Amendment 16 · `SPEC-ios-client.md` §5, §8–§9, §12.2 · T-I8/T-I9/T-I13/T-I16/T-I22 acceptance tests · owner device/OS matrix from T-I3.
 **Do:** On the owner's iPhone and Watch, measure HealthKit observer delivery, BG task drains,
 force-quit behavior, locked-after-first-unlock Data Protection and Secure Enclave signing access,
 notification outcomes, WatchConnectivity outage/recovery, launch/Express/Quick Log timing, and
 overnight battery impact. Prove wrong-host/expired/untrusted certificate rejection, replay rejection,
 revocation, clock failure, key-rotation overlap, and queued-record preservation. Record OS/build,
 evidence timestamps, expected limitations, and status-beacon observations without committing personal
-measurements. Reject permanent socket/audio/location/BLE workarounds. Set a measured energy budget and
+measurements. Reject indefinite background keep-alives and unsupported socket/audio/location/BLE
+workarounds; T-I23 measures the explicitly active relay separately. Set measured energy budgets and
 retry/batch limits; failures name the device state and value.
 **Verify:** `cd "$(git rev-parse --show-toplevel)" && scripts/verify-ios-device-evidence.sh artifacts/ios-stage7-device-acceptance.json`
 
@@ -317,13 +343,15 @@ migration report and keep generation one read-only on any discrepancy.
 
 **Amends:** none.
 **Context budget:** 20 files / 30k tokens plus device/Pi evidence.
-**Reads:** `SPEC-ios-client.md` §12.3 in full · all prior task evidence · server T-X/M3/M4 acceptance outputs · deployment runbooks.
-**Do:** Add one conductor-run suite for all eleven Stage 7 completion criteria: HealthKit parity and
-sub-provenance; denied/absent/stale/rejected paths; offline journal durability and replay no-op;
+**Reads:** `SPEC-ios-client.md` §12.3 in full · Amendment 16 · all prior task evidence including T-I22 · server T-X/M3/M4/M6 acceptance outputs · deployment runbooks.
+**Do:** Add one conductor-run suite for all twelve core Stage 7 completion criteria: HealthKit parity
+and sub-provenance; denied/absent/stale/rejected paths; offline journal durability and replay no-op;
 conflict visibility; watch relay; check-in outcome distinctions; stale/gap viewer; transport/storage
-security; accessibility/timing; Pi alarm independence with phone off; and migration parity. Run a
-bounded beta with rollback and no data-destructive upgrade. Record every unsupported backend feature
-as blocked, not mocked success.
+security; accessibility/timing; Pi alarm independence with phone off; and migration parity; targeted
+and all-active-device APNs delivery with physical-device evidence. If the mobility relay is included in
+the beta, require T-I23 evidence and keep its ambient indicator explicitly separate from emergency
+alerting. Run a bounded beta with rollback and no data-destructive upgrade. Record every unsupported
+backend feature as blocked, not mocked success.
 **Verify:** `cd "$(git rev-parse --show-toplevel)" && PI_HOST="$PI_HOST" scripts/verify-ios-stage7.sh --device-evidence artifacts/ios-stage7-device-acceptance.json --migration-report artifacts/ios-stage7-migration-report.json`
 
 ### T-I21 — Generation-one decommission ledger and deletion of obsolete services
@@ -332,9 +360,33 @@ as blocked, not mocked success.
 **Context budget:** 18 files / 24k tokens.
 **Reads:** T-I0 parity ledger · T-I20 acceptance report · admin T-X6 ledger · generation-one project targets/services named by those ledgers · `SPEC-ios-client.md` §1.2 and §11.
 **Do:** Prove every retained capability has a Stage 7 owner and verified evidence, then remove from
-the new client all BLE sessions, snapshot aggregation/repair, local analysis/reporting, CRDT/restore,
-long-term health/domain mirror, demo seeding, and direct third-party integrations. Preserve only
-accepted fixtures and documented clinical rules. Mark generation one read-only/archived; do not
-delete its repository or original data. Produce a final capability ledger with retained/replaced/
-dropped owner and evidence.
+the new client all legacy BLE sessions, snapshot aggregation/repair, local analysis/reporting,
+CRDT/restore, long-term health/domain mirror, demo seeding, and direct third-party integrations.
+Preserve only the separately accepted T-I23 source relay, fixtures, and documented clinical rules.
+Mark generation one read-only/archived; do not delete its repository or original data. Produce a final
+capability ledger with retained/replaced/dropped owner and evidence.
 **Verify:** `cd "$(git rev-parse --show-toplevel)" && scripts/verify-ios-decommission.sh clients/apple/GEN1-PARITY.yaml artifacts/ios-stage7-acceptance.json && scripts/verify-ios-no-analysis.sh && scripts/verify-ios-no-local-archive.sh`
+
+### T-I23 — Opt-in BLE-to-iPhone-to-LAN relay and ambient indicator contract
+
+**Amends:** Amendment 17; Stage 7's former blanket BLE exclusion.
+**Context budget:** 20 files / 30k tokens plus physical sensor/Pi/LAN/indicator evidence.
+**Reads:** Amendment 17 in full · `SPEC-ios-client.md` §§1–2, 5–8, and 12 · this change's `design.md`
+§§2, 6, 8, and 12 · supported sensor protocol/decoder contracts · Amendment 09/10 enrollment and
+LAN transport · Pi ingest/registry contracts · hardware/indicator design once selected.
+**Do:** Implement a separately named opt-in CoreBluetooth relay for one supported physiological
+sensor and the existing BLE nRF52840 NeoPixel bracelet. Start with the existing authenticated
+private-LAN client transport: send small bounded source-frame batches and return the Pi's latest
+condition in the response. Preserve source identity, BLE/relay session identity, monotonic sequence,
+phone receipt timestamp, raw payload, and explicit acknowledgement/rejection. Mirror the Pi condition
+to the bracelet with a compact version/generation/sequence/timestamp/validity/condition message, such as
+`AW2,1,AB12,1042,1790085000,15,GREEN,FRESH`, over Nordic UART or another simple writable GATT
+characteristic. Reduce validity by relay delay; never restart the full TTL on receipt.
+The bracelet independently expires stale updates. Do not create a second iPhone authority or derive
+identity from host arrival time. The ambient indicator is not an emergency detector or sole alarm path.
+Defer Wi-Fi bracelet hardware and any persistent stream until a specific measured requirement is
+accepted. Measure simultaneous BLE connections, foreground responsiveness, locked/background behavior,
+Core Bluetooth restoration, EMAY keep-alive behavior, Polar H10 behavior, range, roaming, interruption
+and recovery, battery, bracelet expiry, and phone-absent Pi alarm independence. Support claims are
+limited to the measured lifecycle modes.
+**Verify:** `cd "$(git rev-parse --show-toplevel)" && scripts/verify-ios-ble-relay.sh artifacts/ios-ble-relay-evidence.json && scripts/verify-ios-no-analysis.sh && scripts/scan-public-info.sh`

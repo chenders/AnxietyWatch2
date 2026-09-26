@@ -133,9 +133,10 @@ core, with the predictable result. See §8b.
   itself a degradable condition for any source expected to produce new data.
 - **Silence is a reportable event.** The phone cannot notify about a sync it never woke up to
   attempt. **"Source X has been silent for N intervals" is a condition the Pi owns**, and today it
-  exists nowhere in either generation. It surfaces on the Overview and the bedside display; it does
-  not need to be a push notification, and specifically must not be delivered only to the device whose
-  silence is being reported.
+  exists nowhere in either generation. It surfaces on the Overview and the bedside display. Per
+  Amendment 14, phone silence escalates after two missed expected intervals through the configured
+  outbound email channel, with one transition notice, coalesced hourly reminders, and one recovery
+  notice; it is never sent through APNs to the phone being reported.
 
 ### 2.3b Writes are idempotent on content
 
@@ -162,6 +163,15 @@ single property:
 | **Same id, identical content** | No-op. Return the existing record and the same status as the original create |
 | **Same id, *different* content** | **Not a replay — an edit or a conflict.** It is resolved deliberately: the write is rejected with a distinct conflict status, recorded as `rejected` on its attempt, and surfaced in the console for operator resolution — never silently overwritten. This is exactly what gen-1 does wrong: `ON CONFLICT (timestamp) DO UPDATE` cannot tell the two cases apart, so a second device's edit destroys the first with no signal |
 | **Same content, no id** | Rejected. Content-hash identity is tempting and wrong here — two genuinely separate journal entries with the same severity and empty notes are not the same event |
+
+For the versioned `domain` schema, an intentional edit is a new client UUID carrying
+`supersedes_id`; deletion is a new tombstone row carrying `tombstone_target_id`. Neither action
+updates or deletes the accepted row. A same-ID/different-content submission is retained in the
+conflict ledger with its incoming payload and actor/time evidence until an explicit resolution
+records the decision. Relationship rows use the same client identity and version rules for journal,
+medication/dose/follow-up, prescription/pharmacy, profile, therapy/conflict, lab, song/tag, and
+prompt-selection links. Song payloads retain manually editable lyrics; the Pi does not inherit an
+unowned external lyrics scraper from gen-1.
 
 **Scope.** The client-generated id applies to **domain records** — journal entries, songs, tags,
 severity ratings, doses. Pushed platform-store samples keep their ingest identity
@@ -486,6 +496,10 @@ feeds the analysis context block — and it is the strongest part of gen-1's exi
   entire analysis pipeline; a typo is accepted, displayed back as correct, and silently falls back.
 - **An audit log, which does not currently exist.** Key revocation, profile edits, destructive
   actions, and job runs, each with actor and timestamp.
+- **Lyrics enrichment is operator-controlled.** Show Genius.com key presence and last-four only; never
+  echo the key after entry. The global automatic-enrichment control is on by default when a key is
+  present. Without a key it is forced off and disabled, with a guided explanation of how to obtain a
+  Genius.com key and place it in the Pi secret/configuration store.
 
 ---
 
@@ -518,6 +532,8 @@ rather than vanishing from a lock screen.
   redundant copy of an alarm that has already fired locally.
 - **Rate-limited and coalesced.** A source that has been silent for nine days must produce one
   message, not one per check. Digest by default; immediate only for state changes that matter.
+  Amendment 14 specifies the phone-silence policy: two missed expected intervals before the
+  transition email, reminders no more often than hourly, and one recovery email.
 - **The failure is visible.** A send that fails leaves an attempt record (§2.3) and degrades the
   channel's state. A notification channel that silently stops is worse than none, because it is
   trusted.
@@ -605,6 +621,32 @@ the same ledger as a real one and clearly marked as a test.
 alerts is the expected steady state for a working alarm *and* the signature of a completely broken
 one; only a successful test discriminates them.
 
+### 4.10a Operator-directed APNs messages
+
+[Amendment 16](../specs/2026-09-18-amendment-16-operator-directed-apns.md) adds a separate
+operator-directed message capability. It is not the local klaxon path, is not a replacement for
+Amendment 14's independent phone-silence email, and must never acknowledge or clear an alarm.
+
+The operator may target one active device, all active devices for one user, or every active,
+non-revoked phone registered with this Pi/server instance. The console resolves the target before
+send, displays the measured recipient count, and requires explicit confirmation for an all-device
+fanout. A zero-recipient result is visible and is not a successful delivery.
+
+The mobile API registers each device's APNs environment, token, app/build identity, owning user and
+device identity, authorization facts, first/last seen times, and revocation state. The Pi stores
+provider credentials only in protected configuration; the console shows presence and last-four
+metadata, never the credential. Invalid or revoked tokens are excluded from later fanout and their
+provider reason is recorded.
+
+Each send has an immutable message ID, target snapshot, audit actor, payload class, request and
+provider outcome, token invalidations, retry state, and terminal state. APNs acceptance, device
+delivery, display, and acknowledgement are distinct facts. Test sends are separately confirmed,
+audited, rate-limited, and marked as tests; they do not satisfy real-alert delivery evidence.
+Messages contain no HealthKit values, journal text, medication details, credentials, or enrollment
+material. Protected content is fetched by the app only after unlock. Missing configuration,
+missing authorization, stale registration, and never-tested state render as `UNKNOWN` or
+`NOT_CONFIGURED`, never as healthy delivery.
+
 ## 5. Cross-cutting requirements
 
 **Freshness on everything.** §2.2. No exceptions, including inside tables.
@@ -633,7 +675,9 @@ worst exactly on the high-severity signals, a symbol-only column with no text al
 
 Capabilities that exist **today** and have no home in the gen-2 plan. Each needs an owner before
 generation 1 is decommissioned — and the checklist is worth writing **now, while gen-1 is still
-running and inspectable**, not after the box is off.
+running and inspectable**, not after the box is off. The assigned evidence ledger is
+[`2026-09-17-gen1-capability-ledger.md`](../specs/2026-09-17-gen1-capability-ledger.md); it is the
+gate for decommissioning rather than a claim that the migration is complete.
 
 | Capability | Risk if dropped |
 |---|---|
@@ -911,12 +955,15 @@ early spends judgement on incomplete information and then anchors everything aft
 
 ## 10. Open questions
 
-1. **Where does the phone-silence notice escalate?** It is the Pi's job (§2.3), but the Pi notifying
-   about the phone that also carries Pi notifications needs a defined escalation path that does not
-   loop.
+1. **Resolved by Amendment 14:** phone silence escalates through Pi-owned outbound email after two
+   missed expected intervals, with coalesced hourly reminders and one recovery notice; APNs is not
+   used because notifying the phone being reported would create a loop.
 2. **Retention.** Several high-volume tables have no pruning job in either generation. Does the
    console show retention state, trigger compaction, or both?
-3. **How much of Records migrates at all?** It is the least machine-ish part of the console and the
-   most personal. It may belong with the health viewer rather than here.
+3. **How much of Records migrates at all?** **Decided for the iPhone-first MVP:** journal and
+   anxiety records migrate into the same PostgreSQL database under a separate `domain` schema. The
+   iPhone health viewer owns capture, editing, history, and deletion; the console owns operational
+   conflict review, recovery, audit, and administration. Medication, check-in, and other legacy
+   records remain deferred until separately scoped.
 4. **Does the SQL pane ship in v1?** S6 makes it safe, but the same discipline argues that a console
    answering the real questions removes the need for it.

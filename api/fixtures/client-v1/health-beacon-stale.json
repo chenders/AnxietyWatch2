@@ -1,0 +1,11 @@
+{
+  "beacon_id": "00000000-0000-7000-8000-000000000327",
+  "asserted_at": "2025-01-14T07:10:00.000Z",
+  "changed_at": "2025-01-14T07:10:00.000Z",
+  "app_version": "0.1.0-fixture",
+  "registry_sha256": "fixture-registry-digest",
+  "outbox_count": 1,
+  "oldest_outbox_age_s": 86400,
+  "last_server_ack_at": "2025-01-14T07:09:55.000Z",
+  "types": [{"healthkit_type":"HKQuantityTypeIdentifierHeartRate","configured":true,"authorization_request_outcome":"requested","observer_registration_outcome":"registered","background_delivery_outcome":"enabled","last_query_outcome":"succeeded","last_query_at":"2025-01-14T07:09:40.000Z","last_matching_sample_at":"2025-01-14T07:09:39.000Z","last_pi_ack_at":"2025-01-14T07:09:55.000Z"}]
+}

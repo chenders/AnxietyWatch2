@@ -1,0 +1,40 @@
+:root{
+  --enrollment-panel:#192129;
+  --enrollment-border:#68798a;
+  --enrollment-muted:#b7c7d5;
+  --enrollment-warning:#ffda85;
+}
+.enrollment-panel{
+  max-width:48rem;
+  margin:0 0 1.5rem;
+  padding:1.5rem;
+  border:1px solid var(--enrollment-border);
+  border-radius:.4rem;
+  background:var(--enrollment-panel);
+}
+.enrollment-panel h2{margin-top:0}
+.enrollment-panel p{max-width:42rem}
+.enrollment-panel form{display:grid;gap:.75rem}
+.enrollment-panel label,.enrollment-panel legend{font-weight:700}
+.enrollment-panel input[type=password],
+.enrollment-panel input[type=text],
+.enrollment-panel textarea{
+  width:100%;
+  padding:.75rem;
+  border:1px solid var(--enrollment-border);
+  border-radius:.3rem;
+  background:#10151b;
+  color:#f2f5f7;
+  font:inherit;
+}
+.enrollment-panel textarea{min-height:16rem;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.enrollment-panel button{width:max-content;padding:.65rem .9rem;border:1px solid #aebdca;border-radius:.3rem;background:#2b3947;color:#fff;font:inherit;font-weight:700;cursor:pointer}
+.enrollment-panel button:hover{background:#3b4e60}
+.enrollment-panel fieldset{display:grid;gap:.65rem;margin:1rem 0;padding:1rem;border:1px solid var(--enrollment-border);border-radius:.3rem}
+.enrollment-panel fieldset label{font-weight:400}
+.enrollment-panel input[type=checkbox]{inline-size:1.2rem;block-size:1.2rem;accent-color:#7ee4ad;vertical-align:middle;margin-inline-end:.5rem}
+.artifact-actions{display:flex;flex-wrap:wrap;gap:.75rem;margin-top:.75rem}
+.artifact-actions button:last-child{background:transparent}
+.warning{color:var(--enrollment-warning)}
+.status-message{min-height:1.5rem;max-width:48rem}
+@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}

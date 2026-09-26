@@ -47,6 +47,12 @@ public struct ClientWriteBatch: Codable, Equatable, Sendable {
   public let recordedAt: String
   public let items: [ClientWriteItem]
 
+  public init(batchID: UUID, recordedAt: String, items: [ClientWriteItem]) {
+    self.batchID = batchID
+    self.recordedAt = recordedAt
+    self.items = items
+  }
+
   enum CodingKeys: String, CodingKey {
     case batchID = "batch_id"
     case recordedAt = "recorded_at"
@@ -60,9 +66,194 @@ public struct ClientWriteItem: Codable, Equatable, Sendable {
   public let schemaVersion: UInt
   public let content: JSONValue
 
+  public init(id: UUID, recordClass: String, schemaVersion: UInt, content: JSONValue) {
+    self.id = id
+    self.`class` = recordClass
+    self.schemaVersion = schemaVersion
+    self.content = content
+  }
+
   enum CodingKeys: String, CodingKey {
     case id, `class`, content
     case schemaVersion = "schema_version"
+  }
+}
+
+/// Operational phone evidence; it contains no physiological measurement values.
+public struct HealthBeaconRequest: Codable, Equatable, Sendable {
+  public let beaconID: UUID
+  public let assertedAt: String
+  public let changedAt: String
+  public let appVersion: String
+  public let registrySHA256: String
+  public let outboxCount: UInt64
+  public let oldestOutboxAgeS: UInt64?
+  public let lastServerAckAt: String?
+  public let types: [HealthTypeFact]
+
+  public init(
+    beaconID: UUID,
+    assertedAt: String,
+    changedAt: String,
+    appVersion: String,
+    registrySHA256: String,
+    outboxCount: UInt64,
+    oldestOutboxAgeS: UInt64?,
+    lastServerAckAt: String?,
+    types: [HealthTypeFact]
+  ) {
+    self.beaconID = beaconID
+    self.assertedAt = assertedAt
+    self.changedAt = changedAt
+    self.appVersion = appVersion
+    self.registrySHA256 = registrySHA256
+    self.outboxCount = outboxCount
+    self.oldestOutboxAgeS = oldestOutboxAgeS
+    self.lastServerAckAt = lastServerAckAt
+    self.types = types
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case beaconID = "beacon_id"
+    case assertedAt = "asserted_at"
+    case changedAt = "changed_at"
+    case appVersion = "app_version"
+    case registrySHA256 = "registry_sha256"
+    case outboxCount = "outbox_count"
+    case oldestOutboxAgeS = "oldest_outbox_age_s"
+    case lastServerAckAt = "last_server_ack_at"
+    case types
+  }
+}
+
+/// Per-HealthKit-type operational evidence. Authorization outcomes never claim read access granted.
+public struct HealthTypeFact: Codable, Equatable, Sendable {
+  public let healthKitType: String
+  public let configured: Bool
+  public let authorizationRequestOutcome: String?
+  public let observerRegistrationOutcome: String?
+  public let backgroundDeliveryOutcome: String?
+  public let lastQueryOutcome: String?
+  public let lastQueryAt: String?
+  public let lastMatchingSampleAt: String?
+  public let lastPiAckAt: String?
+
+  public init(
+    healthKitType: String,
+    configured: Bool,
+    authorizationRequestOutcome: String?,
+    observerRegistrationOutcome: String?,
+    backgroundDeliveryOutcome: String?,
+    lastQueryOutcome: String?,
+    lastQueryAt: String?,
+    lastMatchingSampleAt: String?,
+    lastPiAckAt: String?
+  ) {
+    self.healthKitType = healthKitType
+    self.configured = configured
+    self.authorizationRequestOutcome = authorizationRequestOutcome
+    self.observerRegistrationOutcome = observerRegistrationOutcome
+    self.backgroundDeliveryOutcome = backgroundDeliveryOutcome
+    self.lastQueryOutcome = lastQueryOutcome
+    self.lastQueryAt = lastQueryAt
+    self.lastMatchingSampleAt = lastMatchingSampleAt
+    self.lastPiAckAt = lastPiAckAt
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case healthKitType = "healthkit_type"
+    case configured
+    case authorizationRequestOutcome = "authorization_request_outcome"
+    case observerRegistrationOutcome = "observer_registration_outcome"
+    case backgroundDeliveryOutcome = "background_delivery_outcome"
+    case lastQueryOutcome = "last_query_outcome"
+    case lastQueryAt = "last_query_at"
+    case lastMatchingSampleAt = "last_matching_sample_at"
+    case lastPiAckAt = "last_pi_ack_at"
+  }
+}
+
+/// Result of admitting a status beacon.
+public struct HealthBeaconResponse: Codable, Equatable, Sendable {
+  public let apiVersion: String
+  public let beaconID: UUID
+  public let status: String
+  public let serverTime: String
+
+  enum CodingKeys: String, CodingKey {
+    case apiVersion = "api_version"
+    case beaconID = "beacon_id"
+    case status
+    case serverTime = "server_time"
+  }
+}
+
+public struct ClientProjectionQuery: Codable, Equatable, Hashable, Sendable {
+  public let metric: String?
+  public let windowStart: String?
+  public let windowEnd: String?
+  public let cursor: String?
+
+  public init(metric: String?, windowStart: String?, windowEnd: String?, cursor: String?) {
+    self.metric = metric
+    self.windowStart = windowStart
+    self.windowEnd = windowEnd
+    self.cursor = cursor
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case metric
+    case windowStart = "window_start"
+    case windowEnd = "window_end"
+    case cursor
+  }
+}
+
+public struct ClientProjectionPage: Codable, Equatable, Sendable {
+  public let apiVersion: String
+  public let metric: String
+  public let observedAt: String?
+  public let generatedAt: String
+  public let points: [ClientProjectionPoint]
+  public let missingIntervals: [[String]]
+  public let nextCursor: String?
+
+  public init(
+    apiVersion: String,
+    metric: String,
+    observedAt: String?,
+    generatedAt: String,
+    points: [ClientProjectionPoint],
+    missingIntervals: [[String]],
+    nextCursor: String?
+  ) {
+    self.apiVersion = apiVersion
+    self.metric = metric
+    self.observedAt = observedAt
+    self.generatedAt = generatedAt
+    self.points = points
+    self.missingIntervals = missingIntervals
+    self.nextCursor = nextCursor
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case apiVersion = "api_version"
+    case metric
+    case observedAt = "observed_at"
+    case generatedAt = "generated_at"
+    case points
+    case missingIntervals = "missing_intervals"
+    case nextCursor = "next_cursor"
+  }
+}
+
+public struct ClientProjectionPoint: Codable, Equatable, Sendable {
+  public let timestamp: String
+  public let value: Double?
+
+  public init(timestamp: String, value: Double?) {
+    self.timestamp = timestamp
+    self.value = value
   }
 }
 

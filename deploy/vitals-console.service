@@ -11,9 +11,15 @@ RestartSec=3
 User=vitals
 Group=vitals
 
-# Interim SPEC-admin-console §9c posture: LAN reads are permitted until the
-# authenticated operations milestone introduces mutation endpoints.
-Environment=VITALS_CONSOLE_BIND=0.0.0.0:8480
+# Amendment 10: the first draft serves the owner-controlled private LAN over
+# HTTP. Bind to the Pi's configured private address, never to all interfaces.
+Environment=VITALS_CONSOLE_BIND=192.168.1.48:8480
+Environment=VITALS_CONSOLE_PRIVATE_LAN=1
+Environment=VITALS_CONSOLE_TLS_TERMINATED=0
+Environment=VITALS_CONSOLE_TRUST_PROXY=0
+# Set the LAN host and Argon2id verifier in this root-only file.
+Environment=VITALS_CONSOLE_ADMIN_HOST=192.168.1.48:8480
+EnvironmentFile=-/etc/vitals/vitals-console.env
 Environment=VITALSD_SOCKET=/run/vitals/vitalsd.sock
 Environment=DATABASE_URL=host=/var/run/postgresql user=vitals dbname=vitals
 # systemd consumes one percent sign; the process receives `%2F` URL escapes.

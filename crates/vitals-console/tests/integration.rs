@@ -5,7 +5,7 @@
 //! **fails** — a broken URL must not produce a green suite (AGENTS.md:
 //! guards must say why).
 //!
-//! These tests require the `attempts`, `domain_records`, and
+//! These tests require the `attempts`, `domain.records`, and
 //! `envelope_clients` tables to exist. Apply the deploy scripts from `db/`
 //! before running.
 
@@ -21,6 +21,8 @@ use serde::Serialize;
 use sqlx::PgPool;
 use std::env;
 use uuid::Uuid;
+use vitals_console::db::{self, DomainRecordOutcome};
+use vitals_console::models::DomainRecordPayload;
 
 // ---- Helpers ----
 
@@ -44,12 +46,21 @@ async fn require_test_db() -> Option<PgPool> {
     }
 }
 
-/// Truncate the three tables between tests so they are independent.
+/// Clear the append-only fixtures between tests so they are independent.
 async fn truncate_all(pool: &PgPool) {
     let _ = sqlx::query("DELETE FROM envelope_clients")
         .execute(pool)
         .await;
-    let _ = sqlx::query("DELETE FROM domain_records")
+    let _ = sqlx::query("DELETE FROM domain.record_audit")
+        .execute(pool)
+        .await;
+    let _ = sqlx::query("DELETE FROM domain.record_conflicts")
+        .execute(pool)
+        .await;
+    let _ = sqlx::query("DELETE FROM domain.record_links")
+        .execute(pool)
+        .await;
+    let _ = sqlx::query("DELETE FROM domain.records")
         .execute(pool)
         .await;
     let _ = sqlx::query("DELETE FROM attempts").execute(pool).await;
@@ -68,13 +79,17 @@ fn content_sha256(content: &serde_json::Value) -> [u8; 32] {
 #[derive(Serialize)]
 struct EnvelopePayload {
     class: String,
-    record: DomainRecordPayload,
+    record: FixtureDomainRecordPayload,
 }
 
 #[derive(Serialize)]
-struct DomainRecordPayload {
+struct FixtureDomainRecordPayload {
     id: Uuid,
     kind: String,
+    schema_version: u32,
+    recorded_at: String,
+    supersedes_id: Option<Uuid>,
+    tombstone_target_id: Option<Uuid>,
     content: serde_json::Value,
 }
 
@@ -218,7 +233,7 @@ async fn test_idempotent_replay_same_hash() {
 
     // Insert.
     sqlx::query(
-        "INSERT INTO domain_records (id, kind, content, content_sha256, created_at, updated_at) \
+        "INSERT INTO domain.records (id, kind, content, content_sha256, created_at, updated_at) \
          VALUES ($1, $2, $3, $4, now(), now())",
     )
     .bind(id)
@@ -231,7 +246,7 @@ async fn test_idempotent_replay_same_hash() {
 
     // Now query: same id, same hash → should return the existing row.
     let existing: (Uuid, Vec<u8>, String, serde_json::Value) = sqlx::query_as(
-        "SELECT id, content_sha256, kind, content FROM domain_records WHERE id = $1",
+        "SELECT id, content_sha256, kind, content FROM domain.records WHERE id = $1",
     )
     .bind(id)
     .fetch_one(&pool)
@@ -266,7 +281,7 @@ async fn test_idempotent_conflict_different_hash() {
 
     // Insert first version.
     sqlx::query(
-        "INSERT INTO domain_records (id, kind, content, content_sha256, created_at, updated_at) \
+        "INSERT INTO domain.records (id, kind, content, content_sha256, created_at, updated_at) \
          VALUES ($1, $2, $3, $4, now(), now())",
     )
     .bind(id)
@@ -279,7 +294,7 @@ async fn test_idempotent_conflict_different_hash() {
 
     // Verify the stored record still has content1 (not overwritten).
     let stored: (serde_json::Value,) =
-        sqlx::query_as("SELECT content FROM domain_records WHERE id = $1")
+        sqlx::query_as("SELECT content FROM domain.records WHERE id = $1")
             .bind(id)
             .fetch_one(&pool)
             .await
@@ -289,7 +304,7 @@ async fn test_idempotent_conflict_different_hash() {
 
     // Try to insert with different content — should be rejected (no overwrite).
     let conflict_result = sqlx::query(
-        "INSERT INTO domain_records (id, kind, content, content_sha256, created_at, updated_at) \
+        "INSERT INTO domain.records (id, kind, content, content_sha256, created_at, updated_at) \
          VALUES ($1, $2, $3, $4, now(), now()) \
          ON CONFLICT (id) DO NOTHING",
     )
@@ -305,7 +320,7 @@ async fn test_idempotent_conflict_different_hash() {
 
     // Verify content is still content1.
     let final_stored: (serde_json::Value,) =
-        sqlx::query_as("SELECT content FROM domain_records WHERE id = $1")
+        sqlx::query_as("SELECT content FROM domain.records WHERE id = $1")
             .bind(id)
             .fetch_one(&pool)
             .await
@@ -327,7 +342,7 @@ async fn test_new_id_insert() {
     let hash = content_sha256(&content);
 
     let result = sqlx::query(
-        "INSERT INTO domain_records (id, kind, content, content_sha256, created_at, updated_at) \
+        "INSERT INTO domain.records (id, kind, content, content_sha256, created_at, updated_at) \
          VALUES ($1, $2, $3, $4, now(), now())",
     )
     .bind(id)
@@ -340,12 +355,113 @@ async fn test_new_id_insert() {
     assert!(result.is_ok());
 
     // Verify it was inserted.
-    let count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM domain_records WHERE id = $1")
+    let count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM domain.records WHERE id = $1")
         .bind(id)
         .fetch_one(&pool)
         .await
         .unwrap();
     assert_eq!(count.0, 1);
+}
+
+// ---- Versioning and conflict evidence ----
+
+fn domain_payload(id: Uuid, content: serde_json::Value) -> DomainRecordPayload {
+    DomainRecordPayload {
+        id,
+        kind: "journal_entry".to_string(),
+        schema_version: 1,
+        recorded_at: "2026-01-15T12:30:00Z".to_string(),
+        supersedes_id: None,
+        tombstone_target_id: None,
+        content,
+    }
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn test_domain_versions_and_tombstones_are_append_only() {
+    let Some(pool) = require_test_db().await else {
+        return;
+    };
+    truncate_all(&pool).await;
+
+    let first_id = Uuid::from_u128(0x100);
+    let first = domain_payload(first_id, serde_json::json!({"anxiety": 4}));
+    let created = db::process_domain_record(&pool, &first, "test-actor")
+        .await
+        .unwrap();
+    assert!(matches!(created, DomainRecordOutcome::Created { .. }));
+
+    let edit_id = Uuid::from_u128(0x101);
+    let mut edit = domain_payload(edit_id, serde_json::json!({"anxiety": 6}));
+    edit.supersedes_id = Some(first_id);
+    let versioned = db::process_domain_record(&pool, &edit, "test-actor")
+        .await
+        .unwrap();
+    assert!(matches!(versioned, DomainRecordOutcome::Created { .. }));
+
+    let tombstone_id = Uuid::from_u128(0x102);
+    let mut tombstone = domain_payload(tombstone_id, serde_json::json!({"reason": "removed"}));
+    tombstone.tombstone_target_id = Some(first_id);
+    let tombstoned = db::process_domain_record(&pool, &tombstone, "test-actor")
+        .await
+        .unwrap();
+    assert!(matches!(tombstoned, DomainRecordOutcome::Created { .. }));
+
+    let count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM domain.records")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(count.0, 3);
+    let events: Vec<(String,)> =
+        sqlx::query_as("SELECT event_kind FROM domain.record_audit ORDER BY id")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        events.iter().map(|row| row.0.as_str()).collect::<Vec<_>>(),
+        ["created", "versioned", "tombstoned"]
+    );
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn test_domain_conflict_preserves_incoming_evidence() {
+    let Some(pool) = require_test_db().await else {
+        return;
+    };
+    truncate_all(&pool).await;
+
+    let id = Uuid::from_u128(0x200);
+    let first = domain_payload(id, serde_json::json!({"anxiety": 3}));
+    db::process_domain_record(&pool, &first, "test-actor")
+        .await
+        .unwrap();
+    let conflicting = domain_payload(id, serde_json::json!({"anxiety": 9}));
+    let outcome = db::process_domain_record(&pool, &conflicting, "other-actor")
+        .await
+        .unwrap();
+    assert!(
+        matches!(outcome, DomainRecordOutcome::Conflict { id: conflict_id } if conflict_id == id)
+    );
+
+    let stored: (serde_json::Value,) =
+        sqlx::query_as("SELECT content FROM domain.records WHERE id = $1")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(stored.0, first.content);
+    let conflict: (serde_json::Value, String, String) = sqlx::query_as(
+        "SELECT incoming_content, actor, status FROM domain.record_conflicts WHERE record_id = $1",
+    )
+    .bind(id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(conflict.0, conflicting.content);
+    assert_eq!(conflict.1, "other-actor");
+    assert_eq!(conflict.2, "open");
 }
 
 // ---- Attempt-before-work tests (spec §2.3, criterion 3) ----
@@ -566,9 +682,13 @@ fn test_effect_serialization() {
 fn test_envelope_payload_roundtrip() {
     let payload = EnvelopePayload {
         class: "domain_record".to_string(),
-        record: DomainRecordPayload {
+        record: FixtureDomainRecordPayload {
             id: Uuid::now_v7(),
             kind: "test".to_string(),
+            schema_version: 1,
+            recorded_at: "2026-01-01T00:00:00Z".to_string(),
+            supersedes_id: None,
+            tombstone_target_id: None,
             content: serde_json::json!({"x": 1}),
         },
     };
@@ -578,4 +698,42 @@ fn test_envelope_payload_roundtrip() {
     assert!(back["record"]["id"].is_string());
     assert_eq!(back["record"]["kind"], "test");
     assert_eq!(back["record"]["content"]["x"], 1);
+}
+
+#[tokio::test]
+async fn test_override_and_mute_api_fails_closed() {
+    let resp = vitals_console::handlers::operator_override_handler().await;
+    assert_eq!(resp.0, axum::http::StatusCode::FORBIDDEN);
+    assert_eq!(
+        resp.1.error,
+        "mutation blocked: auth interface not yet available"
+    );
+}
+
+#[tokio::test]
+async fn test_override_source_declaration_mute_read() {
+    let Some(pool) = require_test_db().await else {
+        return;
+    };
+
+    // Make sure we have a source
+    let _ = sqlx::query("INSERT INTO vitals_source (id, name, transport) VALUES (999, 'test_source', 'ble') ON CONFLICT DO NOTHING")
+        .execute(&pool)
+        .await;
+
+    let _ = sqlx::query("INSERT INTO source_declarations (source_id, is_configured) VALUES (999, false) ON CONFLICT (source_id) DO UPDATE SET is_configured = false")
+        .execute(&pool)
+        .await;
+
+    let _ = sqlx::query("INSERT INTO health_mutes (source_id, muted_by, muted_until) VALUES (999, 'test_actor', NOW() + INTERVAL '1 day')")
+        .execute(&pool)
+        .await;
+
+    let cm = vitals_console::db::get_config_and_mutes(&pool)
+        .await
+        .unwrap();
+    let config = cm.get(&999).unwrap();
+    assert!(!config.is_configured);
+    assert!(config.muted_until.is_some());
+    assert_eq!(config.muted_by.as_deref(), Some("test_actor"));
 }

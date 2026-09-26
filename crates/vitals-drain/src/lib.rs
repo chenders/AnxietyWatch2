@@ -186,6 +186,106 @@ pub fn discover(dir: &Path) -> Result<Vec<PathBuf>, DrainError> {
     Ok(paths)
 }
 
+fn all_zero(file: &mut File, start: u64, end: u64) -> io::Result<bool> {
+    file.seek(SeekFrom::Start(start))?;
+    let mut remaining = end.saturating_sub(start);
+    let mut buffer = [0_u8; 4096];
+    while remaining > 0 {
+        let chunk_size = remaining.min(buffer.len() as u64);
+        let length = usize::try_from(chunk_size).map_err(|_| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "padding length does not fit usize",
+            )
+        })?;
+        let chunk = buffer.get_mut(..length).ok_or_else(|| {
+            io::Error::new(io::ErrorKind::InvalidData, "padding chunk exceeds buffer")
+        })?;
+        file.read_exact(chunk)?;
+        if chunk.iter().any(|byte| *byte != 0) {
+            return Ok(false);
+        }
+        remaining -= chunk_size;
+    }
+    Ok(true)
+}
+
+/// Finds the end of complete COPY rows and ignores the zero-filled tail left
+/// by older spool writers. A nonzero malformed suffix remains a hard failure;
+/// it must never be silently skipped.
+fn complete_payload_length(file: &mut File, length: u64) -> io::Result<u64> {
+    let mut position = FIRST_ROW_OFFSET;
+    loop {
+        if position == length {
+            return Ok(length);
+        }
+        if length.saturating_sub(position) < 2 {
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "spool segment ends inside a COPY row header",
+            ));
+        }
+        file.seek(SeekFrom::Start(position))?;
+        let mut count = [0_u8; 2];
+        file.read_exact(&mut count)?;
+        let fields = i16::from_be_bytes(count);
+        position += 2;
+        if fields == -1 {
+            if all_zero(file, position, length)? {
+                return Ok(position - 2);
+            }
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "spool segment contains a COPY trailer before nonzero data",
+            ));
+        }
+        if fields == 0 && all_zero(file, position, length)? {
+            return Ok(position - 2);
+        }
+        if fields != 9 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("spool row field count is {fields}, expected 9"),
+            ));
+        }
+        for _ in 0..fields {
+            if length.saturating_sub(position) < 4 {
+                return Err(io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    "spool segment ends inside a COPY field length",
+                ));
+            }
+            file.seek(SeekFrom::Start(position))?;
+            let mut field_length = [0_u8; 4];
+            file.read_exact(&mut field_length)?;
+            let field_length = i32::from_be_bytes(field_length);
+            position += 4;
+            if field_length < 0 {
+                if field_length != -1 {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!("spool field length is {field_length}, expected -1 or nonnegative"),
+                    ));
+                }
+                continue;
+            }
+            let field_length = u64::try_from(field_length).map_err(|_| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "spool field length conversion failed",
+                )
+            })?;
+            if field_length > length.saturating_sub(position) {
+                return Err(io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    "spool segment ends inside a COPY field",
+                ));
+            }
+            position += field_length;
+        }
+    }
+}
+
 /// Opens and exclusively locks one segment and its offset file.
 ///
 /// # Errors
@@ -239,6 +339,7 @@ pub fn open_segment(path: &Path) -> Result<Segment, DrainError> {
         )
         .into());
     }
+    let length = complete_payload_length(&mut file, length)?;
     let name = path
         .file_name()
         .and_then(|n| n.to_str())
@@ -516,6 +617,21 @@ mod tests {
         let path = spool.segment_path().to_path_buf();
         drop(spool);
         path
+    }
+
+    #[test]
+    fn trims_zero_filled_tail_from_legacy_segment() {
+        let d = tempfile::tempdir().expect("tempdir");
+        let path = published_segment(d.path());
+        let expected = fs::metadata(&path).expect("metadata").len();
+        let file = OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .expect("open for padding");
+        file.set_len(expected + 430).expect("add legacy padding");
+        drop(file);
+        let segment = open_segment(&path).expect("open padded segment");
+        assert_eq!(segment.length, expected);
     }
 
     #[test]

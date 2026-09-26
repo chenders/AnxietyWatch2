@@ -165,6 +165,7 @@ fn main() -> ExitCode {
                 eprintln!(
                     "vitals-spool-drain: {e}; retrying in 30 seconds without advancing offset"
                 );
+                eprintln!("vitals-spool-drain: error_detail={e:?}");
                 thread::sleep(Duration::from_secs(30));
             }
         }
