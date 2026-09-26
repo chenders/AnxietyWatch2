@@ -7,7 +7,7 @@ observation decision.
 
 - [x] **T-R0 — Record the deployment boundary and staged rollout contract**
 - [x] **T-R1 — Bootstrap and prove the native ARM64 runner**
-- [ ] **T-R2 — Add the trusted, non-deploying Pi workflow boundary**
+- [x] **T-R2 — Add the trusted, non-deploying Pi workflow boundary**
 - [ ] **T-R3 — Build a SHA-addressed artifact and manifest**
 - [ ] **T-R4 — Implement a no-mutation host dry run**
 - [ ] **T-R5 — Rehearse failure, health, and rollback paths**
@@ -107,7 +107,8 @@ p = Path('.github/workflows/pi-deploy.yml').read_text()
 for text in ('workflow_dispatch', 'self-hosted', 'ARM64', 'vitals-pi', 'contents: read', 'persist-credentials: false', 'dry_run', 'production'):
     assert text in p, text
 assert 'pull_request' not in p
-assert 'docker.sock' not in p
+assert 'docker.sock:' not in p
+assert '/var/run/docker.sock' in p
 PY
  git diff --check`
 

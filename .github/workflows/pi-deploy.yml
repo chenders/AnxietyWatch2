@@ -1,0 +1,76 @@
+name: Pi delivery gate
+
+# This is the build-only bridge between the runner smoke proof and the future
+# staged deploy. It intentionally cannot activate a release yet.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'Cargo.toml'
+      - 'rust-toolchain.toml'
+      - 'crates/**'
+      - 'deploy/**'
+      - 'scripts/**'
+      - 'vitals/**'
+      - '.github/workflows/pi-deploy.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pi-delivery-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-only:
+    runs-on: [self-hosted, linux, ARM64, vitals-pi]
+    timeout-minutes: 30
+    steps:
+      - name: Check out the exact commit
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          clean: true
+
+      - name: Verify checkout identity and runner boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          test -z "$(git status --porcelain)"
+          test "$(uname -s)" = Linux
+          test "$(uname -m)" = aarch64
+          test ! -e /var/run/docker.sock || test ! -r /var/run/docker.sock
+
+      - name: Verify pinned Rust toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup run 1.97.1 rustc --version
+          rustup run 1.97.1 cargo --version
+          rustup run 1.97.1 rustfmt --version
+          rustup run 1.97.1 cargo clippy --version
+
+      - name: Run build-only checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup run 1.97.1 cargo fmt --all -- --check
+          rustup run 1.97.1 cargo test -p vitals-decode
+
+      - name: Publish non-deployment result
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '## Pi delivery gate'
+            echo
+            echo "- Commit: \`${GITHUB_SHA}\`"
+            echo "- Mode: \`build-only\`"
+            echo "- dry_run: \`false (T-R4 not implemented)\`"
+            echo "- Protected production environment: \`not used by build-only job\`"
+            echo "- Activated: \`false\`"
+            echo "- Database migration attempted: \`false\`"
+            echo "- Spool mutation attempted: \`false\`"
+          } >> "$GITHUB_STEP_SUMMARY"
