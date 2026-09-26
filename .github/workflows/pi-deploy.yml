@@ -3,8 +3,9 @@ name: Pi delivery gate
 # This is the build-only bridge between the runner smoke proof and the future
 # staged deploy. It intentionally cannot activate a release yet.
 on:
+  # The bootstrap branch is temporary; remove it after T-R3 validation.
   push:
-    branches: [main]
+    branches: [main, chore/github-runner-deployment-plan]
     paths:
       - 'Cargo.toml'
       - 'rust-toolchain.toml'
@@ -14,10 +15,6 @@ on:
       - 'vitals/**'
       - '.github/workflows/pi-deploy.yml'
   workflow_dispatch:
-  # Temporary branch trigger while the delivery tool is being validated. This
-  # job remains build-only and cannot activate a release.
-  push:
-    branches: [chore/github-runner-deployment-plan]
 
 permissions:
   contents: read
