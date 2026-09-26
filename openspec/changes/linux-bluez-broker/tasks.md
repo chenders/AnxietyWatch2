@@ -27,7 +27,7 @@ Move Linux application-level Bluetooth ownership to one broker per verified phys
 - [x] T-BT-4 — Isolate and instrument the BP kernel-policy boundary · implement-complex · amendment 06
 - [x] T-BT-5 — Migrate one source through the broker with reversible ownership · implement-complex · gated
 - [x] T-BT-6 — Migrate remaining collectors and retire direct BlueZ paths · implement-complex · gated
-- [ ] T-BT-7 — Add coexistence, failure-injection, and Pi acceptance gates · implement-complex · review required
+- [x] T-BT-7 — Add coexistence, failure-injection, and Pi acceptance gates · implement-complex · review required
 
 ---
 
@@ -127,8 +127,8 @@ Migrate each remaining authorized source independently. Keep established streams
 ### T-BT-7 — Add coexistence, failure-injection, and Pi acceptance gates
 
 **Depends:** T-BT-4, T-BT-5, T-BT-6
-**Amends:** amendment 06 — BP identity and durability; all current safety amendments governing unknown/degraded state
-**Reads:** `openspec/changes/linux-bluez-broker/design.md`, `docs/reviews/bluetooth-rewrite/RELIABILITY-TEST-PLAN.md`, `docs/reviews/bluetooth-rewrite/PI-BLUEZ-PLATFORM.md`, `docs/specs/AMENDMENTS.md`
+**Amends:** amendment 05 — corrections and runtime safety; amendment 06 — BP identity and durability; all current safety amendments governing unknown/degraded state
+**Reads:** `openspec/changes/linux-bluez-broker/design.md`, `docs/reviews/bluetooth-rewrite/RELIABILITY-TEST-PLAN.md`, `docs/reviews/bluetooth-rewrite/PI-BLUEZ-PLATFORM.md`, `docs/specs/AMENDMENTS.md`, `docs/specs/2026-08-03-amendment-05-corrections-and-runtime-safety.md`, `docs/specs/2026-08-03-amendment-06-bp-identity-and-durability.md`, `crates/vitals-ble-broker/src/lease.rs`, `crates/vitals-ble-broker/src/bp.rs`, `crates/vitals-ble-broker/src/protocol.rs`, `crates/vitals-ble-broker/tests/bluez_contract.rs`, `crates/vitals-ble-broker/tests/bp_policy.rs`
 **Creates:** deterministic integration tests, sanitized evidence fixtures, and acceptance documentation
 
 Add and run the absent-Wellue plus BP-measurement test, discovery filter restoration tests, worker death/backpressure tests, broker/BlueZ restart tests, adapter-generation tests, BP journal/`sync: true` tests, and finite-window/overnight coexistence evidence. Record packet gaps, notification latency, keepalive misses, reconnects, discovery hold time, queue delay, append latency, and unknown/degraded transitions. Linux/Pi evidence must be distinguished from host/fake tests. No source is accepted from a process-start or stale `Connected` observation.
