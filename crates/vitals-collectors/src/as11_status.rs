@@ -60,8 +60,28 @@ pub enum EventSubscriptionState {
     Unavailable,
 }
 
+/// One latest canonical `AirSense` value and its host receipt timestamp.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Air11LatestValue {
+    /// Canonical numeric value.
+    pub value: f64,
+    /// Host receipt timestamp in Unix microseconds.
+    pub sample_at_unix_micros: i64,
+}
+
+/// Latest canonical values retained for the local bedside projection.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct Air11Latest {
+    /// Respiratory rate in breaths per minute.
+    pub respiratory_rate: Option<Air11LatestValue>,
+    /// Leak in litres per minute.
+    pub leak_lpm: Option<Air11LatestValue>,
+    /// Mask pressure in cmH2O.
+    pub pressure_cmh2o: Option<Air11LatestValue>,
+}
+
 /// The status document written by the `AirSense` collector.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Air11Status {
     /// BLE/session state.
     pub link_state: LinkState,
@@ -131,6 +151,9 @@ pub struct Air11Status {
     /// Why a therapy boundary remains provisional, if applicable.
     #[serde(default)]
     pub therapy_blocker: Option<String>,
+    /// Latest numeric values for same-host bedside projection.
+    #[serde(default)]
+    pub latest: Air11Latest,
 }
 
 impl Default for Air11Status {
@@ -164,6 +187,7 @@ impl Default for Air11Status {
             therapy_stop_host_unix_micros: None,
             therapy_finalized_host_unix_micros: None,
             therapy_blocker: None,
+            latest: Air11Latest::default(),
         }
     }
 }
