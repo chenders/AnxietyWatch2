@@ -11,6 +11,7 @@ use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 const BINARY_SPECS: &[BinarySpec] = &[
     BinarySpec {
@@ -74,6 +75,33 @@ const UNIT_FILES: &[&str] = &[
 ];
 
 const RULE_FILES: &[&str] = &["deploy/99-vitals-bp-autoconnect.rules"];
+const LIVE_BINARIES: &[&str] = &[
+    "/usr/local/bin/vitalsd",
+    "/usr/local/bin/vitals-spool-drain",
+    "/usr/local/bin/vitals-console",
+    "/usr/local/bin/h10-collector",
+    "/usr/local/bin/bp-collector",
+    "/usr/local/bin/silence-detector",
+];
+const LIVE_UNITS: &[&str] = &[
+    "/etc/systemd/system/vitalsd.service",
+    "/etc/systemd/system/vitals-spool-drain.service",
+    "/etc/systemd/system/vitals-console.service",
+    "/etc/systemd/system/vitals-h10.service",
+    "/etc/systemd/system/vitals-bp.service",
+    "/etc/systemd/system/vitals-bp-autoconnect.service",
+    "/etc/systemd/system/silence-detector.service",
+];
+const LIVE_SERVICES: &[&str] = &[
+    "vitalsd",
+    "vitals-spool-drain",
+    "vitals-console",
+    "vitals-h10",
+    "vitals-bp",
+    "vitals-bp-autoconnect",
+    "silence-detector",
+];
+const SPOOL_DIRECTORY: &str = "/var/lib/vitals/spool";
 
 #[derive(Debug, Clone, Copy)]
 struct BinarySpec {
@@ -114,6 +142,60 @@ struct Blocker {
     reason: String,
 }
 
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+struct Snapshot {
+    observed_at: u64,
+    current_release: Option<String>,
+    live_files: Vec<LiveFile>,
+    services: Vec<ServiceState>,
+    spool: SpoolState,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+struct LiveFile {
+    path: String,
+    exists: bool,
+    size: u64,
+    sha256: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+struct ServiceState {
+    name: String,
+    state: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+struct SpoolState {
+    file_count: u64,
+    bytes: u64,
+    fingerprint: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+enum CheckState {
+    Passed,
+    Failed,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+struct DryRunChecks {
+    checksums: CheckState,
+    systemd: CheckState,
+    live_state: CheckState,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+struct DryRunReceipt {
+    mode: String,
+    activated: bool,
+    preflight_ok: bool,
+    checks: DryRunChecks,
+    current_release: Option<String>,
+    blocked: Vec<Blocker>,
+    would_change: Vec<String>,
+}
+
 fn main() -> std::process::ExitCode {
     match run() {
         Ok(()) => std::process::ExitCode::SUCCESS,
@@ -128,10 +210,15 @@ fn run() -> Result<(), Box<dyn Error>> {
     let mut args = env::args();
     let _program = args.next();
     let command = args.next().ok_or("missing command")?;
-    if command != "manifest" {
-        return Err(format!("unknown command: {command}").into());
+    match command.as_str() {
+        "manifest" => run_manifest(args),
+        "snapshot" => run_snapshot(args),
+        "apply" => run_apply(args),
+        value => Err(format!("unknown command: {value}").into()),
     }
+}
 
+fn run_manifest(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn Error>> {
     let mut source_sha = None;
     let mut output = None;
     let mut dry_run = false;
@@ -151,14 +238,251 @@ fn run() -> Result<(), Box<dyn Error>> {
     let root = find_repository_root(env::current_dir()?)?;
     let manifest = build_manifest(&root, source_sha, dry_run)?;
     validate_manifest(&manifest)?;
+    write_json(&output, &manifest)
+}
 
-    if let Some(parent) = output.parent().filter(|path| !path.as_os_str().is_empty()) {
+fn run_snapshot(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn Error>> {
+    let output = required_path(&mut args, "snapshot", "--output")?;
+    reject_extra_args(args)?;
+    let snapshot = snapshot_state()?;
+    write_json(&output, &snapshot)
+}
+
+fn run_apply(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn Error>> {
+    let manifest_path = required_path(&mut args, "apply", "--manifest")?;
+    let receipt_path = required_path(&mut args, "apply", "--receipt")?;
+    let mut dry_run = false;
+    for argument in args {
+        match argument.as_str() {
+            "--dry-run" => dry_run = true,
+            value => return Err(format!("unknown apply argument: {value}").into()),
+        }
+    }
+    if !dry_run {
+        return Err("apply blocked: activation is not implemented; pass --dry-run".into());
+    }
+
+    let manifest: Manifest = serde_json::from_str(&fs::read_to_string(&manifest_path)?)?;
+    validate_manifest(&manifest)?;
+    let before = snapshot_state()?;
+    let staging_root = manifest_path
+        .parent()
+        .ok_or("manifest has no parent directory")?
+        .to_path_buf();
+    let checksums_ok = validate_staged_files(&staging_root, &manifest)?;
+    let systemd_verify_ok = verify_staged_units(&staging_root, &manifest)?;
+    let after = snapshot_state()?;
+    let live_state_unchanged = same_snapshot_state(&before, &after);
+    let receipt = DryRunReceipt {
+        mode: "dry-run".to_owned(),
+        activated: false,
+        preflight_ok: checksums_ok && systemd_verify_ok && live_state_unchanged,
+        checks: DryRunChecks {
+            checksums: if checksums_ok {
+                CheckState::Passed
+            } else {
+                CheckState::Failed
+            },
+            systemd: if systemd_verify_ok {
+                CheckState::Passed
+            } else {
+                CheckState::Failed
+            },
+            live_state: if live_state_unchanged {
+                CheckState::Passed
+            } else {
+                CheckState::Failed
+            },
+        },
+        current_release: before.current_release,
+        blocked: manifest.blockers,
+        would_change: manifest
+            .files
+            .iter()
+            .map(|file| file.destination.clone())
+            .collect(),
+    };
+    write_json(&receipt_path, &receipt)
+}
+
+fn required_path(
+    args: &mut impl Iterator<Item = String>,
+    command: &str,
+    option: &str,
+) -> Result<PathBuf, Box<dyn Error>> {
+    let argument = args.next().ok_or(format!("{command} requires {option}"))?;
+    if argument != option {
+        return Err(format!("unknown {command} argument: {argument}").into());
+    }
+    Ok(PathBuf::from(args.next().ok_or(format!(
+        "{command} requires a value for {option}"
+    ))?))
+}
+
+fn reject_extra_args(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn Error>> {
+    if let Some(argument) = args.next() {
+        return Err(format!("unexpected argument: {argument}").into());
+    }
+    Ok(())
+}
+
+fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<(), Box<dyn Error>> {
+    if let Some(parent) = path
+        .parent()
+        .filter(|candidate| !candidate.as_os_str().is_empty())
+    {
         fs::create_dir_all(parent)?;
     }
-    let mut file = File::create(output)?;
-    serde_json::to_writer_pretty(&mut file, &manifest)?;
+    let mut file = File::create(path)?;
+    serde_json::to_writer_pretty(&mut file, value)?;
     file.write_all(b"\n")?;
     Ok(())
+}
+
+fn snapshot_state() -> Result<Snapshot, Box<dyn Error>> {
+    let live_paths = LIVE_BINARIES.iter().chain(LIVE_UNITS.iter());
+    let mut live_files = Vec::new();
+    for path in live_paths {
+        let file = Path::new(path);
+        if file.is_file() {
+            let metadata = fs::metadata(file)?;
+            live_files.push(LiveFile {
+                path: (*path).to_owned(),
+                exists: true,
+                size: metadata.len(),
+                sha256: Some(sha256_file(file)?),
+            });
+        } else {
+            live_files.push(LiveFile {
+                path: (*path).to_owned(),
+                exists: false,
+                size: 0,
+                sha256: None,
+            });
+        }
+    }
+    let mut services = Vec::new();
+    for name in LIVE_SERVICES {
+        let output = Command::new("systemctl").args(["is-active", name]).output();
+        let state = match output {
+            Ok(output) => String::from_utf8_lossy(&output.stdout).trim().to_owned(),
+            Err(error) => format!("unknown: {error}"),
+        };
+        services.push(ServiceState {
+            name: (*name).to_owned(),
+            state,
+        });
+    }
+    services.sort_by(|left, right| left.name.cmp(&right.name));
+    let spool = spool_state()?;
+    let current_release = fs::read_link("/usr/local/lib/vitals/current")
+        .ok()
+        .map(|path| path.to_string_lossy().into_owned());
+    let observed_at = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
+    Ok(Snapshot {
+        observed_at,
+        current_release,
+        live_files,
+        services,
+        spool,
+    })
+}
+
+fn spool_state() -> Result<SpoolState, Box<dyn Error>> {
+    let directory = Path::new(SPOOL_DIRECTORY);
+    let mut files = Vec::new();
+    if directory.is_dir() {
+        collect_files(directory, &mut files)?;
+    }
+    files.retain(|path| {
+        path.extension()
+            .is_some_and(|extension| extension == "spool")
+    });
+    files.sort();
+
+    let mut data_bytes = 0_u64;
+    let mut digest = Sha256::new();
+    for path in &files {
+        let metadata = fs::metadata(path)?;
+        data_bytes = data_bytes.saturating_add(metadata.len());
+        let relative = path.strip_prefix(directory)?.to_string_lossy();
+        digest.update(relative.as_bytes());
+        digest.update([0_u8]);
+        digest.update(metadata.len().to_le_bytes());
+        digest.update(sha256_file(path)?.as_bytes());
+    }
+    let mut data_fingerprint = String::with_capacity(64);
+    for byte in digest.finalize() {
+        use std::fmt::Write as _;
+        write!(&mut data_fingerprint, "{byte:02x}")?;
+    }
+    Ok(SpoolState {
+        file_count: u64::try_from(files.len())?,
+        bytes: data_bytes,
+        fingerprint: data_fingerprint,
+    })
+}
+
+fn same_snapshot_state(left: &Snapshot, right: &Snapshot) -> bool {
+    left.current_release == right.current_release
+        && left.live_files == right.live_files
+        && left.services == right.services
+        && left.spool == right.spool
+}
+
+fn validate_staged_files(root: &Path, manifest: &Manifest) -> Result<bool, Box<dyn Error>> {
+    for file in &manifest.files {
+        let path = safe_staged_path(root, &file.destination)?;
+        if sha256_file(&path)? != file.sha256 {
+            return Err(format!("staged checksum mismatch: {}", file.destination).into());
+        }
+        if file_mode(&path)? != file.mode {
+            return Err(format!(
+                "staged mode mismatch: {} is {:o}, expected {:o}",
+                file.destination,
+                file_mode(&path)?,
+                file.mode
+            )
+            .into());
+        }
+    }
+    Ok(true)
+}
+
+fn verify_staged_units(root: &Path, manifest: &Manifest) -> Result<bool, Box<dyn Error>> {
+    let mut units = Vec::new();
+    for file in &manifest.files {
+        if file.kind == "systemd-unit" {
+            units.push(safe_staged_path(root, &file.destination)?);
+        }
+    }
+    if units.is_empty() {
+        return Err("dry run blocked: manifest has no systemd units".into());
+    }
+    let output = Command::new("systemd-analyze")
+        .arg("verify")
+        .args(&units)
+        .output()?;
+    if !output.status.success() {
+        let detail = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("systemd unit verification failed: {detail}").into());
+    }
+    Ok(true)
+}
+
+fn safe_staged_path(root: &Path, destination: &str) -> Result<PathBuf, Box<dyn Error>> {
+    validate_relative_path(Path::new(destination))?;
+    let root = fs::canonicalize(root)?;
+    let path = root.join(destination);
+    let metadata = fs::symlink_metadata(&path)?;
+    if metadata.file_type().is_symlink() || !metadata.file_type().is_file() {
+        return Err(format!("unsafe staged artifact: {destination}").into());
+    }
+    let canonical = fs::canonicalize(path)?;
+    if !canonical.starts_with(&root) {
+        return Err(format!("staged artifact escapes root: {destination}").into());
+    }
+    Ok(canonical)
 }
 
 fn build_manifest(
