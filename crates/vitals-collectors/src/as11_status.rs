@@ -172,8 +172,10 @@ impl Air11Status {
     /// Publishes this document through a write/sync/rename sequence.
     ///
     /// The temporary file is created privately and with `create_new`, so a
-    /// stale temporary symlink cannot redirect a status write. The directory is
-    /// synced after rename so a power loss cannot silently lose the replacement.
+    /// stale temporary symlink cannot redirect a status write. The published
+    /// status has no credentials or device identifiers and is group-readable
+    /// for the local bedside publisher. The directory is synced after rename
+    /// so a power loss cannot silently lose the replacement.
     ///
     /// # Errors
     /// Returns a serialization or filesystem failure. Callers should stop
@@ -190,6 +192,11 @@ impl Air11Status {
             file.write_all(&bytes)?;
             file.sync_all()?;
             fs::rename(&temporary, path)?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt as _;
+                fs::set_permissions(path, fs::Permissions::from_mode(0o640))?;
+            }
             File::open(parent)?.sync_all()
         })();
         if result.is_err() {
@@ -210,7 +217,7 @@ fn create_temporary(parent: &Path, name: Option<&std::ffi::OsStr>) -> io::Result
         #[cfg(unix)]
         {
             use std::os::unix::fs::OpenOptionsExt;
-            options.mode(0o600);
+            options.mode(0o640);
         }
         match options.open(&temporary) {
             Ok(file) => return Ok((temporary, file)),
@@ -249,6 +256,18 @@ mod tests {
         let text = fs::read_to_string(&path).expect("read status");
         let decoded: Air11Status = serde_json::from_str(&text).expect("status JSON");
         assert_eq!(decoded, status);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                fs::metadata(&path)
+                    .expect("status metadata")
+                    .permissions()
+                    .mode()
+                    & 0o777,
+                0o640
+            );
+        }
         assert!(text.contains("measurement_state"));
         assert!(!text.contains("AA:BB:CC:DD:EE:FF"));
         assert!(!text.contains("masterPairKey"));
