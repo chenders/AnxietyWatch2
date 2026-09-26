@@ -30,7 +30,9 @@ use vitals_collectors::{
     as11_config::{self, Air11Credentials},
     as11_journal::RawJournal,
     as11_session::{TherapyJournal, TherapyLifecycle},
-    as11_status::{Air11Status, EventSubscriptionState, LinkState, MeasurementState},
+    as11_status::{
+        Air11LatestValue, Air11Status, EventSubscriptionState, LinkState, MeasurementState,
+    },
     as11_supervision::{ReconnectBackoff, ReconnectCycle},
     as11_vitalsd::{encode_stream_append, validate_stream_append},
 };
@@ -41,6 +43,8 @@ use vitals_decode::{
 };
 #[cfg(target_os = "linux")]
 use vitals_proto::{Response, WireSample, check_frame_len, decode_payload};
+#[cfg(target_os = "linux")]
+use vitals_registry::VitalsType;
 
 #[cfg(target_os = "linux")]
 const DEFAULT_VITALSD_SOCKET: &str = "/run/vitals/vitalsd.sock";
@@ -579,12 +583,13 @@ impl Collector {
 
     async fn publish_batch(&mut self, samples: Vec<WireSample>) -> Result<(), FatalFailure> {
         let sample_count = samples.len();
-        match append_samples(&self.options.socket, samples).await {
+        match append_samples(&self.options.socket, samples.clone()).await {
             Ok(count) => {
                 self.status.published_samples = self
                     .status
                     .published_samples
                     .saturating_add(u64::try_from(count).map_or(u64::MAX, |value| value));
+                self.update_latest(&samples);
                 self.status.measurement_state = MeasurementState::Measured;
                 self.status.blocker = None;
                 if count != sample_count {
@@ -609,6 +614,26 @@ impl Collector {
                     detail,
                     durability_unknown: error.durability_unknown,
                 })
+            }
+        }
+    }
+
+    fn update_latest(&mut self, samples: &[WireSample]) {
+        for sample in samples {
+            let Some(value_type) = VitalsType::from_id(sample.r#type) else {
+                continue;
+            };
+            let latest = Air11LatestValue {
+                value: sample.value,
+                sample_at_unix_micros: sample.timestamp_unix_micros,
+            };
+            match value_type {
+                VitalsType::RespiratoryRate => self.status.latest.respiratory_rate = Some(latest),
+                VitalsType::Leak => self.status.latest.leak_lpm = Some(latest),
+                VitalsType::MaskPressure | VitalsType::MaskPressure2s => {
+                    self.status.latest.pressure_cmh2o = Some(latest)
+                }
+                _ => {}
             }
         }
     }
