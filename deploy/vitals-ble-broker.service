@@ -1,0 +1,35 @@
+[Unit]
+Description=Per-adapter BlueZ broker for vitals collectors
+After=bluetooth.service vitalsd.service
+Requires=bluetooth.service
+Before=vitals-bp.service vitals-h10.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/vitals-ble-broker
+Restart=always
+RestartSec=3
+EnvironmentFile=/etc/vitals/ble-broker.env
+Environment=VITALS_BLE_BROKER_SOCKET=/run/vitals/ble-broker.sock
+# VITALS_BLE_ADAPTER_SELECTOR must be a stable selector such as
+# address=AA:BB:CC:DD:EE:FF;sysfs_path=/sys/devices/...; never hci0/hci1.
+User=vitals
+Group=vitals
+RuntimeDirectory=vitals
+RuntimeDirectoryMode=0750
+UMask=0007
+OOMScoreAdjust=-1000
+MemoryMin=64M
+MemoryHigh=192M
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+RestrictAddressFamilies=AF_UNIX AF_NETLINK
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

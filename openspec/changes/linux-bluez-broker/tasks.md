@@ -28,6 +28,7 @@ Move Linux application-level Bluetooth ownership to one broker per verified phys
 - [x] T-BT-5 — Migrate one source through the broker with reversible ownership · implement-complex · gated
 - [x] T-BT-6 — Migrate remaining collectors and retire direct BlueZ paths · implement-complex · gated
 - [x] T-BT-7 — Add coexistence, failure-injection, and Pi acceptance gates · implement-complex · review required
+- [x] T-BT-8 — Add the Linux broker daemon and service boundary · implement-complex · Linux/Pi
 
 ---
 
@@ -134,3 +135,17 @@ Migrate each remaining authorized source independently. Keep established streams
 Add and run the absent-Wellue plus BP-measurement test, discovery filter restoration tests, worker death/backpressure tests, broker/BlueZ restart tests, adapter-generation tests, BP journal/`sync: true` tests, and finite-window/overnight coexistence evidence. Record packet gaps, notification latency, keepalive misses, reconnects, discovery hold time, queue delay, append latency, and unknown/degraded transitions. Linux/Pi evidence must be distinguished from host/fake tests. No source is accepted from a process-start or stale `Connected` observation.
 
 **Verify:** `cargo test --workspace && cargo clippy --workspace --all-targets -- -D warnings && git diff --check`
+
+---
+
+### T-BT-8 — Add the Linux broker daemon and service boundary
+
+**Depends:** T-BT-1, T-BT-2, T-BT-3, T-BT-4, T-BT-5, T-BT-6
+**Amends:** none
+**Reads:** `openspec/changes/linux-bluez-broker/design.md`, `docs/reviews/bluetooth-rewrite/DEPLOYMENT-INVENTORY.md`, `docs/specs/AMENDMENTS.md`, `crates/vitals-ble-broker/Cargo.toml`, `crates/vitals-ble-broker/src/lib.rs`, `crates/vitals-ble-broker/src/bluez.rs`, `crates/vitals-ble-broker/src/client.rs`, `crates/vitals-ble-broker/src/protocol.rs`, `deploy/vitals-bp.service`, `deploy/vitals-h10.service`
+**Creates:** `crates/vitals-ble-broker/src/server.rs`, `crates/vitals-ble-broker/src/bin/vitals-ble-broker.rs`, `deploy/vitals-ble-broker.service`
+**Modifies:** broker lease cleanup and owner integration only; no Pi/runtime changes
+
+Add the Linux broker executable listening on `/run/vitals/ble-broker.sock`. Authenticate the private-socket worker handshake and stable adapter selector, resolve the configured controller against local sysfs evidence, and open the existing typed Linux BlueZ owner. Dispatch only typed leases and operations, enforce BP's no-userspace-connect capability, stream bounded notifications, and release device leases on worker disconnect. Keep Wellue disabled and keep the `btmgmt` helper separate. The systemd unit must run unprivileged, create the socket with bounded permissions, and retain the safety-path resource settings. Host verification does not close Linux/BlueZ/Pi acceptance.
+
+**Verify:** `cargo test -p vitals-ble-broker --lib && cargo clippy -p vitals-ble-broker --all-targets -- -D warnings && test -s deploy/vitals-ble-broker.service && rg -q 'ble-broker.sock' deploy/vitals-ble-broker.service && git diff --check`

@@ -177,7 +177,7 @@ impl Generation {
 }
 
 /// An opaque active lease identifier.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct LeaseId(u64);
 
 impl LeaseId {
@@ -713,6 +713,13 @@ impl LeaseScheduler {
         Ok(AcquireResult::Granted(self.grant(request, now)))
     }
 
+    /// Cancel one queued request without touching active leases.
+    pub fn cancel(&mut self, ticket: QueueTicket) -> bool {
+        let before = self.queued.len();
+        self.queued.retain(|request| request.ticket != ticket);
+        self.queued.len() != before
+    }
+
     /// Release a lease and grant the highest-priority queued requests that now fit.
     pub fn release(&mut self, lease_id: LeaseId, now: Tick) -> ReleaseOutcome {
         let mut outcome = ReleaseOutcome::default();
@@ -1131,6 +1138,21 @@ mod tests {
         };
         assert_eq!(preemption.active_lease, active_lease.id());
         assert_eq!(scheduler.active().len(), 1);
+    }
+
+    #[test]
+    fn cancelling_a_queued_request_does_not_release_active_work() {
+        let mut scheduler = LeaseScheduler::new(Generation::new(1));
+        let first = scheduler.acquire(request(Source::AirSense, Intent::Discover, 1, None), 0);
+        assert!(matches!(first, Ok(AcquireResult::Granted(_))));
+        let queued = scheduler.acquire(request(Source::Diagnostics, Intent::Discover, 1, None), 1);
+        let Ok(AcquireResult::Queued { ticket, .. }) = queued else {
+            return;
+        };
+        assert!(scheduler.cancel(ticket));
+        assert_eq!(scheduler.queued_len(), 0);
+        assert_eq!(scheduler.active().len(), 1);
+        assert!(!scheduler.cancel(ticket));
     }
 
     #[test]

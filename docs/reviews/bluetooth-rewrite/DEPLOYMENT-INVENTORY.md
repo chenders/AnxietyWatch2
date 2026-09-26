@@ -66,7 +66,7 @@ The audit found these application-level operation classes:
 - `btmgmt` only in the privileged BP autoconnect unit; no checked-in raw HCI application socket was
   found in the inspected files.
 
-No repository-wide lease, broker, adapter-generation, or controller-power owner currently exists.
+At the inventory freeze no repository-wide lease, broker, adapter-generation, or controller-power owner existed. The current rewrite branch now contains the policy, protocol, Linux owner, and broker daemon front door; this does not assert that the daemon is installed or running on the Pi.
 
 ## 3. Controller and version evidence
 
@@ -176,6 +176,7 @@ status/unit hashes, and a bounded `btmon` trace. It must not modify state merely
 
 The deployment inventory is frozen with explicit unknowns. The stable-controller contract is defined:
 match a unique verified hardware identity, record `hciN` only as an alias, and fail closed with the
-blocking values when resolution is absent or ambiguous. No current controller selector or installed
-artifact is asserted. The next implementation task may build the pure broker policy against this
-contract, but no runtime cutover is justified until the physical/runtime gates above are closed.
+blocking values when resolution is absent or ambiguous. The rewrite branch implements the policy,
+protocol, Linux owner, and private-socket daemon against this contract, but no current controller
+selector, installed artifact, or runtime cutover is asserted until the physical/runtime gates above
+are closed.

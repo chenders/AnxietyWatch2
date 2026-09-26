@@ -355,6 +355,17 @@ impl AdapterPolicy {
         self.scheduler.release(lease, now)
     }
 
+    /// Cancel a queued request when its worker disconnects or declines to wait.
+    pub fn cancel(&mut self, ticket: crate::lease::QueueTicket) -> bool {
+        self.scheduler.cancel(ticket)
+    }
+
+    /// Return the current scheduler generation.
+    #[must_use]
+    pub const fn generation(&self) -> Generation {
+        self.scheduler.generation()
+    }
+
     /// Advance expiry and dispatch queued work.
     pub fn advance(&mut self, now: crate::lease::Tick) -> ReleaseOutcome {
         self.scheduler.advance(now)
@@ -370,12 +381,6 @@ impl AdapterPolicy {
         generation: Generation,
     ) -> Result<Vec<SchedulerEvent>, PolicyError> {
         self.scheduler.invalidate_generation(generation)
-    }
-
-    /// Return the current generation.
-    #[must_use]
-    pub const fn generation(&self) -> Generation {
-        self.scheduler.generation()
     }
 
     /// Return whether a lease is active in the current generation.
@@ -470,6 +475,17 @@ mod runtime {
         /// Release a lease and obtain any newly dispatched leases.
         pub fn release(&mut self, lease: LeaseId, now: crate::lease::Tick) -> ReleaseOutcome {
             self.policy.release(lease, now)
+        }
+
+        /// Cancel a queued request when its worker disconnects or declines to wait.
+        pub fn cancel(&mut self, ticket: crate::lease::QueueTicket) -> bool {
+            self.policy.cancel(ticket)
+        }
+
+        /// Return the current scheduler generation.
+        #[must_use]
+        pub const fn generation(&self) -> Generation {
+            self.policy.generation()
         }
 
         /// Invalidate all leases after a controller or `BlueZ` generation change.
@@ -787,6 +803,14 @@ mod runtime {
         fn check_gatt_lease(&self, lease: &Lease) -> Result<(), OwnerError> {
             if lease.intent() == crate::lease::Intent::KernelObserve
                 && lease.source() == crate::lease::Source::Bp
+            {
+                if !self.policy.owns(lease) {
+                    return Err(OwnerError::LeaseNotOwned { lease: lease.id() });
+                }
+                return Ok(());
+            }
+            if lease.intent() == crate::lease::Intent::Connect
+                || lease.intent() == crate::lease::Intent::Gatt
             {
                 if !self.policy.owns(lease) {
                     return Err(OwnerError::LeaseNotOwned { lease: lease.id() });

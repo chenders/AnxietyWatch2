@@ -11,6 +11,8 @@ pub mod bp;
 pub mod client;
 pub mod lease;
 mod protocol;
+#[cfg(all(feature = "linux", target_os = "linux"))]
+pub mod server;
 
 pub use lease::{
     AcquireResult, Capability, CapabilitySet, DeviceId, Generation, Intent, Lease, LeaseId,
