@@ -201,7 +201,7 @@ const bpCheckStartedAt = finite(parsedBpStart) ? parsedBpStart : Date.now() / 10
 let bpCheckComplete = false;
 const valueOf = (object, names) => { for (const name of names) if (finite(object && object[name])) return object[name]; return null; };
 function metricState(item) { return item && finite(item.value) ? (item.live ? "live" : "stale") : "unknown"; }
-function breathState(now, pap) { if (!pap || pap.rr == null) return "bad"; return pap.active && fresh(pap, now) ? "good" : "warn"; }
+function breathState(now, pap) { if (!pap) return "bad"; if (pap.active && fresh(pap, now)) return "good"; if (pap.rr == null) return "bad"; return "warn"; }
 function ageSeconds(timestamp, now) { return finite(timestamp) ? now - timestamp : null; }
 function ageText(age) {
   if (!finite(age) || age < 0) return "unknown";
@@ -377,9 +377,9 @@ function renderBreathVisual(now, pap) {
   const live=state === "good", hasRate=pap && finite(pap.rr);
   rate.textContent=hasRate ? `${Math.round(pap.rr)}/min` : "—";
   rate.classList.toggle("stale",hasRate && !live);
-  label.textContent=live ? "LIVE BREATH" : state === "warn" ? "STALE" : "NO LIVE DATA";
-  visual.setAttribute("aria-label",live ? `Live CPAP breathing rate ${Math.round(pap.rr)} per minute` : hasRate ? `Stale CPAP breathing rate ${Math.round(pap.rr)} per minute` : "No current breathing measurement");
-  if (live) visual.style.setProperty("--breath-duration",`${Math.max(2,60 / pap.rr)}s`); else visual.style.removeProperty("--breath-duration");
+  label.textContent=live && hasRate ? "LIVE BREATH" : live ? "THERAPY ACTIVE" : state === "warn" ? "STALE" : "NO LIVE DATA";
+  visual.setAttribute("aria-label",live && hasRate ? `Live CPAP breathing rate ${Math.round(pap.rr)} per minute` : live ? "CPAP therapy active; breathing rate not measured" : hasRate ? `Stale CPAP breathing rate ${Math.round(pap.rr)} per minute` : "No current breathing measurement");
+  if (live && hasRate) visual.style.setProperty("--breath-duration",`${Math.max(2,60 / pap.rr)}s`); else visual.style.removeProperty("--breath-duration");
 }
 function renderPapValue(id, value, stale) {
   const element=byId(id); if (!element) return;
