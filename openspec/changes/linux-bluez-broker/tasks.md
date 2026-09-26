@@ -25,7 +25,7 @@ Move Linux application-level Bluetooth ownership to one broker per verified phys
 - [x] T-BT-2 — Add the versioned broker protocol and fake transport · implement-complex
 - [x] T-BT-3 — Implement the Linux BlueZ adapter owner · implement-complex · Linux/Pi
 - [x] T-BT-4 — Isolate and instrument the BP kernel-policy boundary · implement-complex · amendment 06
-- [ ] T-BT-5 — Migrate one source through the broker with reversible ownership · implement-complex · gated
+- [x] T-BT-5 — Migrate one source through the broker with reversible ownership · implement-complex · gated
 - [ ] T-BT-6 — Migrate remaining collectors and retire direct BlueZ paths · implement-complex · gated
 - [ ] T-BT-7 — Add coexistence, failure-injection, and Pi acceptance gates · implement-complex · review required
 
@@ -100,7 +100,7 @@ Keep kernel accept-list registration separate from the unprivileged broker and B
 
 **Depends:** T-BT-3 and T-BT-4
 **Amends:** none
-**Reads:** `openspec/changes/linux-bluez-broker/design.md`, `docs/reviews/bluetooth-rewrite/ARBITRATION-ARCHITECTURE.md`, `docs/reviews/bluetooth-rewrite/RELIABILITY-TEST-PLAN.md`, `docs/specs/AMENDMENTS.md`
+**Reads:** `openspec/changes/linux-bluez-broker/design.md`, `docs/reviews/bluetooth-rewrite/ARBITRATION-ARCHITECTURE.md`, `docs/reviews/bluetooth-rewrite/RELIABILITY-TEST-PLAN.md`, `crates/vitals-ble-broker/Cargo.toml`, `crates/vitals-ble-broker/src/lib.rs`, `crates/vitals-ble-broker/src/protocol.rs`, `crates/vitals-ble-broker/src/bluez.rs`, `crates/vitals-collectors/Cargo.toml`, `crates/vitals-collectors/src/bin/h10_collector.rs`, `crates/vitals-collectors/src/h10_reconnect.rs`, `crates/vitals-collectors/src/h10_build.rs`, `deploy/vitals-h10.service`, `docs/specs/AMENDMENTS.md`
 **Modifies:** exactly one selected collector, its unit, and broker client wiring; selection requires owner approval after T-BT-0
 
 Use the H10 worker as the first source migration target only after the deployment inventory and offline/fake tests are green; this is a transport migration, not H10 acceptance. Remove its direct BlueZ capability and route discovery/connect/GATT operations through the broker. Preserve protocol decoding, source identity, status, and ingest. Add a source-level rollback that stops the new client, proves lease/subscription release, and starts the prior approved owner without overlap. This task must not re-enable Wellue.

@@ -1,7 +1,7 @@
 [Unit]
 Description=Polar H10 heart-rate and RR collector
-After=bluetooth.service vitalsd.service
-Requires=bluetooth.service vitalsd.service
+After=bluetooth.service vitalsd.service vitals-ble-broker.service
+Requires=bluetooth.service vitalsd.service vitals-ble-broker.service
 
 [Service]
 Type=simple
@@ -10,6 +10,9 @@ Restart=always
 RestartSec=3
 EnvironmentFile=/etc/vitals/h10-collector.env
 Environment=VITALSD_SOCKET=/run/vitals/vitalsd.sock
+Environment=VITALS_BLE_BROKER_SOCKET=/run/vitals/ble-broker.sock
+# VITALS_BLE_ADAPTER_SELECTOR must be supplied by the deployment inventory;
+# never use hci0/hci1 here.
 Environment=H10_STATE_DIR=/var/lib/vitals/h10
 # Stopgap panel transport: current status is atomic; history is append-only.
 # Values retain registry-canonical units and declare them in each document.
@@ -27,7 +30,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-RestrictAddressFamilies=AF_UNIX AF_NETLINK AF_BLUETOOTH
+RestrictAddressFamilies=AF_UNIX AF_NETLINK
 RestrictNamespaces=true
 LockPersonality=true
 MemoryDenyWriteExecute=true

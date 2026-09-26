@@ -1,13 +1,14 @@
-//! Pure policy for the Linux `BlueZ` broker.
+//! Policy, protocol, and Linux transport boundary for the `BlueZ` broker.
 //!
-//! This crate deliberately has no `BlueZ`, D-Bus, filesystem, clock, or Tokio
-//! dependency. The policy is deterministic and is exercised with caller-supplied
-//! monotonic ticks. The Linux adapter owner and worker protocol are added by later
-//! tasks.
+//! The lease policy remains deterministic and is exercised with caller-supplied
+//! monotonic ticks. Linux-only adapter ownership and Unix-socket client transport
+//! are isolated behind the `linux` feature and never expose arbitrary D-Bus calls.
 #![forbid(unsafe_code)]
 
 pub mod bluez;
 pub mod bp;
+#[cfg(all(feature = "linux", target_os = "linux"))]
+pub mod client;
 pub mod lease;
 mod protocol;
 
@@ -19,5 +20,9 @@ pub use lease::{
 
 pub use protocol::{
     Acquire, Cancel, ClientMessage, FakeReply, FakeTransport, Hello, MAX_FRAME_BYTES, Operation,
-    OperationKind, PROTOCOL_VERSION, ProtocolError, Release, decode, encode,
+    OperationKind, PROTOCOL_VERSION, ProtocolError, Release, ServerMessage, decode, decode_server,
+    encode, encode_server,
 };
+
+#[cfg(all(feature = "linux", target_os = "linux"))]
+pub use client::{BrokerClient, ClientError as BrokerClientError};

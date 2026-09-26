@@ -118,6 +118,95 @@ pub enum ClientMessage {
     Health,
 }
 
+/// A broker-to-worker response or event.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ServerMessage {
+    /// Handshake accepted for the broker generation.
+    HelloAccepted {
+        /// Current broker generation.
+        generation: Generation,
+    },
+    /// Lease granted immediately.
+    LeaseGranted {
+        /// Granted lease identifier.
+        lease_id: LeaseId,
+        /// Generation attached to the lease.
+        generation: Generation,
+        /// Monotonic lease expiry.
+        expires_at: u64,
+    },
+    /// Lease is queued behind another owner.
+    LeaseQueued {
+        /// Queue ticket.
+        ticket: u64,
+    },
+    /// Typed operation accepted.
+    OperationAccepted {
+        /// Operation correlation identifier.
+        operation_id: u64,
+    },
+    /// GATT resolution returned an opaque broker handle.
+    Resolved {
+        /// Operation correlation identifier.
+        operation_id: u64,
+        /// Opaque characteristic handle for later typed operations.
+        handle: String,
+    },
+    /// Current device transport state.
+    DeviceState {
+        /// Operation correlation identifier.
+        operation_id: u64,
+        /// Whether `BlueZ` reports the peer connected.
+        connected: bool,
+        /// Whether `BlueZ` reports services resolved.
+        services_resolved: bool,
+    },
+    /// A bounded notification or indication payload.
+    Frame {
+        /// Lease that owns the frame stream.
+        lease_id: LeaseId,
+        /// Subscription operation correlation identifier.
+        operation_id: u64,
+        /// Whether the source frame is an indication.
+        indication: bool,
+        /// Raw GATT payload.
+        payload: Vec<u8>,
+    },
+    /// The broker observed a device or stream disconnection.
+    Disconnected {
+        /// Operation correlation identifier.
+        operation_id: u64,
+        /// Redacted named reason.
+        reason: String,
+    },
+    /// Lease release accepted.
+    Released {
+        /// Released lease identifier.
+        lease_id: LeaseId,
+    },
+    /// Health snapshot.
+    Health {
+        /// Broker generation.
+        generation: Generation,
+        /// Current queue depth.
+        queue_depth: usize,
+    },
+    /// A typed operation failed.
+    Error {
+        /// Operation correlation identifier, or zero for handshake errors.
+        operation_id: u64,
+        /// Named protocol/BlueZ failure code.
+        code: u8,
+        /// Redacted detail.
+        detail: String,
+    },
+    /// A pending operation was cancelled at a safe broker boundary.
+    Cancelled {
+        /// Operation correlation identifier.
+        operation_id: u64,
+    },
+}
+
 /// A response produced by the deterministic fake transport.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum FakeReply {
@@ -155,6 +244,8 @@ pub enum ProtocolError {
     UnsupportedVersion(u16),
     /// The message kind is not defined by this protocol.
     UnknownKind(u8),
+    /// The broker response kind is not defined by this protocol.
+    UnknownServerKind(u8),
     /// The payload contains invalid or trailing bytes.
     InvalidPayload,
     /// A string was not valid UTF-8.
@@ -186,6 +277,9 @@ impl fmt::Display for ProtocolError {
                 write!(formatter, "unsupported protocol version: {version}")
             }
             Self::UnknownKind(kind) => write!(formatter, "unknown protocol message kind: {kind}"),
+            Self::UnknownServerKind(kind) => {
+                write!(formatter, "unknown broker response kind: {kind}")
+            }
             Self::InvalidPayload => formatter.write_str("invalid protocol payload"),
             Self::InvalidUtf8 => formatter.write_str("protocol string is not UTF-8"),
             Self::UnknownCapabilityBits(bits) => {
@@ -276,6 +370,226 @@ pub fn decode(frame: &[u8]) -> Result<ClientMessage, ProtocolError> {
         return Err(ProtocolError::InvalidPayload);
     }
     Ok(message)
+}
+
+/// Encode one broker response or event into a bounded frame.
+///
+/// # Errors
+///
+/// Returns an error when a bounded field exceeds the protocol limits.
+pub fn encode_server(message: &ServerMessage) -> Result<Vec<u8>, ProtocolError> {
+    let mut writer = Writer::default();
+    let kind = match message {
+        ServerMessage::HelloAccepted { generation } => {
+            writer.u64(generation.value());
+            0
+        }
+        ServerMessage::LeaseGranted {
+            lease_id,
+            generation,
+            expires_at,
+        } => {
+            writer.u64(lease_id.value());
+            writer.u64(generation.value());
+            writer.u64(*expires_at);
+            1
+        }
+        ServerMessage::LeaseQueued { ticket } => {
+            writer.u64(*ticket);
+            2
+        }
+        ServerMessage::OperationAccepted { operation_id } => {
+            writer.u64(*operation_id);
+            3
+        }
+        ServerMessage::Resolved {
+            operation_id,
+            handle,
+        } => {
+            writer.u64(*operation_id);
+            writer.string(handle)?;
+            4
+        }
+        ServerMessage::DeviceState {
+            operation_id,
+            connected,
+            services_resolved,
+        } => {
+            writer.u64(*operation_id);
+            writer.u8(u8::from(*connected));
+            writer.u8(u8::from(*services_resolved));
+            5
+        }
+        ServerMessage::Frame {
+            lease_id,
+            operation_id,
+            indication,
+            payload,
+        } => {
+            writer.u64(lease_id.value());
+            writer.u64(*operation_id);
+            writer.u8(u8::from(*indication));
+            writer.bytes(payload)?;
+            6
+        }
+        ServerMessage::Disconnected {
+            operation_id,
+            reason,
+        } => {
+            writer.u64(*operation_id);
+            writer.string(reason)?;
+            7
+        }
+        ServerMessage::Released { lease_id } => {
+            writer.u64(lease_id.value());
+            8
+        }
+        ServerMessage::Health {
+            generation,
+            queue_depth,
+        } => {
+            writer.u64(generation.value());
+            writer.u64(u64::try_from(*queue_depth).map_err(|_| ProtocolError::InvalidPayload)?);
+            9
+        }
+        ServerMessage::Error {
+            operation_id,
+            code,
+            detail,
+        } => {
+            writer.u64(*operation_id);
+            writer.u8(*code);
+            writer.string(detail)?;
+            10
+        }
+        ServerMessage::Cancelled { operation_id } => {
+            writer.u64(*operation_id);
+            11
+        }
+    };
+    encode_frame(kind, &writer.finish())
+}
+
+/// Decode one broker response or event frame.
+///
+/// # Errors
+///
+/// Returns an error for malformed or unknown response frames.
+pub fn decode_server(frame: &[u8]) -> Result<ServerMessage, ProtocolError> {
+    let payload = decode_frame(frame)?;
+    let mut reader = Reader::new(payload.1);
+    match payload.0 {
+        0 => Ok(ServerMessage::HelloAccepted {
+            generation: Generation::new(reader.u64()?),
+        }),
+        1 => Ok(ServerMessage::LeaseGranted {
+            lease_id: LeaseId::new(reader.u64()?),
+            generation: Generation::new(reader.u64()?),
+            expires_at: reader.u64()?,
+        }),
+        2 => Ok(ServerMessage::LeaseQueued {
+            ticket: reader.u64()?,
+        }),
+        3 => Ok(ServerMessage::OperationAccepted {
+            operation_id: reader.u64()?,
+        }),
+        4 => Ok(ServerMessage::Resolved {
+            operation_id: reader.u64()?,
+            handle: reader.string()?,
+        }),
+        5 => Ok(ServerMessage::DeviceState {
+            operation_id: reader.u64()?,
+            connected: decode_bool(reader.u8()?)?,
+            services_resolved: decode_bool(reader.u8()?)?,
+        }),
+        6 => Ok(ServerMessage::Frame {
+            lease_id: LeaseId::new(reader.u64()?),
+            operation_id: reader.u64()?,
+            indication: reader.u8()? != 0,
+            payload: reader.bytes_field()?,
+        }),
+        7 => Ok(ServerMessage::Disconnected {
+            operation_id: reader.u64()?,
+            reason: reader.string()?,
+        }),
+        8 => Ok(ServerMessage::Released {
+            lease_id: LeaseId::new(reader.u64()?),
+        }),
+        9 => Ok(ServerMessage::Health {
+            generation: Generation::new(reader.u64()?),
+            queue_depth: usize::try_from(reader.u64()?)
+                .map_err(|_| ProtocolError::InvalidPayload)?,
+        }),
+        10 => Ok(ServerMessage::Error {
+            operation_id: reader.u64()?,
+            code: reader.u8()?,
+            detail: reader.string()?,
+        }),
+        11 => Ok(ServerMessage::Cancelled {
+            operation_id: reader.u64()?,
+        }),
+        kind => Err(ProtocolError::UnknownServerKind(kind)),
+    }
+    .and_then(|message| {
+        if reader.remaining() == 0 {
+            Ok(message)
+        } else {
+            Err(ProtocolError::InvalidPayload)
+        }
+    })
+}
+
+fn encode_frame(kind: u8, payload: &[u8]) -> Result<Vec<u8>, ProtocolError> {
+    let frame_size =
+        HEADER_BYTES
+            .checked_add(payload.len())
+            .ok_or(ProtocolError::FrameTooLarge {
+                length: usize::MAX,
+                max: MAX_FRAME_BYTES,
+            })?;
+    if frame_size > MAX_FRAME_BYTES {
+        return Err(ProtocolError::FrameTooLarge {
+            length: frame_size,
+            max: MAX_FRAME_BYTES,
+        });
+    }
+    let payload_length =
+        u32::try_from(payload.len()).map_err(|_| ProtocolError::FrameTooLarge {
+            length: payload.len(),
+            max: MAX_FRAME_BYTES,
+        })?;
+    let mut frame = Vec::with_capacity(frame_size);
+    frame.extend_from_slice(b"VBT1");
+    frame.extend_from_slice(&PROTOCOL_VERSION.to_be_bytes());
+    frame.push(kind);
+    frame.extend_from_slice(&payload_length.to_be_bytes());
+    frame.extend_from_slice(payload);
+    Ok(frame)
+}
+
+fn decode_frame(frame: &[u8]) -> Result<(u8, &[u8]), ProtocolError> {
+    if frame.len() > MAX_FRAME_BYTES {
+        return Err(ProtocolError::FrameTooLarge {
+            length: frame.len(),
+            max: MAX_FRAME_BYTES,
+        });
+    }
+    let mut reader = Reader::new(frame);
+    if reader.take::<4>()? != *b"VBT1" {
+        return Err(ProtocolError::BadMagic);
+    }
+    let version = reader.u16()?;
+    if version != PROTOCOL_VERSION {
+        return Err(ProtocolError::UnsupportedVersion(version));
+    }
+    let kind = reader.u8()?;
+    let payload_length =
+        usize::try_from(reader.u32()?).map_err(|_| ProtocolError::InvalidPayload)?;
+    let payload = reader.bytes(payload_length)?;
+    if reader.remaining() != 0 {
+        return Err(ProtocolError::InvalidPayload);
+    }
+    Ok((kind, payload))
 }
 
 /// A deterministic in-memory transport used by protocol and capability tests.
@@ -477,6 +791,14 @@ fn decode_payload(kind: u8, reader: &mut Reader<'_>) -> Result<ClientMessage, Pr
         })),
         5 => Ok(ClientMessage::Health),
         other => Err(ProtocolError::UnknownKind(other)),
+    }
+}
+
+fn decode_bool(value: u8) -> Result<bool, ProtocolError> {
+    match value {
+        0 => Ok(false),
+        1 => Ok(true),
+        _ => Err(ProtocolError::InvalidPayload),
     }
 }
 
@@ -726,6 +1048,22 @@ mod tests {
             return;
         };
         assert_eq!(decode(&frame), Ok(message));
+    }
+
+    #[test]
+    fn server_events_round_trip_with_bounded_payload() {
+        let message = ServerMessage::Frame {
+            lease_id: LeaseId::new(7),
+            operation_id: 9,
+            indication: false,
+            payload: vec![1, 2, 3],
+        };
+        let frame_result = encode_server(&message);
+        assert!(frame_result.is_ok());
+        let Ok(frame) = frame_result else {
+            return;
+        };
+        assert_eq!(decode_server(&frame), Ok(message));
     }
 
     #[test]
