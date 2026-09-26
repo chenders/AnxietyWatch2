@@ -916,7 +916,10 @@ final class AppClientRuntime: ObservableObject {
 #endif
       outboxItemCount = report.pendingAfter
       await refreshProjectionMeasurements()
-      syncStatus = "Sync complete: \(report.acknowledged) acknowledged, \(report.replayed) replayed, \(report.rejected) rejected, \(report.conflicts) conflicts, \(report.retryable) retryable; \(report.pendingAfter) pending."
+      syncStatus = "Sync complete: \(report.acknowledged) acknowledged, "
+        + "\(report.replayed) replayed, \(report.rejected) rejected, "
+        + "\(report.conflicts) conflicts, \(report.retryable) retryable; "
+        + "\(report.pendingAfter) pending."
 #if canImport(HealthKit)
       await sendStatusBeacon()
 #endif

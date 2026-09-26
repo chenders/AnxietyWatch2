@@ -24,7 +24,7 @@ func itunesTransportMapsResults() async throws {
         }
       ]
     }
-    """.data(using: .utf8)!
+    """.utf8
   )
   defer { URLProtocolStub.responseData = nil }
   let configuration = URLSessionConfiguration.ephemeral
@@ -62,7 +62,7 @@ func itunesTransportLooksUpExactArtwork() async throws {
         }
       ]
     }
-    """.data(using: .utf8)!
+    """.utf8
   )
   URLProtocolStub.lastURLs[lookupKey] = nil
   defer {
@@ -99,7 +99,7 @@ func itunesTransportRejectsInsecureArtwork() async throws {
       "trackName": "Track", "artistName": "Artist", "trackId": 9,
       "artworkUrl100": "http://example.com/insecure.jpg"
     }] }
-    """.data(using: .utf8)!
+    """.utf8
   )
   defer { URLProtocolStub.responses[searchKey] = nil }
   let configuration = URLSessionConfiguration.ephemeral
@@ -132,9 +132,9 @@ private final class URLProtocolStub: URLProtocol, @unchecked Sendable {
   nonisolated(unsafe) static var responses: [String: Data] = [:]
   nonisolated(unsafe) static var lastURLs: [String: URL] = [:]
 
-  override class func canInit(with request: URLRequest) -> Bool { true }
+  override static func canInit(with request: URLRequest) -> Bool { true }
 
-  override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+  override static func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
   override func startLoading() {
     guard let url = request.url else {

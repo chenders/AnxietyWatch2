@@ -86,8 +86,7 @@ public actor ProjectionCache {
     self.maximumEntries = maximumEntries
     self.persistenceURL = persistenceURL
     if let persistenceURL,
-      FileManager.default.fileExists(atPath: persistenceURL.path)
-    {
+      FileManager.default.fileExists(atPath: persistenceURL.path) {
       let data = try Data(contentsOf: persistenceURL)
       let persisted = try JSONDecoder().decode([PersistedProjectionCacheEntry].self, from: data)
       for item in persisted.sorted(by: { $0.value.fetchedAt < $1.value.fetchedAt }).suffix(maximumEntries) {

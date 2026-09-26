@@ -36,6 +36,8 @@ public struct HealthKitReadTypeDefinition: Codable, Equatable, Sendable, Identif
 /// The retained first-release HealthKit source set. Context-only and unsupported clinical/series
 /// types are deliberately absent: they need separate contracts and must not be flattened.
 public enum HealthKitReadPlan {
+  // Registry metadata is intentionally kept together for auditability.
+  // swiftlint:disable line_length
   public static let firstRelease: [HealthKitReadTypeDefinition] = [
     .init(identifier: "HKQuantityTypeIdentifierHeartRate", registryName: "hr", displayName: "Heart rate", rationale: "Upload heart-rate source samples to your Pi for server-side projections.", kind: .quantity, platformUnit: "count/min"),
     .init(identifier: "HKQuantityTypeIdentifierHeartRateVariabilitySDNN", registryName: "hrv_rmssd", displayName: "Heart-rate variability", rationale: "Upload HRV source samples to your Pi without calculating local trends.", kind: .quantity, platformUnit: "ms"),
@@ -64,6 +66,7 @@ public enum HealthKitReadPlan {
     .init(identifier: "HKQuantityTypeIdentifierPhysicalEffort", registryName: "physical_effort", displayName: "Physical effort", rationale: "Upload physical-effort source samples so the Pi can distinguish exertion from anxiety.", kind: .quantity, platformUnit: "kcal/kg*hr"),
     .init(identifier: "HKQuantityTypeIdentifierBodyMass", registryName: "body_mass", displayName: "Body mass", rationale: "Upload body-mass source samples to your Pi.", kind: .quantity, platformUnit: "kg"),
   ]
+  // swiftlint:enable line_length
 
   public static func definition(for identifier: String) -> HealthKitReadTypeDefinition? {
     firstRelease.first { $0.identifier == identifier }
@@ -94,7 +97,8 @@ public protocol HealthKitAuthorizationRequesting: Sendable {
   func requestStatus(for types: [HealthKitReadTypeDefinition]) async -> String
 }
 
-/// Stores only the authorization request facts that HealthKit permits the app to retain.
+// Stores only the authorization request facts that HealthKit permits the app to retain.
+// swiftlint:disable type_name
 public final class UserDefaultsHealthKitAuthorizationFactStore: HealthKitAuthorizationFactStore, @unchecked Sendable {
   private let defaults: UserDefaults
   private let key: String
@@ -113,6 +117,7 @@ public final class UserDefaultsHealthKitAuthorizationFactStore: HealthKitAuthori
     defaults.set(try JSONEncoder().encode(facts), forKey: key)
   }
 }
+// swiftlint:enable type_name
 
 /// Coordinates the inventive but honest access flow: explain each type, offer the system sheet once,
 /// and retain the ask/result facts while never claiming that a read grant was observable.

@@ -43,7 +43,9 @@ func registryValidationRejectsUnknownProvidedType() throws {
   #expect(document.type(named: "hr")?.unit == "bpm")
   #expect(document.source(named: "healthkit")?.provides.contains("sleep_stage") == true)
 
-  let invalid = Data(#"{"type":{"hr":{"id":1,"unit":"bpm","range":[20,10],"precision":1}},"source":{"healthkit":{"id":2,"transport":"push","provides":["hr"]}}}"#.utf8)
+  let invalid = Data(
+    #"{"type":{"hr":{"id":1,"unit":"bpm","range":[20,10],"precision":1}},"source":{"healthkit":{"id":2,"transport":"push","provides":["hr"]}}}"#.utf8
+  )
   #expect(throws: RegistryError.invalidType("hr")) {
     try RegistryDocument.decode(invalid)
   }

@@ -458,7 +458,18 @@ public struct RequestAuthenticator: Sendable {
       "\"x-anxietywatch-api-version\" \"x-anxietywatch-client-id\" \"x-anxietywatch-key-id\" " +
       "\"x-anxietywatch-request-id\");created=\(created);expires=\(expires)"
     let signatureParams = signatureInput.dropFirst(5)
-    let signatureBase = "\"@method\": \(method)\n\"@authority\": \(authority)\n\"@path\": \(path)\ncontent-digest: \(contentDigest)\ncontent-type: \(contentType)\nx-anxietywatch-api-version: 1\nx-anxietywatch-client-id: \(credential.clientID.uuidString.lowercased())\nx-anxietywatch-key-id: \(credential.keyID.uuidString.lowercased())\nx-anxietywatch-request-id: \(requestID.uuidString.lowercased())\n\"@signature-params\": \(signatureParams)"
+    let signatureBase = [
+      "\"@method\": \(method)",
+      "\"@authority\": \(authority)",
+      "\"@path\": \(path)",
+      "content-digest: \(contentDigest)",
+      "content-type: \(contentType)",
+      "x-anxietywatch-api-version: 1",
+      "x-anxietywatch-client-id: \(credential.clientID.uuidString.lowercased())",
+      "x-anxietywatch-key-id: \(credential.keyID.uuidString.lowercased())",
+      "x-anxietywatch-request-id: \(requestID.uuidString.lowercased())",
+      "\"@signature-params\": \(signatureParams)",
+    ].joined(separator: "\n")
     let signature = try keyStore.sign(
       Data(signatureBase.utf8),
       with: credential.keyReference

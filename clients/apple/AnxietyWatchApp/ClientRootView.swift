@@ -136,7 +136,10 @@ private struct HealthSurface: View {
     NavigationStack {
       Form {
         Section("HealthKit access") {
-          Text("AnxietyWatch reads selected HealthKit data and sends it to the enrolled Pi. Access requests, query results, and Pi acknowledgements are reported separately.")
+          Text(
+            "AnxietyWatch reads selected HealthKit data and sends it to the enrolled Pi. "
+              + "Access requests, query results, and Pi acknowledgements are reported separately."
+          )
             .font(.footnote)
             .foregroundStyle(.secondary)
           Button {
@@ -1035,7 +1038,11 @@ private struct EnrollmentSurface: View {
 
         if runtime.isEnrolled {
           Section("Operator notifications") {
-            Text("Allow operator-directed messages from this Pi. Notifications contain only a protected category or link; health values, journal text, medication details, and credentials are never included.")
+            Text(
+              "Allow operator-directed messages from this Pi. Notifications contain only a protected "
+                + "category or link; health values, journal text, medication details, and credentials "
+                + "are never included."
+            )
               .font(.footnote)
               .foregroundStyle(.secondary)
             Button {

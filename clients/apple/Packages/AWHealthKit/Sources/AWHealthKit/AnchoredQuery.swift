@@ -247,15 +247,22 @@ public final class HealthKitAnchoredQueryEngine: @unchecked Sendable {
 
   private static func unit(for identifier: String) -> HKUnit? {
     switch identifier {
-    case "HKQuantityTypeIdentifierHeartRate", "HKQuantityTypeIdentifierRestingHeartRate", "HKQuantityTypeIdentifierWalkingHeartRateAverage", "HKQuantityTypeIdentifierRespiratoryRate": return .count().unitDivided(by: .minute())
+    case "HKQuantityTypeIdentifierHeartRate", "HKQuantityTypeIdentifierRestingHeartRate",
+      "HKQuantityTypeIdentifierWalkingHeartRateAverage", "HKQuantityTypeIdentifierRespiratoryRate":
+      return .count().unitDivided(by: .minute())
     case "HKQuantityTypeIdentifierHeartRateVariabilitySDNN": return .secondUnit(with: .milli)
-    case "HKQuantityTypeIdentifierOxygenSaturation", "HKQuantityTypeIdentifierAppleWalkingSteadiness", "HKQuantityTypeIdentifierAtrialFibrillationBurden", "HKQuantityTypeIdentifierWalkingDoubleSupportPercentage", "HKQuantityTypeIdentifierWalkingAsymmetryPercentage": return .percent()
+    case "HKQuantityTypeIdentifierOxygenSaturation", "HKQuantityTypeIdentifierAppleWalkingSteadiness",
+      "HKQuantityTypeIdentifierAtrialFibrillationBurden", "HKQuantityTypeIdentifierWalkingDoubleSupportPercentage",
+      "HKQuantityTypeIdentifierWalkingAsymmetryPercentage":
+      return .percent()
     case "HKQuantityTypeIdentifierAppleSleepingWristTemperature": return .degreeCelsius()
     case "HKQuantityTypeIdentifierStepCount": return .count()
     case "HKQuantityTypeIdentifierActiveEnergyBurned": return .kilocalorie()
     case "HKQuantityTypeIdentifierAppleExerciseTime", "HKQuantityTypeIdentifierTimeInDaylight": return .minute()
-    case "HKQuantityTypeIdentifierEnvironmentalAudioExposure", "HKQuantityTypeIdentifierHeadphoneAudioExposure": return .decibelAWeightedSoundPressureLevel()
-    case "HKQuantityTypeIdentifierBloodPressureSystolic", "HKQuantityTypeIdentifierBloodPressureDiastolic": return .millimeterOfMercury()
+    case "HKQuantityTypeIdentifierEnvironmentalAudioExposure", "HKQuantityTypeIdentifierHeadphoneAudioExposure":
+      return .decibelAWeightedSoundPressureLevel()
+    case "HKQuantityTypeIdentifierBloodPressureSystolic", "HKQuantityTypeIdentifierBloodPressureDiastolic":
+      return .millimeterOfMercury()
     case "HKQuantityTypeIdentifierBloodGlucose": return .gramUnit(with: .milli).unitDivided(by: .literUnit(with: .deci))
     case "HKQuantityTypeIdentifierVO2Max": return HKUnit(from: "mL/kg*min")
     case "HKQuantityTypeIdentifierWalkingSpeed": return .meter().unitDivided(by: .second())
