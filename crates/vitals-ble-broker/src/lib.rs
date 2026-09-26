@@ -6,6 +6,7 @@
 //! tasks.
 #![forbid(unsafe_code)]
 
+pub mod bluez;
 pub mod lease;
 mod protocol;
 

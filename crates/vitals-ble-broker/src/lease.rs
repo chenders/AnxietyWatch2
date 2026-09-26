@@ -521,6 +521,11 @@ pub enum PolicyError {
     BpConnectForbidden,
     /// Wellue is disabled by policy.
     WellueDisabled,
+    /// Controller power recovery is reserved for an explicit diagnostic owner.
+    RecoveryNotAuthorized {
+        /// Source that attempted recovery.
+        source: Source,
+    },
     /// A generation change did not advance the controller generation.
     GenerationNotAdvanced {
         /// The current generation.
@@ -544,6 +549,10 @@ impl fmt::Display for PolicyError {
                 formatter.write_str("lease rejected: BP has no userspace connect capability")
             }
             Self::WellueDisabled => formatter.write_str("lease rejected: Wellue is disabled"),
+            Self::RecoveryNotAuthorized { source } => write!(
+                formatter,
+                "lease rejected: power recovery source={source:?} is not Diagnostics",
+            ),
             Self::GenerationNotAdvanced { current, requested } => write!(
                 formatter,
                 "generation change rejected: current={}, requested={}",
@@ -672,6 +681,12 @@ impl LeaseScheduler {
         self.queued.len()
     }
 
+    /// Return an active lease by identifier.
+    #[must_use]
+    pub fn active_lease(&self, lease_id: LeaseId) -> Option<&Lease> {
+        self.active.iter().find(|lease| lease.id == lease_id)
+    }
+
     /// Try to acquire a lease or queue it behind a named active owner.
     ///
     /// # Errors
@@ -788,6 +803,11 @@ impl LeaseScheduler {
         }
         if request.source == Source::Wellue && !wellue_enabled {
             return Err(PolicyError::WellueDisabled);
+        }
+        if request.intent == Intent::PowerRecovery && request.source != Source::Diagnostics {
+            return Err(PolicyError::RecoveryNotAuthorized {
+                source: request.source,
+            });
         }
         Ok(())
     }
@@ -1029,6 +1049,23 @@ mod tests {
             scheduler.acquire(connect_capability, 0),
             Err(PolicyError::BpConnectForbidden)
         );
+    }
+
+    #[test]
+    fn power_recovery_is_reserved_for_diagnostics() {
+        let mut scheduler = LeaseScheduler::new(Generation::new(1));
+        let h10_request = request(Source::H10, Intent::PowerRecovery, 9, None);
+        assert_eq!(
+            scheduler.acquire(h10_request, 0),
+            Err(PolicyError::RecoveryNotAuthorized {
+                source: Source::H10
+            })
+        );
+        let diagnostic_request = request(Source::Diagnostics, Intent::PowerRecovery, 9, None);
+        assert!(matches!(
+            scheduler.acquire(diagnostic_request, 0),
+            Ok(AcquireResult::Granted(_))
+        ));
     }
 
     #[test]

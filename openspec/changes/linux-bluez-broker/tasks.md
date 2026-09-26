@@ -23,7 +23,7 @@ Move Linux application-level Bluetooth ownership to one broker per verified phys
 - [x] T-BT-0 — Freeze deployment inventory and stable-controller contract · investigation
 - [x] T-BT-1 — Add pure lease scheduler and broker capability model · implement-complex
 - [x] T-BT-2 — Add the versioned broker protocol and fake transport · implement-complex
-- [ ] T-BT-3 — Implement the Linux BlueZ adapter owner · implement-complex · Linux/Pi
+- [x] T-BT-3 — Implement the Linux BlueZ adapter owner · implement-complex · Linux/Pi
 - [ ] T-BT-4 — Isolate and instrument the BP kernel-policy boundary · implement-complex · amendment 06
 - [ ] T-BT-5 — Migrate one source through the broker with reversible ownership · implement-complex · gated
 - [ ] T-BT-6 — Migrate remaining collectors and retire direct BlueZ paths · implement-complex · gated
@@ -74,7 +74,7 @@ Define bounded, versioned Unix-socket messages for `Hello`, `Acquire`, typed ope
 
 **Depends:** T-BT-1, T-BT-2
 **Amends:** none
-**Reads:** `openspec/changes/linux-bluez-broker/design.md`, `docs/reviews/bluetooth-rewrite/LIBRARIAN.md`, `docs/reviews/bluetooth-rewrite/COLLECTOR-AUDIT.md`, `docs/reviews/bluetooth-rewrite/PI-BLUEZ-PLATFORM.md`, `docs/specs/AMENDMENTS.md`
+**Reads:** `openspec/changes/linux-bluez-broker/design.md`, `docs/reviews/bluetooth-rewrite/LIBRARIAN.md`, `docs/reviews/bluetooth-rewrite/COLLECTOR-AUDIT.md`, `docs/reviews/bluetooth-rewrite/PI-BLUEZ-PLATFORM.md`, `crates/vitals-ble-broker/Cargo.toml`, `crates/vitals-ble-broker/src/lib.rs`, `crates/vitals-ble-broker/src/lease.rs`, `crates/vitals-ble-broker/src/protocol.rs`, `Cargo.toml`, `Cargo.lock`, `crates/vitals-collectors/Cargo.toml`, `docs/specs/AMENDMENTS.md`
 **Creates:** broker BlueZ adapter modules and Linux contract tests
 
 Implement the only application-level BlueZ/D-Bus owner. Resolve an adapter by stable selector and record current `hciX` only as runtime evidence. Wrap discovery/filter snapshot and restoration, device connect/disconnect, service resolution, notification/indication subscription, writes, deadlines, cancellation, and adapter-generation changes in typed operations. Serialize discovery and new-connect admission, serialize per-device GATT writes, expose ownership and blocker values, and classify BlueZ/D-Bus/USB/controller failures. Do not add a generic D-Bus call. Observe BP kernel-created connections without initiating BP connect.
