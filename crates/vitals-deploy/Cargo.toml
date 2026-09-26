@@ -1,0 +1,19 @@
+[package]
+name = "vitals-deploy"
+description = "SHA-addressed artifact manifest for native Pi delivery"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+tempfile = "3"

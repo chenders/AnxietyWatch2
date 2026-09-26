@@ -12,6 +12,7 @@ members = [
     "crates/hr-spike",          # T-B1 overnight capture (Linux)
     "crates/emay-spike",        # T-B1 substitute: SpO2 capture (Linux)
     "crates/vitals-console",
+    "crates/vitals-deploy",     # native staged-delivery manifest tool
 ]
 
 [workspace.package]
