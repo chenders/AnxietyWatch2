@@ -3,7 +3,7 @@
 //! The server is the only process-facing owner of the Linux adapter owner. It
 //! authenticates workers by the private socket and typed hello, validates every
 //! lease against the negotiated capability set, and never forwards a raw
-//! BlueZ object or D-Bus method to a worker.
+//! `BlueZ` object or D-Bus method to a worker.
 
 #![cfg(all(feature = "linux", target_os = "linux"))]
 
@@ -168,7 +168,7 @@ async fn serve_client(stream: UnixStream, state: Arc<BrokerState>) -> Result<(),
         }
     }
 
-    let (mut reader, writer) = stream.into_split();
+    let (mut reader, mut writer) = stream.into_split();
     let (sender, mut responses) = mpsc::channel::<ServerMessage>(SOCKET_QUEUE);
     let writer_task = tokio::spawn(async move {
         while let Some(message) = responses.recv().await {
@@ -227,7 +227,7 @@ async fn serve_client(stream: UnixStream, state: Arc<BrokerState>) -> Result<(),
     result
 }
 
-fn validate_hello(state: &BrokerState, hello: &vitals_ble_broker::Hello) -> Result<(), String> {
+fn validate_hello(state: &BrokerState, hello: &crate::Hello) -> Result<(), String> {
     if hello.adapter_selector != state.selector_text {
         return Err(format!(
             "worker authentication rejected: adapter selector mismatch for source={:?}",
@@ -305,6 +305,7 @@ async fn process_message(
     }
 }
 
+#[allow(clippy::too_many_lines)]
 async fn acquire_lease(
     client_id: u64,
     acquire: Acquire,
@@ -366,17 +367,12 @@ async fn acquire_lease(
     let now = elapsed_tick(state.started);
     let result = state.owner.lock().await.acquire(request, now);
     match result {
-        Ok(vitals_ble_broker::AcquireResult::Granted(lease)) => {
+        Ok(crate::AcquireResult::Granted(lease)) => {
             let address = address_for_lease(&lease);
             let id = lease.id();
-            state
-                .clients
-                .lock()
-                .await
-                .get_mut(&client_id)
-                .map(|client| {
-                    client.leases.push(id);
-                });
+            if let Some(client) = state.clients.lock().await.get_mut(&client_id) {
+                client.leases.push(id);
+            }
             send_response(
                 sender,
                 ServerMessage::LeaseGranted {
@@ -398,7 +394,7 @@ async fn acquire_lease(
             .await;
             Ok(())
         }
-        Ok(vitals_ble_broker::AcquireResult::Queued { ticket, blocker }) => {
+        Ok(crate::AcquireResult::Queued { ticket, blocker }) => {
             // Source clients currently use bounded retries rather than holding
             // an unbounded socket wait. Cancel the scheduler entry immediately
             // so a dead worker can never strand a lease request.
@@ -415,6 +411,7 @@ async fn acquire_lease(
     }
 }
 
+#[allow(clippy::too_many_lines)]
 async fn process_operation(
     client_id: u64,
     operation: Operation,
@@ -587,7 +584,7 @@ async fn process_operation(
                 .subscribe(&info.lease, &characteristic)
                 .await;
             match stream {
-                Ok(mut stream) => {
+                Ok(stream) => {
                     send_response(
                         sender,
                         ServerMessage::OperationAccepted {
@@ -599,6 +596,7 @@ async fn process_operation(
                     let lease_id = operation.lease_id;
                     let operation_id = operation.operation_id;
                     tokio::spawn(async move {
+                        futures::pin_mut!(stream);
                         while let Some(payload) = stream.next().await {
                             if sender
                                 .send(ServerMessage::Frame {
@@ -761,13 +759,13 @@ async fn remove_lease(client_id: u64, lease_id: LeaseId, state: &Arc<BrokerState
     }
 }
 
-async fn operation_result<T: std::fmt::Display>(
+async fn operation_result<E: std::fmt::Display>(
     sender: &mpsc::Sender<ServerMessage>,
     operation_id: u64,
-    result: Result<T, impl std::fmt::Display>,
+    result: Result<(), E>,
 ) -> Result<(), String> {
     match result {
-        Ok(_) => send_response(sender, ServerMessage::OperationAccepted { operation_id }).await,
+        Ok(()) => send_response(sender, ServerMessage::OperationAccepted { operation_id }).await,
         Err(error) => {
             send_response(
                 sender,
@@ -845,17 +843,17 @@ async fn read_message<R: AsyncRead + Unpin>(reader: &mut R) -> Result<ClientMess
         header[7], header[8], header[9], header[10],
     ]))
     .map_err(|_| ProtocolError::InvalidPayload.to_string())?;
-    let frame_length =
-        HEADER_BYTES
-            .checked_add(payload_length)
-            .ok_or_else(|| ProtocolError::FrameTooLarge {
-                length: usize::MAX,
-                max: vitals_ble_broker::MAX_FRAME_BYTES,
-            })?;
-    if frame_length > vitals_ble_broker::MAX_FRAME_BYTES {
+    let frame_length = HEADER_BYTES
+        .checked_add(payload_length)
+        .ok_or(ProtocolError::FrameTooLarge {
+            length: usize::MAX,
+            max: crate::MAX_FRAME_BYTES,
+        })
+        .map_err(|error| error.to_string())?;
+    if frame_length > crate::MAX_FRAME_BYTES {
         return Err(ProtocolError::FrameTooLarge {
             length: frame_length,
-            max: vitals_ble_broker::MAX_FRAME_BYTES,
+            max: crate::MAX_FRAME_BYTES,
         }
         .to_string());
     }
@@ -867,7 +865,7 @@ async fn read_message<R: AsyncRead + Unpin>(reader: &mut R) -> Result<ClientMess
         .await
         .map_err(|error| format!("broker frame payload read failed: {error}"))?;
     frame.extend_from_slice(&payload);
-    vitals_ble_broker::decode(&frame).map_err(|error| error.to_string())
+    crate::decode(&frame).map_err(|error| error.to_string())
 }
 
 fn prepare_socket(path: &Path) -> io::Result<()> {

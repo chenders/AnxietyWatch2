@@ -1,7 +1,9 @@
 //! Typed Unix-socket client for source workers.
 //!
-//! The client exposes only broker protocol operations. It contains no BlueZ,
+//! The client exposes only broker protocol operations. It contains no `BlueZ`,
 //! D-Bus object paths, adapter power controls, or arbitrary method calls.
+
+#![allow(clippy::missing_errors_doc)]
 
 use std::{fmt, path::Path, time::Duration};
 
@@ -19,13 +21,24 @@ pub enum ClientError {
     /// The broker sent an invalid response.
     Protocol(ProtocolError),
     /// The broker rejected an operation.
-    Broker { code: u8, detail: String },
+    Broker {
+        /// Protocol error code.
+        code: u8,
+        /// Redacted blocker detail.
+        detail: String,
+    },
     /// A response did not match the typed request.
     UnexpectedResponse(&'static str),
     /// The broker queued an operation that this bounded client cannot hold.
-    Queued { ticket: u64 },
+    Queued {
+        /// Scheduler ticket that was not held by this client.
+        ticket: u64,
+    },
     /// An operation exceeded its deadline after broker cancellation.
-    DeadlineExceeded { operation: &'static str },
+    DeadlineExceeded {
+        /// Operation that exceeded its deadline.
+        operation: &'static str,
+    },
     /// The broker did not acknowledge cancellation after a deadline.
     CancellationFailed {
         /// Operation that could not be cancelled.
@@ -150,6 +163,10 @@ impl BrokerClient {
     ///
     /// BP uses this entry point with `KernelObserve`; it cannot negotiate
     /// userspace connection capability.
+    ///
+    /// # Errors
+    ///
+    /// Returns a named socket, handshake, or broker rejection error.
     pub async fn connect_source(
         source: Source,
         socket: impl AsRef<Path>,
@@ -190,6 +207,11 @@ impl BrokerClient {
     }
 
     /// Request a typed lease with the supplied capability boundary.
+    ///
+    /// # Errors
+    ///
+    /// Returns a named socket, protocol, queue, or broker rejection error.
+    #[allow(clippy::too_many_arguments)]
     pub async fn acquire_lease(
         &mut self,
         intent: crate::Intent,
@@ -232,6 +254,10 @@ impl BrokerClient {
     }
 
     /// Request a bounded connect lease for H10.
+    ///
+    /// # Errors
+    ///
+    /// Returns a named socket, protocol, queue, or broker rejection error.
     pub async fn acquire_connect(
         &mut self,
         priority: Priority,
@@ -255,6 +281,10 @@ impl BrokerClient {
     }
 
     /// Observe the broker-owned state of a kernel-created device.
+    ///
+    /// # Errors
+    ///
+    /// Returns a named transport, broker, or cancellation error.
     pub async fn observe_device_bounded(
         &mut self,
         target: impl Into<String>,
@@ -284,6 +314,10 @@ impl BrokerClient {
     }
 
     /// Initiate a broker-owned connection for the acquired lease.
+    ///
+    /// # Errors
+    ///
+    /// Returns a named transport, broker, or operation error.
     pub async fn connect_device(&mut self, target: impl Into<String>) -> Result<(), ClientError> {
         let operation_id = self.next_operation();
         self.send_operation(operation_id, OperationKind::Connect, target, Vec::new())
@@ -292,6 +326,10 @@ impl BrokerClient {
     }
 
     /// Initiate a broker-owned connection with cancellation on deadline.
+    ///
+    /// # Errors
+    ///
+    /// Returns a named transport, broker, or cancellation error.
     pub async fn connect_device_bounded(
         &mut self,
         target: impl Into<String>,
@@ -307,6 +345,10 @@ impl BrokerClient {
     }
 
     /// Resolve the configured H10 service and measurement characteristic.
+    ///
+    /// # Errors
+    ///
+    /// Returns a named transport, broker, or operation error.
     pub async fn resolve_characteristic(
         &mut self,
         service_uuid: impl Into<String>,
@@ -321,6 +363,10 @@ impl BrokerClient {
     }
 
     /// Resolve a characteristic with cancellation on deadline.
+    ///
+    /// # Errors
+    ///
+    /// Returns a named transport, broker, or cancellation error.
     pub async fn resolve_characteristic_bounded(
         &mut self,
         service_uuid: impl Into<String>,
@@ -332,26 +378,34 @@ impl BrokerClient {
         self.send_operation(operation_id, OperationKind::Resolve, target, Vec::new())
             .await?;
         match tokio::time::timeout(deadline, self.receive()).await {
-            Ok(ServerMessage::Resolved {
+            Ok(Ok(ServerMessage::Resolved {
                 operation_id: response_id,
                 handle,
-            }) if response_id == operation_id => Ok(handle),
-            Ok(ServerMessage::Error { code, detail, .. }) => {
+            })) if response_id == operation_id => Ok(handle),
+            Ok(Ok(ServerMessage::Error { code, detail, .. })) => {
                 Err(ClientError::Broker { code, detail })
             }
             Ok(Err(error)) => Err(error),
-            Ok(_) => Err(ClientError::UnexpectedResponse("Resolved")),
+            Ok(Ok(_)) => Err(ClientError::UnexpectedResponse("Resolved")),
             Err(_) => Err(self.cancel_after_deadline(operation_id, "resolve").await),
         }
     }
 
     /// Subscribe to the resolved characteristic.
+    ///
+    /// # Errors
+    ///
+    /// Returns a named transport, broker, or operation error.
     pub async fn subscribe(&mut self, handle: impl Into<String>) -> Result<(), ClientError> {
         self.subscribe_bounded(handle, Duration::from_secs(30))
             .await
     }
 
     /// Subscribe with cancellation on deadline.
+    ///
+    /// # Errors
+    ///
+    /// Returns a named transport, broker, or cancellation error.
     pub async fn subscribe_bounded(
         &mut self,
         handle: impl Into<String>,
@@ -367,6 +421,10 @@ impl BrokerClient {
     }
 
     /// Read the next broker event from the bounded subscription stream.
+    ///
+    /// # Errors
+    ///
+    /// Returns a named transport, protocol, or broker error.
     pub async fn next_event(&mut self) -> Result<Option<BrokerEvent>, ClientError> {
         loop {
             match self.receive().await? {
@@ -402,6 +460,10 @@ impl BrokerClient {
     }
 
     /// Release the worker lease after the source stream has ended.
+    ///
+    /// # Errors
+    ///
+    /// Returns a named transport, protocol, or broker error.
     pub async fn release(&mut self, reason: impl Into<String>) -> Result<(), ClientError> {
         self.send(ClientMessage::Release(Release {
             lease_id: self.lease.id,

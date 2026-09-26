@@ -394,7 +394,14 @@ impl AdapterPolicy {
 
 #[cfg(all(feature = "linux", target_os = "linux"))]
 mod runtime {
-    use super::*;
+    #![allow(clippy::missing_errors_doc)]
+
+    use super::{
+        AcquireResult, AdapterHealth, AdapterPolicy, BluezFailureClass, ControllerEvidence,
+        ControllerSelector, DeviceObservation, DiscoveryReport, Generation, Lease, LeaseId,
+        LeaseRequest, OpenError, OwnerError, PolicyError, ReleaseOutcome, ResolvedController,
+        SchedulerEvent, resolve_controller,
+    };
     use std::{collections::HashMap, sync::Arc, time::Duration};
 
     use bluer::{Adapter, Address, Session, gatt::remote::Characteristic};
@@ -585,11 +592,11 @@ mod runtime {
                     let mut found = false;
                     while let Some(event) = events.next().await {
                         count = count.saturating_add(1);
-                        if let bluer::AdapterEvent::DeviceAdded(address) = event {
-                            if target == Some(address) {
-                                found = true;
-                                break;
-                            }
+                        if let bluer::AdapterEvent::DeviceAdded(address) = event
+                            && target == Some(address)
+                        {
+                            found = true;
+                            break;
                         }
                     }
                     (count, found)
@@ -663,17 +670,18 @@ mod runtime {
                     class: BluezFailureClass::DeviceMissing,
                     operation: "materialize device",
                 })?;
-            match tokio::time::timeout(duration, bluer::Device::connect(&device)).await {
-                Ok(result) => result.map_err(|error| OwnerError::Bluez {
+            if let Ok(result) =
+                tokio::time::timeout(duration, bluer::Device::connect(&device)).await
+            {
+                result.map_err(|error| OwnerError::Bluez {
                     class: classify_bluer_error(&error),
                     operation: "connect device",
-                }),
-                Err(_) => {
-                    let _ = device.disconnect().await;
-                    Err(OwnerError::DeadlineExceeded {
-                        operation: "connect device",
-                    })
-                }
+                })
+            } else {
+                let _ = device.disconnect().await;
+                Err(OwnerError::DeadlineExceeded {
+                    operation: "connect device",
+                })
             }
         }
 
@@ -757,7 +765,7 @@ mod runtime {
             &self,
             lease: &Lease,
             characteristic: &Characteristic,
-        ) -> Result<impl futures::Stream<Item = Vec<u8>>, OwnerError> {
+        ) -> Result<impl futures::Stream<Item = Vec<u8>> + use<>, OwnerError> {
             self.check_gatt_lease(lease)?;
             characteristic
                 .notify()
@@ -857,11 +865,12 @@ mod runtime {
             | ErrorKind::AuthenticationTimeout
             | ErrorKind::InProgress
             | ErrorKind::NotReady => BluezFailureClass::ConnectRejected,
-            ErrorKind::NotAvailable => BluezFailureClass::DaemonUnavailable,
             ErrorKind::Internal(bluer::InternalErrorKind::DBusConnectionLost) => {
                 BluezFailureClass::ControllerLost
             }
-            ErrorKind::Internal(_) => BluezFailureClass::DaemonUnavailable,
+            ErrorKind::NotAvailable | ErrorKind::Internal(_) => {
+                BluezFailureClass::DaemonUnavailable
+            }
             ErrorKind::NotPermitted | ErrorKind::NotAuthorized | ErrorKind::NotSupported => {
                 BluezFailureClass::GattRejected
             }
