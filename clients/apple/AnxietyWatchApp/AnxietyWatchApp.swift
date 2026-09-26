@@ -12,7 +12,7 @@ import BackgroundTasks
 import WatchConnectivity
 #endif
 #if canImport(UserNotifications)
-import UserNotifications
+@preconcurrency import UserNotifications
 #endif
 #if canImport(UIKit)
 import UIKit
