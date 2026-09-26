@@ -37,11 +37,15 @@ jobs:
           xcodebuild -version
           swift --version
 
-      - name: Install SwiftLint
+      - name: Install verification tools
         run: |
+          if ! command -v rg >/dev/null 2>&1; then
+            brew install ripgrep
+          fi
           if ! command -v swiftlint >/dev/null 2>&1; then
             brew install swiftlint
           fi
+          rg --version
           swiftlint version
 
       - name: Verify project and security gates
