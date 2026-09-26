@@ -1,0 +1,4 @@
+# Re-register the A&D cuff whenever the Bluetooth adapter is hot-plugged.
+# The kernel LE auto-connect list is controller state, not persistent BlueZ
+# pairing state, so removing and reinserting the dongle clears it.
+ACTION=="add", SUBSYSTEM=="bluetooth", KERNEL=="hci0", TAG+="systemd", ENV{SYSTEMD_WANTS}+="vitals-bp-autoconnect.service"

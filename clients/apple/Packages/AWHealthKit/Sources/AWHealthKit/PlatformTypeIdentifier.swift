@@ -1,5 +1,3 @@
-import AWClientCore
-import AWTransport
 import Foundation
 
 /// A vendor identifier preserved for registry lookup. This is not a generated registry enum.

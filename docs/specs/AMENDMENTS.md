@@ -20,6 +20,14 @@ wins**. If you find a contradiction, report it rather than implementing either v
 | **07** | [The HTTP API and admin console are Rust, not Python](2026-08-05-amendment-07-api-in-rust.md) | **`language-choices.md` §1 row "HTTP API, admin, analysis → Python 3.12 + FastAPI", and §3 in full** | admin console M0–M2, web dashboard backend, client write API |
 | **08** | [Layout selection by live evaluation, not upfront choice](2026-08-06-amendment-08-layout-evaluation.md) | the implicit "pick a design direction before M1" in `SPEC-admin-console.md` §3.1 | admin console M1 (all three directions behind a runtime switcher), web dashboard (gains a plan home: port B/C onto the `model()` seam + switcher, gated on the vitalsd query path) |
 | **09** | [Production mobile enrollment, request authentication, and TLS topology](2026-08-30-amendment-09-mobile-enrollment-and-tls.md) | Amendment 02 mobile key custody; Amendment 07 client API; admin §9c bind/auth deferral; iOS §6.1 enrollment gate | T-I1, T-I2, T-I4, T-I5, T-I7, T-I17, T-I18, T-M2a, T-M2h |
+| **10** | [First-draft private-LAN transport](2026-09-15-amendment-10-first-draft-lan-http.md) | Amendment 09 §§2, 3.2, and 7 for the first-draft iPhone release; iOS §§6.1 and 7.2 | first-draft T-I1, T-I2, T-I4, T-I5, T-I7, T-M2a |
+| **11** | [Optional direct lyrics retrieval on the iPhone](2026-09-16-amendment-11-optional-direct-lyrics.md) | first-draft Pi-only Genius lyrics decision and iOS records/transport behavior | first-draft T-I4, T-I7, T-I11, T-I13, Pi lyrics/admin work |
+| **12** | [Provider-aware song search and provider-independent identity](2026-09-16-amendment-12-provider-aware-song-search.md) | first-draft song-search provider choice and song-catalog identity behavior | first-draft T-I11, T-I13, song metadata/Pi lyrics work |
+| **13** | [Platform-sample envelope and sub-provenance](2026-09-17-amendment-13-platform-sample-provenance.md) | platform-store identity and provenance decisions pending T-X3 | T-X3, T-X4, T-I6, T-I8, T-I19 |
+| **14** | [Phone-silence escalation](2026-09-17-amendment-14-phone-silence-escalation.md) | open question 1 and undefined phone-silence escalation | T-X1, T-M2e, T-M2f |
+| **15** | [HealthKit is a first-release phone capability](2026-09-17-amendment-15-healthkit-first-release.md) | Amendment 10's first-draft HealthKit deferral | T-I8, T-I9, T-I11, T-I18, T-I19, T-I20 |
+| **16** | [Operator-directed APNs messages](2026-09-18-amendment-16-operator-directed-apns.md) | first-draft remote-notification deferral and the deferred Stage 7 alarm-push client follow-up; preserves Amendment 14's no-loop phone-silence rule | T-M6a–T-M6e, T-I22 |
+| **17** | [Opt-in iPhone BLE mobility relay](2026-09-22-amendment-17-iphone-ble-mobility-relay.md) | Stage 7's blanket exclusion of iPhone BLE sessions and the ordinary-sync socket/keep-alive wording, only for a bounded mobility relay | T-I3, T-I18, T-I20, T-I21, T-I23 |
 | — | [C vs Rust evaluation](2026-08-03-c-vs-rust-evaluation.md) | the C11 decision | all code tasks |
 | — | [Review synthesis and fix tracker](../reviews/SYNTHESIS.md) | — | status of every finding |
 
@@ -65,6 +73,9 @@ batch_id    BIGINT REFERENCES ingest_batch(id) -- NULL = did not arrive signed
   (amendment 06 §1.2). A source that is neither cannot be given a correct identity and must not be
   ingested. A retransmission reuses the same `seq` and dedupes correctly; a reconnect mints a **new
   `session_id`**, so there is no false dedup across a discontinuity.
+- **Platform-store samples use an opaque, lossless identity split** (amendment 13): the HealthKit
+  sample UUID's first and last eight bytes become `session_id` and `seq`. The pair is stable across
+  retries but is not chronological; sub-provenance remains in the versioned `extra` object.
 - **`session_id` must be unique across process restarts.** A per-process counter from 0 makes a
   restarted collector's first rows collide with a previous run's and `ON CONFLICT DO NOTHING` drops
   them silently. Near-total for BP, where `seq` is 0–3 every time.
@@ -122,15 +133,29 @@ collector is dead is the worst false negative available. A shutdown inhibit keep
 silent, and it fails safe (armed by default). Its test injects upstream faults; stopping the
 heartbeat only tests the 555. See amendment 05 §2.
 
+**Amendment 16 adds operator-directed APNs messages** to one active device, one user's active
+phones, or every active non-revoked phone registered with the current Pi. Recipient resolution,
+confirmation, audit, token invalidation, minimal payloads, and separate APNs acceptance/display/
+acknowledgement evidence are mandatory. This is never the phone-silence path and never replaces the
+local klaxon.
+
+**Amendment 17 permits an opt-in iPhone BLE mobility relay.** A supported BLE sensor may reach the
+phone, which forwards an authenticated bounded stream over the private LAN to the Pi. The Pi remains
+authoritative and the local detector/alarm remains independent. A NeoPixel bracelet is a convenience
+indicator only; measured foreground/background behavior, stale/unknown handling, and physical-device
+latency evidence are required before the relay is represented as more than an experiment.
+
 ### Mobile enrollment and network trust
 
-**The public phone API is HTTPS-only and the admin console remains private** (amendment 09).
-`vitals-console` binds loopback behind Caddy: only `/api/v1/client/*` is public, while operator pages
-are WireGuard-only. Enrollment uses a ten-minute single-use console artifact and a non-exportable
-Secure Enclave P-256 key. Requests use RFC 9421 signatures plus durable replay IDs. ATS system trust
-and hostname validation apply; certificate pinning is deliberately rejected for the initial release
-because safe ACME rotation and backup-pin recovery are not operationally proven. The old plaintext
-`/api/envelope/register` route is test-only and never a production mobile flow.
+**The eventual public phone API is HTTPS-only and the admin console remains private** (amendment 09),
+but Amendment 10 permits the first draft to use HTTP only to a manually configured private-LAN Pi
+address. The first draft has no away-from-home endpoint. Device enrollment, Secure Enclave keys,
+RFC 9421 signatures, durable replay IDs, operator approval, and legacy-route exclusion remain in force.
+The production HTTPS/Caddy topology and no-cleartext gate return before public or away-from-home use.
+
+Amendment 11 additionally permits explicit, encrypted provisioning of the Pi-held Genius credential to
+an opted-in iPhone for direct off-LAN lyrics retrieval. This does not permit silent provisioning or
+move the Pi's authoritative record ownership.
 
 ### UI direction
 

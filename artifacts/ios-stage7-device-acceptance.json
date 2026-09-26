@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "captured_at": null,
+  "iphone": {
+    "device_label": "Test iPhone",
+    "os_version": "iOS 27.0",
+    "app_build": "0.1.0 (1)"
+  },
+  "checks": {
+    "healthkit_observer_delivery": {"status": "not_measured", "observed_at": null, "evidence": "Physical-device acceptance run required.", "blocker": "no device observation recorded"},
+    "background_task_drain": {"status": "not_measured", "observed_at": null, "evidence": "Physical-device acceptance run required.", "blocker": "no device observation recorded"},
+    "force_quit_behavior": {"status": "not_measured", "observed_at": null, "evidence": "Physical-device acceptance run required.", "blocker": "no device observation recorded"},
+    "locked_after_first_unlock": {"status": "not_measured", "observed_at": null, "evidence": "Physical-device acceptance run required.", "blocker": "no device observation recorded"},
+    "secure_enclave_background_signing": {"status": "not_measured", "observed_at": null, "evidence": "Physical-device acceptance run required.", "blocker": "no device observation recorded"},
+    "wrong_host_rejection": {"status": "not_measured", "observed_at": null, "evidence": "Physical-device acceptance run required.", "blocker": "no device observation recorded"},
+    "expired_certificate_rejection": {"status": "not_measured", "observed_at": null, "evidence": "Physical-device acceptance run required.", "blocker": "no device observation recorded"},
+    "untrusted_certificate_rejection": {"status": "not_measured", "observed_at": null, "evidence": "Physical-device acceptance run required.", "blocker": "no device observation recorded"},
+    "replay_rejection": {"status": "not_measured", "observed_at": null, "evidence": "Physical-device acceptance run required.", "blocker": "no device observation recorded"},
+    "revocation_rejection": {"status": "not_measured", "observed_at": null, "evidence": "Physical-device acceptance run required.", "blocker": "no device observation recorded"},
+    "clock_failure_rejection": {"status": "not_measured", "observed_at": null, "evidence": "Physical-device acceptance run required.", "blocker": "no device observation recorded"},
+    "key_rotation_overlap": {"status": "not_measured", "observed_at": null, "evidence": "Physical-device acceptance run required.", "blocker": "no device observation recorded"},
+    "queued_record_preservation": {"status": "not_measured", "observed_at": null, "evidence": "Physical-device acceptance run required.", "blocker": "no device observation recorded"},
+    "express_capture_timing": {"status": "not_measured", "observed_at": null, "evidence": "Physical-device acceptance run required.", "blocker": "no device observation recorded"},
+    "journal_capture_timing": {"status": "not_measured", "observed_at": null, "evidence": "Physical-device acceptance run required.", "blocker": "no device observation recorded"},
+    "overnight_battery_impact": {"status": "not_measured", "observed_at": null, "evidence": "Physical-device acceptance run required.", "blocker": "no device observation recorded"},
+    "watch_connectivity_recovery": {"status": "not_measured", "observed_at": null, "evidence": "Physical-device acceptance run required.", "blocker": "no device observation recorded"}
+  },
+  "preconditions": {
+    "background_app_refresh_enabled": {
+      "observed_at": "2026-09-18T03:03:05Z",
+      "evidence": "AnxietyWatch appeared enabled in the iPhone Background App Refresh list."
+    }
+  },
+  "limits": {
+    "healthkit_batch_max": 100,
+    "retry_max": 5,
+    "overnight_battery_budget_percent": 10
+  }
+}

@@ -339,11 +339,19 @@ enum DrainLiveness {
 /// gates `drain_progressing` and the operator-facing stall message.
 const DRAIN_STALL_MAX_AGE_SECS: u64 = 300;
 
+fn progress_age_seconds(now: std::time::SystemTime, advanced: Option<u64>) -> u64 {
+    advanced.map_or(u64::MAX, |value| {
+        now.duration_since(std::time::UNIX_EPOCH)
+            .map_or(u64::MAX, |elapsed| elapsed.as_secs().saturating_sub(value))
+    })
+}
+
 fn finalize_drain_health(health: &mut vitals_proto::Health, liveness: DrainLiveness) {
     // Unmeasured is not measured-and-good: `lag_bytes == 0` from an early
     // return would otherwise reassure the dead-man heartbeat (amendment 05 §2.1).
+    let progress_age = progress_age_seconds(std::time::SystemTime::now(), health.last_advanced_at);
     health.heartbeat.drain_progressing = liveness == DrainLiveness::Measured
-        && (health.lag_bytes == 0 || health.lag_age_seconds <= DRAIN_STALL_MAX_AGE_SECS);
+        && (health.lag_bytes == 0 || progress_age <= DRAIN_STALL_MAX_AGE_SECS);
     health.heartbeat_pulsing = health
         .heartbeat
         .should_pulse(state::HEARTBEAT_MAX_AGE.as_secs());
@@ -421,8 +429,9 @@ fn update_drain_health(health: &mut vitals_proto::Health, spool: &Spool) -> Drai
     health.lag_bytes = lag;
     health.lag_age_seconds = oldest;
     health.last_advanced_at = advanced;
-    if lag > 0 && oldest > DRAIN_STALL_MAX_AGE_SECS {
-        health.degraded.push(format!("spool drain stalled: lag_bytes={lag}, lag_age_seconds={oldest}, last_advanced_at={advanced:?}; check PostgreSQL reachability, advisory lock, and schema fingerprint"));
+    let progress_age = progress_age_seconds(now, advanced);
+    if lag > 0 && progress_age > DRAIN_STALL_MAX_AGE_SECS {
+        health.degraded.push(format!("spool drain stalled: lag_bytes={lag}, progress_age_seconds={progress_age}, lag_age_seconds={oldest}, last_advanced_at={advanced:?}; check PostgreSQL reachability, advisory lock, and schema fingerprint"));
     }
     DrainLiveness::Measured
 }
@@ -618,6 +627,14 @@ mod tests {
             json.get("last_advanced_at"),
             Some(&serde_json::json!(12_345))
         );
+    }
+
+    #[test]
+    fn drain_progress_age_uses_offset_advancement() {
+        let now = UNIX_EPOCH + std::time::Duration::from_secs(1_000);
+        assert_eq!(progress_age_seconds(now, Some(950)), 50);
+        assert_eq!(progress_age_seconds(now, Some(1_050)), 0);
+        assert_eq!(progress_age_seconds(now, None), u64::MAX);
     }
 
     #[test]

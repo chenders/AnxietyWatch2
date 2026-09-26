@@ -12,6 +12,7 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4"
 vitals-decode = { path = "../crates/vitals-decode" }
+vitals-console = { path = "../crates/vitals-console" }
 
 [[bin]]
 name = "fuzz_sfloat"
@@ -39,6 +40,13 @@ bench = false
 [[bin]]
 name = "fuzz_bp_decode"
 path = "fuzz_targets/fuzz_bp_decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "healthkit_payload"
+path = "fuzz_targets/healthkit_payload.rs"
 test = false
 doc = false
 bench = false

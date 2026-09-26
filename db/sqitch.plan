@@ -12,4 +12,22 @@ retention [samples_1min] 2026-08-03T11:06:00Z Chris Henderson <chenders@users.no
 attempts [retention] 2026-08-06T12:00:00Z Chris Henderson <chenders@users.noreply.github.com> # attempt lifecycle, effect, and progress evidence
 status_observations [attempts] 2026-08-06T12:01:00Z Chris Henderson <chenders@users.noreply.github.com> # stored assertion freshness distinct from value change
 domain_records [status_observations] 2026-08-06T12:02:00Z Chris Henderson <chenders@users.noreply.github.com> # idempotent client-minted domain records
-envelope_clients [domain_records] 2026-08-06T12:03:00Z Chris Henderson <chenders@users.noreply.github.com> # register-once envelope credentials
+domain_schema [domain_records] 2026-09-17T12:00:00Z Chris Henderson <chenders@users.noreply.github.com> # isolate user-domain records in the domain schema
+domain_versions [domain_schema] 2026-09-17T12:01:00Z Chris Henderson <chenders@users.noreply.github.com> # immutable record versions and domain relationships
+domain_conflicts [domain_versions] 2026-09-17T12:02:00Z Chris Henderson <chenders@users.noreply.github.com> # durable conflicts and append-only audit evidence
+envelope_clients [domain_conflicts] 2026-08-06T12:03:00Z Chris Henderson <chenders@users.noreply.github.com> # register-once envelope credentials
+service_operation_audit [envelope_clients] 2026-09-18T12:00:00Z Chris Henderson <chenders@users.noreply.github.com> # immutable audited service-operation evidence
+silence_detector [status_observations] 2026-09-19T12:00:00Z Chris Henderson <chenders@users.noreply.github.com> # durable silence status and coalescible notification events
+email_channel [silence_detector] 2026-09-19T12:01:00Z Chris Henderson <chenders@users.noreply.github.com> # encrypted Gmail STARTTLS configuration and test result
+operator_overrides [email_channel] 2026-09-19T12:02:00Z Chris Henderson <chenders@users.noreply.github.com> # operator display metadata overrides
+source_declarations [operator_overrides] 2026-09-19T12:03:00Z Chris Henderson <chenders@users.noreply.github.com> # optional-source declarations
+health_mutes [source_declarations] 2026-09-19T12:04:00Z Chris Henderson <chenders@users.noreply.github.com> # actor and time-bounded health mutes
+mobile_credentials [health_mutes] 2026-09-19T12:05:00Z Chris Henderson <chenders@users.noreply.github.com> # single-use enrollment and public-key device credentials
+mobile_request_replays [mobile_credentials] 2026-09-19T12:06:00Z Chris Henderson <chenders@users.noreply.github.com> # durable authenticated mobile request replay admissions
+mobile_status_beacons [mobile_request_replays] 2026-09-19T12:07:00Z Chris Henderson <chenders@users.noreply.github.com> # append-only operational phone status assertions
+telemetry [mobile_status_beacons] 2026-09-19T12:08:00Z Chris Henderson <chenders@users.noreply.github.com> # opt-in bounded operational telemetry configuration
+healthkit_tombstones [telemetry] 2026-09-19T12:09:00Z Chris Henderson <chenders@users.noreply.github.com> # append-only HealthKit deletion facts
+apns_registrations [healthkit_tombstones] 2026-09-18T12:10:00Z Chris Henderson <chenders@users.noreply.github.com> # encrypted APNs device registration facts and audit
+apns_delivery [apns_registrations] 2026-09-18T12:11:00Z Chris Henderson <chenders@users.noreply.github.com> # immutable APNs message, provider, and client-outcome evidence
+apns_owner_identity [apns_delivery] 2026-09-18T12:12:00Z Chris Henderson <chenders@users.noreply.github.com> # configured owning-user identity for same-user fanout
+apns_idempotency [apns_owner_identity] 2026-09-18T12:13:00Z Chris Henderson <chenders@users.noreply.github.com> # bounded duplicate-send guard

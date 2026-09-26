@@ -5,9 +5,8 @@ let package = Package(
   name: "AWOutbox",
   platforms: [.macOS(.v14), .iOS(.v18)],
   products: [.library(name: "AWOutbox", targets: ["AWOutbox"])],
-  dependencies: [.package(path: "../AWClientCore")],
   targets: [
-    .target(name: "AWOutbox", dependencies: ["AWClientCore"]),
+    .target(name: "AWOutbox"),
     .testTarget(name: "AWOutboxTests", dependencies: ["AWOutbox"]),
   ]
 )
