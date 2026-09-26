@@ -119,6 +119,7 @@ pub enum BrokerEvent {
 pub struct BrokerClient {
     reader: tokio::net::unix::OwnedReadHalf,
     writer: tokio::net::unix::OwnedWriteHalf,
+    source: Source,
     lease: BrokerLease,
     next_operation: u64,
 }
@@ -135,11 +136,33 @@ impl BrokerClient {
         device_selector: impl Into<String>,
         capabilities: CapabilitySet,
     ) -> Result<Self, ClientError> {
+        Self::connect_source(
+            Source::H10,
+            socket,
+            adapter_selector,
+            device_selector,
+            capabilities,
+        )
+        .await
+    }
+
+    /// Connect and authenticate as an explicitly selected source worker.
+    ///
+    /// BP uses this entry point with `KernelObserve`; it cannot negotiate
+    /// userspace connection capability.
+    pub async fn connect_source(
+        source: Source,
+        socket: impl AsRef<Path>,
+        adapter_selector: impl Into<String>,
+        device_selector: impl Into<String>,
+        capabilities: CapabilitySet,
+    ) -> Result<Self, ClientError> {
         let stream = tokio::net::UnixStream::connect(socket).await?;
         let (reader, writer) = stream.into_split();
         let mut client = Self {
             reader,
             writer,
+            source,
             lease: BrokerLease {
                 id: LeaseId::new(0),
                 generation: Generation::new(0),
@@ -150,7 +173,7 @@ impl BrokerClient {
         client
             .send(ClientMessage::Hello(Hello {
                 protocol_version: crate::PROTOCOL_VERSION,
-                source: Source::H10,
+                source,
                 adapter_selector: adapter_selector.into(),
                 device_selector: Some(device_selector.into()),
                 capabilities,
@@ -166,27 +189,27 @@ impl BrokerClient {
         }
     }
 
-    /// Request a bounded connect lease.
-    pub async fn acquire_connect(
+    /// Request a typed lease with the supplied capability boundary.
+    pub async fn acquire_lease(
         &mut self,
+        intent: crate::Intent,
         priority: Priority,
         deadline: u64,
         max_hold: u64,
         device_selector: impl Into<String>,
+        capabilities: CapabilitySet,
+        reason: impl Into<String>,
     ) -> Result<BrokerLease, ClientError> {
         self.send(ClientMessage::Acquire(Acquire {
-            source: Source::H10,
-            intent: crate::Intent::Connect,
+            source: self.source,
+            intent,
             priority,
             deadline,
             max_hold,
             preemptible: false,
             device_selector: Some(device_selector.into()),
-            capabilities: CapabilitySet::empty()
-                .with(crate::Capability::Connect)
-                .with(crate::Capability::Resolve)
-                .with(crate::Capability::Subscribe),
-            reason: "H10 broker transport connect".to_owned(),
+            capabilities,
+            reason: reason.into(),
         }))
         .await?;
         match self.receive().await? {
@@ -205,6 +228,58 @@ impl BrokerClient {
             ServerMessage::LeaseQueued { ticket } => Err(ClientError::Queued { ticket }),
             ServerMessage::Error { code, detail, .. } => Err(ClientError::Broker { code, detail }),
             _ => Err(ClientError::UnexpectedResponse("LeaseGranted")),
+        }
+    }
+
+    /// Request a bounded connect lease for H10.
+    pub async fn acquire_connect(
+        &mut self,
+        priority: Priority,
+        deadline: u64,
+        max_hold: u64,
+        device_selector: impl Into<String>,
+    ) -> Result<BrokerLease, ClientError> {
+        self.acquire_lease(
+            crate::Intent::Connect,
+            priority,
+            deadline,
+            max_hold,
+            device_selector,
+            CapabilitySet::empty()
+                .with(crate::Capability::Connect)
+                .with(crate::Capability::Resolve)
+                .with(crate::Capability::Subscribe),
+            "H10 broker transport connect",
+        )
+        .await
+    }
+
+    /// Observe the broker-owned state of a kernel-created device.
+    pub async fn observe_device_bounded(
+        &mut self,
+        target: impl Into<String>,
+        deadline: Duration,
+    ) -> Result<(bool, bool), ClientError> {
+        let operation_id = self.next_operation();
+        self.send_operation(
+            operation_id,
+            OperationKind::ObserveDevice,
+            target,
+            Vec::new(),
+        )
+        .await?;
+        match tokio::time::timeout(deadline, self.receive()).await {
+            Ok(Ok(ServerMessage::DeviceState {
+                operation_id: response_id,
+                connected,
+                services_resolved,
+            })) if response_id == operation_id => Ok((connected, services_resolved)),
+            Ok(Ok(ServerMessage::Error { code, detail, .. })) => {
+                Err(ClientError::Broker { code, detail })
+            }
+            Ok(Ok(_)) => Err(ClientError::UnexpectedResponse("DeviceState")),
+            Ok(Err(error)) => Err(error),
+            Err(_) => Err(self.cancel_after_deadline(operation_id, "observe").await),
         }
     }
 

@@ -688,7 +688,7 @@ mod runtime {
             service_uuid: bluer::Uuid,
             characteristic_uuid: bluer::Uuid,
         ) -> Result<Characteristic, OwnerError> {
-            self.check_lease(lease, crate::lease::Intent::Gatt)?;
+            self.check_gatt_lease(lease)?;
             let device = self
                 .adapter
                 .device(address)
@@ -742,7 +742,7 @@ mod runtime {
             lease: &Lease,
             characteristic: &Characteristic,
         ) -> Result<impl futures::Stream<Item = Vec<u8>>, OwnerError> {
-            self.check_lease(lease, crate::lease::Intent::Gatt)?;
+            self.check_gatt_lease(lease)?;
             characteristic
                 .notify()
                 .await
@@ -782,6 +782,18 @@ mod runtime {
                     .clone()
             };
             mutex.lock_owned().await
+        }
+
+        fn check_gatt_lease(&self, lease: &Lease) -> Result<(), OwnerError> {
+            if lease.intent() == crate::lease::Intent::KernelObserve
+                && lease.source() == crate::lease::Source::Bp
+            {
+                if !self.policy.owns(lease) {
+                    return Err(OwnerError::LeaseNotOwned { lease: lease.id() });
+                }
+                return Ok(());
+            }
+            self.check_lease(lease, crate::lease::Intent::Gatt)
         }
 
         fn check_lease(

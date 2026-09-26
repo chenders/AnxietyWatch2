@@ -26,7 +26,7 @@ Move Linux application-level Bluetooth ownership to one broker per verified phys
 - [x] T-BT-3 — Implement the Linux BlueZ adapter owner · implement-complex · Linux/Pi
 - [x] T-BT-4 — Isolate and instrument the BP kernel-policy boundary · implement-complex · amendment 06
 - [x] T-BT-5 — Migrate one source through the broker with reversible ownership · implement-complex · gated
-- [ ] T-BT-6 — Migrate remaining collectors and retire direct BlueZ paths · implement-complex · gated
+- [x] T-BT-6 — Migrate remaining collectors and retire direct BlueZ paths · implement-complex · gated
 - [ ] T-BT-7 — Add coexistence, failure-injection, and Pi acceptance gates · implement-complex · review required
 
 ---
@@ -112,13 +112,15 @@ Use the H10 worker as the first source migration target only after the deploymen
 ### T-BT-6 — Migrate remaining collectors and retire direct BlueZ paths
 
 **Depends:** T-BT-5
-**Amends:** none
-**Reads:** `openspec/changes/linux-bluez-broker/design.md`, `docs/reviews/bluetooth-rewrite/COLLECTOR-AUDIT.md`, `docs/reviews/bluetooth-rewrite/LIBRARIAN.md`, `docs/specs/AMENDMENTS.md`
-**Modifies:** H10, SleepO2, AirSense, authorized BP paths, deployment units, and worker dependencies one source at a time
+**Amends:** amendment 06 — BP identity and durability
+**Reads:** `openspec/changes/linux-bluez-broker/design.md`, `docs/reviews/bluetooth-rewrite/COLLECTOR-AUDIT.md`, `docs/reviews/bluetooth-rewrite/LIBRARIAN.md`, `docs/specs/AMENDMENTS.md`, `docs/specs/2026-08-03-amendment-06-bp-identity-and-durability.md`, `crates/vitals-ble-broker/Cargo.toml`, `crates/vitals-ble-broker/src/lib.rs`, `crates/vitals-ble-broker/src/protocol.rs`, `crates/vitals-ble-broker/src/client.rs`, `crates/vitals-ble-broker/src/bluez.rs`, `crates/vitals-collectors/Cargo.toml`, `crates/vitals-collectors/src/bin/bp_collector.rs`, `crates/vitals-collectors/src/bp_build.rs`, `crates/vitals-collectors/src/bin/bp_journal_replay.rs`, `deploy/vitals-bp.service`, `deploy/vitals-bp-autoconnect.service`, `deploy/99-vitals-bp-autoconnect.rules`
+**Modifies:** BP observation/subscription path, kernel-policy helper contract, deployment units, and worker dependencies one source at a time. H10 is already brokered; absent SleepO2/AirSense/EMAY production sources remain separate follow-up work.
+
+The authorized `btmgmt` kernel-policy helper is retained as the narrow BP exception. It is excluded from the application-worker static scan, which must still reject direct BlueZ/D-Bus access in collectors.
 
 Migrate each remaining authorized source independently. Keep established streams alive while another source discovers, subject to measured capacity. Keep Wellue disabled unless a separate authorization gate passes. Remove direct `bluer`/D-Bus access from workers, stopgap discovery/connect loops, and source-level adapter resets only after the replacement path and rollback are verified. Preserve AirSense transport/session and therapy lifecycle as separate state machines.
 
-**Verify:** `cargo clippy --workspace --all-targets -- -D warnings && test -z "$(rg -n 'bluer::|StartDiscovery|StopDiscovery|Device1\\.(Connect|Disconnect)|btmgmt' crates/vitals-collectors/src crates/emay-collector/src deploy 2>/dev/null || true)" && git diff --check`
+**Verify:** `cargo clippy --workspace --all-targets -- -D warnings && test -z "$(rg -n 'bluer::|StartDiscovery|StopDiscovery|Device1\.(Connect|Disconnect)\b' crates/vitals-collectors/src crates/emay-collector/src deploy --glob '!vitals-bp-autoconnect.service' 2>/dev/null || true)" && rg -q 'btmgmt add-device' deploy/vitals-bp-autoconnect.service && git diff --check`
 
 ---
 

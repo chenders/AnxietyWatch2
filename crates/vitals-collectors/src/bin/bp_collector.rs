@@ -8,12 +8,12 @@
 //! and a real reading never connected). The privileged registration is owned
 //! by `vitals-bp-autoconnect.service`, which runs `btmgmt add-device -a 2`
 //! before this unit on every boot; this process still asserts the trust flag
-//! as belt and braces. The collector reacts once `BlueZ` reports the bonded
-//! device connected and GATT resolved, then subscribes through `BlueZ` so
+//! as belt and braces. The collector reacts once the broker reports the kernel-created
+//! bonded device connected and GATT resolved, then subscribes through the broker so
 //! indication CCCD `0x0002` is used.
 //!
 //! The sample-building policy is host-independent and lives in the crate lib so
-//! its tests run on any platform; only the `BlueZ` transport is Linux.
+//! its tests run on any platform; only the broker transport is Linux.
 
 #[cfg(not(target_os = "linux"))]
 fn main() {
@@ -23,8 +23,6 @@ fn main() {
 
 #[cfg(target_os = "linux")]
 mod linux {
-    use bluer::{Address, Device};
-    use futures::StreamExt as _;
     use std::fs::{File, OpenOptions};
     use std::io::{self, Write as _};
     use std::os::unix::fs::OpenOptionsExt as _;
@@ -32,6 +30,9 @@ mod linux {
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
     use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
     use tokio::net::UnixStream;
+    use vitals_ble_broker::bp::bp_capabilities;
+    use vitals_ble_broker::client::{BrokerClient, BrokerEvent};
+    use vitals_ble_broker::{Intent, Priority, Source};
     use vitals_collectors::bp_build as build;
     use vitals_core::{Session, SessionMinter};
     use vitals_decode::bp::bp_decode_2a35;
@@ -39,10 +40,8 @@ mod linux {
         Request, Response, WireSample, check_frame_len, decode_payload, encode_frame,
     };
 
-    const BP_SERVICE: bluer::Uuid =
-        bluer::Uuid::from_u128(0x0000_1810_0000_1000_8000_0080_5f9b_34fb);
-    const BP_MEASUREMENT: bluer::Uuid =
-        bluer::Uuid::from_u128(0x0000_2a35_0000_1000_8000_0080_5f9b_34fb);
+    const BP_SERVICE: &str = "00001810-0000-1000-8000-00805f9b34fb";
+    const BP_MEASUREMENT: &str = "00002a35-0000-1000-8000-00805f9b34fb";
     const SERVICES_TIMEOUT: Duration = Duration::from_secs(10);
     const POLL: Duration = Duration::from_millis(200);
     /// A sync append that neither succeeds nor fails is a frame in limbo and
@@ -51,7 +50,9 @@ mod linux {
     const APPEND_TIMEOUT: Duration = Duration::from_secs(30);
 
     struct Config {
-        target: Address,
+        target: String,
+        broker_socket: PathBuf,
+        adapter_selector: String,
         socket: PathBuf,
         state_dir: PathBuf,
         journal: PathBuf,
@@ -63,9 +64,14 @@ mod linux {
                 .ok()
                 .or_else(|| std::env::args().nth(1))
                 .ok_or_else(|| "BP_CUFF_MAC is unset (or pass the cuff address)".to_owned())?;
-            let target = mac
-                .parse()
-                .map_err(|_| format!("{mac:?} is not a Bluetooth address"))?;
+            if mac.is_empty() {
+                return Err("BP_CUFF_MAC is empty".to_owned());
+            }
+            let broker_socket = std::env::var_os("VITALS_BLE_BROKER_SOCKET")
+                .map(PathBuf::from)
+                .ok_or_else(|| "VITALS_BLE_BROKER_SOCKET is unset".to_owned())?;
+            let adapter_selector = std::env::var("VITALS_BLE_ADAPTER_SELECTOR")
+                .map_err(|_| "VITALS_BLE_ADAPTER_SELECTOR is unset".to_owned())?;
             let state_dir = PathBuf::from(
                 std::env::var_os("BP_STATE_DIR").unwrap_or_else(|| "/var/lib/vitals/bp".into()),
             );
@@ -76,7 +82,9 @@ mod linux {
                     .unwrap_or_else(|| "/run/vitals/vitalsd.sock".into()),
             );
             Ok(Self {
-                target,
+                target: mac,
+                broker_socket,
+                adapter_selector,
                 socket,
                 state_dir,
                 journal,
@@ -172,57 +180,40 @@ mod linux {
             })?
     }
 
-    async fn resolved(device: &Device) -> bool {
-        tokio::time::timeout(SERVICES_TIMEOUT, async {
-            loop {
-                if device.is_services_resolved().await.unwrap_or(false) {
-                    break;
-                }
-                tokio::time::sleep(POLL).await;
-            }
-        })
-        .await
-        .is_ok()
-    }
-
-    async fn measurement_char(
-        device: &Device,
-    ) -> bluer::Result<Option<bluer::gatt::remote::Characteristic>> {
-        for service in device.services().await? {
-            if service.uuid().await? != BP_SERVICE {
-                continue;
-            }
-            for characteristic in service.characteristics().await? {
-                if characteristic.uuid().await? == BP_MEASUREMENT {
-                    return Ok(Some(characteristic));
-                }
-            }
-        }
-        Ok(None)
-    }
-
     async fn capture_connection(
         config: &Config,
-        device: &Device,
+        client: &mut BrokerClient,
         minter: &mut SessionMinter,
         journal: &mut RawJournal,
     ) -> Result<u64, String> {
         let id = minter.mint().map_err(|e| format!("mint session id: {e}"))?;
         let mut session = Session::new(id);
-        let characteristic = measurement_char(device)
+        let characteristic = client
+            .resolve_characteristic_bounded(BP_SERVICE, BP_MEASUREMENT, SERVICES_TIMEOUT)
             .await
-            .map_err(|e| format!("enumerate GATT: {e}"))?
-            .ok_or_else(|| "resolved cuff exposes no 0x2A35 under service 0x1810".to_owned())?;
-        // BlueZ chooses indication bit 0x0002 from the characteristic flags.
-        let mut indications = Box::pin(
-            characteristic
-                .notify()
-                .await
-                .map_err(|e| format!("StartNotify 0x2A35: {e}"))?,
-        );
+            .map_err(|e| format!("broker GATT resolution failed: {e}"))?;
+        client
+            .subscribe_bounded(characteristic, SERVICES_TIMEOUT)
+            .await
+            .map_err(|e| format!("broker indication subscription failed: {e}"))?;
         eprintln!("bp-collector: subscribed to 0x2A35, session {id}");
         let mut count = 0u64;
-        while let Some(raw) = indications.next().await {
+        loop {
+            let event = client
+                .next_event()
+                .await
+                .map_err(|e| format!("broker BP event failed: {e}"))?;
+            let Some(event) = event else {
+                return Ok(count);
+            };
+            let raw = match event {
+                BrokerEvent::Frame { payload, .. } => payload,
+                BrokerEvent::DeviceState { connected, .. } if !connected => return Ok(count),
+                BrokerEvent::DeviceState { .. } => continue,
+                BrokerEvent::Disconnected { reason } => {
+                    return Err(format!("broker disconnected BP: {reason}"));
+                }
+            };
             let arrival = now_micros()?;
             journal
                 .append(arrival, &raw)
@@ -242,7 +233,6 @@ mod linux {
             count = count.saturating_add(1);
             eprintln!("bp-collector: frame {count} is durable in vitalsd spool");
         }
-        Ok(count)
     }
 
     async fn run(config: Config) -> Result<(), String> {
@@ -250,56 +240,54 @@ mod linux {
             .map_err(|e| format!("open session minter: {e}"))?;
         let mut journal = RawJournal::open(&config.journal)
             .map_err(|e| format!("open raw journal {}: {e}", config.journal.display()))?;
-        let bluez = bluer::Session::new().await.map_err(|e| e.to_string())?;
-        let adapter = bluez.default_adapter().await.map_err(|e| e.to_string())?;
-        adapter.set_powered(true).await.map_err(|e| e.to_string())?;
-        let device = adapter.device(config.target).map_err(|e| e.to_string())?;
-        if !device.is_paired().await.unwrap_or(false) {
-            return Err(format!(
-                "{} is not paired; pair it so BlueZ stores the IRK before collecting",
-                config.target
-            ));
-        }
-        // Belt and braces beside vitals-bp-autoconnect.service, which owns
-        // the privileged accept-list registration on every boot. Trust alone
-        // proved insufficient after a power cycle (2026-08-07).
-        if !device.is_trusted().await.unwrap_or(false) {
-            device
-                .set_trusted(true)
-                .await
-                .map_err(|e| format!("could not set {} trusted: {e}", config.target))?;
-            eprintln!(
-                "bp-collector: set {} trusted so bluetoothd re-registers kernel \
-                 auto-connect on every boot",
-                config.target
-            );
-        }
+        let mut client = BrokerClient::connect_source(
+            Source::Bp,
+            &config.broker_socket,
+            config.adapter_selector.clone(),
+            config.target.clone(),
+            bp_capabilities(),
+        )
+        .await
+        .map_err(|e| format!("connect to BLE broker: {e}"))?;
+        client
+            .acquire_lease(
+                Intent::KernelObserve,
+                Priority::new(10),
+                300,
+                24 * 60 * 60,
+                config.target.clone(),
+                bp_capabilities(),
+                "BP kernel-autoconnect observation",
+            )
+            .await
+            .map_err(|e| format!("acquire BP observation lease: {e}"))?;
         eprintln!(
-            "bp-collector: waiting for kernel auto-connect from {} (never calling Connect)",
+            "bp-collector: waiting for broker-observed kernel auto-connect from {} \
+             (never requesting userspace Connect)",
             config.target
         );
         loop {
-            while !device.is_connected().await.unwrap_or(false) {
+            let (connected, services_resolved) = client
+                .observe_device_bounded(config.target.clone(), SERVICES_TIMEOUT)
+                .await
+                .map_err(|e| format!("observe BP device: {e}"))?;
+            if !connected {
                 tokio::time::sleep(POLL).await;
+                continue;
             }
-            if !resolved(&device).await {
+            if !services_resolved {
                 eprintln!(
-                    "bp-collector: DEGRADED — bonded cuff {} connected but ServicesResolved did \
-                     not fire within {}s; encryption could not resume. Remove bond and re-pair",
+                    "bp-collector: DEGRADED — bonded cuff {} connected but ServicesResolved \
+                     did not fire within {}s; encryption could not resume. Remove bond and re-pair",
                     config.target,
                     SERVICES_TIMEOUT.as_secs()
                 );
-                while device.is_connected().await.unwrap_or(false) {
-                    tokio::time::sleep(POLL).await;
-                }
+                tokio::time::sleep(POLL).await;
                 continue;
             }
-            match capture_connection(&config, &device, &mut minter, &mut journal).await {
+            match capture_connection(&config, &mut client, &mut minter, &mut journal).await {
                 Ok(count) => eprintln!("bp-collector: connection ended after {count} frame(s)"),
                 Err(e) => eprintln!("bp-collector: connection failed: {e}"),
-            }
-            while device.is_connected().await.unwrap_or(false) {
-                tokio::time::sleep(POLL).await;
             }
         }
     }
