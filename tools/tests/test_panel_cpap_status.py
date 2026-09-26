@@ -17,6 +17,26 @@ def test_local_status_maps_active_therapy_without_console_auth() -> None:
     assert result["on"] is True
     assert result["therapy_on"] is True
     assert result["sample_at"] == 1_700_000_100.0
+    assert result["respiratory_rate"] is None
+
+
+def test_local_status_maps_latest_air11_fields() -> None:
+    result = local_status_values(
+        {
+            "link_state": "streaming",
+            "therapy_state": "active",
+            "last_host_receipt_unix_micros": 1_700_000_100_000_000,
+            "latest": {
+                "respiratory_rate": {"value": 18.0, "sample_at_unix_micros": 1_700_000_100_000_000},
+                "leak_lpm": {"value": 2.5, "sample_at_unix_micros": 1_700_000_101_000_000},
+                "pressure_cmh2o": {"value": 9.8, "sample_at_unix_micros": 1_700_000_101_000_000},
+            },
+        }
+    )
+    assert result["respiratory_rate"] == 18.0
+    assert result["leak_lpm"] == 2.5
+    assert result["pressure_cmh2o"] == 9.8
+    assert result["sample_at"] == 1_700_000_101.0
 
 
 def test_latest_values_maps_live_air11_fields() -> None:

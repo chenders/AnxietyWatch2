@@ -95,17 +95,35 @@ def local_status_values(document: dict[str, object]) -> dict[str, object]:
     sample_at = float(receipt) / 1_000_000.0 if finite(receipt) else None
     active = therapy_state == "active" and link_state == "streaming"
     status = therapy_state if isinstance(therapy_state, str) else "unknown"
+    latest = document.get("latest")
+    if not isinstance(latest, dict):
+        latest = {}
+
+    def latest_value(name: str) -> tuple[float | None, float | None]:
+        item = latest.get(name)
+        if not isinstance(item, dict):
+            return None, None
+        value = item.get("value")
+        timestamp = item.get("sample_at_unix_micros")
+        if not finite(value) or not finite(timestamp):
+            return None, None
+        return float(value), float(timestamp) / 1_000_000.0
+
+    respiratory_rate, rr_at = latest_value("respiratory_rate")
+    leak, leak_at = latest_value("leak_lpm")
+    pressure, pressure_at = latest_value("pressure_cmh2o")
+    sample_times = [timestamp for timestamp in (rr_at, leak_at, pressure_at) if timestamp is not None]
     return {
         "schema": 1,
         "written_at": time.time(),
-        "sample_at": sample_at,
+        "sample_at": max(sample_times, default=sample_at),
         "on": active,
         "therapy_on": active,
         "session_active": active,
         "status": status,
-        "respiratory_rate": None,
-        "leak_lpm": None,
-        "pressure_cmh2o": None,
+        "respiratory_rate": respiratory_rate,
+        "leak_lpm": leak,
+        "pressure_cmh2o": pressure,
         "source": "resmed_air11",
         "blocker": document.get("blocker"),
     }
