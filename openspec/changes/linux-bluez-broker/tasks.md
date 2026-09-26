@@ -20,7 +20,7 @@ Move Linux application-level Bluetooth ownership to one broker per verified phys
 
 ## Task index
 
-- [ ] T-BT-0 — Freeze deployment inventory and stable-controller contract · investigation
+- [x] T-BT-0 — Freeze deployment inventory and stable-controller contract · investigation
 - [ ] T-BT-1 — Add pure lease scheduler and broker capability model · implement-complex
 - [ ] T-BT-2 — Add the versioned broker protocol and fake transport · implement-complex
 - [ ] T-BT-3 — Implement the Linux BlueZ adapter owner · implement-complex · Linux/Pi
