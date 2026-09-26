@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "captured_at": "2026-09-19T10:35:16Z",
+  "device": {
+    "label": "theodore",
+    "os_version": "27.0",
+    "status": "passed",
+    "build_status": "passed",
+    "launch_status": "passed",
+    "blocker": null
+  },
+  "targeted_send": {
+    "status": "passed",
+    "message_id": "b2a7231e-466f-4d72-89d6-b67b89538d7f",
+    "provider_status": 200,
+    "recipient_count": 1,
+    "display_observed": true,
+    "display_observation_source": "operator report on physical device theodore",
+    "blocker": null
+  },
+  "all_active_fanout": {
+    "status": "passed",
+    "message_id": "5188a5b7-ae78-4048-a629-79623e7f7b96",
+    "provider_status": 200,
+    "recipient_count": 1,
+    "is_test": true,
+    "evidence_source": "authenticated Pi recipient preview and provider ledger"
+  },
+  "user_fanout": {
+    "status": "passed",
+    "message_id": "fe9b5456-6e2b-4179-8f1e-eaf5a453aa26",
+    "owner_user_id": "822182ae-cabf-4a26-96a1-fb50280c36ac",
+    "provider_status": 200,
+    "recipient_count": 1,
+    "is_test": true,
+    "evidence_source": "authenticated Pi recipient preview and provider ledger"
+  },
+  "zero_recipient": {
+    "status": "passed",
+    "message_id": "27c93a20-9fee-4b3f-8ee9-5e92530baad6",
+    "recipient_count": 0,
+    "provider_contacted": false,
+    "evidence_source": "authenticated server recipient snapshot and zero-recipient ledger result"
+  },
+  "invalid_token": {
+    "status": "passed",
+    "message_id": "765916a1-cfcf-4f26-9e5e-5b32aa4ef22b",
+    "provider_status": 400,
+    "provider_reason": "BadDeviceToken",
+    "revoked": true,
+    "evidence_source": "APNs provider ledger and registration audit"
+  },
+  "revoked_token": {
+    "status": "passed",
+    "message_id": "a6c5ca0c-46ad-46ba-8aaa-87b63ee8a5f8",
+    "recipient_count": 0,
+    "provider_contacted": false,
+    "evidence_source": "post-revocation recipient-resolution ledger result"
+  },
+  "duplicate_message": {
+    "status": "passed",
+    "message_id": "3caa55db-9755-4b11-81ee-a17b7cd0a098",
+    "first_submission_provider_status": 200,
+    "duplicate_submission_http_status": 409,
+    "duplicate_error": "apns_duplicate_submission",
+    "evidence_source": "authenticated API response and idempotency ledger"
+  },
+  "minimal_payload": {
+    "status": "passed",
+    "evidence_source": "payload contract unit test plus accepted sandbox provider requests",
+    "sensitive_fields_present": false
+  },
+  "recent_operator_verification": {
+    "status": "passed",
+    "message_id": "71a12ffa-9a0e-4d44-98d9-a3147fa7881e",
+    "provider_status": 200,
+    "display_observed": true,
+    "acknowledged_observed": true,
+    "observation_source": "physical-device tap after fixed build installation",
+    "server_client_outcome_row_present": true,
+    "server_outcome": "acknowledged"
+  },
+  "outcome_separation": {
+    "status": "passed",
+    "message_id": "b2a7231e-466f-4d72-89d6-b67b89538d7f",
+    "apns_accepted_equals_displayed": false,
+    "display_observed": true,
+    "acknowledged_observed": true,
+    "blocker": null
+  }
+}

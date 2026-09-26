@@ -148,6 +148,7 @@ public struct SyncReport: Equatable, Sendable {
 public enum SyncError: Error, Equatable, Sendable {
   case credentialUnavailable(String)
   case blocked(TransportFailure)
+  case drainAlreadyOwned(String)
   case invalidPayload(String)
 }
 
@@ -180,6 +181,9 @@ public actor SyncEngine {
     do {
       try await outbox.acquireDrainOwnership()
     } catch let error as OutboxError {
+      if case .drainAlreadyOwned(let reason) = error {
+        throw SyncError.drainAlreadyOwned(reason)
+      }
       throw SyncError.invalidPayload(error.localizedDescription)
     } catch {
       throw SyncError.invalidPayload("drain ownership failed: \(error.localizedDescription)")

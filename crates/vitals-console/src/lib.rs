@@ -9,6 +9,8 @@
 
 /// Real-data read API: sample queries, host status, and recovery state.
 pub mod api;
+/// APNs provider configuration and minimal payload safety contracts.
+pub mod apns;
 /// Client for the `vitalsd` Unix-socket protocol.
 pub mod client;
 /// Versioned Apple-client routes and generated OpenAPI contract.

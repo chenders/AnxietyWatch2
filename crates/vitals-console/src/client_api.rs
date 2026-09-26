@@ -11,12 +11,13 @@ use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::IntoResponse;
 use axum::routing::{any, get, post};
 use base64::Engine;
-use chrono::{SecondsFormat, Utc};
+use chrono::{DateTime, SecondsFormat, Utc};
 use p256::ecdsa::signature::Verifier;
 use p256::elliptic_curve::sec1::ToEncodedPoint;
 use p256::pkcs8::DecodePublicKey;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use sqlx::Row;
 use utoipa::{IntoParams, OpenApi, ToSchema};
 use uuid::Uuid;
 
@@ -43,6 +44,8 @@ const REGISTRY_JSON: &str = include_str!(concat!(
         client_enroll_handler,
         client_write_handler,
         client_beacon_handler,
+        client_apns_registration_handler,
+        client_apns_outcome_handler,
         client_projections_handler
     ),
     components(schemas(
@@ -63,6 +66,10 @@ const REGISTRY_JSON: &str = include_str!(concat!(
         HealthBeaconRequest,
         HealthBeaconResponse,
         HealthTypeFact,
+        ApnsRegistrationRequest,
+        ApnsRegistrationResponse,
+        ApnsOutcomeRequest,
+        ApnsOutcomeResponse,
         ProjectionQuery,
         ProjectionPage,
         ProjectionPoint,
@@ -84,6 +91,14 @@ where
         .route("/api/v1/client/enroll", post(client_enroll_handler))
         .route("/api/v1/client/items", post(client_write_handler))
         .route("/api/v1/client/status", post(client_beacon_handler))
+        .route(
+            "/api/v1/client/notifications/apns/registration",
+            post(client_apns_registration_handler),
+        )
+        .route(
+            "/api/v1/client/notifications/apns/outcomes",
+            post(client_apns_outcome_handler),
+        )
         .route(
             "/api/v1/client/projections",
             get(client_projections_handler),
@@ -314,6 +329,115 @@ pub struct HealthBeaconResponse {
     pub status: String,
     /// Server response instant in UTC.
     pub server_time: String,
+}
+
+/// Authenticated iPhone APNs registration facts.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct ApnsRegistrationRequest {
+    /// Authenticated device identity; must equal the signed client id.
+    pub device_id: Uuid,
+    /// Lowercase hexadecimal APNs token, absent when iOS has not supplied one.
+    pub token: Option<String>,
+    /// APNs environment selected by the signed app build.
+    pub environment: String,
+    /// App bundle identifier.
+    pub app_identifier: String,
+    /// User-visible app version.
+    pub app_version: String,
+    /// Build identifier.
+    pub build: String,
+    /// iOS notification authorization state.
+    pub authorization_status: String,
+    /// Whether iOS allows alert presentation.
+    pub alerts_enabled: bool,
+    /// Whether iOS allows notification sounds.
+    pub sounds_enabled: bool,
+    /// Whether iOS allows badge updates.
+    pub badges_enabled: bool,
+}
+
+/// APNs registration admission response.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct ApnsRegistrationResponse {
+    /// API contract version.
+    pub api_version: String,
+    /// `registered` or `refreshed`.
+    pub status: String,
+    /// Server response instant in UTC.
+    pub server_time: String,
+}
+
+/// Client-observed APNs display or acknowledgement fact.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct ApnsOutcomeRequest {
+    /// Immutable operator-message identifier.
+    pub message_id: Uuid,
+    /// Client-observed `displayed` or `acknowledged` fact.
+    pub outcome: String,
+    /// Observation instant in UTC.
+    pub observed_at: String,
+}
+
+/// APNs outcome admission response.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct ApnsOutcomeResponse {
+    /// API contract version.
+    pub api_version: String,
+    /// Immutable operator-message identifier.
+    pub message_id: Uuid,
+    /// Admission state.
+    pub status: String,
+    /// Server response instant in UTC.
+    pub server_time: String,
+}
+
+/// Operator request for a targeted or all-active APNs send.
+#[derive(Debug, Deserialize)]
+pub struct AdminApnsSendRequest {
+    /// `device`, `user`, or `all_active`.
+    pub recipient_scope: String,
+    /// Client-supplied key that makes a repeated operator submission a no-op.
+    pub idempotency_key: Option<Uuid>,
+    /// Explicit device target for the `device` scope.
+    pub device_id: Option<Uuid>,
+    /// Explicit owning-user target for the `user` scope.
+    pub user_id: Option<Uuid>,
+    /// Measured recipient count required to confirm an all-active send.
+    pub confirmed_recipient_count: Option<usize>,
+    /// Minimal APNs payload class.
+    pub payload_class: String,
+    /// Optional client notification category.
+    pub category: Option<String>,
+    /// Optional protected app deep link.
+    pub deep_link: Option<String>,
+    /// Test sends are marked independently in every ledger row.
+    pub is_test: bool,
+}
+
+/// Result of one authenticated operator send request.
+#[derive(Debug, Serialize)]
+pub struct AdminApnsSendResponse {
+    /// Immutable message identifier shared by provider and client ledgers.
+    pub message_id: Uuid,
+    /// Recipient count captured before sending.
+    pub recipient_count: usize,
+    /// Number of HTTP 2xx APNs acceptance responses.
+    pub accepted_count: usize,
+    /// Number of non-accepted recipient attempts.
+    pub rejected_count: usize,
+    /// `accepted`, `partial`, `rejected`, or `zero_recipients`.
+    pub status: String,
+}
+
+/// Measured recipient preview returned before an operator confirms a send.
+#[derive(Debug, Serialize)]
+pub struct AdminApnsRecipientPreview {
+    /// Scope resolved by the server.
+    pub recipient_scope: String,
+    /// Device identifiers only; APNs tokens are never returned.
+    pub device_ids: Vec<Uuid>,
+    /// Measured active recipient count.
+    pub recipient_count: usize,
 }
 
 /// Projection query uses UTC windows and an opaque server cursor.
@@ -732,7 +856,7 @@ async fn authenticate_mobile_request(
 ) -> Result<Vec<String>, ClientApiError> {
     let signature = mobile_signature(headers, body)?;
     let credential: Option<MobileCredentialRow> = sqlx::query_as(
-        "SELECT public_key, scopes, expires_at, revoked_at FROM mobile_credentials\
+        "SELECT public_key, scopes, expires_at, revoked_at FROM mobile_credentials \
              WHERE client_id = $1 AND key_id = $2",
     )
     .bind(signature.client_id)
@@ -867,7 +991,7 @@ async fn authenticate_mobile_request(
     let admitted: Option<(Uuid,)> = sqlx::query_as(
         "INSERT INTO mobile_request_replays (client_id, request_id, request_digest, expires_at)\
          VALUES ($1, $2, $3, to_timestamp($4))\
-         ON CONFLICT (client_id, request_id) DO NOTHING\
+         ON CONFLICT (client_id, request_id) DO NOTHING \
          RETURNING request_id",
     )
     .bind(signature.client_id)
@@ -1037,6 +1161,419 @@ pub async fn admin_enrollment_artifact_handler(
         .headers_mut()
         .insert(header::PRAGMA, HeaderValue::from_static("no-cache"));
     Ok(response)
+}
+
+/// Resolve the measured recipient set without creating a message or contacting APNs.
+///
+/// # Errors
+///
+/// Returns a named recent-auth, configuration, target, or recipient-resolution blocker.
+pub async fn admin_apns_recipient_preview_handler(
+    State(state): State<crate::handlers::AppState>,
+    headers: HeaderMap,
+    Json(request): Json<AdminApnsSendRequest>,
+) -> Result<Json<AdminApnsRecipientPreview>, ClientApiError> {
+    state
+        .security
+        .require_recent_auth(&headers, Utc::now().timestamp())
+        .map_err(|security_error| {
+            error(
+                StatusCode::UNAUTHORIZED,
+                "recent_auth_required",
+                "APNs recipient preview requires recent operator reauthentication",
+                false,
+                format!("security={security_error:?}"),
+                Some(API_MAJOR),
+            )
+        })?;
+    let database = state
+        .db
+        .as_ref()
+        .ok_or_else(|| unavailable("apns_recipient_preview", "VITALS_CONSOLE_DATABASE_URL"))?;
+    let server_instance_id = state.server_instance_id.ok_or_else(|| {
+        unavailable(
+            "apns_recipient_preview",
+            "VITALS_CONSOLE_SERVER_INSTANCE_ID",
+        )
+    })?;
+    let target_device_id = match request.recipient_scope.as_str() {
+        "device" => Some(request.device_id.ok_or_else(|| {
+            error(
+                StatusCode::BAD_REQUEST,
+                "apns_target_invalid",
+                "device scope requires an explicit device_id",
+                false,
+                "device_id=missing".to_string(),
+                Some(API_MAJOR),
+            )
+        })?),
+        "all_active" | "user" => None,
+        other => {
+            return Err(error(
+                StatusCode::BAD_REQUEST,
+                "apns_scope_invalid",
+                "APNs recipient scope is unsupported",
+                false,
+                format!("recipient_scope={other}"),
+                Some(API_MAJOR),
+            ));
+        }
+    };
+    let owner_user_id = if request.recipient_scope == "user" {
+        Some(request.user_id.ok_or_else(|| {
+            error(
+                StatusCode::BAD_REQUEST,
+                "apns_target_invalid",
+                "user scope requires an explicit user_id",
+                false,
+                "user_id=missing".to_string(),
+                Some(API_MAJOR),
+            )
+        })?)
+    } else {
+        None
+    };
+    let recipients = crate::db::resolve_apns_recipients(
+        database,
+        server_instance_id,
+        owner_user_id,
+        target_device_id,
+    )
+    .await
+    .map_err(|reason| {
+        error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "apns_recipient_resolution_failed",
+            "APNs recipients could not be resolved",
+            true,
+            reason,
+            Some(API_MAJOR),
+        )
+    })?;
+    Ok(Json(AdminApnsRecipientPreview {
+        recipient_scope: request.recipient_scope.clone(),
+        device_ids: recipients
+            .iter()
+            .map(|recipient| recipient.device_id)
+            .collect(),
+        recipient_count: recipients.len(),
+    }))
+}
+
+/// Send one operator-directed APNs message after resolving and snapshotting recipients.
+///
+/// # Errors
+///
+/// Returns a named recent-auth, recipient, provider, payload, or persistence blocker. A zero
+/// recipient result is recorded as `zero_recipients`, never as successful delivery.
+#[expect(
+    clippy::too_many_lines,
+    reason = "recipient resolution, immutable snapshot, provider attempts, and terminal classification stay auditable"
+)]
+pub async fn admin_apns_send_handler(
+    State(state): State<crate::handlers::AppState>,
+    headers: HeaderMap,
+    Extension(token_protector): Extension<Option<crate::apns::ApnsTokenProtector>>,
+    Extension(provider): Extension<Option<crate::apns::ApnsProvider>>,
+    Json(request): Json<AdminApnsSendRequest>,
+) -> Result<Json<AdminApnsSendResponse>, ClientApiError> {
+    state
+        .security
+        .require_recent_auth(&headers, Utc::now().timestamp())
+        .map_err(|security_error| {
+            error(
+                StatusCode::UNAUTHORIZED,
+                "recent_auth_required",
+                "sensitive APNs send requires recent operator reauthentication",
+                false,
+                format!("security={security_error:?}"),
+                Some(API_MAJOR),
+            )
+        })?;
+    let database = state
+        .db
+        .as_ref()
+        .ok_or_else(|| unavailable("apns_send", "VITALS_CONSOLE_DATABASE_URL"))?;
+    let server_instance_id = state
+        .server_instance_id
+        .ok_or_else(|| unavailable("apns_send", "VITALS_CONSOLE_SERVER_INSTANCE_ID"))?;
+    let target_device_id = match request.recipient_scope.as_str() {
+        "device" => Some(request.device_id.ok_or_else(|| {
+            error(
+                StatusCode::BAD_REQUEST,
+                "apns_target_invalid",
+                "device scope requires an explicit device_id",
+                false,
+                "device_id=missing".to_string(),
+                Some(API_MAJOR),
+            )
+        })?),
+        "all_active" | "user" => None,
+        other => {
+            return Err(error(
+                StatusCode::BAD_REQUEST,
+                "apns_scope_invalid",
+                "APNs recipient scope is unsupported",
+                false,
+                format!("recipient_scope={other}"),
+                Some(API_MAJOR),
+            ));
+        }
+    };
+    let idempotency_key = request.idempotency_key.ok_or_else(|| {
+        error(
+            StatusCode::BAD_REQUEST,
+            "apns_idempotency_key_missing",
+            "APNs send requires an idempotency key",
+            false,
+            "idempotency_key=missing".to_string(),
+            Some(API_MAJOR),
+        )
+    })?;
+    let message_id = Uuid::new_v4();
+    let owner_user_id = if request.recipient_scope == "user" {
+        Some(request.user_id.ok_or_else(|| {
+            error(
+                StatusCode::BAD_REQUEST,
+                "apns_target_invalid",
+                "user scope requires an explicit user_id",
+                false,
+                "user_id=missing".to_string(),
+                Some(API_MAJOR),
+            )
+        })?)
+    } else {
+        None
+    };
+    let payload = crate::apns::ApnsPayload::new(
+        message_id.to_string(),
+        request.payload_class,
+        request.category,
+        request.deep_link,
+        request.is_test,
+    )
+    .map_err(|reason| {
+        error(
+            StatusCode::BAD_REQUEST,
+            "apns_payload_invalid",
+            "APNs payload was rejected by the minimal-payload policy",
+            false,
+            reason,
+            Some(API_MAJOR),
+        )
+    })?;
+    let recipients = crate::db::resolve_apns_recipients(
+        database,
+        server_instance_id,
+        owner_user_id,
+        target_device_id,
+    )
+    .await
+    .map_err(|reason| {
+        error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "apns_recipient_resolution_failed",
+            "APNs recipients could not be resolved",
+            true,
+            reason,
+            Some(API_MAJOR),
+        )
+    })?;
+    if request.recipient_scope == "all_active"
+        && request.confirmed_recipient_count != Some(recipients.len())
+    {
+        return Err(error(
+            StatusCode::CONFLICT,
+            "apns_confirmation_required",
+            "all-active APNs send requires confirmation of the measured recipient count",
+            false,
+            format!(
+                "confirmed_recipient_count={:?}; measured_recipient_count={}",
+                request.confirmed_recipient_count,
+                recipients.len()
+            ),
+            Some(API_MAJOR),
+        ));
+    }
+    let target_snapshot = serde_json::json!({
+        "recipient_scope": request.recipient_scope,
+        "user_id": owner_user_id,
+        "device_ids": recipients.iter().map(|recipient| recipient.device_id).collect::<Vec<_>>(),
+        "recipient_count": recipients.len()
+    });
+    let created = crate::db::create_apns_message(
+        database,
+        message_id,
+        server_instance_id,
+        Some(idempotency_key),
+        crate::security::AUTHENTICATED_ACTOR,
+        &request.recipient_scope,
+        target_device_id,
+        owner_user_id,
+        &payload,
+        &target_snapshot,
+    )
+    .await
+    .map_err(|reason| {
+        error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "apns_message_ledger_unavailable",
+            "APNs message could not be recorded",
+            true,
+            reason,
+            Some(API_MAJOR),
+        )
+    })?;
+    if !created {
+        return Err(error(
+            StatusCode::CONFLICT,
+            "apns_duplicate_submission",
+            "APNs message was already submitted with this idempotency key",
+            false,
+            format!("idempotency_key={idempotency_key}"),
+            Some(API_MAJOR),
+        ));
+    }
+    if recipients.is_empty() {
+        return Ok(Json(AdminApnsSendResponse {
+            message_id,
+            recipient_count: 0,
+            accepted_count: 0,
+            rejected_count: 0,
+            status: "zero_recipients".to_string(),
+        }));
+    }
+    let provider = provider
+        .ok_or_else(|| unavailable("apns_send", "VITALS_CONSOLE_APNS_PROVIDER_CONFIGURATION"))?;
+    let protector =
+        token_protector.ok_or_else(|| unavailable("apns_send", "VITALS_CONSOLE_APNS_TOKEN_KEY"))?;
+    let mut accepted_count = 0;
+    for recipient in &recipients {
+        let mut attempt = 0_u8;
+        loop {
+            attempt += 1;
+            let result = match protector.open(&recipient.token_ciphertext) {
+                Ok(token) => provider
+                    .send(&token, &payload, Utc::now().timestamp())
+                    .await
+                    .map_err(|reason| format!("APNs provider transport failed: {reason}")),
+                Err(reason) => Err(reason),
+            };
+            let retryable = match result {
+                Ok(result) => {
+                    if result.accepted {
+                        accepted_count += 1;
+                    }
+                    let state = if result.accepted {
+                        "accepted"
+                    } else if result.retryable {
+                        "retryable"
+                    } else {
+                        "rejected"
+                    };
+                    if !result.accepted
+                        && !result.retryable
+                        && result.reason.as_deref().is_some_and(|reason| {
+                            matches!(
+                                reason,
+                                "BadDeviceToken"
+                                    | "DeviceTokenNotForTopic"
+                                    | "Unregistered"
+                                    | "ExpiredToken"
+                            )
+                        })
+                        && let Some(reason) = result.reason.as_deref()
+                    {
+                        crate::db::revoke_apns_registration(
+                            database,
+                            server_instance_id,
+                            recipient,
+                            reason,
+                        )
+                        .await
+                        .map_err(|ledger_reason| {
+                            error(
+                                StatusCode::SERVICE_UNAVAILABLE,
+                                "apns_registration_ledger_unavailable",
+                                "APNs invalid-token state could not be recorded",
+                                true,
+                                ledger_reason,
+                                Some(API_MAJOR),
+                            )
+                        })?;
+                    }
+                    crate::db::record_apns_attempt(
+                        database,
+                        message_id,
+                        server_instance_id,
+                        recipient,
+                        state,
+                        Some(result.status_code),
+                        result.reason.as_deref(),
+                        result.retryable,
+                    )
+                    .await
+                    .map_err(|reason| {
+                        error(
+                            StatusCode::SERVICE_UNAVAILABLE,
+                            "apns_attempt_ledger_unavailable",
+                            "APNs provider result could not be recorded",
+                            true,
+                            reason,
+                            Some(API_MAJOR),
+                        )
+                    })?;
+                    result.retryable
+                }
+                Err(reason) => {
+                    crate::db::record_apns_attempt(
+                        database,
+                        message_id,
+                        server_instance_id,
+                        recipient,
+                        "retryable",
+                        None,
+                        Some(&reason),
+                        true,
+                    )
+                    .await
+                    .map_err(|ledger_reason| {
+                        error(
+                            StatusCode::SERVICE_UNAVAILABLE,
+                            "apns_attempt_ledger_unavailable",
+                            "APNs provider failure could not be recorded",
+                            true,
+                            ledger_reason,
+                            Some(API_MAJOR),
+                        )
+                    })?;
+                    true
+                }
+            };
+            if !retryable || attempt >= 3 {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(
+                100 * (1_u64 << (attempt - 1)),
+            ))
+            .await;
+        }
+    }
+    let rejected_count = recipients.len() - accepted_count;
+    let status = if accepted_count == recipients.len() {
+        "accepted"
+    } else if accepted_count > 0 {
+        "partial"
+    } else {
+        "rejected"
+    };
+    Ok(Json(AdminApnsSendResponse {
+        message_id,
+        recipient_count: recipients.len(),
+        accepted_count,
+        rejected_count,
+        status: status.to_string(),
+    }))
 }
 
 /// Discover API compatibility before enrollment.
@@ -1667,11 +2204,230 @@ pub async fn client_beacon_handler(
     }))
 }
 
+/// Admit authenticated APNs registration facts from an enrolled iPhone.
+///
+/// # Errors
+///
+/// Returns a named version, authentication, validation, configuration, or persistence blocker.
+#[utoipa::path(
+    post,
+    path = "/api/v1/client/notifications/apns/registration",
+    tag = "apple-client",
+    params(
+        ("X-AnxietyWatch-API-Version" = String, Header, description = "Supported API major"),
+        ("X-AnxietyWatch-Client-ID" = String, Header, description = "Enrolled client UUID"),
+        ("X-AnxietyWatch-Key-ID" = String, Header, description = "Active P-256 key UUID"),
+        ("X-AnxietyWatch-Request-ID" = String, Header, description = "Fresh replay-protection UUID"),
+        ("Content-Digest" = String, Header, description = "RFC 9530 body digest"),
+        ("Signature-Input" = String, Header, description = "RFC 9421 covered components and times"),
+        ("Signature" = String, Header, description = "RFC 9421 ecdsa-p256-sha256 signature")
+    ),
+    request_body = ApnsRegistrationRequest,
+    responses(
+        (status = 200, description = "Registration facts accepted", body = ApnsRegistrationResponse),
+        (status = 401, description = "Missing or invalid request signature", body = ClientErrorResponse),
+        (status = 403, description = "Credential scope denied", body = ClientErrorResponse),
+        (status = 409, description = "Durable request id was already admitted", body = ClientErrorResponse),
+        (status = 503, description = "Registration persistence or token protection unavailable", body = ClientErrorResponse)
+    )
+)]
+pub async fn client_apns_registration_handler(
+    Extension(database): Extension<Option<sqlx::PgPool>>,
+    Extension(server_instance_id): Extension<Option<Uuid>>,
+    Extension(owner_user_id): Extension<Option<Uuid>>,
+    Extension(token_protector): Extension<Option<crate::apns::ApnsTokenProtector>>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<Json<ApnsRegistrationResponse>, ClientApiError> {
+    validate_version(&headers)?;
+    let database =
+        database.ok_or_else(|| unavailable("apns_registration", "VITALS_CONSOLE_DATABASE_URL"))?;
+    let server_instance_id = server_instance_id
+        .ok_or_else(|| unavailable("apns_registration", "VITALS_CONSOLE_SERVER_INSTANCE_ID"))?;
+    let owner_user_id = owner_user_id
+        .ok_or_else(|| unavailable("apns_registration", "VITALS_CONSOLE_APNS_OWNER_USER_ID"))?;
+    authenticate_mobile_request(
+        &database,
+        &headers,
+        body.as_ref(),
+        "POST",
+        "/api/v1/client/notifications/apns/registration",
+        &["submit_notifications"],
+    )
+    .await?;
+    let request: ApnsRegistrationRequest =
+        serde_json::from_slice(&body).map_err(|decode_error| {
+            error(
+                StatusCode::BAD_REQUEST,
+                "apns_registration_invalid",
+                "APNs registration body does not match the client contract",
+                false,
+                format!("body_decode={decode_error}"),
+                Some(API_MAJOR),
+            )
+        })?;
+    let client_id = parse_uuid_header(&headers, "x-anxietywatch-client-id")?;
+    let status = crate::db::store_apns_registration(
+        &database,
+        server_instance_id,
+        owner_user_id,
+        client_id,
+        &request,
+        token_protector.as_ref(),
+    )
+    .await
+    .map_err(|reason| {
+        error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "apns_registration_unavailable",
+            "APNs registration could not be admitted",
+            true,
+            reason,
+            Some(API_MAJOR),
+        )
+    })?;
+    Ok(Json(ApnsRegistrationResponse {
+        api_version: format!("{API_MAJOR}.{API_MINOR}"),
+        status,
+        server_time: utc_now(),
+    }))
+}
+
+/// Admit a client-observed display or acknowledgement fact without inferring provider delivery.
+///
+/// # Errors
+///
+/// Returns a named version, authentication, or unavailable-ledger blocker.
+#[utoipa::path(
+    post,
+    path = "/api/v1/client/notifications/apns/outcomes",
+    tag = "apple-client",
+    params(
+        ("X-AnxietyWatch-API-Version" = String, Header, description = "Supported API major"),
+        ("X-AnxietyWatch-Client-ID" = String, Header, description = "Enrolled client UUID"),
+        ("X-AnxietyWatch-Key-ID" = String, Header, description = "Active P-256 key UUID"),
+        ("X-AnxietyWatch-Request-ID" = String, Header, description = "Fresh replay-protection UUID"),
+        ("Content-Digest" = String, Header, description = "RFC 9530 body digest"),
+        ("Signature-Input" = String, Header, description = "RFC 9421 covered components and times"),
+        ("Signature" = String, Header, description = "RFC 9421 ecdsa-p256-sha256 signature")
+    ),
+    request_body = ApnsOutcomeRequest,
+    responses(
+        (status = 401, description = "Missing or invalid request signature", body = ClientErrorResponse),
+        (status = 403, description = "Credential scope denied", body = ClientErrorResponse),
+        (status = 409, description = "Durable request id was already admitted", body = ClientErrorResponse),
+        (status = 200, description = "Outcome fact accepted", body = ApnsOutcomeResponse),
+        (status = 400, description = "Malformed outcome fact", body = ClientErrorResponse),
+        (status = 503, description = "Outcome ledger unavailable", body = ClientErrorResponse)
+    )
+)]
+pub async fn client_apns_outcome_handler(
+    Extension(database): Extension<Option<sqlx::PgPool>>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<Json<ApnsOutcomeResponse>, ClientApiError> {
+    validate_version(&headers)?;
+    let database =
+        database.ok_or_else(|| unavailable("apns_outcome", "VITALS_CONSOLE_DATABASE_URL"))?;
+    authenticate_mobile_request(
+        &database,
+        &headers,
+        body.as_ref(),
+        "POST",
+        "/api/v1/client/notifications/apns/outcomes",
+        &["submit_notifications"],
+    )
+    .await?;
+    let request: ApnsOutcomeRequest = serde_json::from_slice(&body).map_err(|decode_error| {
+        error(
+            StatusCode::BAD_REQUEST,
+            "apns_outcome_invalid",
+            "APNs outcome body does not match the client contract",
+            false,
+            format!("body_decode={decode_error}"),
+            Some(API_MAJOR),
+        )
+    })?;
+    let client_id = parse_uuid_header(&headers, "x-anxietywatch-client-id")?;
+    let status = crate::db::record_apns_outcome(&database, client_id, &request)
+        .await
+        .map_err(|reason| {
+            let status = if reason.contains("database") || reason.contains("persistence") {
+                StatusCode::SERVICE_UNAVAILABLE
+            } else {
+                StatusCode::BAD_REQUEST
+            };
+            error(
+                status,
+                "apns_outcome_rejected",
+                "APNs outcome was not admitted",
+                status == StatusCode::SERVICE_UNAVAILABLE,
+                reason,
+                Some(API_MAJOR),
+            )
+        })?;
+    Ok(Json(ApnsOutcomeResponse {
+        api_version: format!("{API_MAJOR}.{API_MINOR}"),
+        message_id: request.message_id,
+        status,
+        server_time: utc_now(),
+    }))
+}
+
 /// Projection placeholder. Its success schema is present but no 2xx response is advertised.
 ///
 /// # Errors
 ///
-/// Returns a version error or the named M3/M4 capability gate.
+fn registry_id(category: &str, name: &str) -> Option<i32> {
+    serde_json::from_str::<serde_json::Value>(REGISTRY_JSON)
+        .ok()?
+        .get(category)?
+        .get(name)?
+        .get("id")?
+        .as_i64()?
+        .try_into()
+        .ok()
+}
+
+fn projection_type(metric: &str) -> Option<i32> {
+    let canonical = match metric {
+        "heart_rate" => "hr",
+        "oxygen_saturation" => "spo2",
+        "respiratory_rate" => "respiratory_rate",
+        "blood_pressure_systolic" => "bp_systolic",
+        "blood_pressure_diastolic" => "bp_diastolic",
+        other => other,
+    };
+    registry_id("type", canonical)
+}
+
+fn projection_time(
+    raw: Option<&str>,
+    field: &str,
+) -> Result<Option<DateTime<Utc>>, ClientApiError> {
+    raw.map(|value| {
+        DateTime::parse_from_rfc3339(value)
+            .map(|parsed| parsed.with_timezone(&Utc))
+            .map_err(|_| {
+                error(
+                    StatusCode::BAD_REQUEST,
+                    "projection_window_invalid",
+                    "projection window must be an RFC3339 UTC instant",
+                    false,
+                    format!("{field}={value}; expected=rfc3339"),
+                    Some(API_MAJOR),
+                )
+            })
+    })
+    .transpose()
+}
+
+/// Returns a version error or the authenticated projection page.
+///
+/// # Errors
+///
+/// Returns a named error for incompatible versions, failed request authentication, invalid
+/// registry metrics or windows, unavailable storage, or a failed projection query.
 #[utoipa::path(
     get,
     path = "/api/v1/client/projections",
@@ -1686,19 +2442,24 @@ pub async fn client_beacon_handler(
         ("Signature" = String, Header, description = "RFC 9421 ecdsa-p256-sha256 signature")
     ),
     responses(
+        (status = 200, description = "Authenticated projection page", body = ProjectionPage),
         (status = 400, description = "Missing or malformed API version", body = ClientErrorResponse),
         (status = 401, description = "Missing or invalid request signature", body = ClientErrorResponse),
         (status = 403, description = "Credential scope does not permit this operation", body = ClientErrorResponse),
         (status = 409, description = "Durable request id was already admitted", body = ClientErrorResponse),
         (status = 426, description = "Incompatible API major", body = ClientErrorResponse),
-        (status = 503, description = "Projections are gated on M3/M4", body = ClientErrorResponse)
+        (status = 503, description = "Projection storage is unavailable", body = ClientErrorResponse)
     )
 )]
 #[allow(clippy::unused_async, reason = "axum handlers must be async")]
+#[allow(
+    clippy::too_many_lines,
+    reason = "the projection contract keeps authentication, registry, window, and query blockers together"
+)]
 pub async fn client_projections_handler(
     Extension(database): Extension<Option<sqlx::PgPool>>,
     headers: HeaderMap,
-    Query(_query): Query<ProjectionQuery>,
+    Query(query): Query<ProjectionQuery>,
 ) -> Result<Json<ProjectionPage>, ClientApiError> {
     validate_version(&headers)?;
     let database =
@@ -1712,7 +2473,105 @@ pub async fn client_projections_handler(
         &["read_projections"],
     )
     .await?;
-    Err(unavailable("projections", "admin_M3_M4"))
+
+    let metric = query.metric.as_deref().ok_or_else(|| {
+        error(
+            StatusCode::BAD_REQUEST,
+            "projection_metric_missing",
+            "a registry metric is required",
+            false,
+            "metric=missing".to_string(),
+            Some(API_MAJOR),
+        )
+    })?;
+    let type_id = projection_type(metric).ok_or_else(|| {
+        error(
+            StatusCode::BAD_REQUEST,
+            "projection_metric_unknown",
+            "the requested metric is not in the registry",
+            false,
+            format!("metric={metric}; registry=unknown"),
+            Some(API_MAJOR),
+        )
+    })?;
+    let source_id = registry_id("source", "healthkit").ok_or_else(|| {
+        error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "projection_registry_invalid",
+            "the generated registry does not define the HealthKit source",
+            false,
+            "source=healthkit; registry_id=missing".to_string(),
+            Some(API_MAJOR),
+        )
+    })?;
+    let window_start = projection_time(query.window_start.as_deref(), "window_start")?;
+    let window_end = projection_time(query.window_end.as_deref(), "window_end")?;
+    if let (Some(start), Some(end)) = (window_start, window_end)
+        && start >= end
+    {
+        return Err(error(
+            StatusCode::BAD_REQUEST,
+            "projection_window_invalid",
+            "projection window start must precede its end",
+            false,
+            format!("window_start={start}; window_end={end}"),
+            Some(API_MAJOR),
+        ));
+    }
+
+    let rows = sqlx::query(
+        "SELECT timestamp, value
+         FROM samples
+         WHERE source = $1
+           AND type = $2
+           AND ($3::timestamptz IS NULL OR timestamp >= $3)
+           AND ($4::timestamptz IS NULL OR timestamp < $4)
+         ORDER BY timestamp DESC
+         LIMIT 200",
+    )
+    .bind(source_id)
+    .bind(type_id)
+    .bind(window_start)
+    .bind(window_end)
+    .fetch_all(&database)
+    .await
+    .map_err(|source| {
+        error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "projection_storage_unavailable",
+            "the projection sample query failed",
+            true,
+            format!("metric={metric}; database={source}"),
+            Some(API_MAJOR),
+        )
+    })?;
+
+    let observed_at = rows
+        .first()
+        .and_then(|row| row.try_get::<DateTime<Utc>, _>("timestamp").ok())
+        .map(|time| time.to_rfc3339_opts(SecondsFormat::Millis, true));
+    let points = rows
+        .iter()
+        .rev()
+        .filter_map(|row| {
+            let timestamp = row.try_get::<DateTime<Utc>, _>("timestamp").ok()?;
+            let value = row.try_get::<f64, _>("value").ok()?;
+            Some(ProjectionPoint {
+                timestamp: timestamp.to_rfc3339_opts(SecondsFormat::Millis, true),
+                value: Some(value),
+            })
+        })
+        .collect();
+
+    Ok(Json(ProjectionPage {
+        api_version: format!("{API_MAJOR}.{API_MINOR}"),
+        metric: metric.to_string(),
+        observed_at,
+        generated_at: utc_now(),
+        points,
+        missing_intervals: Vec::new(),
+        next_cursor: None,
+    }))
 }
 
 #[allow(clippy::unused_async, reason = "axum handlers must be async")]
@@ -2014,11 +2873,7 @@ mod tests {
         let projection_responses = value["paths"]["/api/v1/client/projections"]["get"]["responses"]
             .as_object()
             .expect("projection responses object");
-        assert!(
-            projection_responses
-                .keys()
-                .all(|status| !status.starts_with('2'))
-        );
+        assert!(projection_responses.contains_key("200"));
         let serialized = serde_json::to_string(&value).expect("OpenAPI JSON serializes");
         assert!(!serialized.contains("VitalsType"));
         assert!(!serialized.contains("VitalsSource"));

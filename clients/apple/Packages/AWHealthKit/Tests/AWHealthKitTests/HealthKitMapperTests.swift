@@ -26,14 +26,14 @@ private func quantitySample(value: Double? = 72.0, metadata: [String: String] = 
   HealthKitTransportSample(
     healthKitSampleUUID: UUID(uuidString: "00000000-0000-4000-8000-000000000101")!,
     healthKitType: PlatformTypeIdentifier(rawValue: "HKQuantityTypeIdentifierHeartRate")!,
-    startAt: "2025-01-15T08:00:00Z",
-    endAt: "2025-01-15T08:00:05Z",
+    startAt: "2025-01-15T08:00:00.123Z",
+    endAt: "2025-01-15T08:00:05.456Z",
     originalValue: value,
     originalUnit: "count/min",
     sourceRevision: HealthKitSourceRevision(sourceName: "Fixture Watch"),
     metadata: metadata,
     queryBatchID: UUID(uuidString: "00000000-0000-7000-8000-000000000201")!,
-    recordedAt: "2025-01-15T08:01:00Z"
+    recordedAt: "2025-01-15T08:01:00.789Z"
   )
 }
 

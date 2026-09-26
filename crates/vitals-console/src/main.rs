@@ -6,10 +6,11 @@
 
 use axum::{Router, middleware, routing::get, routing::post};
 use std::env;
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
 use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::services::{ServeDir, ServeFile};
+use uuid::Uuid;
 use vitals_console::api::clock::clock_handler;
 use vitals_console::api::display::display_handler;
 use vitals_console::api::host::host_handler;
@@ -40,9 +41,20 @@ async fn main() {
         env::var("VITALSD_SOCKET").unwrap_or_else(|_| "/run/vitals/vitalsd.sock".to_string());
     let test_routes_enabled = env::var("VITALS_CONSOLE_TEST_ROUTES").is_ok_and(|v| v == "1");
     let loopback_bind = bind_addr.starts_with("127.0.0.1:") || bind_addr.starts_with("[::1]:");
-    if !loopback_bind {
+    let private_lan_bind = bind_addr.parse::<SocketAddr>().is_ok_and(|address| {
+        if address.ip().is_loopback() || address.ip().is_unspecified() {
+            return false;
+        }
+        match address.ip() {
+            IpAddr::V4(ip) => ip.is_private(),
+            IpAddr::V6(ip) => ip.is_unique_local(),
+        }
+    });
+    let private_lan_enabled =
+        env::var("VITALS_CONSOLE_PRIVATE_LAN").is_ok_and(|value| value == "1");
+    if !(loopback_bind || private_lan_enabled && private_lan_bind) {
         eprintln!(
-            "vitals-console: bind blocked: VITALS_CONSOLE_BIND={bind_addr} is not loopback; Caddy/WireGuard is the only production ingress"
+            "vitals-console: bind blocked: VITALS_CONSOLE_BIND={bind_addr} is not loopback or an explicitly enabled private-LAN address"
         );
         std::process::exit(64);
     }
@@ -72,6 +84,54 @@ async fn main() {
 
     let db_url = env::var("DATABASE_URL")
         .unwrap_or_else(|_| "host=/var/run/postgresql user=vitals dbname=vitals".to_string());
+
+    let apns_owner_user_id: Option<Uuid> = env::var("VITALS_CONSOLE_APNS_OWNER_USER_ID")
+        .ok()
+        .and_then(|value| value.parse().ok());
+
+    let apns_token_protector = match env::var("VITALS_CONSOLE_APNS_TOKEN_KEY") {
+        Ok(value) if !value.is_empty() => {
+            match vitals_console::apns::ApnsTokenProtector::from_base64(&value) {
+                Ok(protector) => Some(protector),
+                Err(error) => {
+                    eprintln!("vitals-console: APNs token protection disabled: {error}");
+                    None
+                }
+            }
+        }
+        _ => None,
+    };
+
+    let apns_provider =
+        if let (Ok(environment), Ok(team_id), Ok(key_id), Ok(bundle_id), Ok(private_key_path)) = (
+            env::var("VITALS_CONSOLE_APNS_ENVIRONMENT"),
+            env::var("VITALS_CONSOLE_APNS_TEAM_ID"),
+            env::var("VITALS_CONSOLE_APNS_KEY_ID"),
+            env::var("VITALS_CONSOLE_APNS_BUNDLE_ID"),
+            env::var("VITALS_CONSOLE_APNS_PRIVATE_KEY_PATH"),
+        ) {
+            match vitals_console::apns::ApnsProviderConfig::from_values(
+                &environment,
+                &team_id,
+                &key_id,
+                &bundle_id,
+                &private_key_path,
+            )
+            .and_then(vitals_console::apns::ApnsProvider::from_config)
+            {
+                Ok(provider) => {
+                    eprintln!("vitals-console: APNs provider configured");
+                    Some(provider)
+                }
+                Err(error) => {
+                    eprintln!("vitals-console: APNs provider disabled: {error}");
+                    None
+                }
+            }
+        } else {
+            eprintln!("vitals-console: APNs provider disabled: configuration is incomplete");
+            None
+        };
 
     let state = AppState {
         socket_path: PathBuf::from(&socket_path),
@@ -103,6 +163,14 @@ async fn main() {
         .route(
             "/api/admin/mobile/enrollment-artifacts",
             post(vitals_console::client_api::admin_enrollment_artifact_handler),
+        )
+        .route(
+            "/api/admin/notifications/apns/recipients",
+            post(vitals_console::client_api::admin_apns_recipient_preview_handler),
+        )
+        .route(
+            "/api/admin/notifications/apns/send",
+            post(vitals_console::client_api::admin_apns_send_handler),
         )
         .route("/dashboard", get(dashboard_handler))
         .route("/dashboard/", get(dashboard_handler))
@@ -142,6 +210,7 @@ async fn main() {
 
     let security = state.security.clone();
     let mobile_database = state.db.clone();
+    let mobile_server_instance_id = state.server_instance_id;
     let app = app
         .nest_service(
             "/console",
@@ -151,6 +220,10 @@ async fn main() {
         )
         .with_state(state)
         .layer(axum::Extension(mobile_database))
+        .layer(axum::Extension(mobile_server_instance_id))
+        .layer(axum::Extension(apns_owner_user_id))
+        .layer(axum::Extension(apns_token_protector))
+        .layer(axum::Extension(apns_provider))
         .layer(RequestBodyLimitLayer::new(MAX_REQUEST_BODY_BYTES))
         .layer(middleware::from_fn_with_state(
             security,

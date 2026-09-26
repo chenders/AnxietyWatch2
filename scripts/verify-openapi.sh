@@ -28,6 +28,8 @@ expected_paths = {
     "/api/v1/client/projections",
     "/api/v1/client/registry",
     "/api/v1/client/version",
+    "/api/v1/client/notifications/apns/registration",
+    "/api/v1/client/notifications/apns/outcomes",
 }
 if set(doc.get("paths", {})) != expected_paths:
     raise SystemExit("openapi: FAIL — explicit client path set changed")
@@ -41,6 +43,9 @@ implemented = {
     "/api/v1/client/enroll",
     "/api/v1/client/items",
     "/api/v1/client/status",
+    "/api/v1/client/notifications/apns/registration",
+    "/api/v1/client/notifications/apns/outcomes",
+    "/api/v1/client/projections",
 }
 gated = expected_paths - implemented
 for path in implemented:
@@ -67,6 +72,8 @@ signed_paths = {
     "/api/v1/client/items",
     "/api/v1/client/status",
     "/api/v1/client/projections",
+    "/api/v1/client/notifications/apns/registration",
+    "/api/v1/client/notifications/apns/outcomes",
 }
 required_signature_headers = {
     "X-AnxietyWatch-API-Version",
@@ -101,6 +108,10 @@ required_schemas = {
     "EnrollmentClaimRequest",
     "EnrollmentCredentialResponse",
     "HealthBeaconRequest",
+    "ApnsRegistrationRequest",
+    "ApnsRegistrationResponse",
+    "ApnsOutcomeRequest",
+    "ApnsOutcomeResponse",
     "ItemAcknowledgement",
     "ProjectionPage",
     "RegistryDiscoveryResponse",
@@ -146,6 +157,10 @@ expected_fixtures = {
     "projection-response.json",
     "write-batch-ack-response.json",
     "write-batch-request.json",
+    "apns-registration-request.json",
+    "apns-registration-response.json",
+    "apns-outcome-request.json",
+    "apns-outcome-response.json",
 }
 actual_fixtures = {path.name for path in fixture_dir.glob("*.json")}
 if actual_fixtures != expected_fixtures:

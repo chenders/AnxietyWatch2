@@ -95,6 +95,14 @@ public enum SongSearchError: Error, Equatable, Sendable {
 /// A provider adapter owned by the transport layer; journal text is never passed to it.
 public protocol SongSearchProviderClient: Sendable {
   func search(query: String) async throws -> [SongSearchResult]
+  /// Return artwork for an exact provider result when the search response omitted it.
+  func artworkURL(for result: SongSearchResult) async throws -> String?
+}
+
+public extension SongSearchProviderClient {
+  func artworkURL(for result: SongSearchResult) async throws -> String? {
+    result.artworkURL
+  }
 }
 
 /// Capability-aware search with the required Genius-to-iTunes fallback.
@@ -132,6 +140,61 @@ public struct SongSearchCoordinator: Sendable {
       throw SongSearchError.noUsableResult("iTunes returned no usable song result")
     }
     return results
+  }
+
+  /// Fill missing artwork without changing the provider-independent song identity.
+  ///
+  /// The lookup order is exact provider lookup, exact iTunes metadata lookup, then a normalized
+  /// title/artist/album match from a fresh iTunes search. A missing or invalid URL remains an
+  /// explicit no-artwork state for the UI placeholder; it is never represented by an empty image.
+  public func resolveArtwork(for result: SongSearchResult) async -> SongSearchResult {
+    if Self.verifiedArtworkURL(result.artworkURL) != nil {
+      return result
+    }
+    let providers: [any SongSearchProviderClient] = [geniusProxy, geniusDirect, itunes].compactMap { $0 }
+    for provider in providers {
+      if let artwork = try? await provider.artworkURL(for: result),
+        let verifiedArtwork = Self.verifiedArtworkURL(artwork) {
+        return Self.withArtwork(verifiedArtwork, on: result)
+      }
+    }
+    let query = "\(result.artist) \(result.title)"
+    if let matches = try? await itunes.search(query: query),
+       let match = matches.first(where: { Self.sameSong($0, result) }),
+       let artwork = Self.verifiedArtworkURL(match.artworkURL) {
+      return Self.withArtwork(artwork, on: result)
+    }
+    return result
+  }
+
+  private static func sameSong(_ lhs: SongSearchResult, _ rhs: SongSearchResult) -> Bool {
+    lhs.identity.artist == rhs.identity.artist
+      && lhs.identity.title == rhs.identity.title
+      && (rhs.identity.album.isEmpty || lhs.identity.album == rhs.identity.album)
+  }
+
+  private static func verifiedArtworkURL(_ value: String?) -> String? {
+    guard let value,
+      let url = URL(string: value.trimmingCharacters(in: .whitespacesAndNewlines)),
+      url.scheme?.lowercased() == "https",
+      url.host != nil,
+      url.user == nil,
+      url.password == nil
+    else { return nil }
+    return url.absoluteString
+  }
+
+  private static func withArtwork(_ artworkURL: String, on result: SongSearchResult) -> SongSearchResult {
+    SongSearchResult(
+      id: result.id,
+      title: result.title,
+      artist: result.artist,
+      album: result.album,
+      provider: result.provider,
+      providerID: result.providerID,
+      artworkURL: artworkURL,
+      sourceURL: result.sourceURL
+    )
   }
 }
 
@@ -280,7 +343,24 @@ public struct SongCatalog: Codable, Equatable, Sendable {
 
   /// Adds a result once per canonical identity; provider IDs never deduplicate songs.
   public mutating func add(_ result: SongSearchResult) -> UUID {
-    if let existing = songs.first(where: { $0.identity == result.identity }) {
+    if let index = songs.firstIndex(where: { $0.identity == result.identity }) {
+      let existing = songs[index]
+      if existing.artworkURL == nil, let artworkURL = result.artworkURL {
+        songs[index] = SongRecord(
+          id: existing.id,
+          title: existing.title,
+          artist: existing.artist,
+          album: existing.album,
+          provider: existing.provider,
+          providerID: existing.providerID,
+          artworkURL: artworkURL,
+          sourceURL: existing.sourceURL,
+          lyrics: existing.lyrics,
+          lastUsedAt: existing.lastUsedAt,
+          occurrenceCount: existing.occurrenceCount,
+          syncState: existing.syncState
+        )
+      }
       return existing.id
     }
     let song = SongRecord(result: result)

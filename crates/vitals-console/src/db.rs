@@ -11,7 +11,8 @@ use sqlx::PgPool;
 use subtle::ConstantTimeEq;
 use uuid::Uuid;
 
-use crate::client_api::HealthBeaconRequest;
+use crate::apns::ApnsTokenProtector;
+use crate::client_api::{ApnsRegistrationRequest, HealthBeaconRequest};
 use crate::credentials::{
     CREDENTIAL_LIFETIME_S, DeviceCredential, fingerprint_public_key, hash_enrollment_token,
     validate_mobile_label, validate_mobile_public_key, validate_mobile_scopes,
@@ -20,6 +21,377 @@ use crate::domain;
 use crate::models::{
     AttemptView, DomainRecordPayload, DomainRecordResponse, Effect, ErrorResponse, error_reply,
 };
+
+/// Store current APNs registration facts without returning token material.
+///
+/// # Errors
+///
+/// Returns a named validation, encryption, or database blocker.
+#[expect(
+    clippy::too_many_lines,
+    reason = "registration validation, upsert, and append-only audit must share one transaction boundary"
+)]
+pub async fn store_apns_registration(
+    pool: &PgPool,
+    server_instance_id: Uuid,
+    owner_user_id: Uuid,
+    client_id: Uuid,
+    request: &ApnsRegistrationRequest,
+    token_protector: Option<&ApnsTokenProtector>,
+) -> Result<String, String> {
+    if request.device_id != client_id {
+        return Err(format!(
+            "APNs registration blocked: device_id={} does not match authenticated client_id={client_id}",
+            request.device_id
+        ));
+    }
+    if request.environment != "sandbox" && request.environment != "production" {
+        return Err(format!(
+            "APNs registration blocked: environment={} is unsupported",
+            request.environment
+        ));
+    }
+    if request.app_identifier.trim().is_empty()
+        || request.app_version.trim().is_empty()
+        || request.build.trim().is_empty()
+        || request.authorization_status.trim().is_empty()
+    {
+        return Err(
+            "APNs registration blocked: app identity or authorization facts are incomplete"
+                .to_string(),
+        );
+    }
+    let (token_ciphertext, token_fingerprint) = match request.token.as_deref() {
+        Some(token) => {
+            let protector = token_protector.ok_or_else(|| {
+                "APNs registration blocked: VITALS_CONSOLE_APNS_TOKEN_KEY is not configured"
+                    .to_string()
+            })?;
+            let (ciphertext, fingerprint) = protector.seal(token)?;
+            (Some(ciphertext), Some(fingerprint))
+        }
+        None => (None, None),
+    };
+    let existing: Option<(Uuid,)> = sqlx::query_as(
+        "SELECT device_id FROM apns_device_registrations WHERE server_instance_id = $1 AND device_id = $2",
+    )
+    .bind(server_instance_id)
+    .bind(request.device_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|error| format!("APNs registration lookup failed: {error}"))?;
+    let action = if existing.is_some() {
+        "refreshed"
+    } else {
+        "registered"
+    };
+    sqlx::query(
+        "INSERT INTO apns_device_registrations
+         (server_instance_id, owner_user_id, device_id, client_id, token_ciphertext, token_fingerprint,
+          environment, app_identifier, app_version, build, authorization_status,
+          alerts_enabled, sounds_enabled, badges_enabled)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+         ON CONFLICT (server_instance_id, device_id) DO UPDATE SET
+          owner_user_id = EXCLUDED.owner_user_id,
+          client_id = EXCLUDED.client_id,
+          token_ciphertext = EXCLUDED.token_ciphertext,
+          token_fingerprint = EXCLUDED.token_fingerprint,
+          environment = EXCLUDED.environment,
+          app_identifier = EXCLUDED.app_identifier,
+          app_version = EXCLUDED.app_version,
+          build = EXCLUDED.build,
+          authorization_status = EXCLUDED.authorization_status,
+          alerts_enabled = EXCLUDED.alerts_enabled,
+          sounds_enabled = EXCLUDED.sounds_enabled,
+          badges_enabled = EXCLUDED.badges_enabled,
+          last_seen_at = now(),
+          revoked_at = NULL,
+          last_provider_reason = NULL",
+    )
+    .bind(server_instance_id)
+    .bind(owner_user_id)
+    .bind(request.device_id)
+    .bind(client_id)
+    .bind(token_ciphertext)
+    .bind(token_fingerprint)
+    .bind(&request.environment)
+    .bind(&request.app_identifier)
+    .bind(&request.app_version)
+    .bind(&request.build)
+    .bind(&request.authorization_status)
+    .bind(request.alerts_enabled)
+    .bind(request.sounds_enabled)
+    .bind(request.badges_enabled)
+    .execute(pool)
+    .await
+    .map_err(|error| format!("APNs registration persistence failed: {error}"))?;
+    sqlx::query(
+        "INSERT INTO apns_registration_audit
+         (server_instance_id, device_id, client_id, action, reason)
+         VALUES ($1, $2, $3, $4, $5)",
+    )
+    .bind(server_instance_id)
+    .bind(request.device_id)
+    .bind(client_id)
+    .bind(action)
+    .bind(format!(
+        "authorization_status={}",
+        request.authorization_status
+    ))
+    .execute(pool)
+    .await
+    .map_err(|error| format!("APNs registration audit failed: {error}"))?;
+    Ok(action.to_string())
+}
+
+#[derive(Clone, Debug)]
+/// An active registration selected for one immutable message snapshot.
+pub struct ApnsRecipient {
+    /// Registered device identity.
+    pub device_id: Uuid,
+    /// Enrolled mobile credential identity.
+    pub client_id: Uuid,
+    /// Encrypted token, never returned to the browser.
+    pub token_ciphertext: Vec<u8>,
+    /// Stable non-secret token fingerprint.
+    pub token_fingerprint: String,
+}
+
+/// Resolve active, recently-seen registrations for one APNs send.
+///
+/// # Errors
+///
+/// Returns a database blocker. Registrations without tokens, revoked registrations, and stale
+/// registrations are excluded before the recipient snapshot is created.
+pub async fn resolve_apns_recipients(
+    pool: &PgPool,
+    server_instance_id: Uuid,
+    owner_user_id: Option<Uuid>,
+    device_id: Option<Uuid>,
+) -> Result<Vec<ApnsRecipient>, String> {
+    let query = if device_id.is_some() {
+        "SELECT device_id, client_id, token_ciphertext, token_fingerprint
+         FROM apns_device_registrations
+         WHERE server_instance_id = $1 AND ($2::uuid IS NULL OR owner_user_id = $2)
+           AND device_id = $3 AND revoked_at IS NULL
+           AND last_seen_at >= now() - INTERVAL '30 days'
+           AND token_ciphertext IS NOT NULL AND token_fingerprint IS NOT NULL"
+    } else {
+        "SELECT device_id, client_id, token_ciphertext, token_fingerprint
+         FROM apns_device_registrations
+         WHERE server_instance_id = $1 AND ($2::uuid IS NULL OR owner_user_id = $2)
+           AND revoked_at IS NULL
+           AND last_seen_at >= now() - INTERVAL '30 days'
+           AND token_ciphertext IS NOT NULL AND token_fingerprint IS NOT NULL
+         ORDER BY device_id"
+    };
+    let rows: Vec<(Uuid, Uuid, Vec<u8>, String)> = if let Some(device_id) = device_id {
+        sqlx::query_as(query)
+            .bind(server_instance_id)
+            .bind(owner_user_id)
+            .bind(device_id)
+            .fetch_all(pool)
+            .await
+    } else {
+        sqlx::query_as(query)
+            .bind(server_instance_id)
+            .bind(owner_user_id)
+            .fetch_all(pool)
+            .await
+    }
+    .map_err(|error| format!("APNs recipient resolution failed: {error}"))?;
+    Ok(rows
+        .into_iter()
+        .map(
+            |(device_id, client_id, token_ciphertext, token_fingerprint)| ApnsRecipient {
+                device_id,
+                client_id,
+                token_ciphertext,
+                token_fingerprint,
+            },
+        )
+        .collect())
+}
+
+/// Persist an immutable APNs message and its measured target snapshot.
+///
+/// # Errors
+///
+/// Returns a database blocker.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "message ledger fields mirror the immutable audit record exactly"
+)]
+pub async fn create_apns_message(
+    pool: &PgPool,
+    message_id: Uuid,
+    server_instance_id: Uuid,
+    idempotency_key: Option<Uuid>,
+    audit_actor: &str,
+    recipient_scope: &str,
+    target_device_id: Option<Uuid>,
+    target_user_id: Option<Uuid>,
+    payload: &crate::apns::ApnsPayload,
+    target_snapshot: &serde_json::Value,
+) -> Result<bool, String> {
+    sqlx::query(
+        "INSERT INTO apns_messages
+         (message_id, server_instance_id, idempotency_key, audit_actor, recipient_scope,
+          target_device_id, target_user_id, target_snapshot, payload_class, category, deep_link, is_test)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+         ON CONFLICT (server_instance_id, idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING",
+    )
+    .bind(message_id)
+    .bind(server_instance_id)
+    .bind(idempotency_key)
+    .bind(audit_actor)
+    .bind(recipient_scope)
+    .bind(target_device_id)
+    .bind(target_user_id)
+    .bind(target_snapshot)
+    .bind(&payload.payload_class)
+    .bind(&payload.category)
+    .bind(&payload.deep_link)
+    .bind(payload.is_test)
+    .execute(pool)
+    .await
+    .map_err(|error| format!("APNs message ledger insert failed: {error}"))
+    .map(|result| result.rows_affected() == 1)
+}
+
+/// Append one provider attempt, retaining provider acceptance separately from device observation.
+///
+/// # Errors
+///
+/// Returns a database blocker.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "provider evidence fields remain explicit in the append-only attempt row"
+)]
+pub async fn record_apns_attempt(
+    pool: &PgPool,
+    message_id: Uuid,
+    server_instance_id: Uuid,
+    recipient: &ApnsRecipient,
+    state: &str,
+    provider_status: Option<u16>,
+    provider_reason: Option<&str>,
+    retryable: bool,
+) -> Result<(), String> {
+    sqlx::query(
+        "INSERT INTO apns_delivery_attempts
+         (message_id, server_instance_id, device_id, client_id, token_fingerprint,
+          attempt_number, state, provider_status, provider_reason, retryable)
+         SELECT $1, $2, $3, $4, $5,
+                COALESCE(MAX(attempt_number), 0) + 1, $6, $7, $8, $9
+         FROM apns_delivery_attempts
+         WHERE message_id = $1 AND device_id = $3",
+    )
+    .bind(message_id)
+    .bind(server_instance_id)
+    .bind(recipient.device_id)
+    .bind(recipient.client_id)
+    .bind(&recipient.token_fingerprint)
+    .bind(state)
+    .bind(provider_status.map(i32::from))
+    .bind(provider_reason)
+    .bind(retryable)
+    .execute(pool)
+    .await
+    .map_err(|error| format!("APNs delivery attempt insert failed: {error}"))?;
+    Ok(())
+}
+
+/// Mark a token invalid after an explicit APNs invalid-token response.
+///
+/// # Errors
+///
+/// Returns a database blocker.
+pub async fn revoke_apns_registration(
+    pool: &PgPool,
+    server_instance_id: Uuid,
+    recipient: &ApnsRecipient,
+    reason: &str,
+) -> Result<(), String> {
+    sqlx::query(
+        "UPDATE apns_device_registrations
+         SET revoked_at = COALESCE(revoked_at, now()), last_provider_reason = $3
+         WHERE server_instance_id = $1 AND device_id = $2",
+    )
+    .bind(server_instance_id)
+    .bind(recipient.device_id)
+    .bind(reason)
+    .execute(pool)
+    .await
+    .map_err(|error| format!("APNs invalid-token revocation failed: {error}"))?;
+    sqlx::query(
+        "INSERT INTO apns_registration_audit
+         (server_instance_id, device_id, client_id, action, reason)
+         VALUES ($1, $2, $3, 'provider_rejected', $4)",
+    )
+    .bind(server_instance_id)
+    .bind(recipient.device_id)
+    .bind(recipient.client_id)
+    .bind(reason)
+    .execute(pool)
+    .await
+    .map_err(|error| format!("APNs invalid-token audit failed: {error}"))?;
+    Ok(())
+}
+
+/// Record a device-observed display or acknowledgement fact idempotently.
+///
+/// # Errors
+///
+/// Returns a database, ownership, or timestamp blocker.
+pub async fn record_apns_outcome(
+    pool: &PgPool,
+    client_id: Uuid,
+    request: &crate::client_api::ApnsOutcomeRequest,
+) -> Result<String, String> {
+    if request.outcome != "displayed" && request.outcome != "acknowledged" {
+        return Err(format!(
+            "APNs outcome blocked: outcome={} is unsupported",
+            request.outcome
+        ));
+    }
+    let observed_at = chrono::DateTime::parse_from_rfc3339(&request.observed_at)
+        .map_err(|error| format!("APNs outcome blocked: observed_at={error}"))?
+        .with_timezone(&chrono::Utc);
+    let owns_message: Option<(Uuid,)> = sqlx::query_as(
+        "SELECT message_id FROM apns_delivery_attempts
+         WHERE message_id = $1 AND client_id = $2 LIMIT 1",
+    )
+    .bind(request.message_id)
+    .bind(client_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|error| format!("APNs outcome lookup failed: {error}"))?;
+    if owns_message.is_none() {
+        return Err(format!(
+            "APNs outcome blocked: message_id={} is not assigned to client_id={client_id}",
+            request.message_id
+        ));
+    }
+    let inserted = sqlx::query(
+        "INSERT INTO apns_client_outcomes (message_id, client_id, outcome, observed_at)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (message_id, client_id, outcome) DO NOTHING",
+    )
+    .bind(request.message_id)
+    .bind(client_id)
+    .bind(&request.outcome)
+    .bind(observed_at)
+    .execute(pool)
+    .await
+    .map_err(|error| format!("APNs outcome persistence failed: {error}"))?
+    .rows_affected();
+    Ok(if inserted == 1 {
+        "recorded".to_string()
+    } else {
+        "replayed".to_string()
+    })
+}
 
 /// Return the most recent received status beacon for the Ingest health projection.
 ///
@@ -324,7 +696,7 @@ pub async fn claim_mobile_credential(
         .await
         .map_err(|error| format!("mobile enrollment database transaction failed: {error}"))?;
     let artifact: Option<EnrollmentArtifactRow> = sqlx::query_as(
-        "SELECT server_instance_id, token_hash, scopes, expires_at, consumed_at\
+        "SELECT server_instance_id, token_hash, scopes, expires_at, consumed_at \
          FROM enrollment_artifacts WHERE enrollment_id = $1 FOR UPDATE",
     )
     .bind(enrollment_id)

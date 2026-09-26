@@ -1,6 +1,7 @@
 import AWDomain
 import AWOutbox
 import AWTransport
+import Foundation
 import SwiftUI
 
 /// Navigation responsibility derives from generation-one `AnxietyWatch/App/ContentView.swift`.
@@ -134,8 +135,8 @@ private struct HealthSurface: View {
   var body: some View {
     NavigationStack {
       Form {
-        Section("Read-only HealthKit") {
-          Text("HealthKit read authorization is requested once per type. Apple does not expose whether a read was granted, so this screen reports requests, query results, and Pi acknowledgements separately.")
+        Section("HealthKit access") {
+          Text("AnxietyWatch reads selected HealthKit data and sends it to the enrolled Pi. Access requests, query results, and Pi acknowledgements are reported separately.")
             .font(.footnote)
             .foregroundStyle(.secondary)
           Button {
@@ -146,9 +147,14 @@ private struct HealthSurface: View {
             }
           } label: {
             if isRequesting { ProgressView("Requesting…") }
-            else { Label("Request HealthKit access", systemImage: "heart.text.square") }
+            else { Label("Request access to HealthKit", systemImage: "heart.text.square") }
           }
           .disabled(isRequesting || !runtime.isEnrolled)
+          if !runtime.isEnrolled {
+            Label("Enrollment is required before HealthKit can be configured.", systemImage: "lock")
+              .font(.footnote)
+              .foregroundStyle(.secondary)
+          }
           if let outcome = runtime.healthKitAuthorizationFacts.outcome {
             LabeledContent("Request outcome", value: outcome)
           }
@@ -156,9 +162,9 @@ private struct HealthSurface: View {
             LabeledContent("Apple request status", value: status)
           }
         }
-        Section("Per-type delivery") {
+        Section("HealthKit data status") {
           if runtime.healthKitFacts.isEmpty {
-            Text("HealthKit delivery is unknown until the enrolled Pi registry is available.")
+            Text("No data status is available until this iPhone is enrolled and the Pi registry is reachable.")
               .foregroundStyle(.secondary)
           } else {
             ForEach(runtime.healthKitFacts, id: \.healthKitType) { fact in
@@ -167,6 +173,14 @@ private struct HealthSurface: View {
                 Text(fact.lastQueryOutcome ?? "not measured")
                   .font(.footnote)
                   .foregroundStyle(.secondary)
+                if let observer = fact.observerRegistrationOutcome {
+                  LabeledContent("Observer", value: observer)
+                    .font(.footnote)
+                }
+                if let background = fact.backgroundDeliveryOutcome {
+                  LabeledContent("Background delivery", value: background)
+                    .font(.footnote)
+                }
                 if let ack = fact.lastPiAckAt {
                   Text("Pi acknowledged: \(ack.formatted(.dateTime))")
                     .font(.caption)
@@ -201,6 +215,39 @@ private struct RuntimeStatusSurface: View {
             .foregroundStyle(.secondary)
             .accessibilityLabel("Sync status: \(runtime.syncStatus)")
         }
+        Section("Pi measurements") {
+          Text(runtime.projectionStatus)
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+          ForEach(runtime.projectionMeasurements) { measurement in
+            VStack(alignment: .leading, spacing: 3) {
+              LabeledContent(measurement.label) {
+                if let value = measurement.value {
+                  Text("\(value.formatted(.number.precision(.fractionLength(0...1)))) \(measurement.unit)")
+                    .fontWeight(.semibold)
+                } else {
+                  Text("Not measured")
+                    .foregroundStyle(.secondary)
+                }
+              }
+              if let observedAt = measurement.observedAt {
+                Text("Observed \(observedAt) · \(measurement.state)")
+                  .font(.caption2)
+                  .foregroundStyle(.secondary)
+              } else {
+                Text(measurement.state)
+                  .font(.caption2)
+                  .foregroundStyle(.secondary)
+              }
+            }
+          }
+          Button {
+            Task { await runtime.refreshProjectionMeasurements() }
+          } label: {
+            Label("Refresh measurements", systemImage: "arrow.clockwise")
+          }
+          .disabled(!runtime.isEnrolled)
+        }
         Section("Local delivery") {
           LabeledContent("Outbox items", value: "\(runtime.outboxItemCount)")
           Button {
@@ -220,22 +267,11 @@ private struct RuntimeStatusSurface: View {
           }
           .disabled(isSyncing || !runtime.isEnrolled)
         }
-        Section("Journal privacy") {
-          Toggle(
-            "Include local journal mirror in backups",
-            isOn: Binding(
-              get: { runtime.journalBackupIncluded },
-              set: { included in
-                Task { await runtime.setJournalBackupIncluded(included) }
-              }
-            )
-          )
-          Text("The temporary outbox is always excluded. The local journal mirror remains protected and is excluded until you enable this setting.")
-            .font(.footnote)
-            .foregroundStyle(.secondary)
-        }
       }
       .navigationTitle("Today")
+      .task {
+        await runtime.refreshProjectionMeasurements()
+      }
     }
   }
 }
@@ -529,12 +565,19 @@ private struct JournalCaptureSurface: View {
   private var songSection: some View {
     Section("Song") {
       if let selectedSong {
-        VStack(alignment: .leading, spacing: 4) {
-          Text(selectedSong.title).font(.headline)
-          Text("\(selectedSong.artist) · \(selectedSong.provider.rawValue)")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-          Button("Remove song") { self.selectedSong = nil }
+        HStack(alignment: .top, spacing: 12) {
+          SongArtworkView(
+            artworkURL: selectedSong.artworkURL,
+            size: 56,
+            accessibilityLabel: "Artwork for \(selectedSong.title) by \(selectedSong.artist)"
+          )
+          VStack(alignment: .leading, spacing: 4) {
+            Text(selectedSong.title).font(.headline)
+            Text("\(selectedSong.artist) · \(selectedSong.provider.rawValue)")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+            Button("Remove song") { self.selectedSong = nil }
+          }
         }
       } else {
         Button {
@@ -618,6 +661,7 @@ private struct SongPickerSurface: View {
   @State private var results: [SongSearchResult] = []
   @State private var isSearching = false
   @State private var searchError: String?
+  @State private var selectingResultID: UUID?
   @State private var artist = ""
   @State private var album = ""
 
@@ -647,15 +691,32 @@ private struct SongPickerSurface: View {
           Section("Results") {
             ForEach(results) { result in
               Button {
-                onSelect(result)
+                Task {
+                  selectingResultID = result.id
+                  let resolved = await searchCoordinator.resolveArtwork(for: result)
+                  guard selectingResultID == result.id else { return }
+                  onSelect(resolved)
+                }
               } label: {
-                VStack(alignment: .leading, spacing: 3) {
-                  Text(result.title)
-                  Text("\(result.artist) · \(result.album ?? "Album not provided")")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                HStack(spacing: 10) {
+                  SongArtworkView(
+                    artworkURL: result.artworkURL,
+                    size: 44,
+                    accessibilityLabel: "Artwork for \(result.title) by \(result.artist)"
+                  )
+                  VStack(alignment: .leading, spacing: 3) {
+                    Text(result.title)
+                    Text("\(result.artist) · \(result.album ?? "Album not provided")")
+                      .font(.caption)
+                      .foregroundStyle(.secondary)
+                  }
+                  if selectingResultID == result.id {
+                    ProgressView()
+                      .accessibilityLabel("Loading artwork")
+                  }
                 }
               }
+              .disabled(selectingResultID != nil)
               .accessibilityLabel("Select \(result.title) by \(result.artist)")
             }
           }
@@ -775,14 +836,102 @@ private struct JournalEntryDetailSurface: View {
   }
 }
 
+private struct SongArtworkView: View {
+  let artworkURL: String?
+  let fallbackArtworkURL: String?
+  let size: CGFloat
+  let accessibilityLabel: String
+  @State private var retryGeneration = 0
+  @State private var didRetry = false
+
+  init(
+    artworkURL: String?,
+    fallbackArtworkURL: String? = nil,
+    size: CGFloat,
+    accessibilityLabel: String
+  ) {
+    self.artworkURL = artworkURL
+    self.fallbackArtworkURL = fallbackArtworkURL
+    self.size = size
+    self.accessibilityLabel = accessibilityLabel
+  }
+
+  var body: some View {
+    Group {
+      if let url = activeURL {
+        AsyncImage(url: url, transaction: Transaction(animation: .easeInOut)) { phase in
+          switch phase {
+          case .success(let image):
+            image
+              .resizable()
+              .scaledToFill()
+          case .failure:
+            placeholder
+              .task {
+                guard !didRetry else { return }
+                try? await Task.sleep(nanoseconds: 400_000_000)
+                guard !Task.isCancelled else { return }
+                didRetry = true
+                retryGeneration += 1
+              }
+          case .empty:
+            placeholder
+          @unknown default:
+            placeholder
+          }
+        }
+        .id(retryGeneration)
+      } else {
+        placeholder
+      }
+    }
+    .frame(width: size, height: size)
+    .clipShape(RoundedRectangle(cornerRadius: max(8, size * 0.12)))
+    .accessibilityLabel(accessibilityLabel)
+    .onChange(of: artworkURL) { _, _ in
+      didRetry = false
+      retryGeneration = 0
+    }
+  }
+
+  private var activeURL: URL? {
+    let primary = Self.verifiedURL(artworkURL)
+    guard retryGeneration > 0 else { return primary }
+    return Self.verifiedURL(fallbackArtworkURL) ?? primary
+  }
+
+  private var placeholder: some View {
+    ZStack {
+      Color(red: 0.15, green: 0.16, blue: 0.17)
+      Image(systemName: "music.note")
+        .font(.system(size: max(16, size * 0.32), weight: .medium))
+        .foregroundStyle(Color(red: 0.78, green: 0.70, blue: 0.59))
+    }
+    .accessibilityHidden(true)
+  }
+
+  private static func verifiedURL(_ value: String?) -> URL? {
+    guard let value,
+      let url = URL(string: value.trimmingCharacters(in: .whitespacesAndNewlines)),
+      url.scheme?.lowercased() == "https",
+      url.host != nil,
+      url.user == nil,
+      url.password == nil
+    else { return nil }
+    return url
+  }
+}
+
 private struct SongRowSurface: View {
   let song: SongRecord
 
   var body: some View {
-    HStack {
-      Image(systemName: "music.note")
-        .frame(minWidth: 44, minHeight: 44)
-        .accessibilityHidden(true)
+    HStack(spacing: 12) {
+      SongArtworkView(
+        artworkURL: song.artworkURL,
+        size: 48,
+        accessibilityLabel: "Artwork for \(song.title) by \(song.artist)"
+      )
       VStack(alignment: .leading) {
         Text(song.title).font(.headline)
         Text(song.artist).font(.subheadline).foregroundStyle(.secondary)
@@ -801,6 +950,17 @@ private struct SongDetailSurface: View {
 
   var body: some View {
     Form {
+      Section("Artwork") {
+        HStack {
+          Spacer()
+          SongArtworkView(
+            artworkURL: song.artworkURL,
+            size: 180,
+            accessibilityLabel: "Artwork for \(song.title) by \(song.artist)"
+          )
+          Spacer()
+        }
+      }
       Section("Metadata") {
         LabeledContent("Title", value: song.title)
         LabeledContent("Artist", value: song.artist)
@@ -852,6 +1012,7 @@ private struct EnrollmentSurface: View {
   @State private var isEnrolling = false
   @State private var statusMessage: String?
   @State private var showingRecovery = false
+  @State private var showingUnenrollConfirmation = false
 
   var body: some View {
     NavigationStack {
@@ -869,6 +1030,30 @@ private struct EnrollmentSurface: View {
           } else if !runtime.isEnrolled {
             Text("Paste the one-time enrollment artifact created by the private admin console.")
               .font(.footnote)
+          }
+        }
+
+        if runtime.isEnrolled {
+          Section("Operator notifications") {
+            Text("Allow operator-directed messages from this Pi. Notifications contain only a protected category or link; health values, journal text, medication details, and credentials are never included.")
+              .font(.footnote)
+              .foregroundStyle(.secondary)
+            Button {
+              Task { await runtime.requestNotifications() }
+            } label: {
+              Label("Register notifications", systemImage: "bell.badge")
+            }
+            Text(runtime.notificationStatus)
+              .font(.footnote)
+              .accessibilityLabel("Notification status: \(runtime.notificationStatus)")
+          }
+        }
+
+        if runtime.isEnrolled {
+          Section("Pi connection actions") {
+            Button("Remove Pi enrollment", role: .destructive) {
+              showingUnenrollConfirmation = true
+            }
           }
         }
 
@@ -908,6 +1093,21 @@ private struct EnrollmentSurface: View {
           }
         }
 
+        Section("Journal privacy") {
+          Toggle(
+            "Include local journal mirror in backups",
+            isOn: Binding(
+              get: { runtime.journalBackupIncluded },
+              set: { included in
+                Task { await runtime.setJournalBackupIncluded(included) }
+              }
+            )
+          )
+          Text("The temporary outbox is always excluded. The local journal mirror remains protected and is excluded until you enable this setting.")
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+        }
+
         Section {
           Button("Start recovery") { showingRecovery = true }
         } footer: {
@@ -915,6 +1115,18 @@ private struct EnrollmentSurface: View {
         }
       }
       .navigationTitle("Settings")
+      .confirmationDialog(
+        "Remove Pi enrollment?",
+        isPresented: $showingUnenrollConfirmation,
+        titleVisibility: .visible
+      ) {
+        Button("Remove enrollment", role: .destructive) {
+          Task { await runtime.unenroll() }
+        }
+        Button("Cancel", role: .cancel) {}
+      } message: {
+        Text("This removes the Pi credential and signing key. Local journal data is retained.")
+      }
       .sheet(isPresented: $showingRecovery) { RecoveryView() }
     }
   }

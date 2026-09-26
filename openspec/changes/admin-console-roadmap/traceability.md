@@ -20,8 +20,9 @@ amendment explicitly supersedes it.
 | §4.9b Email | Gmail app password, STARTTLS, recorded test, coalescing, visible failure, off alarm path | M2e, M2f, M2k |
 | §4.9c Telemetry | Opt-in OTLP, strict metric boundary, credentials/region/test/export health, bounded noncritical queue | M2i, M2j, M2k |
 | §4.10 Alarm | Two observable channels, evidence ages, never-tested unknown, independent test operations | M6a–M6d |
+| §4.10a / Amendment 16 | Operator-directed APNs targeting, user/all-device fanout, registration, redaction, audit, token invalidation, and distinct delivery facts | M6e, T-I22 |
 | §5 | Proportionate confirmation, patterns A–D, forms, persistent upload history, accessibility | M2a/M2b/M2h, M3e, M4a/M4d, M5c, milestone suites |
-| §6 push channel | Redundant remote push remains owned | M6c, M6d, X6 |
+| §6 push channel | Redundant alarm push and operator-directed APNs remain Pi-owned; phone-silence APNs exclusion remains | M6c–M6e, T-I22, X1, X6 |
 | §6 clinical PDF | Pi-side clinical report owner | M4e, M4f |
 | §6 JSON/CSV | Portable scoped export | M3d, M3i |
 | §6 correlation recompute | Supervised recompute | M4a, M4b, M4f |

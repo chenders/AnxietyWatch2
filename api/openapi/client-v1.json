@@ -238,6 +238,290 @@
         }
       }
     },
+    "/api/v1/client/notifications/apns/outcomes": {
+      "post": {
+        "tags": [
+          "apple-client"
+        ],
+        "summary": "Admit a client-observed display or acknowledgement fact without inferring provider delivery.",
+        "description": "# Errors\n\nReturns a named version, authentication, or unavailable-ledger blocker.",
+        "operationId": "client_apns_outcome_handler",
+        "parameters": [
+          {
+            "name": "X-AnxietyWatch-API-Version",
+            "in": "header",
+            "description": "Supported API major",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-AnxietyWatch-Client-ID",
+            "in": "header",
+            "description": "Enrolled client UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-AnxietyWatch-Key-ID",
+            "in": "header",
+            "description": "Active P-256 key UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-AnxietyWatch-Request-ID",
+            "in": "header",
+            "description": "Fresh replay-protection UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Content-Digest",
+            "in": "header",
+            "description": "RFC 9530 body digest",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Signature-Input",
+            "in": "header",
+            "description": "RFC 9421 covered components and times",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Signature",
+            "in": "header",
+            "description": "RFC 9421 ecdsa-p256-sha256 signature",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApnsOutcomeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Outcome fact accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApnsOutcomeResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed outcome fact",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid request signature",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Credential scope denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Durable request id was already admitted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Outcome ledger unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/client/notifications/apns/registration": {
+      "post": {
+        "tags": [
+          "apple-client"
+        ],
+        "summary": "Admit authenticated APNs registration facts from an enrolled iPhone.",
+        "description": "# Errors\n\nReturns a named version, authentication, validation, configuration, or persistence blocker.",
+        "operationId": "client_apns_registration_handler",
+        "parameters": [
+          {
+            "name": "X-AnxietyWatch-API-Version",
+            "in": "header",
+            "description": "Supported API major",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-AnxietyWatch-Client-ID",
+            "in": "header",
+            "description": "Enrolled client UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-AnxietyWatch-Key-ID",
+            "in": "header",
+            "description": "Active P-256 key UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-AnxietyWatch-Request-ID",
+            "in": "header",
+            "description": "Fresh replay-protection UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Content-Digest",
+            "in": "header",
+            "description": "RFC 9530 body digest",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Signature-Input",
+            "in": "header",
+            "description": "RFC 9421 covered components and times",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Signature",
+            "in": "header",
+            "description": "RFC 9421 ecdsa-p256-sha256 signature",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApnsRegistrationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Registration facts accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApnsRegistrationResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid request signature",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Credential scope denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Durable request id was already admitted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Registration persistence or token protection unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/client/openapi.json": {
       "get": {
         "tags": [
@@ -264,8 +548,8 @@
         "tags": [
           "apple-client"
         ],
-        "summary": "Projection placeholder. Its success schema is present but no 2xx response is advertised.",
-        "description": "# Errors\n\nReturns a version error or the named M3/M4 capability gate.",
+        "summary": "Returns a version error or the authenticated projection page.",
+        "description": "# Errors\n\nReturns a named error for incompatible versions, failed request authentication, invalid\nregistry metrics or windows, unavailable storage, or a failed projection query.",
         "operationId": "client_projections_handler",
         "parameters": [
           {
@@ -360,6 +644,16 @@
           }
         ],
         "responses": {
+          "200": {
+            "description": "Authenticated projection page",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectionPage"
+                }
+              }
+            }
+          },
           "400": {
             "description": "Missing or malformed API version",
             "content": {
@@ -411,7 +705,7 @@
             }
           },
           "503": {
-            "description": "Projections are gated on M3/M4",
+            "description": "Projection storage is unavailable",
             "content": {
               "application/json": {
                 "schema": {
@@ -667,6 +961,143 @@
   },
   "components": {
     "schemas": {
+      "ApnsOutcomeRequest": {
+        "type": "object",
+        "description": "Client-observed APNs display or acknowledgement fact.",
+        "required": [
+          "message_id",
+          "outcome",
+          "observed_at"
+        ],
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Immutable operator-message identifier."
+          },
+          "observed_at": {
+            "type": "string",
+            "description": "Observation instant in UTC."
+          },
+          "outcome": {
+            "type": "string",
+            "description": "Client-observed `displayed` or `acknowledged` fact."
+          }
+        }
+      },
+      "ApnsOutcomeResponse": {
+        "type": "object",
+        "description": "APNs outcome admission response.",
+        "required": [
+          "api_version",
+          "message_id",
+          "status",
+          "server_time"
+        ],
+        "properties": {
+          "api_version": {
+            "type": "string",
+            "description": "API contract version."
+          },
+          "message_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Immutable operator-message identifier."
+          },
+          "server_time": {
+            "type": "string",
+            "description": "Server response instant in UTC."
+          },
+          "status": {
+            "type": "string",
+            "description": "Admission state."
+          }
+        }
+      },
+      "ApnsRegistrationRequest": {
+        "type": "object",
+        "description": "Authenticated iPhone APNs registration facts.",
+        "required": [
+          "device_id",
+          "environment",
+          "app_identifier",
+          "app_version",
+          "build",
+          "authorization_status",
+          "alerts_enabled",
+          "sounds_enabled",
+          "badges_enabled"
+        ],
+        "properties": {
+          "alerts_enabled": {
+            "type": "boolean",
+            "description": "Whether iOS allows alert presentation."
+          },
+          "app_identifier": {
+            "type": "string",
+            "description": "App bundle identifier."
+          },
+          "app_version": {
+            "type": "string",
+            "description": "User-visible app version."
+          },
+          "authorization_status": {
+            "type": "string",
+            "description": "iOS notification authorization state."
+          },
+          "badges_enabled": {
+            "type": "boolean",
+            "description": "Whether iOS allows badge updates."
+          },
+          "build": {
+            "type": "string",
+            "description": "Build identifier."
+          },
+          "device_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Authenticated device identity; must equal the signed client id."
+          },
+          "environment": {
+            "type": "string",
+            "description": "APNs environment selected by the signed app build."
+          },
+          "sounds_enabled": {
+            "type": "boolean",
+            "description": "Whether iOS allows notification sounds."
+          },
+          "token": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Lowercase hexadecimal APNs token, absent when iOS has not supplied one."
+          }
+        }
+      },
+      "ApnsRegistrationResponse": {
+        "type": "object",
+        "description": "APNs registration admission response.",
+        "required": [
+          "api_version",
+          "status",
+          "server_time"
+        ],
+        "properties": {
+          "api_version": {
+            "type": "string",
+            "description": "API contract version."
+          },
+          "server_time": {
+            "type": "string",
+            "description": "Server response instant in UTC."
+          },
+          "status": {
+            "type": "string",
+            "description": "`registered` or `refreshed`."
+          }
+        }
+      },
       "ClientAuthHeaders": {
         "type": "object",
         "description": "RFC 9421 request-authentication fields fixed by Amendment 09.",

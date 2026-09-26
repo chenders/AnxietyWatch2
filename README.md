@@ -87,7 +87,14 @@ viewers: bedside panel · web dashboard · admin console · phone
          never dependencies in the target alert path
 ```
 
-The target radio-packet-to-tier-evaluation latency is p99 under two seconds. The alert path is native services under systemd: no network and no container between a sample and an alarm output. 
+The target radio-packet-to-tier-evaluation latency is p99 under two seconds. The alert path is native services under systemd: no network and no container between a sample and an alarm output.
+
+An accepted optional mobility experiment allows a supported BLE sensor to reach an iPhone, then cross
+private Wi-Fi to the Pi; the Pi's condition is mirrored back through the iPhone to the existing BLE
+nRF52840 NeoPixel bracelet. This is an ambient convenience display—not an emergency detector—and the
+Pi's detector and local alarm remain independent if iOS suspends the relay. Wi-Fi bracelet hardware is
+deferred.
+See [Amendment 17](docs/specs/2026-09-22-amendment-17-iphone-ble-mobility-relay.md).
 
 ## Engineering Invariants
 

@@ -11,6 +11,7 @@
 		462ED94B7C334773E74B4412 /* AWDomain in Frameworks */ = {isa = PBXBuildFile; productRef = B7AFEB623EB96756ABF94321 /* AWDomain */; };
 		5AC65148BA497492051BAC11 /* AWDomain in Frameworks */ = {isa = PBXBuildFile; productRef = 0C53F675FB8F978DA3A1EDCC /* AWDomain */; };
 		5EA96E17D0240E470B8835FC /* SkeletonTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 348E3D27EF79C0CF0DAF810D /* SkeletonTests.swift */; };
+		AA11BB22CC33DD44EE55FF66 /* NotificationFlowUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB11BB22CC33DD44EE55FF66 /* NotificationFlowUITests.swift */; };
 		5F566A3ADF1B4F7C5756C122 /* ClientRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33DE46CA1DE61090CD8688BE /* ClientRootView.swift */; };
 		64192BE6EE67DA893D33F60E /* AWClientCore in Frameworks */ = {isa = PBXBuildFile; productRef = D3A84ED73B6A8C57CC99BED5 /* AWClientCore */; };
 		7F4095D9B6297CA40607C256 /* AnxietyWatchWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6837A9FDF4B8906D2C3641B /* AnxietyWatchWatchApp.swift */; };
@@ -69,6 +70,8 @@
 		4BC3614DF23E18D95CCA39D2 /* AnxietyWatchApp.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = AnxietyWatchApp.entitlements; sourceTree = "<group>"; };
 		4E7C404B080FC19AA8EC2266 /* AnxietyWatchWatch.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = AnxietyWatchWatch.entitlements; sourceTree = "<group>"; };
 		7CF8F8B525B086E939EE2887 /* AnxietyWatchAppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AnxietyWatchAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		AB11BB22CC33DD44EE55FF66 /* NotificationFlowUITests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NotificationFlowUITests.swift; sourceTree = "<group>"; };
+		AC11BB22CC33DD44EE55FF66 /* AnxietyWatchAppUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AnxietyWatchAppUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		86A9FC29554F0F2B1D112C82 /* Shared.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; path = Shared.xcconfig; sourceTree = "<group>"; };
 		8A3FA330BD6D8FF7AC0891C0 /* watchOS.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; path = watchOS.xcconfig; sourceTree = "<group>"; };
 		A5868297EEC548A56EF776F4 /* AnxietyWatchWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AnxietyWatchWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -78,6 +81,7 @@
 		D6837A9FDF4B8906D2C3641B /* AnxietyWatchWatchApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AnxietyWatchWatchApp.swift; sourceTree = "<group>"; };
 		EFD1A6E84CC434864FA2B031 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		F0854BAA8EB3A60E08D30D7B /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		F1A23C4E9B5D7F8012345678 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		F8284FD2C9EEDC34006BF82C /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = System/Library/Frameworks/Foundation.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
@@ -158,6 +162,7 @@
 				496B8032647E4D6BCA90A1D3 /* AnxietyWatchApp.app */,
 				A5868297EEC548A56EF776F4 /* AnxietyWatchWatch.app */,
 				7CF8F8B525B086E939EE2887 /* AnxietyWatchAppTests.xctest */,
+				AC11BB22CC33DD44EE55FF66 /* AnxietyWatchAppUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -166,6 +171,7 @@
 			isa = PBXGroup;
 			children = (
 				E323DBB3C40FA3CC2CC2088D /* AnxietyWatchAppTests */,
+				AD11BB22CC33DD44EE55FF66 /* AnxietyWatchAppUITests */,
 			);
 			name = Tests;
 			path = Tests;
@@ -196,6 +202,7 @@
 				C8E2F4A6B8D013579BDF2468 /* Assets.xcassets */,
 				EFD1A6E84CC434864FA2B031 /* PrivacyInfo.xcprivacy */,
 				4BC3614DF23E18D95CCA39D2 /* AnxietyWatchApp.entitlements */,
+				F1A23C4E9B5D7F8012345678 /* Info.plist */,
 			);
 			name = AnxietyWatchApp;
 			path = AnxietyWatchApp;
@@ -207,6 +214,15 @@
 				AA88D4AA8FF909846CEEBC00 /* Foundation.framework */,
 			);
 			name = watchOS;
+			sourceTree = "<group>";
+		};
+		AD11BB22CC33DD44EE55FF66 /* AnxietyWatchAppUITests */ = {
+			isa = PBXGroup;
+			children = (
+				AB11BB22CC33DD44EE55FF66 /* NotificationFlowUITests.swift */,
+			);
+			name = AnxietyWatchAppUITests;
+			path = AnxietyWatchAppUITests;
 			sourceTree = "<group>";
 		};
 		E323DBB3C40FA3CC2CC2088D /* AnxietyWatchAppTests */ = {
@@ -268,6 +284,22 @@
 			productReference = 496B8032647E4D6BCA90A1D3 /* AnxietyWatchApp.app */;
 			productType = "com.apple.product-type.application";
 		};
+		AF11BB22CC33DD44EE55FF66 /* AnxietyWatchAppUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B011BB22CC33DD44EE55FF66 /* Build configuration list for PBXNativeTarget "AnxietyWatchAppUITests" */;
+			buildPhases = (
+				AE11BB22CC33DD44EE55FF66 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				B411BB22CC33DD44EE55FF66 /* PBXTargetDependency */,
+			);
+			name = AnxietyWatchAppUITests;
+			productName = AnxietyWatchAppUITests;
+			productReference = AC11BB22CC33DD44EE55FF66 /* AnxietyWatchAppUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 		D499996135CF022B6D05FC68 /* AnxietyWatchAppTests */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = AD82E745F606F075D8D38690 /* Build configuration list for PBXNativeTarget "AnxietyWatchAppTests" */;
@@ -323,6 +355,7 @@
 				06A5D7D58A73CC7C54584700 /* AnxietyWatchApp */,
 				05C2BBF3E73847DACCC227D0 /* AnxietyWatchWatch */,
 				D499996135CF022B6D05FC68 /* AnxietyWatchAppTests */,
+				AF11BB22CC33DD44EE55FF66 /* AnxietyWatchAppUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -364,6 +397,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		AE11BB22CC33DD44EE55FF66 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AA11BB22CC33DD44EE55FF66 /* NotificationFlowUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		C807F617A4D8F0A320EC6FDE /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -390,6 +431,19 @@
 			target = 05C2BBF3E73847DACCC227D0 /* AnxietyWatchWatch */;
 			targetProxy = 7FB3A6D9A9EBAD7D0110AA8C /* PBXContainerItemProxy */;
 		};
+		B311BB22CC33DD44EE55FF66 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A5F81ED4EC90A9FB4BD4705E /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 06A5D7D58A73CC7C54584700;
+			remoteInfo = AnxietyWatchApp;
+		};
+		B411BB22CC33DD44EE55FF66 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = AnxietyWatchApp;
+			target = 06A5D7D58A73CC7C54584700 /* AnxietyWatchApp */;
+			targetProxy = B311BB22CC33DD44EE55FF66 /* PBXContainerItemProxy */;
+		};
 		D7A4A2B73591175270775CCC /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			name = AnxietyWatchApp;
@@ -414,6 +468,35 @@
 			};
 			name = Release;
 		};
+		B111BB22CC33DD44EE55FF66 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 4243100C5315413CB10ADE43 /* iOS.xcconfig */;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.groundeffectsoftware.AnxietyWatch.Stage7UITests;
+				SDKROOT = iphoneos;
+				TEST_TARGET_NAME = AnxietyWatchApp;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		B211BB22CC33DD44EE55FF66 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 4243100C5315413CB10ADE43 /* iOS.xcconfig */;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.groundeffectsoftware.AnxietyWatch.Stage7UITests;
+				SDKROOT = iphoneos;
+				TEST_TARGET_NAME = AnxietyWatchApp;
+				TARGETED_DEVICE_FAMILY = 1;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
 		5674E3077052D203A5B3E232 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = 4243100C5315413CB10ADE43 /* iOS.xcconfig */;
@@ -435,7 +518,10 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				APS_ENVIRONMENT = development;
 				CLANG_ENABLE_OBJC_WEAK = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = AnxietyWatchApp/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -597,7 +683,10 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				APS_ENVIRONMENT = production;
 				CLANG_ENABLE_OBJC_WEAK = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = AnxietyWatchApp/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -624,6 +713,15 @@
 			buildConfigurations = (
 				E87861F27FDA8EC4EAE56522 /* Release */,
 				5A8B2D0872834E978B44C707 /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		B011BB22CC33DD44EE55FF66 /* Build configuration list for PBXNativeTarget "AnxietyWatchAppUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B211BB22CC33DD44EE55FF66 /* Release */,
+				B111BB22CC33DD44EE55FF66 /* Debug */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

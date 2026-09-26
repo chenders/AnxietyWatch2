@@ -118,7 +118,11 @@ from pathlib import Path
 
 apple = Path(sys.argv[1])
 expected_entitlements = {
-    "AnxietyWatchApp/AnxietyWatchApp.entitlements": {"com.apple.developer.healthkit": True},
+    "AnxietyWatchApp/AnxietyWatchApp.entitlements": {
+        "com.apple.developer.healthkit": True,
+        "com.apple.developer.healthkit.background-delivery": True,
+        "aps-environment": "$(APS_ENVIRONMENT)",
+    },
     "AnxietyWatchWatch/AnxietyWatchWatch.entitlements": {},
 }
 for relative in expected_entitlements:
@@ -145,7 +149,11 @@ if lock.get("schema_version") != 1 or lock.get("third_party_dependencies") != []
     raise SystemExit("ios-project: FAIL — dependency lock must explicitly contain no third-party code")
 allowlist = json.loads((apple / "Entitlements.allowlist.json").read_text())
 if allowlist.get("targets") != {
-    "AnxietyWatchApp": ["com.apple.developer.healthkit"],
+    "AnxietyWatchApp": [
+        "aps-environment",
+        "com.apple.developer.healthkit",
+        "com.apple.developer.healthkit.background-delivery",
+    ],
     "AnxietyWatchWatch": [],
 }:
     raise SystemExit("ios-project: FAIL — entitlement allowlist differs from HealthKit-only target entitlements")
@@ -154,4 +162,4 @@ if fixture.get("fixture") is not True or fixture.get("contains_personal_data") i
     raise SystemExit("ios-project: FAIL — public skeleton fixture is not explicitly synthetic")
 PY
 
-printf 'ios-project: PASS — iPhone/watch targets, 5 packages, schemes, privacy, support, and HealthKit-only capabilities verified\n'
+printf 'ios-project: PASS — iPhone/watch targets, 5 packages, schemes, privacy, support, HealthKit, and APNs capabilities verified\n'

@@ -27,3 +27,7 @@ mobile_request_replays [mobile_credentials] 2026-09-19T12:06:00Z Chris Henderson
 mobile_status_beacons [mobile_request_replays] 2026-09-19T12:07:00Z Chris Henderson <chenders@users.noreply.github.com> # append-only operational phone status assertions
 telemetry [mobile_status_beacons] 2026-09-19T12:08:00Z Chris Henderson <chenders@users.noreply.github.com> # opt-in bounded operational telemetry configuration
 healthkit_tombstones [telemetry] 2026-09-19T12:09:00Z Chris Henderson <chenders@users.noreply.github.com> # append-only HealthKit deletion facts
+apns_registrations [healthkit_tombstones] 2026-09-18T12:10:00Z Chris Henderson <chenders@users.noreply.github.com> # encrypted APNs device registration facts and audit
+apns_delivery [apns_registrations] 2026-09-18T12:11:00Z Chris Henderson <chenders@users.noreply.github.com> # immutable APNs message, provider, and client-outcome evidence
+apns_owner_identity [apns_delivery] 2026-09-18T12:12:00Z Chris Henderson <chenders@users.noreply.github.com> # configured owning-user identity for same-user fanout
+apns_idempotency [apns_owner_identity] 2026-09-18T12:13:00Z Chris Henderson <chenders@users.noreply.github.com> # bounded duplicate-send guard

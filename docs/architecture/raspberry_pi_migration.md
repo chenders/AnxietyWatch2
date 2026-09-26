@@ -5,7 +5,11 @@ This document outlines the architectural decisions and feasibility research that
 ## TL;DR
 - **The backend (Rust + PostgreSQL) and all cloud API integrations move to a Raspberry Pi 5 cleanly.** The multi-hour BLE oximeter/chest-strap ingestion is the one genuinely risky component.
 - **Recommended target:** Raspberry Pi 5 (8GB or 16GB) booting from an NVMe SSD on the official M.2 HAT+, on the official 27W 5V/5A PSU, with a UPS/watchdog HAT, an external CSR8510A10 USB BLE dongle with external antenna, and the Pi kept on 5GHz WiFi or Ethernet. **microSD as the primary DB store is disqualified** for a write-heavy 24/7 database.
-- **Alerting Philosophy:** Do not treat a single Pi as the sole trusted host for a safety-relevant physiological alert. Pi OS is not real-time, SD/power-loss failure modes are real, and BLE continuity over hours is the least reliable link in the chain. Keep the phone/watch as the authoritative alerting path where possible, and treat the Pi as an ingestion/analysis server.
+- **Alerting Philosophy:** The Pi owns the authoritative detector, local klaxon, and hardware-dead-man
+  path. The iPhone/watch and the Amendment 17 BLE bracelet are convenience presentation/relay devices,
+  never the sole alerting path. Pi OS is not real-time, SD/power-loss failure modes are real, and BLE
+  continuity over hours is the least reliable link in the chain. A phone or bracelet outage must not
+  disable Pi collection, detection, or local alerting.
 
 ## Key Findings
 

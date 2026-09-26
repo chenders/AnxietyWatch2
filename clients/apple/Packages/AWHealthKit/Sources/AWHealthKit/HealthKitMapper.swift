@@ -250,14 +250,17 @@ public struct HealthKitMapper: Sendable {
 
   private func validate(_ sample: HealthKitTransportSample, registryName: String) throws {
     let formatter = ISO8601DateFormatter()
-    guard let start = formatter.date(from: sample.startAt),
-          let end = formatter.date(from: sample.endAt),
-          end >= start else {
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    let fallbackFormatter = ISO8601DateFormatter()
+    let start = formatter.date(from: sample.startAt) ?? fallbackFormatter.date(from: sample.startAt)
+    let end = formatter.date(from: sample.endAt) ?? fallbackFormatter.date(from: sample.endAt)
+    guard let start, let end, end >= start else {
       throw HealthKitMappingError.invalidInterval(
         "start_at=\(sample.startAt), end_at=\(sample.endAt)"
       )
     }
-    guard formatter.date(from: sample.recordedAt) != nil else {
+    guard formatter.date(from: sample.recordedAt) != nil
+      || fallbackFormatter.date(from: sample.recordedAt) != nil else {
       throw HealthKitMappingError.invalidRecordedAt(sample.recordedAt)
     }
     guard sample.metadata.keys.allSatisfy(Self.allowedMetadataKeys.contains) else {

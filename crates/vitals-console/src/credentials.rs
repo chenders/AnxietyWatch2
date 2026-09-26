@@ -25,13 +25,14 @@ pub const PLAINTEXT_RESPONSE_HEADERS: [(&str, &str); 2] = [
 ];
 
 /// Least-privilege mobile scopes understood by the server.
-pub const ALLOWED_SCOPES: [&str; 6] = [
+pub const ALLOWED_SCOPES: [&str; 7] = [
     "submit_platform_health",
     "submit_domain_records",
     "read_projections",
     "read_registry",
     "read_credential_status",
     "rotate_own_key",
+    "submit_notifications",
 ];
 
 /// Recent operator reauthentication evidence.

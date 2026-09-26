@@ -29,22 +29,30 @@ The Pi remains the system of record, analysis host, integration hub, and indepen
 monitor. The app is useful when the Pi is temporarily unreachable, but it is never part of the
 local detector-to-klaxon path. In the first release, HealthKit is a primary phone capability: the
 app requests read-only access, uploads source samples to the Pi, and exposes factual access/sync
-state. WatchOS, reminders/notifications, and non-journal domain features remain deferred. The app
-captures journal/anxiety records, uploads HealthKit samples, and reads Pi projections and prior records.
+state. WatchOS, local reminders, and non-journal domain features remain deferred. Operator-directed
+remote APNs notifications are in first-release scope under [Amendment 16](../specs/2026-09-18-amendment-16-operator-directed-apns.md).
+The app captures journal/anxiety records, uploads HealthKit samples, receives protected Pi-directed
+notifications, reads Pi projections and prior records, and may operate an explicit BLE source relay
+for the mobility-indicator feature defined by [Amendment 17](../specs/2026-09-22-amendment-17-iphone-ble-mobility-relay.md).
 
-### 1.1 The three jobs
+### 1.1 The four jobs
 
 | Job | Phone responsibility | Pi responsibility |
 |---|---|---|
 | HealthKit bridge in | request narrowly scoped read access, query, normalize transport payloads, enqueue, retry | authenticate, map to registry types/units, validate, store, expose receiving state |
 | Journal in | capture reports and doses, schedule local prompts, enqueue immutable versions | own authoritative records, conflict history, policy, analysis, export |
 | Viewer out | render server projections and explicit stale/unknown states | compute projections, analysis, reports, and evidence ages |
+| BLE mobility relay | receive supported sensor notifications, forward bounded frames, receive Pi state over LAN, and mirror it to the BLE bracelet | validate/decode/store/analyse source data and publish the authoritative indicator state |
+
+The BLE relay is a transport role, not local ownership. Its expected feasibility is yes for an active
+measured mode, not an unconditional iOS background guarantee.
 
 ### 1.2 Explicit non-goals
 
 The Stage 7 app does **not**:
 
-- hold Polar H10, EMAY, cuff, or Oura BLE sessions;
+- hold unbounded or legacy-generation BLE collector sessions; it may hold an explicit, supported
+  source-relay session only under Amendment 17;
 - compute authoritative baselines, CNS risk tiers, correlations, or clinical reports;
 - write any data back to HealthKit;
 - maintain a second authoritative health database;
@@ -68,8 +76,9 @@ The Stage 7 app does **not**:
 3. **One-way writes, ordinary reads.** Phone-to-Pi is an idempotent enrichment push. Pi-to-phone is a
    query/projection API. Generation one's bidirectional CRDT is not ported.
 4. **Batch transport, not batch delay.** HealthKit and domain writes use bounded HTTPS batches to
-   reduce overhead, but the first item starts a drain immediately. A live socket is a later
-   optimization only after a measured latency requirement has a consumer.
+   reduce overhead, but the first item starts a drain immediately. A live socket remains disallowed
+   for ordinary sync; Amendment 17 permits a time-bounded authenticated stream only while the
+   opt-in BLE mobility relay is active and only after its latency requirement is measured.
 5. **Watch relays through iPhone.** The first watchOS client uses `WatchConnectivity`; it holds no Pi
    credential. Direct watch-to-Pi communication is deferred unless measured delivery failures prove
    the relay inadequate.
@@ -78,8 +87,9 @@ The Stage 7 app does **not**:
    remains the final validator.
 7. **No generated Swift registry.** Registry JSON is decoded into client models and cached with its
    version. Unknown entries are preserved for diagnostics and not guessed into known types.
-8. **No BLE compatibility mode.** Generation-one BLE services are removed rather than hidden behind
-   a default-off switch.
+8. **No legacy BLE compatibility mode.** Generation-one BLE services are removed rather than hidden
+   behind a default-off switch. The Amendment 17 mobility relay is a separately named, opt-in source
+   transport with its own identity, stale-state, security, and physical-device acceptance contract.
 9. **HealthKit reads only.** The app requests only enabled read types and has no HealthKit share/write
    authorization.
 10. **Facts, not permission guesses.** HealthKit does not reveal whether read permission was granted.
@@ -88,8 +98,8 @@ The Stage 7 app does **not**:
 11. **Existing app knowledge, new narrow tree.** Selected generation-one UI and behavior are imported
     into `clients/apple/` with provenance. The old `Services/` tree is not copied wholesale.
 12. **Native-first implementation.** Swift, SwiftUI, structured concurrency, `URLSession`, HealthKit,
-    `BGTaskScheduler`, UserNotifications, and WatchConnectivity are the defaults. A third-party
-    dependency requires a license, privacy, maintenance, and necessity record.
+    CoreBluetooth, Network, `BGTaskScheduler`, UserNotifications, and WatchConnectivity are the
+    defaults. A third-party dependency requires a license, privacy, maintenance, and necessity record.
 13. **Missing is never zero.** This applies to HealthKit values, journal fields, check-ins, graph
     gaps, and server state.
 
@@ -315,9 +325,11 @@ HealthKit observer callbacks enqueue work and complete promptly. They do not per
 network transfers. `BGAppRefreshTask` and, where justified, `BGProcessingTask` drain bounded batches.
 Foreground activation and explicit user actions also trigger a drain.
 
-No one-second timers, permanent sockets, background audio, location abuse, or BLE keep-alive are
-permitted. iOS background execution is best effort; the Pi's status-beacon silence detector is the
-source of truth about whether delivery is happening.
+No one-second timers, permanent ordinary-sync sockets, background audio, location abuse, or BLE
+keep-alive intended to defeat suspension are permitted. An Amendment 17 relay may use a bounded
+stream while explicitly active, but iOS background execution remains best effort. The relay must
+report suspended, disconnected, and stale states; the Pi's status/relay silence detector is the source
+of truth about whether delivery is happening.
 
 ### 5.4 HealthKit anchoring
 
@@ -352,6 +364,38 @@ preserves every unacknowledged item.
 
 Amendment 15 makes HealthKit part of the first release. HealthKit uses this same authenticated
 phone-to-Pi transport for bounded source-sample envelopes; it is not deferred.
+
+### 6.3 BLE mobility relay
+
+Under Amendment 17, an explicitly enabled iPhone may act as a CoreBluetooth central for a supported
+physiological device and forward sensor-identifiable frames over an authenticated private-LAN stream
+to the Pi. It may also receive the Pi's small authenticated indicator-state messages over the LAN and
+mirror them to the existing BLE nRF52840 NeoPixel bracelet using bounded GATT writes. The relay
+preserves source provenance and stable sequence/session identity; it does not invent identity from
+host arrival time, perform authoritative decoding/analysis, or become durable source storage. The Pi
+receives the source stream through a dedicated relay ingress and applies the existing registry,
+decoder, append-only ingest, and analysis contracts.
+
+The prototype starts with the existing authenticated private-LAN client transport: small bounded
+source-frame batches are sent by ordinary request, and the Pi response may include its latest
+condition. A source frame preserves source identity, BLE/relay session identity, monotonic sequence,
+phone receipt timestamp, raw payload, and explicit acknowledgement or rejection. A persistent stream is
+future work only if measurements show request/response latency is inadequate. In the first-draft
+private-LAN HTTP mode, the request is authenticated/signed but the response condition is not
+cryptographically authenticated unless the Pi signs that object or HTTPS is used; documentation must
+not call the whole exchange mutually authenticated. This is acceptable for a convenience prototype,
+not for a safety decision.
+
+The Pi-to-iPhone indicator state carries a monotonic sequence, Pi observation/generation timestamp,
+condition, freshness, and expiry. A compact prototype message such as
+`AW2,1,AB12,1042,1790085000,15,GREEN,FRESH` is sufficient. The iPhone reduces validity by observed
+relay delay and never restarts the full validity period merely because it received an old response.
+The bracelet preserves those fields and independently expires into stale/unknown if updates stop. If
+the phone, sensor, Wi-Fi, or Pi is unavailable, the
+state is visibly non-reassuring and the Pi records the gap. The bracelet is an ambient convenience
+display, not an alarm path or system of record. A Wi-Fi bracelet is deferred unless a later measured
+requirement justifies it. The transport, bracelet protocol, and physical evidence are owned by T-I23;
+ordinary journal and HealthKit sync remain bounded HTTP delivery.
 
 Before public or away-from-home use, the Amendment 09 Caddy HTTPS origin, ATS system trust, hostname
 validation, and no-cleartext gate must be restored.
@@ -407,9 +451,10 @@ this single-owner health client.
 - HealthKit access is opt-in per type with a plain-language purpose shown before the system sheet.
 - The app requests read-only access to the enabled subset and remains useful when any subset is
   denied or absent.
-- No tracking permission, contacts, location, microphone, camera, or Bluetooth permission is added
-  unless a separately specified feature requires it. OCR may request camera/photo access only at
-  point of use.
+- No tracking permission, contacts, location, microphone, or camera permission is added unless a
+  separately specified feature requires it. The Amendment 17 relay may request Bluetooth and local
+  network permission only when the user enables the relay. OCR may request camera/photo access only
+  at point of use.
 - Third-party code is pinned and inventoried; an SBOM and privacy-manifest review gate every release.
 - The privacy screen identifies what stays on device, what is sent to the Pi, and what server export
   or deletion operations exist.
@@ -435,15 +480,26 @@ this single-owner health client.
 
 ### 9.1 Local prompts
 
-Reminders and notifications are deferred from the first draft. The first draft schedules no journal,
-dose, check-in, or sync reminders. A later release may add person-facing prompts under a separately
-accepted notification policy; unknown delivery must never be converted to declined.
+Local journal, dose, check-in, and sync reminders remain deferred from the first draft. Operator-directed
+remote APNs messages are not deferred; they are specified in §9.2 and Amendment 16. A later release
+may add person-facing local prompts under a separately accepted notification policy; unknown delivery
+must never be converted to declined.
 
-### 9.2 Remote alarm information
+### 9.2 Remote APNs messages and alarm information
 
-Remote notifications may report the Pi's alarm state when the M6 channel contract exists, but they
-are a redundant convenience, not proof that the local alarm worked. Notification receipt, display,
-and acknowledgement are separate evidence. The app cannot silently clear the local tier.
+Under [Amendment 16](../specs/2026-09-18-amendment-16-operator-directed-apns.md), the Pi may send
+an operator-directed APNs message to one selected active device, all active devices for a selected
+user, or every active non-revoked phone registered with the Pi. The app registers its APNs token and
+authorization/liveness facts through the authenticated mobile API. The Pi resolves and records the
+recipient snapshot before sending; a broadcast never silently expands after confirmation.
+
+Payloads are minimal and contain no HealthKit values, journal text, medication details, credentials,
+or enrollment material. The app re-fetches protected content after unlock when a message includes a
+protected category or deep link. APNs acceptance, device delivery, display, and acknowledgement are
+separate facts. Invalid/revoked tokens are removed from future fanout with the provider reason
+recorded. A remote alarm message is redundant convenience, not proof that the local alarm worked,
+and the app cannot silently clear the local tier. Amendment 14's phone-silence condition never uses
+APNs to notify the phone being reported.
 
 ### 9.3 Watch Quick Log
 
@@ -511,14 +567,17 @@ retained where the reassessment requires them.
 - Security checks: committed-secret scan, ATS configuration, Keychain accessibility, backup
   exclusion, log redaction, dependency audit, privacy manifest, and release entitlement diff.
 - Performance/energy: bounded history rendering, no polling loop, observer debounce, background batch
-  size, launch responsiveness, and overnight battery impact.
+  size, launch responsiveness, overnight battery impact, and Amendment 17 BLE-to-Pi/indicator
+  latency, jitter, reconnect, stale-age, and battery evidence.
 
 ### 12.2 Physical-device gates
 
 Simulator tests do not prove HealthKit background delivery, notification behavior, locked-device data
-protection, WatchConnectivity, energy use, or credential persistence. Milestone acceptance therefore
-runs on the owner's iPhone and Apple Watch using fixed reference fixtures plus explicitly identified
-personal-data checks that are never committed.
+protection, WatchConnectivity, energy use, credential persistence, or BLE relay behavior. Milestone
+acceptance therefore runs on the owner's iPhone and Apple Watch using fixed reference fixtures plus
+explicitly identified personal-data checks that are never committed. The relay also requires physical
+sensor, Pi, LAN, and indicator evidence under Amendment 17; foreground and locked/background results
+are reported separately.
 
 ### 12.3 Stage 7 completion
 
@@ -543,6 +602,14 @@ Stage 7 is complete only when:
 10. With the iPhone powered off, Pi collection, detection, and local alert acceptance remain green.
 11. The verified generation-one migration report has no unowned retained capability or unexplained
     record-count/date discrepancy.
+12. A physical device proves an authenticated Pi-directed APNs test can target one device and the
+    all-active-registered-device scope, with minimal payloads and separate APNs acceptance, display,
+    and acknowledgement evidence; invalid/revoked token handling and zero-recipient behavior are
+    also verified.
+13. If the Amendment 17 relay is enabled, physical evidence proves the declared BLE-to-Pi and
+    Pi-to-indicator latency/jitter, reconnect and stale/unknown behavior, iOS lifecycle limits, and
+    phone-absent Pi alarm independence. Without that evidence the relay remains experimental and
+    cannot display a reassuring state outside its measured mode.
 
 ---
 
@@ -557,6 +624,7 @@ Stage 7 is complete only when:
 | G-IOS-REPORTS — read/report APIs | complete viewer | admin roadmap M3/M4 |
 | G-IOS-MIGRATION — verified backfill contract | gen-1 decommission | admin roadmap T-X5/T-X6 |
 | G-IOS-ALARM-PUSH — remote channel protocol | remote alarm presentation only | admin roadmap M6 |
+| G-IOS-BLE-RELAY — bounded mobility relay contract | opt-in BLE source relay and indicator state | Stage 7 T-I23 + Pi relay owner |
 
 Blocked features remain absent or explicitly unavailable. They are never mocked into a production
 success state to make the app look complete.

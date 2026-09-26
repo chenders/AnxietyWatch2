@@ -433,6 +433,11 @@ pub async fn security_middleware(
     if path.starts_with("/api/v1/client/") || matches!(path, "/api/health" | "/api/version") {
         return next.run(request).await;
     }
+    // The browser must load the login page and its static assets before it has a session.
+    // All data-bearing admin APIs remain behind the session check below.
+    if path == "/console" || path.starts_with("/console/") {
+        return next.run(request).await;
+    }
     if path == "/api/admin/login" {
         if let Err(error) = security.validate_host(request.headers()) {
             return (
@@ -747,6 +752,10 @@ mod tests {
             .route("/api/v1/client/version", get(|| async { StatusCode::OK }))
             .route("/api/admin/login", get(|| async { StatusCode::OK }))
             .route("/api/health", get(|| async { StatusCode::OK }))
+            .route(
+                "/console/mobile-enrollment.html",
+                get(|| async { StatusCode::OK }),
+            )
             .route("/api/vitals", get(|| async { StatusCode::OK }))
             .layer(axum::middleware::from_fn_with_state(
                 security,
@@ -785,6 +794,17 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(health_response.status(), StatusCode::OK);
+        let console_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/console/mobile-enrollment.html")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(console_response.status(), StatusCode::OK);
         let admin_response = app
             .oneshot(
                 Request::builder()

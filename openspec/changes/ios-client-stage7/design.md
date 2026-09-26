@@ -5,7 +5,8 @@
 Generation one is an iOS/watchOS application with local SwiftData storage, HealthKit aggregation,
 BLE sessions, analysis, reporting, and bidirectional server sync. AnxietyWatch2 reverses authority:
 the Pi captures sensors, stores the record, computes analysis, generates reports, and alarms without
-the phone. Stage 7 keeps only the irreducibly mobile behavior.
+the phone. Stage 7 keeps only the irreducibly mobile behavior, plus the opt-in Amendment 17 BLE
+mobility relay whose job is transport rather than ownership or analysis.
 
 The normative behavior is in [`docs/design/SPEC-ios-client.md`](../../../docs/design/SPEC-ios-client.md).
 This file explains the implementation seams and task ordering.
@@ -21,6 +22,7 @@ clients/apple/
 │   ├── AWTransport/       versioned API client and generated OpenAPI transport types
 │   ├── AWOutbox/          temporary durable queue + receipt metadata
 │   ├── AWHealthKit/       queries, anchors, observer bridge, transport records
+│   ├── AWBLERelay/        CoreBluetooth source relay, Pi-state mirror, and bounded LAN stream
 │   └── AWDomain/          journal/song/dose/check-in commands and projections
 ├── Tests/                 unit, contract, persistence, UI, accessibility
 └── AnxietyWatch.xcodeproj
@@ -110,6 +112,7 @@ cross as if they were measured HealthKit samples.
 | secure enrollment, credential rotation/revoke | T-M2a/T-I1 | T-I4 |
 | OpenAPI/version/error envelope | T-I2 | T-I3 |
 | platform sample identity/provenance | T-X3/T-X4 | T-I6/T-I7 |
+| BLE relay framing, source identity, and stale state | Amendment 17/T-I23 Pi ingress | T-I23 |
 | phone status beacon | T-X1/T-X2 | T-I9 |
 | domain record version/tombstone schema | T-M5a/T-M5b | T-I12–T-I15 |
 | viewer queries/reports | M3/M4 | T-I10/T-I11 |
@@ -148,6 +151,14 @@ adds a waiting window. iOS may still suspend the process or deny background time
 - Pi-side silence and oldest-outbox age expose when “possible” has not occurred.
 
 A socket would not grant background execution and therefore does not solve the primary limitation.
+
+Amendment 17 is a narrow exception for an explicitly active mobility relay. The prototype starts with
+small bounded authenticated request/response batches and mirrors Pi state to the BLE nRF52840 bracelet
+while iOS permits it. The relay must publish lifecycle evidence and the bracelet must independently
+enter stale/unknown when updates expire. This is technically feasible as an active measured mode; it
+is not a promise of indefinite background delivery. A persistent stream is future work only if
+measurements justify it. The ambient indicator is convenience feedback, not an emergency detector,
+and the Pi alarm path remains independent. A Wi-Fi bracelet is deferred.
 
 ## 9. Input architecture
 
@@ -189,7 +200,15 @@ are visibly stamped synthetic.
   problem. A bounded stale projection cache is sufficient for viewing.
 - **WebView/PWA:** rejected; HealthKit, reliable local notifications, background delivery, and watch
   relay require native APIs.
-- **Permanent WebSocket:** rejected initially; it does not buy iOS background execution and adds a
-  liveness surface.
+- **Permanent ordinary-sync WebSocket:** rejected; it does not buy iOS background execution and adds
+  a liveness surface. A bounded authenticated stream is permitted only for the explicit Amendment 17
+  relay and only with physical evidence.
+- **Make the bracelet the emergency path:** rejected; the bracelet is ambient convenience feedback and
+  must become stale/unknown when the phone relay is unavailable. The Pi detector and local alarm remain
+  independent.
+- **Replace the existing BLE bracelet with Wi-Fi hardware first:** deferred; the nRF52840 BLE bracelet
+  is the initial target, and Wi-Fi hardware requires a specific measured reason.
 - **Watch talks directly to Pi:** deferred; more credentials and retry logic for no demonstrated need.
 - **Port local snapshot/analysis code:** rejected; the Pi owns computation and provenance.
+- **Treat the iPhone as a second authority:** rejected; the BLE relay forwards source frames and
+  provenance while the Pi owns validation, storage, analysis, and alarm decisions.

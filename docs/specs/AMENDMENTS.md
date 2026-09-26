@@ -26,6 +26,8 @@ wins**. If you find a contradiction, report it rather than implementing either v
 | **13** | [Platform-sample envelope and sub-provenance](2026-09-17-amendment-13-platform-sample-provenance.md) | platform-store identity and provenance decisions pending T-X3 | T-X3, T-X4, T-I6, T-I8, T-I19 |
 | **14** | [Phone-silence escalation](2026-09-17-amendment-14-phone-silence-escalation.md) | open question 1 and undefined phone-silence escalation | T-X1, T-M2e, T-M2f |
 | **15** | [HealthKit is a first-release phone capability](2026-09-17-amendment-15-healthkit-first-release.md) | Amendment 10's first-draft HealthKit deferral | T-I8, T-I9, T-I11, T-I18, T-I19, T-I20 |
+| **16** | [Operator-directed APNs messages](2026-09-18-amendment-16-operator-directed-apns.md) | first-draft remote-notification deferral and the deferred Stage 7 alarm-push client follow-up; preserves Amendment 14's no-loop phone-silence rule | T-M6a–T-M6e, T-I22 |
+| **17** | [Opt-in iPhone BLE mobility relay](2026-09-22-amendment-17-iphone-ble-mobility-relay.md) | Stage 7's blanket exclusion of iPhone BLE sessions and the ordinary-sync socket/keep-alive wording, only for a bounded mobility relay | T-I3, T-I18, T-I20, T-I21, T-I23 |
 | — | [C vs Rust evaluation](2026-08-03-c-vs-rust-evaluation.md) | the C11 decision | all code tasks |
 | — | [Review synthesis and fix tracker](../reviews/SYNTHESIS.md) | — | status of every finding |
 
@@ -130,6 +132,18 @@ a recent tier evaluation, and drain progress — because a healthy `klaxond` pul
 collector is dead is the worst false negative available. A shutdown inhibit keeps deliberate reboots
 silent, and it fails safe (armed by default). Its test injects upstream faults; stopping the
 heartbeat only tests the 555. See amendment 05 §2.
+
+**Amendment 16 adds operator-directed APNs messages** to one active device, one user's active
+phones, or every active non-revoked phone registered with the current Pi. Recipient resolution,
+confirmation, audit, token invalidation, minimal payloads, and separate APNs acceptance/display/
+acknowledgement evidence are mandatory. This is never the phone-silence path and never replaces the
+local klaxon.
+
+**Amendment 17 permits an opt-in iPhone BLE mobility relay.** A supported BLE sensor may reach the
+phone, which forwards an authenticated bounded stream over the private LAN to the Pi. The Pi remains
+authoritative and the local detector/alarm remains independent. A NeoPixel bracelet is a convenience
+indicator only; measured foreground/background behavior, stale/unknown handling, and physical-device
+latency evidence are required before the relay is represented as more than an experiment.
 
 ### Mobile enrollment and network trust
 

@@ -76,10 +76,21 @@ func songCatalogDeduplicatesAndSorts() {
 private struct FixedSearchProvider: SongSearchProviderClient {
   let results: [SongSearchResult]
   let failure: SongSearchError?
+  let artwork: String?
+
+  init(results: [SongSearchResult], failure: SongSearchError?, artwork: String? = nil) {
+    self.results = results
+    self.failure = failure
+    self.artwork = artwork
+  }
 
   func search(query: String) async throws -> [SongSearchResult] {
     if let failure { throw failure }
     return results
+  }
+
+  func artworkURL(for result: SongSearchResult) async throws -> String? {
+    artwork
   }
 }
 
@@ -106,6 +117,78 @@ func geniusFailureFallsBackToITunes() async throws {
   )
   #expect(results == [itunesResult])
   #expect(results.first?.provider == .itunes)
+}
+
+@Test("artwork resolution prefers an exact provider result and verifies HTTPS")
+func artworkResolutionPrefersVerifiedProviderArtwork() async {
+  let result = SongSearchResult(
+    title: "Track",
+    artist: "Artist",
+    provider: .geniusProxy
+  )
+  let coordinator = SongSearchCoordinator(
+    geniusProxy: FixedSearchProvider(
+      results: [],
+      failure: nil,
+      artwork: "https://example.com/track.jpg"
+    ),
+    geniusDirect: nil,
+    itunes: FixedSearchProvider(results: [], failure: nil)
+  )
+
+  let resolved = await coordinator.resolveArtwork(for: result)
+
+  #expect(resolved.artworkURL == "https://example.com/track.jpg")
+}
+
+@Test("artwork resolution falls back to an exact iTunes catalog match")
+func artworkResolutionFallsBackToITunesCatalog() async {
+  let result = SongSearchResult(title: "Track", artist: "Artist", provider: .geniusProxy)
+  let catalogResult = SongSearchResult(
+    title: "TRACK",
+    artist: "artist",
+    provider: .itunes,
+    artworkURL: "https://example.com/track.jpg"
+  )
+  let coordinator = SongSearchCoordinator(
+    geniusProxy: FixedSearchProvider(results: [], failure: nil),
+    geniusDirect: nil,
+    itunes: FixedSearchProvider(results: [catalogResult], failure: nil)
+  )
+
+  let resolved = await coordinator.resolveArtwork(for: result)
+
+  #expect(resolved.artworkURL == "https://example.com/track.jpg")
+}
+
+@Test("artwork resolution rejects insecure provider artwork and keeps explicit absence")
+func artworkResolutionRejectsInsecureProviderArtwork() async {
+  let result = SongSearchResult(title: "Track", artist: "Artist", provider: .geniusProxy)
+  let coordinator = SongSearchCoordinator(
+    geniusProxy: FixedSearchProvider(results: [], failure: nil, artwork: "http://example.com/track.jpg"),
+    geniusDirect: nil,
+    itunes: FixedSearchProvider(results: [], failure: nil)
+  )
+
+  let resolved = await coordinator.resolveArtwork(for: result)
+
+  #expect(resolved.artworkURL == nil)
+}
+
+@Test("catalog keeps the stable song ID while filling missing artwork metadata")
+func songCatalogFillsArtworkForExistingIdentity() {
+  let original = SongSearchResult(title: "Track", artist: "Artist", provider: .manual)
+  let enriched = SongSearchResult(
+    title: "TRACK",
+    artist: "artist",
+    provider: .itunes,
+    artworkURL: "https://example.com/track.jpg"
+  )
+  var catalog = SongCatalog()
+  let songID = catalog.add(original)
+
+  #expect(catalog.add(enriched) == songID)
+  #expect(catalog.songs.first?.artworkURL == "https://example.com/track.jpg")
 }
 
 @Test("journal capture queues a referenced song before its journal entry")

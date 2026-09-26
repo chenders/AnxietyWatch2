@@ -62,6 +62,7 @@ worktree/branch/commit/PR. `BLOCKED` tasks remain queued but must not be dispatc
 - [ ] T-M6b — Local klaxon evidence and independent test operation · implement-complex
 - [ ] T-M6c — Remote push evidence, token age, sweep, and test operation · implement-complex
 - [ ] T-M6d — Alarm screen and M6 acceptance suite · implement-complex · **BLOCKED on T-M6a–T-M6c**
+- [ ] T-M6e — Operator-directed APNs targeting, fanout, and delivery ledger · implement-complex · **BLOCKED on T-M6a/T-M6c**
 
 ### Cross-plan obligations
 
@@ -586,6 +587,24 @@ channels, evidence/freshness/dependency tier, and independent confirmed tests. A
 proving never-tested, stale, failed, and successful-test states.
 
 **Verify:** `cd "$(git rev-parse --show-toplevel)" && scripts/verify-admin-m6.sh`
+
+### T-M6e — Operator-directed APNs targeting, fanout, and delivery ledger
+
+**Amends:** accepted Amendment 16; preserves Amendment 14.
+
+**Reads:** design §4.10/§4.10a, Amendment 16, Amendment 14, T-M6a protocol, mobile enrollment/API
+contract, and T-I22.
+
+**Do:** Add the protected APNs provider configuration and authenticated mobile registration path.
+Support one-device, one-user, and every-active-device targets scoped to this server instance. Resolve
+and display the recipient snapshot before confirmation; record zero-recipient outcomes explicitly.
+Implement bounded idempotent sends, invalid-token revocation, transient retry, minimal payload
+redaction, audit records, test-vs-real separation, and distinct APNs accepted/delivered/displayed/
+acknowledged facts. Expose token age, authorization state, provider state, last sweep/send, and
+failure reasons without returning tokens or private keys. Never route phone-silence escalation
+through APNs.
+
+**Verify:** `cd "$(git rev-parse --show-toplevel)" && scripts/verify-remote-apns.sh`
 
 ### T-X1 — Decide phone-silence escalation path
 

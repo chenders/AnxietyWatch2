@@ -32,6 +32,7 @@ struct ITunesTrack: Decodable {
 public final class URLSessionITunesSongSearchProvider: SongSearchProviderClient, @unchecked Sendable {
   private let session: URLSession
   private let endpoint: URL
+  private let lookupEndpoint: URL
 
   public convenience init() {
     self.init(
@@ -41,9 +42,10 @@ public final class URLSessionITunesSongSearchProvider: SongSearchProviderClient,
     )
   }
 
-  init(session: URLSession, endpoint: URL) {
+  init(session: URLSession, endpoint: URL, lookupEndpoint: URL? = nil) {
     self.session = session
     self.endpoint = endpoint
+    self.lookupEndpoint = lookupEndpoint ?? endpoint.deletingLastPathComponent().appendingPathComponent("lookup")
   }
 
   public func search(query: String) async throws -> [SongSearchResult] {
@@ -97,13 +99,65 @@ public final class URLSessionITunesSongSearchProvider: SongSearchProviderClient,
           album: nonEmpty(track.collectionName),
           provider: .itunes,
           providerID: track.trackID.map(String.init),
-          artworkURL: track.artworkURL,
+          artworkURL: Self.verifiedArtworkURL(track.artworkURL),
           sourceURL: track.sourceURL
         )
       }
     } catch {
       throw SongSearchError.technicalFailure("iTunes search response was invalid")
     }
+  }
+
+  /// Look up artwork by the exact iTunes track ID rather than trusting a broad search match.
+  public func artworkURL(for result: SongSearchResult) async throws -> String? {
+    guard result.provider == .itunes,
+      let providerID = result.providerID,
+      !providerID.isEmpty,
+      providerID.allSatisfy(\.isNumber),
+      var components = URLComponents(url: lookupEndpoint, resolvingAgainstBaseURL: false)
+    else { return nil }
+    components.queryItems = [
+      URLQueryItem(name: "id", value: providerID),
+      URLQueryItem(name: "entity", value: "song"),
+      URLQueryItem(name: "limit", value: "1"),
+    ]
+    guard let url = components.url else {
+      throw SongSearchError.technicalFailure("iTunes artwork lookup URL could not be formed")
+    }
+    var request = URLRequest(url: url)
+    request.httpMethod = "GET"
+    request.setValue("application/json", forHTTPHeaderField: "Accept")
+    let (data, response) = try await session.data(for: request)
+    guard data.count <= 512 * 1024 else {
+      throw SongSearchError.technicalFailure("iTunes artwork lookup response exceeded 512 KiB")
+    }
+    guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+      let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+      throw SongSearchError.technicalFailure("iTunes artwork lookup returned HTTP status \(status)")
+    }
+    do {
+      let decoded = try JSONDecoder().decode(ITunesSearchResponse.self, from: data)
+      guard let track = decoded.results.first(where: { $0.trackID.map(String.init) == providerID }) else {
+        return nil
+      }
+      return Self.verifiedArtworkURL(track.artworkURL)
+    } catch let error as SongSearchError {
+      throw error
+    } catch {
+      throw SongSearchError.technicalFailure("iTunes artwork lookup response was invalid")
+    }
+  }
+
+  private static func verifiedArtworkURL(_ value: String?) -> String? {
+    guard let value else { return nil }
+    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let url = URL(string: trimmed),
+      url.scheme?.lowercased() == "https",
+      url.host != nil,
+      url.user == nil,
+      url.password == nil
+    else { return nil }
+    return url.absoluteString
   }
 
   private func nonEmpty(_ value: String?) -> String? {

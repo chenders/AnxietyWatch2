@@ -75,6 +75,34 @@ func requestFixtureIsForwardCompatible() throws {
   }
 }
 
+@Test("APNs registration and outcome fixtures preserve separate delivery facts")
+func apnsFixturesDecode() throws {
+  let registration = try JSONDecoder().decode(
+    APNsRegistrationRequest.self,
+    from: fixture(named: "apns-registration-request.json")
+  )
+  #expect(registration.environment == "sandbox")
+  #expect(registration.authorizationStatus == "authorized")
+  #expect(registration.token == "a1b2c3d4")
+
+  let registrationResponse = try JSONDecoder().decode(
+    APNsRegistrationResponse.self,
+    from: fixture(named: "apns-registration-response.json")
+  )
+  #expect(registrationResponse.status == "accepted")
+
+  let outcome = try JSONDecoder().decode(
+    APNsOutcomeRequest.self,
+    from: fixture(named: "apns-outcome-request.json")
+  )
+  #expect(outcome.outcome == .displayed)
+  let outcomeResponse = try JSONDecoder().decode(
+    APNsOutcomeResponse.self,
+    from: fixture(named: "apns-outcome-response.json")
+  )
+  #expect(outcomeResponse.status == "accepted")
+}
+
 @Test("unknown future error fields do not turn an incompatible major into success")
 func versionErrorFixtureDecodes() throws {
   let error = try JSONDecoder().decode(

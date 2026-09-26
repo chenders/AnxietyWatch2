@@ -1,8 +1,12 @@
 {
   "schema_version": 1,
   "targets": {
-    "AnxietyWatchApp": ["com.apple.developer.healthkit"],
+    "AnxietyWatchApp": [
+      "aps-environment",
+      "com.apple.developer.healthkit",
+      "com.apple.developer.healthkit.background-delivery"
+    ],
     "AnxietyWatchWatch": []
   },
-  "reason": "The iPhone reads HealthKit in the first release. It requests no HealthKit share/write access and the Watch holds no HealthKit entitlement."
+  "reason": "The iPhone reads HealthKit and receives operator-directed APNs messages in the first release. It requests no HealthKit share/write access and the Watch holds no HealthKit entitlement."
 }

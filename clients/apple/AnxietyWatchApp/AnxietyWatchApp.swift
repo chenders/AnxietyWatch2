@@ -11,6 +11,23 @@ import BackgroundTasks
 #if canImport(WatchConnectivity)
 import WatchConnectivity
 #endif
+#if canImport(UserNotifications)
+import UserNotifications
+#endif
+#if canImport(UIKit)
+import UIKit
+#endif
+
+struct AppProjectionMeasurement: Equatable, Identifiable, Sendable {
+  let metric: String
+  let label: String
+  let unit: String
+  let value: Double?
+  let observedAt: String?
+  let state: String
+
+  var id: String { metric }
+}
 
 struct AppJournalMirrorEntry: Codable, Equatable, Identifiable, Sendable {
   let record: DomainRecordPayload
@@ -228,8 +245,15 @@ final class AppClientRuntime: ObservableObject {
   @Published private(set) var isEnrolled = false
   @Published private(set) var syncStatus = "Sync is not initialized."
   @Published private(set) var outboxItemCount = 0
+  @Published private(set) var projectionMeasurements: [AppProjectionMeasurement] = []
+  @Published private(set) var projectionStatus = "Measurements have not been loaded."
   @Published private(set) var journalBackupIncluded = false
   @Published private(set) var journalBackupChoiceRequired = true
+#if canImport(UserNotifications)
+  @Published private(set) var notificationStatus = "Notifications are not configured."
+  private var apnsTransport: URLSessionAPNsTransport?
+  private var apnsOutcomeLedger: APNsOutcomeLedger?
+#endif
 #if canImport(HealthKit)
   @Published private(set) var healthKitAuthorizationFacts = HealthKitAuthorizationFacts()
   @Published private(set) var healthKitFacts: [HealthKitTypeFacts] = []
@@ -260,6 +284,9 @@ final class AppClientRuntime: ObservableObject {
   init() {
     credentialStore = KeychainCredentialStore()
     keyStore = SecureEnclaveKeyStore()
+#if canImport(UserNotifications)
+    apnsOutcomeLedger = try? APNsOutcomeLedger()
+#endif
 #if canImport(HealthKit)
     healthKitFactsStore = UserDefaultsHealthKitFactsStore()
     healthKitAuthorizationFactsStore = UserDefaultsHealthKitAuthorizationFactStore()
@@ -319,6 +346,9 @@ final class AppClientRuntime: ObservableObject {
       isEnrolled = false
       syncEngine = nil
       projectionService = nil
+#if canImport(UserNotifications)
+      apnsTransport = nil
+#endif
 #if canImport(HealthKit)
       healthKitCoordinator = nil
       statusTransport = nil
@@ -331,6 +361,9 @@ final class AppClientRuntime: ObservableObject {
         isEnrolled = false
         syncEngine = nil
         projectionService = nil
+#if canImport(UserNotifications)
+        apnsTransport = nil
+#endif
 #if canImport(HealthKit)
         healthKitCoordinator = nil
         statusTransport = nil
@@ -339,6 +372,9 @@ final class AppClientRuntime: ObservableObject {
         return
       }
       let authenticator = RequestAuthenticator(keyStore: keyStore, origin: credential.origin)
+#if canImport(UserNotifications)
+      apnsTransport = URLSessionAPNsTransport(origin: credential.origin, authenticator: authenticator)
+#endif
 #if canImport(HealthKit)
       if let previousHealthKitCoordinator = healthKitCoordinator {
         await previousHealthKitCoordinator.stopObservers()
@@ -396,11 +432,18 @@ final class AppClientRuntime: ObservableObject {
       }
 #endif
       isEnrolled = true
+      await refreshProjectionMeasurements()
+#if canImport(UserNotifications)
+      await refreshNotificationRegistration()
+#endif
       syncStatus = "Enrolled; waiting for a queued write or Sync Now."
     } catch {
       isEnrolled = false
       syncEngine = nil
       projectionService = nil
+#if canImport(UserNotifications)
+      apnsTransport = nil
+#endif
 #if canImport(HealthKit)
       healthKitCoordinator = nil
       statusTransport = nil
@@ -430,11 +473,218 @@ final class AppClientRuntime: ObservableObject {
     outboxItemCount = (try? await outbox.snapshot().pendingCount) ?? 0
   }
 
+  /// Fetch the small Today surface from Pi-owned projections. The phone only renders values returned
+  /// by the server; it does not aggregate, interpolate, or retain a health archive.
+  func refreshProjectionMeasurements() async {
+    let definitions = [
+      (metric: "hr", label: "Heart rate", unit: "bpm"),
+      (metric: "spo2", label: "Oxygen saturation", unit: "%"),
+      (metric: "respiratory_rate", label: "Respiratory rate", unit: "breaths/min"),
+      (metric: "resting_hr", label: "Resting heart rate", unit: "bpm"),
+    ]
+    guard isEnrolled, let projectionService else {
+      projectionMeasurements = []
+      projectionStatus = isEnrolled
+        ? "Measurements unavailable: projection transport is not initialized."
+        : "Measurements unavailable: this iPhone is not enrolled."
+      return
+    }
+
+    var loaded: [AppProjectionMeasurement] = []
+    for definition in definitions {
+      let query = ClientProjectionQuery(
+        metric: definition.metric,
+        windowStart: nil,
+        windowEnd: nil,
+        cursor: nil
+      )
+      let state = await projectionService.read(query: query)
+      switch state {
+      case let .live(page, _):
+        let point = page.points.last(where: { $0.value != nil })
+        loaded.append(
+          AppProjectionMeasurement(
+            metric: definition.metric,
+            label: definition.label,
+            unit: definition.unit,
+            value: point?.value,
+            observedAt: page.observedAt ?? point?.timestamp,
+            state: point == nil ? "not measured" : "live"
+          )
+        )
+      case let .stale(page, _, reason):
+        let point = page.points.last(where: { $0.value != nil })
+        loaded.append(
+          AppProjectionMeasurement(
+            metric: definition.metric,
+            label: definition.label,
+            unit: definition.unit,
+            value: point?.value,
+            observedAt: page.observedAt ?? point?.timestamp,
+            state: point == nil ? "not measured" : "stale: \(reason)"
+          )
+        )
+      case let .unknown(reason):
+        loaded.append(
+          AppProjectionMeasurement(
+            metric: definition.metric,
+            label: definition.label,
+            unit: definition.unit,
+            value: nil,
+            observedAt: nil,
+            state: "not measured: \(reason)"
+          )
+        )
+      }
+    }
+    projectionMeasurements = loaded
+    projectionStatus = loaded.contains(where: { $0.value != nil })
+      ? "Pi projections refreshed."
+      : "No requested measurements have been recorded."
+  }
+
 #if canImport(BackgroundTasks)
   func scheduleHealthKitDrain() {
     let request = BGAppRefreshTaskRequest(identifier: healthKitDrainTaskIdentifier)
     request.earliestBeginDate = Date(timeIntervalSinceNow: 1)
     try? BGTaskScheduler.shared.submit(request)
+  }
+#endif
+
+#if canImport(UserNotifications)
+  /// Presents the one-time rationale in Settings, then registers authorization facts and the APNs
+  /// token through the authenticated Pi API. No protected content is placed in the push payload.
+  /// Remove the enrolled credential and its Secure Enclave signing key without deleting local journal data.
+  func unenroll() async {
+    do {
+      if let credential = try credentialStore.load() {
+        try keyStore.deleteKey(credential.keyReference)
+      }
+      try credentialStore.delete()
+      await reload()
+    } catch {
+      syncStatus = "Unenrollment failed: secure credential cleanup did not complete."
+    }
+  }
+
+  func requestNotifications() async {
+    guard isEnrolled else {
+      notificationStatus = "Notification setup blocked: this iPhone is not enrolled."
+      return
+    }
+    let center = UNUserNotificationCenter.current()
+    let granted: Bool
+    do {
+      granted = try await center.requestAuthorization(options: [.alert, .sound, .badge])
+    } catch {
+      notificationStatus = "Notification setup failed: authorization request could not complete."
+      return
+    }
+    await registerAPNsFacts()
+    #if canImport(UIKit)
+    UIApplication.shared.registerForRemoteNotifications()
+    #endif
+    notificationStatus = granted
+      ? "Notification permission requested; waiting for APNs registration."
+      : "Notifications are denied; operator messages will not be displayed."
+  }
+
+  func handleAPNsToken(_ tokenData: Data) async {
+    await registerAPNsFacts(token: tokenData.map { String(format: "%02x", $0) }.joined())
+  }
+
+  private func refreshNotificationRegistration() async {
+    let settings = await UNUserNotificationCenter.current().notificationSettings()
+    guard settings.authorizationStatus == .authorized
+      || settings.authorizationStatus == .provisional
+      || settings.authorizationStatus == .ephemeral
+    else { return }
+    await registerAPNsFacts()
+    #if canImport(UIKit)
+    UIApplication.shared.registerForRemoteNotifications()
+    #endif
+  }
+
+  func handleAPNsRegistrationFailure() async {
+    await registerAPNsFacts()
+    notificationStatus = "APNs registration failed: the token is unavailable; authorization is not delivery evidence."
+  }
+
+  func recordAPNsOutcome(for message: APNsMessage, outcome: APNsMessageOutcome) async {
+    guard let ledger = apnsOutcomeLedger,
+      await ledger.shouldReport(messageID: message.messageID, outcome: outcome)
+    else { return }
+    guard let transport = apnsTransport else {
+      notificationStatus = "Notification outcome blocked: authenticated Pi transport is unavailable."
+      return
+    }
+    guard let credential = try? credentialStore.load() else {
+      notificationStatus = "Notification outcome blocked: enrolled credential is unavailable."
+      return
+    }
+    let formatter = ISO8601DateFormatter()
+    do {
+      let request = try APNsOutcomeRequest(
+        messageID: message.messageID,
+        outcome: outcome,
+        observedAt: formatter.string(from: Date())
+      )
+      _ = try await transport.report(outcome: request, credential: credential)
+      notificationStatus = outcome == .displayed
+        ? "Operator message displayed; awaiting acknowledgement if selected."
+        : "Operator message acknowledgement recorded."
+    } catch {
+      notificationStatus = "Notification outcome queued: Pi acknowledgement could not be recorded."
+    }
+  }
+
+  private func registerAPNsFacts(token: String? = nil) async {
+    guard let transport = apnsTransport else {
+      notificationStatus = "Notification setup blocked: authenticated Pi transport is unavailable."
+      return
+    }
+    guard let credential = try? credentialStore.load() else {
+      notificationStatus = "Notification setup blocked: enrolled credential is unavailable."
+      return
+    }
+    let settings = await UNUserNotificationCenter.current().notificationSettings()
+    let status: String
+    switch settings.authorizationStatus {
+    case .authorized: status = "authorized"
+    case .denied: status = "denied"
+    case .provisional: status = "provisional"
+    case .ephemeral: status = "ephemeral"
+    case .notDetermined: status = "not_determined"
+    @unknown default: status = "unknown"
+    }
+    let info = Bundle.main.infoDictionary ?? [:]
+    let appVersion = info["CFBundleShortVersionString"] as? String ?? "unknown"
+    let build = info["CFBundleVersion"] as? String ?? "unknown"
+    #if DEBUG
+    let environment = "sandbox"
+    #else
+    let environment = "production"
+    #endif
+    do {
+      let request = try APNsRegistrationRequest(
+        deviceID: credential.clientID,
+        token: token,
+        environment: environment,
+        appIdentifier: Bundle.main.bundleIdentifier ?? "unknown",
+        appVersion: appVersion,
+        build: build,
+        authorizationStatus: status,
+        alertsEnabled: settings.alertSetting == .enabled,
+        soundsEnabled: settings.soundSetting == .enabled,
+        badgesEnabled: settings.badgeSetting == .enabled
+      )
+      let response = try await transport.register(request: request, credential: credential)
+      notificationStatus = response.status == "accepted"
+        ? "Notification registration acknowledged by Pi; APNs delivery remains unknown."
+        : "Notification registration state: \(response.status)."
+    } catch {
+      notificationStatus = "Notification registration failed: \(String(describing: error))"
+    }
   }
 #endif
 
@@ -658,16 +908,104 @@ final class AppClientRuntime: ObservableObject {
       await notifyWatchRelayServerAcknowledgements(for: watchRelayIDsBeforeDrain, outbox: outbox)
 #endif
       outboxItemCount = report.pendingAfter
-      syncStatus = "Sync complete: \(report.acknowledged) acknowledged; \(report.pendingAfter) pending."
+      await refreshProjectionMeasurements()
+      syncStatus = "Sync complete: \(report.acknowledged) acknowledged, \(report.replayed) replayed, \(report.rejected) rejected, \(report.conflicts) conflicts, \(report.retryable) retryable; \(report.pendingAfter) pending."
 #if canImport(HealthKit)
       await sendStatusBeacon()
 #endif
+    } catch let error as SyncError {
+      await refreshOutboxState()
+      if case .drainAlreadyOwned = error {
+        syncStatus = "Sync already in progress; queued items remain safe."
+      } else {
+        syncStatus = "Sync blocked: \(error)"
+      }
     } catch {
       await refreshOutboxState()
       syncStatus = "Sync blocked: \(error)"
     }
   }
 }
+
+#if canImport(UserNotifications) && canImport(UIKit)
+private final class NotificationAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
+  nonisolated(unsafe) weak var runtime: AppClientRuntime?
+  private var pendingOutcomes: [(APNsMessage, APNsMessageOutcome)] = []
+
+  @MainActor
+  func attach(runtime: AppClientRuntime) {
+    self.runtime = runtime
+    let pending = pendingOutcomes
+    pendingOutcomes.removeAll()
+    for (message, outcome) in pending {
+      Task { @MainActor in
+        await runtime.recordAPNsOutcome(for: message, outcome: outcome)
+      }
+    }
+  }
+
+  @MainActor
+  private func recordOutcome(_ message: APNsMessage, _ outcome: APNsMessageOutcome) async {
+    guard let runtime else {
+      pendingOutcomes.append((message, outcome))
+      return
+    }
+    await runtime.recordAPNsOutcome(for: message, outcome: outcome)
+  }
+
+  func application(
+    _ application: UIApplication,
+    didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
+  ) -> Bool {
+    UNUserNotificationCenter.current().delegate = self
+    return true
+  }
+
+  func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+    Task { @MainActor [weak self] in
+      await self?.runtime?.handleAPNsToken(deviceToken)
+    }
+  }
+
+  func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: any Error) {
+    Task { @MainActor [weak self] in
+      await self?.runtime?.handleAPNsRegistrationFailure()
+    }
+  }
+
+  nonisolated func userNotificationCenter(
+    _ center: UNUserNotificationCenter,
+    willPresent notification: UNNotification,
+    withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+  ) {
+    guard let message = try? APNsMessage(userInfo: notification.request.content.userInfo) else {
+      completionHandler([])
+      return
+    }
+    Task { @MainActor in
+      await self.recordOutcome(message, .displayed)
+    }
+    completionHandler([.banner, .sound, .badge])
+  }
+
+  nonisolated func userNotificationCenter(
+    _ center: UNUserNotificationCenter,
+    didReceive response: UNNotificationResponse,
+    withCompletionHandler completionHandler: @escaping () -> Void
+  ) {
+    guard let message = try? APNsMessage(userInfo: response.notification.request.content.userInfo) else {
+      completionHandler()
+      return
+    }
+    // The payload carries only a protected category/deep link. The eventual protected view is
+    // fetched by the enrolled client after the device is unlocked.
+    Task { @MainActor in
+      await self.recordOutcome(message, .acknowledged)
+    }
+    completionHandler()
+  }
+}
+#endif
 
 #if canImport(WatchConnectivity)
 private final class WatchRelayReply: @unchecked Sendable {
@@ -779,11 +1117,19 @@ private final class AppWatchRelayReceiver: NSObject, WCSessionDelegate {
 @main
 struct AnxietyWatchApp: App {
   @StateObject private var runtime = AppClientRuntime()
+#if canImport(UserNotifications) && canImport(UIKit)
+  @UIApplicationDelegateAdaptor(NotificationAppDelegate.self) private var notificationDelegate
+#endif
 
   var body: some Scene {
     WindowGroup {
       ClientRootView()
         .environmentObject(runtime)
+        .onAppear {
+#if canImport(UserNotifications) && canImport(UIKit)
+          notificationDelegate.attach(runtime: runtime)
+#endif
+        }
     }
   }
 }

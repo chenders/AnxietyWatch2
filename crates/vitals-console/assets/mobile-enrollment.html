@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Mobile enrollment · AnxietyWatch2 console</title>
+  <link rel="stylesheet" href="/console/base.css">
+  <link rel="stylesheet" href="/console/mobile-enrollment.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="top" aria-label="Console identity">
+    <a class="brand" href="/console/">AnxietyWatch2 <span>console</span></a>
+    <nav aria-label="Console navigation">
+      <a href="/console/">Overview</a>
+      <a href="/console/mobile-enrollment.html" aria-current="page">Mobile enrollment</a>
+    </nav>
+  </header>
+  <main id="main">
+    <header class="page-head">
+      <p class="eyebrow">Credentials · one-time action</p>
+      <h1>Enroll an iPhone</h1>
+      <p>Create a ten-minute, single-use artifact for one device. The token is shown once and is never stored by this page.</p>
+    </header>
+
+    <section class="enrollment-panel" aria-labelledby="login-title">
+      <h2 id="login-title">Operator authentication</h2>
+      <p>Sign in with the admin password. This also supplies the recent-authentication evidence required for artifact creation.</p>
+      <form id="login-form">
+        <label for="admin-password">Admin password</label>
+        <input id="admin-password" name="password" type="password" autocomplete="current-password" required>
+        <button type="submit">Sign in</button>
+      </form>
+    </section>
+
+    <section id="artifact-panel" class="enrollment-panel" aria-labelledby="artifact-title" hidden>
+      <h2 id="artifact-title">Create enrollment artifact</h2>
+      <form id="artifact-form">
+        <label for="device-label">Device label</label>
+        <input id="device-label" name="device_label" type="text" value="iPhone" maxlength="80" required>
+        <fieldset>
+          <legend>Allowed device capabilities</legend>
+          <label><input type="checkbox" name="scope" value="submit_platform_health" checked> Submit HealthKit source samples</label>
+          <label><input type="checkbox" name="scope" value="submit_domain_records" checked> Submit journal records</label>
+          <label><input type="checkbox" name="scope" value="read_projections" checked> Read projections</label>
+          <label><input type="checkbox" name="scope" value="read_registry" checked> Read registry and API compatibility</label>
+          <label><input type="checkbox" name="scope" value="read_credential_status" checked> Read this device's credential status</label>
+          <label><input type="checkbox" name="scope" value="rotate_own_key" checked> Rotate this device's key</label>
+          <label><input type="checkbox" name="scope" value="submit_notifications"> Receive operator-directed notifications</label>
+        </fieldset>
+        <button type="submit">Generate one-time artifact</button>
+      </form>
+    </section>
+
+    <section id="artifact-result" class="enrollment-panel artifact-result" aria-labelledby="result-title" hidden>
+      <h2 id="result-title">Artifact ready</h2>
+      <p>Copy this complete JSON into AnxietyWatch on the iPhone. Leaving this page loses the only plaintext token.</p>
+      <label for="artifact-json">One-time enrollment artifact</label>
+      <textarea id="artifact-json" readonly spellcheck="false" aria-describedby="artifact-warning"></textarea>
+      <div class="artifact-actions">
+        <button id="copy-artifact" type="button">Copy artifact JSON</button>
+        <button id="clear-artifact" type="button">Clear artifact</button>
+      </div>
+      <p id="artifact-warning" class="warning">Do not paste this artifact into chat, email, logs, or a ticket.</p>
+    </section>
+    <p id="status" class="status-message" role="status" aria-live="polite"></p>
+  </main>
+  <script src="/console/mobile-enrollment.js"></script>
+</body>
+</html>

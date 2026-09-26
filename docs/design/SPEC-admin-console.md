@@ -621,6 +621,32 @@ the same ledger as a real one and clearly marked as a test.
 alerts is the expected steady state for a working alarm *and* the signature of a completely broken
 one; only a successful test discriminates them.
 
+### 4.10a Operator-directed APNs messages
+
+[Amendment 16](../specs/2026-09-18-amendment-16-operator-directed-apns.md) adds a separate
+operator-directed message capability. It is not the local klaxon path, is not a replacement for
+Amendment 14's independent phone-silence email, and must never acknowledge or clear an alarm.
+
+The operator may target one active device, all active devices for one user, or every active,
+non-revoked phone registered with this Pi/server instance. The console resolves the target before
+send, displays the measured recipient count, and requires explicit confirmation for an all-device
+fanout. A zero-recipient result is visible and is not a successful delivery.
+
+The mobile API registers each device's APNs environment, token, app/build identity, owning user and
+device identity, authorization facts, first/last seen times, and revocation state. The Pi stores
+provider credentials only in protected configuration; the console shows presence and last-four
+metadata, never the credential. Invalid or revoked tokens are excluded from later fanout and their
+provider reason is recorded.
+
+Each send has an immutable message ID, target snapshot, audit actor, payload class, request and
+provider outcome, token invalidations, retry state, and terminal state. APNs acceptance, device
+delivery, display, and acknowledgement are distinct facts. Test sends are separately confirmed,
+audited, rate-limited, and marked as tests; they do not satisfy real-alert delivery evidence.
+Messages contain no HealthKit values, journal text, medication details, credentials, or enrollment
+material. Protected content is fetched by the app only after unlock. Missing configuration,
+missing authorization, stale registration, and never-tested state render as `UNKNOWN` or
+`NOT_CONFIGURED`, never as healthy delivery.
+
 ## 5. Cross-cutting requirements
 
 **Freshness on everything.** §2.2. No exceptions, including inside tables.
