@@ -94,8 +94,8 @@ pub async fn store_apns_registration(
          ON CONFLICT (server_instance_id, device_id) DO UPDATE SET
           owner_user_id = EXCLUDED.owner_user_id,
           client_id = EXCLUDED.client_id,
-          token_ciphertext = EXCLUDED.token_ciphertext,
-          token_fingerprint = EXCLUDED.token_fingerprint,
+          token_ciphertext = COALESCE(EXCLUDED.token_ciphertext, apns_device_registrations.token_ciphertext),
+          token_fingerprint = COALESCE(EXCLUDED.token_fingerprint, apns_device_registrations.token_fingerprint),
           environment = EXCLUDED.environment,
           app_identifier = EXCLUDED.app_identifier,
           app_version = EXCLUDED.app_version,
@@ -155,6 +155,10 @@ pub struct ApnsRecipient {
     pub token_ciphertext: Vec<u8>,
     /// Stable non-secret token fingerprint.
     pub token_fingerprint: String,
+    /// APNs environment selected by the client.
+    pub environment: String,
+    /// APNs topic selected by the client bundle identifier.
+    pub app_identifier: String,
 }
 
 /// Resolve active, recently-seen registrations for one APNs send.
@@ -170,14 +174,14 @@ pub async fn resolve_apns_recipients(
     device_id: Option<Uuid>,
 ) -> Result<Vec<ApnsRecipient>, String> {
     let query = if device_id.is_some() {
-        "SELECT device_id, client_id, token_ciphertext, token_fingerprint
+        "SELECT device_id, client_id, token_ciphertext, token_fingerprint, environment, app_identifier
          FROM apns_device_registrations
          WHERE server_instance_id = $1 AND ($2::uuid IS NULL OR owner_user_id = $2)
            AND device_id = $3 AND revoked_at IS NULL
            AND last_seen_at >= now() - INTERVAL '30 days'
            AND token_ciphertext IS NOT NULL AND token_fingerprint IS NOT NULL"
     } else {
-        "SELECT device_id, client_id, token_ciphertext, token_fingerprint
+        "SELECT device_id, client_id, token_ciphertext, token_fingerprint, environment, app_identifier
          FROM apns_device_registrations
          WHERE server_instance_id = $1 AND ($2::uuid IS NULL OR owner_user_id = $2)
            AND revoked_at IS NULL
@@ -185,29 +189,39 @@ pub async fn resolve_apns_recipients(
            AND token_ciphertext IS NOT NULL AND token_fingerprint IS NOT NULL
          ORDER BY device_id"
     };
-    let rows: Vec<(Uuid, Uuid, Vec<u8>, String)> = if let Some(device_id) = device_id {
-        sqlx::query_as(query)
-            .bind(server_instance_id)
-            .bind(owner_user_id)
-            .bind(device_id)
-            .fetch_all(pool)
-            .await
-    } else {
-        sqlx::query_as(query)
-            .bind(server_instance_id)
-            .bind(owner_user_id)
-            .fetch_all(pool)
-            .await
-    }
-    .map_err(|error| format!("APNs recipient resolution failed: {error}"))?;
+    let rows: Vec<(Uuid, Uuid, Vec<u8>, String, String, String)> =
+        if let Some(device_id) = device_id {
+            sqlx::query_as(query)
+                .bind(server_instance_id)
+                .bind(owner_user_id)
+                .bind(device_id)
+                .fetch_all(pool)
+                .await
+        } else {
+            sqlx::query_as(query)
+                .bind(server_instance_id)
+                .bind(owner_user_id)
+                .fetch_all(pool)
+                .await
+        }
+        .map_err(|error| format!("APNs recipient resolution failed: {error}"))?;
     Ok(rows
         .into_iter()
         .map(
-            |(device_id, client_id, token_ciphertext, token_fingerprint)| ApnsRecipient {
+            |(
                 device_id,
                 client_id,
                 token_ciphertext,
                 token_fingerprint,
+                environment,
+                app_identifier,
+            )| ApnsRecipient {
+                device_id,
+                client_id,
+                token_ciphertext,
+                token_fingerprint,
+                environment,
+                app_identifier,
             },
         )
         .collect())

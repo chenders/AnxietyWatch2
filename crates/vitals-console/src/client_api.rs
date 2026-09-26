@@ -6,7 +6,7 @@
 use axum::Json;
 use axum::Router;
 use axum::body::Bytes;
-use axum::extract::{Extension, Query, State};
+use axum::extract::{Extension, OriginalUri, Query, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::IntoResponse;
 use axum::routing::{any, get, post};
@@ -1453,10 +1453,25 @@ pub async fn admin_apns_send_handler(
         loop {
             attempt += 1;
             let result = match protector.open(&recipient.token_ciphertext) {
-                Ok(token) => provider
-                    .send(&token, &payload, Utc::now().timestamp())
-                    .await
-                    .map_err(|reason| format!("APNs provider transport failed: {reason}")),
+                Ok(token) => {
+                    let environment = crate::apns::ApnsEnvironment::parse(&recipient.environment)
+                        .map_err(|reason| {
+                            format!("APNs registration environment invalid: {reason}")
+                        });
+                    match environment {
+                        Ok(environment) => provider
+                            .send_for(
+                                &token,
+                                &payload,
+                                environment,
+                                &recipient.app_identifier,
+                                Utc::now().timestamp(),
+                            )
+                            .await
+                            .map_err(|reason| format!("APNs provider transport failed: {reason}")),
+                        Err(reason) => Err(reason),
+                    }
+                }
                 Err(reason) => Err(reason),
             };
             let retryable = match result {
@@ -2401,6 +2416,90 @@ fn projection_type(metric: &str) -> Option<i32> {
     registry_id("type", canonical)
 }
 
+const PROJECTION_PAGE_SIZE: i64 = 200;
+
+#[derive(Debug, Serialize, Deserialize)]
+struct ProjectionCursor {
+    version: u8,
+    metric: String,
+    window_start: Option<String>,
+    window_end: Option<String>,
+    offset: i64,
+}
+
+fn projection_cursor_text(value: Option<DateTime<Utc>>) -> Option<String> {
+    value.map(|time| time.to_rfc3339_opts(SecondsFormat::Millis, true))
+}
+
+fn decode_projection_cursor(
+    raw: Option<&str>,
+    metric: &str,
+    window_start: Option<DateTime<Utc>>,
+    window_end: Option<DateTime<Utc>>,
+) -> Result<i64, ClientApiError> {
+    let Some(raw) = raw else { return Ok(0) };
+    let decoded = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(raw)
+        .map_err(|_| {
+            error(
+                StatusCode::BAD_REQUEST,
+                "projection_cursor_invalid",
+                "projection cursor is malformed",
+                false,
+                "cursor=base64_invalid".to_string(),
+                Some(API_MAJOR),
+            )
+        })?;
+    let cursor: ProjectionCursor = serde_json::from_slice(&decoded).map_err(|_| {
+        error(
+            StatusCode::BAD_REQUEST,
+            "projection_cursor_invalid",
+            "projection cursor is malformed",
+            false,
+            "cursor=payload_invalid".to_string(),
+            Some(API_MAJOR),
+        )
+    })?;
+    let expected_start = projection_cursor_text(window_start);
+    let expected_end = projection_cursor_text(window_end);
+    if cursor.version != 1
+        || cursor.metric != metric
+        || cursor.window_start != expected_start
+        || cursor.window_end != expected_end
+        || cursor.offset < 0
+    {
+        return Err(error(
+            StatusCode::BAD_REQUEST,
+            "projection_cursor_invalid",
+            "projection cursor does not match this metric window",
+            false,
+            format!(
+                "cursor_version={}; cursor_metric={}; expected_metric={}; cursor_offset={}",
+                cursor.version, cursor.metric, metric, cursor.offset
+            ),
+            Some(API_MAJOR),
+        ));
+    }
+    Ok(cursor.offset)
+}
+
+fn encode_projection_cursor(
+    metric: &str,
+    window_start: Option<DateTime<Utc>>,
+    window_end: Option<DateTime<Utc>>,
+    offset: i64,
+) -> Option<String> {
+    let cursor = ProjectionCursor {
+        version: 1,
+        metric: metric.to_string(),
+        window_start: projection_cursor_text(window_start),
+        window_end: projection_cursor_text(window_end),
+        offset,
+    };
+    let bytes = serde_json::to_vec(&cursor).ok()?;
+    Some(base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes))
+}
+
 fn projection_time(
     raw: Option<&str>,
     field: &str,
@@ -2458,18 +2557,23 @@ fn projection_time(
 )]
 pub async fn client_projections_handler(
     Extension(database): Extension<Option<sqlx::PgPool>>,
+    OriginalUri(original_uri): OriginalUri,
     headers: HeaderMap,
     Query(query): Query<ProjectionQuery>,
 ) -> Result<Json<ProjectionPage>, ClientApiError> {
     validate_version(&headers)?;
     let database =
         database.ok_or_else(|| unavailable("projections", "VITALS_CONSOLE_DATABASE_URL"))?;
+    let signed_path = original_uri.path_and_query().map_or_else(
+        || original_uri.path().to_string(),
+        |value| value.as_str().to_string(),
+    );
     authenticate_mobile_request(
         &database,
         &headers,
         &[],
         "GET",
-        "/api/v1/client/projections",
+        &signed_path,
         &["read_projections"],
     )
     .await?;
@@ -2519,6 +2623,8 @@ pub async fn client_projections_handler(
         ));
     }
 
+    let offset =
+        decode_projection_cursor(query.cursor.as_deref(), metric, window_start, window_end)?;
     let rows = sqlx::query(
         "SELECT timestamp, value
          FROM samples
@@ -2527,12 +2633,14 @@ pub async fn client_projections_handler(
            AND ($3::timestamptz IS NULL OR timestamp >= $3)
            AND ($4::timestamptz IS NULL OR timestamp < $4)
          ORDER BY timestamp DESC
-         LIMIT 200",
+         LIMIT $5 OFFSET $6",
     )
     .bind(source_id)
     .bind(type_id)
     .bind(window_start)
     .bind(window_end)
+    .bind(PROJECTION_PAGE_SIZE + 1)
+    .bind(offset)
     .fetch_all(&database)
     .await
     .map_err(|source| {
@@ -2546,11 +2654,16 @@ pub async fn client_projections_handler(
         )
     })?;
 
-    let observed_at = rows
+    let has_next = rows.len() > usize::try_from(PROJECTION_PAGE_SIZE).unwrap_or(usize::MAX);
+    let page_rows = rows
+        .into_iter()
+        .take(usize::try_from(PROJECTION_PAGE_SIZE).unwrap_or(usize::MAX))
+        .collect::<Vec<_>>();
+    let observed_at = page_rows
         .first()
         .and_then(|row| row.try_get::<DateTime<Utc>, _>("timestamp").ok())
         .map(|time| time.to_rfc3339_opts(SecondsFormat::Millis, true));
-    let points = rows
+    let points: Vec<ProjectionPoint> = page_rows
         .iter()
         .rev()
         .filter_map(|row| {
@@ -2563,14 +2676,34 @@ pub async fn client_projections_handler(
         })
         .collect();
 
+    let points_empty = points.is_empty();
     Ok(Json(ProjectionPage {
         api_version: format!("{API_MAJOR}.{API_MINOR}"),
         metric: metric.to_string(),
         observed_at,
         generated_at: utc_now(),
         points,
-        missing_intervals: Vec::new(),
-        next_cursor: None,
+        missing_intervals: if points_empty {
+            match (window_start, window_end) {
+                (Some(start), Some(end)) => vec![vec![
+                    start.to_rfc3339_opts(SecondsFormat::Millis, true),
+                    end.to_rfc3339_opts(SecondsFormat::Millis, true),
+                ]],
+                _ => Vec::new(),
+            }
+        } else {
+            Vec::new()
+        },
+        next_cursor: has_next
+            .then(|| {
+                encode_projection_cursor(
+                    metric,
+                    window_start,
+                    window_end,
+                    offset.saturating_add(PROJECTION_PAGE_SIZE),
+                )
+            })
+            .flatten(),
     }))
 }
 
@@ -2707,6 +2840,27 @@ mod tests {
             serde_json::from_value(value).expect("modified beacon decodes");
         let error = validate_health_beacon(&request).expect_err("later changed time must fail");
         assert!(error.contains("later than asserted_at"));
+    }
+
+    #[test]
+    fn projection_cursor_round_trips_and_rejects_a_different_window() {
+        let start = Some(
+            DateTime::parse_from_rfc3339("2026-01-01T00:00:00Z")
+                .expect("start")
+                .with_timezone(&Utc),
+        );
+        let end = Some(
+            DateTime::parse_from_rfc3339("2026-01-02T00:00:00Z")
+                .expect("end")
+                .with_timezone(&Utc),
+        );
+        let cursor = encode_projection_cursor("heart_rate", start, end, 200).expect("cursor");
+        assert_eq!(
+            decode_projection_cursor(Some(&cursor), "heart_rate", start, end).expect("decode"),
+            200
+        );
+        assert!(decode_projection_cursor(Some(&cursor), "spo2", start, end).is_err());
+        assert!(decode_projection_cursor(Some(&cursor), "heart_rate", start, None).is_err());
     }
 
     #[tokio::test]

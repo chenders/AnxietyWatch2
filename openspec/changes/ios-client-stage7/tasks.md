@@ -352,7 +352,7 @@ and all-active-device APNs delivery with physical-device evidence. If the mobili
 the beta, require T-I23 evidence and keep its ambient indicator explicitly separate from emergency
 alerting. Run a bounded beta with rollback and no data-destructive upgrade. Record every unsupported
 backend feature as blocked, not mocked success.
-**Verify:** `cd "$(git rev-parse --show-toplevel)" && PI_HOST="$PI_HOST" scripts/verify-ios-stage7.sh --device-evidence artifacts/ios-stage7-device-acceptance.json --migration-report artifacts/ios-stage7-migration-report.json --apns-evidence artifacts/ios-stage7-apns-evidence.json`
+**Verify:** `cd "$(git rev-parse --show-toplevel)" && PI_HOST="$PI_HOST" scripts/verify-ios-stage7.sh --device-evidence artifacts/ios-stage7-device-acceptance.json --migration-report artifacts/ios-stage7-migration-report.json`
 
 ### T-I21 — Generation-one decommission ledger and deletion of obsolete services
 

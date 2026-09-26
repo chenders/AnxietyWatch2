@@ -16,7 +16,6 @@
     const hex = Array.from(bytes, byte => byte.toString(16).padStart(2, "0")).join("");
     return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
   };
-  const idempotencyKey = makeIdempotencyKey();
   const body = response => response.json().catch(() => ({}));
   document.querySelector("#login-form").addEventListener("submit", async event => {
     event.preventDefault(); status.textContent = "Signing in…";
@@ -43,7 +42,7 @@
   document.querySelector("#send-form").addEventListener("submit", async event => {
     event.preventDefault(); if (!csrfToken) { status.textContent = "Send blocked: operator authentication is missing."; return; }
     const scope = document.querySelector("#recipient-scope").value;
-    const request = { recipient_scope: scope, idempotency_key: idempotencyKey, device_id: scope === "device" ? document.querySelector("#device-id").value.trim() : null, user_id: scope === "user" ? document.querySelector("#user-id").value.trim() : null, confirmed_recipient_count: Number(document.querySelector("#confirmed-count").value), payload_class: document.querySelector("#payload-class").value.trim(), category: document.querySelector("#category").value.trim() || null, deep_link: null, is_test: document.querySelector("#is-test").checked };
+    const request = { recipient_scope: scope, idempotency_key: makeIdempotencyKey(), device_id: scope === "device" ? document.querySelector("#device-id").value.trim() : null, user_id: scope === "user" ? document.querySelector("#user-id").value.trim() : null, confirmed_recipient_count: Number(document.querySelector("#confirmed-count").value), payload_class: document.querySelector("#payload-class").value.trim(), category: document.querySelector("#category").value.trim() || null, deep_link: null, is_test: document.querySelector("#is-test").checked };
     status.textContent = "Sending…";
     try {
       const response = await fetch("/api/admin/notifications/apns/send", { method: "POST", headers: { "Content-Type": "application/json", "x-anxietywatch-csrf": csrfToken }, credentials: "same-origin", body: JSON.stringify(request) });

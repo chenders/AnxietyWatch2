@@ -1,10 +1,10 @@
-# Minidude recovery evidence — 2026-09-20
+# Pi host recovery evidence — 2026-09-20
 
 ## Recovery artifact
 
 Direct-to-Mac recovery directory:
 
-`~/minidude-reboot-evidence/20260920T073718Z/recovery/`
+`~/pi-host-reboot-evidence/20260920T073718Z/recovery/`
 
 Captured artifacts:
 
@@ -35,7 +35,7 @@ logical recovery set, not a verified physical pgBackRest restore.
 The prior boot journal shows repeated service failure/restart activity:
 
 - `vitals-console.service`: approximately 16,975 restart attempts; it repeatedly failed to bind
-  `192.168.1.48:8480` with `Cannot assign requested address`.
+  `pi-host:8480` with `Cannot assign requested address`.
 - user `cage-status.service`: approximately 24,390 restart attempts.
 - `vitals-emay.service`: restart counter approximately 2,708; EMAY target was absent/removed.
 - `vitals-bt-up.service`: repeated failures approximately every 30 seconds.

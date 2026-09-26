@@ -3,7 +3,7 @@
 **Captured:** 2026-09-18T05:19:40Z
 **Working branch:** `feature/ios-thin-client`
 **Device:** `theodore`, iOS 27.0
-**Pi:** `192.168.1.48`
+**Pi:** `pi-host`
 
 ## Resume here
 
@@ -29,10 +29,10 @@ Do not discard the current working tree or reset the branch. It contains the liv
 
 ### Pi enrollment/server
 
-- Admin enrollment page: `http://192.168.1.48:8480/console/mobile-enrollment.html`
+- Admin enrollment page: `http://pi-host:8480/console/mobile-enrollment.html`
 - Admin password hash is stored only on the Pi in `/etc/vitals/vitals-console.env` mode `0600`.
 - Plaintext `thepw.txt` was deleted after use.
-- `vitals-console` is active and listening on `192.168.1.48:8480`.
+- `vitals-console` is active and listening on `pi-host:8480`.
 - Private-LAN bind and public static console access are deployed.
 - Enrollment schema and grants were applied for:
   - `enrollment_artifacts`

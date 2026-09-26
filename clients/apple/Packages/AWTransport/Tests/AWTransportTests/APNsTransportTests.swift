@@ -86,8 +86,10 @@ func minimalMessagePayload() throws {
 func independentOutcomeEvidence() async throws {
   let ledger = try APNsOutcomeLedger(maximumEntries: 2)
   #expect(await ledger.shouldReport(messageID: notificationMessageID, outcome: .displayed))
+  await ledger.markReported(messageID: notificationMessageID, outcome: .displayed)
   #expect(!(await ledger.shouldReport(messageID: notificationMessageID, outcome: .displayed)))
   #expect(await ledger.shouldReport(messageID: notificationMessageID, outcome: .acknowledged))
+  await ledger.markReported(messageID: notificationMessageID, outcome: .acknowledged)
   #expect(!(await ledger.shouldReport(messageID: notificationMessageID, outcome: .acknowledged)))
 }
 

@@ -34,6 +34,24 @@ func successfulProjectionRead() async throws {
   #expect(transport.readCount == 1)
 }
 
+@Test("projection cache survives recreation")
+func projectionCachePersistsAcrossRecreation() async throws {
+  let url = FileManager.default.temporaryDirectory
+    .appendingPathComponent("aw2-projection-cache-\(UUID().uuidString).json")
+  defer { try? FileManager.default.removeItem(at: url) }
+  let key = ProjectionCacheKey(
+    endpoint: "https://client.example.com",
+    clientID: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
+    apiMajor: 1,
+    query: ClientProjectionQuery(metric: "heart_rate", windowStart: nil, windowEnd: nil, cursor: nil)
+  )
+  let fetchedAt = readNow
+  let first = try ProjectionCache(persistenceURL: url)
+  try await first.put(page( value: 72), for: key, fetchedAt: fetchedAt, expiresAt: fetchedAt.addingTimeInterval(300))
+  let second = try ProjectionCache(persistenceURL: url)
+  #expect(await second.get(key)?.page.points.first?.value == 72)
+}
+
 @Test("network failure with a cache returns stale data and a named reason")
 func staleProjectionRead() async throws {
   let cache = try ProjectionCache()

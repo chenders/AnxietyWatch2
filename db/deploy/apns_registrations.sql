@@ -45,6 +45,7 @@ COMMENT ON TABLE apns_device_registrations IS
 COMMENT ON TABLE apns_registration_audit IS
     'Append-only APNs registration lifecycle evidence without token material.';
 
-GRANT SELECT, INSERT, UPDATE ON apns_device_registrations, apns_registration_audit TO vitals;
+GRANT SELECT, INSERT, UPDATE ON apns_device_registrations TO vitals;
+GRANT SELECT, INSERT ON apns_registration_audit TO vitals;
 
 COMMIT;

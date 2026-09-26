@@ -220,6 +220,32 @@ impl ApnsProvider {
         payload: &ApnsPayload,
         now_epoch_s: i64,
     ) -> Result<ApnsProviderResult, String> {
+        self.send_for(
+            token,
+            payload,
+            self.config.environment,
+            &self.config.bundle_id,
+            now_epoch_s,
+        )
+        .await
+    }
+
+    /// Send using the environment and topic recorded for the target registration.
+    ///
+    /// # Errors
+    ///
+    /// Returns a transport, token, topic, or request-construction error.
+    pub async fn send_for(
+        &self,
+        token: &str,
+        payload: &ApnsPayload,
+        environment: ApnsEnvironment,
+        topic: &str,
+        now_epoch_s: i64,
+    ) -> Result<ApnsProviderResult, String> {
+        if topic.trim().is_empty() {
+            return Err("APNs send blocked: target topic is empty".to_string());
+        }
         let token = token.trim();
         if token.is_empty() || !token.bytes().all(|byte| byte.is_ascii_hexdigit()) {
             return Err("APNs send blocked: token is not hexadecimal".to_string());
@@ -239,12 +265,12 @@ impl ApnsProvider {
             "deep_link": payload.deep_link,
             "is_test": payload.is_test
         });
-        let url = format!("{}/3/device/{token}", self.config.environment.host());
+        let url = format!("{}/3/device/{token}", environment.host());
         let response = self
             .client
             .post(url)
             .bearer_auth(jwt)
-            .header("apns-topic", &self.config.bundle_id)
+            .header("apns-topic", topic)
             .header("apns-push-type", "alert")
             .header("apns-priority", "10")
             .json(&body)

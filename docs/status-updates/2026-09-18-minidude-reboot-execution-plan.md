@@ -1,12 +1,12 @@
-# Minidude reboot execution plan
+# Pi host reboot execution plan
 
-**Status:** ready for power restoration  
-**Host:** `192.168.1.48` / `minidude`  
+**Status:** ready for power restoration
+**Host:** `pi-host` / `pi-host`
 **Prepared:** 2026-09-20
 
 ## My understanding of the instruction
 
-You have unplugged `minidude`. Before you reconnect power, I must have the local side ready so that
+You have unplugged `pi-host`. Before you reconnect power, I must have the local side ready so that
 connection attempts begin immediately. Once SSH becomes available, I should autonomously continue
 through the planned recovery work—diagnosing the reboot/watchdog/PostgreSQL/spool problem, preserving
 evidence, making the verified backup, and applying the reversible prototype load controls—without
@@ -16,7 +16,7 @@ I should continue until the planned work is complete, the host goes down again, 
 actually destructive, unsafe, unavailable, or requires an explicit operator decision. A host failure
 is not a reason to stop the plan permanently: I should resume observation/reconnection attempts.
 
-The direct-to-Mac path is now prepared in `/tmp/minidude-direct-recovery.sh`. It encrypts each
+The direct-to-Mac path is now prepared in `/tmp/pi-host-direct-recovery.sh`. It encrypts each
 stream locally and explicitly records that WAL metadata is not a physical WAL archive; the
 production pgBackRest physical-backup/restore gate remains separate.
 
@@ -31,10 +31,10 @@ than replying only with a short acknowledgement.
   - `openspec/changes/pi-prototype-storage-degraded-mode/tasks.md`
   - `openspec/changes/pi-prototype-storage-degraded-mode/traceability.md`
 - The local watcher has been syntax-checked and started.
-- Watcher log: `/tmp/minidude-after-reboot-watcher.log`
-- Watcher PID: recorded in `/tmp/minidude-after-reboot-watcher.pid` (currently `60900`).
-- Local evidence root: `~/minidude-reboot-evidence/`
-- SSH polling target: `chris@192.168.1.48`, every two seconds.
+- Watcher log: `/tmp/pi-host-after-reboot-watcher.log`
+- Watcher PID: recorded in `/tmp/pi-host-after-reboot-watcher.pid` (currently `60900`).
+- Local evidence root: `~/pi-host-reboot-evidence/`
+- SSH polling target: `chris@pi-host`, every two seconds.
 - No compilation, migration, schema change, sample deletion, spool deletion, offset change, or
   watchdog change is part of the first connection action.
 
@@ -62,7 +62,7 @@ I will continue in this order without waiting for another routine prompt:
    observed state.
 3. Create a fresh encrypted recovery set directly on this Mac when possible: stream PostgreSQL
    globals, a custom-format database dump, WAL/recovery-boundary evidence, and the pending spool
-   segments over SSH. This avoids staging a backup archive on `minidude`.
+   segments over SSH. This avoids staging a backup archive on `pi-host`.
 4. Verify checksums, archive readability, and the logical dump/spool read tests before
    relaxing ingest or materialization behavior.
 5. Measure and isolate query amplification, connection churn, spool scans, drain pressure, memory,
@@ -85,7 +85,7 @@ I will continue in this order without waiting for another routine prompt:
 
 These are not random pauses:
 
-- `minidude` is unreachable or reboots, in which case the watcher/reconnection plan continues;
+- `pi-host` is unreachable or reboots, in which case the watcher/reconnection plan continues;
 - a backup destination or encryption/recovery prerequisite is missing;
 - a command would delete data, alter `samples`, rewrite/skip spool offsets, repartition, modify
   `/boot/firmware`, apply `dtoverlay`, or restore destructively into a live database;
@@ -95,4 +95,4 @@ These are not random pauses:
 
 ## Ready instruction
 
-The local watcher and evidence path are in place, and the watcher is actively polling SSH. **You can plug `minidude` in now.**
+The local watcher and evidence path are in place, and the watcher is actively polling SSH. **You can plug `pi-host` in now.**

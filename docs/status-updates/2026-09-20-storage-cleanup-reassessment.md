@@ -11,7 +11,7 @@ The correct operational sequence for this situation is:
 
 1. Stop all collection and draining. Incoming records are explicitly not a priority during this
    recovery window.
-2. Create an unfiltered recovery set off `minidude`, including the database data described as
+2. Create an unfiltered recovery set off `pi-host`, including the database data described as
    planes/noise and CNS depression-warning data.
 3. Verify that the off-Pi artifacts are readable and complete.
 4. Inventory the exact relations and predicates for the two projects.
@@ -91,7 +91,7 @@ whether the host is stable.
 
 ## Current state
 
-No destructive cleanup has run: `minidude` is still unreachable. The local watcher and direct-to-Mac
+No destructive cleanup has run: `pi-host` is still unreachable. The local watcher and direct-to-Mac
 recovery script are prepared. Once the host returns, the sequence is evidence capture, stop intake,
 direct backup, verification, classification, controlled intervention/cleanup, and stability
 measurement. I understand that normal production deletion rules are not the objective during this

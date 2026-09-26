@@ -267,6 +267,7 @@ final class AppClientRuntime: ObservableObject {
   private let journalMirror: AppJournalMirrorStore?
   private var syncEngine: SyncEngine?
   private var projectionService: ProjectionReadService?
+  private var projectionCache: ProjectionCache?
 #if canImport(BackgroundTasks)
   private let healthKitDrainTaskIdentifier = "com.groundeffectsoftware.AnxietyWatch.healthkit-drain"
 #endif
@@ -307,6 +308,9 @@ final class AppClientRuntime: ObservableObject {
         throw OutboxError.persistenceFailure("application support directory is unavailable")
       }
       let directory = support.appendingPathComponent("AnxietyWatch", isDirectory: true)
+      projectionCache = try ProjectionCache(
+        persistenceURL: directory.appendingPathComponent("projection-cache.json", isDirectory: false)
+      )
       let localOutbox = try FileOutboxStore(directory: directory)
       let localJournalMirror = try AppJournalMirrorStore(directory: directory)
       loadedOutbox = localOutbox
@@ -390,7 +394,9 @@ final class AppClientRuntime: ObservableObject {
         transport: writeTransport,
         stateSink: journalMirror
       )
-      let cache = try ProjectionCache()
+      guard let cache = projectionCache else {
+        throw OutboxError.persistenceFailure("projection cache initialization failed")
+      }
       let readTransport = URLSessionProjectionTransport(
         origin: credential.origin,
         authenticator: authenticator
@@ -630,11 +636,12 @@ final class AppClientRuntime: ObservableObject {
         observedAt: formatter.string(from: Date())
       )
       _ = try await transport.report(outcome: request, credential: credential)
+      await ledger.markReported(messageID: message.messageID, outcome: outcome)
       notificationStatus = outcome == .displayed
         ? "Operator message displayed; awaiting acknowledgement if selected."
         : "Operator message acknowledgement recorded."
     } catch {
-      notificationStatus = "Notification outcome queued: Pi acknowledgement could not be recorded."
+      notificationStatus = "Notification outcome retryable: Pi acknowledgement could not be recorded."
     }
   }
 

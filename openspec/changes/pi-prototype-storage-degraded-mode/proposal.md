@@ -16,7 +16,7 @@ measured cost/stability decision rather than an assumed cure.
 - Establish a named **production baseline** and a separately named **prototype degraded mode**.
 - Produce and verify an encrypted, off-Pi recovery set before changing ingest or drain policy;
   when Pi free space is constrained, stream the logical recovery artifacts directly to the Mac rather
-  than staging a backup archive on `minidude`.
+  than staging a backup archive on `pi-host`.
 - Preserve raw spool segments and append-only evidence while reducing optional read and write load.
 - Add bounded, observable PostgreSQL/drainer/resource controls; no silent discard or manual offset
   advancement is permitted.
@@ -80,7 +80,7 @@ table name or a broad query.
 ## Hard gates
 
 1. No degraded ingest/materialization policy is enabled until an encrypted recovery set is copied
-   off `minidude`, checksummed, and its restore/readability is verified.
+   off `pi-host`, checksummed, and its restore/readability is verified.
 2. The recovery set includes pending spool data; a PostgreSQL backup alone is insufficient.
 3. No safety-relevant source is reduced without an explicit operator decision naming the source,
    reason, expected loss/latency behavior, and rollback command.

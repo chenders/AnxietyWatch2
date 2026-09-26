@@ -29,7 +29,7 @@ The recovery set is a versioned manifest containing:
 - a record of secrets/configuration that are required for recovery without placing secret values in
   the repository or an unencrypted export.
 
-The recovery set is transferred off `minidude` to an operator-selected destination. The destination
+The recovery set is transferred off `pi-host` to an operator-selected destination. The destination
 must be outside the Pi's failure domain. Verification includes checksums, archive readability, a
 non-vacuous database restore/read test, and spool manifest comparison. The transfer is not complete
 when only a local NVMe copy exists.
@@ -37,7 +37,7 @@ when only a local NVMe copy exists.
 When Pi free space is a concern, the prototype path streams `pg_dumpall --globals-only`, a custom
 format `pg_dump`, WAL/recovery-boundary metadata, and a tar stream of the pending spool directly over
 SSH to the Mac, where each artifact is encrypted and stored. No backup archive is staged on
-`minidude`. This is a logical recovery set: WAL metadata is not a physical WAL archive, and it does
+`pi-host`. This is a logical recovery set: WAL metadata is not a physical WAL archive, and it does
 not replace the production pgBackRest physical-backup/restore gate.
 
 Because a full PostgreSQL backup does not include files waiting in the spool, the spool copy is a

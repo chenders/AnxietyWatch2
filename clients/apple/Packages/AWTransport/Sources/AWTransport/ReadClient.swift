@@ -18,7 +18,7 @@ public struct ProjectionCacheKey: Hashable, Sendable {
   }
 }
 
-public struct CachedProjection: Equatable, Sendable {
+public struct CachedProjection: Codable, Equatable, Sendable {
   public let page: ClientProjectionPage
   public let fetchedAt: Date
   public let expiresAt: Date
@@ -46,19 +46,54 @@ public enum ProjectionReadState: Equatable, Sendable {
   case unknown(reason: String)
 }
 
-/// Bounded convenience cache for server projections. Eviction loses no record because the Pi is the
-/// only long-term owner; cache identity includes endpoint, device, API major, and query.
+/// Bounded local cache for server projections. Eviction loses no record because the Pi is the
+/// only long-term owner; cache identity includes endpoint, device, API major, and query. When a
+/// persistence URL is supplied, entries survive relaunch and receive iOS file protection.
+private struct PersistedProjectionCacheEntry: Codable {
+  let key: ProjectionCacheKeyCodable
+  let value: CachedProjection
+}
+
+private struct ProjectionCacheKeyCodable: Codable {
+  let endpoint: String
+  let clientID: UUID
+  let apiMajor: UInt
+  let query: ClientProjectionQuery
+
+  init(_ key: ProjectionCacheKey) {
+    endpoint = key.endpoint
+    clientID = key.clientID
+    apiMajor = key.apiMajor
+    query = key.query
+  }
+
+  var key: ProjectionCacheKey {
+    ProjectionCacheKey(endpoint: endpoint, clientID: clientID, apiMajor: apiMajor, query: query)
+  }
+}
+
 public actor ProjectionCache {
   private let maximumEntries: Int
+  private let persistenceURL: URL?
   private var entries: [ProjectionCacheKey: CachedProjection] = [:]
 
-  public init(maximumEntries: Int = 50) throws {
+  public init(maximumEntries: Int = 50, persistenceURL: URL? = nil) throws {
     guard (1...500).contains(maximumEntries) else {
       throw EnrollmentError.invalidArtifact(
         "projection cache size must be 1...500; received \(maximumEntries)"
       )
     }
     self.maximumEntries = maximumEntries
+    self.persistenceURL = persistenceURL
+    if let persistenceURL,
+      FileManager.default.fileExists(atPath: persistenceURL.path)
+    {
+      let data = try Data(contentsOf: persistenceURL)
+      let persisted = try JSONDecoder().decode([PersistedProjectionCacheEntry].self, from: data)
+      for item in persisted.sorted(by: { $0.value.fetchedAt < $1.value.fetchedAt }).suffix(maximumEntries) {
+        entries[item.key.key] = item.value
+      }
+    }
   }
 
   public func put(
@@ -81,6 +116,25 @@ public actor ProjectionCache {
       let oldestKey = entries.min { lhs, rhs in lhs.value.fetchedAt < rhs.value.fetchedAt }?.key
       if let oldestKey { entries.removeValue(forKey: oldestKey) }
     }
+    try persist()
+  }
+
+  private func persist() throws {
+    guard let persistenceURL else { return }
+    let data = try JSONEncoder().encode(
+      entries.map { PersistedProjectionCacheEntry(key: ProjectionCacheKeyCodable($0.key), value: $0.value) }
+    )
+    try FileManager.default.createDirectory(
+      at: persistenceURL.deletingLastPathComponent(),
+      withIntermediateDirectories: true
+    )
+    try data.write(to: persistenceURL, options: .atomic)
+#if os(iOS)
+    try FileManager.default.setAttributes(
+      [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication],
+      ofItemAtPath: persistenceURL.path
+    )
+#endif
   }
 
   public func get(_ key: ProjectionCacheKey) -> CachedProjection? { entries[key] }
@@ -206,6 +260,7 @@ public final class URLSessionProjectionTransport: ProjectionReading, @unchecked 
     request.httpMethod = "GET"
     request.setValue("application/json", forHTTPHeaderField: "Accept")
     let path = components.percentEncodedPath
+      + (components.percentEncodedQuery.map { "?\($0)" } ?? "")
     for (field, value) in try authenticator.headers(
       body: Data(), credential: credential, now: Date(), method: "GET", path: path
     ) {

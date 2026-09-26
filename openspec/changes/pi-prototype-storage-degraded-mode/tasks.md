@@ -15,10 +15,10 @@ it does not authorize destructive cleanup or unresolved migrations.
 
 ## T-P0 — Record baseline and recovery contract
 
-**Tier:** implement-standard  
-**Host:** pi  
-**Context budget:** ~8k tokens  
-**Depends:** none  
+**Tier:** implement-standard
+**Host:** pi
+**Context budget:** ~8k tokens
+**Depends:** none
 **Review required:** yes
 
 **Reads:** `docs/specs/AMENDMENTS.md`, `openspec/changes/pi5-vitals-core/proposal.md`,
@@ -41,17 +41,17 @@ it does not authorize destructive cleanup or unresolved migrations.
 
 ## T-P1 — Create and verify the off-box recovery set
 
-**Tier:** implement-complex  
-**Host:** either  
-**Context budget:** ~10k tokens  
-**Depends:** T-P0 green  
+**Tier:** implement-complex
+**Host:** either
+**Context budget:** ~10k tokens
+**Depends:** T-P0 green
 **Review required:** yes
 
 **Reads:** `docs/specs/AMENDMENTS.md`, `openspec/changes/pi-prototype-storage-degraded-mode/proposal.md`,
 `openspec/changes/pi-prototype-storage-degraded-mode/design.md`,
 `deploy/restore-verification/README.md`, `deploy/restore-verification/verify-restore.sh`
 
-**Creates:** `~/minidude-reboot-evidence/latest/recovery/`, an off-box encrypted recovery set
+**Creates:** `~/pi-host-reboot-evidence/latest/recovery/`, an off-box encrypted recovery set
 
 **Do:**
 1. Prefer the direct-to-Mac path while Pi free space is at risk: stream PostgreSQL globals, a
@@ -63,16 +63,16 @@ it does not authorize destructive cleanup or unresolved migrations.
 4. Verify checksum, archive readability, and spool archive readability. Record that this logical
    recovery set is not a physical pgBackRest restore; the physical production gate remains open.
 
-**Verify:** `test -s "$HOME/minidude-reboot-evidence/latest/recovery/database.gpg" && test -s "$HOME/minidude-reboot-evidence/latest/recovery/spool.gpg" && test -s "$HOME/minidude-reboot-evidence/latest/recovery/wal-evidence.gpg" && grep -q 'failures=0' "$HOME/minidude-reboot-evidence/latest/recovery/direct-recovery.log"`
+**Verify:** `test -s "$HOME/pi-host-reboot-evidence/latest/recovery/database.gpg" && test -s "$HOME/pi-host-reboot-evidence/latest/recovery/spool.gpg" && test -s "$HOME/pi-host-reboot-evidence/latest/recovery/wal-evidence.gpg" && grep -q 'failures=0' "$HOME/pi-host-reboot-evidence/latest/recovery/direct-recovery.log"`
 
 **Expect:** exit 0; the complete logical database, WAL evidence, and pending spool are encrypted and stored off Pi.
 
 ## T-P2 — Enable reversible low-load prototype profile
 
-**Tier:** implement-standard  
-**Host:** pi  
-**Context budget:** ~8k tokens  
-**Depends:** T-P1 green  
+**Tier:** implement-standard
+**Host:** pi
+**Context budget:** ~8k tokens
+**Depends:** T-P1 green
 **Review required:** yes
 
 **Reads:** `openspec/changes/pi-prototype-storage-degraded-mode/proposal.md`,
@@ -93,10 +93,10 @@ it does not authorize destructive cleanup or unresolved migrations.
 
 ## T-P3 — Bound drain, query, and resource pressure
 
-**Tier:** implement-complex  
-**Host:** pi  
-**Context budget:** ~12k tokens  
-**Depends:** T-P2 green  
+**Tier:** implement-complex
+**Host:** pi
+**Context budget:** ~12k tokens
+**Depends:** T-P2 green
 **Review required:** yes
 
 **Reads:** `crates/vitals-drain/src/lib.rs`, `crates/vitalsd/src/main.rs`,
@@ -120,10 +120,10 @@ it does not authorize destructive cleanup or unresolved migrations.
 
 ## T-P4 — Measure the second-NVMe decision
 
-**Tier:** implement-complex  
-**Host:** pi  
-**Context budget:** ~10k tokens  
-**Depends:** T-P3 green  
+**Tier:** implement-complex
+**Host:** pi
+**Context budget:** ~10k tokens
+**Depends:** T-P3 green
 **Review required:** yes
 
 **Reads:** `openspec/changes/pi-prototype-storage-degraded-mode/design.md`,
@@ -146,10 +146,10 @@ it does not authorize destructive cleanup or unresolved migrations.
 
 ## T-P5a — Inventory and isolate separate-project data
 
-**Tier:** implement-complex  
-**Host:** pi  
-**Context budget:** ~10k tokens  
-**Depends:** T-P1 green  
+**Tier:** implement-complex
+**Host:** pi
+**Context budget:** ~10k tokens
+**Depends:** T-P1 green
 **Review required:** yes
 
 **Reads:** `docs/specs/AMENDMENTS.md`,
@@ -177,10 +177,10 @@ it does not authorize destructive cleanup or unresolved migrations.
 
 ## T-P5 — Approve any source-specific data reduction
 
-**Tier:** human  
-**Host:** pi  
-**Context budget:** ~6k tokens  
-**Depends:** T-P3 green and T-P4 green  
+**Tier:** human
+**Host:** pi
+**Context budget:** ~6k tokens
+**Depends:** T-P3 green and T-P4 green
 **Review required:** yes
 
 **Reads:** `vitals/registry.toml`, `docs/specs/AMENDMENTS.md`,
@@ -202,10 +202,10 @@ it does not authorize destructive cleanup or unresolved migrations.
 
 ## T-P6 — Return to production profile and verify acceptance
 
-**Tier:** implement-complex  
-**Host:** pi  
-**Context budget:** ~10k tokens  
-**Depends:** T-P4 green, T-P5a green, and T-P5 green  
+**Tier:** implement-complex
+**Host:** pi
+**Context budget:** ~10k tokens
+**Depends:** T-P4 green, T-P5a green, and T-P5 green
 **Review required:** yes
 
 **Reads:** `openspec/changes/pi-prototype-storage-degraded-mode/proposal.md`,

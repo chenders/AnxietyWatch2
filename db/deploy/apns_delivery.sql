@@ -56,7 +56,7 @@ COMMENT ON TABLE apns_delivery_attempts IS
 COMMENT ON TABLE apns_client_outcomes IS
     'Append-only device-observed display and acknowledgement facts.';
 
-GRANT SELECT, INSERT, UPDATE ON apns_messages, apns_delivery_attempts, apns_client_outcomes TO vitals;
+GRANT SELECT, INSERT ON apns_messages, apns_delivery_attempts, apns_client_outcomes TO vitals;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO vitals;
 
 COMMIT;

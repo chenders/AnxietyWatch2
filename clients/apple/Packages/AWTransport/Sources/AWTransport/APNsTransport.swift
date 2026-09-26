@@ -202,13 +202,20 @@ public actor APNsOutcomeLedger {
   }
 
   public func shouldReport(messageID: UUID, outcome: APNsMessageOutcome) -> Bool {
-    let key = "\(messageID.uuidString.lowercased()):\(outcome.rawValue)"
-    guard !reported.contains(key) else { return false }
+    !reported.contains(key(messageID: messageID, outcome: outcome))
+  }
+
+  public func markReported(messageID: UUID, outcome: APNsMessageOutcome) {
+    let value = key(messageID: messageID, outcome: outcome)
+    guard !reported.contains(value) else { return }
     if reported.count >= maximumEntries {
       reported.removeFirst()
     }
-    reported.insert(key)
-    return true
+    reported.insert(value)
+  }
+
+  private func key(messageID: UUID, outcome: APNsMessageOutcome) -> String {
+    "\(messageID.uuidString.lowercased()):\(outcome.rawValue)"
   }
 }
 
