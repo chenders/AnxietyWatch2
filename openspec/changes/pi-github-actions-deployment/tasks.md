@@ -8,7 +8,7 @@ observation decision.
 - [x] **T-R0 — Record the deployment boundary and staged rollout contract**
 - [x] **T-R1 — Bootstrap and prove the native ARM64 runner**
 - [x] **T-R2 — Add the trusted, non-deploying Pi workflow boundary**
-- [ ] **T-R3 — Build a SHA-addressed artifact and manifest**
+- [x] **T-R3 — Build a SHA-addressed artifact and manifest**
 - [ ] **T-R4 — Implement a no-mutation host dry run**
 - [ ] **T-R5 — Rehearse failure, health, and rollback paths**
 - [ ] **T-R6 — Create the pre-deploy backup and recovery receipt**
@@ -141,7 +141,7 @@ staged artifact manifest; exact paths are selected in the task implementation
 4. Add unit tests for manifest parsing, path traversal, checksum mismatch, missing target, duplicate
    target, SHA mismatch, and deterministic output. Keep the helper out of decoder/core crates.
 
-**Verify:** `set -e; SOURCE_SHA="${GITHUB_SHA:-$(git rev-parse HEAD)}"; OUTPUT_DIR="${RUNNER_TEMP:-/tmp}"; export SOURCE_SHA; cargo test -p vitals-deploy && cargo clippy -p vitals-deploy --all-targets -- -D warnings && cargo fmt --all -- --check && cargo build --release -p vitalsd -p vitals-drain -p vitals-console -p vitals-collectors && cargo run -p vitals-deploy -- manifest --source "$SOURCE_SHA" --dry-run --output "$OUTPUT_DIR/vitals-manifest.json" && jq -e '.source_sha == env.SOURCE_SHA and (.files | length) > 0' "$OUTPUT_DIR/vitals-manifest.json" >/dev/null`
+**Verify:** `set -e; SOURCE_SHA="${GITHUB_SHA:-$(git rev-parse HEAD)}"; OUTPUT_DIR="${RUNNER_TEMP:-/tmp}"; export SOURCE_SHA; cargo test -p vitals-deploy && cargo clippy -p vitals-deploy --all-targets -- -D warnings && cargo fmt --all -- --check && cargo build --release -p vitalsd -p vitals-drain -p vitals-console -p vitals-collectors && cargo run -p vitals-deploy -- manifest --source "$SOURCE_SHA" --dry-run --output "$OUTPUT_DIR/vitals-manifest.json" && jq -e '.source_sha == env.SOURCE_SHA and .architecture == "aarch64" and (.files | length) > 0 and (.blockers | type) == "array"' "$OUTPUT_DIR/vitals-manifest.json" >/dev/null`
 
 **Expect:** exit 0; the artifact is reproducible, SHA-addressed, complete for the reconciled target
 set, and no live path is changed. If `vitals-deploy` is not the selected package name, update this
