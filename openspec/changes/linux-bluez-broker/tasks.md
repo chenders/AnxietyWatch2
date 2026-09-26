@@ -21,7 +21,7 @@ Move Linux application-level Bluetooth ownership to one broker per verified phys
 ## Task index
 
 - [x] T-BT-0 — Freeze deployment inventory and stable-controller contract · investigation
-- [ ] T-BT-1 — Add pure lease scheduler and broker capability model · implement-complex
+- [x] T-BT-1 — Add pure lease scheduler and broker capability model · implement-complex
 - [ ] T-BT-2 — Add the versioned broker protocol and fake transport · implement-complex
 - [ ] T-BT-3 — Implement the Linux BlueZ adapter owner · implement-complex · Linux/Pi
 - [ ] T-BT-4 — Isolate and instrument the BP kernel-policy boundary · implement-complex · amendment 06
@@ -48,7 +48,7 @@ Resolve the authoritative deployed artifact/revision, enabled units, direct Blue
 
 **Depends:** T-BT-0
 **Amends:** none
-**Reads:** `openspec/changes/linux-bluez-broker/proposal.md`, `openspec/changes/linux-bluez-broker/design.md`, `docs/reviews/bluetooth-rewrite/ARBITRATION-ARCHITECTURE.md`, `docs/reviews/bluetooth-rewrite/RELIABILITY-TEST-PLAN.md`, `docs/specs/AMENDMENTS.md`
+**Reads:** `openspec/changes/linux-bluez-broker/proposal.md`, `openspec/changes/linux-bluez-broker/design.md`, `docs/reviews/bluetooth-rewrite/ARBITRATION-ARCHITECTURE.md`, `docs/reviews/bluetooth-rewrite/RELIABILITY-TEST-PLAN.md`, `Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml`, `crates/vitals-core/Cargo.toml`, `crates/vitals-core/src/lib.rs`, `docs/specs/AMENDMENTS.md`
 **Creates:** `crates/vitals-ble-broker/` policy modules and tests
 
 Create the broker package's pure policy layer without BlueZ, I/O, or global state. Model adapter-global and device-local leases, source priorities, deadlines, preemption only at safe boundaries, lease expiry, retry release, adapter generations, bounded worker queues, capability sets, and named blocker values. Include a BP capability that cannot represent `Connect`, adapter reset, power mutation, or generic D-Bus calls. Keep source state distinctions (`Connected`, `ServicesResolved`, `Subscribed`, `Streaming`, `Stale`, `Degraded`, `Unknown`) explicit.

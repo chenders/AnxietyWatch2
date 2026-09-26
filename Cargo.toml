@@ -8,6 +8,7 @@ members = [
     "crates/vitalsd",           # the single-writer daemon (Linux)
     "crates/vitals-drain",      # COPY-binary spool to PostgreSQL
     "crates/vitals-collectors", # production BLE collectors (Linux)
+    "crates/vitals-ble-broker",  # pure BLE lease policy and broker (Linux)
     "crates/hr-spike",          # T-B1 overnight capture (Linux)
     "crates/emay-spike",        # T-B1 substitute: SpO2 capture (Linux)
     "crates/vitals-console",
