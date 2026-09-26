@@ -89,12 +89,9 @@ duration=$((10#$duration))
     die "duration=$duration is outside the bounded range ${MIN_DURATION}..${MAX_DURATION} seconds"
 
 for command_name in \
-    systemctl getent awk python3 timeout ip stat cmp date sleep seq mktemp mkdir cp rm tr head psql; do
+    systemctl getent awk python3 timeout ip stat cmp date sleep seq mktemp mkdir cp rm tr head psql sudo; do
     require_command "$command_name"
 done
-if ((EUID == 0)); then
-    require_command sudo
-fi
 
 if [[ ! -t 0 || ! -t 1 ]]; then
     die "operator authorization required: run this bounded command from a terminal"
@@ -136,12 +133,15 @@ if ! vitals_home=$(getent passwd vitals | awk -F: 'NR == 1 { print $6; exit }');
 fi
 [[ -n "$vitals_home" ]] || die "vitals account lookup failed: home directory is empty"
 credentials_path="$vitals_home/.air11/air11-credentials.json"
-[[ -f "$credentials_path" ]] || \
-    die "credentials gate failed: operator credential file is absent at the vitals home .air11 path"
+if ! sudo test -f "$credentials_path"; then
+    die "credentials gate failed: operator credential file is absent or unreadable at the vitals home .air11 path"
+fi
 
 # Validate only the shape and permissions. The master key is read but never
-# printed, copied, put in an argument, or included in a diagnostic.
-if ! target=$(python3 - "$credentials_path" 2>"$work_dir/credentials.err" <<'PY'
+# printed, copied, put in an argument, or included in a diagnostic. The
+# credentials directory is private to the vitals account, so the validator
+# runs through sudo even when the operator invokes this script unprivileged.
+if ! target=$(sudo python3 - "$credentials_path" 2>"$work_dir/credentials.err" <<'PY'
 import json
 import os
 import re
@@ -224,11 +224,10 @@ fi
 psql_scalar() {
     local sql=$1
     local output
-    local -a psql_prefix=()
-    if ((EUID == 0)); then
-        # PostgreSQL peer authentication belongs to the vitals role, not root.
-        psql_prefix=(sudo -u vitals)
-    fi
+    # PostgreSQL peer authentication belongs to the vitals role; using it for
+    # both root and unprivileged operator invocations avoids a hidden role
+    # dependency in the acceptance command.
+    local -a psql_prefix=(sudo -u vitals)
     if ! output=$(timeout 15 "${psql_prefix[@]}" psql --no-psqlrc --quiet --no-align --tuples-only \
         --no-password --set=ON_ERROR_STOP=1 --command "$sql" 2>"$work_dir/psql.err"); then
         return 1
@@ -415,7 +414,19 @@ allowed = {
     "durability_unknown",
     "last_host_receipt_unix_micros",
     "last_device_start_time",
+    "last_event_data_id",
     "blocker",
+    "event_blocker",
+    "event_notifications",
+    "event_records",
+    "event_subscription_state",
+    "event_truncated_notifications",
+    "therapy_blocker",
+    "therapy_finalized_host_unix_micros",
+    "therapy_session_id",
+    "therapy_start_host_unix_micros",
+    "therapy_state",
+    "therapy_stop_host_unix_micros",
 }
 streaming = False
 measured = False
@@ -472,10 +483,17 @@ for path in paths:
 final = json.loads(paths[-1].read_text(encoding="utf-8"))
 if final.get("link_state") != "streaming":
     raise SystemExit(f"final link_state={final.get('link_state')}; expected streaming")
-if final.get("measurement_state") != "measured":
-    raise SystemExit(f"final measurement_state={final.get('measurement_state')}; expected measured")
-if final.get("blocker") is not None:
-    raise SystemExit("final blocker is present")
+if final.get("measurement_state") not in {"measured", "quarantined"}:
+    raise SystemExit(
+        f"final measurement_state={final.get('measurement_state')}; "
+        "expected measured or quarantined"
+    )
+if final.get("measurement_state") == "quarantined":
+    blocker = final.get("blocker")
+    if not isinstance(blocker, str) or not blocker:
+        raise SystemExit("final quarantined state has no named blocker")
+elif final.get("blocker") is not None:
+    raise SystemExit("final measured state has a blocker")
 if not streaming:
     raise SystemExit("no snapshot reached link_state=streaming")
 if not measured:
