@@ -7,6 +7,7 @@
 #![forbid(unsafe_code)]
 
 pub mod bluez;
+pub mod bp;
 pub mod lease;
 mod protocol;
 

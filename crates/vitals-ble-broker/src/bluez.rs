@@ -647,7 +647,7 @@ mod runtime {
                     class: BluezFailureClass::DeviceMissing,
                     operation: "materialize device",
                 })?;
-            match tokio::time::timeout(duration, device.connect()).await {
+            match tokio::time::timeout(duration, bluer::Device::connect(&device)).await {
                 Ok(result) => result.map_err(|error| OwnerError::Bluez {
                     class: classify_bluer_error(&error),
                     operation: "connect device",

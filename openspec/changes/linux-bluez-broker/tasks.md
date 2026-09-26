@@ -24,7 +24,7 @@ Move Linux application-level Bluetooth ownership to one broker per verified phys
 - [x] T-BT-1 — Add pure lease scheduler and broker capability model · implement-complex
 - [x] T-BT-2 — Add the versioned broker protocol and fake transport · implement-complex
 - [x] T-BT-3 — Implement the Linux BlueZ adapter owner · implement-complex · Linux/Pi
-- [ ] T-BT-4 — Isolate and instrument the BP kernel-policy boundary · implement-complex · amendment 06
+- [x] T-BT-4 — Isolate and instrument the BP kernel-policy boundary · implement-complex · amendment 06
 - [ ] T-BT-5 — Migrate one source through the broker with reversible ownership · implement-complex · gated
 - [ ] T-BT-6 — Migrate remaining collectors and retire direct BlueZ paths · implement-complex · gated
 - [ ] T-BT-7 — Add coexistence, failure-injection, and Pi acceptance gates · implement-complex · review required

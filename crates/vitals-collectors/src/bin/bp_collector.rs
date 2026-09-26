@@ -1,7 +1,7 @@
 //! A&D UA-651BLE blood-pressure collector.
 //!
 //! The cuff is store-and-forward and advertises only briefly after a reading.
-//! This process deliberately never calls `Device1.Connect`: the kernel
+//! This process deliberately never initiates a userspace device connection: the kernel
 //! auto-connect list catches that short window. That list does NOT survive a
 //! reboot, and `bluetoothd` does not repopulate it for this bonded+trusted
 //! cuff (proven 2026-08-07: post-reboot the cuff sat at auto-connect action 0
