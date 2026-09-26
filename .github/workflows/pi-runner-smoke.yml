@@ -4,6 +4,11 @@ name: Pi runner smoke
 # the native ARM64 execution boundary without granting deployment authority.
 on:
   workflow_dispatch:
+  # Temporary bootstrap trigger: this branch is the only push target. Remove
+  # after the first smoke run is accepted and the workflow is available from
+  # the default branch for manual dispatch.
+  push:
+    branches: [chore/github-runner-deployment-plan]
 
 permissions:
   contents: read
