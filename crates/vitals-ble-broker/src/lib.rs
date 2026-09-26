@@ -7,9 +7,15 @@
 #![forbid(unsafe_code)]
 
 pub mod lease;
+mod protocol;
 
 pub use lease::{
     AcquireResult, Capability, CapabilitySet, DeviceId, Generation, Intent, Lease, LeaseId,
     LeaseRequest, LeaseScheduler, NamedBlocker, PolicyError, Priority, QueueTicket, ReleaseOutcome,
     SchedulerEvent, Source, Tick,
+};
+
+pub use protocol::{
+    Acquire, Cancel, ClientMessage, FakeReply, FakeTransport, Hello, MAX_FRAME_BYTES, Operation,
+    OperationKind, PROTOCOL_VERSION, ProtocolError, Release, decode, encode,
 };

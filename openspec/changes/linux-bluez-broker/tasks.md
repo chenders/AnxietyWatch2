@@ -22,7 +22,7 @@ Move Linux application-level Bluetooth ownership to one broker per verified phys
 
 - [x] T-BT-0 — Freeze deployment inventory and stable-controller contract · investigation
 - [x] T-BT-1 — Add pure lease scheduler and broker capability model · implement-complex
-- [ ] T-BT-2 — Add the versioned broker protocol and fake transport · implement-complex
+- [x] T-BT-2 — Add the versioned broker protocol and fake transport · implement-complex
 - [ ] T-BT-3 — Implement the Linux BlueZ adapter owner · implement-complex · Linux/Pi
 - [ ] T-BT-4 — Isolate and instrument the BP kernel-policy boundary · implement-complex · amendment 06
 - [ ] T-BT-5 — Migrate one source through the broker with reversible ownership · implement-complex · gated
@@ -61,7 +61,7 @@ Create the broker package's pure policy layer without BlueZ, I/O, or global stat
 
 **Depends:** T-BT-1
 **Amends:** none
-**Reads:** `openspec/changes/linux-bluez-broker/design.md`, `docs/reviews/bluetooth-rewrite/RELIABILITY-TEST-PLAN.md`, `docs/specs/AMENDMENTS.md`
+**Reads:** `openspec/changes/linux-bluez-broker/design.md`, `docs/reviews/bluetooth-rewrite/RELIABILITY-TEST-PLAN.md`, `crates/vitals-ble-broker/Cargo.toml`, `crates/vitals-ble-broker/src/lib.rs`, `crates/vitals-ble-broker/src/lease.rs`, `Cargo.toml`, `docs/specs/AMENDMENTS.md`
 **Creates:** broker protocol/client modules and fake transport tests
 
 Define bounded, versioned Unix-socket messages for `Hello`, `Acquire`, typed operations, `Frame`, `Release`, `Cancel`, and `Health`. Authenticate worker kind and capabilities at handshake, include broker generation and adapter selector, bound frame and queue sizes, redact device identifiers in errors, and reject unknown capabilities. No raw BlueZ object paths or arbitrary method invocation may cross the protocol. Test worker death, cancellation, expiry, backpressure, generation changes, malformed frames, and BP capability rejection.

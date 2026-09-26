@@ -106,6 +106,28 @@ impl CapabilitySet {
         self.0 & Self::bit(capability) != 0
     }
 
+    /// Return the stable wire representation of this set.
+    #[must_use]
+    pub const fn bits(self) -> u8 {
+        self.0
+    }
+
+    /// Construct a set from its stable wire representation.
+    #[must_use]
+    pub const fn from_bits(bits: u8) -> Option<Self> {
+        let known = Self::KERNEL_OBSERVE
+            | Self::DISCOVER
+            | Self::CONNECT
+            | Self::RESOLVE
+            | Self::SUBSCRIBE
+            | Self::WRITE;
+        if bits & !known == 0 {
+            Some(Self(bits))
+        } else {
+            None
+        }
+    }
+
     const fn bit(capability: Capability) -> u8 {
         match capability {
             Capability::KernelObserve => Self::KERNEL_OBSERVE,
@@ -159,10 +181,20 @@ impl Generation {
 pub struct LeaseId(u64);
 
 impl LeaseId {
+    /// Construct an identifier from its protocol representation.
+    #[must_use]
+    pub const fn new(value: u64) -> Self {
+        Self(value)
+    }
+
     /// Return the numeric identifier for telemetry or protocol encoding.
     #[must_use]
     pub const fn value(self) -> u64 {
         self.0
+    }
+
+    pub(crate) const fn from_wire(value: u64) -> Self {
+        Self::new(value)
     }
 }
 
@@ -289,6 +321,12 @@ impl LeaseRequest {
     #[must_use]
     pub const fn capabilities(&self) -> CapabilitySet {
         self.capabilities
+    }
+
+    /// Return whether the requested operation is safe to preempt.
+    #[must_use]
+    pub const fn is_preemptible(&self) -> bool {
+        self.preemptible
     }
 
     /// Return the human-readable reason attached to the request.
