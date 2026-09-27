@@ -13,7 +13,7 @@ is the *why*.
 | Task group | Machine | Why |
 |---|---|---|
 | **Group A** (hardware) | **the Pi** | You are physically at the box with a screwdriver. `dmesg`, `lsusb`, `hciconfig` are local. |
-| **T-B1** (8-hour capture) | **the Pi** | Must outlive an SSH session. Runs overnight under `systemd-run`. |
+| **T-B1** (8-hour capture; `openspec/changes/99-last-specs/`) | **the Pi** | Must outlive an SSH session. Runs overnight under `systemd-run`. |
 | **Group C** (Postgres) | either | Every `Verify` is already `ssh "$PI_HOST" '…'`, so Mac works fine. |
 | **Group D** (code) | **Mac** | Pure code. Bigger worker pool, your editor, the repo is here. |
 
@@ -282,8 +282,8 @@ send_task T-D3 worker-3 gemini/gemini-3.1-pro-preview
 That is Stage 3's foundation done before a single package arrives.
 
 When the hardware lands: `herdr --remote "$PI_HOST"`, spin the layout there, run Group A in
-order, and dispatch **T-B1 the moment T-A4 goes green** — it occupies a whole night, so start it and
-let everything else proceed around it.
+order, and dispatch **T-B1 from `openspec/changes/99-last-specs/` the moment T-A4 goes green** — it
+occupies a whole night, so start it and let everything else proceed around it.
 
 ---
 
@@ -334,4 +334,5 @@ Paste into the conductor if you override the default kickoff:
 > 6. Stop and ask before anything destructive: repartitioning, `dtoverlay` edits, `pgbackrest`
 >    restore into a live cluster.
 > 7. Record scope deltas, measured results, and decisions under `## Implementation notes` in
->    `tasks.md` as they happen. T-B1's gap histogram goes there verbatim.
+>    `openspec/changes/99-last-specs/tasks.md` as they happen. T-B1's gap histogram goes there
+>    verbatim.

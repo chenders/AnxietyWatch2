@@ -152,7 +152,8 @@ modes, both valid:
 `tasks.md` is already written as `ssh "$PI_HOST" '…'`, so `host: pi` tasks execute remotely with
 no change. Default for everything except long-running hardware work.
 
-**Mode B — Pi-local session.** For work where being on the box matters — the overnight T-B1 capture,
+**Mode B — Pi-local session.** For work where being on the box matters — the overnight T-B1 capture
+(maintained in `openspec/changes/99-last-specs/`),
 `dmesg`/`journalctl` tailing, `bluetoothctl` interaction, anything that must outlive an SSH
 connection — attach to the Pi's own herdr from the Mac:
 
@@ -161,7 +162,7 @@ herdr --remote "$PI_HOST"
 ```
 
 Workers execute locally on the Pi with the same model tiers. Prefer Mode B for all of Group A and
-T-B1; Mode A for Group D's pure-code tasks.
+the T-B1 task in `openspec/changes/99-last-specs/`; Mode A for Group D's pure-code tasks.
 
 **Repo split.** This repo is authoritative for `proposal/design/tasks`, the registry TOML, and
 generated headers — those are committed here. Pi-resident source (`~/vitals`) is a working tree that

@@ -46,11 +46,10 @@ The conductor ticks a box **only after running that task's `Verify` command itse
 pane renders (`grep -n '^- \[' tasks.md`).
 
 - [x] T-A1 — Migrate root filesystem to NVMe · human · pi
-- [ ] T-A2 — Audio output path · human · pi
+- [x] T-A2 — Audio output path · human · pi
 - [x] T-A3 — Bring up the Sena UD100-G03 · implement-standard · pi · **gate G1 owner**
 - [x] T-A4 — Disable onboard Bluetooth · mechanical · pi · **blocked by G1**
 - [x] T-A5 — Watchdog, governor, update policy · mechanical · pi
-- [ ] T-B1 — Eight-hour Polar H10 capture · implement-complex · pi · **review**
 - [x] T-C1 — PostgreSQL 16 bare metal on NVMe · implement-standard · pi · **blocked by G2**
 - [x] T-C2 — pgBackRest, three tiers · implement-standard · pi · **review**
 - [ ] T-C3 — Scheduled restore verification · implement-complex · pi · **review · gate G3 owner**
@@ -62,8 +61,9 @@ pane renders (`grep -n '^- \[' tasks.md`).
 - [ ] T-D6 — bp-collector end to end · implement-complex · pi · **review · blocked by G3**
 
 Parallelism: T-D1 and T-D2 have no hardware dependency and may run on separate workers concurrently
-with all of Group A. T-B1 occupies a whole night — dispatch it the moment T-A4 is green and let the
-other groups proceed around it.
+with all of Group A. The overnight H10 capture is now tracked as T-B1 in
+`openspec/changes/99-last-specs/tasks.md`; dispatch it when T-A4 is green and let the other groups
+proceed around it.
 
 ---
 
@@ -305,7 +305,10 @@ ssh "$PI_HOST" 'sudo sh -c "echo ondemand > /sys/devices/system/cpu/cpu0/cpufreq
 
 ## Group B — Thesis spike (Stage 1)
 
-### T-B1 — Eight-hour Polar H10 capture
+T-B1 moved to `openspec/changes/99-last-specs/tasks.md`. The historical task text below is retained
+for provenance; the consolidation change is now authoritative for its status and Verify command.
+
+### Historical T-B1 task text — Eight-hour Polar H10 capture
 
 **Tier:** implement-complex · **Host:** pi · **Context budget:** ~5k · **Depends:** T-A4
 **Amends:** 06 (§1.2 seq scope, §3 bonded-but-unencrypted state) · 05 (§1.4 clock drift, §4.3 IRK pairing) · 04 (§1 RR beat-time reconstruction) · 03 (§1 tactile evidence)
@@ -1143,7 +1146,8 @@ reading in the store.
 ## Implementation notes
 
 <!-- Conductor: record scope deltas, measured results, and decisions here as they happen.
-     T-B1's gap histogram goes here verbatim — it is the project's foundational measurement. -->
+     T-B1 is now owned by openspec/changes/99-last-specs/tasks.md; the historical T-B1 notes below
+     are retained for provenance and are not a second task status record. -->
 
 ### T-C2 — pgBackRest, three tiers · PASSED 2026-08-05
 
