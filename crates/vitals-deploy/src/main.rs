@@ -458,6 +458,7 @@ fn run_activation(
         .ok_or("manifest has no parent directory")?;
     let before = snapshot_state()?;
     let mut blocked = manifest.blockers.clone();
+    let _ = append_unknown_state_blockers(&before, &mut blocked);
     if let Err(reason) = validate_target_architecture(&manifest) {
         blocked.push(Blocker {
             kind: "wrong_architecture".to_owned(),
@@ -527,7 +528,7 @@ fn run_activation(
         run_systemctl(["daemon-reload"])?;
         restart_targets(&manifest)?;
         let after = snapshot_state()?;
-        let health_ok = health_is_acceptable(&after, &before);
+        let health_ok = health_is_acceptable(&after, &before, &manifest.source_sha);
         if !health_ok {
             return Err("post-activation health blocked: service, database, socket, or spool evidence failed".into());
         }
@@ -878,8 +879,9 @@ fn restart_targets(manifest: &Manifest) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn health_is_acceptable(after: &Snapshot, before: &Snapshot) -> bool {
-    after.spool == before.spool
+fn health_is_acceptable(after: &Snapshot, before: &Snapshot, expected_release: &str) -> bool {
+    after.current_release.as_deref() == Some(expected_release)
+        && after.spool == before.spool
         && socket_exists(Path::new("/run/vitals/vitalsd.sock"))
         && after.database.state != "unknown"
         && after.runner.state != "unknown"

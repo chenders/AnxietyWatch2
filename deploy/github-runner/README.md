@@ -116,6 +116,9 @@ The operator must retain the prior release and use the receipt's rollback comman
 
 - The runner is repository-scoped and must not be shared with unrelated repositories.
 - Only trusted `main` jobs may eventually use the deploy label. Pull requests never target it.
+- The activation workflow may use a narrowly allowlisted sudoers entry for the root-owned
+  `/usr/local/bin/vitals-deploy` helper only; it must not permit `systemctl`, `install`, a shell, or
+  arbitrary commands. The helper validates the manifest and backup gate again as root.
 - No Docker socket is mounted. The native life-safety path remains outside containers.
 - Registration-token renewal, runner software upgrades, and removal are operator tasks; record the
   runner version and result without recording tokens.
