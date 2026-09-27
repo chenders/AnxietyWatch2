@@ -50,7 +50,7 @@ pane renders (`grep -n '^- \[' tasks.md`).
 - [x] T-A3 — Bring up the Sena UD100-G03 · implement-standard · pi · **gate G1 owner**
 - [x] T-A4 — Disable onboard Bluetooth · mechanical · pi · **blocked by G1**
 - [x] T-A5 — Watchdog, governor, update policy · mechanical · pi
-- [ ] T-B1 — Ten-minute Polar H10 hardware check · implement-complex · pi · **review**
+- [x] T-B1 — Ten-minute Polar H10 hardware check · implement-complex · pi · **review**
 - [x] T-C1 — PostgreSQL 16 bare metal on NVMe · implement-standard · pi · **blocked by G2**
 - [x] T-C2 — pgBackRest, three tiers · implement-standard · pi · **review**
 - [x] T-C3 — Scheduled restore verification · implement-complex · pi · **review · gate G3 owner**
@@ -1139,13 +1139,14 @@ reading in the store.
 <!-- Conductor: record scope deltas, measured results, and decisions here as they happen.
      T-B1's gap histogram goes here verbatim — it is the project's bounded hardware evidence. -->
 
-### T-B1 — ten-minute hardware check · Verify passed 2026-09-27; review pending
+### T-B1 — ten-minute hardware check · PASSED 2026-09-27
 
 Amendment 11 replaced the overnight contract with a ten-minute ceiling for every hardware check
 except the dedicated ResMed AirSense 11 integration. The exact T-B1 Verify command exited 0 on
 `pi-host`: 600 notifications, its RR intervals, 599 seconds, longest gap 2.5 seconds, and no
-malformed lines. Drift was correctly reported as not estimable for this short run. The T-B1 task
-remains unchecked until its required review is complete.
+malformed lines. Drift was correctly reported as not estimable for this short run. The adversarial
+review found no actionable findings after the bounded-capture, parser, drift, and cached-device
+fixes. T-B1 is complete under Amendment 11.
 
 ### T-C3 — Scheduled restore verification · PASSED 2026-09-26
 
