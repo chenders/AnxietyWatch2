@@ -1,7 +1,7 @@
 [Unit]
 Description=A&D UA-651BLE blood pressure collector
-After=bluetooth.service vitalsd.service vitals-bp-autoconnect.service
-Requires=bluetooth.service vitalsd.service
+After=bluetooth.service vitalsd.service vitals-bp-autoconnect.service vitals-ble-broker.service
+Requires=bluetooth.service vitalsd.service vitals-ble-broker.service
 Wants=vitals-bp-autoconnect.service
 
 [Service]
@@ -11,6 +11,9 @@ Restart=always
 RestartSec=3
 EnvironmentFile=/etc/vitals/bp-collector.env
 Environment=VITALSD_SOCKET=/run/vitals/vitalsd.sock
+Environment=VITALS_BLE_BROKER_SOCKET=/run/vitals/ble-broker.sock
+# VITALS_BLE_ADAPTER_SELECTOR must be supplied by deployment inventory;
+# never use hci0/hci1 here.
 Environment=BP_STATE_DIR=/var/lib/vitals/bp
 Environment=BP_JOURNAL=/var/lib/vitals/bp/raw-frames.journal
 # StateDirectory, not ReadWritePaths: a ReadWritePaths target that does not
@@ -29,7 +32,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-RestrictAddressFamilies=AF_UNIX AF_NETLINK AF_BLUETOOTH
+RestrictAddressFamilies=AF_UNIX
 RestrictNamespaces=true
 LockPersonality=true
 MemoryDenyWriteExecute=true
