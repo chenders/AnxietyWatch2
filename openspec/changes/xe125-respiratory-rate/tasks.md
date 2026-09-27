@@ -3,7 +3,7 @@
 **Status:** Spec accepted for implementation by explicit user instruction. The first two tasks are
 being started immediately; no radar sample is promoted to the alarm path by this change.
 
-**Amends:** `docs/specs/AMENDMENTS.md` (mandatory); no accepted amendment is changed.
+**Amends:** `docs/specs/AMENDMENTS.md` (mandatory), amendment 11's ten-minute hardware-check ceiling; no accepted amendment is changed.
 
 ## Task index
 
@@ -86,7 +86,8 @@ being started immediately; no radar sample is promoted to the alarm path by this
 **Modifies:** the implementation notes for this change when evidence exists.
 
 **Do:** connect the board over USB1, identify the Enhanced port, flash and record a compatible
-XM125/A121 module firmware version, run a short capture, and preserve at least one H5 recording.
+XM125/A121 module firmware version, run a capture of no more than ten minutes, and preserve at least
+one H5 recording.
 
 **Verify:** a Pi command that proves the Enhanced port exists, the session produced JSONL frames, and
 the requested raw recording is non-empty.
@@ -106,8 +107,9 @@ the requested raw recording is non-empty.
 **Modifies:** the implementation notes for this change when evidence exists.
 
 **Do:** measure one stationary person at 0.5–1 m using overhead and side placements, include supine
-and side positions, bedding, deliberate movement, no-presence, and a respiratory reference. Record
-which observations are valid and which are unknown.
+and side positions, bedding, deliberate movement, no-presence, and a respiratory reference. Bound
+each individual hardware capture to ten minutes. Record which observations are valid and which are
+unknown.
 
 **Verify:** a report-check command that requires every matrix case, a reference value, and explicit
 unknown/motion counts.

@@ -3,7 +3,7 @@
 **Status:** T-E1 established a source-provided identity for device-storage records; T-E2 is now
 unblocked for the stored-session collector. The anonymous live stream remains non-durable.
 
-**Amends:** `docs/specs/AMENDMENTS.md` (mandatory); no accepted amendment is changed.
+**Amends:** `docs/specs/AMENDMENTS.md` (mandatory), amendment 11's ten-minute hardware-check ceiling; no accepted amendment is changed.
 
 ## Task index
 
@@ -82,8 +82,8 @@ create a parallel durable history file or alter H10/BP semantics.
 `deploy/stopgap/live-vitals-watch`
 
 **Do:** Build and verify before the service switch; stop the display-only service and start exactly
-one approved durable EMAY collector. Do not restart H10/vitalsd/PostgreSQL/kiosk, run active scans,
-or reboot the Pi.
+one approved durable EMAY collector. Bound the live hardware verification to ten minutes. Do not
+restart H10/vitalsd/PostgreSQL/kiosk, run active scans, or reboot the Pi.
 
 **Verify:** a recorded pi-host command must show the durable unit active, the current EMAY stream
 fresh, the EMAY source/type row count increasing, and H10 still advancing.
