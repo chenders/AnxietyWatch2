@@ -121,6 +121,8 @@ mod bluez_boundary {
 
     /// How long to look for the device before calling it out of range.
     const DISCOVERY_TIMEOUT: Duration = Duration::from_mins(1);
+    /// Amendment 11 bounds every non-ResMed hardware check to ten minutes.
+    const CAPTURE_DURATION: Duration = Duration::from_mins(10);
 
     #[derive(Clone, Copy)]
     enum Preparation<H> {
@@ -207,7 +209,9 @@ mod bluez_boundary {
     #[rustfmt::skip]
     async fn find(adapter: &Adapter, target: Address) -> bluer::Result<Option<Device>> {
         if let Ok(device) = adapter.device(target) {
-            if device.is_paired().await.unwrap_or(false) || device.name().await.is_ok() {
+            if device.is_paired().await.unwrap_or(false)
+                || device.remote_address().await.is_ok()
+            {
                 return Ok(Some(device));
             }
         }
@@ -287,7 +291,17 @@ mod bluez_boundary {
     }
 
     #[rustfmt::skip]
-    async fn capture(hr_char: HrCharacteristic) -> bluer::Result<CaptureStats> { Ok(consume_notifications(Box::pin(hr_char.notify().await?), tokio::signal::ctrl_c(), emit_heart_rate).await) }
+    async fn capture(hr_char: HrCharacteristic) -> bluer::Result<CaptureStats> {
+        let stop = async {
+            tokio::select! {
+                _ = tokio::signal::ctrl_c() => {},
+                _ = tokio::time::sleep(CAPTURE_DURATION) => {
+                    eprintln!("hr-spike: ten-minute hardware-check limit reached");
+                }
+            }
+        };
+        Ok(consume_notifications(Box::pin(hr_char.notify().await?), stop, emit_heart_rate).await)
+    }
 
     fn terminal_code(target: Address, state: DeviceState) -> i32 {
         match state {

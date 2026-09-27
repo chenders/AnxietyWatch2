@@ -255,10 +255,10 @@ def report(a: Analysis) -> str:
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("log", type=Path)
-    minimum_duration = p.add_mutually_exclusive_group()
-    minimum_duration.add_argument("--require-duration-hours", type=float, default=None)
-    minimum_duration.add_argument("--require-duration-minutes", type=float, default=None)
-    p.add_argument("--max-duration-minutes", type=float, default=None)
+    p.add_argument("--require-duration-minutes", type=float, default=None)
+    # This tool is the bounded non-ResMed hardware gate; every invocation has
+    # a hard ten-minute ceiling. The ResMed integration does not use it.
+    p.add_argument("--max-duration-minutes", type=float, default=10.0)
     p.add_argument("--max-gap-seconds", type=float, default=None)
     p.add_argument(
         "--require-drift-report",
@@ -288,24 +288,17 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     failures: list[str] = []
-    if args.require_duration_hours is not None:
-        hrs = a.duration_s / 3600.0
-        if hrs < args.require_duration_hours:
-            failures.append(
-                f"duration {hrs:.2f}h is under the required {args.require_duration_hours}h"
-            )
     if args.require_duration_minutes is not None:
         minutes = a.duration_s / 60.0
         if minutes < args.require_duration_minutes:
             failures.append(
                 f"duration {minutes:.2f}m is under the required {args.require_duration_minutes}m"
             )
-    if args.max_duration_minutes is not None:
-        minutes = a.duration_s / 60.0
-        if minutes > args.max_duration_minutes:
-            failures.append(
-                f"duration {minutes:.2f}m exceeds the maximum {args.max_duration_minutes}m"
-            )
+    minutes = a.duration_s / 60.0
+    if minutes > args.max_duration_minutes:
+        failures.append(
+            f"duration {minutes:.2f}m exceeds the maximum {args.max_duration_minutes}m"
+        )
     if args.max_gap_seconds is not None:
         longest = a.longest_gap()
         if longest > args.max_gap_seconds:

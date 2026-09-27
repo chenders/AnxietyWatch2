@@ -84,10 +84,10 @@ def test_malformed_lines_are_collected_not_skipped(tmp_path: Path) -> None:
 
 
 def test_a_short_capture_fails_the_duration_requirement(tmp_path: Path, capsys) -> None:
-    log = write(tmp_path, steady(seconds=3600.0))
-    rc = main([str(log), "--require-duration-hours", "8"])
+    log = write(tmp_path, steady(seconds=8 * 60.0))
+    rc = main([str(log), "--require-duration-minutes", "9"])
     assert rc == 1
-    assert "under the required 8" in capsys.readouterr().err
+    assert "under the required 9" in capsys.readouterr().err
 
 
 def test_a_ten_minute_capture_passes_the_bounded_hardware_gate(tmp_path: Path) -> None:
@@ -110,13 +110,13 @@ def test_capture_over_ten_minutes_fails_the_maximum(tmp_path: Path, capsys) -> N
 
 
 def test_a_full_length_capture_passes(tmp_path: Path) -> None:
-    log = write(tmp_path, steady(seconds=8 * 3600.0 + 60))
-    assert main([str(log), "--require-duration-hours", "8", "--max-gap-seconds", "300"]) == 0
+    log = write(tmp_path, steady(seconds=9 * 60.0 + 1))
+    assert main([str(log), "--require-duration-minutes", "9", "--max-gap-seconds", "300"]) == 0
 
 
 def test_a_long_gap_fails_and_names_its_length(tmp_path: Path, capsys) -> None:
-    log = write(tmp_path, steady(seconds=8 * 3600.0 + 400, gap_at=3600.0, gap_len=400.0))
-    rc = main([str(log), "--require-duration-hours", "8", "--max-gap-seconds", "300"])
+    log = write(tmp_path, steady(seconds=9 * 60.0 + 1, gap_at=120.0, gap_len=400.0))
+    rc = main([str(log), "--require-duration-minutes", "9", "--max-gap-seconds", "300"])
     assert rc == 1
     err = capsys.readouterr().err
     assert "longest gap" in err
@@ -124,10 +124,10 @@ def test_a_long_gap_fails_and_names_its_length(tmp_path: Path, capsys) -> None:
 
 
 def test_malformed_lines_fail_the_gate(tmp_path: Path, capsys) -> None:
-    lines = steady(seconds=8 * 3600.0 + 60)
-    lines.insert(500, "this is not a notification")
+    lines = steady(seconds=9 * 60.0 + 1)
+    lines.insert(100, "this is not a notification")
     log = write(tmp_path, lines)
-    rc = main([str(log), "--require-duration-hours", "8"])
+    rc = main([str(log), "--require-duration-minutes", "9"])
     assert rc == 1
     assert "malformed" in capsys.readouterr().err
 
@@ -152,7 +152,7 @@ def test_a_one_line_capture_fails_and_explains_systemd_run(tmp_path: Path, capsy
     bounded capture becomes a one-line file, and a gate that accepted it
     would cost another hardware check."""
     log = write(tmp_path, ["Running as unit: hrspike.service"])
-    rc = main([str(log), "--require-duration-hours", "8"])
+    rc = main([str(log)])
     assert rc == 1
     err = capsys.readouterr().err
     assert "--pipe" in err, "the failure must name the actual cause"
