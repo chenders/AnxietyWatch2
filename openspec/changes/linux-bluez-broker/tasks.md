@@ -14,7 +14,7 @@ Move Linux application-level Bluetooth ownership to one broker per verified phys
 - BP must never receive a capability or code path that calls `Device1.Connect`; it waits for kernel autoconnect and preserves the `sync: true`/raw-journal contract from amendment 06.
 - `hci0`/`hci1` are runtime names, not hardware identity. Never bind by index alone.
 - No unbounded discovery, retry, adapter reset, or per-source global power cycle.
-- Wellue remains disabled. H10 acceptance requires fresh physical measurements. AirSense therapy lifecycle remains separate.
+- Wellue remains disabled. H10 physical acceptance is explicitly deferred to `openspec/changes/h10-physical-acceptance/`; this change makes no H10 acceptance claim. AirSense therapy lifecycle remains separate.
 - No task changes `/boot/firmware`, applies `dtoverlay=disable-bt`, pairs devices, re-enables Wellue, or performs an unapproved Pi operation.
 - Acceptance evidence distinguishes measured-good, measured-bad, stale/degraded, and unknown.
 
@@ -104,7 +104,7 @@ Keep kernel accept-list registration separate from the unprivileged broker and B
 **Reads:** `openspec/changes/linux-bluez-broker/design.md`, `docs/reviews/bluetooth-rewrite/ARBITRATION-ARCHITECTURE.md`, `docs/reviews/bluetooth-rewrite/RELIABILITY-TEST-PLAN.md`, `crates/vitals-ble-broker/Cargo.toml`, `crates/vitals-ble-broker/src/lib.rs`, `crates/vitals-ble-broker/src/protocol.rs`, `crates/vitals-ble-broker/src/bluez.rs`, `crates/vitals-collectors/Cargo.toml`, `crates/vitals-collectors/src/bin/h10_collector.rs`, `crates/vitals-collectors/src/h10_reconnect.rs`, `crates/vitals-collectors/src/h10_build.rs`, `deploy/vitals-h10.service`, `docs/specs/AMENDMENTS.md`
 **Modifies:** exactly one selected collector, its unit, and broker client wiring; selection requires owner approval after T-BT-0
 
-Use the H10 worker as the first source migration target only after the deployment inventory and offline/fake tests are green; this is a transport migration, not H10 acceptance. Remove its direct BlueZ capability and route discovery/connect/GATT operations through the broker. Preserve protocol decoding, source identity, status, and ingest. Add a source-level rollback that stops the new client, proves lease/subscription release, and starts the prior approved owner without overlap. This task must not re-enable Wellue.
+Use the H10 worker as the first source migration target only after the deployment inventory and offline/fake tests are green; this is a transport migration, not H10 physical acceptance. Physical H10 validation is deferred to `openspec/changes/h10-physical-acceptance/`. Remove its direct BlueZ capability and route discovery/connect/GATT operations through the broker. Preserve protocol decoding, source identity, status, and ingest. Add a source-level rollback that stops the new client, proves lease/subscription release, and starts the prior approved owner without overlap. This task must not re-enable Wellue.
 
 **Verify:** `cargo test --workspace && test -z "$(rg -n 'bluer|Device1\\.(StartDiscovery|StopDiscovery|Connect|Disconnect)' crates/vitals-collectors/src/bin/h10_collector.rs || true)" && git diff --check`
 
@@ -132,7 +132,7 @@ Migrate each remaining authorized source independently. Keep established streams
 **Reads:** `openspec/changes/linux-bluez-broker/design.md`, `docs/reviews/bluetooth-rewrite/RELIABILITY-TEST-PLAN.md`, `docs/reviews/bluetooth-rewrite/PI-BLUEZ-PLATFORM.md`, `docs/specs/AMENDMENTS.md`, `docs/specs/2026-08-03-amendment-05-corrections-and-runtime-safety.md`, `docs/specs/2026-08-03-amendment-06-bp-identity-and-durability.md`, `crates/vitals-ble-broker/src/lease.rs`, `crates/vitals-ble-broker/src/bp.rs`, `crates/vitals-ble-broker/src/protocol.rs`, `crates/vitals-ble-broker/tests/bluez_contract.rs`, `crates/vitals-ble-broker/tests/bp_policy.rs`
 **Creates:** deterministic integration tests, sanitized evidence fixtures, and acceptance documentation
 
-Add and run the absent-Wellue plus BP-measurement test, discovery filter restoration tests, worker death/backpressure tests, broker/BlueZ restart tests, adapter-generation tests, BP journal/`sync: true` tests, and finite-window/overnight coexistence evidence. Record packet gaps, notification latency, keepalive misses, reconnects, discovery hold time, queue delay, append latency, and unknown/degraded transitions. Linux/Pi evidence must be distinguished from host/fake tests. No source is accepted from a process-start or stale `Connected` observation.
+Add and run the absent-Wellue plus BP-measurement test, discovery filter restoration tests, worker death/backpressure tests, broker/BlueZ restart tests, adapter-generation tests, BP journal/`sync: true` tests, and finite-window/overnight coexistence evidence. Record packet gaps, notification latency, keepalive misses, reconnects, discovery hold time, queue delay, append latency, and unknown/degraded transitions. Linux/Pi evidence must be distinguished from host/fake tests. No source is accepted from a process-start or stale `Connected` observation. H10 physical acceptance is deferred to `openspec/changes/h10-physical-acceptance/` and is not a gate for this change.
 
 **Verify:** `cargo test --workspace && cargo clippy --workspace --all-targets -- -D warnings && git diff --check`
 

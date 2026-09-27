@@ -1,8 +1,8 @@
 # Linux BlueZ broker acceptance gates
 
-**Status:** portable/fake gates recorded; Linux/Pi gates remain open.
-**Scope:** T-BT-7 deterministic policy evidence only. No Pi, SSH, service, firmware, overlay,
-Wellue, or physical H10 operation was performed.
+**Status:** portable/fake gates recorded; BP Linux/Pi gates are recorded; H10 physical acceptance is explicitly deferred to `openspec/changes/h10-physical-acceptance/`.
+**Scope:** T-BT-7 deterministic policy evidence plus the bounded BP Pi canary. No firmware,
+overlay, pairing, Wellue enablement, or physical H10 measurement was performed.
 
 ## Portable evidence
 
@@ -41,7 +41,7 @@ These remain **unknown/not run** and cannot be substituted by the portable tests
 - absent-Wellue plus real BP measurement and durable spool evidence;
 - notification gaps, queue delay, reconnects, and finite-window coexistence;
 - manager restart, `bluetoothd` restart, reboot, and USB hotplug recovery;
-- fresh physical H10 measurements and acceptance;
+- fresh physical H10 measurements and acceptance (deferred to `openspec/changes/h10-physical-acceptance/`);
 - Wellue enablement (remains disabled).
 
 No process-start, stale `Connected`, fake frame, or emulator result closes a physical gate.
