@@ -595,9 +595,21 @@ async fn process_operation(
                     let sender = sender.clone();
                     let lease_id = operation.lease_id;
                     let operation_id = operation.operation_id;
+                    eprintln!(
+                        "vitals-ble-broker: subscription active lease={} operation={}",
+                        lease_id.value(),
+                        operation_id
+                    );
                     tokio::spawn(async move {
                         futures::pin_mut!(stream);
                         while let Some(payload) = stream.next().await {
+                            let payload_len = payload.len();
+                            eprintln!(
+                                "vitals-ble-broker: indication received lease={} operation={} bytes={}",
+                                lease_id.value(),
+                                operation_id,
+                                payload_len
+                            );
                             if sender
                                 .send(ServerMessage::Frame {
                                     lease_id,
@@ -608,9 +620,19 @@ async fn process_operation(
                                 .await
                                 .is_err()
                             {
+                                eprintln!(
+                                    "vitals-ble-broker: indication delivery stopped lease={} operation={}",
+                                    lease_id.value(),
+                                    operation_id
+                                );
                                 return;
                             }
                         }
+                        eprintln!(
+                            "vitals-ble-broker: notification stream ended lease={} operation={}",
+                            lease_id.value(),
+                            operation_id
+                        );
                         let _ = sender
                             .send(ServerMessage::Disconnected {
                                 operation_id,

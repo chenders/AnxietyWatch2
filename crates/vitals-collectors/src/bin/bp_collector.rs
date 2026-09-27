@@ -27,7 +27,7 @@ mod linux {
     use std::io::{self, Write as _};
     use std::os::unix::fs::OpenOptionsExt as _;
     use std::path::{Path, PathBuf};
-    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+    use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
     use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
     use tokio::net::UnixStream;
     use vitals_ble_broker::bp::bp_capabilities;
@@ -48,6 +48,10 @@ mod linux {
     /// the cuff has already deleted its copy. Amendment 06 §2.2: the loss must
     /// be visible, so a wedged daemon becomes a named error, not a stall.
     const APPEND_TIMEOUT: Duration = Duration::from_secs(30);
+    /// Do not subscribe to the cuff until the durable sink accepts connections.
+    /// The cuff may deliver exactly one indication and then discard it.
+    const VITALSD_READY_TIMEOUT: Duration = Duration::from_secs(30);
+    const VITALSD_READY_POLL: Duration = Duration::from_millis(100);
 
     struct Config {
         target: String,
@@ -125,6 +129,28 @@ mod linux {
             .duration_since(UNIX_EPOCH)
             .map_err(|e| format!("system clock is before Unix epoch: {e}"))?;
         i64::try_from(d.as_micros()).map_err(|_| "Unix timestamp does not fit i64".to_owned())
+    }
+
+    async fn wait_for_vitalsd(socket: &Path) -> Result<(), String> {
+        let started = Instant::now();
+        loop {
+            match UnixStream::connect(socket).await {
+                Ok(_) => {
+                    eprintln!("bp-collector: vitalsd durable socket is ready");
+                    return Ok(());
+                }
+                Err(_) if started.elapsed() < VITALSD_READY_TIMEOUT => {
+                    tokio::time::sleep(VITALSD_READY_POLL).await;
+                }
+                Err(error) => {
+                    return Err(format!(
+                        "vitalsd readiness timed out after {}s for {}: {error}",
+                        VITALSD_READY_TIMEOUT.as_secs(),
+                        socket.display()
+                    ));
+                }
+            }
+        }
     }
 
     async fn append_durable(socket: &Path, samples: Vec<WireSample>) -> Result<(), String> {
@@ -240,6 +266,7 @@ mod linux {
             .map_err(|e| format!("open session minter: {e}"))?;
         let mut journal = RawJournal::open(&config.journal)
             .map_err(|e| format!("open raw journal {}: {e}", config.journal.display()))?;
+        wait_for_vitalsd(&config.socket).await?;
         let mut client = BrokerClient::connect_source(
             Source::Bp,
             &config.broker_socket,
@@ -289,6 +316,31 @@ mod linux {
                 Ok(count) => eprintln!("bp-collector: connection ended after {count} frame(s)"),
                 Err(e) => eprintln!("bp-collector: connection failed: {e}"),
             }
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use tempfile::tempdir;
+        use tokio::net::UnixListener;
+
+        #[tokio::test(flavor = "current_thread")]
+        async fn waits_for_vitalsd_socket_readiness() {
+            let directory = tempdir().expect("temporary directory");
+            let socket = directory.path().join("vitalsd.sock");
+            let delayed_socket = socket.clone();
+            let listener = tokio::spawn(async move {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+                let listener = UnixListener::bind(delayed_socket).expect("bind test socket");
+                tokio::time::sleep(Duration::from_millis(100)).await;
+                drop(listener);
+            });
+
+            wait_for_vitalsd(&socket)
+                .await
+                .expect("socket becomes ready");
+            listener.await.expect("listener task");
         }
     }
 
