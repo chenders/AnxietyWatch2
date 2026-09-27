@@ -7,13 +7,13 @@ being started immediately; no radar sample is promoted to the alarm path by this
 
 ## Task index
 
-- [x] 1.1 Registry type and source
-- [x] 1.2 Bench JSONL capture runner
-- [ ] 2.1 Live Pi acquisition and firmware pin
-- [ ] 2.2 Placement/reference capture matrix
-- [ ] 3.1 Transport-neutral Rust frame model
-- [ ] 3.2 Rust production collector and `vitalsd` publication
-- [ ] 4.1 Validation gate and optional alert promotion
+- [x] T-X1 — Registry type and source
+- [x] T-X2 — Bench JSONL capture runner
+- [ ] T-X3 — Live Pi acquisition and firmware pin
+- [ ] T-X4 — Placement/reference capture matrix
+- [ ] T-X5 — Transport-neutral Rust frame model
+- [ ] T-X6 — Rust production collector and `vitalsd` publication
+- [ ] T-X7 — Validation gate and optional alert promotion
 
 ## 1. Bench foundation
 
@@ -81,7 +81,8 @@ being started immediately; no radar sample is promoted to the alarm path by this
 **Reads:** `docs/specs/AMENDMENTS.md`, `xe125/README.md`,
 `openspec/changes/xe125-respiratory-rate/design.md`
 
-**Creates:** a recorded firmware/version note and raw session outside the repository's source tree.
+**Creates:** `tools/verify_xe125_live.sh`, plus a recorded firmware/version note and raw session
+outside the repository's source tree.
 
 **Modifies:** the implementation notes for this change when evidence exists.
 
@@ -89,8 +90,7 @@ being started immediately; no radar sample is promoted to the alarm path by this
 XM125/A121 module firmware version, run a capture of no more than ten minutes, and preserve at least
 one H5 recording.
 
-**Verify:** a Pi command that proves the Enhanced port exists, the session produced JSONL frames, and
-the requested raw recording is non-empty.
+**Verify:** `ssh "$PI_HOST" 'cd ~/AnxietyWatch2 && tools/verify_xe125_live.sh ~/vitals/xe125'`
 
 **Expect:** exit 0; a failed connection names the blocker instead of being accepted as no breathing.
 
@@ -102,7 +102,7 @@ the requested raw recording is non-empty.
 **Reads:** `docs/specs/AMENDMENTS.md`, `xe125/README.md`,
 `openspec/changes/xe125-respiratory-rate/specs/xe125-respiratory-rate/spec.md`
 
-**Creates:** raw captures and a measured placement/reference report.
+**Creates:** `tools/verify_xe125_matrix.py`, raw captures, and a measured placement/reference report.
 
 **Modifies:** the implementation notes for this change when evidence exists.
 
@@ -111,8 +111,7 @@ and side positions, bedding, deliberate movement, no-presence, and a respiratory
 each individual hardware capture to ten minutes. Record which observations are valid and which are
 unknown.
 
-**Verify:** a report-check command that requires every matrix case, a reference value, and explicit
-unknown/motion counts.
+**Verify:** `python3 tools/verify_xe125_matrix.py ~/vitals/xe125/placement-report.json`
 
 **Expect:** exit 0 only when the matrix is complete; no numeric result is accepted for a no-presence
 or motion case.
@@ -129,15 +128,15 @@ or motion case.
 `openspec/changes/xe125-respiratory-rate/design.md`, `crates/vitals-core/src/lib.rs`,
 `crates/vitals-proto/src/lib.rs`
 
-**Creates:** a tested Rust module/crate for A121 frame/state normalization and quality decisions;
-add a fuzz target if it parses raw bytes.
+**Creates:** a tested Rust module/crate for A121 frame/state normalization and quality decisions,
+a fuzz target if it parses raw bytes, and `scripts/verify_xe125_frame.sh`.
 
 **Modifies:** workspace membership only if the design proves a new crate is necessary.
 
 **Do:** define owned I/Q/frame metadata without host-time identity, represent the four app states,
 reject non-finite/out-of-range rates, and keep the module independent of BlueZ, SQL, and systemd.
 
-**Verify:** the crate's unit, clippy, and fuzz/Kani commands, with zero warnings and no panic paths.
+**Verify:** `scripts/verify_xe125_frame.sh`
 
 **Expect:** exit 0; all invalid and unknown states are tested.
 
@@ -151,7 +150,8 @@ stable module identity · **Review required:** yes
 `openspec/changes/xe125-respiratory-rate/design.md`, `crates/vitalsd/src/main.rs`,
 `crates/vitals-proto/src/lib.rs`, `crates/vitals-core/src/lib.rs`, `vitals/registry.toml`
 
-**Creates:** a Linux-only Rust collector, tests, raw-frame journal wiring, and a service definition.
+**Creates:** a Linux-only Rust collector, tests, raw-frame journal wiring, a service definition,
+and `scripts/verify_xe125_collector.sh` plus its live socket-check command.
 
 **Modifies:** `vitalsd` primary-source configuration only in a separately reviewed promotion step.
 
@@ -159,8 +159,7 @@ stable module identity · **Review required:** yes
 durable ingestion, publish only valid measured rates through `vitalsd`, retain quality/provenance,
 and leave the alarm path disabled.
 
-**Verify:** Pi build/test/clippy plus a live capture command proving valid samples and explicit
-unknown states reach the socket without using arrival time as identity.
+**Verify:** `ssh "$PI_HOST" 'cd ~/AnxietyWatch2 && scripts/verify_xe125_collector.sh'`
 
 **Expect:** exit 0; a missing identity or invalid rate is visibly quarantined.
 
@@ -175,14 +174,15 @@ unknown states reach the socket without using arrival time as identity.
 `openspec/changes/xe125-respiratory-rate/specs/xe125-respiratory-rate/spec.md`,
 `openspec/changes/xe125-respiratory-rate/design.md`, validation reports
 
-**Creates:** an accepted validation report or a permanent decision to keep the source experimental.
+**Creates:** `tools/verify_xe125_validation.py`, an accepted validation report or a permanent
+decision to keep the source experimental.
 
 **Modifies:** alerting configuration only after explicit acceptance.
 
 **Do:** review accuracy, gaps, false positives/negatives, motion behavior, placement, and failure
 states. Promote the source only with a separate explicit alert-policy decision.
 
-**Verify:** a report gate that fails unless all required evidence and owner acceptance are present.
+**Verify:** `python3 tools/verify_xe125_validation.py ~/vitals/xe125/validation-report.json`
 
 **Expect:** exit 0 only for an explicit decision; otherwise the radar remains record-only.
 
