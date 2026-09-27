@@ -23,7 +23,7 @@ backup.
 | Stage | Deliverable |
 |---|---|
 | 0 | Hardware floor: NVMe root, audio out, Sena dongle, watchdog, governor |
-| 1 | Thesis spike: 8-hour uninterrupted Polar H10 capture with a measured gap histogram |
+| 1 | Thesis spike: ten-minute Polar H10 hardware-path check with a measured gap histogram |
 | 2 | Storage floor: Postgres 16 bare metal on NVMe, pgBackRest, verified restore |
 | 3 | `vitals` core: registry codegen, decoder crates, `vitalsd`, spool drain, `bp-collector` |
 
@@ -46,7 +46,9 @@ Two documents it amends:
 ## Success criteria
 
 1. `/` runs from NVMe; microSD holds `/boot/firmware` only.
-2. A Polar H10 capture runs 8 hours with a recorded drop count and gap histogram.
+2. A Polar H10 hardware-path check runs for ten minutes with a recorded gap histogram and no
+malformed notifications. This is not an endurance claim; the ResMed AirSense 11 integration is the
+sole hardware-check exception to the ten-minute ceiling.
 3. `pgbackrest check` passes and the monthly restore-verification timer has completed once green.
 4. A BP measurement taken on the cuff appears in `samples` within 60 s of the cuff being in range,
    with `source = ad_ua651ble` and values in canonical units.

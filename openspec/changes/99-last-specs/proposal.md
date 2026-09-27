@@ -12,7 +12,7 @@ provenance and acceptance contract.
 
 ## Migration history
 
-`T-B1 — Eight-hour Polar H10 capture` was temporarily consolidated here from
+`T-B1 — Polar H10 hardware check` was temporarily consolidated here from
 `openspec/changes/pi5-vitals-core/tasks.md`, then returned to that original group when the H10 sensor
 became available. The original task is authoritative again; this change retains the migration model
 for future recovered tasks.

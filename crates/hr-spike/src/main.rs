@@ -1,8 +1,7 @@
-//! T-B1 — eight-hour Polar H10 capture.
+//! T-B1 — bounded Polar H10 hardware check.
 //!
-//! The entire project rests on the Pi holding a BLE connection all night. This
-//! measures that before anything is built on top of it, which is why the task
-//! sits ahead of the storage and core work.
+//! The project rests on the Pi holding a BLE connection and receiving valid RR
+//! notifications. This checks that path before anything is built on top of it.
 //!
 //! The `BlueZ` adapter is deliberately kept at the bottom of this file. The
 //! argument, state, notification, and exit decisions above it are testable
@@ -68,7 +67,7 @@ fn record_notification(stats: &mut CaptureStats, buf: &[u8]) -> Option<HeartRate
     }
 }
 
-/// Maps a completed state to the process status used by the overnight log.
+/// Maps a completed state to the process status used by the capture log.
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 fn capture_exit_code(state: DeviceState, decoded_notifications: u64) -> i32 {
     match state {
@@ -171,8 +170,8 @@ mod bluez_boundary {
     }
 
     /// One line of capture. Written to stdout and flushed per notification: an
-    /// eight-hour run that buffers loses everything if the process is killed,
-    /// and the whole point is surviving the night.
+    /// bounded run that buffers loses everything if the process is killed,
+    /// so flush every notification as it arrives.
     fn emit(bpm: u16, rr_s: &[f64]) {
         use std::io::Write as _;
         // The decoder yields canonical seconds; this capture file format is

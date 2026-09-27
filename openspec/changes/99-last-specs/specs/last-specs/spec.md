@@ -6,7 +6,7 @@ The project MUST maintain one authoritative task contract for each task held by 
 host, dependencies, amendment references, review requirement, and Verify command.
 
 #### Scenario: T-B1 is moved into the consolidation change
-- **WHEN** the eight-hour Polar H10 task is moved from `pi5-vitals-core`
+- **WHEN** the Polar H10 hardware-check task is moved from `pi5-vitals-core`
 - **THEN** `99-last-specs/tasks.md` is authoritative for T-B1 and the former task list points to it
 
 #### Scenario: A task is present in a source checkout
@@ -20,7 +20,7 @@ The destination MUST retain the task's executable Verify command, and a task MUS
 complete unless that command exits zero.
 
 #### Scenario: A migrated task has not been verified
-- **WHEN** T-B1 has been moved but its overnight capture Verify command has not exited zero
+- **WHEN** T-B1 has been moved but its hardware-check Verify command has not exited zero
 - **THEN** T-B1 remains unchecked and is reported as incomplete
 
 #### Scenario: A migrated task is completed

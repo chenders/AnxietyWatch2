@@ -50,7 +50,7 @@ pane renders (`grep -n '^- \[' tasks.md`).
 - [x] T-A3 — Bring up the Sena UD100-G03 · implement-standard · pi · **gate G1 owner**
 - [x] T-A4 — Disable onboard Bluetooth · mechanical · pi · **blocked by G1**
 - [x] T-A5 — Watchdog, governor, update policy · mechanical · pi
-- [ ] T-B1 — Eight-hour Polar H10 capture · implement-complex · pi · **review**
+- [ ] T-B1 — Ten-minute Polar H10 hardware check · implement-complex · pi · **review**
 - [x] T-C1 — PostgreSQL 16 bare metal on NVMe · implement-standard · pi · **blocked by G2**
 - [x] T-C2 — pgBackRest, three tiers · implement-standard · pi · **review**
 - [x] T-C3 — Scheduled restore verification · implement-complex · pi · **review · gate G3 owner**
@@ -62,8 +62,8 @@ pane renders (`grep -n '^- \[' tasks.md`).
 - [x] T-D6 — bp-collector end to end · implement-complex · pi · **review · blocked by G3**
 
 Parallelism: T-D1 and T-D2 have no hardware dependency and may run on separate workers concurrently
-with all of Group A. T-B1 occupies a whole night — dispatch it when T-A4 is green and let the other
-groups proceed around it.
+with all of Group A. T-B1 is a bounded ten-minute hardware check — dispatch it when T-A4 is green
+and let the other groups proceed around it.
 
 ---
 
@@ -305,14 +305,16 @@ ssh "$PI_HOST" 'sudo sh -c "echo ondemand > /sys/devices/system/cpu/cpu0/cpufreq
 
 ## Group B — Thesis spike (Stage 1)
 
-### T-B1 — Eight-hour Polar H10 capture
+### T-B1 — Ten-minute Polar H10 hardware check
 
 **Tier:** implement-complex · **Host:** pi · **Context budget:** ~5k · **Depends:** T-A4
-**Amends:** 06 (§1.2 seq scope, §3 bonded-but-unencrypted state) · 05 (§1.4 clock drift, §4.3 IRK pairing) · 04 (§1 RR beat-time reconstruction) · 03 (§1 tactile evidence)
+**Amends:** 11 (ten-minute hardware-check ceiling) · 06 (§1.2 seq scope, §3 bonded-but-unencrypted state) · 05 (§1.4 clock drift, §4.3 IRK pairing) · 04 (§1 RR beat-time reconstruction) · 03 (§1 tactile evidence)
 **Review required:** yes
 
-The entire project rests on the Pi holding a BLE connection all night. **Measure this before
-building anything on top of it.** Deliberately placed before the storage and core work.
+The project rests on the Pi holding a BLE connection and receiving valid RR notifications.
+**Check that hardware path before building anything on top of it.** This is a bounded bring-up
+check, not an overnight endurance claim; the dedicated ResMed AirSense 11 integration is the only
+hardware check exempt from the ten-minute ceiling (amendment 11).
 
 **Creates:** `crates/hr-spike/` (a throwaway binary crate), `tools/gap_histogram.py`
 
@@ -377,40 +379,29 @@ script the acceptance check runs was never version-controlled.
    Distinguish three states, not two (amendment 06 §3): **device not found** (pairing fault),
    **out of range** (normal), and **bonded but `ServicesResolved` never fired within 10 s**
    (encryption could not resume — looks exactly like a quiet night, and is not one).
-5. Run the capture overnight under systemd-run so it survives your SSH session:
+5. Run a bounded ten-minute capture. It may run directly in the Pi session; `--pipe` remains
+   required when using `systemd-run` so stdout is the capture rather than a unit banner:
    ```sh
-   # --pipe, an ABSOLUTE ExecStart, and the redirect on systemd-run itself.
-   # Without --pipe the child's stdout goes to the journal and the shell
-   # redirect captures only "Running as unit: hrspike.service" -- an 8-hour
-   # capture into a one-line file, which the Verify then happily reads.
-   # A relative path resolves against the unit's WorkingDirectory, not yours.
-   systemd-run --user --pipe --unit=hrspike --setenv=H10_MAC=<mac> \
-     "$PWD/target/release/hr-spike" > ~/vitals/spike/night1.log
+   timeout --signal=INT --kill-after=5 10m \
+     env H10_MAC=<mac> "$PWD/target/release/hr-spike" \
+     > ~/vitals/spike/night1.log
    ```
-6. In the morning, compute the gap histogram with `tools/gap_histogram.py`: read the log, diff
-   consecutive timestamps, and print count of gaps in each bucket `<2s, 2-10s, 10-60s, 60s-5m, >5m`,
-   plus total duration, total RR count, and longest gap.
-   Also report, per A05 §1.4 and §5:
-   - **observed clock drift** — fit cumulative RR sum against host arrival time; a rate outside
-     ±0.5% is a sensor or host clock fault, not normal. Nothing else in this system will measure it.
-   - **Dropped-notification count**, not a `seq` gap count. A05 §1.3 offers `max(seq) - count(*)`
-     as the lost-beat metric, but A05 §1.1 defines RR `seq` as the count of intervals *received*,
-     which is dense by construction — so that expression is identically zero and cannot detect
-     anything. The H10 transmits no beat counter (the same payload anonymity amendment 06 §1
-     documents for the cuff). Estimate drops instead from the ratio of elapsed wall time to summed
-     RR duration per connection, and report it as an estimate.
-7. Record the histogram verbatim in `## Implementation notes`. **This number is the project's
-   foundation — if the longest gap exceeds 5 minutes, stop and report before proceeding.**
+6. Compute the gap histogram with `tools/gap_histogram.py`: read the log, diff consecutive
+   timestamps, and print count of gaps in each bucket `<2s, 2-10s, 10-60s, 60s-5m, >5m`, plus
+   total duration, total RR count, and longest gap. Report a drift figure when estimable, but do not
+   require one: ten minutes proves the notification path, not overnight clock stability. The
+   dropped-notification estimate remains labelled as an estimate, never a `seq` gap count.
+7. Record the histogram verbatim in `## Implementation notes`. **If the longest gap exceeds 5
+   minutes, stop and report before proceeding.**
 
-**Verify:** `ssh "$PI_HOST" 'cd ~/AnxietyWatch2 && python3 tools/gap_histogram.py ~/vitals/spike/night1.log --require-duration-hours 8 --max-gap-seconds 300 --require-drift-report'`
-**Expect:** exit 0. The script must exit nonzero if duration < 8 h, if longest gap > 300 s, or if
-`--require-drift-report` was passed and no drift figure could be computed. A flag a script may
-accept and ignore is a check that cannot fail.
+**Verify:** `ssh "$PI_HOST" 'cd ~/AnxietyWatch2 && python3 tools/gap_histogram.py ~/vitals/spike/night1.log --require-duration-minutes 10 --max-gap-seconds 300'`
+**Expect:** exit 0. The script must exit nonzero if duration < 10 minutes, if longest gap > 300 s,
+or if the capture contains malformed lines.
 
 **Commit:**
 ```sh
 git add openspec/changes/pi5-vitals-core/tasks.md crates/hr-spike/ tools/gap_histogram.py
-git commit -m "spike(T-B1): record 8-hour Polar H10 capture gap histogram"
+git commit -m "spike(T-B1): record ten-minute Polar H10 hardware check"
 ```
 
 ---
@@ -1146,7 +1137,15 @@ reading in the store.
 ## Implementation notes
 
 <!-- Conductor: record scope deltas, measured results, and decisions here as they happen.
-     T-B1's gap histogram goes here verbatim — it is the project's foundational measurement. -->
+     T-B1's gap histogram goes here verbatim — it is the project's bounded hardware evidence. -->
+
+### T-B1 — ten-minute hardware check · Verify passed 2026-09-27; review pending
+
+Amendment 11 replaced the overnight contract with a ten-minute ceiling for every hardware check
+except the dedicated ResMed AirSense 11 integration. The exact T-B1 Verify command exited 0 on
+`pi-host`: 602 notifications, its RR intervals, 601 seconds, longest gap 2.5 seconds, and no
+malformed lines. Drift was correctly reported as not estimable for this short run. The T-B1 task
+remains unchecked until its required review is complete.
 
 ### T-C3 — Scheduled restore verification · PASSED 2026-09-26
 
@@ -1514,10 +1513,10 @@ malformed payload (answered, connection survives), an oversized length prefix (r
 allocation, daemon survives), a disconnected subscriber (forgotten, not leaked), and four concurrent
 clients.
 
-### T-B1 — tooling built 2026-08-03 · capture not yet run
+### T-B1 — tooling built 2026-08-03 · superseded by Amendment 11
 
-The night itself still has to happen. Everything it needs is built, verified on both hosts, and
-committed.
+The original overnight capture contract was replaced by Amendment 11. The tooling remains useful,
+but T-B1 now requires only a bounded ten-minute H10 hardware-path check.
 
 **Built:**
 
@@ -1543,8 +1542,8 @@ committed.
 **What the gate refuses to accept:**
 
 - **A one-line capture**, naming `--pipe` as the cause. `systemd-run` without it sends the child's
-  stdout to the journal and the shell redirect captures only the unit banner — an eight-hour run
-  into a one-line file. A gate that accepted it would cost another night.
+  stdout to the journal and the shell redirect captures only the unit banner — even a bounded run
+  into a one-line file. A gate that accepted it would cost another hardware check.
 - **`--require-drift-report` when drift could not be computed.** A flag a script may accept and
   ignore is a check that cannot fail.
 - Malformed lines, which are collected and counted rather than skipped: silently skipping would make
@@ -1569,20 +1568,21 @@ same payload anonymity amendment 06 §1 documents for the cuff.
    `#[cfg(target_os = "linux")]` body must be built on the Pi before it is called done** — a clean
    local build proves only that the stub compiles.
 
-**Still required, and it needs you:** pair the H10 (`bluetoothctl pair` + `btmgmt add-device -a 2`),
-wear it overnight with a moist strap, and run the capture under `systemd-run --pipe`. The strap must
-be damp or the H10 does not advertise at all.
+**Historical note:** the original contract required pairing and an overnight run. Amendment 11
+replaces that with a ten-minute check. Pair the H10 (`bluetoothctl pair` + `btmgmt add-device -a 2`)
+and keep the strap damp or it may not advertise.
 
 ### T-B1 substitute — EMAY `SleepO2` capture, tooling verified live 2026-08-03
 
 The H10 strap could not be found, so the thesis spike moves to the oximeter. This is a substitution,
 not a downgrade:
 
-- **It answers the same question.** T-B1 measures whether the Pi can hold a BLE link all night.
+- **It answered the original question.** The historical T-B1 substitute measured whether the Pi
+  could hold a BLE link all night; Amendment 11 now bounds active hardware checks to ten minutes.
 - **It carries the primary signal.** Amendment 05 §2.1 permits only SpO₂ and respiratory rate to
   raise a tier past watch or clear a raised one. The H10's HR and RR are corroborating.
-- **It is a harder test.** The device stops streaming unless the host writes a keepalive about every
-  1.5 s, so this exercises bidirectional traffic for eight hours rather than passive notifications.
+- **It was a harder test.** The device stops streaming unless the host writes a keepalive about every
+  1.5 s, so the historical run exercised bidirectional traffic rather than passive notifications.
 - **It cannot hit the SMP failure.** No pairing, no bonding, no encryption — so amendment 06 §3's
   bonded-but-unusable state is structurally impossible here.
 
@@ -1625,7 +1625,8 @@ than inventing a number.
    capture sit in the agreeing region. `0x7F` is correct because it came from the vendor-app
    decompile, not because any frame demonstrated it.
 
-**Still requires you:** wear the oximeter overnight and run the capture under `systemd-run --pipe`.
+**Historical only:** the overnight oximeter run is not an active hardware acceptance requirement
+under Amendment 11.
 
 ### T-A1 (2026-08-05) — root on NVMe, verified
 

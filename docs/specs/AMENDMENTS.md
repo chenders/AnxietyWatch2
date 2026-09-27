@@ -19,6 +19,9 @@ wins**. If you find a contradiction, report it rather than implementing either v
 | **06** | [BP identity and durability](2026-08-03-amendment-06-bp-identity-and-durability.md) | **amendment 05 §5 (T-D6 row) — the hardware disproved it**, and **§1.1's identity rule, which it narrows**; extends §4.3; restates A01 §5's durability rule | T-B1, T-D3, T-D4, T-D6 |
 | **07** | [The HTTP API and admin console are Rust, not Python](2026-08-05-amendment-07-api-in-rust.md) | **`language-choices.md` §1 row "HTTP API, admin, analysis → Python 3.12 + FastAPI", and §3 in full** | admin console M0–M2, web dashboard backend, client write API |
 | **08** | [Layout selection by live evaluation, not upfront choice](2026-08-06-amendment-08-layout-evaluation.md) | the implicit "pick a design direction before M1" in `SPEC-admin-console.md` §3.1 | admin console M1 (all three directions behind a runtime switcher), web dashboard (gains a plan home: port B/C onto the `model()` seam + switcher, gated on the vitalsd query path) |
+| **09** | [What the admin console is *for*](2026-08-09-amendment-09-admin-console-purpose.md) · [changes & rationale](2026-08-09-amendment-09-changes-and-rationale.md) | **`SPEC-admin-console.md` §3 (IA order and milestones), §4.7 (Analysis — was job plumbing only), §4.8 (Records — was "prompt-input curation")**; adds §4.11 | admin console M2 (feature control + analysis read-only, both pulled earlier), M3 (analysis runs), the analysis data model, `PROMPT-admin.md` → `PROMPT-admin-v2.md` |
+| **11** | [Bounded hardware checks](2026-09-27-amendment-11-bounded-hardware-checks.md) | hardware verification duration contracts; ResMed AirSense 11 integration is the sole exception | all hardware checks, especially T-B1 |
+| **GOV** | [Repository governance, recovery and worktree lifecycle](../../openspec/changes/repository-recovery-and-lifecycle/proposed-amendment-governance-workflow.md) · [owner decision](../../openspec/changes/repository-recovery-and-lifecycle/reviews/governance/owner-decision-2026-09-06.md) | `AGENTS.md` worktree-per-task wording becomes one branch/worktree per **concurrently active** task; extends task, preservation, review, publication and deployment contracts | repository/documentation work and future governance tooling; no physiological or schema changes |
 | — | [C vs Rust evaluation](2026-08-03-c-vs-rust-evaluation.md) | the C11 decision | all code tasks |
 | — | [Review synthesis and fix tracker](../reviews/SYNTHESIS.md) | — | status of every finding |
 
@@ -28,6 +31,21 @@ wins**. If you find a contradiction, report it rather than implementing either v
 
 Read this before any implementation task. Each line replaces something the original design or an
 early task brief still says.
+
+### Repository governance and authoring
+
+**GOV is owner-accepted as policy, not implemented tooling.** Serial tasks may use the canonical
+checkout under exclusive ownership; concurrent writers still require separate branches/worktrees.
+Preservation, bounded inventory, evidence, task and closure requirements apply as specified in GOV.
+New/enhanced enforcement remains unavailable unless actual evidence establishes otherwise; the
+separately authorized squash-only restriction is verified. Copilot remains the required route until
+an explicitly approved, verified replacement transition. No blanket cleanup, store migration,
+private disclosure, runner installation or deployment permission follows from acceptance.
+
+The owner also approved [OpenSpec authoring guidance](../../openspec/changes/repository-recovery-and-lifecycle/reviews/openspec-authoring-guidance.md)
+under GOV unit B; see its [approval record](../../openspec/changes/repository-recovery-and-lifecycle/reviews/governance/authoring-owner-decision-2026-09-06.md).
+Use its requirement/scenario/task/evidence structure for the next scoped implementation plans.
+Numeric GOV numbering is deferred; do not overwrite the existing numbered drafts.
 
 ### Language
 
@@ -130,6 +148,31 @@ seam with the same switcher, gated on the vitalsd query path. One view-model per
 renderings, no direction-specific data logic. The direction determination is recorded after real
 use, then the losing template sets are deleted. The bedside panel's shipped eight-view swipe
 switcher is the precedent and needs no change.
+
+### The admin console is not only a monitor
+
+**An analysis run produces a clinical document, not a job status** (amendment 09). If a task brief
+describes Analysis purely as queue states, elapsed time and a cost ledger, it is describing half the
+feature. The artifact has a specified shape — severity and confidence as **separate mandatory axes**,
+a closed registry-governed category per insight, supporting data, full provenance (model, tokens,
+cost, raw exchange), and export for printing. **Coverage gaps are findings ranked among the clinical
+ones**, never footnotes: the three-state law applies to a whole analysis window, not just a sensor.
+
+**Records hold artifacts with lifecycles**, not prompt inputs. A conflict is a symmetric two-party
+record that moves active → resolved.
+
+**The console can enable and disable things** (new §4.11), and *deliberately off* is a distinct
+render from *silently absent* and from *not configured*. **Anything running on emulated or synthetic
+data surfaces on the Overview and is stamped on every analysis produced over that window.**
+
+**Order changed:** Feature control and analysis **read-only** are M2; analysis **runs** are M3.
+Analysis was M4.
+
+### Hardware verification duration
+
+Except for the dedicated ResMed AirSense 11 integration check, every individual hardware check or
+live hardware capture is bounded to ten minutes. T-B1 is a ten-minute Polar H10 path check, not an
+overnight endurance claim. Short checks do not prove long-term reliability and do not waive review.
 
 ### Tools adopted
 

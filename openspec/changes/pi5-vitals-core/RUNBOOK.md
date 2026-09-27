@@ -13,11 +13,11 @@ is the *why*.
 | Task group | Machine | Why |
 |---|---|---|
 | **Group A** (hardware) | **the Pi** | You are physically at the box with a screwdriver. `dmesg`, `lsusb`, `hciconfig` are local. |
-| **T-B1** (8-hour capture) | **the Pi** | Must outlive an SSH session. Runs overnight under `systemd-run`. |
+| **T-B1** (10-minute hardware check) | **the Pi** | Proves H10 discovery, GATT, and notifications; not endurance. |
 | **Group C** (Postgres) | either | Every `Verify` is already `ssh "$PI_HOST" '…'`, so Mac works fine. |
 | **Group D** (code) | **Mac** | Pure code. Bigger worker pool, your editor, the repo is here. |
 
-Rule of thumb: **hardware and overnight work on the Pi, code on the Mac.** Both have herdr 0.7.5
+Rule of thumb: **hardware work on the Pi, code on the Mac.** Both have herdr 0.7.5
 and pi 0.83.0, so either works for anything — this is preference, not capability.
 
 Attach to the Pi's session from your Mac terminal without leaving your desk:
@@ -64,8 +64,8 @@ against your topped-up credits.
 **There is exactly one gateway, and it lives on the Pi.** The Mac's stack was stopped and its
 `~/.pi/agent/models.json` repointed at `http://pi-host:4000/v1` (backup at `models.json.bak`).
 Both machines share one worker key, one budget, one cost dashboard. The Pi is the right host because
-it is the box that is always on — a laptop that sleeps should not be brokering model calls for an
-overnight capture running on the Pi.
+it is the box that is always on — a laptop that sleeps should not be brokering model calls for a
+hardware capture running on the Pi.
 
 **Consequence for adding provider keys:** add them **on the Pi only**, and both machines get them.
 
@@ -282,8 +282,8 @@ send_task T-D3 worker-3 gemini/gemini-3.1-pro-preview
 That is Stage 3's foundation done before a single package arrives.
 
 When the hardware lands: `herdr --remote "$PI_HOST"`, spin the layout there, run Group A in
-order, and dispatch **T-B1 the moment T-A4 goes green** — it occupies a whole night, so start it and
-let everything else proceed around it.
+order, and dispatch **T-B1 the moment T-A4 goes green** — it is a bounded ten-minute check, so let
+everything else proceed around it.
 
 ---
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Analyse an overnight Polar H10 capture.
+"""Analyse a bounded Polar H10 hardware capture.
 
-The entire project rests on the Pi holding a BLE connection all night. This is
+The project rests on the Pi holding a BLE connection and receiving valid RR
 the script that says whether it did, and it is both the report you read and the
 gate that passes — so the number you look at can never drift from the number
 that decides.
@@ -15,8 +15,7 @@ the link was up.
 
 Usage:
     gap_histogram.py night1.log
-    gap_histogram.py night1.log --require-duration-hours 8 --max-gap-seconds 300 \\
-                     --require-drift-report
+    gap_histogram.py capture.log --require-duration-minutes 10 --max-gap-seconds 300
 
 Exits nonzero when a requirement is not met, and says which one. A gate that
 will not name its blocker costs an hour of guessing.
@@ -205,7 +204,7 @@ def report(a: Analysis) -> str:
     """The human-readable report. Same data the gate uses."""
     out: list[str] = []
     hrs = a.duration_s / 3600.0
-    out.append("Polar H10 overnight capture")
+    out.append("Polar H10 hardware capture")
     out.append("=" * 60)
     out.append(f"  notifications   {a.count}")
     out.append(f"  RR intervals    {a.rr_count}")
@@ -248,7 +247,9 @@ def report(a: Analysis) -> str:
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("log", type=Path)
-    p.add_argument("--require-duration-hours", type=float, default=None)
+    duration = p.add_mutually_exclusive_group()
+    duration.add_argument("--require-duration-hours", type=float, default=None)
+    duration.add_argument("--require-duration-minutes", type=float, default=None)
     p.add_argument("--max-gap-seconds", type=float, default=None)
     p.add_argument(
         "--require-drift-report",
@@ -267,10 +268,10 @@ def main(argv: list[str] | None = None) -> int:
 
     # A capture of one line is what `systemd-run` without --pipe produces: the
     # child's stdout goes to the journal and the shell redirect catches only
-    # "Running as unit". Refusing it by name saves an entire wasted night.
+    # "Running as unit". Refusing it by name saves a wasted hardware check.
     if a.count < 2:
         print(
-            f"\nFAIL: only {a.count} notification(s) parsed. If this was an overnight "
+            f"\nFAIL: only {a.count} notification(s) parsed. If this was a systemd "
             "run, systemd-run needs --pipe — without it the child's stdout goes to "
             "the journal and the redirect captures only the unit banner.",
             file=sys.stderr,
@@ -283,6 +284,12 @@ def main(argv: list[str] | None = None) -> int:
         if hrs < args.require_duration_hours:
             failures.append(
                 f"duration {hrs:.2f}h is under the required {args.require_duration_hours}h"
+            )
+    if args.require_duration_minutes is not None:
+        minutes = a.duration_s / 60.0
+        if minutes < args.require_duration_minutes:
+            failures.append(
+                f"duration {minutes:.2f}m is under the required {args.require_duration_minutes}m"
             )
     if args.max_gap_seconds is not None:
         longest = a.longest_gap()

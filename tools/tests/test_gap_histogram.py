@@ -1,6 +1,6 @@
 """Tests for the T-B1 acceptance gate.
 
-This script decides whether an eight-hour capture counts. Every test here is a
+This script decides whether a bounded hardware capture counts. Every test here is a
 way it could pass when it should not — which is the only failure that matters
 for a gate, because a false pass costs another night.
 """
@@ -82,6 +82,18 @@ def test_a_short_capture_fails_the_duration_requirement(tmp_path: Path, capsys) 
     assert "under the required 8" in capsys.readouterr().err
 
 
+def test_a_ten_minute_capture_passes_the_bounded_hardware_gate(tmp_path: Path) -> None:
+    log = write(tmp_path, steady(seconds=10 * 60 + 1))
+    assert main([str(log), "--require-duration-minutes", "10", "--max-gap-seconds", "300"]) == 0
+
+
+def test_a_ten_minute_capture_can_fail_the_bounded_gate(tmp_path: Path, capsys) -> None:
+    log = write(tmp_path, steady(seconds=9 * 60 + 59))
+    rc = main([str(log), "--require-duration-minutes", "10"])
+    assert rc == 1
+    assert "under the required 10" in capsys.readouterr().err
+
+
 def test_a_full_length_capture_passes(tmp_path: Path) -> None:
     log = write(tmp_path, steady(seconds=8 * 3600.0 + 60))
     assert main([str(log), "--require-duration-hours", "8", "--max-gap-seconds", "300"]) == 0
@@ -109,14 +121,14 @@ def test_a_missing_file_is_an_error_not_a_pass(tmp_path: Path) -> None:
     assert main([str(tmp_path / "nope.log")]) == 2
 
 
-# ── the failure that would waste a whole night ───────────────────────────────
+# ── the failure that would waste a hardware check ────────────────────────────
 
 
 def test_a_one_line_capture_fails_and_explains_systemd_run(tmp_path: Path, capsys) -> None:
     """`systemd-run` without --pipe sends the child's stdout to the journal, so
-    the shell redirect captures only "Running as unit: hrspike.service". An
-    eight-hour capture becomes a one-line file, and a gate that accepted it
-    would cost another night."""
+    the shell redirect captures only "Running as unit: hrspike.service". A
+    bounded capture becomes a one-line file, and a gate that accepted it
+    would cost another hardware check."""
     log = write(tmp_path, ["Running as unit: hrspike.service"])
     rc = main([str(log), "--require-duration-hours", "8"])
     assert rc == 1

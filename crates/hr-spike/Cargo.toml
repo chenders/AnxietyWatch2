@@ -1,6 +1,6 @@
 [package]
 name = "hr-spike"
-description = "T-B1: overnight Polar H10 capture. Throwaway, but the measurement it produces is not."
+description = "T-B1: bounded Polar H10 hardware check. Throwaway, but the measurement it produces is not."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

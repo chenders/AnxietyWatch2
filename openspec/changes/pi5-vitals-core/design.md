@@ -118,7 +118,7 @@ and `.profile`; `bash -lc "pi --version"` returns 0.83.0.
 gateway ran in Docker **on the Mac**, bound to `127.0.0.1:4000` — verified UNREACHABLE from the Pi,
 so `pi` there could not reach any model at all.
 
-Exposing the Mac's gateway would have worked, but it was the wrong fix: it makes the Pi's overnight
+Exposing the Mac's gateway would have worked, but it was the wrong fix: it makes the Pi's hardware
 capture depend on a laptop staying awake to broker its model calls, which is the exact dependency
 this project exists to remove. **The gateway is infrastructure and belongs on the box that does not
 sleep.** So it moved instead:
@@ -150,9 +150,9 @@ modes, both valid:
 
 **Mode A — Mac pool, remote execution (default).** Workers run on the Mac; every `Verify` in
 `tasks.md` is already written as `ssh "$PI_HOST" '…'`, so `host: pi` tasks execute remotely with
-no change. Default for everything except long-running hardware work.
+no change. Default for everything except hardware interaction.
 
-**Mode B — Pi-local session.** For work where being on the box matters — the overnight T-B1 capture,
+**Mode B — Pi-local session.** For work where being on the box matters — T-B1's bounded H10 check,
 `dmesg`/`journalctl` tailing, `bluetoothctl` interaction, anything that must outlive an SSH
 connection — attach to the Pi's own herdr from the Mac:
 
@@ -161,7 +161,8 @@ herdr --remote "$PI_HOST"
 ```
 
 Workers execute locally on the Pi with the same model tiers. Prefer Mode B for all of Group A and
-T-B1; Mode A for Group D's pure-code tasks.
+T-B1; Mode A for Group D's pure-code tasks. Amendment 11 bounds each hardware check to ten minutes
+except the ResMed AirSense 11 integration check.
 
 **Repo split.** This repo is authoritative for `proposal/design/tasks`, the registry TOML, and
 generated headers — those are committed here. Pi-resident source (`~/vitals`) is a working tree that
