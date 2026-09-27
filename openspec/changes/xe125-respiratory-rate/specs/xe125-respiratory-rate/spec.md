@@ -35,9 +35,9 @@ in `ESTIMATE_BREATHING_RATE`. `NO_PRESENCE_DETECTED`, `INTRA_PRESENCE_DETECTED`,
   progress
 
 ### Requirement: Canonical rate and range validation
-The registry MUST define `respiratory_rate` as the canonical `breaths_per_minute` measurement type.
-Every durable ingest path MUST reject non-finite or out-of-registry estimates with a named reason;
-it MUST never clamp an estimate into range. The initial engineering range is 1.0–120.0
+The registry MUST define `respiratory_rate` as the existing canonical `breaths/min` measurement
+type (id 11). Every durable ingest path MUST reject non-finite or out-of-registry estimates with a
+named reason; it MUST never clamp an estimate into range. The engineering range is 1.0–100.0
 breaths/minute and is not a statement of clinical normality.
 
 #### Scenario: A finite in-range estimate is produced

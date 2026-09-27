@@ -31,11 +31,12 @@ being started immediately; no radar sample is promoted to the alarm path by this
 
 **Do:**
 
-1. Add permanent type id 9: `respiratory_rate`, canonical unit `breaths_per_minute`, engineering
-   range 1.0–120.0, precision 0.1.
-2. Add permanent source id 4: `acconeer_xe125`, transport `usb_serial`, providing the new type.
+1. Confirm the existing permanent type id 11: `respiratory_rate`, canonical unit `breaths/min`,
+   engineering range 1.0–100.0, precision 0.1.
+2. Add permanent source id 4: `acconeer_xe125`, transport `usb_serial`, on-demand, providing the
+   existing respiratory-rate type.
 3. Regenerate; never hand-edit generated files.
-4. Pin the new IDs in registry tests.
+4. Pin the reconciled IDs and ranges in registry tests.
 
 **Verify:** `python3 vitals/tools/gen_registry.py --check && cargo test -p vitals-registry && cargo build -p vitals-registry`
 
@@ -188,11 +189,11 @@ states. Promote the source only with a separate explicit alert-policy decision.
 
 ## Implementation notes
 
-### T-X1 — passed 2026-09-01
+### T-X1 — passed 2026-09-01; reconciled on the rebased main line
 
-- Added `VitalsType::RespiratoryRate` as type id 9 with canonical unit
-  `breaths_per_minute` and engineering range 1.0–120.0.
-- Added `VitalsSource::AcconeerXe125` as source id 4 with `usb_serial` transport.
+- Reused the existing `VitalsType::RespiratoryRate` as type id 11, unit `breaths/min`, engineering
+  range 1.0–100.0, rather than introducing the obsolete id 9 from the earlier branch.
+- Added `VitalsSource::AcconeerXe125` as source id 4 with `usb_serial` transport and on-demand cadence.
 - Regenerated all registry artifacts; generated files remain source-controlled outputs only.
 - Verify passed: `python3 vitals/tools/gen_registry.py --check && cargo test -p vitals-registry &&
   cargo build -p vitals-registry`.

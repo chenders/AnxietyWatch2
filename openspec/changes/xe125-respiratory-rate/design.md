@@ -65,8 +65,9 @@ rate.
 
 ### 3. Add a generated registry type and source now, but do not promote them
 
-`respiratory_rate` receives permanent type id 9, unit `breaths_per_minute`, engineering range
-1.0–120.0. `acconeer_xe125` receives permanent source id 4 and transport `usb_serial`. These IDs
+`respiratory_rate` uses the existing permanent type id 11, unit `breaths/min`, and engineering
+range 1.0–100.0. `acconeer_xe125` uses permanent source id 4, transport `usb_serial`, and on-demand
+cadence. These IDs
 are provenance labels, not a claim that the source is already clinically accepted. The range is a
 reject/quarantine boundary, not a normal-vitals threshold.
 

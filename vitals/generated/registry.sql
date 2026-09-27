@@ -167,6 +167,10 @@ VALUES (3, 'derived', 'internal')
 ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name,
     transport = EXCLUDED.transport;
 INSERT INTO vitals_source (id, name, transport)
+VALUES (4, 'acconeer_xe125', 'usb_serial')
+ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name,
+    transport = EXCLUDED.transport;
+INSERT INTO vitals_source (id, name, transport)
 VALUES (6, 'ad_ua651ble', 'ble')
 ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name,
     transport = EXCLUDED.transport;
