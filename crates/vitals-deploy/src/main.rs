@@ -1,10 +1,12 @@
 //! Build and validate the immutable artifact manifest used by Pi delivery.
 //!
-//! This command does not activate a release, restart a service, touch `PostgreSQL`,
-//! or modify the spool. Activation is a later, separately gated operation.
+//! Dry-run mode never activates a release, restarts a service, touches `PostgreSQL`,
+//! or modifies the spool. Activation is separately gated by root, backup, manifest,
+//! and explicit operator-confirmation checks.
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::collections::BTreeMap;
 use std::env;
 use std::error::Error;
 use std::fs::{self, File, OpenOptions};
@@ -219,6 +221,33 @@ struct FaultReceipt {
     cases: Vec<FaultCase>,
 }
 
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "the receipt records independent acceptance gates for the operator"
+)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+struct ActivationReceipt {
+    activated: bool,
+    source_sha: String,
+    preflight_ok: bool,
+    health_ok: bool,
+    spool_unchanged: bool,
+    backup_gate: bool,
+    rollback_command: String,
+    rollback_completed: bool,
+    blocked: Vec<Blocker>,
+}
+
+#[derive(Debug, Deserialize)]
+struct BackupGate {
+    backup_verified: bool,
+    restore_verified: bool,
+    off_pi: bool,
+    spool_fingerprint: String,
+    rollback_release: String,
+    encryption_key_location: String,
+}
+
 fn main() -> std::process::ExitCode {
     match run() {
         Ok(()) => std::process::ExitCode::SUCCESS,
@@ -281,18 +310,33 @@ fn run_snapshot(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn Er
     write_json(&output, &snapshot)
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "apply must keep dry-run and activation argument handling adjacent"
+)]
 fn run_apply(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn Error>> {
     let manifest_path = required_path(&mut args, "apply", "--manifest")?;
     let receipt_path = required_path(&mut args, "apply", "--receipt")?;
     let mut dry_run = false;
-    for argument in args {
+    let mut activate = false;
+    let mut backup_gate = None;
+    while let Some(argument) = args.next() {
         match argument.as_str() {
             "--dry-run" => dry_run = true,
+            "--activate" => activate = true,
+            "--backup-gate" => {
+                backup_gate = Some(PathBuf::from(
+                    args.next().ok_or("--backup-gate needs a value")?,
+                ));
+            }
             value => return Err(format!("unknown apply argument: {value}").into()),
         }
     }
-    if !dry_run {
-        return Err("apply blocked: activation is not implemented; pass --dry-run".into());
+    if dry_run == activate {
+        return Err("apply blocked: choose exactly one of --dry-run or --activate".into());
+    }
+    if activate {
+        return run_activation(&manifest_path, &receipt_path, backup_gate.as_deref());
     }
 
     let manifest: Manifest = serde_json::from_str(&fs::read_to_string(&manifest_path)?)?;
@@ -381,6 +425,481 @@ fn run_apply(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn Error
             .collect(),
     };
     write_json(&receipt_path, &receipt)
+}
+
+struct LiveBackup {
+    path: PathBuf,
+    existed: bool,
+    mode: u32,
+    bytes: Option<Vec<u8>>,
+    symlink: Option<PathBuf>,
+}
+
+#[expect(
+    clippy::too_many_lines,
+    reason = "activation is one transaction with one receipt and rollback boundary"
+)]
+fn run_activation(
+    manifest_path: &Path,
+    receipt_path: &Path,
+    backup_gate_path: Option<&Path>,
+) -> Result<(), Box<dyn Error>> {
+    require_root()?;
+    if env::var("VITALS_DEPLOY_ALLOW_ACTIVATE").as_deref() != Ok("1") {
+        return Err("activation blocked: VITALS_DEPLOY_ALLOW_ACTIVATE=1 is required".into());
+    }
+    let manifest: Manifest = serde_json::from_str(&fs::read_to_string(manifest_path)?)?;
+    validate_manifest(&manifest)?;
+    let gate = read_backup_gate(backup_gate_path.ok_or(
+        "activation blocked: --backup-gate is required; backup evidence is not optional",
+    )?)?;
+    let staging_root = manifest_path
+        .parent()
+        .ok_or("manifest has no parent directory")?;
+    let before = snapshot_state()?;
+    let mut blocked = manifest.blockers.clone();
+    if let Err(reason) = validate_target_architecture(&manifest) {
+        blocked.push(Blocker {
+            kind: "wrong_architecture".to_owned(),
+            subject: "manifest.architecture".to_owned(),
+            value: manifest.architecture.clone(),
+            reason,
+        });
+    }
+    if gate.spool_fingerprint != before.spool.fingerprint {
+        blocked.push(Blocker {
+            kind: "spool_identity".to_owned(),
+            subject: "backup.spool_fingerprint".to_owned(),
+            value: format!(
+                "backup={}, current={}",
+                gate.spool_fingerprint, before.spool.fingerprint
+            ),
+            reason: "backup gate does not describe the current pending spool".to_owned(),
+        });
+    }
+    if let Err(reason) = validate_staged_files(staging_root, &manifest) {
+        blocked.push(Blocker {
+            kind: "staged_artifact".to_owned(),
+            subject: "manifest.files".to_owned(),
+            value: staging_root.display().to_string(),
+            reason,
+        });
+    }
+    if let Err(reason) = verify_staged_units(staging_root, &manifest) {
+        blocked.push(Blocker {
+            kind: "systemd_verify".to_owned(),
+            subject: "staged units".to_owned(),
+            value: staging_root.display().to_string(),
+            reason,
+        });
+    }
+    if !blocked.is_empty() {
+        let receipt = ActivationReceipt {
+            activated: false,
+            source_sha: manifest.source_sha,
+            preflight_ok: false,
+            health_ok: false,
+            spool_unchanged: true,
+            backup_gate: true,
+            rollback_command: "not available: activation did not begin".to_owned(),
+            rollback_completed: false,
+            blocked,
+        };
+        write_json(receipt_path, &receipt)?;
+        return Err("activation blocked: preflight blockers are recorded in the receipt".into());
+    }
+
+    let lock = acquire_deployment_lock()?;
+    let release = install_release(staging_root, &manifest)?;
+    let backups = backup_live_targets(&manifest)?;
+    let old_current = fs::read_link(CURRENT_RELEASE).ok();
+    let rollback_command = format!(
+        "sudo VITALS_DEPLOY_ALLOW_ACTIVATE=1 /usr/local/bin/vitals-deploy apply --manifest {} --activate --backup-gate {} --receipt {}",
+        manifest_path.display(),
+        backup_gate_path
+            .unwrap_or(Path::new("<backup-gate>"))
+            .display(),
+        receipt_path.display()
+    );
+    let activation: Result<Snapshot, Box<dyn Error>> = (|| {
+        switch_current_release(&release)?;
+        install_live_targets(staging_root, &manifest)?;
+        run_systemctl(["daemon-reload"])?;
+        restart_targets(&manifest)?;
+        let after = snapshot_state()?;
+        let health_ok = health_is_acceptable(&after, &before);
+        if !health_ok {
+            return Err("post-activation health blocked: service, database, socket, or spool evidence failed".into());
+        }
+        Ok(after)
+    })();
+    drop(lock);
+
+    match activation {
+        Ok(after) => {
+            let receipt = ActivationReceipt {
+                activated: true,
+                source_sha: manifest.source_sha,
+                preflight_ok: true,
+                health_ok: true,
+                spool_unchanged: before.spool == after.spool,
+                backup_gate: true,
+                rollback_command,
+                rollback_completed: false,
+                blocked: Vec::new(),
+            };
+            write_json(receipt_path, &receipt)
+        }
+        Err(error) => {
+            let rollback = rollback_live_targets(&backups, old_current.as_deref())
+                .and_then(|()| run_systemctl(["daemon-reload"]))
+                .and_then(|()| restart_all_targets());
+            let rollback_completed = rollback.is_ok();
+            let reason = match rollback {
+                Ok(()) => format!("activation failed: {error}; rollback completed"),
+                Err(rollback_error) => {
+                    format!("activation failed: {error}; rollback blocked: {rollback_error}")
+                }
+            };
+            let receipt = ActivationReceipt {
+                activated: false,
+                source_sha: manifest.source_sha,
+                preflight_ok: true,
+                health_ok: false,
+                spool_unchanged: snapshot_state().is_ok_and(|after| before.spool == after.spool),
+                backup_gate: true,
+                rollback_command,
+                rollback_completed,
+                blocked: vec![Blocker {
+                    kind: "activation".to_owned(),
+                    subject: "service health".to_owned(),
+                    value: error.to_string(),
+                    reason,
+                }],
+            };
+            write_json(receipt_path, &receipt)?;
+            Err("activation failed; receipt records activation and rollback evidence".into())
+        }
+    }
+}
+
+const CURRENT_RELEASE: &str = "/usr/local/lib/vitals/current";
+const RELEASE_ROOT: &str = "/usr/local/lib/vitals/releases";
+const DEPLOYMENT_LOCK: &str = "/run/vitals-deploy.lock";
+
+fn require_root() -> Result<(), Box<dyn Error>> {
+    #[cfg(unix)]
+    {
+        let output = Command::new("id").arg("-u").output()?;
+        let uid = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+        if uid != "0" {
+            return Err(format!("activation blocked: uid={uid}, expected uid=0").into());
+        }
+    }
+    Ok(())
+}
+
+fn read_backup_gate(path: &Path) -> Result<BackupGate, Box<dyn Error>> {
+    let gate: BackupGate = serde_json::from_str(&fs::read_to_string(path)?)?;
+    if !gate.backup_verified {
+        return Err("backup gate blocked: backup_verified=false".into());
+    }
+    if !gate.restore_verified {
+        return Err("backup gate blocked: restore_verified=false".into());
+    }
+    if !gate.off_pi {
+        return Err("backup gate blocked: off_pi=false".into());
+    }
+    if gate.spool_fingerprint.is_empty() {
+        return Err("backup gate blocked: spool_fingerprint is empty".into());
+    }
+    if gate.rollback_release.is_empty() {
+        return Err("backup gate blocked: rollback_release is empty".into());
+    }
+    if gate.encryption_key_location.is_empty() {
+        return Err("backup gate blocked: encryption_key_location is empty".into());
+    }
+    Ok(gate)
+}
+
+fn acquire_deployment_lock() -> Result<File, Box<dyn Error>> {
+    let lock = OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .open(DEPLOYMENT_LOCK)
+        .map_err(|error| {
+            format!("deployment blocked: lock={DEPLOYMENT_LOCK} unavailable: {error}")
+        })?;
+    Ok(lock)
+}
+
+fn install_release(root: &Path, manifest: &Manifest) -> Result<PathBuf, Box<dyn Error>> {
+    validate_release_name(&manifest.source_sha)?;
+    let release = Path::new(RELEASE_ROOT).join(&manifest.source_sha);
+    if release.exists() {
+        return Err(format!(
+            "activation blocked: release already exists: {}",
+            release.display()
+        )
+        .into());
+    }
+    fs::create_dir_all(&release)?;
+    for file in &manifest.files {
+        let source = safe_staged_path(root, &file.destination)?;
+        let target = safe_release_path(&release, &file.destination)?;
+        if let Some(parent) = target.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::copy(source, &target)?;
+        set_file_mode(&target, file.mode)?;
+    }
+    Ok(release)
+}
+
+fn validate_release_name(value: &str) -> Result<(), Box<dyn Error>> {
+    if value.is_empty()
+        || value.len() > 128
+        || !value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_'))
+    {
+        return Err(format!("unsafe release name: {value}").into());
+    }
+    Ok(())
+}
+
+fn safe_release_path(root: &Path, destination: &str) -> Result<PathBuf, Box<dyn Error>> {
+    validate_relative_path(Path::new(destination))?;
+    Ok(root.join(destination))
+}
+
+fn live_target(file: &ArtifactFile) -> Option<PathBuf> {
+    let path = Path::new(&file.destination);
+    match file.kind.as_str() {
+        "binary" => path
+            .strip_prefix("bin")
+            .ok()
+            .map(|name| Path::new("/usr/local/bin").join(name)),
+        "systemd-unit" => path
+            .strip_prefix("units/deploy")
+            .ok()
+            .map(|name| Path::new("/etc/systemd/system").join(name)),
+        "udev-rule" => path
+            .strip_prefix("rules/deploy")
+            .ok()
+            .map(|name| Path::new("/etc/udev/rules.d").join(name)),
+        "console-asset" => path
+            .strip_prefix("share/vitals-console/assets")
+            .ok()
+            .map(|name| Path::new("/usr/local/share/vitals-console/assets").join(name)),
+        _ => None,
+    }
+}
+
+fn backup_live_targets(
+    manifest: &Manifest,
+) -> Result<BTreeMap<PathBuf, LiveBackup>, Box<dyn Error>> {
+    let mut backups = BTreeMap::new();
+    for file in &manifest.files {
+        let live = live_target(file).ok_or_else(|| {
+            format!(
+                "activation blocked: unsupported artifact kind/destination: {}",
+                file.destination
+            )
+        })?;
+        if backups.contains_key(&live) {
+            continue;
+        }
+        let metadata = fs::symlink_metadata(&live).ok();
+        let entry = match metadata {
+            Some(metadata) if metadata.file_type().is_symlink() => LiveBackup {
+                path: live.clone(),
+                existed: true,
+                mode: 0,
+                bytes: None,
+                symlink: Some(fs::read_link(&live)?),
+            },
+            Some(metadata) if metadata.file_type().is_file() => LiveBackup {
+                path: live.clone(),
+                existed: true,
+                mode: file_mode(&live)?,
+                bytes: Some(fs::read(&live)?),
+                symlink: None,
+            },
+            Some(_) => {
+                return Err(format!(
+                    "activation blocked: live target is not a file or symlink: {}",
+                    live.display()
+                )
+                .into());
+            }
+            None => LiveBackup {
+                path: live.clone(),
+                existed: false,
+                mode: 0,
+                bytes: None,
+                symlink: None,
+            },
+        };
+        backups.insert(live, entry);
+    }
+    Ok(backups)
+}
+
+fn install_live_targets(root: &Path, manifest: &Manifest) -> Result<(), Box<dyn Error>> {
+    for file in &manifest.files {
+        let live = live_target(file).ok_or_else(|| {
+            format!(
+                "activation blocked: unsupported artifact kind/destination: {}",
+                file.destination
+            )
+        })?;
+        let source = safe_staged_path(root, &file.destination)?;
+        replace_file(&live, &source, file.mode)?;
+    }
+    Ok(())
+}
+
+fn replace_file(target: &Path, source: &Path, mode: u32) -> Result<(), Box<dyn Error>> {
+    let parent = target.parent().ok_or("live target has no parent")?;
+    fs::create_dir_all(parent)?;
+    let name = target
+        .file_name()
+        .ok_or("live target has no name")?
+        .to_string_lossy();
+    let temporary = parent.join(format!(".{name}.vitals-deploy-tmp-{}", std::process::id()));
+    let _ = fs::remove_file(&temporary);
+    fs::copy(source, &temporary)?;
+    set_file_mode(&temporary, mode)?;
+    fs::rename(&temporary, target)?;
+    Ok(())
+}
+
+fn switch_current_release(release: &Path) -> Result<(), Box<dyn Error>> {
+    let current = Path::new(CURRENT_RELEASE);
+    let parent = current.parent().ok_or("current release has no parent")?;
+    fs::create_dir_all(parent)?;
+    let temporary = parent.join(format!(".current-tmp-{}", std::process::id()));
+    let _ = fs::remove_file(&temporary);
+    let target = release.file_name().ok_or("release has no name")?;
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(target, &temporary)?;
+    #[cfg(not(unix))]
+    return Err("activation blocked: release switching requires Unix symlinks".into());
+    fs::rename(temporary, current)?;
+    Ok(())
+}
+
+fn rollback_live_targets(
+    backups: &BTreeMap<PathBuf, LiveBackup>,
+    old_current: Option<&Path>,
+) -> Result<(), Box<dyn Error>> {
+    for backup in backups.values() {
+        if backup.existed {
+            if let Some(target) = &backup.symlink {
+                let _ = fs::remove_file(&backup.path);
+                #[cfg(unix)]
+                std::os::unix::fs::symlink(target, &backup.path)?;
+                #[cfg(not(unix))]
+                return Err("rollback blocked: Unix symlink restore unavailable".into());
+            } else if let Some(bytes) = &backup.bytes {
+                let temporary = backup
+                    .path
+                    .with_extension(format!("rollback-{}", std::process::id()));
+                fs::write(&temporary, bytes)?;
+                set_file_mode(&temporary, backup.mode)?;
+                fs::rename(temporary, &backup.path)?;
+            }
+        } else {
+            let _ = fs::remove_file(&backup.path);
+        }
+    }
+    let current = Path::new(CURRENT_RELEASE);
+    let _ = fs::remove_file(current);
+    if let Some(old) = old_current {
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(old, current)?;
+        #[cfg(not(unix))]
+        return Err("rollback blocked: Unix symlink restore unavailable".into());
+    }
+    Ok(())
+}
+
+fn run_systemctl<const N: usize>(arguments: [&str; N]) -> Result<(), Box<dyn Error>> {
+    let output = Command::new("systemctl").args(arguments).output()?;
+    if !output.status.success() {
+        return Err(format!(
+            "systemctl blocked: args={:?}, exit={}, stderr={}",
+            arguments,
+            output.status,
+            String::from_utf8_lossy(&output.stderr).trim()
+        )
+        .into());
+    }
+    Ok(())
+}
+
+const SERVICE_RESTART_ORDER: &[&str] = &[
+    "vitalsd",
+    "vitals-spool-drain",
+    "vitals-console",
+    "vitals-h10",
+    "vitals-bp-autoconnect",
+    "vitals-bp",
+    "silence-detector",
+];
+
+fn restart_all_targets() -> Result<(), Box<dyn Error>> {
+    for service in SERVICE_RESTART_ORDER {
+        run_systemctl(["restart", service])?;
+    }
+    Ok(())
+}
+
+fn restart_targets(manifest: &Manifest) -> Result<(), Box<dyn Error>> {
+    let mut services = Vec::new();
+    for file in &manifest.files {
+        if file.kind == "systemd-unit"
+            && let Some(name) = Path::new(&file.destination).file_name()
+            && let Some(service) = name
+                .to_str()
+                .and_then(|value| value.strip_suffix(".service"))
+        {
+            services.push(service.to_owned());
+        }
+    }
+    services.sort();
+    services.dedup();
+    for service in SERVICE_RESTART_ORDER {
+        if services.iter().any(|candidate| candidate == service) {
+            run_systemctl(["restart", service])?;
+        }
+    }
+    Ok(())
+}
+
+fn health_is_acceptable(after: &Snapshot, before: &Snapshot) -> bool {
+    after.spool == before.spool
+        && socket_exists(Path::new("/run/vitals/vitalsd.sock"))
+        && after.database.state != "unknown"
+        && after.runner.state != "unknown"
+        && after
+            .services
+            .iter()
+            .all(|service| !service.state.starts_with("unknown:"))
+}
+
+fn socket_exists(path: &Path) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::FileTypeExt;
+        fs::metadata(path).is_ok_and(|metadata| metadata.file_type().is_socket())
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = path;
+        false
+    }
 }
 
 #[expect(
@@ -1197,10 +1716,12 @@ fn rustc_version() -> String {
 mod tests {
     use super::{
         ArtifactFile, BINARY_SPECS, ExternalState, LiveFile, Manifest, ServiceState, Snapshot,
-        SpoolState, missing_blocker, same_snapshot_state, sha256_file, stage_manifest_files,
-        validate_manifest, validate_relative_path, validate_staged_files, verify_hash,
+        SpoolState, health_is_fresh, missing_blocker, same_snapshot_state, sha256_file,
+        stage_manifest_files, validate_manifest, validate_relative_path, validate_release_name,
+        validate_staged_files, validate_target_architecture, verify_hash,
     };
     use std::fs;
+    use std::time::Duration;
     use tempfile::tempdir;
 
     fn file(path: &std::path::Path, contents: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
@@ -1358,5 +1879,23 @@ mod tests {
         after = snapshot_fixture();
         after.runner.state = "unknown".to_owned();
         assert!(!same_snapshot_state(&before, &after));
+    }
+
+    #[test]
+    fn activation_contract_rejects_unsafe_release_names_and_wrong_architecture() {
+        assert!(validate_release_name("abc123").is_ok());
+        assert!(validate_release_name("../etc").is_err());
+        let value = manifest(Vec::new(), "abc123");
+        assert!(validate_target_architecture(&value).is_ok());
+        let mut wrong = value;
+        wrong.architecture = "x86_64".to_owned();
+        assert!(validate_target_architecture(&wrong).is_err());
+    }
+
+    #[test]
+    fn health_freshness_rejects_future_and_stale_documents() {
+        assert!(health_is_fresh(950, 1_000, Duration::from_mins(1)));
+        assert!(!health_is_fresh(900, 1_000, Duration::from_mins(1)));
+        assert!(!health_is_fresh(1_001, 1_000, Duration::from_mins(1)));
     }
 }
