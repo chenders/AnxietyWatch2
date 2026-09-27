@@ -93,6 +93,25 @@ The exact unit installation and runner release checksum will be captured as an i
 receipt by the runner-bootstrap task. This document is not permission to install a deployment
 helper or to grant the runner root access.
 
+## Staged delivery commands
+
+The checked-in `vitals-deploy` helper has three deliberately separate modes:
+
+- `manifest --stage-dir ...` builds a SHA-addressed immutable staging tree and never touches live paths.
+- `apply --dry-run` snapshots services, database identity, runner state, live files, and spool identity; it validates every staged checksum and unit without activation.
+- `apply --activate` requires root, `--backup-gate`, `VITALS_DEPLOY_ALLOW_ACTIVATE=1`, an ARM64 manifest with no blockers, and a successful preflight. It installs a new release, restarts only manifest-selected services in dependency order, checks health and spool identity, and records rollback evidence.
+
+A backup gate must be a root-owned JSON receipt containing `backup_verified: true`, `restore_verified: true`, `off_pi: true`, a non-empty `spool_fingerprint`, `rollback_release`, and `encryption_key_location`. The encryption key itself must never be placed in the receipt, GitHub, or this repository. The activation command is intentionally not run by bootstrap or smoke workflows:
+
+```sh
+sudo VITALS_DEPLOY_ALLOW_ACTIVATE=1 /usr/local/bin/vitals-deploy \
+  apply --manifest /var/lib/vitals/deploy/<sha>/manifest.json \
+  --activate --backup-gate /var/lib/vitals/recovery/github-deploy-gate.json \
+  --receipt /var/lib/vitals/recovery/github-deploy-latest.json
+```
+
+The operator must retain the prior release and use the receipt's rollback command if health or data-path evidence is not green. A failed preflight or missing backup gate must leave the live release untouched.
+
 ## Operational rules
 
 - The runner is repository-scoped and must not be shared with unrelated repositories.
