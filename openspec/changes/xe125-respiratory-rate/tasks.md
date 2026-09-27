@@ -10,7 +10,7 @@ being started immediately; no radar sample is promoted to the alarm path by this
 - [x] T-X1 — Registry type and source
 - [x] T-X2 — Bench JSONL capture runner
 - [ ] T-X3 — Live Pi acquisition and firmware pin
-- [ ] T-X4 — Placement/reference capture matrix
+- [ ] T-X4 — Placement and reference capture matrix
 - [ ] T-X5 — Transport-neutral Rust frame model
 - [ ] T-X6 — Rust production collector and `vitalsd` publication
 - [ ] T-X7 — Validation gate and optional alert promotion
@@ -106,8 +106,9 @@ XM125/A121 module firmware version, run a short capture, and preserve at least o
 **Modifies:** the implementation notes for this change when evidence exists.
 
 **Do:** measure one stationary person at 0.5–1 m using overhead and side placements, include supine
-and side positions, bedding, deliberate movement, no-presence, and a respiratory reference. Record
-which observations are valid and which are unknown.
+and side positions, bedding, deliberate movement, no-presence, and a respiratory reference. Bound
+each individual hardware capture to ten minutes and record its duration in the report. Record which
+observations are valid and which are unknown.
 
 **Verify:** `python3 tools/verify_xe125_matrix.py ~/vitals/xe125/placement-report.json`
 

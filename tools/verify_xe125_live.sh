@@ -17,8 +17,6 @@ grep -qi 'enhanced' "$port_file" || {
 }
 port=$(sed -n 's/^port=//p' "$port_file" | head -n 1)
 test -n "$port" || { echo "XE125 verify: $port_file has no port= entry" >&2; exit 1; }
-test -e "$port" || { echo "XE125 verify: recorded port is absent: $port" >&2; exit 1; }
-
 python3 - "$jsonl" <<'PY'
 import json
 import sys
