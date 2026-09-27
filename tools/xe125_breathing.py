@@ -144,8 +144,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--duration-seconds",
         type=float,
-        default=0.0,
-        help="stop after this many seconds; zero means until Ctrl-C",
+        default=600.0,
+        help="stop after this many seconds; must be greater than 0 and no more than 600",
     )
     parser.add_argument("--sensor-id", type=int, default=1)
     parser.add_argument("--start-m", type=float, default=DEFAULT_START_M)
@@ -179,8 +179,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """Parse and validate operator configuration."""
     parser = build_parser()
     args = parser.parse_args(argv)
-    if args.duration_seconds < 0:
-        parser.error("--duration-seconds must be non-negative")
+    if args.duration_seconds <= 0 or args.duration_seconds > 600:
+        parser.error("--duration-seconds must be greater than 0 and no more than 600")
     if args.start_m >= args.end_m:
         parser.error("--end-m must be greater than --start-m")
     if args.frame_rate <= 0:

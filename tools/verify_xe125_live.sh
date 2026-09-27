@@ -32,8 +32,8 @@ for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines()
         item = json.loads(line)
     except json.JSONDecodeError as exc:
         raise SystemExit(f"XE125 verify: invalid JSONL at line {line_number}: {exc}")
-    if not isinstance(item, dict) or not item.get("state"):
-        raise SystemExit(f"XE125 verify: line {line_number} lacks an explicit state")
+    if not isinstance(item, dict) or not item.get("app_state"):
+        raise SystemExit(f"XE125 verify: line {line_number} lacks an explicit app_state")
     observed = item.get("observed_at_unix_micros")
     if not isinstance(observed, int) or observed < 0:
         raise SystemExit(f"XE125 verify: line {line_number} lacks an integer observation time")

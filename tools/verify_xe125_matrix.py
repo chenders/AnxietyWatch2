@@ -36,7 +36,7 @@ def main() -> int:
     if not isinstance(report, dict):
         return fail("report root must be an object")
     cases = report.get("cases")
-    if not isinstance(cases, dict) or not REQUIRED_CASES <= set(cases):
+    if not isinstance(cases, dict) or set(cases) < REQUIRED_CASES:
         return fail(f"cases must include {sorted(REQUIRED_CASES)}")
     reference = report.get("reference_breaths_per_minute")
     if not isinstance(reference, (int, float)) or not math.isfinite(reference) or reference <= 0:
@@ -49,7 +49,9 @@ def main() -> int:
         if not isinstance(duration, (int, float)) or not math.isfinite(duration):
             return fail(f"{name} must record a finite duration_seconds")
         if duration <= 0 or duration > 600:
-            return fail(f"{name} duration {duration}s is outside the 0–600s hardware-check bound")
+            return fail(f"{name} duration {duration}s is outside the 0-600s hardware-check bound")
+        if name in {"deliberate_motion", "no_presence"} and case["status"] != "unknown":
+            return fail(f"{name} must be unknown; no numeric result is accepted")
         if case["status"] == "unknown":
             if "rate" in case and case["rate"] is not None:
                 return fail(f"{name} is unknown but contains a numeric rate")

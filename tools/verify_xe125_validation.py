@@ -29,14 +29,21 @@ def main() -> int:
     if report.get("matrix_complete") is not True:
         return fail("matrix_complete must be true")
     evidence = report.get("evidence")
-    if not isinstance(evidence, list) or not evidence or not all(isinstance(x, str) and x for x in evidence):
+    if (
+        not isinstance(evidence, list)
+        or not evidence
+        or not all(isinstance(x, str) and x for x in evidence)
+    ):
         return fail("evidence must be a non-empty list of paths or identifiers")
     decision = report.get("decision")
     if decision not in {"accepted", "experimental-only"}:
         return fail("decision must be accepted or experimental-only")
     if report.get("alarm_promotion", False) is not False:
         return fail("alarm_promotion must remain false in this change")
-    print(f"XE125 validation verify: {decision}, {len(evidence)} evidence items, alarm path isolated")
+    print(
+        f"XE125 validation verify: {decision}, {len(evidence)} evidence items, "
+        "alarm path isolated"
+    )
     return 0
 
 
