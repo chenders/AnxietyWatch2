@@ -68,25 +68,27 @@ jobs:
           set -euo pipefail
           rustup run 1.97.1 cargo build --release -p vitalsd -p vitals-drain -p vitals-console -p vitals-collectors -p vitals-deploy
 
-      - name: Generate the SHA-addressed manifest
+      - name: Generate the SHA-addressed staged release
         shell: bash
         run: |
           set -euo pipefail
+          stage="$RUNNER_TEMP/vitals-release/$GITHUB_SHA"
+          mkdir -p "$stage"
           rustup run 1.97.1 cargo run -p vitals-deploy -- \
             manifest --source "$GITHUB_SHA" --dry-run \
-            --output "$RUNNER_TEMP/vitals-manifest.json"
-          jq -e '.source_sha == env.GITHUB_SHA and .architecture == "aarch64" and (.files | length) > 0' \
-            "$RUNNER_TEMP/vitals-manifest.json" >/dev/null
-          cp "$RUNNER_TEMP/vitals-manifest.json" "$RUNNER_TEMP/vitals-manifest-summary.json"
+            --stage-dir "$stage" \
+            --output "$stage/manifest.json"
+          jq -e '.source_sha == env.GITHUB_SHA and .architecture == "aarch64" and (.files | length) > 0 and (.blockers | type) == "array"' \
+            "$stage/manifest.json" >/dev/null
 
-      - name: Preserve dry-run tooling as a workflow artifact
+      - name: Preserve staged dry-run tooling as a workflow artifact
         uses: actions/upload-artifact@v4
         with:
           name: vitals-dry-run-${{ github.sha }}
           if-no-files-found: error
           path: |
             target/release/vitals-deploy
-            ${{ runner.temp }}/vitals-manifest.json
+            ${{ runner.temp }}/vitals-release/${{ github.sha }}/**
 
       - name: Publish non-deployment result
         if: always()

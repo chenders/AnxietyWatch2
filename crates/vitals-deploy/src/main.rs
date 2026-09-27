@@ -134,7 +134,7 @@ struct ArtifactFile {
     kind: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 struct Blocker {
     kind: String,
     subject: String,
@@ -149,6 +149,14 @@ struct Snapshot {
     live_files: Vec<LiveFile>,
     services: Vec<ServiceState>,
     spool: SpoolState,
+    database: ExternalState,
+    runner: ExternalState,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+struct ExternalState {
+    state: String,
+    detail: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -221,12 +229,18 @@ fn run() -> Result<(), Box<dyn Error>> {
 fn run_manifest(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn Error>> {
     let mut source_sha = None;
     let mut output = None;
+    let mut stage_dir = None;
     let mut dry_run = false;
     while let Some(argument) = args.next() {
         match argument.as_str() {
             "--source" => source_sha = Some(args.next().ok_or("--source needs a value")?),
             "--output" => {
                 output = Some(PathBuf::from(args.next().ok_or("--output needs a value")?));
+            }
+            "--stage-dir" => {
+                stage_dir = Some(PathBuf::from(
+                    args.next().ok_or("--stage-dir needs a value")?,
+                ));
             }
             "--dry-run" => dry_run = true,
             value => return Err(format!("unknown argument: {value}").into()),
@@ -238,6 +252,9 @@ fn run_manifest(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn Er
     let root = find_repository_root(env::current_dir()?)?;
     let manifest = build_manifest(&root, source_sha, dry_run)?;
     validate_manifest(&manifest)?;
+    if let Some(stage_dir) = stage_dir {
+        stage_manifest_files(&root, &stage_dir, &manifest)?;
+    }
     write_json(&output, &manifest)
 }
 
@@ -269,14 +286,51 @@ fn run_apply(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn Error
         .parent()
         .ok_or("manifest has no parent directory")?
         .to_path_buf();
-    let checksums_ok = validate_staged_files(&staging_root, &manifest)?;
-    let systemd_verify_ok = verify_staged_units(&staging_root, &manifest)?;
+    let mut blocked = manifest.blockers.clone();
+    let checksums_ok = match validate_staged_files(&staging_root, &manifest) {
+        Ok(()) => true,
+        Err(reason) => {
+            blocked.push(Blocker {
+                kind: "staged_artifact".to_owned(),
+                subject: "manifest.files".to_owned(),
+                value: staging_root.display().to_string(),
+                reason,
+            });
+            false
+        }
+    };
+    let systemd_verify_ok = match verify_staged_units(&staging_root, &manifest) {
+        Ok(()) => true,
+        Err(reason) => {
+            blocked.push(Blocker {
+                kind: "systemd_verify".to_owned(),
+                subject: "staged units".to_owned(),
+                value: staging_root.display().to_string(),
+                reason,
+            });
+            false
+        }
+    };
     let after = snapshot_state()?;
+    let infrastructure_state_known = append_unknown_state_blockers(&after, &mut blocked);
     let live_state_unchanged = same_snapshot_state(&before, &after);
+    if !live_state_unchanged {
+        blocked.push(Blocker {
+            kind: "live_mutation".to_owned(),
+            subject: "live state".to_owned(),
+            value: "before and after snapshots differ".to_owned(),
+            reason: "dry-run must not mutate binaries, units, services, database, runner, or spool"
+                .to_owned(),
+        });
+    }
     let receipt = DryRunReceipt {
         mode: "dry-run".to_owned(),
         activated: false,
-        preflight_ok: checksums_ok && systemd_verify_ok && live_state_unchanged,
+        preflight_ok: blocked.is_empty()
+            && checksums_ok
+            && systemd_verify_ok
+            && infrastructure_state_known
+            && live_state_unchanged,
         checks: DryRunChecks {
             checksums: if checksums_ok {
                 CheckState::Passed
@@ -295,7 +349,7 @@ fn run_apply(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn Error
             },
         },
         current_release: before.current_release,
-        blocked: manifest.blockers,
+        blocked,
         would_change: manifest
             .files
             .iter()
@@ -363,14 +417,9 @@ fn snapshot_state() -> Result<Snapshot, Box<dyn Error>> {
     }
     let mut services = Vec::new();
     for name in LIVE_SERVICES {
-        let output = Command::new("systemctl").args(["is-active", name]).output();
-        let state = match output {
-            Ok(output) => String::from_utf8_lossy(&output.stdout).trim().to_owned(),
-            Err(error) => format!("unknown: {error}"),
-        };
         services.push(ServiceState {
             name: (*name).to_owned(),
-            state,
+            state: service_state(name),
         });
     }
     services.sort_by(|left, right| left.name.cmp(&right.name));
@@ -385,7 +434,125 @@ fn snapshot_state() -> Result<Snapshot, Box<dyn Error>> {
         live_files,
         services,
         spool,
+        database: database_state(),
+        runner: runner_state(),
     })
+}
+
+fn service_state(name: &str) -> String {
+    match Command::new("systemctl").args(["is-active", name]).output() {
+        Ok(output) => {
+            let state = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+            if state.is_empty() {
+                let detail = String::from_utf8_lossy(&output.stderr).trim().to_owned();
+                format!(
+                    "unknown: systemctl is-active {name} exited {}: {detail}",
+                    output.status
+                )
+            } else {
+                state
+            }
+        }
+        Err(error) => format!("unknown: systemctl is-active {name} unavailable: {error}"),
+    }
+}
+
+fn database_state() -> ExternalState {
+    let database_url = env::var("VITALS_DEPLOY_DATABASE_URL").unwrap_or_else(|_| {
+        "host=/var/run/postgresql port=5432 dbname=vitals user=vitals".to_owned()
+    });
+    let query = "SELECT current_database(), current_schema(), current_setting('server_version_num'), to_regclass('public.samples')";
+    match Command::new("psql")
+        .args([
+            "--no-psqlrc",
+            "--tuples-only",
+            "--no-align",
+            "--dbname",
+            &database_url,
+            "--command",
+            query,
+        ])
+        .output()
+    {
+        Ok(output) if output.status.success() => ExternalState {
+            state: "ready".to_owned(),
+            detail: String::from_utf8_lossy(&output.stdout).trim().to_owned(),
+        },
+        Ok(output) => ExternalState {
+            state: "unknown".to_owned(),
+            detail: format!(
+                "psql exited {}: {}",
+                output.status,
+                String::from_utf8_lossy(&output.stderr).trim()
+            ),
+        },
+        Err(error) => ExternalState {
+            state: "unknown".to_owned(),
+            detail: format!("psql unavailable: {error}"),
+        },
+    }
+}
+
+fn runner_state() -> ExternalState {
+    let service = env::var("VITALS_DEPLOY_RUNNER_SERVICE")
+        .unwrap_or_else(|_| "github-vitals-runner".to_owned());
+    match Command::new("systemctl")
+        .args(["is-active", service.as_str()])
+        .output()
+    {
+        Ok(output) => {
+            let state = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+            if state.is_empty() {
+                ExternalState {
+                    state: "unknown".to_owned(),
+                    detail: format!(
+                        "{service}: systemctl exited {}: {}",
+                        output.status,
+                        String::from_utf8_lossy(&output.stderr).trim()
+                    ),
+                }
+            } else {
+                ExternalState {
+                    state,
+                    detail: service,
+                }
+            }
+        }
+        Err(error) => ExternalState {
+            state: "unknown".to_owned(),
+            detail: format!("{service}: systemctl unavailable: {error}"),
+        },
+    }
+}
+
+fn append_unknown_state_blockers(snapshot: &Snapshot, blocked: &mut Vec<Blocker>) -> bool {
+    let mut known = true;
+    for service in &snapshot.services {
+        if service.state.starts_with("unknown:") {
+            known = false;
+            blocked.push(Blocker {
+                kind: "unknown_service_state".to_owned(),
+                subject: service.name.clone(),
+                value: service.state.clone(),
+                reason: "service state could not be observed without mutation".to_owned(),
+            });
+        }
+    }
+    for (subject, state) in [
+        ("database", &snapshot.database),
+        ("runner", &snapshot.runner),
+    ] {
+        if state.state == "unknown" {
+            known = false;
+            blocked.push(Blocker {
+                kind: "unknown_external_state".to_owned(),
+                subject: subject.to_owned(),
+                value: state.detail.clone(),
+                reason: format!("{subject} state could not be observed without mutation"),
+            });
+        }
+    }
+    known
 }
 
 fn spool_state() -> Result<SpoolState, Box<dyn Error>> {
@@ -428,46 +595,57 @@ fn same_snapshot_state(left: &Snapshot, right: &Snapshot) -> bool {
         && left.live_files == right.live_files
         && left.services == right.services
         && left.spool == right.spool
+        && left.database == right.database
+        && left.runner == right.runner
 }
 
-fn validate_staged_files(root: &Path, manifest: &Manifest) -> Result<bool, Box<dyn Error>> {
+fn validate_staged_files(root: &Path, manifest: &Manifest) -> Result<(), String> {
     for file in &manifest.files {
-        let path = safe_staged_path(root, &file.destination)?;
-        if sha256_file(&path)? != file.sha256 {
-            return Err(format!("staged checksum mismatch: {}", file.destination).into());
+        let path = safe_staged_path(root, &file.destination).map_err(|error| error.to_string())?;
+        let actual_sha = sha256_file(&path).map_err(|error| error.to_string())?;
+        if actual_sha != file.sha256 {
+            return Err(format!(
+                "staged checksum mismatch: {} (actual={actual_sha}, expected={})",
+                file.destination, file.sha256
+            ));
         }
-        if file_mode(&path)? != file.mode {
+        let actual_mode = file_mode(&path).map_err(|error| error.to_string())?;
+        if actual_mode != file.mode {
             return Err(format!(
                 "staged mode mismatch: {} is {:o}, expected {:o}",
-                file.destination,
-                file_mode(&path)?,
-                file.mode
-            )
-            .into());
+                file.destination, actual_mode, file.mode
+            ));
         }
     }
-    Ok(true)
+    Ok(())
 }
 
-fn verify_staged_units(root: &Path, manifest: &Manifest) -> Result<bool, Box<dyn Error>> {
+fn verify_staged_units(root: &Path, manifest: &Manifest) -> Result<(), String> {
     let mut units = Vec::new();
     for file in &manifest.files {
         if file.kind == "systemd-unit" {
-            units.push(safe_staged_path(root, &file.destination)?);
+            units.push(
+                safe_staged_path(root, &file.destination).map_err(|error| error.to_string())?,
+            );
         }
     }
     if units.is_empty() {
-        return Err("dry run blocked: manifest has no systemd units".into());
+        return Err("dry run blocked: manifest has no systemd units".to_owned());
     }
     let output = Command::new("systemd-analyze")
         .arg("verify")
         .args(&units)
-        .output()?;
+        .output()
+        .map_err(|error| format!("systemd-analyze unavailable: {error}"))?;
     if !output.status.success() {
-        let detail = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("systemd unit verification failed: {detail}").into());
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!(
+            "systemd unit verification failed: exit={}, stdout={stdout}, stderr={stderr}",
+            output.status
+        ));
     }
-    Ok(true)
+    Ok(())
 }
 
 fn safe_staged_path(root: &Path, destination: &str) -> Result<PathBuf, Box<dyn Error>> {
@@ -483,6 +661,51 @@ fn safe_staged_path(root: &Path, destination: &str) -> Result<PathBuf, Box<dyn E
         return Err(format!("staged artifact escapes root: {destination}").into());
     }
     Ok(canonical)
+}
+
+fn stage_manifest_files(
+    repository_root: &Path,
+    stage_root: &Path,
+    manifest: &Manifest,
+) -> Result<(), Box<dyn Error>> {
+    fs::create_dir_all(stage_root)?;
+    for file in &manifest.files {
+        let source = safe_repository_path(repository_root, &file.source)?;
+        let destination = stage_root.join(&file.destination);
+        validate_relative_path(Path::new(&file.destination))?;
+        if let Some(parent) = destination.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::copy(source, &destination)?;
+        set_file_mode(&destination, file.mode)?;
+    }
+    Ok(())
+}
+
+fn safe_repository_path(root: &Path, relative: &str) -> Result<PathBuf, Box<dyn Error>> {
+    validate_relative_path(Path::new(relative))?;
+    let root = fs::canonicalize(root)?;
+    let path = root.join(relative);
+    let metadata = fs::symlink_metadata(&path)?;
+    if metadata.file_type().is_symlink() || !metadata.file_type().is_file() {
+        return Err(format!("unsafe repository artifact: {relative}").into());
+    }
+    let canonical = fs::canonicalize(path)?;
+    if !canonical.starts_with(&root) {
+        return Err(format!("repository artifact escapes root: {relative}").into());
+    }
+    Ok(canonical)
+}
+
+fn set_file_mode(path: &Path, mode: u32) -> Result<(), Box<dyn Error>> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(path, fs::Permissions::from_mode(mode))?;
+    }
+    #[cfg(not(unix))]
+    let _ = (path, mode);
+    Ok(())
 }
 
 fn build_manifest(
@@ -568,6 +791,10 @@ fn artifact_file(
     destination: &str,
     kind: &str,
 ) -> Result<ArtifactFile, Box<dyn Error>> {
+    let metadata = fs::symlink_metadata(source)?;
+    if metadata.file_type().is_symlink() || !metadata.file_type().is_file() {
+        return Err(format!("unsafe repository artifact: {}", source.display()).into());
+    }
     let relative = source
         .strip_prefix(root)?
         .to_string_lossy()
@@ -724,8 +951,9 @@ fn rustc_version() -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        ArtifactFile, BINARY_SPECS, Manifest, missing_blocker, sha256_file, validate_manifest,
-        validate_relative_path, verify_hash,
+        ArtifactFile, BINARY_SPECS, ExternalState, LiveFile, Manifest, ServiceState, Snapshot,
+        SpoolState, missing_blocker, same_snapshot_state, sha256_file, stage_manifest_files,
+        validate_manifest, validate_relative_path, validate_staged_files, verify_hash,
     };
     use std::fs;
     use tempfile::tempdir;
@@ -820,5 +1048,70 @@ mod tests {
         let second = sha256_file(&path)?;
         assert_eq!(first, second);
         Ok(())
+    }
+
+    #[test]
+    fn stages_manifest_files_and_validates_the_staged_copy()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let repository = tempdir()?;
+        let source = repository.path().join("source.bin");
+        file(&source, b"release")?;
+        let stage = tempdir()?;
+        let manifest = manifest(
+            vec![ArtifactFile {
+                source: "source.bin".to_owned(),
+                destination: "bin/release.bin".to_owned(),
+                sha256: sha256_file(&source)?,
+                mode: 0o644,
+                kind: "binary".to_owned(),
+            }],
+            "abc123",
+        );
+        stage_manifest_files(repository.path(), stage.path(), &manifest)?;
+        assert_eq!(fs::read(stage.path().join("bin/release.bin"))?, b"release");
+        validate_staged_files(stage.path(), &manifest).map_err(std::io::Error::other)?;
+        Ok(())
+    }
+
+    fn snapshot_fixture() -> Snapshot {
+        Snapshot {
+            observed_at: 1,
+            current_release: Some("abc".to_owned()),
+            live_files: vec![LiveFile {
+                path: "/usr/local/bin/example".to_owned(),
+                exists: false,
+                size: 0,
+                sha256: None,
+            }],
+            services: vec![ServiceState {
+                name: "example".to_owned(),
+                state: "inactive".to_owned(),
+            }],
+            spool: SpoolState {
+                file_count: 0,
+                bytes: 0,
+                fingerprint: "empty".to_owned(),
+            },
+            database: ExternalState {
+                state: "ready".to_owned(),
+                detail: "vitals|public|160000|samples".to_owned(),
+            },
+            runner: ExternalState {
+                state: "ready".to_owned(),
+                detail: "github-vitals-runner: active".to_owned(),
+            },
+        }
+    }
+
+    #[test]
+    fn snapshot_comparison_detects_database_and_runner_changes() {
+        let before = snapshot_fixture();
+        let mut after = snapshot_fixture();
+        assert!(same_snapshot_state(&before, &after));
+        after.database.detail = "vitals|public|160000|missing".to_owned();
+        assert!(!same_snapshot_state(&before, &after));
+        after = snapshot_fixture();
+        after.runner.state = "unknown".to_owned();
+        assert!(!same_snapshot_state(&before, &after));
     }
 }
