@@ -150,8 +150,9 @@ stable module identity · **Review required:** yes
 `openspec/changes/xe125-respiratory-rate/design.md`, `crates/vitalsd/src/main.rs`,
 `crates/vitals-proto/src/lib.rs`, `crates/vitals-core/src/lib.rs`, `vitals/registry.toml`
 
-**Creates:** a Linux-only Rust collector, tests, raw-frame journal wiring, a service definition,
-and `scripts/verify_xe125_collector.sh` plus its live socket-check command.
+**Creates:** a Linux-only Rust collector, tests, a service definition, and
+`scripts/verify_xe125_collector.sh` plus its live socket-check command. Bench H5 evidence remains the
+replay source; this streaming path does not add per-frame fsync journaling.
 
 **Modifies:** `vitalsd` primary-source configuration only in a separately reviewed promotion step.
 
