@@ -4,17 +4,18 @@
 
 Active consolidation change. This folder is the final OpenSpec destination for tasks that are
 recovered from older or newly added checkouts and are ready to continue, but do not yet belong to
-their final implementation change.
+their final implementation change. It currently has no active task.
 
 The `99-` prefix deliberately sorts this change after the named product changes. It is a holding
 change, not permission to combine unrelated implementation work without preserving each task's
 provenance and acceptance contract.
 
-## Initial migration
+## Migration history
 
-`T-B1 — Eight-hour Polar H10 capture` moves here from
-`openspec/changes/pi5-vitals-core/tasks.md`. Its task text and Verify command are retained; the
-vitals-core change keeps only a redirect and its historical implementation notes.
+`T-B1 — Eight-hour Polar H10 capture` was temporarily consolidated here from
+`openspec/changes/pi5-vitals-core/tasks.md`, then returned to that original group when the H10 sensor
+became available. The original task is authoritative again; this change retains the migration model
+for future recovered tasks.
 
 ## Goals
 
