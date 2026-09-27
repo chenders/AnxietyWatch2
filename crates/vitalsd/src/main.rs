@@ -306,6 +306,7 @@ fn handle(
         }
         Cmd::Health { reply } => {
             let mut health = st.health(now);
+            health.sync_append_ready = rotation_blocker.is_none() && !spool.is_memory_only();
             let liveness = update_drain_health(&mut health, spool);
             if let Some(blocker) = rotation_blocker {
                 health.degraded.push(blocker.clone());
