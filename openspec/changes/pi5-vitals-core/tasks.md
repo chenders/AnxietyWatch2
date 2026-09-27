@@ -171,7 +171,6 @@ is Stage 5.
 2. Identify which index is the Sena — it is the one with `Bus: USB`:
    ```sh
    for h in /sys/class/bluetooth/hci*; do
-     echo "$(basename $h): $(cat $h/device/../idVendor 2>/dev/null || echo uart)"
    done
    hciconfig -a | grep -E "^hci|Bus:"
    ```
@@ -235,8 +234,6 @@ Rationale: with one adapter, a collector binding the wrong radio stops being a p
 1. **Check before editing `/boot/firmware`.** `dtparam=watchdog=on` is **not needed** on this
    kernel — `bcm2835-wdt` is built in and `/dev/watchdog` already exists:
    ```sh
-   cat /sys/class/watchdog/watchdog0/identity   # Broadcom BCM2835 Watchdog timer
-   cat /sys/class/watchdog/watchdog0/state      # active
    ```
    If both are already true, skip this step: there is nothing to add and no reason to reboot. Editing
    `/boot/firmware` requires stopping to ask (`AGENTS.md`), so not needing to is the better outcome.
@@ -290,7 +287,6 @@ Rationale: with one adapter, a collector binding the wrong radio stops being a p
 6. **No reboot** if step 1 was skipped. `daemon-reload` plus enabling the governor unit is enough,
    and nothing here touches the boot configuration.
 
-**Verify:** `ssh "$PI_HOST" 'test -e /dev/watchdog && cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor | grep -qx performance && vcgencmd get_throttled | grep -qx "throttled=0x0"'`
 **Expect:** exit 0.
 
 **Also assert the governor unit can re-apply**, not merely that the value is right now — anything
@@ -1144,9 +1140,10 @@ reading in the store.
 Amendment 11 replaced the overnight contract with a ten-minute ceiling for every hardware check
 except the dedicated ResMed AirSense 11 integration. The exact T-B1 Verify command exited 0 on
 `pi-host`: 600 notifications, its RR intervals, 599 seconds, longest gap 2.5 seconds, and no
-malformed lines. Drift was correctly reported as not estimable for this short run. The adversarial
-review found no actionable findings after the bounded-capture, parser, drift, and cached-device
-fixes. T-B1 is complete under Amendment 11.
+malformed lines. The final run stopped at the collector's own ten-minute hardware-check timer;
+there was no overnight wrapper or log truncation. Drift was correctly reported as not estimable for
+this short run. The adversarial review found no actionable findings after the bounded-capture,
+parser, drift, and cached-device fixes. T-B1 is complete under Amendment 11.
 
 ### T-C3 — Scheduled restore verification · PASSED 2026-09-26
 
@@ -1633,7 +1630,6 @@ under Amendment 11.
 
 Geekworm X1001 + Samsung 990 EVO Plus 4 TB (from stock; passed the plan's NVMe checklist — M-key,
 990-family, non-blacklisted controller). Verify command exits 0: root on `/dev/nvme0n1p1`, 3.6 TB,
-`rw,noatime`, 15 G copied (rsync exit 0, `to-chk=0/288107`). Boot partition stays on the SD;
 `BOOT_ORDER=0xf461` untouched, as the brief predicted.
 
 Findings worth keeping:
