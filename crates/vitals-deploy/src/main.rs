@@ -601,6 +601,28 @@ fn require_root() -> Result<(), Box<dyn Error>> {
 }
 
 fn read_backup_gate(path: &Path) -> Result<BackupGate, Box<dyn Error>> {
+    let metadata = fs::symlink_metadata(path)?;
+    if metadata.file_type().is_symlink() || !metadata.file_type().is_file() {
+        return Err(format!("backup gate blocked: unsafe path {}", path.display()).into());
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+        if metadata.uid() != 0 {
+            return Err(format!(
+                "backup gate blocked: owner uid={}, expected uid=0",
+                metadata.uid()
+            )
+            .into());
+        }
+        if metadata.permissions().mode() & 0o022 != 0 {
+            return Err(format!(
+                "backup gate blocked: mode={:o} permits group/world writes",
+                metadata.permissions().mode() & 0o777
+            )
+            .into());
+        }
+    }
     let gate: BackupGate = serde_json::from_str(&fs::read_to_string(path)?)?;
     if !gate.backup_verified {
         return Err("backup gate blocked: backup_verified=false".into());
