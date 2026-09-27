@@ -35,7 +35,7 @@ pub struct Acquire {
     pub intent: Intent,
     /// The scheduler priority.
     pub priority: Priority,
-    /// The monotonic request deadline.
+    /// The maximum number of monotonic seconds from broker receipt before the request expires.
     pub deadline: u64,
     /// The maximum lease hold time.
     pub max_hold: u64,
