@@ -11,12 +11,12 @@ fn main() {
 
 #[cfg(target_os = "linux")]
 mod linux {
-    use bluer::Address;
-    use futures::StreamExt as _;
     use std::path::{Path, PathBuf};
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
     use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
     use tokio::net::UnixStream;
+    use vitals_ble_broker::client::{BrokerClient, BrokerEvent};
+    use vitals_ble_broker::{Capability, CapabilitySet, Priority};
     use vitals_collectors::h10_build as build;
     use vitals_collectors::h10_reconnect::{
         LinkLoss, ReconnectBackoff, assess_link, notification_idle_timeout,
@@ -28,28 +28,29 @@ mod linux {
     };
     use vitals_registry::VitalsSource;
 
-    const HR_SERVICE: bluer::Uuid =
-        bluer::Uuid::from_u128(0x0000_180d_0000_1000_8000_0080_5f9b_34fb);
-    const HR_MEASUREMENT: bluer::Uuid =
-        bluer::Uuid::from_u128(0x0000_2a37_0000_1000_8000_0080_5f9b_34fb);
+    const HR_SERVICE: &str = "0000180d-0000-1000-8000-00805f9b34fb";
+    const HR_MEASUREMENT: &str = "00002a37-0000-1000-8000-00805f9b34fb";
     /// A wedged daemon must be loud, not a silent stall (amendment 06 §2.2's
     /// visibility rule applies to the streaming path too).
     const APPEND_TIMEOUT: Duration = Duration::from_secs(30);
     /// `BlueZ` can leave a connect operation pending indefinitely. A deadline
-    /// plus `Device1.Disconnect` cancellation prevents the stale
-    /// `Operation already in progress` loop observed on 2026-08-28.
+    /// plus broker cancellation prevents the stale operation loop observed on
+    /// 2026-08-28.
     const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
     const CONNECTION_CHECK_INTERVAL: Duration = Duration::from_secs(1);
-    const CONNECTION_CHECK_TIMEOUT: Duration = Duration::from_secs(2);
     const GATT_DISCOVERY_TIMEOUT: Duration = Duration::from_secs(15);
     const SUBSCRIBE_TIMEOUT: Duration = Duration::from_secs(10);
-    const CANCEL_CONNECTION_TIMEOUT: Duration = Duration::from_secs(5);
+    /// The stream lease is finite so a wedged worker cannot retain ownership forever;
+    /// reconnecting at this boundary is handled by the source backoff loop.
+    const H10_LEASE_HOLD: u64 = 24 * 60 * 60;
     /// Auxiliary writes are bounded; saturation drops and names an update instead of
     /// blocking BLE ingestion or growing memory without limit.
     const LIVE_STATUS_QUEUE_CAPACITY: usize = 4;
 
     pub(super) struct Config {
-        target: Address,
+        target: String,
+        broker_socket: PathBuf,
+        adapter_selector: String,
         socket: PathBuf,
         state_dir: PathBuf,
         live_status: Option<PathBuf>,
@@ -63,10 +64,18 @@ mod linux {
                 .ok()
                 .or_else(|| std::env::args().nth(1))
                 .ok_or_else(|| "H10_MAC is unset".to_owned())?;
+            if mac.is_empty() {
+                return Err("H10_MAC is empty".to_owned());
+            }
+            let broker_socket = std::env::var_os("VITALS_BLE_BROKER_SOCKET")
+                .map(PathBuf::from)
+                .ok_or_else(|| "VITALS_BLE_BROKER_SOCKET is unset".to_owned())?;
+            let adapter_selector = std::env::var("VITALS_BLE_ADAPTER_SELECTOR")
+                .map_err(|_| "VITALS_BLE_ADAPTER_SELECTOR is unset".to_owned())?;
             Ok(Self {
-                target: mac
-                    .parse()
-                    .map_err(|_| format!("invalid H10 address {mac:?}"))?,
+                target: mac,
+                broker_socket,
+                adapter_selector,
                 socket: std::env::var_os("VITALSD_SOCKET")
                     .map_or_else(|| "/run/vitals/vitalsd.sock".into(), PathBuf::from),
                 state_dir: std::env::var_os("H10_STATE_DIR")
@@ -237,73 +246,18 @@ mod linux {
             .map_or(0, |d| d.as_secs() ^ u64::from(d.subsec_nanos()))
     }
 
-    async fn cancel_connection(device: &bluer::Device) {
-        match tokio::time::timeout(CANCEL_CONNECTION_TIMEOUT, device.disconnect()).await {
-            Ok(Ok(())) => {}
-            Ok(Err(e)) => eprintln!(
-                "h10-collector: BlueZ connection cleanup returned kind={:?}, message={:?}; \
-                 next attempt will still retry",
-                e.kind, e.message
-            ),
-            Err(_) => eprintln!(
-                "h10-collector: BlueZ connection cancellation timed out after {}s",
-                CANCEL_CONNECTION_TIMEOUT.as_secs()
-            ),
-        }
-    }
-
     async fn connect_and_find(
-        device: &bluer::Device,
-    ) -> Result<bluer::gatt::remote::Characteristic, String> {
-        let connected = tokio::time::timeout(CONNECTION_CHECK_TIMEOUT, device.is_connected())
+        client: &mut BrokerClient,
+        config: &Config,
+    ) -> Result<String, String> {
+        client
+            .connect_device_bounded(config.target.clone(), CONNECT_TIMEOUT)
             .await
-            .map_err(|_| {
-                format!(
-                    "initial BlueZ Connected status check timed out after {}s",
-                    CONNECTION_CHECK_TIMEOUT.as_secs()
-                )
-            })?
-            .map_err(|e| format!("initial BlueZ Connected status check failed: {e}"))?;
-        if !connected {
-            match tokio::time::timeout(CONNECT_TIMEOUT, device.connect()).await {
-                Ok(Ok(())) => {}
-                Ok(Err(e)) => return Err(format!("BlueZ connect failed: {e}")),
-                Err(_) => {
-                    return Err(format!(
-                        "BlueZ connect timed out after {}s",
-                        CONNECT_TIMEOUT.as_secs()
-                    ));
-                }
-            }
-        }
-        tokio::time::timeout(Duration::from_secs(10), async {
-            while !device.is_services_resolved().await.unwrap_or(false) {
-                tokio::time::sleep(Duration::from_millis(200)).await;
-            }
-        })
-        .await
-        .map_err(|_| "ServicesResolved timeout after 10s".to_owned())?;
-
-        tokio::time::timeout(GATT_DISCOVERY_TIMEOUT, async {
-            for service in device.services().await.map_err(|e| e.to_string())? {
-                if service.uuid().await.map_err(|e| e.to_string())? != HR_SERVICE {
-                    continue;
-                }
-                for characteristic in service.characteristics().await.map_err(|e| e.to_string())? {
-                    if characteristic.uuid().await.map_err(|e| e.to_string())? == HR_MEASUREMENT {
-                        return Ok(characteristic);
-                    }
-                }
-            }
-            Err("H10 has no 0x2A37".to_owned())
-        })
-        .await
-        .map_err(|_| {
-            format!(
-                "GATT discovery timed out after {}s",
-                GATT_DISCOVERY_TIMEOUT.as_secs()
-            )
-        })?
+            .map_err(|e| format!("broker connect failed: {e}"))?;
+        client
+            .resolve_characteristic_bounded(HR_SERVICE, HR_MEASUREMENT, GATT_DISCOVERY_TIMEOUT)
+            .await
+            .map_err(|e| format!("broker GATT discovery failed: {e}"))
     }
 
     async fn consume_notifications(
@@ -311,25 +265,20 @@ mod linux {
         minter: &mut SessionMinter,
         backoff: &mut ReconnectBackoff,
         live_status_sender: Option<&tokio::sync::mpsc::Sender<String>>,
-        device: &bluer::Device,
-        characteristic: &bluer::gatt::remote::Characteristic,
+        client: &mut BrokerClient,
+        characteristic: &str,
     ) -> Result<LinkLoss, String> {
         let id = minter.mint().map_err(|e| e.to_string())?;
         let mut hr_seq = 0_i64;
         let mut rr_seq = 0_i64;
-        let notification_stream = tokio::time::timeout(SUBSCRIBE_TIMEOUT, characteristic.notify())
+        client
+            .subscribe_bounded(characteristic.to_owned(), SUBSCRIBE_TIMEOUT)
             .await
-            .map_err(|_| {
-                format!(
-                    "GATT notification subscribe timed out after {}s",
-                    SUBSCRIBE_TIMEOUT.as_secs()
-                )
-            })?
-            .map_err(|e| e.to_string())?;
-        let mut notifications = Box::pin(notification_stream);
+            .map_err(|e| format!("broker notification subscribe failed: {e}"))?;
         let idle_timeout = notification_idle_timeout(source_for(config));
         let mut last_notification = tokio::time::Instant::now();
         let mut received_notification = false;
+        let mut connected = true;
         let mut connection_check = tokio::time::interval(CONNECTION_CHECK_INTERVAL);
         connection_check.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         eprintln!(
@@ -340,9 +289,26 @@ mod linux {
 
         loop {
             tokio::select! {
-                next = notifications.next() => {
-                    let Some(raw) = next else {
+                next = client.next_event() => {
+                    let event = next.map_err(|e| e.to_string())?;
+                    let Some(event) = event else {
                         return Ok(LinkLoss::StreamEnded);
+                    };
+                    let raw = match event {
+                        BrokerEvent::Frame { payload, .. } => payload,
+                        BrokerEvent::DeviceState {
+                            connected: state_connected,
+                            ..
+                        } => {
+                            connected = state_connected;
+                            if !connected {
+                                return Ok(LinkLoss::Disconnected);
+                            }
+                            continue;
+                        }
+                        BrokerEvent::Disconnected { reason } => {
+                            return Err(format!("broker disconnected H10: {reason}"));
+                        }
                     };
                     // Any notification proves the complete BLE subscription path is live,
                     // even if its physiological payload is malformed or rejected.
@@ -387,18 +353,6 @@ mod linux {
                     }
                 }
                 _ = connection_check.tick() => {
-                    let connected = tokio::time::timeout(
-                        CONNECTION_CHECK_TIMEOUT,
-                        device.is_connected(),
-                    )
-                    .await
-                    .map_err(|_| {
-                        format!(
-                            "BlueZ Connected status check timed out after {}s",
-                            CONNECTION_CHECK_TIMEOUT.as_secs()
-                        )
-                    })?
-                    .map_err(|e| format!("BlueZ Connected status check failed: {e}"))?;
                     if let Some(loss) = assess_link(
                         connected,
                         last_notification.elapsed(),
@@ -417,29 +371,44 @@ mod linux {
         backoff: &mut ReconnectBackoff,
         live_status_sender: Option<&tokio::sync::mpsc::Sender<String>>,
     ) -> Result<LinkLoss, String> {
-        let session = bluer::Session::new().await.map_err(|e| e.to_string())?;
-        let adapter = session.default_adapter().await.map_err(|e| e.to_string())?;
-        adapter.set_powered(true).await.map_err(|e| e.to_string())?;
-        let device = adapter.device(config.target).map_err(|e| e.to_string())?;
+        let capabilities = CapabilitySet::empty()
+            .with(Capability::Connect)
+            .with(Capability::Resolve)
+            .with(Capability::Subscribe);
+        let mut client = BrokerClient::connect(
+            &config.broker_socket,
+            config.adapter_selector.clone(),
+            config.target.clone(),
+            capabilities,
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+        client
+            .acquire_connect(Priority::new(8), 300, H10_LEASE_HOLD, config.target.clone())
+            .await
+            .map_err(|e| e.to_string())?;
         let result = async {
-            let characteristic = connect_and_find(&device).await?;
+            let characteristic = connect_and_find(&mut client, config).await?;
             consume_notifications(
                 config,
                 minter,
                 backoff,
                 live_status_sender,
-                &device,
+                &mut client,
                 &characteristic,
             )
             .await
         }
         .await;
-
-        // Device1.Disconnect cancels an outstanding Connect as well as closing
-        // a live link. This cleanup is what prevents a failed attempt from
-        // poisoning every later retry with `Operation already in progress`.
-        cancel_connection(&device).await;
-        result
+        let release = client.release("H10 stream ended or failed").await;
+        match (result, release) {
+            (Err(error), Ok(())) => Err(error),
+            (Err(error), Err(release_error)) => Err(format!(
+                "{error}; broker lease release failed: {release_error}"
+            )),
+            (Ok(result), Ok(())) => Ok(result),
+            (Ok(_), Err(error)) => Err(format!("broker lease release failed: {error}")),
+        }
     }
 
     pub async fn run(config: Config) -> Result<(), String> {
@@ -457,10 +426,10 @@ mod linux {
             {
                 Ok(LinkLoss::StreamEnded) => "notification stream ended".to_owned(),
                 Ok(LinkLoss::Disconnected) => {
-                    "BlueZ Connected=false while notification stream remained open".to_owned()
+                    "broker Connected=false while notification stream remained open".to_owned()
                 }
                 Ok(LinkLoss::NotificationIdle { idle_for }) => format!(
-                    "no notification for {:.1}s while BlueZ remained connected",
+                    "no notification for {:.1}s while broker remained connected",
                     idle_for.as_secs_f64()
                 ),
                 Err(e) => e,
@@ -486,7 +455,9 @@ mod linux {
 
         fn test_config(root: &Path) -> Config {
             Config {
-                target: "AA:BB:CC:DD:EE:FF".parse().expect("valid test address"),
+                target: "AA:BB:CC:DD:EE:FF".to_owned(),
+                broker_socket: root.join("broker.sock"),
+                adapter_selector: "test-controller".to_owned(),
                 socket: root.join("vitalsd.sock"),
                 state_dir: root.join("state"),
                 live_status: Some(root.join("status/status.json")),

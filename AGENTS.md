@@ -123,10 +123,12 @@ doc in the same commit. A plan doc that does not reflect what shipped is a defec
 
 ## Workflow — every change ships this way
 
-**Nothing lands on `main` except through a reviewed PR.** The pre-push hook blocks direct pushes.
+**Nothing lands on `main` except through a reviewed PR.** Review may be performed locally by an
+owner-approved model or by the owner; GitHub/Copilot review is optional and is not an acceptance
+gate. The pre-push hook blocks direct pushes.
 
 ```
-worktree → branch → commit → push → PR → /respond-to-copilot → squash-merge
+worktree → branch → commit → push → PR → local/owner review → squash-merge
 ```
 
 ### One worktree per task
@@ -143,13 +145,13 @@ Clean up after merge: `git worktree remove ../aw2-t-d3`
 
 ### Review
 
-Open the PR, then run `/respond-to-copilot` and work the loop until Copilot has no actionable
-findings. Address every comment — fix it, or reply with the reason and the rule. Silence reads as
-agreement and the next round re-raises it.
+Before merging, obtain an owner-approved review of the diff from a local model or the owner.
+Address actionable findings — fix them, or record the reason and governing rule. GitHub/Copilot
+review may be used when available, but it is not required and no merge loop depends on it.
 
-Before opening the PR, dispatch `c-pre-pr-reviewer` on the diff (and
-`physio-accuracy-reviewer` if it touches a decoder, the registry, or the CNS pipeline). Catching a
-finding there costs one agent run; catching it in Copilot costs a full round trip.
+Before opening the PR, dispatch `c-pre-pr-reviewer` on the diff when that local reviewer is
+available (and `physio-accuracy-reviewer` if it touches a decoder, the registry, or the CNS
+pipeline).
 
 ### Commit trailers
 

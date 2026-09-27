@@ -1,0 +1,24 @@
+[package]
+name = "vitals-ble-broker"
+description = "Pure lease and capability policy for the Linux BlueZ broker"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+default = []
+# Enables the Linux BlueZ owner and its contract tests. The dependency is target-gated
+# below so host policy tests remain buildable on non-Linux development machines.
+linux = []
+
+[dependencies]
+
+[target.'cfg(target_os = "linux")'.dependencies]
+bluer = { version = "0.17", features = ["bluetoothd"] }
+futures = "0.3"
+tokio = { version = "1", features = ["io-util", "macros", "net", "rt", "sync", "time"] }
+
+[lints]
+workspace = true
