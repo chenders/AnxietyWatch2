@@ -42,7 +42,7 @@ const BINARY_SPECS: &[BinarySpec] = &[
     },
     BinarySpec {
         name: "h10-collector",
-        source: "target/release/h10-collector",
+        source: "target/release/h10_collector",
         destination: "bin/h10-collector",
         unit: "vitals-h10.service",
         package: "vitals-collectors",
@@ -50,7 +50,7 @@ const BINARY_SPECS: &[BinarySpec] = &[
     },
     BinarySpec {
         name: "bp-collector",
-        source: "target/release/bp-collector",
+        source: "target/release/bp_collector",
         destination: "bin/bp-collector",
         unit: "vitals-bp.service",
         package: "vitals-collectors",
@@ -61,8 +61,8 @@ const BINARY_SPECS: &[BinarySpec] = &[
         source: "target/release/silence-detector",
         destination: "bin/silence-detector",
         unit: "silence-detector.service",
-        package: "not present in workspace",
-        available: false,
+        package: "vitals-console",
+        available: true,
     },
 ];
 
@@ -315,13 +315,21 @@ fn run_snapshot(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn Er
     reason = "apply must keep dry-run and activation argument handling adjacent"
 )]
 fn run_apply(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn Error>> {
-    let manifest_path = required_path(&mut args, "apply", "--manifest")?;
-    let receipt_path = required_path(&mut args, "apply", "--receipt")?;
+    let mut manifest_path = None;
+    let mut receipt_path = None;
     let mut dry_run = false;
     let mut activate = false;
     let mut backup_gate = None;
     while let Some(argument) = args.next() {
         match argument.as_str() {
+            "--manifest" => {
+                manifest_path = Some(PathBuf::from(
+                    args.next().ok_or("--manifest needs a value")?,
+                ));
+            }
+            "--receipt" => {
+                receipt_path = Some(PathBuf::from(args.next().ok_or("--receipt needs a value")?));
+            }
             "--dry-run" => dry_run = true,
             "--activate" => activate = true,
             "--backup-gate" => {
@@ -332,6 +340,8 @@ fn run_apply(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn Error
             value => return Err(format!("unknown apply argument: {value}").into()),
         }
     }
+    let manifest_path = manifest_path.ok_or("apply requires --manifest")?;
+    let receipt_path = receipt_path.ok_or("apply requires --receipt")?;
     if dry_run == activate {
         return Err("apply blocked: choose exactly one of --dry-run or --activate".into());
     }
@@ -1739,10 +1749,10 @@ fn rustc_version() -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        ArtifactFile, BINARY_SPECS, ExternalState, LiveFile, Manifest, ServiceState, Snapshot,
-        SpoolState, health_is_fresh, missing_blocker, same_snapshot_state, sha256_file,
-        stage_manifest_files, validate_manifest, validate_relative_path, validate_release_name,
-        validate_staged_files, validate_target_architecture, verify_hash,
+        ArtifactFile, ExternalState, LiveFile, Manifest, ServiceState, Snapshot, SpoolState,
+        health_is_fresh, missing_blocker, same_snapshot_state, sha256_file, stage_manifest_files,
+        validate_manifest, validate_relative_path, validate_release_name, validate_staged_files,
+        validate_target_architecture, verify_hash,
     };
     use std::fs;
     use std::time::Duration;
@@ -1803,17 +1813,19 @@ mod tests {
     }
 
     #[test]
-    fn reports_missing_target_as_a_blocker_instead_of_omitting_it()
-    -> Result<(), Box<dyn std::error::Error>> {
-        let spec = BINARY_SPECS
-            .iter()
-            .find(|candidate| candidate.name == "silence-detector")
-            .ok_or("silence-detector spec missing")?;
-        let blocker = missing_blocker(spec);
+    fn reports_missing_target_as_a_blocker_instead_of_omitting_it() {
+        let spec = super::BinarySpec {
+            name: "future-detector",
+            source: "target/release/future-detector",
+            destination: "bin/future-detector",
+            unit: "future-detector.service",
+            package: "future-package",
+            available: false,
+        };
+        let blocker = missing_blocker(&spec);
         assert_eq!(blocker.kind, "missing_artifact");
-        assert_eq!(blocker.subject, "silence-detector");
-        assert!(blocker.reason.contains("not present in workspace"));
-        Ok(())
+        assert_eq!(blocker.subject, "future-detector");
+        assert!(blocker.reason.contains("future-package"));
     }
 
     #[test]

@@ -72,7 +72,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          rustup run 1.97.1 cargo build --release -p vitalsd -p vitals-drain -p vitals-console -p vitals-collectors -p vitals-deploy
+          rustup run 1.97.1 cargo build --release -p vitalsd -p vitals-drain -p vitals-console -p vitals-collectors --bins -p vitals-deploy
 
       - name: Generate the SHA-addressed staged release
         shell: bash

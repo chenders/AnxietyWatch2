@@ -37,10 +37,12 @@ PostgreSQL/Sqitch/pgBackRest operations, and no container in the life-safety pat
 
 The checked-in units currently name `vitalsd`, `vitals-spool-drain`, `vitals-console`, H10/BP
 collectors, and a silence detector. The H10/BP collector sources are present as auto-discovered
-binaries in `vitals-collectors`, while the checked-in `silence-detector.service` still has no
-corresponding workspace package. A full-fleet deployment cannot be claimed until that remaining
-mapping is reconciled. The deployment tool must fail with the missing target name and expected
-package, never omit it.
+binaries in `vitals-collectors` (`h10_collector` and `bp_collector` are Cargo's default binary
+names); `silence-detector` is an auto-discovered binary in `vitals-console`. The deployment build
+must pass `--bins` for the collector package because a plain package build compiles its library but
+not both binary targets. The current inventory therefore maps every checked-in `ExecStart` to a built
+workspace artifact. The deployment tool must still fail with the missing target name and expected
+package if a future package/build graph change breaks that mapping, never omit it.
 
 ## 3. Proposed topology
 
