@@ -5,7 +5,9 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace
 
-from tools.xe125_breathing import observation_dict
+import pytest
+
+from tools.xe125_breathing import observation_dict, parse_args
 
 
 def result(*, state: str, rate: object, presence_detected: bool = True) -> SimpleNamespace:
@@ -21,6 +23,14 @@ def result(*, state: str, rate: object, presence_detected: bool = True) -> Simpl
             inter_presence_score=6.0,
         ),
     )
+
+
+def test_duration_defaults_to_ten_minutes_and_rejects_longer_runs() -> None:
+    assert parse_args(["--serial-port", "/dev/ttyUSB0"]).duration_seconds == 600.0
+    with pytest.raises(SystemExit):
+        parse_args(["--serial-port", "/dev/ttyUSB0", "--duration-seconds", "0"])
+    with pytest.raises(SystemExit):
+        parse_args(["--serial-port", "/dev/ttyUSB0", "--duration-seconds", "601"])
 
 
 def test_estimate_contains_rate_and_presence_context() -> None:
