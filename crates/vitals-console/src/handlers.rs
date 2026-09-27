@@ -862,6 +862,7 @@ mod tests {
             sources: vec![],
             total_samples: 0,
             spool_bytes: 0,
+            sync_append_ready: true,
             lag_bytes: 0,
             lag_age_seconds: 0,
             last_advanced_at: None,

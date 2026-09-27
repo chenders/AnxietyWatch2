@@ -15,8 +15,8 @@ Environment=VITALS_BLE_BROKER_SOCKET=/run/vitals/ble-broker.sock
 # address=AA:BB:CC:DD:EE:FF;sysfs_path=/sys/devices/...; never hci0/hci1.
 User=vitals
 Group=vitals
-RuntimeDirectory=vitals
-RuntimeDirectoryMode=0750
+# vitalsd.service owns /run/vitals. Declaring the same RuntimeDirectory here
+# would let a broker restart remove vitalsd.sock while vitalsd still runs.
 UMask=0007
 OOMScoreAdjust=-1000
 MemoryMin=64M
@@ -24,6 +24,7 @@ MemoryHigh=192M
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
+ReadWritePaths=/run/vitals
 ProtectHome=true
 RestrictAddressFamilies=AF_UNIX AF_NETLINK
 RestrictNamespaces=true

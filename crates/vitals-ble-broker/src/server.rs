@@ -354,17 +354,17 @@ async fn acquire_lease(
         .await;
     }
     let device = acquire.device_selector.clone().map(DeviceId::new);
+    let now = elapsed_tick(state.started);
     let request = LeaseRequest::new(
         acquire.source,
         acquire.intent,
         acquire.priority,
-        acquire.deadline,
+        deadline_after(now, acquire.deadline),
         acquire.max_hold,
         device,
         acquire.capabilities,
     )
     .with_reason(acquire.reason);
-    let now = elapsed_tick(state.started);
     let result = state.owner.lock().await.acquire(request, now);
     match result {
         Ok(crate::AcquireResult::Granted(lease)) => {
@@ -595,6 +595,7 @@ async fn process_operation(
                     let sender = sender.clone();
                     let lease_id = operation.lease_id;
                     let operation_id = operation.operation_id;
+                    let indication = info.lease.source() == Source::Bp;
                     tokio::spawn(async move {
                         futures::pin_mut!(stream);
                         while let Some(payload) = stream.next().await {
@@ -602,7 +603,7 @@ async fn process_operation(
                                 .send(ServerMessage::Frame {
                                     lease_id,
                                     operation_id,
-                                    indication: true,
+                                    indication,
                                     payload,
                                 })
                                 .await
@@ -809,6 +810,10 @@ fn elapsed_tick(started: Instant) -> u64 {
     started.elapsed().as_secs()
 }
 
+fn deadline_after(now: u64, timeout: u64) -> u64 {
+    now.saturating_add(timeout)
+}
+
 fn error_message(operation_id: u64, code: u8, detail: &str) -> ServerMessage {
     ServerMessage::Error {
         operation_id,
@@ -987,4 +992,19 @@ fn usb_identity(path: &Path) -> (Option<String>, Option<(u16, u16)>) {
         }
     }
     (None, None)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::deadline_after;
+
+    #[test]
+    fn lease_timeout_is_added_to_broker_tick() {
+        assert_eq!(deadline_after(722, 300), 1_022);
+    }
+
+    #[test]
+    fn lease_timeout_addition_saturates() {
+        assert_eq!(deadline_after(u64::MAX, 1), u64::MAX);
+    }
 }

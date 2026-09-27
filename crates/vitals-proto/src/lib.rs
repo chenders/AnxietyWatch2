@@ -274,6 +274,8 @@ pub struct Health {
     pub total_samples: u64,
     /// Bytes in the current spool segment.
     pub spool_bytes: u64,
+    /// Whether a sync-required append can currently be persisted.
+    pub sync_append_ready: bool,
     /// Bytes waiting for the `PostgreSQL` drainer.
     pub lag_bytes: u64,
     /// Age of the oldest waiting segment, or zero when empty.
