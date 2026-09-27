@@ -52,7 +52,7 @@ pane renders (`grep -n '^- \[' tasks.md`).
 - [x] T-A5 — Watchdog, governor, update policy · mechanical · pi
 - [x] T-C1 — PostgreSQL 16 bare metal on NVMe · implement-standard · pi · **blocked by G2**
 - [x] T-C2 — pgBackRest, three tiers · implement-standard · pi · **review**
-- [ ] T-C3 — Scheduled restore verification · implement-complex · pi · **review · gate G3 owner**
+- [x] T-C3 — Scheduled restore verification · implement-complex · pi · **review · gate G3 owner**
 - [x] T-D1 — Registry TOML and codegen · implement-standard · mac
 - [x] T-D2 — IEEE-11073 SFLOAT decoder with fuzz target · implement-complex · either · **review**
 - [x] T-D3 — COPY-binary encoder and spool · implement-complex · either · **review**
@@ -1148,6 +1148,19 @@ reading in the store.
 <!-- Conductor: record scope deltas, measured results, and decisions here as they happen.
      T-B1 is now owned by openspec/changes/99-last-specs/tasks.md; the historical T-B1 notes below
      are retained for provenance and are not a second task status record. -->
+
+### T-C3 — Scheduled restore verification · PASSED 2026-09-26
+
+Deployed the versioned `deploy/postgres/verify-restore.sh` and systemd units to `pi-host`.
+The verifier restores the latest full backup into an isolated scratch filesystem under
+`/var/lib/postgresql/verify`, starts PostgreSQL on port 5433, compares all public table counts,
+checks sequence floors and extension inventory, runs `pg_amcheck`, publishes the JSON result, and
+removes the scratch cluster. The monthly timer and daily staleness timer are enabled.
+
+The exact Verify command exited 0. Evidence: backup `20260926-204229F`, `tables_checked=31`,
+`mismatches=[]`, `restore_seconds=218`, and `/var/lib/vitals/restore-verify.json` has `ok=true`.
+The result directory grants the operator account traverse-only ACL access so the task's unprivileged `jq` check
+can read the root-owned 0644 result without exposing directory listing access.
 
 ### T-C2 — pgBackRest, three tiers · PASSED 2026-08-05
 
