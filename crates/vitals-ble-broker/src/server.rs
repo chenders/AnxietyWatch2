@@ -949,9 +949,9 @@ fn controller_inventory(root: &Path) -> io::Result<Vec<ControllerEvidence>> {
         }
         let class_path = entry.path();
         let device_path = fs::canonicalize(class_path.join("device"))?;
-        let address = fs::read_to_string(class_path.join("address"))?
-            .trim()
-            .to_owned();
+        let address = fs::read_to_string(class_path.join("address"))
+            .ok()
+            .map(|value| value.trim().to_owned());
         let (serial, vid_pid) = usb_identity(&device_path);
         let bus = if device_path.to_string_lossy().contains("/usb") {
             ControllerBus::Usb
@@ -964,7 +964,7 @@ fn controller_inventory(root: &Path) -> io::Result<Vec<ControllerEvidence>> {
         };
         records.push(ControllerEvidence {
             runtime_name: name,
-            address: Some(address),
+            address,
             sysfs_path: Some(device_path.to_string_lossy().into_owned()),
             serial,
             bus,
