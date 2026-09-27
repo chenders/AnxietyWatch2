@@ -33,6 +33,17 @@ def test_duration_defaults_to_ten_minutes_and_rejects_longer_runs() -> None:
         parse_args(["--serial-port", "/dev/ttyUSB0", "--duration-seconds", "601"])
 
 
+def test_unknown_state_is_safely_coerced() -> None:
+    observation = observation_dict(
+        result(state="SOME_BOGUS_STATE", rate=15.0),
+        observed_at_unix_micros=1_700_000_000_000_000,
+    )
+
+    assert observation["app_state"] == "UNKNOWN_STATE"
+    assert observation["rate_available"] is False
+    assert observation["breathing_rate_breaths_per_min"] is None
+
+
 def test_estimate_contains_rate_and_presence_context() -> None:
     observation = observation_dict(
         result(state="ESTIMATE_BREATHING_RATE", rate=13.5),
