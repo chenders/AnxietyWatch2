@@ -206,7 +206,11 @@ mod bluez_boundary {
 
     #[rustfmt::skip]
     async fn find(adapter: &Adapter, target: Address) -> bluer::Result<Option<Device>> {
-        if let Ok(device) = adapter.device(target) && device.is_paired().await.unwrap_or(false) { return Ok(Some(device)); }
+        if let Ok(device) = adapter.device(target) {
+            if device.is_paired().await.unwrap_or(false) || device.name().await.is_ok() {
+                return Ok(Some(device));
+            }
+        }
         let events = adapter.discover_devices().await?;
         Ok(if wait_for_target(events, target, DISCOVERY_TIMEOUT).await { Some(adapter.device(target)?) } else { None })
     }

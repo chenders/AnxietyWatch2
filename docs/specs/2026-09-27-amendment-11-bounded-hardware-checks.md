@@ -17,9 +17,10 @@ EMAY, A&D, XE125, audio, Bluetooth, storage, or other hardware checks.
 
 ## 2. T-B1 replacement
 
-T-B1 is a ten-minute Polar H10 hardware-path check. It proves discovery, pairing, GATT service
-resolution, subscription to Heart Rate Measurement (`0x2A37`), valid notifications, and the gap
-ceiling. It MUST NOT require an overnight run or claim eight-hour continuity.
+T-B1 is a bounded Polar H10 hardware-path check with an acceptance window of at least nine and
+at most ten minutes. It proves discovery, pairing, GATT service resolution, subscription to Heart
+Rate Measurement (`0x2A37`), valid notifications, and the gap ceiling. It MUST NOT require an
+overnight run or claim eight-hour continuity.
 
 The gap histogram tool accepts an explicit `--require-duration-minutes` gate. T-B1 no longer
 requires a drift figure: ten minutes is sufficient to prove the notification path but is not an

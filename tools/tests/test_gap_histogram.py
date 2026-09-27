@@ -66,10 +66,18 @@ def test_a_notification_without_rr_intervals_still_counts(tmp_path: Path) -> Non
 
 def test_malformed_lines_are_collected_not_skipped(tmp_path: Path) -> None:
     """Silently skipping would let a corrupt capture look shorter but clean."""
-    log = write(tmp_path, ["1700000000.0 60 1000.0", "garbage", "1700000001.0 x 1000.0"])
+    log = write(
+        tmp_path,
+        [
+            "1700000000.0 60 1000.0",
+            "1700000001.0 61 1000.0 TRAILING",
+            "garbage",
+            "1700000002.0 x 1000.0",
+        ],
+    )
     a = parse(log)
     assert a.count == 1
-    assert len(a.malformed) == 2
+    assert len(a.malformed) == 3
 
 
 # ── the gate ─────────────────────────────────────────────────────────────────
@@ -92,6 +100,13 @@ def test_a_ten_minute_capture_can_fail_the_bounded_gate(tmp_path: Path, capsys) 
     rc = main([str(log), "--require-duration-minutes", "10"])
     assert rc == 1
     assert "under the required 10" in capsys.readouterr().err
+
+
+def test_capture_over_ten_minutes_fails_the_maximum(tmp_path: Path, capsys) -> None:
+    log = write(tmp_path, steady(seconds=10 * 60 + 2))
+    rc = main([str(log), "--max-duration-minutes", "10"])
+    assert rc == 1
+    assert "exceeds the maximum 10" in capsys.readouterr().err
 
 
 def test_a_full_length_capture_passes(tmp_path: Path) -> None:
@@ -119,6 +134,13 @@ def test_malformed_lines_fail_the_gate(tmp_path: Path, capsys) -> None:
 
 def test_a_missing_file_is_an_error_not_a_pass(tmp_path: Path) -> None:
     assert main([str(tmp_path / "nope.log")]) == 2
+
+
+def test_non_monotonic_timestamps_fail_the_gate(tmp_path: Path, capsys) -> None:
+    log = write(tmp_path, ["1700000001.0 60", "1700000000.0 60"])
+    rc = main([str(log)])
+    assert rc == 1
+    assert "non-monotonic" in capsys.readouterr().err
 
 
 # ── the failure that would waste a hardware check ────────────────────────────

@@ -15,7 +15,8 @@ the link was up.
 
 Usage:
     gap_histogram.py night1.log
-    gap_histogram.py capture.log --require-duration-minutes 10 --max-gap-seconds 300
+    gap_histogram.py capture.log --require-duration-minutes 10 --max-duration-minutes 10 \
+                     --max-gap-seconds 300
 
 Exits nonzero when a requirement is not met, and says which one. A gate that
 will not name its blocker costs an hour of guessing.
@@ -109,7 +110,10 @@ class Analysis:
             return None
         start, end = run
         window = self.notifications[start : end + 1]
-        rr_total_s = sum(sum(n.rr_ms) for n in window) / 1000.0
+        # The first notification's intervals precede its arrival timestamp;
+        # compare only intervals received after the window begins.
+        measured = window[1:]
+        rr_total_s = sum(sum(n.rr_ms) for n in measured) / 1000.0
         host_s = window[-1].t - window[0].t
         if host_s <= 0 or rr_total_s <= 0:
             return None
@@ -157,7 +161,8 @@ class Analysis:
             return 0, "no unbroken run of 5 minutes or more; not estimable"
         start, end = run
         window = self.notifications[start : end + 1]
-        rr_total_s = sum(sum(n.rr_ms) for n in window) / 1000.0
+        measured = window[1:]
+        rr_total_s = sum(sum(n.rr_ms) for n in measured) / 1000.0
         host_s = window[-1].t - window[0].t
         missing_s = host_s - rr_total_s
         if missing_s <= 0:
@@ -189,8 +194,11 @@ def parse(path: Path) -> Analysis:
             except ValueError as exc:
                 a.malformed.append((line_no, str(exc)))
                 continue
+            if len(parts) > 3:
+                a.malformed.append((line_no, f"expected at most 3 fields, got {len(parts)}"))
+                continue
             rr: list[float] = []
-            if len(parts) >= 3 and parts[2]:
+            if len(parts) == 3 and parts[2]:
                 try:
                     rr = [float(x) for x in parts[2].split(",") if x]
                 except ValueError as exc:
@@ -247,9 +255,10 @@ def report(a: Analysis) -> str:
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("log", type=Path)
-    duration = p.add_mutually_exclusive_group()
-    duration.add_argument("--require-duration-hours", type=float, default=None)
-    duration.add_argument("--require-duration-minutes", type=float, default=None)
+    minimum_duration = p.add_mutually_exclusive_group()
+    minimum_duration.add_argument("--require-duration-hours", type=float, default=None)
+    minimum_duration.add_argument("--require-duration-minutes", type=float, default=None)
+    p.add_argument("--max-duration-minutes", type=float, default=None)
     p.add_argument("--max-gap-seconds", type=float, default=None)
     p.add_argument(
         "--require-drift-report",
@@ -291,12 +300,23 @@ def main(argv: list[str] | None = None) -> int:
             failures.append(
                 f"duration {minutes:.2f}m is under the required {args.require_duration_minutes}m"
             )
+    if args.max_duration_minutes is not None:
+        minutes = a.duration_s / 60.0
+        if minutes > args.max_duration_minutes:
+            failures.append(
+                f"duration {minutes:.2f}m exceeds the maximum {args.max_duration_minutes}m"
+            )
     if args.max_gap_seconds is not None:
         longest = a.longest_gap()
         if longest > args.max_gap_seconds:
             failures.append(
                 f"longest gap {longest:.1f}s exceeds the {args.max_gap_seconds}s limit"
             )
+    negative_gaps = [gap for gap in a.gaps() if gap < 0]
+    if negative_gaps:
+        failures.append(
+            f"{len(negative_gaps)} non-monotonic timestamp gap(s); first is {negative_gaps[0]:.3f}s"
+        )
     if args.require_drift_report:
         drift = a.drift_pct()
         if drift is None:

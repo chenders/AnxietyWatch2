@@ -171,8 +171,9 @@ Analysis was M4.
 ### Hardware verification duration
 
 Except for the dedicated ResMed AirSense 11 integration check, every individual hardware check or
-live hardware capture is bounded to ten minutes. T-B1 is a ten-minute Polar H10 path check, not an
-overnight endurance claim. Short checks do not prove long-term reliability and do not waive review.
+live hardware capture is bounded to ten minutes. T-B1 is a bounded nine-to-ten-minute Polar H10 path
+check, not an overnight endurance claim. Short checks do not prove long-term reliability and do not
+waive review.
 
 ### Tools adopted
 

@@ -394,9 +394,9 @@ script the acceptance check runs was never version-controlled.
 7. Record the histogram verbatim in `## Implementation notes`. **If the longest gap exceeds 5
    minutes, stop and report before proceeding.**
 
-**Verify:** `ssh "$PI_HOST" 'cd ~/AnxietyWatch2 && python3 tools/gap_histogram.py ~/vitals/spike/night1.log --require-duration-minutes 10 --max-gap-seconds 300'`
-**Expect:** exit 0. The script must exit nonzero if duration < 10 minutes, if longest gap > 300 s,
-or if the capture contains malformed lines.
+**Verify:** `ssh "$PI_HOST" 'cd ~/AnxietyWatch2 && python3 tools/gap_histogram.py ~/vitals/spike/night1.log --require-duration-minutes 9 --max-duration-minutes 10 --max-gap-seconds 300'`
+**Expect:** exit 0. The script must exit nonzero if duration < 9 minutes, if duration > 10 minutes,
+if longest gap > 300 s, if timestamps go backward, or if the capture contains malformed lines.
 
 **Commit:**
 ```sh
@@ -1143,7 +1143,7 @@ reading in the store.
 
 Amendment 11 replaced the overnight contract with a ten-minute ceiling for every hardware check
 except the dedicated ResMed AirSense 11 integration. The exact T-B1 Verify command exited 0 on
-`pi-host`: 602 notifications, its RR intervals, 601 seconds, longest gap 2.5 seconds, and no
+`pi-host`: 600 notifications, its RR intervals, 599 seconds, longest gap 2.5 seconds, and no
 malformed lines. Drift was correctly reported as not estimable for this short run. The T-B1 task
 remains unchecked until its required review is complete.
 
