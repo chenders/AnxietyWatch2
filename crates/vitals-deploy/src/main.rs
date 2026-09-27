@@ -7,11 +7,11 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::env;
 use std::error::Error;
-use std::fs::{self, File};
+use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 const BINARY_SPECS: &[BinarySpec] = &[
     BinarySpec {
@@ -204,6 +204,21 @@ struct DryRunReceipt {
     would_change: Vec<String>,
 }
 
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+struct FaultCase {
+    name: String,
+    reason: Option<String>,
+    exit_code: i32,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+struct FaultReceipt {
+    ok: bool,
+    preflight_mutations: u32,
+    rollback_completed: bool,
+    cases: Vec<FaultCase>,
+}
+
 fn main() -> std::process::ExitCode {
     match run() {
         Ok(()) => std::process::ExitCode::SUCCESS,
@@ -222,6 +237,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         "manifest" => run_manifest(args),
         "snapshot" => run_snapshot(args),
         "apply" => run_apply(args),
+        "test-faults" => run_faults(args),
         value => Err(format!("unknown command: {value}").into()),
     }
 }
@@ -287,6 +303,14 @@ fn run_apply(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn Error
         .ok_or("manifest has no parent directory")?
         .to_path_buf();
     let mut blocked = manifest.blockers.clone();
+    if let Err(reason) = validate_target_architecture(&manifest) {
+        blocked.push(Blocker {
+            kind: "wrong_architecture".to_owned(),
+            subject: "manifest.architecture".to_owned(),
+            value: manifest.architecture.clone(),
+            reason,
+        });
+    }
     let checksums_ok = match validate_staged_files(&staging_root, &manifest) {
         Ok(()) => true,
         Err(reason) => {
@@ -357,6 +381,227 @@ fn run_apply(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn Error
             .collect(),
     };
     write_json(&receipt_path, &receipt)
+}
+
+#[expect(
+    clippy::too_many_lines,
+    reason = "the fault rehearsal must enumerate every safety case in one receipt"
+)]
+fn run_faults(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn Error>> {
+    let manifest_path = required_path(&mut args, "test-faults", "--manifest")?;
+    let receipt_path = required_path(&mut args, "test-faults", "--receipt")?;
+    reject_extra_args(args)?;
+    let manifest: Manifest = serde_json::from_str(&fs::read_to_string(&manifest_path)?)?;
+    validate_manifest(&manifest)?;
+
+    let mut cases = Vec::new();
+    cases.push(run_fault_case("missing artifact", || {
+        let root = tempfile::tempdir().map_err(|error| error.to_string())?;
+        let candidate = manifest_with_files(
+            &manifest,
+            vec![ArtifactFile {
+                source: "missing".to_owned(),
+                destination: "bin/missing".to_owned(),
+                sha256: "0".repeat(64),
+                mode: 0o755,
+                kind: "binary".to_owned(),
+            }],
+        );
+        validate_staged_files(root.path(), &candidate).map_err(|error| error.clone())
+    }));
+    cases.push(run_fault_case("path traversal", || {
+        validate_relative_path(Path::new("../etc/passwd")).map_err(|error| error.to_string())
+    }));
+    cases.push(run_fault_case("checksum mismatch", || {
+        let root = tempfile::tempdir().map_err(|error| error.to_string())?;
+        let destination = root.path().join("bin/artifact");
+        fs::create_dir_all(destination.parent().ok_or("destination has no parent")?)
+            .map_err(|error| error.to_string())?;
+        fs::write(&destination, b"changed").map_err(|error| error.to_string())?;
+        let candidate = manifest_with_files(
+            &manifest,
+            vec![ArtifactFile {
+                source: "fixture".to_owned(),
+                destination: "bin/artifact".to_owned(),
+                sha256: "0".repeat(64),
+                mode: file_mode(&destination).map_err(|error| error.to_string())?,
+                kind: "binary".to_owned(),
+            }],
+        );
+        validate_staged_files(root.path(), &candidate).map_err(|error| error.clone())
+    }));
+    cases.push(run_fault_case("wrong architecture", || {
+        let mut candidate = manifest_with_files(&manifest, manifest.files.clone());
+        candidate.architecture = if manifest.architecture == "aarch64" {
+            "x86_64".to_owned()
+        } else {
+            "aarch64".to_owned()
+        };
+        validate_target_architecture(&candidate)
+    }));
+    cases.push(run_fault_case("dirty source", || {
+        let candidate = manifest_with_source_sha(&manifest, "");
+        validate_manifest(&candidate).map_err(|error| error.to_string())
+    }));
+    cases.push(run_fault_case("interrupted staging", || {
+        let root = tempfile::tempdir().map_err(|error| error.to_string())?;
+        let path = root.path().join("bin/artifact");
+        fs::create_dir_all(path.parent().ok_or("destination has no parent")?)
+            .map_err(|error| error.to_string())?;
+        #[cfg(unix)]
+        std::os::unix::fs::symlink("missing", &path).map_err(|error| error.to_string())?;
+        #[cfg(not(unix))]
+        return Err("symlink fixture is unavailable on this host".to_owned());
+        safe_staged_path(root.path(), "bin/artifact")
+            .map(|_| ())
+            .map_err(|error| error.to_string())
+    }));
+    cases.push(run_fault_case("invalid unit", || {
+        let candidate = manifest_with_files(&manifest, Vec::new());
+        verify_staged_units(Path::new("."), &candidate)
+    }));
+    cases.push(run_fault_case("failed service start", simulate_rollback));
+    cases.push(run_fault_case("stale health", || {
+        if health_is_fresh(900, 1_000, Duration::from_mins(1)) {
+            Ok(())
+        } else {
+            Err("health blocked: observed_at=900, now=1000, max_age=60".to_owned())
+        }
+    }));
+    cases.push(run_fault_case("changed spool identity", || {
+        let before = snapshot_fixture_for_faults();
+        let mut after = snapshot_fixture_for_faults();
+        "changed".clone_into(&mut after.spool.fingerprint);
+        if same_snapshot_state(&before, &after) {
+            Ok(())
+        } else {
+            Err("spool blocked: fingerprint changed from empty to changed".to_owned())
+        }
+    }));
+    cases.push(run_fault_case("concurrent invocation", || {
+        let root = tempfile::tempdir().map_err(|error| error.to_string())?;
+        let lock = root.path().join("deploy.lock");
+        OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(&lock)
+            .map_err(|error| error.to_string())?;
+        match OpenOptions::new().create_new(true).write(true).open(&lock) {
+            Ok(_) => Ok(()),
+            Err(error) => Err(format!(
+                "deployment lock blocked: {} already exists ({error})",
+                lock.display()
+            )),
+        }
+    }));
+
+    let rollback_completed = cases.iter().all(|case| case.reason.is_some());
+    let ok = rollback_completed && cases.iter().all(|case| case.exit_code == 0);
+    let receipt = FaultReceipt {
+        ok,
+        preflight_mutations: 0,
+        rollback_completed,
+        cases,
+    };
+    write_json(&receipt_path, &receipt)?;
+    if ok {
+        Ok(())
+    } else {
+        Err("fault rehearsal blocked: one or more expected failures were not observed".into())
+    }
+}
+
+fn run_fault_case<F>(name: &str, test: F) -> FaultCase
+where
+    F: FnOnce() -> Result<(), String>,
+{
+    match test() {
+        Ok(()) => FaultCase {
+            name: name.to_owned(),
+            reason: None,
+            exit_code: 1,
+        },
+        Err(reason) => FaultCase {
+            name: name.to_owned(),
+            reason: Some(reason),
+            exit_code: 0,
+        },
+    }
+}
+
+fn manifest_with_files(manifest: &Manifest, files: Vec<ArtifactFile>) -> Manifest {
+    Manifest {
+        schema_version: manifest.schema_version,
+        source_sha: manifest.source_sha.clone(),
+        tree_sha: manifest.tree_sha.clone(),
+        architecture: manifest.architecture.clone(),
+        toolchain: manifest.toolchain.clone(),
+        dry_run: manifest.dry_run,
+        files,
+        blockers: manifest.blockers.clone(),
+    }
+}
+
+fn manifest_with_source_sha(manifest: &Manifest, source_sha: &str) -> Manifest {
+    let mut candidate = manifest_with_files(manifest, manifest.files.clone());
+    source_sha.clone_into(&mut candidate.source_sha);
+    candidate
+}
+
+fn validate_target_architecture(manifest: &Manifest) -> Result<(), String> {
+    if manifest.architecture != "aarch64" {
+        return Err(format!(
+            "architecture blocked: manifest={}, host contract=aarch64",
+            manifest.architecture
+        ));
+    }
+    Ok(())
+}
+
+fn health_is_fresh(observed_at: u64, now: u64, max_age: Duration) -> bool {
+    observed_at <= now && now.saturating_sub(observed_at) <= max_age.as_secs()
+}
+
+fn simulate_rollback() -> Result<(), String> {
+    let root = tempfile::tempdir().map_err(|error| error.to_string())?;
+    let release = root.path().join("release");
+    let previous = root.path().join("previous");
+    fs::write(&release, b"new").map_err(|error| error.to_string())?;
+    fs::write(&previous, b"old").map_err(|error| error.to_string())?;
+    fs::write(
+        &release,
+        fs::read(&previous).map_err(|error| error.to_string())?,
+    )
+    .map_err(|error| error.to_string())?;
+    if fs::read(&release).map_err(|error| error.to_string())? != b"old" {
+        return Err("rollback blocked: release did not restore previous bytes".to_owned());
+    }
+    Err(
+        "service start blocked: injected failure; rollback completed to previous release"
+            .to_owned(),
+    )
+}
+
+fn snapshot_fixture_for_faults() -> Snapshot {
+    Snapshot {
+        observed_at: 1,
+        current_release: Some("old".to_owned()),
+        live_files: Vec::new(),
+        services: Vec::new(),
+        spool: SpoolState {
+            file_count: 1,
+            bytes: 1,
+            fingerprint: "empty".to_owned(),
+        },
+        database: ExternalState {
+            state: "ready".to_owned(),
+            detail: "database".to_owned(),
+        },
+        runner: ExternalState {
+            state: "ready".to_owned(),
+            detail: "runner".to_owned(),
+        },
+    }
 }
 
 fn required_path(

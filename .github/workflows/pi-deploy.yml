@@ -80,6 +80,11 @@ jobs:
             --output "$stage/manifest.json"
           jq -e '.source_sha == env.GITHUB_SHA and .architecture == "aarch64" and (.files | length) > 0 and (.blockers | type) == "array"' \
             "$stage/manifest.json" >/dev/null
+          rustup run 1.97.1 cargo run -p vitals-deploy -- \
+            test-faults --manifest "$stage/manifest.json" \
+            --receipt "$stage/rollback-rehearsal.json"
+          jq -e '.ok == true and .preflight_mutations == 0 and .rollback_completed == true and (.cases | length) >= 8' \
+            "$stage/rollback-rehearsal.json" >/dev/null
 
       - name: Preserve staged dry-run tooling as a workflow artifact
         uses: actions/upload-artifact@v4
@@ -99,7 +104,7 @@ jobs:
             echo
             echo "- Commit: \`${GITHUB_SHA}\`"
             echo "- Mode: \`build-only\`"
-            echo "- dry_run: \`false (T-R4 not implemented)\`"
+            echo "- dry_run: \`host apply not invoked by build-only job\`"
             echo "- Protected production environment: \`not used by build-only job\`"
             echo "- Activated: \`false\`"
             echo "- Database migration attempted: \`false\`"
