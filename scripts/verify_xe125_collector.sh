@@ -2,7 +2,7 @@
 # Verify the Linux XE125 collector contract after the collector exists.
 set -euo pipefail
 
-cargo build --workspace
+cargo build --workspace --release
 cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 test -x target/release/xe125-collector || {
