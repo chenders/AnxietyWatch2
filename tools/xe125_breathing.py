@@ -60,9 +60,9 @@ def finite_number(value: Any) -> float | None:
 def state_name(value: Any) -> str:
     """Get an enum name without allowing an invalid state to look measured."""
     name = getattr(value, "name", None)
-    if isinstance(name, str):
+    if isinstance(name, str) and name in KNOWN_STATES:
         return name
-    if isinstance(value, str):
+    if isinstance(value, str) and value in KNOWN_STATES:
         return value
     return "UNKNOWN_STATE"
 
