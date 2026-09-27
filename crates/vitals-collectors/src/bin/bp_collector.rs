@@ -131,7 +131,7 @@ mod linux {
         i64::try_from(d.as_micros()).map_err(|_| "Unix timestamp does not fit i64".to_owned())
     }
 
-    async fn vitalsd_health(socket: &Path) -> Result<Vec<String>, String> {
+    async fn vitalsd_health(socket: &Path) -> Result<(bool, Vec<String>), String> {
         let mut stream = UnixStream::connect(socket)
             .await
             .map_err(|e| format!("connect {}: {e}", socket.display()))?;
@@ -153,7 +153,7 @@ mod linux {
             .await
             .map_err(|e| format!("read health reply: {e}"))?;
         match decode_payload::<Response>(&body).map_err(|e| format!("decode health reply: {e}"))? {
-            Response::Health { health } => Ok(health.degraded.clone()),
+            Response::Health { health } => Ok((health.sync_append_ready, health.degraded.clone())),
             Response::Error { kind, detail } => Err(format!("vitalsd health {kind:?}: {detail}")),
             other => Err(format!("unexpected vitalsd health reply: {other:?}")),
         }
@@ -175,16 +175,17 @@ mod linux {
                 ));
             }
             let last_error = match tokio::time::timeout(remaining, vitalsd_health(socket)).await {
-                Ok(Ok(degraded)) => {
-                    let persistence_blocker = degraded
-                        .iter()
-                        .find(|reason| reason.starts_with("spool persistence unavailable"));
-                    if let Some(blocker) = persistence_blocker {
-                        format!("vitalsd sync append blocked: {blocker}")
+                Ok(Ok((true, _))) => {
+                    eprintln!("bp-collector: vitalsd durable socket is ready");
+                    return Ok(());
+                }
+                Ok(Ok((false, degraded))) => {
+                    let blocker = if degraded.is_empty() {
+                        "vitalsd reported sync_append_ready=false".to_owned()
                     } else {
-                        eprintln!("bp-collector: vitalsd durable socket is ready");
-                        return Ok(());
-                    }
+                        degraded.join("; ")
+                    };
+                    format!("vitalsd sync append blocked: {blocker}")
                 }
                 Ok(Err(error)) => error,
                 Err(_) => format!(
@@ -371,6 +372,11 @@ mod linux {
     }
 
     #[cfg(test)]
+    #[expect(
+        clippy::expect_used,
+        clippy::items_after_test_module,
+        reason = "Linux socket tests fail loudly and keep the entry point beside run"
+    )]
     mod tests {
         use super::*;
         use tempfile::tempdir;
@@ -407,6 +413,7 @@ mod linux {
                         sources: Vec::new(),
                         total_samples: 0,
                         spool_bytes: 0,
+                        sync_append_ready: true,
                         lag_bytes: 0,
                         lag_age_seconds: 0,
                         last_advanced_at: None,
@@ -431,6 +438,64 @@ mod linux {
                 .await
                 .expect("health becomes ready");
             listener.await.expect("listener task");
+        }
+
+        #[tokio::test(flavor = "current_thread")]
+        async fn sync_append_blocker_prevents_readiness() {
+            let directory = tempdir().expect("temporary directory");
+            let socket = directory.path().join("vitalsd.sock");
+            let listener = UnixListener::bind(&socket).expect("bind test socket");
+            let task = tokio::spawn(async move {
+                for _ in 0..3 {
+                    let (mut stream, _) = listener.accept().await.expect("accept health probe");
+                    let mut len = [0u8; 4];
+                    stream
+                        .read_exact(&mut len)
+                        .await
+                        .expect("read health length");
+                    let n = check_frame_len(u32::from_le_bytes(len)).expect("health length");
+                    let mut body = vec![0; n];
+                    stream
+                        .read_exact(&mut body)
+                        .await
+                        .expect("read health body");
+                    assert_eq!(
+                        decode_payload::<Request>(&body).expect("decode request"),
+                        Request::Health
+                    );
+                    let response = Response::Health {
+                        health: Box::new(Health {
+                            uptime_secs: 1,
+                            sources: Vec::new(),
+                            total_samples: 0,
+                            spool_bytes: 0,
+                            sync_append_ready: false,
+                            lag_bytes: 0,
+                            lag_age_seconds: 0,
+                            last_advanced_at: None,
+                            subscribers: Vec::new(),
+                            heartbeat: HeartbeatInputs {
+                                monitoring_window_active: false,
+                                primary_sample_age_secs: None,
+                                tier_evaluation_age_secs: None,
+                                drain_progressing: true,
+                            },
+                            heartbeat_pulsing: true,
+                            degraded: vec!["spool rotation blocked: test blocker".to_owned()],
+                        }),
+                    };
+                    stream
+                        .write_all(&encode_frame(&response).expect("encode health response"))
+                        .await
+                        .expect("write health response");
+                }
+            });
+
+            let error = wait_for_vitalsd_with_timeout(&socket, Duration::from_millis(220))
+                .await
+                .expect_err("sync append blocker must prevent readiness");
+            assert!(error.contains("vitalsd readiness timed out"));
+            task.abort();
         }
 
         #[tokio::test(flavor = "current_thread")]
