@@ -13,4 +13,6 @@ test -x scripts/xe125-live-socket-check.sh || {
   echo "XE125 collector verify: live socket check is missing" >&2
   exit 1
 }
-timeout --signal=INT --kill-after=5 10m scripts/xe125-live-socket-check.sh
+# The live check owns its short bounded duration and must exit 0; the outer
+# timeout is a fail-closed upper bound, not the success condition.
+timeout --signal=INT --kill-after=5 10m scripts/xe125-live-socket-check.sh --duration-seconds 60

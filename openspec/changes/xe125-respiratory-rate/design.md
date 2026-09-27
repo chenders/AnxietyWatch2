@@ -15,7 +15,7 @@ The existing project has a Rust `vitalsd` single-writer path and a generated reg
 amendments require canonical units at the decoder boundary, append-only provenance, stable source
 identity, raw evidence for recoverability, and a strict distinction between unknown and healthy.
 The first milestone must therefore be a reversible bench tool, not an unvalidated alarm source. Under
-Amendment 01, the collector-to-spool path remains `collector -> libvitals -> vitalsd -> COPY spool`;
+Amendment 01, the collector-to-spool path remains `collector -> vitals-core -> vitalsd -> COPY spool`;
 `vitalsd` remains the single writer and the collector must not open the spool independently.
 
 ## Goals / Non-Goals
@@ -37,7 +37,6 @@ Amendment 01, the collector-to-spool path remains `collector -> libvitals -> vit
   verified on the Pi.
 - Claiming apnea detection, ventilation, oxygenation, tidal volume, or clinical accuracy.
 - Promoting radar output into CNS escalation or clearing in this change.
-- Choosing a final bedroom enclosure, lens, or mechanical mounting design without bench evidence.
 
 ## Decisions
 
@@ -56,7 +55,7 @@ surface.
 The first output records Acconeer's app state, range, presence scores, and rate. A future portable
 Rust processing crate may consume recorded frames or a transport-neutral frame type. The eventual
 Linux collector will publish through `vitalsd`; it will not write the spool directly. This is the
-Amendment 01 single-writer path, not a return to SQLite: `libvitals` owns COPY encoding, `vitalsd`
+Amendment 01 single-writer path, not a return to SQLite: `vitals-core` owns COPY encoding, `vitalsd`
 owns spool writes, and the drainer owns PostgreSQL COPY ingestion.
 
 **Alternative rejected:** treat one displayed floating-point number as a complete vital-sign sample.
@@ -100,7 +99,6 @@ A missing result is always unknown.
   durable ingest on state and validation.
 - **No stable frame identity** → keep bench output non-durable until the module protocol exposes a
   retransmission-stable identity.
-- **Multiple people or bedroom motion** → validate one-person placement first and report presence
   ambiguity rather than selecting a number silently.
 - **Clinical overinterpretation** → keep radar outside the alarm path and state that it measures
   chest motion/frequency, not airflow or oxygenation.
