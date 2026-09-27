@@ -29,6 +29,9 @@ Group=vitals
 # else; the socket itself is chmod 0660 by the daemon at bind time.
 RuntimeDirectory=vitals
 RuntimeDirectoryMode=0770
+# Keep the shared runtime directory across a vitalsd restart: the broker owns
+# its socket there and remains running while vitalsd rebinds its own socket.
+RuntimeDirectoryPreserve=yes
 StateDirectory=vitals
 StateDirectoryMode=0770
 

@@ -820,7 +820,7 @@ impl LeaseScheduler {
     }
 
     fn grant(&mut self, request: LeaseRequest, now: Tick) -> Lease {
-        let expires_at = request.deadline.min(now.saturating_add(request.max_hold));
+        let expires_at = now.saturating_add(request.max_hold);
         let lease = Lease {
             id: LeaseId(self.next_lease),
             source: request.source,
@@ -961,6 +961,26 @@ mod tests {
             CapabilitySet::empty(),
         )
         .with_reason("test request")
+    }
+
+    #[test]
+    fn granted_lease_uses_max_hold_not_request_deadline() {
+        let mut scheduler = LeaseScheduler::new(Generation::new(1));
+        let mut lease_request = request(Source::AirSense, Intent::Discover, 1, None);
+        lease_request = LeaseRequest::new(
+            lease_request.source,
+            lease_request.intent,
+            lease_request.priority,
+            101,
+            20,
+            lease_request.device,
+            lease_request.capabilities,
+        );
+        let result = scheduler.acquire(lease_request, 100);
+        let Ok(AcquireResult::Granted(lease)) = result else {
+            return;
+        };
+        assert_eq!(lease.expires_at(), 120);
     }
 
     #[test]

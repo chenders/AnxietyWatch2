@@ -133,6 +133,7 @@ fn health_json(h: &vitals_proto::Health) -> String {
     let _ = write!(o, "{{\"uptime_secs\":{}", h.uptime_secs);
     let _ = write!(o, ",\"total_samples\":{}", h.total_samples);
     let _ = write!(o, ",\"spool_bytes\":{}", h.spool_bytes);
+    let _ = write!(o, ",\"sync_append_ready\":{}", h.sync_append_ready);
     let _ = write!(o, ",\"lag_bytes\":{}", h.lag_bytes);
     let _ = write!(o, ",\"lag_age_seconds\":{}", h.lag_age_seconds);
     let advanced = h
@@ -189,6 +190,7 @@ mod tests {
             sources: Vec::new(),
             total_samples: 2,
             spool_bytes: 3,
+            sync_append_ready: true,
             lag_bytes: 4,
             lag_age_seconds: 5,
             last_advanced_at: Some(6),
@@ -204,6 +206,10 @@ mod tests {
         };
         let value: serde_json::Value =
             serde_json::from_str(&health_json(&health)).expect("valid JSON");
+        assert_eq!(
+            value.get("sync_append_ready"),
+            Some(&serde_json::json!(true))
+        );
         assert_eq!(value.get("lag_bytes"), Some(&serde_json::json!(4)));
         assert_eq!(value.get("lag_age_seconds"), Some(&serde_json::json!(5)));
         assert_eq!(value.get("last_advanced_at"), Some(&serde_json::json!(6)));
