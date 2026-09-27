@@ -134,6 +134,14 @@
       ],
       "service": "0x1810",
       "indication": true
+    },
+    "polar_h10_emulator": {
+      "id": 7,
+      "transport": "internal",
+      "provides": [
+        "hr",
+        "rr_interval"
+      ]
     }
   }
 }

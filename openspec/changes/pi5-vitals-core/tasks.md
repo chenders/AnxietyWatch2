@@ -58,7 +58,7 @@ pane renders (`grep -n '^- \[' tasks.md`).
 - [x] T-D3 — COPY-binary encoder and spool · implement-complex · either · **review**
 - [x] T-D4 — vitalsd daemon and socket protocol · implement-complex · pi · **review**
 - [x] T-D5 — spool drainer · implement-complex · pi · **review · blocked by G3**
-- [ ] T-D6 — bp-collector end to end · implement-complex · pi · **review · blocked by G3**
+- [x] T-D6 — bp-collector end to end · implement-complex · pi · **review · blocked by G3**
 
 Parallelism: T-D1 and T-D2 have no hardware dependency and may run on separate workers concurrently
 with all of Group A. The overnight H10 capture is now tracked as T-B1 in
@@ -1110,7 +1110,10 @@ proof of the path — but the device is harder to talk to than "standard profile
 
 7. **Take a real blood pressure reading.** Confirm it lands.
 
-**Verify:** `ssh "$PI_HOST" 'cd ~/AnxietyWatch2 && cargo test -p vitals-decode bp && cargo fuzz run fuzz_bp_decode -- -max_total_time=60 && psql -U vitals -tAc "SELECT count(*) FROM samples WHERE source=6 AND type=6" | awk "\$1 > 0"'`
+**Verify:** `ssh "$PI_HOST" 'cd ~/AnxietyWatch2 && cargo test -p vitals-decode bp && PATH="$HOME/.rustup/toolchains/nightly-aarch64-unknown-linux-gnu/bin:$PATH" cargo fuzz run fuzz_bp_decode -- -max_total_time=60 && psql -U vitals -tAc "SELECT count(*) FROM samples WHERE source=6 AND type=6" | awk "\$1 > 0"'`
+<!-- Verify corrected deliberately 2026-09-27: cargo-fuzz passes unstable -Z flags to rustc, so
+     the original stable-toolchain command cannot succeed. The Pi has the pinned nightly toolchain
+     installed without a rustup proxy; put its bin directory first so cargo-fuzz uses nightly. -->
 **Expect:** exit 0; tests pass; fuzzer clean at 60 s; at least one systolic row present with
 `source = 6`.
 
@@ -1167,6 +1170,16 @@ can read the root-owned 0644 result without exposing directory listing access.
 The exact Verify command exited 0 on `pi-host`. The drainer test suite passed, and the crash test
 killed the process after COPY had consumed the batch, restarted it, and confirmed `rows=10000`,
 `unique=10000`, `offset=1020037`, and `eof=1020037` with no active throttling.
+
+### T-D6 — BP collector end to end · PASSED 2026-09-27
+
+The decoder tests passed (9 cases), the corrected nightly ASan fuzz run completed 23,276,905
+executions in 60 seconds without a finding, and the live database contains 81 systolic samples
+(`source=6`, `type=6`). The collector service is enabled and active. The current workspace includes
+the decoder, collector, raw-journal replay tool, fuzz target, registry additions, sync-segment seal,
+and BP deployment units. The original stable `cargo fuzz` Verify was run and failed because the
+stable compiler rejects the required `-Zsanitizer` flags; the corrected command above was then run
+with the installed nightly toolchain and passed.
 
 ### T-C2 — pgBackRest, three tiers · PASSED 2026-08-05
 

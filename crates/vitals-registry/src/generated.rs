@@ -45,6 +45,8 @@ pub enum VitalsSource {
     AcconeerXe125 = 4,
     /// `ad_ua651ble` — `ble`, service `0x1810` (indication)
     AdUa651ble = 6,
+    /// `polar_h10_emulator` — `internal`
+    PolarH10Emulator = 7,
 }
 
 impl VitalsType {
@@ -127,6 +129,7 @@ impl VitalsSource {
             3 => Some(Self::Derived),
             4 => Some(Self::AcconeerXe125),
             6 => Some(Self::AdUa651ble),
+            7 => Some(Self::PolarH10Emulator),
             _ => None,
         }
     }
@@ -152,11 +155,12 @@ pub const ALL_TYPES: [VitalsType; 9] = [
 ];
 
 /// Every source.
-pub const ALL_SOURCES: [VitalsSource; 6] = [
+pub const ALL_SOURCES: [VitalsSource; 7] = [
     VitalsSource::Emay,
     VitalsSource::PolarH10,
     VitalsSource::Healthkit,
     VitalsSource::Derived,
     VitalsSource::AcconeerXe125,
     VitalsSource::AdUa651ble,
+    VitalsSource::PolarH10Emulator,
 ];

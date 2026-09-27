@@ -1273,6 +1273,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "vitals-collectors"
+version = "0.1.0"
+dependencies = [
+ "bluer",
+ "futures",
+ "tempfile",
+ "tokio",
+ "vitals-core",
+ "vitals-decode",
+ "vitals-proto",
+ "vitals-registry",
+]
+
+[[package]]
 name = "vitals-core"
 version = "0.1.0"
 dependencies = [

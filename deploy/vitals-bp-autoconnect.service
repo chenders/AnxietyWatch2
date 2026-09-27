@@ -1,0 +1,22 @@
+[Unit]
+Description=Register the A&D cuff on the kernel LE auto-connect list
+# The mgmt accept-list does not survive a reboot, and bluetoothd does NOT
+# repopulate it for this bonded+trusted cuff (verified 2026-08-07: after a
+# power cycle the cuff sat in device_list with action 0 and absent from
+# white_list, and a reading never connected). Without this unit the
+# collector waits forever and a missed reading looks exactly like a quiet
+# night. Runs as root because btmgmt needs CAP_NET_ADMIN; the collector
+# itself stays unprivileged.
+After=bluetooth.service
+Requires=bluetooth.service
+Before=vitals-bp.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+EnvironmentFile=/etc/vitals/bp-collector.env
+# -a 2: auto-connect always · -t 1: LE public, matching the cuff's address type
+ExecStart=/bin/sh -c 'btmgmt add-device -a 2 -t 1 "$BP_CUFF_MAC"'
+
+[Install]
+WantedBy=multi-user.target

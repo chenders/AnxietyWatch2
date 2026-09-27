@@ -182,6 +182,13 @@ D-Bus client replaced it and is the shape `bp-collector` should take.
 
 - **Does setting the cuff's clock enable timestamps?** Highest-value follow-up — it would give
   real event times and resolve finding 1.
+  *Status 2026-08-07 (T-D6 step 5): still uninvestigated — the write test needs the cuff's brief
+  post-measurement window plus an operator, and both landed in the deferred-physical pile. Every
+  frame captured to date has flags bit1 = 0. Two consequences are already coded so the day this
+  resolves nothing has to change downstream: the collector keeps `timestamp` = arrival
+  unconditionally (amendment 06 §1.4), and a device timestamp, if one ever appears, lands in
+  `extra` as `device_time_unvalidated` — unvalidated because the cuff clock is civil local time,
+  so a naive UTC decode of it is off by the zone offset.*
 - The vendor service `233bf000-5a34-1b6d-975c-000d5690abe4` is unexplored.
 - `0x2A36` Intermediate Cuff Pressure was never observed; the cuff may not implement it.
 - kPa frames, negative SFLOAT exponents and measurement-status bits all need synthetic

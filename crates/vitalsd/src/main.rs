@@ -330,6 +330,12 @@ fn handle(
             let rows: Vec<Sample> = samples.iter().map(to_sample).collect();
             let resp = match spool.append(&rows, node_id, sync) {
                 Ok(()) => {
+                    if sync && let Err(error) = spool.seal_current() {
+                        eprintln!(
+                            "event=vitalsd.failure stage=sync-segment-seal result=error detail={:?}",
+                            error.to_string()
+                        );
+                    }
                     st.record_appended(&samples, spool.segment_bytes(), now);
                     eprintln!(
                         "event=vitalsd.append stage=spooled client_id={client_id} request_id={request_id} count={} segment={} bytes={} result=ok",
