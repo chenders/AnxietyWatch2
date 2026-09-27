@@ -595,43 +595,46 @@ async fn process_operation(
                     let sender = sender.clone();
                     let lease_id = operation.lease_id;
                     let operation_id = operation.operation_id;
-                    eprintln!(
-                        "vitals-ble-broker: subscription active lease={} operation={}",
-                        lease_id.value(),
-                        operation_id
-                    );
+                    let indication = info.lease.source() == Source::Bp;
                     tokio::spawn(async move {
                         futures::pin_mut!(stream);
+                        let mut frame_count = 0_u64;
                         while let Some(payload) = stream.next().await {
-                            let payload_len = payload.len();
-                            eprintln!(
-                                "vitals-ble-broker: indication received lease={} operation={} bytes={}",
-                                lease_id.value(),
-                                operation_id,
-                                payload_len
-                            );
+                            frame_count = frame_count.saturating_add(1);
+                            if frame_count == 1 || frame_count % 100 == 0 {
+                                eprintln!(
+                                    "vitals-ble-broker: GATT frame received lease={} operation={} transport={} count={} bytes={}",
+                                    lease_id.value(),
+                                    operation_id,
+                                    if indication { "indication" } else { "notification" },
+                                    frame_count,
+                                    payload.len()
+                                );
+                            }
                             if sender
                                 .send(ServerMessage::Frame {
                                     lease_id,
                                     operation_id,
-                                    indication: true,
+                                    indication,
                                     payload,
                                 })
                                 .await
                                 .is_err()
                             {
                                 eprintln!(
-                                    "vitals-ble-broker: indication delivery stopped lease={} operation={}",
+                                    "vitals-ble-broker: GATT frame delivery stopped lease={} operation={} count={}",
                                     lease_id.value(),
-                                    operation_id
+                                    operation_id,
+                                    frame_count
                                 );
                                 return;
                             }
                         }
                         eprintln!(
-                            "vitals-ble-broker: notification stream ended lease={} operation={}",
+                            "vitals-ble-broker: GATT stream ended lease={} operation={} frames={}",
                             lease_id.value(),
-                            operation_id
+                            operation_id,
+                            frame_count
                         );
                         let _ = sender
                             .send(ServerMessage::Disconnected {

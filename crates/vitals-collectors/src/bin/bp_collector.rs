@@ -131,25 +131,76 @@ mod linux {
         i64::try_from(d.as_micros()).map_err(|_| "Unix timestamp does not fit i64".to_owned())
     }
 
+    async fn vitalsd_health(socket: &Path) -> Result<Vec<String>, String> {
+        let mut stream = UnixStream::connect(socket)
+            .await
+            .map_err(|e| format!("connect {}: {e}", socket.display()))?;
+        let frame = encode_frame(&Request::Health).map_err(|e| format!("encode health: {e}"))?;
+        stream
+            .write_all(&frame)
+            .await
+            .map_err(|e| format!("write health: {e}"))?;
+        let mut len = [0u8; 4];
+        stream
+            .read_exact(&mut len)
+            .await
+            .map_err(|e| format!("read health reply length: {e}"))?;
+        let n = check_frame_len(u32::from_le_bytes(len))
+            .map_err(|e| format!("health reply length: {e}"))?;
+        let mut body = vec![0; n];
+        stream
+            .read_exact(&mut body)
+            .await
+            .map_err(|e| format!("read health reply: {e}"))?;
+        match decode_payload::<Response>(&body).map_err(|e| format!("decode health reply: {e}"))? {
+            Response::Health { health } => Ok(health.degraded.clone()),
+            Response::Error { kind, detail } => Err(format!("vitalsd health {kind:?}: {detail}")),
+            other => Err(format!("unexpected vitalsd health reply: {other:?}")),
+        }
+    }
+
     async fn wait_for_vitalsd(socket: &Path) -> Result<(), String> {
+        wait_for_vitalsd_with_timeout(socket, VITALSD_READY_TIMEOUT).await
+    }
+
+    async fn wait_for_vitalsd_with_timeout(socket: &Path, timeout: Duration) -> Result<(), String> {
         let started = Instant::now();
         loop {
-            match UnixStream::connect(socket).await {
-                Ok(_) => {
-                    eprintln!("bp-collector: vitalsd durable socket is ready");
-                    return Ok(());
-                }
-                Err(_) if started.elapsed() < VITALSD_READY_TIMEOUT => {
-                    tokio::time::sleep(VITALSD_READY_POLL).await;
-                }
-                Err(error) => {
-                    return Err(format!(
-                        "vitalsd readiness timed out after {}s for {}: {error}",
-                        VITALSD_READY_TIMEOUT.as_secs(),
-                        socket.display()
-                    ));
-                }
+            let remaining = timeout.saturating_sub(started.elapsed());
+            if remaining.is_zero() {
+                return Err(format!(
+                    "vitalsd readiness timed out after {}s for {}: no health response",
+                    timeout.as_secs(),
+                    socket.display()
+                ));
             }
+            let last_error = match tokio::time::timeout(remaining, vitalsd_health(socket)).await {
+                Ok(Ok(degraded)) => {
+                    let persistence_blocker = degraded
+                        .iter()
+                        .find(|reason| reason.starts_with("spool persistence unavailable"));
+                    if let Some(blocker) = persistence_blocker {
+                        format!("vitalsd sync append blocked: {blocker}")
+                    } else {
+                        eprintln!("bp-collector: vitalsd durable socket is ready");
+                        return Ok(());
+                    }
+                }
+                Ok(Err(error)) => error,
+                Err(_) => format!(
+                    "vitalsd health probe timed out after {}ms",
+                    remaining.as_millis()
+                ),
+            };
+            let remaining = timeout.saturating_sub(started.elapsed());
+            if remaining.is_zero() {
+                return Err(format!(
+                    "vitalsd readiness timed out after {}s for {}: {last_error}",
+                    timeout.as_secs(),
+                    socket.display()
+                ));
+            }
+            tokio::time::sleep(VITALSD_READY_POLL.min(remaining)).await;
         }
     }
 
@@ -324,23 +375,79 @@ mod linux {
         use super::*;
         use tempfile::tempdir;
         use tokio::net::UnixListener;
+        use vitals_proto::{Health, HeartbeatInputs};
 
         #[tokio::test(flavor = "current_thread")]
-        async fn waits_for_vitalsd_socket_readiness() {
+        async fn waits_for_vitalsd_health_readiness() {
             let directory = tempdir().expect("temporary directory");
             let socket = directory.path().join("vitalsd.sock");
             let delayed_socket = socket.clone();
             let listener = tokio::spawn(async move {
                 tokio::time::sleep(Duration::from_millis(20)).await;
                 let listener = UnixListener::bind(delayed_socket).expect("bind test socket");
-                tokio::time::sleep(Duration::from_millis(100)).await;
-                drop(listener);
+                let (mut stream, _) = listener.accept().await.expect("accept health probe");
+                let mut len = [0u8; 4];
+                stream
+                    .read_exact(&mut len)
+                    .await
+                    .expect("read health length");
+                let n = check_frame_len(u32::from_le_bytes(len)).expect("health length");
+                let mut body = vec![0; n];
+                stream
+                    .read_exact(&mut body)
+                    .await
+                    .expect("read health body");
+                assert_eq!(
+                    decode_payload::<Request>(&body).expect("decode request"),
+                    Request::Health
+                );
+                let response = Response::Health {
+                    health: Box::new(Health {
+                        uptime_secs: 1,
+                        sources: Vec::new(),
+                        total_samples: 0,
+                        spool_bytes: 0,
+                        lag_bytes: 0,
+                        lag_age_seconds: 0,
+                        last_advanced_at: None,
+                        subscribers: Vec::new(),
+                        heartbeat: HeartbeatInputs {
+                            monitoring_window_active: false,
+                            primary_sample_age_secs: None,
+                            tier_evaluation_age_secs: None,
+                            drain_progressing: true,
+                        },
+                        heartbeat_pulsing: true,
+                        degraded: Vec::new(),
+                    }),
+                };
+                stream
+                    .write_all(&encode_frame(&response).expect("encode health response"))
+                    .await
+                    .expect("write health response");
             });
 
             wait_for_vitalsd(&socket)
                 .await
-                .expect("socket becomes ready");
+                .expect("health becomes ready");
             listener.await.expect("listener task");
+        }
+
+        #[tokio::test(flavor = "current_thread")]
+        async fn health_probe_timeout_is_bounded() {
+            let directory = tempdir().expect("temporary directory");
+            let socket = directory.path().join("vitalsd.sock");
+            let listener = UnixListener::bind(&socket).expect("bind test socket");
+            let task = tokio::spawn(async move {
+                let (_stream, _) = listener.accept().await.expect("accept health probe");
+                tokio::time::sleep(Duration::from_secs(1)).await;
+            });
+
+            let error = wait_for_vitalsd_with_timeout(&socket, Duration::from_millis(20))
+                .await
+                .expect_err("unresponsive health socket must time out");
+            assert!(error.contains("vitalsd readiness timed out"));
+            task.abort();
         }
     }
 
