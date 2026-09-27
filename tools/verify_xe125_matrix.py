@@ -36,7 +36,7 @@ def main() -> int:
     if not isinstance(report, dict):
         return fail("report root must be an object")
     cases = report.get("cases")
-    if not isinstance(cases, dict) or set(cases) < REQUIRED_CASES:
+    if not isinstance(cases, dict) or not REQUIRED_CASES.issubset(cases):
         return fail(f"cases must include {sorted(REQUIRED_CASES)}")
     reference = report.get("reference_breaths_per_minute")
     if not isinstance(reference, (int, float)) or not math.isfinite(reference) or reference <= 0:
