@@ -15,8 +15,7 @@ the link was up.
 
 Usage:
     gap_histogram.py night1.log
-    gap_histogram.py capture.log --require-duration-minutes 10 --max-duration-minutes 10 \
-                     --max-gap-seconds 300
+    gap_histogram.py capture.log --require-duration-minutes 9 --max-gap-seconds 300
 
 Exits nonzero when a requirement is not met, and says which one. A gate that
 will not name its blocker costs an hour of guessing.
@@ -43,6 +42,7 @@ BUCKETS: list[tuple[str, float, float]] = [
 # A sensor whose clock runs more than this fast or slow against the host is
 # faulty, not merely imprecise (amendment 05 §1.4).
 DRIFT_LIMIT_PCT = 0.5
+MAX_DURATION_MINUTES = 10.0
 
 
 @dataclass
@@ -167,7 +167,7 @@ class Analysis:
         missing_s = host_s - rr_total_s
         if missing_s <= 0:
             return 0, "summed RR duration covers the elapsed window"
-        mean_rr_s = rr_total_s / max(1, sum(len(n.rr_ms) for n in window))
+        mean_rr_s = rr_total_s / max(1, sum(len(n.rr_ms) for n in measured))
         if mean_rr_s <= 0:
             return 0, "no RR intervals in the window"
         return round(missing_s / mean_rr_s), (
@@ -258,7 +258,6 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--require-duration-minutes", type=float, default=None)
     # This tool is the bounded non-ResMed hardware gate; every invocation has
     # a hard ten-minute ceiling. The ResMed integration does not use it.
-    p.add_argument("--max-duration-minutes", type=float, default=10.0)
     p.add_argument("--max-gap-seconds", type=float, default=None)
     p.add_argument(
         "--require-drift-report",
@@ -295,9 +294,9 @@ def main(argv: list[str] | None = None) -> int:
                 f"duration {minutes:.2f}m is under the required {args.require_duration_minutes}m"
             )
     minutes = a.duration_s / 60.0
-    if minutes > args.max_duration_minutes:
+    if minutes > MAX_DURATION_MINUTES:
         failures.append(
-            f"duration {minutes:.2f}m exceeds the maximum {args.max_duration_minutes}m"
+            f"duration {minutes:.2f}m exceeds the maximum {MAX_DURATION_MINUTES}m"
         )
     if args.max_gap_seconds is not None:
         longest = a.longest_gap()

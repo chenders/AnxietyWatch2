@@ -104,7 +104,7 @@ def test_a_ten_minute_capture_can_fail_the_bounded_gate(tmp_path: Path, capsys) 
 
 def test_capture_over_ten_minutes_fails_the_maximum(tmp_path: Path, capsys) -> None:
     log = write(tmp_path, steady(seconds=10 * 60 + 2))
-    rc = main([str(log), "--max-duration-minutes", "10"])
+    rc = main([str(log)])
     assert rc == 1
     assert "exceeds the maximum 10" in capsys.readouterr().err
 
