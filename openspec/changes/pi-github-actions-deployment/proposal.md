@@ -25,9 +25,9 @@ Introduce a native ARM64 GitHub Actions runner on the Pi and a staged, fail-clos
 - repeated fault-injection rehearsals establish that a failed preflight or post-restart health
   check leaves the prior release running and names the blocking value;
 - the first real update is gated on an off-Pi backup and verified restore evidence, then is a small,
-  coordinated update observed against fixed acceptance evidence;
-- `sync-to-pi.sh` remains available during the observation period and is removed or reduced to an
-  explicit retired message only after the new path has demonstrated equivalent or better recovery.
+  coordinated update evaluated against fixed post-deploy acceptance evidence;
+- `sync-to-pi.sh` remains available until the post-deploy evidence, manual rollback rehearsal, and
+  explicit operator decision are recorded; no arbitrary elapsed-time observation period is required.
 
 ## Scope
 
@@ -50,8 +50,8 @@ operator, the Pi, or a backup/rollback decision.
    skip targets silently.
 5. No real deploy occurs until the encrypted off-Pi backup, restore/readability evidence, spool
    state, and rollback release are recorded.
-6. `sync-to-pi.sh` is not removed until the runner path has survived an observation period and an
-   operator has a tested manual rollback.
+6. `sync-to-pi.sh` is not removed until the post-deploy evidence set is green, an operator has a
+   tested manual rollback, and the operator explicitly decides whether retirement is appropriate.
 
 ## Non-goals
 

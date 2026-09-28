@@ -1,7 +1,7 @@
 # Pi GitHub Actions delivery observation
 
-Status: **in progress**. T-R8 is not complete until the observation period includes another
-trusted delivery and scheduled idle evidence.
+Status: **in progress**. Per Amendment 18, T-R8 is not a waiting-period gate; it remains open until
+the manual rollback result and explicit operator decision to retain or retire the path are recorded.
 
 ## Delivery under observation
 
@@ -30,6 +30,8 @@ A second, manually dispatched build-only run `36372549404` also completed succes
 same commit; its `activate=false` input skipped the production job:
 <https://github.com/chenders/AnxietyWatch2/actions/runs/36372549404>
 
+These deliveries are supporting evidence only, not a mandatory count or elapsed-time gate.
+
 At the post-deployment observation sample on 2026-09-28 03:08 UTC:
 
 - active release: `9b4fff2091be39a5f8517ab52a99cfd764e6658b`
@@ -57,5 +59,6 @@ not evidence that the console activation changed the data path.
 ## Migration decision
 
 `scripts/sync-to-pi.sh` remains installed as an **emergency/manual rollback and recovery path**.
-It is not called by the GitHub workflow. It will not be retired until another trusted delivery and
-the agreed observation period produce clean health, journal, spool, and rollback evidence.
+It is not called by the GitHub workflow. It will not be retired until the post-deploy evidence and
+manual rollback rehearsal are complete and the operator explicitly decides to retire it. The current
+decision is to retain it as the emergency/manual path.

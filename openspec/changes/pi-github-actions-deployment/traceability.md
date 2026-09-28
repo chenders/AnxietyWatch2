@@ -9,7 +9,7 @@
 | 5 | T-R5 repeated dry-run/fault rehearsal | Injected failures fail closed or restore prior release | None; test data only |
 | 6 | T-R6 backup gate | Encrypted off-Pi backup plus non-vacuous restore evidence and spool boundary | None |
 | 7 | T-R7 minor update | Operator-approved main deployment, health/socket/spool proof, retained rollback | Narrow allowlisted service activation |
-| 8 | T-R8 observation and retirement | Repeated delivery evidence and manual rollback before sync retirement | Removal of old sync path only with approval |
+| 8 | T-R8 post-deploy evidence and retirement | Green activation receipt, read-only idle snapshot, manual rollback exit result, and explicit operator decision before sync retirement | Removal of old sync path only with approval |
 
 ## Explicit blockers
 

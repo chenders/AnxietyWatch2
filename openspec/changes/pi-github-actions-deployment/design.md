@@ -140,7 +140,7 @@ A deploy is not green because `systemctl is-active` is green. The acceptance con
   exercises a write;
 - drainer progress and PostgreSQL readiness where those services are in the target set;
 - console/API readiness only for the console target, without treating the console as the safety path;
-- no new journal errors attributable to the update during the observation window.
+- no new journal errors attributable to the update in the post-deploy evidence snapshot.
 
 Unknown health is a block, not success. A stale or missing health document names the document and
 age. The helper leaves an auditable JSON receipt in a root-owned recovery directory; receipts contain
@@ -162,8 +162,9 @@ The ladder intentionally moves from no host mutation to a real, small update:
    disposable root, while running backup/restore and spool evidence checks in read-only mode.
 6. **First real deployment:** after a fresh encrypted backup and verified restore, choose a minor
    update with a fixed maintenance window, operator present, and a prewritten rollback command.
-7. **Observation:** retain the old sync path and release for a defined period, collect fixed evidence,
-   then decide whether to retire `sync-to-pi.sh`.
+7. **Post-deploy evidence:** retain the old sync path and release, collect the fixed idle/data-path
+   evidence, rehearse manual rollback, and record the operator's retain-or-retire decision. No
+   arbitrary elapsed-time period is a gate.
 
 ## 5. Backup and first-update gate
 
@@ -183,5 +184,5 @@ rollback available. Any unknown state stops the rollout.
 During migration, the script remains the emergency/manual path and is not called by the GitHub
 workflow. Existing task `Verify` commands that depend on it must first be converted to use either a
 local native build or the new staged helper. Only the final retirement task may delete it or replace
-it with a message pointing to the runbook; that task requires a green observation receipt and a
-manual rollback rehearsal.
+it with a message pointing to the runbook; that task requires a green post-deploy evidence receipt,
+a manual rollback rehearsal, and an explicit operator decision.

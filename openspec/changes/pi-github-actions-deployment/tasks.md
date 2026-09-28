@@ -2,8 +2,8 @@
 
 Acceptance is each `Verify:` command's exit code, run by the conductor/operator. A worker report is
 not evidence. Do not tick a box until the command has exited 0. The tasks are deliberately ordered:
-runner first, then progressively more capable dry runs, then backup, then one minor update, then an
-observation decision.
+runner first, then progressively more capable dry runs, then backup, then one minor update, then a
+finite post-deploy evidence and rollback decision.
 
 - [x] **T-R0 — Record the deployment boundary and staged rollout contract**
 - [x] **T-R1 — Bootstrap and prove the native ARM64 runner**
@@ -272,31 +272,36 @@ health contract
 **Expect:** exit 0; the selected minor update is active, the safety daemon/socket is healthy, spool
 identity was preserved, backup evidence was consumed, and rollback remains available.
 
-## T-R8 — Observe, document rollback readiness, and retire SSH sync
+## T-R8 — Record post-deploy evidence, rollback readiness, and retire SSH sync
 
 **Tier:** implement-standard<br>
 **Host:** mac<br>
 **Context budget:** ~14k tokens<br>
-**Depends:** T-R7 green plus the agreed observation period<br>
+**Depends:** T-R7 green<br>
+**Amends:** 18 (no elapsed-time observation gate)<br>
 **Review required:** yes
 
 **Reads:** `docs/specs/AMENDMENTS.md`, `scripts/sync-to-pi.sh`, all T-R1–T-R7 receipts,
 `openspec/changes/pi5-vitals-core/tasks.md`, `openspec/changes/pi5-vitals-core/RUNBOOK.md`,
 `openspec/changes/pi-github-actions-deployment/design.md`
 
-**Creates:** observation report, updated runbooks/task Verify commands, and either a retired wrapper
-or the deliberate decision to retain `sync-to-pi.sh`
+**Creates:** post-deploy evidence and rollback report, updated runbooks/task Verify commands, and
+either a retired wrapper or the deliberate decision to retain `sync-to-pi.sh`
 
 **Do:**
-1. Observe multiple trusted main deliveries and scheduled idle periods; review runner availability,
-   artifact identity, health evidence, spool/drainer behavior, resource pressure, and journal errors.
-2. Rehearse manual rollback again without a GitHub job and record its exit code.
+1. Record the green T-R7 receipt and a read-only post-deploy snapshot taken after a scheduled
+   idle/spool-seal cycle. Include release identity, runner, database, vitalsd socket, service states,
+   drainer progress, spool evidence, resource pressure, and journal errors. No elapsed-time threshold
+   or arbitrary delivery count is required.
+2. Rehearse manual rollback without a GitHub job, record the exact command and exit code, and keep
+   the old release installed.
 3. Migrate task contracts that still depend on rsync/SSH to the staged native path, or explicitly
    retain the script for a documented emergency-only use.
-4. Remove the old script only if the operator approves and the observation/rollback evidence is
-   complete. Otherwise leave it intact and record the blocker; convenience is not a retirement gate.
+4. Remove the old script only if the operator approves and the post-deploy evidence plus rollback
+   rehearsal are complete. Otherwise leave it intact and record the operator's retain decision;
+   convenience is not a retirement gate.
 
-**Verify:** `test -s docs/deploy/pi-github-actions-observation.md && rg -q 'observation|rollback' docs/deploy/pi-github-actions-observation.md && if rg -q 'scripts/sync-to-pi.sh' openspec/changes/pi5-vitals-core/tasks.md openspec/changes/pi5-vitals-core/RUNBOOK.md; then test -s scripts/sync-to-pi.sh && rg -q 'emergency' docs/deploy/pi-github-actions-observation.md; else test ! -e scripts/sync-to-pi.sh; fi`
+**Verify:** `test -s docs/deploy/pi-github-actions-observation.md && rg -q 'post-deploy|rollback|operator decision' docs/deploy/pi-github-actions-observation.md && if rg -q 'scripts/sync-to-pi.sh' openspec/changes/pi5-vitals-core/tasks.md openspec/changes/pi5-vitals-core/RUNBOOK.md; then test -s scripts/sync-to-pi.sh && rg -q 'emergency' docs/deploy/pi-github-actions-observation.md; else test ! -e scripts/sync-to-pi.sh; fi`
 
-**Expect:** exit 0; the observation period, rollback rehearsal, and final sync-script decision are
-recorded. The script may remain if its emergency role is still justified.
+**Expect:** exit 0; the post-deploy evidence, manual rollback result, and explicit sync-script decision
+are recorded. The script may remain if its emergency role is still justified.
