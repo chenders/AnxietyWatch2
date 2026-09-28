@@ -17,10 +17,10 @@ observation decision.
 
 ## T-R0 — Record the deployment boundary and staged rollout contract
 
-**Tier:** implement-standard  
-**Host:** mac  
-**Context budget:** ~12k tokens  
-**Depends:** none  
+**Tier:** implement-standard<br>
+**Host:** mac<br>
+**Context budget:** ~12k tokens<br>
+**Depends:** none<br>
 **Review required:** yes
 
 **Reads:** `docs/specs/AMENDMENTS.md`, `../AnxietyWatch/.github/workflows/deploy.yml`,
@@ -51,10 +51,10 @@ performs no deployment.
 
 ## T-R1 — Bootstrap and prove the native ARM64 runner
 
-**Tier:** human  
-**Host:** pi  
-**Context budget:** ~10k tokens  
-**Depends:** T-R0 green  
+**Tier:** human<br>
+**Host:** pi<br>
+**Context budget:** ~10k tokens<br>
+**Depends:** T-R0 green<br>
 **Review required:** yes
 
 **Reads:** `docs/specs/AMENDMENTS.md`, `deploy/github-runner/README.md`,
@@ -81,10 +81,10 @@ Docker socket, and has a bootstrap receipt. A green job alone is insufficient.
 
 ## T-R2 — Add the trusted, non-deploying Pi workflow boundary
 
-**Tier:** implement-standard  
-**Host:** mac  
-**Context budget:** ~10k tokens  
-**Depends:** T-R1 green  
+**Tier:** implement-standard<br>
+**Host:** mac<br>
+**Context budget:** ~10k tokens<br>
+**Depends:** T-R1 green<br>
 **Review required:** yes
 
 **Reads:** `docs/specs/AMENDMENTS.md`, `openspec/changes/pi-github-actions-deployment/design.md`,
@@ -117,10 +117,10 @@ privilege by a Docker mount or broad token.
 
 ## T-R3 — Build a SHA-addressed artifact and manifest
 
-**Tier:** implement-complex  
-**Host:** pi  
-**Context budget:** ~16k tokens  
-**Depends:** T-R2 green  
+**Tier:** implement-complex<br>
+**Host:** pi<br>
+**Context budget:** ~16k tokens<br>
+**Depends:** T-R2 green<br>
 **Review required:** yes
 
 **Reads:** `docs/specs/AMENDMENTS.md`, `Cargo.toml`, `rust-toolchain.toml`, `deploy/*.service`,
@@ -151,10 +151,10 @@ Verify deliberately as a separate decision before implementation; never weaken t
 
 ## T-R4 — Implement a no-mutation host dry run
 
-**Tier:** implement-complex  
-**Host:** pi  
-**Context budget:** ~16k tokens  
-**Depends:** T-R3 green  
+**Tier:** implement-complex<br>
+**Host:** pi<br>
+**Context budget:** ~16k tokens<br>
+**Depends:** T-R3 green<br>
 **Review required:** yes
 
 **Reads:** `docs/specs/AMENDMENTS.md`, `openspec/changes/pi-github-actions-deployment/design.md`,
@@ -182,10 +182,10 @@ byte-for-byte unchanged apart from explicitly excluded observation timestamps.
 
 ## T-R5 — Rehearse failure, health, and rollback paths
 
-**Tier:** implement-complex  
-**Host:** pi  
-**Context budget:** ~18k tokens  
-**Depends:** T-R4 green  
+**Tier:** implement-complex<br>
+**Host:** pi<br>
+**Context budget:** ~18k tokens<br>
+**Depends:** T-R4 green<br>
 **Review required:** yes
 
 **Reads:** `docs/specs/AMENDMENTS.md`, `openspec/changes/pi-github-actions-deployment/design.md`,
@@ -211,10 +211,10 @@ previous release/data boundary intact.
 
 ## T-R6 — Create the pre-deploy backup and recovery receipt
 
-**Tier:** implement-complex  
-**Host:** either  
-**Context budget:** ~12k tokens  
-**Depends:** T-R5 green  
+**Tier:** implement-complex<br>
+**Host:** either<br>
+**Context budget:** ~12k tokens<br>
+**Depends:** T-R5 green<br>
 **Review required:** yes
 
 **Reads:** `docs/specs/AMENDMENTS.md`, `deploy/restore-verification/README.md`,
@@ -241,10 +241,10 @@ and a known previous release. A logical copy without restore evidence fails this
 
 ## T-R7 — Coordinate and execute one minor real update
 
-**Tier:** human  
-**Host:** pi  
-**Context budget:** ~16k tokens  
-**Depends:** T-R6 green and operator-approved maintenance window  
+**Tier:** human<br>
+**Host:** pi<br>
+**Context budget:** ~16k tokens<br>
+**Depends:** T-R6 green and operator-approved maintenance window<br>
 **Review required:** yes
 
 **Reads:** `docs/specs/AMENDMENTS.md`, `openspec/changes/pi-github-actions-deployment/design.md`,
@@ -274,10 +274,10 @@ identity was preserved, backup evidence was consumed, and rollback remains avail
 
 ## T-R8 — Observe, document rollback readiness, and retire SSH sync
 
-**Tier:** implement-standard  
-**Host:** mac  
-**Context budget:** ~14k tokens  
-**Depends:** T-R7 green plus the agreed observation period  
+**Tier:** implement-standard<br>
+**Host:** mac<br>
+**Context budget:** ~14k tokens<br>
+**Depends:** T-R7 green plus the agreed observation period<br>
 **Review required:** yes
 
 **Reads:** `docs/specs/AMENDMENTS.md`, `scripts/sync-to-pi.sh`, all T-R1–T-R7 receipts,
