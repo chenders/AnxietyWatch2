@@ -1,0 +1,68 @@
+name: Pi runner smoke
+
+# This is intentionally manual while the runner is being introduced. It proves
+# the native ARM64 execution boundary without granting deployment authority.
+on:
+  workflow_dispatch:
+  # Temporary bootstrap trigger: this branch is the only push target. The runner
+  # must have the cargo-fmt proxy before this smoke can pass. Remove
+  # after the first smoke run is accepted and the workflow is available from
+  # the default branch for manual dispatch.
+  push:
+    branches: [chore/github-runner-deployment-plan]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pi-runner-smoke
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    runs-on: [self-hosted, linux, ARM64, vitals-pi]
+    timeout-minutes: 15
+    steps:
+      - name: Check out the requested commit
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          clean: true
+
+      - name: Verify runner boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Linux
+          test "$(uname -m)" = aarch64
+          printf 'runner=%s\n' "$(hostname)"
+          printf 'kernel=%s\n' "$(uname -sr)"
+
+      - name: Verify pinned Rust toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup run 1.97.1 rustc --version
+          rustup run 1.97.1 cargo --version
+          rustup run 1.97.1 rustfmt --version
+          rustup run 1.97.1 cargo clippy --version
+
+      - name: Run a non-deployment workspace proof
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup run 1.97.1 cargo fmt --all -- --check
+          rustup run 1.97.1 cargo test -p vitals-decode
+
+      - name: Publish smoke evidence
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '## Pi runner smoke'
+            echo
+            echo "- Commit: \`${GITHUB_SHA}\`"
+            echo "- Host: \`$(hostname)\`"
+            echo "- Architecture: \`$(uname -m)\`"
+            echo "- Deployment performed: \`false\`"
+          } >> "$GITHUB_STEP_SUMMARY"
