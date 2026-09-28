@@ -1,6 +1,6 @@
 # Active Pi admin and monitoring URLs
 
-**Evidence time:** 2026-09-28 09:33 UTC  
+**Evidence time:** 2026-09-28 09:33 UTC
 **Host placeholder:** `$PI_HOST` means the Pi's configured private-LAN address. The literal address is intentionally not committed to the repository.
 
 This is a read-only inventory of HTTP listeners and routes observed on the Pi. HTTP status codes below are observations at the evidence time, not permanent interface guarantees.
@@ -19,9 +19,9 @@ There is no HTTPS listener in this inventory. The vitals console explicitly runs
 
 ## 1. Vitals console: port 8480
 
-Service: `vitals-console.service`  
-Configured bind: the Pi's private address on port `8480`  
-Protocol: HTTP  
+Service: `vitals-console.service`
+Configured bind: the Pi's private address on port `8480`
+Protocol: HTTP
 Authentication: browser login/session for data-bearing administration routes; health and version are intentionally public.
 
 ### Browser pages
@@ -100,9 +100,9 @@ The client API uses its own device/request authentication contract where require
 
 ## 2. Bedside clinical panel: port 8975
 
-Service: `panel-http.service`  
-Process: `anxietywatch-panel-http.py`  
-Bind: `0.0.0.0:8975`  
+Service: `panel-http.service`
+Process: `anxietywatch-panel-http.py`
+Bind: `0.0.0.0:8975`
 Request boundary: private-LAN and loopback allowlist; clients outside the allowlist are rejected.
 
 | URL | Purpose | Observed result |
@@ -114,9 +114,9 @@ This is a static panel server. The tested API-like paths (`/api/state`, `/api/he
 
 ## 3. Noise-watch administration: port 8976
 
-Service: `panel-admin.service`  
-Process: `panel-admin`  
-Bind: `0.0.0.0:8976`  
+Service: `panel-admin.service`
+Process: `panel-admin`
+Bind: `0.0.0.0:8976`
 Authentication: **none implemented by this service**.
 
 The service is LAN-facing because it binds all interfaces. Treat it as a private-LAN administrative surface, not an Internet-safe endpoint.
@@ -142,9 +142,9 @@ The service returns `404` for unrelated paths and does not provide a login route
 
 ## 4. dump1090 aircraft map: port 80
 
-Service: `lighttpd.service`  
-Bind: `0.0.0.0:80`  
-Document root: `/var/www/html`  
+Service: `lighttpd.service`
+Bind: `0.0.0.0:80`
+Document root: `/var/www/html`
 
 ### Active map route
 
