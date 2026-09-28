@@ -13,6 +13,7 @@ const {
   buildGraphModel,
   computeHrv,
   downsampleSeries,
+  mergePayload,
   nearest,
   pathData,
   windowed,
@@ -87,6 +88,34 @@ assert.equal(store.merge([{ t: 2, v: 20 }, { t: 1, v: 10 }, { t: 2, v: 20 }]), t
 assert.deepEqual(store.points, [{ t: 1, v: 10 }, { t: 2, v: 20 }]);
 assert.equal(store.merge([{ t: 2, v: 20 }]), false);
 console.log("PASS: incremental merge deduplicates and sorts out-of-order arrivals");
+
+assert.equal(
+  mergePayload({
+    units: { rr: "seconds" },
+    h10: {
+      sample_at: 1_700_000_500,
+      hr: 72,
+      test_origin: "polar_h10_emulator",
+      rr_points: [{ t: 1_700_000_500, v: 0.8 }],
+    },
+  }),
+  false,
+  "non-physical current samples must not enter physical graph stores",
+);
+assert.equal(
+  mergePayload({
+    units: { rr: "seconds" },
+    h10: {
+      sample_at: 1_700_000_501,
+      hr: 73,
+      test_origin: "physical_device",
+      rr_points: [{ t: 1_700_000_501, v: 0.81 }],
+    },
+  }),
+  true,
+  "physical current samples must enter graph stores",
+);
+console.log("PASS: graph stores reject non-physical current samples");
 
 const dense = Array.from({ length: 50_000 }, (_, index) => ({
   t: index < 25_000 ? index * 0.5 : 20_000 + (index - 25_000) * 0.5,

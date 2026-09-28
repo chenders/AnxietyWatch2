@@ -422,6 +422,8 @@ function installHover() {
 function mergePayload(data) {
   if (!data) return false;
   const incoming = data.h10_delta || data.h10_history || {};
+  const h10 = data.h10;
+  const physicalH10 = h10 && h10.test_origin === "physical_device";
   let changed = stores.hr.merge(incoming.hr);
   const rrUnit = data.units && data.units.rr;
   const rrIsCanonical = rrUnit === "seconds";
@@ -436,11 +438,12 @@ function mergePayload(data) {
   if (Array.isArray(data.ranges && data.ranges.rr) && data.ranges.rr.length >= 2) {
     rrValidRange = [Number(data.ranges.rr[0]), Number(data.ranges.rr[1])];
   }
-  const h10 = data.h10;
-  if (h10 && h10.sample_at != null && h10.hr != null) {
+  // Graph history is physical-device-only; an emulator or unknown live sample
+  // must never be folded into stores labelled history_origin=physical_device.
+  if (physicalH10 && h10.sample_at != null && h10.hr != null) {
     changed = stores.hr.merge([{ t: h10.sample_at, v: h10.hr }]) || changed;
   }
-  if (rrIsCanonical && h10 && Array.isArray(h10.rr_points)) {
+  if (rrIsCanonical && physicalH10 && Array.isArray(h10.rr_points)) {
     changed = stores.rr.merge(h10.rr_points) || changed;
   }
   return changed;
@@ -611,6 +614,7 @@ if (typeof module !== "undefined") {
     lowerBound,
     nearest,
     nearestAcrossSeries,
+    mergePayload,
     pathData,
     timeBounds,
     valueBounds,
