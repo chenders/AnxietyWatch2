@@ -39,6 +39,17 @@ in full before starting.
 - Use `git pull --rebase`. Never `git reset --hard`, `git checkout -B`, or `git switch -C`.
 - Stage specific files by name. Never `git add -A` or `git add .`.
 - Commit after every task.
+- Install the repository hooks with `scripts/install-hooks.sh` before pushing and run the full
+  `.githooks/pre-push` gate for every push; do not use `--no-verify` to bypass the public-information
+  or provenance checks.
+- If private, personal, machine-specific, PHI, device-identifying, or secret material is found in a
+  commit that is already public or is about to be pushed, do not merely add a later redaction commit.
+  First remove the offending content from the branch history: identify the earliest offending commit,
+  amend it with an interactive rebase onto `origin/main` (or use an equivalent history-rewrite tool),
+  verify the current tree and rewritten history, then update the remote branch with
+  `git push --force-with-lease`. Re-run `scripts/check-public-info.py --self-test`, the full
+  pre-push gate, and the relevant CI checks. Never rewrite `main`; if the material reached `main`,
+  stop and coordinate the owner/maintainer response, including secret rotation where applicable.
 
 ## Rust
 
