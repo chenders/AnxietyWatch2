@@ -1256,11 +1256,27 @@ fn service_state(name: &str) -> String {
 }
 
 fn database_state() -> ExternalState {
+    let root_process = Command::new("id")
+        .arg("-u")
+        .output()
+        .ok()
+        .is_some_and(|output| String::from_utf8_lossy(&output.stdout).trim() == "0");
     let database_url = env::var("VITALS_DEPLOY_DATABASE_URL").unwrap_or_else(|_| {
-        "host=/var/run/postgresql port=5432 dbname=vitals user=vitals".to_owned()
+        if root_process {
+            "host=/var/run/postgresql port=5432 dbname=vitals user=postgres".to_owned()
+        } else {
+            "host=/var/run/postgresql port=5432 dbname=vitals user=vitals".to_owned()
+        }
     });
     let query = "SELECT current_database(), current_schema(), current_setting('server_version_num'), to_regclass('public.samples')";
-    match Command::new("psql")
+    let mut command = if root_process {
+        let mut command = Command::new("runuser");
+        command.args(["-u", "postgres", "--", "psql"]);
+        command
+    } else {
+        Command::new("psql")
+    };
+    match command
         .args([
             "--no-psqlrc",
             "--tuples-only",
@@ -1419,20 +1435,61 @@ fn validate_staged_files(root: &Path, manifest: &Manifest) -> Result<(), String>
 }
 
 fn verify_staged_units(root: &Path, manifest: &Manifest) -> Result<(), String> {
-    let mut units = Vec::new();
-    for file in &manifest.files {
-        if file.kind == "systemd-unit" {
-            units.push(
-                safe_staged_path(root, &file.destination).map_err(|error| error.to_string())?,
-            );
-        }
-    }
-    if units.is_empty() {
+    let staged_units = manifest
+        .files
+        .iter()
+        .filter(|file| file.kind == "systemd-unit")
+        .collect::<Vec<_>>();
+    if staged_units.is_empty() {
         return Err("dry run blocked: manifest has no systemd units".to_owned());
     }
+    let verification_root = tempfile::tempdir().map_err(|error| error.to_string())?;
+    let unit_root = verification_root.path().join("etc/systemd/system");
+    let vendor_root = verification_root.path().join("usr/lib/systemd/system");
+    fs::create_dir_all(&unit_root).map_err(|error| error.to_string())?;
+    copy_tree(Path::new("/lib/systemd/system"), &vendor_root)
+        .map_err(|error| format!("systemd fixture copy blocked: {error}"))?;
+
+    for file in &staged_units {
+        let source =
+            safe_staged_path(root, &file.destination).map_err(|error| error.to_string())?;
+        let name = Path::new(&file.destination)
+            .file_name()
+            .ok_or_else(|| format!("unit has no filename: {}", file.destination))?;
+        let target = unit_root.join(name);
+        fs::copy(&source, &target).map_err(|error| error.to_string())?;
+        set_file_mode(&target, file.mode).map_err(|error| error.to_string())?;
+        copy_execstart_commands(&source, verification_root.path())?;
+    }
+    for file in &manifest.files {
+        if file.kind != "binary" {
+            continue;
+        }
+        let source =
+            safe_staged_path(root, &file.destination).map_err(|error| error.to_string())?;
+        let name = Path::new(&file.destination)
+            .file_name()
+            .ok_or_else(|| format!("binary has no filename: {}", file.destination))?;
+        let target = verification_root.path().join("usr/local/bin").join(name);
+        if let Some(parent) = target.parent() {
+            fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+        }
+        fs::copy(source, target).map_err(|error| error.to_string())?;
+    }
+
+    let names = staged_units
+        .iter()
+        .map(|file| {
+            Path::new(&file.destination)
+                .file_name()
+                .and_then(|name| name.to_str())
+                .ok_or_else(|| format!("unit filename is not UTF-8: {}", file.destination))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
     let output = Command::new("systemd-analyze")
         .arg("verify")
-        .args(&units)
+        .arg(format!("--root={}", verification_root.path().display()))
+        .args(names)
         .output()
         .map_err(|error| format!("systemd-analyze unavailable: {error}"))?;
     if !output.status.success() {
@@ -1442,6 +1499,54 @@ fn verify_staged_units(root: &Path, manifest: &Manifest) -> Result<(), String> {
             "systemd unit verification failed: exit={}, stdout={stdout}, stderr={stderr}",
             output.status
         ));
+    }
+    Ok(())
+}
+
+fn copy_execstart_commands(unit: &Path, root: &Path) -> Result<(), String> {
+    let text = fs::read_to_string(unit).map_err(|error| error.to_string())?;
+    for line in text.lines().filter(|line| line.starts_with("ExecStart=")) {
+        let command = line
+            .trim_start_matches("ExecStart=")
+            .trim_start_matches('-');
+        let Some(path) = command.split_whitespace().next() else {
+            continue;
+        };
+        let source = Path::new(path);
+        if !source.is_absolute() || path.starts_with("/usr/local/bin/") {
+            continue;
+        }
+        if !source.is_file() {
+            return Err(format!("systemd command is missing on host: {path}"));
+        }
+        let target = root.join(path.trim_start_matches('/'));
+        if let Some(parent) = target.parent() {
+            fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+        }
+        fs::copy(source, target).map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
+fn copy_tree(source: &Path, target: &Path) -> Result<(), Box<dyn Error>> {
+    if !source.is_dir() {
+        return Err(format!("source unit directory is missing: {}", source.display()).into());
+    }
+    fs::create_dir_all(target)?;
+    for entry in fs::read_dir(source)? {
+        let entry = entry?;
+        let source_path = entry.path();
+        let target_path = target.join(entry.file_name());
+        let metadata = fs::symlink_metadata(&source_path)?;
+        if metadata.file_type().is_symlink() {
+            #[cfg(unix)]
+            std::os::unix::fs::symlink(fs::read_link(&source_path)?, target_path)?;
+        } else if metadata.is_dir() {
+            copy_tree(&source_path, &target_path)?;
+        } else if metadata.is_file() {
+            fs::copy(&source_path, &target_path)?;
+            set_file_mode(&target_path, file_mode(&source_path)?)?;
+        }
     }
     Ok(())
 }

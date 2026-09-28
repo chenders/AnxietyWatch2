@@ -24,7 +24,7 @@ REMOTE="$PI_PATH"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 rsync -az --delete \
-  --exclude 'build*' --exclude 'target' --exclude 'fuzz/target' --exclude '.git' --exclude '.idea' --exclude '.DS_Store' \
+  --exclude 'build/' --exclude 'target' --exclude 'fuzz/target' --exclude '.git' --exclude '.idea' --exclude '.DS_Store' \
   "$ROOT/" "$HOST:$REMOTE/"
 echo "synced → $HOST:$REMOTE"
 

@@ -9,9 +9,9 @@ observation decision.
 - [x] **T-R1 — Bootstrap and prove the native ARM64 runner**
 - [x] **T-R2 — Add the trusted, non-deploying Pi workflow boundary**
 - [x] **T-R3 — Build a SHA-addressed artifact and manifest**
-- [ ] **T-R4 — Implement a no-mutation host dry run**
-- [ ] **T-R5 — Rehearse failure, health, and rollback paths**
-- [ ] **T-R6 — Create the pre-deploy backup and recovery receipt**
+- [x] **T-R4 — Implement a no-mutation host dry run**
+- [x] **T-R5 — Rehearse failure, health, and rollback paths**
+- [x] **T-R6 — Create the pre-deploy backup and recovery receipt**
 - [ ] **T-R7 — Coordinate and execute one minor real update**
 - [ ] **T-R8 — Observe, document rollback readiness, and retire SSH sync**
 
@@ -173,7 +173,9 @@ Verify deliberately as a separate decision before implementation; never weaken t
    spool, run Sqitch, or write production databases.
 4. Compare the after snapshot to the before snapshot and fail if any live state changed.
 
-**Verify:** `ssh "$PI_HOST" 'set -e; before=$(mktemp); after=$(mktemp); /usr/local/bin/vitals-deploy snapshot --output "$before"; /usr/local/bin/vitals-deploy apply --manifest /var/lib/vitals/deploy/test-manifest.json --dry-run --receipt /var/lib/vitals/recovery/last-dry-run.json; /usr/local/bin/vitals-deploy snapshot --output "$after"; cmp <(jq -S "del(.observed_at)" "$before") <(jq -S "del(.observed_at)" "$after"); jq -e ".mode == \"dry-run\" and .activated == false and (.blocked | type) == \"array\"" /var/lib/vitals/recovery/last-dry-run.json >/dev/null'`
+**Verify:** `ssh "$PI_HOST" 'set -e; before=$(mktemp); after=$(mktemp); /usr/local/bin/vitals-deploy snapshot --output "$before"; sudo /usr/local/bin/vitals-deploy apply --manifest /var/lib/vitals/deploy/test-manifest.json --dry-run --receipt /var/lib/vitals/recovery/last-dry-run.json; /usr/local/bin/vitals-deploy snapshot --output "$after"; cmp <(jq -S "del(.observed_at)" "$before") <(jq -S "del(.observed_at)" "$after"); sudo jq -e ".mode == \"dry-run\" and .activated == false and (.blocked | type) == \"array\"" /var/lib/vitals/recovery/last-dry-run.json >/dev/null'`
+
+**Verify correction:** The recovery directory is root-only on the Pi; `sudo` is required for the read-only helper and receipt assertion. The helper's dry-run still forbids activation and production mutation.
 
 **Expect:** exit 0; the full deployment plan is exercised, a receipt exists, and production state is
 byte-for-byte unchanged apart from explicitly excluded observation timestamps.
@@ -200,7 +202,9 @@ T-R3/T-R4 helper and test files, `deploy/*.service`, `deploy/restore-verificatio
    health document, age, or value; no rollback may erase spool data or run a database write.
 4. Prove a concurrent invocation is rejected with the deployment lock/value named.
 
-**Verify:** `ssh "$PI_HOST" 'set -e; /usr/local/bin/vitals-deploy test-faults --manifest /var/lib/vitals/deploy/test-manifest.json --receipt /var/lib/vitals/recovery/rollback-rehearsal.json; jq -e ".ok == true and .preflight_mutations == 0 and .rollback_completed == true and (.cases | length) >= 8 and (.cases | all(.reason != null and .exit_code != null))" /var/lib/vitals/recovery/rollback-rehearsal.json >/dev/null'`
+**Verify:** `ssh "$PI_HOST" 'set -e; sudo /usr/local/bin/vitals-deploy test-faults --manifest /var/lib/vitals/deploy/test-manifest.json --receipt /var/lib/vitals/recovery/rollback-rehearsal.json; sudo jq -e ".ok == true and .preflight_mutations == 0 and .rollback_completed == true and (.cases | length) >= 8 and (.cases | all(.reason != null and .exit_code != null))" /var/lib/vitals/recovery/rollback-rehearsal.json >/dev/null'`
+
+**Verify correction:** The rehearsal receipt is root-owned under the protected recovery directory, so both the helper and read-only assertion run through `sudo`; no production service or database action is added.
 
 **Expect:** exit 0; every injected fault is observable, fail-closed or rolled back, and leaves the
 previous release/data boundary intact.
@@ -228,7 +232,9 @@ previous release/data boundary intact.
 4. Copy recovery evidence off Pi and record the backup age, restore result, schema identity, and
    rollback release. Keep encryption material outside GitHub and source control.
 
-**Verify:** `ssh "$PI_HOST" 'set -e; jq -e ".backup_verified == true and .restore_verified == true and .off_pi == true and .spool_fingerprint != null and .rollback_release != null and .encryption_key_location != null" /var/lib/vitals/recovery/github-deploy-gate.json >/dev/null'`
+**Verify:** `ssh "$PI_HOST" 'set -e; sudo jq -e ".backup_verified == true and .restore_verified == true and .off_pi == true and .spool_fingerprint != null and .rollback_release != null and .encryption_key_location != null" /var/lib/vitals/recovery/github-deploy-gate.json >/dev/null'`
+
+**Verify correction:** The recovery gate is intentionally root-owned and stored under the protected recovery directory; the assertion uses `sudo` for read-only access.
 
 **Expect:** exit 0; the first real deployment has a fresh, encrypted, off-Pi, restore-verified gate
 and a known previous release. A logical copy without restore evidence fails this task.
