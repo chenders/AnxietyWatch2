@@ -18,6 +18,23 @@ jobs:
       - name: Reject personal and setup-specific information
         run: python3 scripts/check-public-info.py --self-test
 
+  h10-graph-performance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - name: Install Python test tools
+        run: python -m pip install 'pytest>=8.0' 'ruff>=0.6'
+      - name: H10 browser performance invariants
+        run: node docs/design/pi-panel/direction-a-clinical/polar-h10-performance-check.mjs
+      - name: Incremental publisher tests and lint
+        run: |
+          python -m pytest -q vitals/tools/tests/test_panel_vitals_status.py
+          ruff check tools/panel_vitals_status.py vitals/tools/tests/test_panel_vitals_status.py
+
   build-test:
     runs-on: ubuntu-latest
     # A real PostgreSQL, because the COPY-binary round-trip cannot be trusted

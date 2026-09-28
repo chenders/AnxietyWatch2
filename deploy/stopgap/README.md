@@ -173,6 +173,51 @@ Still open:
   `unclutter` would hide it.
 - `XDG_RUNTIME_DIR` must match the UID assigned to the dedicated `anxietywatch` service account.
 
+## Polar H10 graph data
+
+`polar-h10.html` is the detailed local H10 view. Its publisher deliberately splits the feed:
+
+- `vitals_status.json` is the small one-second status poll. It contains current BP/H10 state and
+  only `h10_delta` points added since `history_revision`.
+- Both documents declare `units.rr=seconds`, matching the registry's canonical RR unit. Missing or
+  different unit metadata blocks RR display rather than guessing or silently converting it.
+- `vitals_h10_history.json` is the full baseline. The publisher refreshes it at most every five
+  minutes, and the page refetches it only when its revision advances.
+
+The page computes RMSSD and SDNN together in one linear rolling-window pass and caches one graph
+model per data/range revision. Rendering retains first/minimum/maximum/last values per horizontal
+pixel while preserving every measured gap; it never creates one SVG node per sample. Hover lookup
+uses the cached model and binary search, throttled to one animation frame.
+
+### 2026-08-28/29 incident evidence
+
+The original page recomputed the rolling 60-second HRV window quadratically and called that function
+10 times per redraw and 24 times per pointer move. Selecting all history created about 70,900 SVG
+`stop` elements; two recorded pointer handlers each occupied the main thread for about 10.6 seconds.
+It also downloaded and parsed the complete ~1.23 MB history every second. On the Pi the corresponding
+publisher accumulated more than eight CPU-hours in 23 hours.
+
+After the collector was corrected to retain registry-canonical RR seconds, the old page still labelled
+the values as milliseconds and applied a `200..3000` check. A valid recent RR median of 1.036 seconds
+therefore rendered as approximately 1 ms and unusable even while the radio, collector, status file,
+and panel feed were all fresh. Unit metadata now fails closed, and this page consumes seconds without
+a presentation-layer conversion.
+
+Deployment also caught a cursor-query integration defect: `psql` does not expand `:variables` in a
+`-c` SQL argument. The publisher now passes SQL on stdin (where psql performs substitution), tests
+the exact argument shape, and includes stderr in a named query failure instead of logging only a
+multi-page command string.
+
+The split is a stopgap transport optimization, not the eventual query API. Runtime JSON remains
+untracked and is still served only on the local panel HTTP service.
+
+Verify the browser-side performance invariants with:
+
+```sh
+node docs/design/pi-panel/direction-a-clinical/polar-h10-performance-check.mjs
+uv run pytest -q vitals/tools/tests/test_panel_vitals_status.py
+```
+
 ## Query string
 
 The kiosk unit loads `?kiosk=1&live`.
