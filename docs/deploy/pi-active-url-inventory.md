@@ -34,8 +34,10 @@ Authentication: browser login/session for data-bearing administration routes; he
 | `http://$PI_HOST:8480/dashboard` | Vitals dashboard | `200 text/html` |
 | `http://$PI_HOST:8480/dashboard/` | Vitals dashboard | `200 text/html` |
 | `http://$PI_HOST:8480/` | No root page is mounted | `404` |
+| `http://$PI_HOST:8480/admin` | No standalone admin page is mounted | `404` |
+| `http://$PI_HOST:8480/admin/` | No standalone admin page is mounted | `404` |
 
-The dashboard HTML is reachable without a session, but its data-bearing API calls are protected separately.
+There is no `/admin` or `/admin/` page on the vitals console; both returned `404`. The app-wide operator entry point is `/console`, and the app-wide monitoring page is `/dashboard`. The dashboard HTML is reachable without a session, but its data-bearing API calls are protected separately.
 
 ### Public monitoring endpoints
 
