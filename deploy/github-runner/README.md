@@ -57,8 +57,10 @@ network details, or production credentials in this repository.
    ExecStart=/opt/actions-runner-vitals/run.sh
    Restart=always
    RestartSec=10
-   TimeoutStopSec=5
-   NoNewPrivileges=yes
+   TimeoutStopSec=5min
+   UMask=0077
+   # Required for the narrow sudoers rule to elevate only vitals-deploy.
+   NoNewPrivileges=no
    PrivateTmp=yes
    ProtectHome=yes
    ProtectSystem=full
@@ -71,9 +73,23 @@ network details, or production credentials in this repository.
    WantedBy=multi-user.target
    ```
 
-   `ProtectSystem=full` is only the bootstrap posture; the implementation task must verify the
-   runner's own update/work-directory behavior before hardening it further. Never set
-   `RUNNER_ALLOW_RUNASROOT`.
+   Install the checked-in unit and narrow sudoers rule:
+
+   ```sh
+   sudo install -o root -g root -m 0644 deploy/github-runner/github-vitals-runner.service \
+     /etc/systemd/system/github-vitals-runner.service
+   sudo install -o root -g root -m 0440 deploy/github-runner/github-vitals-deploy.sudoers \
+     /etc/sudoers.d/github-vitals-deploy
+   sudo visudo -cf /etc/sudoers.d/github-vitals-deploy
+   sudo systemctl daemon-reload
+   sudo systemctl enable --now github-vitals-runner
+   ```
+
+   `NoNewPrivileges=no` is deliberate: the runner cannot use `sudo` otherwise. The sudoers rule
+   permits only the root-owned `vitals-deploy` helper and does not permit a shell, `systemctl`,
+   `install`, or arbitrary root commands. `ProtectSystem=full` is only the bootstrap posture; the
+   implementation task must verify the runner's own update/work-directory behavior before hardening
+   it further. Never set `RUNNER_ALLOW_RUNASROOT`.
 6. Install the pinned Rust toolchain and components as the runner user, plus only the documented
    build prerequisites:
 
@@ -104,7 +120,8 @@ The checked-in `vitals-deploy` helper has three deliberately separate modes:
 A backup gate must be a root-owned JSON receipt containing `backup_verified: true`, `restore_verified: true`, `off_pi: true`, a non-empty `spool_fingerprint`, `rollback_release`, and `encryption_key_location`. The encryption key itself must never be placed in the receipt, GitHub, or this repository. The activation command is intentionally not run by bootstrap or smoke workflows:
 
 ```sh
-sudo VITALS_DEPLOY_ALLOW_ACTIVATE=1 /usr/local/bin/vitals-deploy \
+VITALS_DEPLOY_ALLOW_ACTIVATE=1 sudo --preserve-env=VITALS_DEPLOY_ALLOW_ACTIVATE \
+  /usr/local/bin/vitals-deploy \
   apply --manifest /var/lib/vitals/deploy/<sha>/manifest.json \
   --activate --backup-gate /var/lib/vitals/recovery/github-deploy-gate.json \
   --receipt /var/lib/vitals/recovery/github-deploy-latest.json
