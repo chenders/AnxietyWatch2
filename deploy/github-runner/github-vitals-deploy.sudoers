@@ -1,0 +1,4 @@
+# Allow the repository-scoped runner to invoke only the root-owned deployment helper.
+# SETENV is limited to this command so the helper's VITALS_DEPLOY_ALLOW_ACTIVATE gate
+# can be passed without granting shell, systemctl, install, or arbitrary root access.
+github-vitals ALL=(root) NOPASSWD:SETENV: /usr/local/bin/vitals-deploy

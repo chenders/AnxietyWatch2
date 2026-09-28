@@ -157,7 +157,8 @@ jobs:
           test "$(jq -r .source_sha "$manifest")" = "$GITHUB_SHA"
           test "$(jq -r .architecture "$manifest")" = aarch64
           test "$(jq -r '.blockers | length' "$manifest")" = 0
-          sudo -n env VITALS_DEPLOY_ALLOW_ACTIVATE=1 \
+          VITALS_DEPLOY_ALLOW_ACTIVATE=1 \
+            sudo -n --preserve-env=VITALS_DEPLOY_ALLOW_ACTIVATE \
             /usr/local/bin/vitals-deploy apply \
             --manifest "$manifest" \
             --activate \
