@@ -23,7 +23,9 @@ mod tests {
     fn ids_are_pinned() {
         assert_eq!(VitalsType::Hr.id(), 1);
         assert_eq!(VitalsType::BpSystolic.id(), 6);
+        assert_eq!(VitalsType::RespiratoryRate.id(), 11);
         assert_eq!(VitalsSource::Emay.id(), 0);
+        assert_eq!(VitalsSource::AcconeerXe125.id(), 4);
         assert_eq!(VitalsSource::AdUa651ble.id(), 6);
     }
 
@@ -113,6 +115,6 @@ mod tests {
             }
         }
         assert_eq!(periodic, 4);
-        assert_eq!(on_demand, 2);
+        assert_eq!(on_demand, 3);
     }
 }

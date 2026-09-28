@@ -332,6 +332,16 @@
         "on_demand": true
       }
     },
+    "acconeer_xe125": {
+      "id": 4,
+      "transport": "usb_serial",
+      "provides": [
+        "respiratory_rate"
+      ],
+      "cadence": {
+        "on_demand": true
+      }
+    },
     "ad_ua651ble": {
       "id": 6,
       "transport": "ble",

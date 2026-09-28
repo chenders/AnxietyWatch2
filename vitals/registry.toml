@@ -205,6 +205,12 @@ transport = "internal"
 provides = ["hrv_rmssd"]
 on_demand = true
 
+[source.acconeer_xe125]
+id = 4
+transport = "usb_serial"
+provides = ["respiratory_rate"]
+on_demand = true
+
 [source.ad_ua651ble]
 id = 6
 transport = "ble"
