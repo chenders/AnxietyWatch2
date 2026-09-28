@@ -81,6 +81,8 @@ pub enum VitalsSource {
     Healthkit = 2,
     /// `derived` — `internal`
     Derived = 3,
+    /// `acconeer_xe125` — `usb_serial`
+    AcconeerXe125 = 4,
     /// `ad_ua651ble` — `ble`, service `0x1810` (indication)
     AdUa651ble = 6,
     /// `polar_h10_emulator` — `internal`
@@ -240,6 +242,7 @@ impl VitalsSource {
             1 => Some(Self::PolarH10),
             2 => Some(Self::Healthkit),
             3 => Some(Self::Derived),
+            4 => Some(Self::AcconeerXe125),
             6 => Some(Self::AdUa651ble),
             7 => Some(Self::PolarH10Emulator),
             _ => None,
@@ -266,6 +269,7 @@ impl VitalsSource {
             Self::PolarH10 => Cadence::EverySeconds(1),
             Self::Healthkit => Cadence::EverySeconds(21600),
             Self::Derived => Cadence::OnDemand,
+            Self::AcconeerXe125 => Cadence::OnDemand,
             Self::AdUa651ble => Cadence::OnDemand,
             Self::PolarH10Emulator => Cadence::EverySeconds(1),
         }
@@ -306,11 +310,12 @@ pub const ALL_TYPES: [VitalsType; 29] = [
 ];
 
 /// Every source.
-pub const ALL_SOURCES: [VitalsSource; 6] = [
+pub const ALL_SOURCES: [VitalsSource; 7] = [
     VitalsSource::Emay,
     VitalsSource::PolarH10,
     VitalsSource::Healthkit,
     VitalsSource::Derived,
+    VitalsSource::AcconeerXe125,
     VitalsSource::AdUa651ble,
     VitalsSource::PolarH10Emulator,
 ];
