@@ -1,7 +1,6 @@
 # Pi GitHub Actions delivery observation
 
-Status: **in progress**. Per Amendment 18, T-R8 is not a waiting-period gate; it remains open until
-the manual rollback result and explicit operator decision to retain or retire the path are recorded.
+Status: **complete**. Per Amendment 18, T-R8 closes on finite evidence rather than elapsed time.
 
 ## Delivery under observation
 
@@ -48,6 +47,22 @@ release or database state. Three read-only samples 65 seconds apart retained rel
 segment, and active `vitalsd`/console/drainer services. The segment fingerprint rotated as the seal
 timer published fresh empty segments; byte count and database state remained unchanged.
 
+## Manual rollback rehearsal
+
+Receipt: `/var/lib/vitals/recovery/manual-rollback-rehearsal.json`
+
+On 2026-09-28 08:05 UTC, the operator manually switched from release
+`9b4fff2091be39a5f8517ab52a99cfd764e6658b` to `pre-runner-20260927`, daemon-reloaded, and restarted
+`vitals-console`. The rollback exit code was `0`, the rollback state checks passed, and the
+`vitalsd` socket, database/runner observability, and spool evidence remained valid. The operator
+then restored the deployed release with exit code `0`; the restore state checks passed and
+`spool_unchanged` was `true`.
+
+## Operator decision
+
+Retain `scripts/sync-to-pi.sh` as the emergency/manual recovery path. It is not called by the
+GitHub workflow and is not being retired by this change.
+
 ## Known host conditions
 
 These were observed before the successful console-only activation and are outside its selected
@@ -59,6 +74,5 @@ not evidence that the console activation changed the data path.
 ## Migration decision
 
 `scripts/sync-to-pi.sh` remains installed as an **emergency/manual rollback and recovery path**.
-It is not called by the GitHub workflow. It will not be retired until the post-deploy evidence and
-manual rollback rehearsal are complete and the operator explicitly decides to retire it. The current
-decision is to retain it as the emergency/manual path.
+It is not called by the GitHub workflow. The post-deploy evidence, manual rollback rehearsal, and
+operator retain decision are now recorded.

@@ -13,7 +13,7 @@ finite post-deploy evidence and rollback decision.
 - [x] **T-R5 — Rehearse failure, health, and rollback paths**
 - [x] **T-R6 — Create the pre-deploy backup and recovery receipt**
 - [x] **T-R7 — Coordinate and execute one minor real update**
-- [ ] **T-R8 — Observe, document rollback readiness, and retire SSH sync**
+- [x] **T-R8 — Record post-deploy evidence, rollback readiness, and retire SSH sync**
 
 ## T-R0 — Record the deployment boundary and staged rollout contract
 
