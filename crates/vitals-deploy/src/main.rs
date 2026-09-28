@@ -598,6 +598,14 @@ const CURRENT_RELEASE: &str = "/usr/local/lib/vitals/current";
 const RELEASE_ROOT: &str = "/usr/local/lib/vitals/releases";
 const DEPLOYMENT_LOCK: &str = "/run/vitals-deploy.lock";
 
+struct DeploymentLock;
+
+impl Drop for DeploymentLock {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(DEPLOYMENT_LOCK);
+    }
+}
+
 fn require_root() -> Result<(), Box<dyn Error>> {
     #[cfg(unix)]
     {
@@ -655,7 +663,7 @@ fn read_backup_gate(path: &Path) -> Result<BackupGate, Box<dyn Error>> {
     Ok(gate)
 }
 
-fn acquire_deployment_lock() -> Result<File, Box<dyn Error>> {
+fn acquire_deployment_lock() -> Result<DeploymentLock, Box<dyn Error>> {
     let lock = OpenOptions::new()
         .create_new(true)
         .write(true)
@@ -663,7 +671,8 @@ fn acquire_deployment_lock() -> Result<File, Box<dyn Error>> {
         .map_err(|error| {
             format!("deployment blocked: lock={DEPLOYMENT_LOCK} unavailable: {error}")
         })?;
-    Ok(lock)
+    drop(lock);
+    Ok(DeploymentLock)
 }
 
 fn install_release(root: &Path, manifest: &Manifest) -> Result<PathBuf, Box<dyn Error>> {
