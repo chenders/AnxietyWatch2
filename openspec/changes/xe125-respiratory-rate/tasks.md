@@ -1,7 +1,8 @@
 # Tasks — XE125 respiratory-rate sensing
 
-**Status:** Spec accepted for implementation by explicit user instruction. The first two tasks are
-being started immediately; no radar sample is promoted to the alarm path by this change.
+**Status:** Spec accepted for implementation by explicit user instruction. T-X1 and T-X2 are
+complete; T-X3 through T-X7 are explicitly deferred until all other active OpenSpec work is
+complete. No radar sample is promoted to the alarm path by this change.
 
 **Amends:** `docs/specs/AMENDMENTS.md` (mandatory); no accepted amendment is changed.
 
