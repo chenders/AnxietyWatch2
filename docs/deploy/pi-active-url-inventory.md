@@ -7,13 +7,13 @@ This is a read-only inventory of HTTP listeners and routes observed on the Pi. H
 
 ## Summary
 
-| Base URL | Service | Bind scope | Role | Current state |
-|---|---|---|---|---|
-| `http://$PI_HOST:8480` | `vitals-console.service` | Pi private interface only | AnxietyWatch vitals dashboard, health, and authenticated administration | Active; HTTP only; dashboard and health routes respond |
-| `http://$PI_HOST:8975` | `panel-http.service` | `0.0.0.0`, with private-LAN/loopback request allowlist | Bedside clinical panel | Active; panel root responds |
-| `http://$PI_HOST:8976` | `panel-admin.service` | `0.0.0.0` | Aircraft/noise-watch administration and state | Active; no authentication implemented by this service |
-| `http://$PI_HOST:80` | `lighttpd.service` | `0.0.0.0` | dump1090 aircraft map and static files | Active; map responds, aircraft JSON feeds currently return `404` |
-| `http://127.0.0.1:631` | `cupsd` | Loopback only | Host print administration | Active locally; not reachable through the LAN address |
+| Base URL               | Service                  | Bind scope                                             | Role                                                                    | Current state                                                    |
+| ---------------------- | ------------------------ | ------------------------------------------------------ | ----------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| `http://$PI_HOST:8480` | `vitals-console.service` | Pi private interface only                              | AnxietyWatch vitals dashboard, health, and authenticated administration | Active; HTTP only; dashboard and health routes respond           |
+| `http://$PI_HOST:8975` | `panel-http.service`     | `0.0.0.0`, with private-LAN/loopback request allowlist | Bedside clinical panel                                                  | Active; panel root responds                                      |
+| `http://$PI_HOST:8976` | `panel-admin.service`    | `0.0.0.0`                                              | Aircraft/noise-watch administration and state                           | Active; no authentication implemented by this service            |
+| `http://$PI_HOST:80`   | `lighttpd.service`       | `0.0.0.0`                                              | dump1090 aircraft map and static files                                  | Active; map responds, aircraft JSON feeds currently return `404` |
+| `http://127.0.0.1:631` | `cupsd`                  | Loopback only                                          | Host print administration                                               | Active locally; not reachable through the LAN address            |
 
 There is no HTTPS listener in this inventory. The vitals console explicitly runs with TLS termination disabled and binds only to the private interface.
 
@@ -26,57 +26,57 @@ Authentication: browser login/session for data-bearing administration routes; he
 
 ### Browser pages
 
-| URL | Purpose | Observed result |
-|---|---|---:|
-| `http://$PI_HOST:8480/console` | Console login/application shell | `200 text/html` |
-| `http://$PI_HOST:8480/console/` | Console login/application shell | `200 text/html` |
-| `http://$PI_HOST:8480/console/login` | Console login/application shell | `200 text/html` |
-| `http://$PI_HOST:8480/dashboard` | Vitals dashboard | `200 text/html` |
-| `http://$PI_HOST:8480/dashboard/` | Vitals dashboard | `200 text/html` |
-| `http://$PI_HOST:8480/` | No root page is mounted | `404` |
-| `http://$PI_HOST:8480/admin` | No standalone admin page is mounted | `404` |
-| `http://$PI_HOST:8480/admin/` | No standalone admin page is mounted | `404` |
+| URL                                  | Purpose                             | Observed result |
+| ------------------------------------ | ----------------------------------- | --------------: |
+| `http://$PI_HOST:8480/console`       | Console login/application shell     | `200 text/html` |
+| `http://$PI_HOST:8480/console/`      | Console login/application shell     | `200 text/html` |
+| `http://$PI_HOST:8480/console/login` | Console login/application shell     | `200 text/html` |
+| `http://$PI_HOST:8480/dashboard`     | Vitals dashboard                    | `200 text/html` |
+| `http://$PI_HOST:8480/dashboard/`    | Vitals dashboard                    | `200 text/html` |
+| `http://$PI_HOST:8480/`              | No root page is mounted             |           `404` |
+| `http://$PI_HOST:8480/admin`         | No standalone admin page is mounted |           `404` |
+| `http://$PI_HOST:8480/admin/`        | No standalone admin page is mounted |           `404` |
 
 There is no `/admin` or `/admin/` page on the vitals console; both returned `404`. The app-wide operator entry point is `/console`, and the app-wide monitoring page is `/dashboard`. The dashboard HTML is reachable without a session, but its data-bearing API calls are protected separately.
 
 ### Public monitoring endpoints
 
-| Method | URL | Purpose | Observed result |
-|---|---|---|---:|
-| `GET` | `http://$PI_HOST:8480/api/health` | Structured vitals/source health | `200 application/json` |
-| `GET` | `http://$PI_HOST:8480/api/version` | Running console/API version | `200 application/json` |
+| Method | URL                                | Purpose                         |        Observed result |
+| ------ | ---------------------------------- | ------------------------------- | ---------------------: |
+| `GET`  | `http://$PI_HOST:8480/api/health`  | Structured vitals/source health | `200 application/json` |
+| `GET`  | `http://$PI_HOST:8480/api/version` | Running console/API version     | `200 application/json` |
 
 ### Session-protected monitoring endpoints
 
 These routes are mounted and require the browser admin session. An unauthenticated `GET` returned `401 application/json` during this inventory.
 
-| Method | URL | Purpose |
-|---|---|---|
-| `GET` | `http://$PI_HOST:8480/api/query` | Query interface |
-| `GET` | `http://$PI_HOST:8480/api/latest` | Latest measurements |
-| `GET` | `http://$PI_HOST:8480/api/nightly` | Nightly view/data |
-| `GET` | `http://$PI_HOST:8480/api/services` | Service state |
-| `GET` | `http://$PI_HOST:8480/api/host` | Host state/details |
-| `GET` | `http://$PI_HOST:8480/api/display` | Display state |
-| `GET` | `http://$PI_HOST:8480/api/recovery` | Recovery/deployment state |
-| `GET` | `http://$PI_HOST:8480/api/clock` | Clock state |
-| `GET` | `http://$PI_HOST:8480/api/attempts` | Attempt history |
-| `GET` | `http://$PI_HOST:8480/api/admin/security` | Security/admin state |
+| Method | URL                                       | Purpose                   |
+| ------ | ----------------------------------------- | ------------------------- |
+| `GET`  | `http://$PI_HOST:8480/api/query`          | Query interface           |
+| `GET`  | `http://$PI_HOST:8480/api/latest`         | Latest measurements       |
+| `GET`  | `http://$PI_HOST:8480/api/nightly`        | Nightly view/data         |
+| `GET`  | `http://$PI_HOST:8480/api/services`       | Service state             |
+| `GET`  | `http://$PI_HOST:8480/api/host`           | Host state/details        |
+| `GET`  | `http://$PI_HOST:8480/api/display`        | Display state             |
+| `GET`  | `http://$PI_HOST:8480/api/recovery`       | Recovery/deployment state |
+| `GET`  | `http://$PI_HOST:8480/api/clock`          | Clock state               |
+| `GET`  | `http://$PI_HOST:8480/api/attempts`       | Attempt history           |
+| `GET`  | `http://$PI_HOST:8480/api/admin/security` | Security/admin state      |
 
 ### Session-protected administration endpoints
 
-| Method | URL | Purpose |
-|---|---|---|
-| `POST` | `http://$PI_HOST:8480/api/admin/login` | Create the browser admin session; host validation applies |
-| `POST` | `http://$PI_HOST:8480/api/admin/logout` | End the browser admin session |
-| `POST` | `http://$PI_HOST:8480/api/health/mutes` | Change health mute state |
-| `POST` | `http://$PI_HOST:8480/api/config/declarations` | Change source declarations |
-| `POST` | `http://$PI_HOST:8480/api/config/overrides` | Change operator overrides |
-| `POST` | `http://$PI_HOST:8480/api/services/:unit/:action` | Request a service operation |
-| `POST` | `http://$PI_HOST:8480/api/envelope` | Submit an envelope through the console path |
-| `POST` | `http://$PI_HOST:8480/api/admin/mobile/enrollment-artifacts` | Create mobile enrollment artifacts |
-| `POST` | `http://$PI_HOST:8480/api/admin/notifications/apns/recipients` | Preview APNs recipients |
-| `POST` | `http://$PI_HOST:8480/api/admin/notifications/apns/send` | Send an APNs notification |
+| Method | URL                                                            | Purpose                                                   |
+| ------ | -------------------------------------------------------------- | --------------------------------------------------------- |
+| `POST` | `http://$PI_HOST:8480/api/admin/login`                         | Create the browser admin session; host validation applies |
+| `POST` | `http://$PI_HOST:8480/api/admin/logout`                        | End the browser admin session                             |
+| `POST` | `http://$PI_HOST:8480/api/health/mutes`                        | Change health mute state                                  |
+| `POST` | `http://$PI_HOST:8480/api/config/declarations`                 | Change source declarations                                |
+| `POST` | `http://$PI_HOST:8480/api/config/overrides`                    | Change operator overrides                                 |
+| `POST` | `http://$PI_HOST:8480/api/services/:unit/:action`              | Request a service operation                               |
+| `POST` | `http://$PI_HOST:8480/api/envelope`                            | Submit an envelope through the console path               |
+| `POST` | `http://$PI_HOST:8480/api/admin/mobile/enrollment-artifacts`   | Create mobile enrollment artifacts                        |
+| `POST` | `http://$PI_HOST:8480/api/admin/notifications/apns/recipients` | Preview APNs recipients                                   |
+| `POST` | `http://$PI_HOST:8480/api/admin/notifications/apns/send`       | Send an APNs notification                                 |
 
 The production process does not mount the plaintext test routes. `/test`, `/api/envelope/register`, and `/api/envelope/plaintext-test` are only mounted when the explicit test-route environment flag is enabled.
 
@@ -84,17 +84,17 @@ The production process does not mount the plaintext test routes. `/test`, `/api/
 
 These are protocol endpoints for signed/mobile clients, not operator-facing monitoring pages:
 
-| Method | URL |
-|---|---|
-| `GET` | `http://$PI_HOST:8480/api/v1/client/version` |
-| `GET` | `http://$PI_HOST:8480/api/v1/client/openapi.json` |
-| `GET` | `http://$PI_HOST:8480/api/v1/client/registry` |
-| `POST` | `http://$PI_HOST:8480/api/v1/client/enroll` |
-| `POST` | `http://$PI_HOST:8480/api/v1/client/items` |
-| `POST` | `http://$PI_HOST:8480/api/v1/client/status` |
+| Method | URL                                                                  |
+| ------ | -------------------------------------------------------------------- |
+| `GET`  | `http://$PI_HOST:8480/api/v1/client/version`                         |
+| `GET`  | `http://$PI_HOST:8480/api/v1/client/openapi.json`                    |
+| `GET`  | `http://$PI_HOST:8480/api/v1/client/registry`                        |
+| `POST` | `http://$PI_HOST:8480/api/v1/client/enroll`                          |
+| `POST` | `http://$PI_HOST:8480/api/v1/client/items`                           |
+| `POST` | `http://$PI_HOST:8480/api/v1/client/status`                          |
 | `POST` | `http://$PI_HOST:8480/api/v1/client/notifications/apns/registration` |
-| `POST` | `http://$PI_HOST:8480/api/v1/client/notifications/apns/outcomes` |
-| `GET` | `http://$PI_HOST:8480/api/v1/client/projections` |
+| `POST` | `http://$PI_HOST:8480/api/v1/client/notifications/apns/outcomes`     |
+| `GET`  | `http://$PI_HOST:8480/api/v1/client/projections`                     |
 
 The client API uses its own device/request authentication contract where required; it is separate from the browser admin cookie.
 
@@ -105,10 +105,10 @@ Process: `anxietywatch-panel-http.py`
 Bind: `0.0.0.0:8975`
 Request boundary: private-LAN and loopback allowlist; clients outside the allowlist are rejected.
 
-| URL | Purpose | Observed result |
-|---|---|---:|
-| `http://$PI_HOST:8975/` | Bedside clinical panel, Direction A | `200 text/html` |
-| `http://$PI_HOST:8975/index.html` | Same static panel | `200 text/html` |
+| URL                               | Purpose                             | Observed result |
+| --------------------------------- | ----------------------------------- | --------------: |
+| `http://$PI_HOST:8975/`           | Bedside clinical panel, Direction A | `200 text/html` |
+| `http://$PI_HOST:8975/index.html` | Same static panel                   | `200 text/html` |
 
 This is a static panel server. The tested API-like paths (`/api/state`, `/api/health`, `/api/version`, and `/dashboard`) returned `404`; its live data is supplied through the panel's client-side integration rather than these routes.
 
@@ -123,19 +123,19 @@ The service is LAN-facing because it binds all interfaces. Treat it as a private
 
 ### Pages and read-only state
 
-| Method | URL | Purpose | Observed result |
-|---|---|---|---:|
-| `GET` | `http://$PI_HOST:8976/` | Noise Watch admin page | `200 text/html` |
-| `GET` | `http://$PI_HOST:8976/index.html` | Noise Watch admin page | `200 text/html` |
-| `GET` | `http://$PI_HOST:8976/admin.html` | Noise Watch admin page | `200 text/html` |
-| `GET` | `http://$PI_HOST:8976/settings` | Noise Watch settings page | `200 text/html` |
-| `GET` | `http://$PI_HOST:8976/api/state` | Large combined aircraft/noise/settings state document | `200 application/json` |
+| Method | URL                               | Purpose                                               |        Observed result |
+| ------ | --------------------------------- | ----------------------------------------------------- | ---------------------: |
+| `GET`  | `http://$PI_HOST:8976/`           | Noise Watch admin page                                |        `200 text/html` |
+| `GET`  | `http://$PI_HOST:8976/index.html` | Noise Watch admin page                                |        `200 text/html` |
+| `GET`  | `http://$PI_HOST:8976/admin.html` | Noise Watch admin page                                |        `200 text/html` |
+| `GET`  | `http://$PI_HOST:8976/settings`   | Noise Watch settings page                             |        `200 text/html` |
+| `GET`  | `http://$PI_HOST:8976/api/state`  | Large combined aircraft/noise/settings state document | `200 application/json` |
 
 ### Mutating endpoints
 
-| Method | URL | Purpose | Current route evidence |
-|---|---|---|---|
-| `POST` | `http://$PI_HOST:8976/api/settings` | Save settings | Route active; empty probe body returned `400` |
+| Method | URL                                       | Purpose               | Current route evidence                        |
+| ------ | ----------------------------------------- | --------------------- | --------------------------------------------- |
+| `POST` | `http://$PI_HOST:8976/api/settings`       | Save settings         | Route active; empty probe body returned `400` |
 | `POST` | `http://$PI_HOST:8976/api/warning-review` | Save a warning review | Route active; empty probe body returned `400` |
 
 The service returns `404` for unrelated paths and does not provide a login route.
@@ -148,10 +148,10 @@ Document root: `/var/www/html`
 
 ### Active map route
 
-| URL | Purpose | Observed result |
-|---|---|---:|
-| `http://$PI_HOST/dump1090/` | Redirect to the aircraft map | `301` to `/dump1090/gmap.html` |
-| `http://$PI_HOST/dump1090/gmap.html` | dump1090 aircraft map | `200 text/html` |
+| URL                                  | Purpose                      |                Observed result |
+| ------------------------------------ | ---------------------------- | -----------------------------: |
+| `http://$PI_HOST/dump1090/`          | Redirect to the aircraft map | `301` to `/dump1090/gmap.html` |
+| `http://$PI_HOST/dump1090/gmap.html` | dump1090 aircraft map        |                `200 text/html` |
 
 The server root `http://$PI_HOST/` returned `403`; it is not an active application landing page.
 
