@@ -1449,6 +1449,8 @@ fn verify_staged_units(root: &Path, manifest: &Manifest) -> Result<(), String> {
     fs::create_dir_all(&unit_root).map_err(|error| error.to_string())?;
     copy_tree(Path::new("/lib/systemd/system"), &vendor_root)
         .map_err(|error| format!("systemd fixture copy blocked: {error}"))?;
+    copy_tree(Path::new("/etc/systemd/system"), &unit_root)
+        .map_err(|error| format!("systemd host-unit fixture copy blocked: {error}"))?;
 
     for file in &staged_units {
         let source =
@@ -1457,6 +1459,7 @@ fn verify_staged_units(root: &Path, manifest: &Manifest) -> Result<(), String> {
             .file_name()
             .ok_or_else(|| format!("unit has no filename: {}", file.destination))?;
         let target = unit_root.join(name);
+        let _ = fs::remove_file(&target);
         fs::copy(&source, &target).map_err(|error| error.to_string())?;
         set_file_mode(&target, file.mode).map_err(|error| error.to_string())?;
         copy_execstart_commands(&source, verification_root.path())?;
@@ -1476,6 +1479,7 @@ fn verify_staged_units(root: &Path, manifest: &Manifest) -> Result<(), String> {
         }
         fs::copy(source, target).map_err(|error| error.to_string())?;
     }
+    copy_host_execstart_commands(Path::new("/etc/systemd/system"), verification_root.path())?;
 
     let names = staged_units
         .iter()
@@ -1504,6 +1508,34 @@ fn verify_staged_units(root: &Path, manifest: &Manifest) -> Result<(), String> {
 }
 
 fn copy_execstart_commands(unit: &Path, root: &Path) -> Result<(), String> {
+    copy_execstart_commands_from(unit, root, false)
+}
+
+fn copy_host_execstart_commands(source: &Path, root: &Path) -> Result<(), String> {
+    if !source.is_dir() {
+        return Err(format!(
+            "source unit directory is missing: {}",
+            source.display()
+        ));
+    }
+    for entry in fs::read_dir(source).map_err(|error| error.to_string())? {
+        let entry = entry.map_err(|error| error.to_string())?;
+        let path = entry.path();
+        let metadata = fs::symlink_metadata(&path).map_err(|error| error.to_string())?;
+        if metadata.is_dir() {
+            copy_host_execstart_commands(&path, root)?;
+        } else if metadata.is_file() {
+            copy_execstart_commands_from(&path, root, true)?;
+        }
+    }
+    Ok(())
+}
+
+fn copy_execstart_commands_from(
+    unit: &Path,
+    root: &Path,
+    include_local_binaries: bool,
+) -> Result<(), String> {
     let text = fs::read_to_string(unit).map_err(|error| error.to_string())?;
     for line in text.lines().filter(|line| line.starts_with("ExecStart=")) {
         let command = line
@@ -1513,13 +1545,17 @@ fn copy_execstart_commands(unit: &Path, root: &Path) -> Result<(), String> {
             continue;
         };
         let source = Path::new(path);
-        if !source.is_absolute() || path.starts_with("/usr/local/bin/") {
+        if !source.is_absolute() || (!include_local_binaries && path.starts_with("/usr/local/bin/"))
+        {
             continue;
         }
         if !source.is_file() {
             return Err(format!("systemd command is missing on host: {path}"));
         }
         let target = root.join(path.trim_start_matches('/'));
+        if target.exists() {
+            continue;
+        }
         if let Some(parent) = target.parent() {
             fs::create_dir_all(parent).map_err(|error| error.to_string())?;
         }
