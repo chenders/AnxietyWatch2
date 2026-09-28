@@ -1,0 +1,32 @@
+[Unit]
+Description=GitHub Actions runner for AnxietyWatch2 native Pi delivery
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+User=github-vitals
+Group=github-vitals
+WorkingDirectory=/opt/actions-runner-vitals
+Environment=HOME=/var/lib/github-vitals
+Environment=RUSTUP_HOME=/var/lib/github-vitals/.rustup
+Environment=CARGO_HOME=/var/lib/github-vitals/.cargo
+Environment=PATH=/var/lib/github-vitals/.cargo/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/opt/actions-runner-vitals/run.sh
+Restart=always
+RestartSec=10
+TimeoutStopSec=5min
+UMask=0077
+
+# The runner may elevate only through the companion sudoers rule below.
+# NoNewPrivileges must remain disabled for that narrowly allowlisted helper.
+NoNewPrivileges=no
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=full
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryHigh=1G
+CPUQuota=200%
+
+[Install]
+WantedBy=multi-user.target
