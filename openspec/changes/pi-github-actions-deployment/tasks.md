@@ -12,7 +12,7 @@ observation decision.
 - [x] **T-R4 — Implement a no-mutation host dry run**
 - [x] **T-R5 — Rehearse failure, health, and rollback paths**
 - [x] **T-R6 — Create the pre-deploy backup and recovery receipt**
-- [ ] **T-R7 — Coordinate and execute one minor real update**
+- [x] **T-R7 — Coordinate and execute one minor real update**
 - [ ] **T-R8 — Observe, document rollback readiness, and retire SSH sync**
 
 ## T-R0 — Record the deployment boundary and staged rollout contract
@@ -265,7 +265,9 @@ health contract
 5. Record before/after release, changed services, health evidence, spool evidence, elapsed time, and
    whether rollback was needed. Keep the old release installed.
 
-**Verify:** `ssh "$PI_HOST" 'set -e; jq -e ".activated == true and .source_sha != null and .preflight_ok == true and .health_ok == true and .spool_unchanged == true and .backup_gate == true and .rollback_command != null" /var/lib/vitals/recovery/github-deploy-latest.json >/dev/null; systemctl is-active --quiet vitalsd; test -S /run/vitals/vitalsd.sock'`
+**Verify:** `ssh "$PI_HOST" 'set -e; sudo jq -e ".activated == true and .source_sha != null and .preflight_ok == true and .health_ok == true and .spool_unchanged == true and .backup_gate == true and .rollback_command != null" /var/lib/vitals/recovery/github-deploy-latest.json >/dev/null; systemctl is-active --quiet vitalsd; sudo test -S /run/vitals/vitalsd.sock'`
+
+**Verify correction:** The activation receipt is root-owned under the protected recovery directory and `/run/vitals` is root-only; `sudo jq` and `sudo test -S` are required for read-only assertion access.
 
 **Expect:** exit 0; the selected minor update is active, the safety daemon/socket is healthy, spool
 identity was preserved, backup evidence was consumed, and rollback remains available.
