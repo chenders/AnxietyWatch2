@@ -1,0 +1,180 @@
+name: Pi delivery gate
+
+# This workflow first builds and rehearses the staged delivery. Activation is a
+# separate workflow-dispatch path behind the protected production environment.
+on:
+  # The bootstrap branch remains while the runner and delivery gates are being accepted.
+  push:
+    branches: [main, chore/github-runner-deployment-plan]
+    paths:
+      - 'Cargo.toml'
+      - 'rust-toolchain.toml'
+      - 'crates/**'
+      - 'deploy/**'
+      - 'scripts/**'
+      - 'vitals/**'
+      - '.github/workflows/pi-deploy.yml'
+  workflow_dispatch:
+    inputs:
+      activate:
+        description: 'Activate the already-approved staged release on the Pi'
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pi-delivery-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-only:
+    runs-on: [self-hosted, linux, ARM64, vitals-pi]
+    timeout-minutes: 30
+    steps:
+      - name: Check out the exact commit
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          clean: true
+
+      - name: Verify checkout identity and runner boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          test -z "$(git status --porcelain)"
+          test "$(uname -s)" = Linux
+          test "$(uname -m)" = aarch64
+          test ! -e /var/run/docker.sock || test ! -r /var/run/docker.sock
+
+      - name: Verify pinned Rust toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup run 1.97.1 rustc --version
+          rustup run 1.97.1 cargo --version
+          rustup run 1.97.1 rustfmt --version
+          rustup run 1.97.1 cargo clippy --version
+
+      - name: Run build-only checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup run 1.97.1 cargo fmt --all -- --check
+          rustup run 1.97.1 cargo test -p vitals-decode
+          rustup run 1.97.1 cargo test -p vitals-deploy
+          rustup run 1.97.1 cargo clippy -p vitals-deploy --all-targets -- -D warnings
+
+      - name: Build the current native artifact set
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup run 1.97.1 cargo build --release -p vitalsd -p vitals-drain -p vitals-console -p vitals-collectors --bins -p vitals-deploy
+
+      - name: Generate the SHA-addressed staged release
+        shell: bash
+        run: |
+          set -euo pipefail
+          stage="$RUNNER_TEMP/vitals-release/$GITHUB_SHA"
+          mkdir -p "$stage"
+          rustup run 1.97.1 cargo run -p vitals-deploy -- \
+            manifest --source "$GITHUB_SHA" --dry-run \
+            --stage-dir "$stage" \
+            --output "$stage/manifest.json"
+          jq -e '.source_sha == env.GITHUB_SHA and .architecture == "aarch64" and (.files | length) > 0 and (.blockers | type) == "array"' \
+            "$stage/manifest.json" >/dev/null
+          rustup run 1.97.1 cargo run -p vitals-deploy -- \
+            test-faults --manifest "$stage/manifest.json" \
+            --receipt "$stage/rollback-rehearsal.json"
+          jq -e '.ok == true and .preflight_mutations == 0 and .rollback_completed == true and (.cases | length) >= 8' \
+            "$stage/rollback-rehearsal.json" >/dev/null
+
+      - name: Preserve staged dry-run tooling as a workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vitals-dry-run-${{ github.sha }}
+          if-no-files-found: error
+          path: |
+            target/release/vitals-deploy
+            ${{ runner.temp }}/vitals-release/${{ github.sha }}/**
+
+      - name: Publish non-deployment result
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '## Pi delivery gate'
+            echo
+            echo "- Commit: \`${GITHUB_SHA}\`"
+            echo "- Mode: \`build-only\`"
+            echo "- dry_run: \`host apply not invoked by build-only job\`"
+            echo "- Protected production environment: \`not used by build-only job\`"
+            echo "- Activated: \`false\`"
+            echo "- Database migration attempted: \`false\`"
+            echo "- Spool mutation attempted: \`false\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  activate:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.activate == true && github.ref == 'refs/heads/main' }}
+    needs: build-only
+    runs-on: [self-hosted, linux, ARM64, vitals-pi]
+    environment: production
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Download the exact staged release
+        uses: actions/download-artifact@v4
+        with:
+          name: vitals-dry-run-${{ github.sha }}
+          path: ${{ runner.temp }}/vitals-deploy-artifact
+
+      - name: Require the operator backup and restore gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          gate=/var/lib/vitals/recovery/github-deploy-gate.json
+          dry_run=/var/lib/vitals/recovery/last-dry-run.json
+          sudo -n jq -e '.mode == "dry-run" and .activated == false and .preflight_ok == true' "$dry_run" >/dev/null
+          sudo -n jq -e '
+            .backup_verified == true and
+            .restore_verified == true and
+            .off_pi == true and
+            (.spool_fingerprint | type == "string" and length > 0) and
+            (.rollback_release | type == "string" and length > 0) and
+            (.encryption_key_location | type == "string" and length > 0)
+          ' "$gate" >/dev/null
+
+      - name: Activate only the approved manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          manifest=$(find "$RUNNER_TEMP/vitals-deploy-artifact" -type f -name manifest.json -print -quit)
+          test -n "$manifest"
+          test "$(jq -r .source_sha "$manifest")" = "$GITHUB_SHA"
+          test "$(jq -r .architecture "$manifest")" = aarch64
+          test "$(jq -r '.blockers | length' "$manifest")" = 0
+          sudo -n env VITALS_DEPLOY_ALLOW_ACTIVATE=1 \
+            /usr/local/bin/vitals-deploy apply \
+            --manifest "$manifest" \
+            --activate \
+            --backup-gate /var/lib/vitals/recovery/github-deploy-gate.json \
+            --receipt /var/lib/vitals/recovery/github-deploy-latest.json
+          jq -e '.activated == true and .health_ok == true and .spool_unchanged == true and .backup_gate == true' \
+            <(sudo -n cat /var/lib/vitals/recovery/github-deploy-latest.json) >/dev/null
+
+      - name: Publish activation result
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '## Pi delivery activation'
+            echo
+            echo "- Commit: \`${GITHUB_SHA}\`"
+            echo "- Mode: \`activate\`"
+            echo "- Protected production environment: \`approved by environment gate\`"
+            echo "- Receipt: \`/var/lib/vitals/recovery/github-deploy-latest.json\`"
+          } >> "$GITHUB_STEP_SUMMARY"
