@@ -41,7 +41,10 @@ At the post-deployment observation sample on 2026-09-28 03:08 UTC:
 - `vitalsd` socket and deployment lock: present/clear
 
 The scheduled spool-seal/drainer idle path continued to run after activation without changing the
-release or database state.
+release or database state. Three read-only samples 65 seconds apart retained release
+`9b4fff2091be39a5f8517ab52a99cfd764e6658b`, PostgreSQL `ready`, runner `active`, one 37-byte spool
+segment, and active `vitalsd`/console/drainer services. The segment fingerprint rotated as the seal
+timer published fresh empty segments; byte count and database state remained unchanged.
 
 ## Known host conditions
 
