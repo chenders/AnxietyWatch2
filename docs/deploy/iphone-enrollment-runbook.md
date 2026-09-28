@@ -8,7 +8,7 @@ There is **no separate phone-enrollment password** and no documented default pas
 
 Use the existing **AnxietyWatch2 console admin password** at the first step. The server stores only an Argon2id password hash in its root-only configuration; the plaintext password cannot be recovered from the Pi or from this repository. Do not put the password in this document, chat, email, logs, screenshots, or tickets.
 
-If the admin password is unknown, stop and have the authorized operator reset or retrieve it through the approved password-management process. Do not guess repeatedly: login attempts are throttled.
+If the admin password is unknown, stop and have the authorized operator retrieve it or follow the credential-provisioning procedure in [Vitals console admin credential provisioning](vitals-console-credential-provisioning.md). Do not guess repeatedly: login attempts are throttled.
 
 ## Before you begin
 
