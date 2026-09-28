@@ -23,8 +23,6 @@ NoNewPrivileges=no
 PrivateTmp=yes
 ProtectHome=yes
 ProtectSystem=full
-RestrictNamespaces=yes
-LockPersonality=yes
 MemoryHigh=1G
 CPUQuota=200%
 

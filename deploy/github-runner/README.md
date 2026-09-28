@@ -64,8 +64,6 @@ network details, or production credentials in this repository.
    PrivateTmp=yes
    ProtectHome=yes
    ProtectSystem=full
-   RestrictNamespaces=yes
-   LockPersonality=yes
    MemoryHigh=1G
    CPUQuota=200%
 
@@ -85,9 +83,11 @@ network details, or production credentials in this repository.
    sudo systemctl enable --now github-vitals-runner
    ```
 
-   `NoNewPrivileges=no` is deliberate: the runner cannot use `sudo` otherwise. The sudoers rule
-   permits only the root-owned `vitals-deploy` helper and does not permit a shell, `systemctl`,
-   `install`, or arbitrary root commands. `ProtectSystem=full` is only the bootstrap posture; the
+   `NoNewPrivileges=no` is deliberate: the runner cannot use `sudo` otherwise. Systemd sandbox
+   options such as `RestrictNamespaces` and `LockPersonality` implicitly enable
+   `NoNewPrivileges`, so they are intentionally not present here. The sudoers rule permits only
+   the root-owned `vitals-deploy` helper and does not permit a shell, `systemctl`, `install`, or
+   arbitrary root commands. `ProtectSystem=full` is only the bootstrap posture; the
    implementation task must verify the runner's own update/work-directory behavior before hardening
    it further. Never set `RUNNER_ALLOW_RUNASROOT`.
 6. Install the pinned Rust toolchain and components as the runner user, plus only the documented
