@@ -112,7 +112,7 @@ impl SecurityError {
 #[derive(Clone)]
 pub struct SecurityState {
     password_hash: Option<String>,
-    admin_host: Option<String>,
+    admin_hosts: Vec<String>,
     tls_terminated: bool,
     trusted_proxy: bool,
     sessions: Arc<Mutex<HashMap<String, Session>>>,
@@ -186,9 +186,19 @@ impl SecurityState {
         trusted_proxy: bool,
         admin_host: Option<String>,
     ) -> Self {
+        let admin_hosts = admin_host
+            .into_iter()
+            .flat_map(|hosts| {
+                hosts
+                    .split(',')
+                    .map(|host| host.trim().to_ascii_lowercase())
+                    .collect::<Vec<_>>()
+            })
+            .filter(|host| !host.is_empty())
+            .collect();
         Self {
             password_hash,
-            admin_host: admin_host.map(|host| host.to_ascii_lowercase()),
+            admin_hosts,
             tls_terminated,
             trusted_proxy,
             sessions: Arc::new(Mutex::new(HashMap::new())),
@@ -407,15 +417,15 @@ impl SecurityState {
     }
 
     fn validate_host(&self, headers: &HeaderMap) -> Result<(), SecurityError> {
-        let Some(expected) = &self.admin_host else {
+        if self.admin_hosts.is_empty() {
             return Ok(());
-        };
+        }
         let actual = headers
             .get(header::HOST)
             .and_then(|value| value.to_str().ok())
             .unwrap_or("missing-host")
             .to_ascii_lowercase();
-        if &actual == expected {
+        if self.admin_hosts.iter().any(|expected| expected == &actual) {
             Ok(())
         } else {
             Err(SecurityError::InvalidOrigin(actual))
@@ -689,6 +699,29 @@ mod tests {
             Err(SecurityError::Throttled { .. })
         ));
         assert!(security.login("10.0.0.2", "correct horse", 2_001).is_ok());
+    }
+
+    #[test]
+    fn security_host_alias_is_accepted() {
+        let security = SecurityState::new(
+            configured().password_hash.clone(),
+            true,
+            true,
+            Some("admin.example.test, operator-alias.example.test:8480".to_string()),
+        );
+        let receipt = security
+            .login("127.0.0.1", "correct horse", 2_500)
+            .expect("login");
+        let mut alias_headers = headers(&receipt, true);
+        alias_headers.insert(
+            header::HOST,
+            "operator-alias.example.test:8480".parse().unwrap(),
+        );
+        assert!(
+            security
+                .authenticate(&alias_headers, &Method::GET, 2_501)
+                .is_ok()
+        );
     }
 
     #[test]
