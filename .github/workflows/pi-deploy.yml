@@ -132,22 +132,6 @@ jobs:
           name: vitals-dry-run-${{ github.sha }}
           path: ${{ runner.temp }}/vitals-deploy-artifact
 
-      - name: Require the operator backup and restore gate
-        shell: bash
-        run: |
-          set -euo pipefail
-          gate=/var/lib/vitals/recovery/github-deploy-gate.json
-          dry_run=/var/lib/vitals/recovery/last-dry-run.json
-          sudo -n jq -e '.mode == "dry-run" and .activated == false and .preflight_ok == true' "$dry_run" >/dev/null
-          sudo -n jq -e '
-            .backup_verified == true and
-            .restore_verified == true and
-            .off_pi == true and
-            (.spool_fingerprint | type == "string" and length > 0) and
-            (.rollback_release | type == "string" and length > 0) and
-            (.encryption_key_location | type == "string" and length > 0)
-          ' "$gate" >/dev/null
-
       - name: Activate only the approved manifest
         shell: bash
         run: |
@@ -157,6 +141,8 @@ jobs:
           test "$(jq -r .source_sha "$manifest")" = "$GITHUB_SHA"
           test "$(jq -r .architecture "$manifest")" = aarch64
           test "$(jq -r '.blockers | length' "$manifest")" = 0
+          # The root-owned helper validates the backup gate and all preflight evidence.
+          # Keep sudo limited to this command; do not grant the runner arbitrary root-file reads.
           VITALS_DEPLOY_ALLOW_ACTIVATE=1 \
             sudo -n --preserve-env=VITALS_DEPLOY_ALLOW_ACTIVATE \
             /usr/local/bin/vitals-deploy apply \
@@ -164,8 +150,6 @@ jobs:
             --activate \
             --backup-gate /var/lib/vitals/recovery/github-deploy-gate.json \
             --receipt /var/lib/vitals/recovery/github-deploy-latest.json
-          jq -e '.activated == true and .health_ok == true and .spool_unchanged == true and .backup_gate == true' \
-            <(sudo -n cat /var/lib/vitals/recovery/github-deploy-latest.json) >/dev/null
 
       - name: Publish activation result
         if: always()
