@@ -51,6 +51,8 @@ uv.lock
 # SwiftPM build products are local and contain absolute developer paths.
 clients/apple/Packages/*/.build/
 
-# Runtime status file for the pi-panel live stopgap. Written by
-# emay-spike on the Pi; a local copy is only ever a test fixture.
+# Runtime data for the pi-panel live stopgap. Written on the Pi; local copies
+# are only ever test fixtures and must not dirty the deploy-key checkout.
 docs/design/pi-panel/direction-a-clinical/status.json
+docs/design/pi-panel/direction-a-clinical/vitals_status.json
+docs/design/pi-panel/direction-a-clinical/vitals_h10_history.json
