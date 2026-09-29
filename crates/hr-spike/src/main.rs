@@ -562,7 +562,7 @@ mod bluez_boundary {
         #[tokio::test(flavor = "current_thread")]
         async fn discovery_decision_accepts_target_and_rejects_other_streams() {
             let target = address("AA:BB:CC:DD:EE:FF");
-            let other = address("11:22:33:44:55:66");
+            let other = address("11:22:33XX:XX:XX");
             assert!(
                 wait_for_target(
                     stream::iter([

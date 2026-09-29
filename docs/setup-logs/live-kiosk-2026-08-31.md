@@ -1,7 +1,7 @@
 # Live vitals kiosk and source-age investigation
 
 **Date:** 2026-08-31  
-**Host:** `pi-host`  
+**Host:** `pi-host`
 **Kiosk:** `http://pi-host:8975/live-vitals.html?kiosk=1`
 
 ## Kiosk contract

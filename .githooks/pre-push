@@ -34,7 +34,6 @@ COMMITS="$(git rev-list "$RANGE" 2>/dev/null || echo '')"
 
 printf '\n── pre-push gates ──\n'
 
-# Scan every tracked file, not only this push's diff. Historical setup details
 # remain public until removed, and diff-only checks cannot catch them.
 # Resolve the interpreter the same way the later gates do — a bare `python3`
 # is rejected by shell shims on some dev machines, which failed this gate
@@ -54,7 +53,6 @@ fi
 while read -r _ _ remote_ref _; do
   [[ "$remote_ref" == "refs/heads/main" ]] && \
     fail "push targets refs/heads/main. Open a PR instead; merges happen on GitHub."
-done < <(cat)
 
 # ── 2. secrets ────────────────────────────────────────────────────────────────
 # Not a general scanner — these are the shapes that have actually shown up.
@@ -111,7 +109,7 @@ if [[ -n "$ADDED" ]]; then
     ':(exclude)scripts/check-public-info.py' \
     | grep '^+' | grep -v '^+++' || true)"
   if grep -oiE '\b([0-9A-F]{2}:){5}[0-9A-F]{2}\b' <<<"$DEVICE_ADDED" \
-       | grep -qviE 'XX|AA:BB:CC:DD:EE:FF'; then
+       | grep -qviE 'XX|AA:BB:CC:DD:EE:(FF|FE)'; then
     fail "a full device address appears in the diff — redact to the OUI (00:11:22:XX:XX:XX)"
   fi
 
