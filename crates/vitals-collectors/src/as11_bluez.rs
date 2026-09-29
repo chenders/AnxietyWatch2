@@ -1043,7 +1043,6 @@ mod tests {
     }
 
     #[test]
-    #[test]
     fn stream_notifications_are_retained_in_arrival_order() {
         let mut pending = VecDeque::new();
         retain_stream_notification(&mut pending, ENCRYPTED_RESPONSE_VCID, b"first".to_vec())
