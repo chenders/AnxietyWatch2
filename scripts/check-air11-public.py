@@ -54,6 +54,16 @@ REQUIRED_SERVICE_LINES = (
     "RuntimeDirectory=vitals-air11",
 )
 SKIP_PATHS = {"scripts/check-public-info.py"}
+# These are public implementation/schema/documentation paths. Their names
+# describe credential handling, but they contain no deployed credential data.
+PUBLIC_CREDENTIAL_PATHS = {
+    "crates/vitals-console/src/credentials.rs",
+    "db/deploy/mobile_credentials.sql",
+    "db/revert/mobile_credentials.sql",
+    "db/verify/mobile_credentials.sql",
+    "docs/deploy/vitals-console-credential-provisioning.md",
+    "scripts/provision-vitals-console-password.sh",
+}
 
 FORBIDDEN_SERVICE_TOKENS = (
     "Environment=",
@@ -171,7 +181,10 @@ def file_findings(root: Path, path: Path) -> list[str]:
     if PRIVATE_ARTIFACT.search(relative) or suffix in RAW_EXTENSIONS:
         findings.append(f"private AirSense artifact is tracked: {relative}")
         return findings
-    if re.search(r"(?i)(?:credentials?|secrets?|password|passwd)(?:[._-]|$)", relative):
+    if (
+        relative not in PUBLIC_CREDENTIAL_PATHS
+        and re.search(r"(?i)(?:credentials?|secrets?|password|passwd)(?:[._-]|$)", relative)
+    ):
         findings.append(f"credential or secret artifact is tracked: {relative}")
         return findings
     try:
@@ -304,6 +317,9 @@ def self_test(root: Path) -> None:
         raise AssertionError("acceptance gate did not reject a service enable action")
     if not file_findings(root, root / "air11-night-20260906.jsonl"):
         raise AssertionError("artifact gate missed a raw-capture filename")
+    for relative in PUBLIC_CREDENTIAL_PATHS:
+        if file_findings(root, root / relative):
+            raise AssertionError(f"artifact gate rejected public implementation path: {relative}")
     masked = "11:22:" + "33:44:55:66"
     if FULL_MAC.search(masked) is None:
         raise AssertionError("artifact gate self-test setup failed")
