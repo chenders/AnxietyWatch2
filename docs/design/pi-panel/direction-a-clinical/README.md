@@ -9,12 +9,15 @@ open index.html                     # review mode: state buttons + notes
 open 'index.html?kiosk=1'           # the panel alone — how it runs on the device
 open 'index.html?kiosk=1&state=klaxon'
 node panel-check.mjs                # the gate — exit 0 or 1
+node ../../../../tools/tests/test_bedside_vitals_panel.mjs
 ```
 
 | File | What it is |
 |---|---|
-| `index.html` | The panel. Self-contained; the 800×480 frame plus review scaffolding that `?kiosk=1` hides. |
+| `index.html` | The Direction A panel. Self-contained; the 800×480 frame plus review scaffolding that `?kiosk=1` hides. |
+| `bedside-vitals.html` | The physical kiosk summary. It preserves the authored 800×480 geometry and fits it to the active HDMI viewport in kiosk mode. |
 | `panel-check.mjs` | Contrast, tier separation, layout arithmetic and touch target, behind an exit code. |
+| `tools/tests/test_bedside_vitals_panel.mjs` | Contract checks for dimensions, source precedence, unknown-state handling, and the bedside data view. |
 
 `../index.html` is the earlier hand-built panel. `PROMPT-pi-panel.md` names it as
 "one solved direction to beat", so it is the **baseline and stays untouched** —
