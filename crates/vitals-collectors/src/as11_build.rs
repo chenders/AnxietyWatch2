@@ -139,6 +139,7 @@ impl std::error::Error for Air11BuildError {}
 pub struct Air11SampleBuilder {
     session_id: i64,
     last_start_time_micros: Option<i64>,
+    first_positions: [Option<i64>; AIR11_SIGNAL_SLOTS],
     last_positions: [Option<i64>; AIR11_SIGNAL_SLOTS],
 }
 
@@ -155,6 +156,7 @@ impl Air11SampleBuilder {
         Ok(Self {
             session_id,
             last_start_time_micros: None,
+            first_positions: [None; AIR11_SIGNAL_SLOTS],
             last_positions: [None; AIR11_SIGNAL_SLOTS],
         })
     }
@@ -164,9 +166,11 @@ impl Air11SampleBuilder {
     /// Source positions are absolute source sample ordinals: the parsed
     /// `startTime` in microseconds is advanced by the interval reported in the
     /// frame for each bounded array index, then divided by the signal's native
-    /// cadence.  Repeated positions are ignored; a backwards position is an
-    /// error.  State is committed only after the whole frame succeeds, so a
-    /// quarantined frame cannot partially advance identity.
+    /// cadence.  The stored `seq` is that ordinal relative to the first
+    /// position for the signal in this session.  Repeated positions are
+    /// ignored; a backwards position is an error.  State is committed only
+    /// after the whole frame succeeds, so a quarantined frame cannot partially
+    /// advance identity.
     ///
     /// # Errors
     /// Returns a named error for a bad host timestamp, source clock, source
@@ -188,6 +192,7 @@ impl Air11SampleBuilder {
             });
         }
 
+        let mut first_positions = self.first_positions;
         let mut next_positions = self.last_positions;
         let mut batch = Air11Batch {
             samples: Vec::new(),
@@ -213,12 +218,14 @@ impl Air11SampleBuilder {
                 frame,
                 signal_index,
                 &context,
+                &mut first_positions,
                 &mut next_positions,
                 &mut batch,
             )?;
         }
 
         self.last_start_time_micros = Some(start_time_micros);
+        self.first_positions = first_positions;
         self.last_positions = next_positions;
         Ok(batch)
     }
@@ -242,6 +249,7 @@ fn build_signal(
     frame: &StreamFrame,
     signal_index: usize,
     context: &BuildContext,
+    first_positions: &mut [Option<i64>; AIR11_SIGNAL_SLOTS],
     next_positions: &mut [Option<i64>; AIR11_SIGNAL_SLOTS],
     batch: &mut Air11Batch,
 ) -> Result<(), Air11BuildError> {
@@ -305,9 +313,8 @@ fn build_signal(
                 continue;
             }
         }
-        *next_positions
-            .get_mut(slot)
-            .ok_or(Air11BuildError::SourceStartTimeInvalid)? = Some(source_ordinal);
+        let sequence =
+            record_source_position(source_ordinal, slot, first_positions, next_positions)?;
         if !value.valid {
             batch.unavailable = batch.unavailable.saturating_add(1);
             continue;
@@ -330,7 +337,7 @@ fn build_signal(
             source: VitalsSource::ResmedAir11.id(),
             r#type: r#type.id(),
             session_id: context.session_id,
-            seq: source_ordinal,
+            seq: sequence,
             timestamp_unix_micros: context.timestamp_unix_micros,
             value: converted,
             extra: Some(extra),
@@ -338,6 +345,29 @@ fn build_signal(
         });
     }
     Ok(())
+}
+
+fn record_source_position(
+    source_ordinal: i64,
+    slot: usize,
+    first_positions: &mut [Option<i64>; AIR11_SIGNAL_SLOTS],
+    next_positions: &mut [Option<i64>; AIR11_SIGNAL_SLOTS],
+) -> Result<i64, Air11BuildError> {
+    let first_position = first_positions
+        .get(slot)
+        .copied()
+        .ok_or(Air11BuildError::SourceStartTimeInvalid)?
+        .unwrap_or(source_ordinal);
+    let sequence = source_ordinal
+        .checked_sub(first_position)
+        .ok_or(Air11BuildError::SourceStartTimeInvalid)?;
+    *first_positions
+        .get_mut(slot)
+        .ok_or(Air11BuildError::SourceStartTimeInvalid)? = Some(first_position);
+    *next_positions
+        .get_mut(slot)
+        .ok_or(Air11BuildError::SourceStartTimeInvalid)? = Some(source_ordinal);
+    Ok(sequence)
 }
 
 /// Parses the bounded source clock representation retained by `StreamData`.
@@ -717,7 +747,7 @@ mod tests {
         .expect("good fixture");
         let recovered = builder.build_frame(&good, receipt()).expect("good");
         assert_eq!(recovered.samples.len(), 1);
-        assert_ne!(recovered.samples[0].seq, 0);
+        assert_eq!(recovered.samples[0].seq, 5);
     }
 
     #[test]
@@ -734,6 +764,7 @@ mod tests {
         let mut positions = samples.iter().map(|sample| sample.seq);
         let first = positions.next().expect("first position");
         let second = positions.next().expect("second position");
+        assert_eq!(first, 0);
         assert_eq!(second - first, 1);
 
         let report_interval_frame = decode_stream(

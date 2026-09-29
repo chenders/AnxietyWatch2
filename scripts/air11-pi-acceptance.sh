@@ -165,12 +165,24 @@ client_id = document.get("client_id", document.get("clientId"))
 if not isinstance(client_id, str) or not client_id or len(client_id) > 128:
     raise ValueError("client id is missing or outside the 1..128-byte bound")
 
-master_key = document.get("master_pair_key", document.get("masterPairKey"))
+master_key = next(
+    (document.get(name) for name in ("master_pair_key", "masterPairKey", "master_key", "master_key_hex")
+     if document.get(name) is not None),
+    None,
+)
 if not isinstance(master_key, str) or re.fullmatch(r"[0-9a-fA-F]{64}", master_key) is None:
     raise ValueError("master pair key is not exactly 32 bytes of hexadecimal")
 
-linux_address = document.get("linux_address")
-address = linux_address if linux_address is not None else document.get("address")
+linux_address = next(
+    (document.get(name) for name in ("linux_address", "linuxAddress", "linux_mac", "linuxMac")
+     if document.get(name) is not None),
+    None,
+)
+address = linux_address if linux_address is not None else next(
+    (document.get(name) for name in ("address", "device_address", "target")
+     if document.get(name) is not None),
+    None,
+)
 if not isinstance(address, str) or not address.strip():
     raise ValueError("target address is absent")
 address = address.strip()
@@ -523,7 +535,7 @@ distinct_types=0
 metadata_rows=0
 distinct_sessions=0
 if ((require_postgres == 1)); then
-window_predicate="source = 5 AND timestamp >= to_timestamp(${start_epoch} - 5) AND timestamp <= now() + interval '5 seconds' AND type BETWEEN 9 AND 23"
+window_predicate="source = (SELECT id FROM vitals_source WHERE name = 'resmed_air11') AND timestamp >= to_timestamp(${start_epoch} - 5) AND timestamp <= now() + interval '5 seconds'"
 query_count() {
     local sql=$1
     local value

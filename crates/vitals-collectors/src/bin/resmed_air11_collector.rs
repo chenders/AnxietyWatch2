@@ -384,13 +384,9 @@ impl Collector {
                 "AirSense stream start blocked: authentication is not complete",
             ));
         }
-        if let Err(error) = transport.start_stream().await {
-            return Ok(ConnectionOutcome::Lost(ConnectionLost {
-                detail: format!("AirSense stream subscription failed: {error}"),
-                reconnect_succeeded: false,
-            }));
-        }
-        self.reconnect_cycle.mark_stream_started();
+        // Subscribe before starting the stream.  Otherwise early StreamData
+        // notifications can arrive while start_stream's response is being
+        // correlated and be discarded before stream_loop can journal them.
         match transport.subscribe_events().await {
             Ok(()) => {
                 self.status.event_subscription_state = EventSubscriptionState::Subscribed;
@@ -402,6 +398,13 @@ impl Collector {
                     Some(format!("AirSense event subscription unavailable: {error}"));
             }
         }
+        if let Err(error) = transport.start_stream().await {
+            return Ok(ConnectionOutcome::Lost(ConnectionLost {
+                detail: format!("AirSense stream subscription failed: {error}"),
+                reconnect_succeeded: false,
+            }));
+        }
+        self.reconnect_cycle.mark_stream_started();
         self.status.link_state = LinkState::Streaming;
         self.status.blocker = None;
         self.publish()?;
