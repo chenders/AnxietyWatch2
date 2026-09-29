@@ -63,5 +63,6 @@ $(if ((reload)); then printf 'sudo systemctl daemon-reload\n'; fi)
 sudo stat -c 'installed type=%F mode=%a owner=%U group=%G' '$remote_path'
 sudo test -f '$remote_path'
 sudo test ! -L '$remote_path'
-sudo test "\$(stat -c '%a:%U:%G' '$remote_path')" = '${mode#0}:root:root'
+sudo test \"\$(stat -c '%a:%U:%G' '$remote_path')\" = '${mode#0}:root:root'
+sudo test -c /dev/null
 "

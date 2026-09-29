@@ -429,6 +429,20 @@ fn is_linux_mac(value: &str) -> bool {
     count == 6
 }
 
+fn is_nonzero_linux_mac(value: &str) -> bool {
+    is_linux_mac(value)
+        && value
+            .bytes()
+            .filter(u8::is_ascii_hexdigit)
+            .any(|byte| !matches!(byte, b'0'))
+}
+
+fn is_nonzero_hex(value: &str, length: usize) -> bool {
+    value.len() == length
+        && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+        && value.bytes().any(|byte| !matches!(byte, b'0'))
+}
+
 fn exceeds_byte_bound(len: usize, maximum: u64) -> bool {
     match u64::try_from(len) {
         Ok(len) => len > maximum,
@@ -455,7 +469,7 @@ fn valid_target_present(document: &Value) -> bool {
         document
             .get(*name)
             .and_then(Value::as_str)
-            .is_some_and(is_linux_mac)
+            .is_some_and(is_nonzero_linux_mac)
     })
 }
 
@@ -566,7 +580,7 @@ fn credential_view(path: &Path) -> CredentialView {
             "master_key_hex",
         ],
     )
-    .is_some_and(|value| value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit()));
+    .is_some_and(|value| is_nonzero_hex(value, 64));
     let valid = document.is_object()
         && address_present
         && client_id_present
@@ -1557,6 +1571,14 @@ mod tests {
             air11_admin_token: Some(std::sync::Arc::new("admin-token".to_string())),
             air11_allowed_networks: std::sync::Arc::new(default_allowed_networks()),
         }
+    }
+
+    #[test]
+    fn credential_shape_rejects_all_zero_target_and_master_key() {
+        assert!(!is_nonzero_linux_mac(&"0".repeat(12)));
+        assert!(is_nonzero_linux_mac(&format!("{}1", "0".repeat(11))));
+        assert!(!is_nonzero_hex("0".repeat(64).as_str(), 64));
+        assert!(is_nonzero_hex(&format!("{}1", "0".repeat(63)), 64));
     }
 
     #[test]
