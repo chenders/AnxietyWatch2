@@ -67,7 +67,7 @@ mod tests {
         assert_eq!(VitalsType::Hr.unit(), "bpm");
     }
 
-    /// AirSense uses permanent ids for source-backed stream rows. The source
+    /// `AirSense` uses permanent ids for source-backed stream rows. The source
     /// and type enums are what prevent a numeric source/type transposition.
     #[test]
     fn air11_source_and_types_match_the_contract() {

@@ -74,10 +74,6 @@ fn air11_capabilities() -> (bool, Option<Arc<String>>, Option<Arc<String>>) {
     (actions_enabled, action_token, admin_token)
 }
 
-#[expect(
-    clippy::too_many_lines,
-    reason = "startup wiring keeps network, credential, database, and route policy together"
-)]
 #[tokio::main]
 #[allow(
     clippy::too_many_lines,

@@ -167,6 +167,7 @@ mod tests {
                             drain_progressing: true,
                         },
                         heartbeat_pulsing: true,
+                        sync_append_ready: true,
                         degraded: Vec::new(),
                     }),
                 },
