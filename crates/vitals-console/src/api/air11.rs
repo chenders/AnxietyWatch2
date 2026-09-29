@@ -1300,14 +1300,11 @@ async fn record_audit_transaction(
 
 async fn set_opt_in(pool: &sqlx::PgPool, opted_in: bool) -> Result<(), ()> {
     let mut transaction = pool.begin().await.map_err(|_| ())?;
-    sqlx::query(
-        "INSERT INTO air11_integration_config (singleton, opted_in) VALUES (TRUE, $1)\
-         ON CONFLICT (singleton) DO UPDATE SET opted_in = EXCLUDED.opted_in, updated_at = now()",
-    )
-    .bind(opted_in)
-    .execute(&mut *transaction)
-    .await
-    .map_err(|_| ())?;
+    sqlx::query("SELECT set_air11_opt_in($1)")
+        .bind(opted_in)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|_| ())?;
     let action = if opted_in { "opt_in" } else { "opt_out" };
     record_audit_transaction(
         &mut transaction,

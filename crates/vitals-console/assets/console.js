@@ -12,6 +12,10 @@
   const screen = VALID_SCREENS.has(params.get("screen")) ? params.get("screen") : "overview";
   const names = { a: "Service Mode", b: "Preflight", c: "Flowpath" };
   const main = document.querySelector("main");
+  const loginPanel = document.querySelector("#console-login");
+  const loginForm = document.querySelector("#console-login-form");
+  const loginStatus = document.querySelector("#console-login-status");
+  let consoleCsrfToken = null;
   let lastSuccessMs = null;
   let model = null;
   let timer = null;
@@ -30,6 +34,26 @@
     if (target === screen) link.setAttribute("aria-current", "page");
   });
   document.querySelector("#reconnect").addEventListener("click", refresh);
+  loginForm?.addEventListener("submit", async event => {
+    event.preventDefault();
+    const password = document.querySelector("#console-password")?.value || "";
+    loginStatus.textContent = "Signing in…";
+    const response = await fetch("/api/admin/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ password }),
+    }).catch(error => ({ ok: false, status: 0, json: async () => ({ error: error.message }) }));
+    const body = await response.json().catch(() => ({}));
+    document.querySelector("#console-password").value = "";
+    if (!response.ok || typeof body.csrf_token !== "string") {
+      loginStatus.textContent = body.error || `Sign-in failed: HTTP ${response.status}`;
+      return;
+    }
+    consoleCsrfToken = body.csrf_token;
+    loginPanel.hidden = true;
+    await refresh();
+  });
 
   const esc = value => String(value ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]);
   const ageText = seconds => {
@@ -319,6 +343,7 @@
     const results = Object.fromEntries(keys.map((key, i) => [key, values[i]]));
     if (results.health.ok) lastSuccessMs = Date.now();
     if (results.version.ok) document.querySelector("#build-id").textContent = `Build: ${results.version.data.git_commit || results.version.data.version}`;
+    if (results.host?.error?.includes("HTTP 401") || results.clock?.error?.includes("HTTP 401")) loginPanel.hidden = false;
     return { model: ({ overview, display, ingest, attempts, air11: air11Page })[screen](results), healthOk: results.health.ok };
   }
 

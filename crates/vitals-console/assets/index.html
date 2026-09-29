@@ -37,6 +37,15 @@
     <span>Cards retain their last known outcome and reason; this document cannot vouch for current state.</span>
     <button id="reconnect" type="button">Reconnect now</button>
   </aside>
+  <section id="console-login" aria-labelledby="console-login-title">
+    <h1 id="console-login-title">Admin session required</h1>
+    <form id="console-login-form">
+      <label for="console-password">Console admin password</label>
+      <input id="console-password" name="password" type="password" autocomplete="current-password" required>
+      <button type="submit">Sign in</button>
+      <p id="console-login-status" role="status"></p>
+    </form>
+  </section>
   <main id="console-main" tabindex="-1" aria-live="polite">
     <section class="loading" aria-labelledby="loading-title">
       <h1 id="loading-title">Loading actual appliance observations</h1>

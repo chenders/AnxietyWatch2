@@ -26,6 +26,21 @@ CREATE TABLE air11_admin_audit (
 CREATE INDEX air11_admin_audit_created_idx
     ON air11_admin_audit (created_at DESC, id DESC);
 
+CREATE FUNCTION set_air11_opt_in(p_opted_in BOOLEAN)
+RETURNS VOID
+LANGUAGE SQL
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $$
+    INSERT INTO air11_integration_config (singleton, opted_in)
+    VALUES (TRUE, p_opted_in)
+    ON CONFLICT (singleton) DO UPDATE
+        SET opted_in = EXCLUDED.opted_in, updated_at = now();
+$$;
+
+REVOKE ALL ON FUNCTION set_air11_opt_in(BOOLEAN) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION set_air11_opt_in(BOOLEAN) TO vitals;
+
 CREATE FUNCTION reject_air11_admin_audit_mutation()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -43,7 +58,8 @@ CREATE TRIGGER air11_admin_audit_truncate_immutable
     BEFORE TRUNCATE ON air11_admin_audit
     FOR EACH STATEMENT EXECUTE FUNCTION reject_air11_admin_audit_mutation();
 
-GRANT SELECT, INSERT, UPDATE ON air11_integration_config TO vitals;
+GRANT SELECT ON air11_integration_config TO vitals;
+REVOKE INSERT, UPDATE, DELETE ON air11_integration_config FROM vitals;
 GRANT SELECT, INSERT ON air11_admin_audit TO vitals;
 REVOKE UPDATE, DELETE, TRUNCATE ON air11_admin_audit FROM vitals;
 

@@ -14,6 +14,9 @@ DEPLOY_REQUIRED = (
     "singleton  BOOLEAN     PRIMARY KEY DEFAULT TRUE CHECK (singleton)",
     "opted_in   BOOLEAN     NOT NULL DEFAULT FALSE",
     "VALUES (TRUE, FALSE)",
+    "CREATE FUNCTION set_air11_opt_in(p_opted_in BOOLEAN)",
+    "GRANT EXECUTE ON FUNCTION set_air11_opt_in(BOOLEAN) TO vitals",
+    "REVOKE INSERT, UPDATE, DELETE ON air11_integration_config FROM vitals",
     "CREATE TABLE air11_admin_audit",
     "GENERATED ALWAYS AS IDENTITY PRIMARY KEY",
     "'opt_in', 'opt_out', 'start', 'stop', 'restart', 'credential_check'",
@@ -25,6 +28,7 @@ DEPLOY_REQUIRED = (
 REVERT_REQUIRED = (
     "DROP TABLE IF EXISTS air11_admin_audit",
     "DROP TABLE IF EXISTS air11_integration_config",
+    "DROP FUNCTION IF EXISTS set_air11_opt_in(BOOLEAN)",
 )
 VERIFY_REQUIRED = (
     "FROM air11_integration_config",
