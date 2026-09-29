@@ -16,6 +16,8 @@ DEPLOY_REQUIRED = (
     "VALUES (TRUE, FALSE)",
     "CREATE FUNCTION set_air11_opt_in(p_opted_in BOOLEAN)",
     "GRANT EXECUTE ON FUNCTION set_air11_opt_in(BOOLEAN) TO vitals",
+    "CREATE FUNCTION append_air11_admin_audit(",
+    "GRANT EXECUTE ON FUNCTION append_air11_admin_audit(TEXT, TEXT, TEXT) TO vitals",
     "REVOKE INSERT, UPDATE, DELETE ON air11_integration_config FROM vitals",
     "CREATE TABLE air11_admin_audit",
     "GENERATED ALWAYS AS IDENTITY PRIMARY KEY",
@@ -29,6 +31,7 @@ REVERT_REQUIRED = (
     "DROP TABLE IF EXISTS air11_admin_audit",
     "DROP TABLE IF EXISTS air11_integration_config",
     "DROP FUNCTION IF EXISTS set_air11_opt_in(BOOLEAN)",
+    "DROP FUNCTION IF EXISTS append_air11_admin_audit(TEXT, TEXT, TEXT)",
 )
 VERIFY_REQUIRED = (
     "FROM air11_integration_config",

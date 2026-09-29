@@ -401,13 +401,16 @@ remaining_duration=$((duration - half_duration))
 wait_for_air11_measured "$remaining_duration"
 snapshot_status "final"
 
-if ! python3 - "$status_dir" "$target" <<'PY' 2>"$work_dir/status.err"
+target_file="$work_dir/target.txt"
+printf '%s\n' "$target" >"$target_file"
+chmod 600 "$target_file"
+if ! python3 - "$status_dir" "$target_file" <<'PY' 2>"$work_dir/status.err"
 import json
 import sys
 from pathlib import Path
 
 status_dir = Path(sys.argv[1])
-target = sys.argv[2]
+target = Path(sys.argv[2]).read_text(encoding="utf-8").strip()
 paths = sorted(status_dir.glob("*.json"))
 if len(paths) != 3:
     raise SystemExit(f"status snapshots={len(paths)}; expected 3")

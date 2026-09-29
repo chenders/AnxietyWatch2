@@ -47,6 +47,23 @@ $$;
 REVOKE ALL ON FUNCTION set_air11_opt_in(BOOLEAN) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION set_air11_opt_in(BOOLEAN) TO vitals;
 
+CREATE FUNCTION append_air11_admin_audit(
+    p_action TEXT,
+    p_outcome TEXT,
+    p_detail TEXT
+)
+RETURNS VOID
+LANGUAGE SQL
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $$
+    INSERT INTO air11_admin_audit (action, outcome, detail)
+    VALUES (p_action, p_outcome, p_detail);
+$$;
+
+REVOKE ALL ON FUNCTION append_air11_admin_audit(TEXT, TEXT, TEXT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION append_air11_admin_audit(TEXT, TEXT, TEXT) TO vitals;
+
 CREATE FUNCTION reject_air11_admin_audit_mutation()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -66,8 +83,8 @@ CREATE TRIGGER air11_admin_audit_truncate_immutable
 
 GRANT SELECT ON air11_integration_config TO vitals;
 REVOKE INSERT, UPDATE, DELETE ON air11_integration_config FROM vitals;
-GRANT SELECT, INSERT ON air11_admin_audit TO vitals;
-REVOKE UPDATE, DELETE, TRUNCATE ON air11_admin_audit FROM vitals;
+GRANT SELECT ON air11_admin_audit TO vitals;
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON air11_admin_audit FROM vitals;
 
 COMMENT ON TABLE air11_integration_config IS
     'Non-secret AirSense opt-in state. BLE credentials remain in the external operator-managed file.';

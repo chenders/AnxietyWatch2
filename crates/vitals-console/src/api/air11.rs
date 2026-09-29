@@ -1272,7 +1272,7 @@ async fn record_audit(
     outcome: &str,
     detail: &str,
 ) -> Result<(), ()> {
-    sqlx::query("INSERT INTO air11_admin_audit (action, outcome, detail) VALUES ($1, $2, $3)")
+    sqlx::query("SELECT append_air11_admin_audit($1, $2, $3)")
         .bind(action)
         .bind(outcome)
         .bind(detail)
