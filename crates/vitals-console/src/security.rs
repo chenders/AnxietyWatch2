@@ -442,16 +442,7 @@ pub async fn security_middleware(
     let path = request.uri().path();
     if path.starts_with("/api/v1/client/")
         || matches!(path, "/api/health" | "/api/version")
-        || request.method() == Method::GET
-            && matches!(
-                path,
-                "/api/air11"
-                    | "/api/air11/history"
-                    | "/api/host"
-                    | "/api/clock"
-                    | "/api/display"
-                    | "/api/attempts"
-            )
+        || request.method() == Method::GET && matches!(path, "/api/air11" | "/api/air11/history")
         || path == "/api/air11"
             && request.method() == Method::POST
             && request.headers().contains_key("authorization")
@@ -464,8 +455,7 @@ pub async fn security_middleware(
         return next.run(request).await;
     }
     // The browser must load the login page and its static assets before it has a session.
-    // Mutating and privileged admin APIs remain behind the session check below;
-    // explicitly listed read-only projections serve the private-bound appliance feed.
+    // All non-kiosk admin APIs remain behind the session check below.
     if path == "/console" || path.starts_with("/console/") {
         return next.run(request).await;
     }
@@ -877,23 +867,12 @@ mod tests {
         let app = Router::new()
             .route("/api/air11", get(|| async { StatusCode::OK }))
             .route("/api/air11/history", get(|| async { StatusCode::OK }))
-            .route("/api/host", get(|| async { StatusCode::OK }))
-            .route("/api/clock", get(|| async { StatusCode::OK }))
-            .route("/api/display", get(|| async { StatusCode::OK }))
-            .route("/api/attempts", get(|| async { StatusCode::OK }))
             .layer(axum::middleware::from_fn_with_state(
                 security,
                 security_middleware,
             ));
 
-        for uri in [
-            "/api/air11",
-            "/api/air11/history",
-            "/api/host",
-            "/api/clock",
-            "/api/display",
-            "/api/attempts",
-        ] {
+        for uri in ["/api/air11", "/api/air11/history"] {
             let response = app
                 .clone()
                 .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())

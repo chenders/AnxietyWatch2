@@ -490,6 +490,10 @@
         "inspiratory_duration",
         "trigger_cycle_event"
       ],
+      "conversion": {
+        "leak": 60.0,
+        "tidal_volume": 1000.0
+      },
       "service": "0xFD56",
       "cadence": {
         "expected_cadence_s": 1

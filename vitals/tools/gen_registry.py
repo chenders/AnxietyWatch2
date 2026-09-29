@@ -466,6 +466,7 @@ def emit_json(reg: Registry) -> str:
                 "id": s.id,
                 "transport": s.transport,
                 "provides": list(s.provides),
+                **({"conversion": dict(s.conversions)} if s.conversions else {}),
                 **({"service": s.service} if s.service else {}),
                 **({"indication": True} if s.indication else {}),
                 "cadence": (
