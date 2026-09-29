@@ -1,0 +1,114 @@
+{
+  "items": [
+    {
+      "id": "99-last-specs",
+      "type": "change",
+      "valid": true,
+      "issues": [],
+      "durationMs": 21
+    },
+    {
+      "id": "emay-durable-ingestion",
+      "type": "change",
+      "valid": false,
+      "issues": [
+        {
+          "level": "ERROR",
+          "path": "file",
+          "message": "Change must have at least one delta. No deltas found. Ensure your change has a specs/ directory with capability folders (e.g. specs/http-server/spec.md) containing .md files that use delta headers (## ADDED/MODIFIED/REMOVED/RENAMED Requirements) and that each requirement includes at least one \"#### Scenario:\" block. If this change intentionally modifies no specs (pure refactor, tooling, docs), set \"skip_specs: true\" in the change's .openspec.yaml instead. Tip: run \"openspec change show <change-id> --json --deltas-only\" to inspect parsed deltas."
+        }
+      ],
+      "durationMs": 14
+    },
+    {
+      "id": "openspec-corpus-preservation-disposition-audit",
+      "type": "change",
+      "valid": true,
+      "issues": [
+        {
+          "level": "INFO",
+          "path": "file",
+          "message": "skip_specs is set in .openspec.yaml: change declares no spec-level behavior changes, zero deltas accepted"
+        }
+      ],
+      "durationMs": 14
+    },
+    {
+      "id": "pi5-vitals-core",
+      "type": "change",
+      "valid": false,
+      "issues": [
+        {
+          "level": "ERROR",
+          "path": "file",
+          "message": "Change must have at least one delta. No deltas found. Ensure your change has a specs/ directory with capability folders (e.g. specs/http-server/spec.md) containing .md files that use delta headers (## ADDED/MODIFIED/REMOVED/RENAMED Requirements) and that each requirement includes at least one \"#### Scenario:\" block. If this change intentionally modifies no specs (pure refactor, tooling, docs), set \"skip_specs: true\" in the change's .openspec.yaml instead. Tip: run \"openspec change show <change-id> --json --deltas-only\" to inspect parsed deltas."
+        }
+      ],
+      "durationMs": 14
+    },
+    {
+      "id": "project-knowledge-architecture",
+      "type": "change",
+      "valid": true,
+      "issues": [],
+      "durationMs": 21
+    },
+    {
+      "id": "repository-recovery-and-lifecycle",
+      "type": "change",
+      "valid": false,
+      "issues": [
+        {
+          "level": "ERROR",
+          "path": "file",
+          "message": "Change must have at least one delta. No deltas found. Ensure your change has a specs/ directory with capability folders (e.g. specs/http-server/spec.md) containing .md files that use delta headers (## ADDED/MODIFIED/REMOVED/RENAMED Requirements) and that each requirement includes at least one \"#### Scenario:\" block. If this change intentionally modifies no specs (pure refactor, tooling, docs), set \"skip_specs: true\" in the change's .openspec.yaml instead. Tip: run \"openspec change show <change-id> --json --deltas-only\" to inspect parsed deltas."
+        }
+      ],
+      "durationMs": 13
+    },
+    {
+      "id": "safety-hardening",
+      "type": "change",
+      "valid": false,
+      "issues": [
+        {
+          "level": "ERROR",
+          "path": "file",
+          "message": "Change must have at least one delta. No deltas found. Ensure your change has a specs/ directory with capability folders (e.g. specs/http-server/spec.md) containing .md files that use delta headers (## ADDED/MODIFIED/REMOVED/RENAMED Requirements) and that each requirement includes at least one \"#### Scenario:\" block. If this change intentionally modifies no specs (pure refactor, tooling, docs), set \"skip_specs: true\" in the change's .openspec.yaml instead. Tip: run \"openspec change show <change-id> --json --deltas-only\" to inspect parsed deltas."
+        }
+      ],
+      "durationMs": 4
+    },
+    {
+      "id": "xe125-respiratory-rate",
+      "type": "change",
+      "valid": true,
+      "issues": [],
+      "durationMs": 10
+    }
+  ],
+  "summary": {
+    "totals": {
+      "items": 8,
+      "passed": 4,
+      "failed": 4
+    },
+    "byType": {
+      "change": {
+        "items": 8,
+        "passed": 4,
+        "failed": 4
+      },
+      "spec": {
+        "items": 0,
+        "passed": 0,
+        "failed": 0
+      }
+    }
+  },
+  "version": "1.0",
+  "root": {
+    "path": "$HOME/Source/AnxietyWatch2",
+    "source": "nearest"
+  }
+}

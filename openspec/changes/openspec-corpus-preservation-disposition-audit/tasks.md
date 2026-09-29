@@ -11,7 +11,7 @@ physiological, storage, alerting, or hardware amendment is changed.
 
 - [x] T-OCPA1 — Establish the bounded preservation baseline
 - [x] T-OCPA2 — Inventory changes, amendments, documents, and evidence
-- [ ] T-OCPA3 — Record validation, lifecycle, and discrepancy findings
+- [x] T-OCPA3 — Record validation, lifecycle, and discrepancy findings
 - [ ] T-OCPA4 — Produce disposition and follow-on change packets
 - [ ] T-OCPA5 — Review and obtain owner dispositions
 
@@ -77,9 +77,9 @@ excluded/not-audited disposition, and sensitive material is not disclosed.
 `openspec list --specs`; `openspec validate --all --strict --no-interactive --json`; all existing
 change task files; owner decisions; review records; and evidence references identified by the inventory.
 
-**Creates:** raw validator output, a lifecycle/evidence ledger, and a discrepancy register covering
-validation failures, status contradictions, missing owners, stale claims, and the panel-direction
-conflict.
+**Creates:** raw validator/version/doctor outputs, a lifecycle/evidence ledger, and a discrepancy
+register covering validation failures, status contradictions, missing owners, stale claims, and the
+panel-direction conflict; plus metadata-only findings builder and verifier tools.
 
 **Modifies:** none of the existing changes or source records.
 

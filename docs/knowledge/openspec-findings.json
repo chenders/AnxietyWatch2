@@ -1,0 +1,205 @@
+{
+  "change_id": "openspec-corpus-preservation-disposition-audit",
+  "change_records": [
+    {
+      "change": "99-last-specs",
+      "checked_tasks": 0,
+      "lifecycle_claim": "task-checkbox-claim-only",
+      "open_tasks": 0,
+      "tasks_path": "openspec/changes/99-last-specs/tasks.md",
+      "tasks_present": true,
+      "verify_contracts": 0
+    },
+    {
+      "change": "emay-durable-ingestion",
+      "checked_tasks": 4,
+      "lifecycle_claim": "task-checkbox-claim-only",
+      "open_tasks": 0,
+      "tasks_path": "openspec/changes/emay-durable-ingestion/tasks.md",
+      "tasks_present": true,
+      "verify_contracts": 4
+    },
+    {
+      "change": "openspec-corpus-preservation-disposition-audit",
+      "checked_tasks": 2,
+      "lifecycle_claim": "task-checkbox-claim-only",
+      "open_tasks": 3,
+      "tasks_path": "openspec/changes/openspec-corpus-preservation-disposition-audit/tasks.md",
+      "tasks_present": true,
+      "verify_contracts": 5
+    },
+    {
+      "change": "pi5-vitals-core",
+      "checked_tasks": 15,
+      "lifecycle_claim": "task-checkbox-claim-only",
+      "open_tasks": 0,
+      "tasks_path": "openspec/changes/pi5-vitals-core/tasks.md",
+      "tasks_present": true,
+      "verify_contracts": 15
+    },
+    {
+      "change": "project-knowledge-architecture",
+      "checked_tasks": 0,
+      "lifecycle_claim": "task-checkbox-claim-only",
+      "open_tasks": 5,
+      "tasks_path": "openspec/changes/project-knowledge-architecture/tasks.md",
+      "tasks_present": true,
+      "verify_contracts": 5
+    },
+    {
+      "change": "repository-recovery-and-lifecycle",
+      "checked_tasks": null,
+      "lifecycle_claim": "not-measured",
+      "open_tasks": null,
+      "tasks_path": "openspec/changes/repository-recovery-and-lifecycle/tasks.md",
+      "tasks_present": false,
+      "verify_contracts": null
+    },
+    {
+      "change": "safety-hardening",
+      "checked_tasks": 0,
+      "lifecycle_claim": "task-checkbox-claim-only",
+      "open_tasks": 0,
+      "tasks_path": "openspec/changes/safety-hardening/tasks.md",
+      "tasks_present": true,
+      "verify_contracts": 5
+    },
+    {
+      "change": "xe125-respiratory-rate",
+      "checked_tasks": 2,
+      "lifecycle_claim": "task-checkbox-claim-only",
+      "open_tasks": 5,
+      "tasks_path": "openspec/changes/xe125-respiratory-rate/tasks.md",
+      "tasks_present": true,
+      "verify_contracts": 7
+    }
+  ],
+  "current_operational_evidence": {
+    "claims": [
+      "no current physical bedside-display acceptance is established by this audit",
+      "no current hardware acceptance is established by this audit",
+      "no task Verify command was rerun by this findings builder"
+    ],
+    "state": "not-measured"
+  },
+  "discrepancies": [
+    {
+      "claim": "latest strict validator reports no recognized spec delta",
+      "disposition": "owner decision needed; do not automatically add specs or set skip_specs",
+      "id": "validation-no-delta-emay",
+      "source_paths": [
+        "openspec/changes/emay-durable-ingestion"
+      ],
+      "state": "measured-bad-structural-only"
+    },
+    {
+      "claim": "latest strict validator reports no recognized spec delta",
+      "disposition": "owner decision needed; do not automatically add specs or set skip_specs",
+      "id": "validation-no-delta-pi5",
+      "source_paths": [
+        "openspec/changes/pi5-vitals-core"
+      ],
+      "state": "measured-bad-structural-only"
+    },
+    {
+      "claim": "latest strict validator reports no recognized spec delta",
+      "disposition": "owner decision needed; preserve owner policy records and decide whether this is spec-free",
+      "id": "validation-no-delta-repository-governance",
+      "source_paths": [
+        "openspec/changes/repository-recovery-and-lifecycle"
+      ],
+      "state": "measured-bad-structural-only"
+    },
+    {
+      "claim": "latest strict validator reports no recognized spec delta",
+      "disposition": "owner decision needed; this change contains behavioral safety work and cannot be classified by validator output alone",
+      "id": "validation-no-delta-safety",
+      "source_paths": [
+        "openspec/changes/safety-hardening"
+      ],
+      "state": "measured-bad-structural-only"
+    },
+    {
+      "claim": "openspec list --specs reports no specs found",
+      "disposition": "do not create canonical specs until owner disposition and authority review",
+      "id": "no-canonical-specs",
+      "source_paths": [
+        "openspec/specs"
+      ],
+      "state": "measured-good-cli-observation"
+    },
+    {
+      "claim": "one source says all three panel directions are ported; the Direction A README says B and C are not built",
+      "disposition": "preserve both claims and create a separate reconciliation decision or change",
+      "id": "panel-direction-documentation-conflict",
+      "source_paths": [
+        "docs/design/CLAUDE-DESIGN-SOURCES.md",
+        "docs/design/pi-panel/direction-a-clinical/README.md",
+        "docs/design/PROMPT-pi-panel.md"
+      ],
+      "state": "not-measured-unresolved"
+    },
+    {
+      "claim": "approved guidance records OpenSpec 1.6.0 while the installed CLI is 1.13.2",
+      "disposition": "re-probe version-specific claims; do not rewrite approved guidance silently",
+      "id": "authoring-guidance-version-drift",
+      "source_paths": [
+        "openspec/changes/repository-recovery-and-lifecycle/reviews/openspec-authoring-guidance.md",
+        "docs/knowledge/openspec-version.txt"
+      ],
+      "state": "measured-bad-version-drift-only"
+    },
+    {
+      "claim": "the repository-governance change has no tasks.md in the current corpus",
+      "disposition": "record as missing planning artifact; do not infer task completion",
+      "id": "repository-governance-tasks-missing",
+      "source_paths": [
+        "openspec/changes/repository-recovery-and-lifecycle/tasks.md"
+      ],
+      "state": "measured-bad-structural-only"
+    }
+  ],
+  "evidence_state_rule": "not-measured is distinct from measured-good and measured-bad; lifecycle and evidence are separate",
+  "findings_id": "openspec-findings",
+  "observed_at_utc": "2026-09-29T05:39:11Z",
+  "owner_disposition": {
+    "authoring_guidance": "owner-approved guidance; not proof of implemented enforcement",
+    "governance_policy": "owner-accepted policy; implementation and enforcement remain separate",
+    "per_change_disposition_records": "not-found"
+  },
+  "structural_validation": {
+    "command": "openspec validate --all --strict --no-interactive --json --report full",
+    "exit_code": 1,
+    "failed_changes": [
+      "emay-durable-ingestion",
+      "pi5-vitals-core",
+      "repository-recovery-and-lifecycle",
+      "safety-hardening"
+    ],
+    "interpretation": "structural OpenSpec evidence only; does not prove implementation, owner acceptance, Verify success, runtime, hardware, or physical display behavior",
+    "passed_changes": [
+      "99-last-specs",
+      "openspec-corpus-preservation-disposition-audit",
+      "project-knowledge-architecture",
+      "xe125-respiratory-rate"
+    ],
+    "raw_output": "docs/knowledge/openspec-validation.json"
+  },
+  "task_id": "T-OCPA3",
+  "tooling": {
+    "canonical_specs_output": "No specs found.",
+    "canonical_specs_state": "not-measured/none-found by CLI output",
+    "doctor": {
+      "references": [],
+      "root": {
+        "healthy": true,
+        "path": "$HOME/Source/AnxietyWatch2",
+        "source": "nearest",
+        "status": []
+      },
+      "status": [],
+      "store": null
+    },
+    "openspec_version": "1.13.2"
+  }
+}

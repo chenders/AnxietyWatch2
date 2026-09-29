@@ -1,0 +1,11 @@
+{
+  "root": {
+    "path": "$HOME/Source/AnxietyWatch2",
+    "source": "nearest",
+    "healthy": true,
+    "status": []
+  },
+  "store": null,
+  "references": [],
+  "status": []
+}
