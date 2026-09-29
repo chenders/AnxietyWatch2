@@ -844,6 +844,7 @@ mod tests {
     extern crate std;
 
     use super::*;
+    use core::fmt::Write as _;
     use std::{format, string::String};
 
     // De-identified fixture: it contains no pairing material, device address,
@@ -1038,13 +1039,19 @@ mod tests {
             if index != 0 {
                 data.push(',');
             }
-            data.push_str(&format!(r#"{{"{name}":[1,null]}}"#));
+            let _ = write!(data, r#"{{"{name}":[1,null]}}"#);
         }
         data.push(']');
         let json = format!(r#"{{"method":"StreamData","params":{{"streamId":1,"intervalMs":200,"startTime":"x","data":{data}}}}}"#);
         let frame = decode_stream(json.as_bytes()).expect("all signals");
-        assert_eq!(frame.signal_count, names.len() as u8);
-        assert_eq!(frame.value_count, (names.len() * 2) as u16);
+        assert_eq!(
+            frame.signal_count,
+            u8::try_from(names.len()).expect("signal count fits")
+        );
+        assert_eq!(
+            frame.value_count,
+            u16::try_from(names.len() * 2).expect("value count fits")
+        );
         assert!(frame.signals.iter().take(names.len()).all(|signal| signal.sample_interval_ms == 200));
         assert!(decode_stream(br#"{"method":"StreamData","params":{"streamId":1,"intervalMs":200,"startTime":"x","data":[{"_RR2":[]},{"_RR2":[1]}]}}"#).is_none());
         assert!(decode_stream(br#"{"method":"StreamData","params":{"streamId":1,"intervalMs":0,"startTime":"x"}}"#).is_none());

@@ -618,7 +618,7 @@ mod tests {
         let json = br#"{"method":"EventNotification","params":{"subscriptionId":2,"dataId":"x","events":[{"event":"HypopneaEnd"},{"event":"CentralApneaEnd"},{"event":"ObstructiveApneaEnd"},{"event":"ApneaEnd"},{"event":"ReraEnd"},{"event":"CsrStart"},{"event":"CsrEnd"},{"event":"Other","reportTime":"t","duration_ms":1},{"event":"Other","durationMilliseconds":2},{"event":"Other","duration_s":3},{"event":"Other","backdateSeconds":4},{"event":"Other","value":-2147483648,"extra":{"a":[true,false,null]}}]}}"#;
         let frame = decode_event(json).expect("all event variants");
         assert_eq!(frame.event_count, 12);
-        assert_eq!(frame.events.get(0).expect("hypopnea").kind, EventKind::Hypopnea);
+        assert_eq!(frame.events.first().expect("hypopnea").kind, EventKind::Hypopnea);
         assert_eq!(frame.events.get(1).expect("central").kind, EventKind::CentralApnea);
         assert_eq!(frame.events.get(2).expect("obstructive").kind, EventKind::ObstructiveApnea);
         assert_eq!(frame.events.get(3).expect("apnea").kind, EventKind::UnclassifiedApnea);
@@ -661,7 +661,7 @@ mod tests {
     #[test]
     fn rejects_missing_fields_oversized_strings_and_bad_syntax() {
         for json in [
-            br#"{}"#.as_slice(),
+            br"{}".as_slice(),
             br#"{"method":"Wrong","params":{}}"#.as_slice(),
             br#"{"method":"EventNotification"}"#.as_slice(),
             br#"{"method":"EventNotification","params":{}}"#.as_slice(),
