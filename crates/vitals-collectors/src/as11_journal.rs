@@ -16,6 +16,8 @@ use crate::as11_crypto::MAX_JSON_RESPONSE_BYTES;
 
 /// Maximum bytes retained in one raw journal segment.
 pub const MAX_JOURNAL_BYTES: u64 = 8 * 1024 * 1024;
+/// Maximum bytes retained across archived journal segments.
+pub const MAX_JOURNAL_ARCHIVE_BYTES: u64 = 64 * 1024 * 1024;
 /// Maximum decrypted JSON envelope length accepted in one journal record.
 pub const MAX_JOURNAL_PAYLOAD_BYTES: usize = MAX_JSON_RESPONSE_BYTES;
 /// Maximum records returned by one bounded replay operation.
@@ -297,6 +299,7 @@ impl RawJournal {
         let archive = journal_path(&self.dir, generation);
         fs::rename(&self.path, &archive)?;
         sync_directory(&self.dir)?;
+        prune_archives(&self.dir, MAX_JOURNAL_ARCHIVE_BYTES)?;
         let file = create_new_private(&self.path)?;
         self.file = file;
         self.bytes = 0;
@@ -504,6 +507,43 @@ fn newest_generation(dir: &Path) -> Result<Option<u64>, JournalError> {
     Ok(newest)
 }
 
+fn prune_archives(dir: &Path, max_bytes: u64) -> Result<(), JournalError> {
+    let mut archives = Vec::new();
+    let mut total = 0_u64;
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        let Some(number) = name
+            .to_str()
+            .and_then(|value| value.strip_prefix(JOURNAL_PREFIX))
+            .and_then(|value| value.strip_suffix(JOURNAL_SUFFIX))
+        else {
+            continue;
+        };
+        let Ok(generation) = number.parse::<u64>() else {
+            continue;
+        };
+        let metadata = private_file_metadata(&entry.path())?;
+        let bytes = metadata.len();
+        total = total.saturating_add(bytes);
+        archives.push((generation, bytes, entry.path()));
+    }
+    archives.sort_unstable_by_key(|(generation, _, _)| *generation);
+    let mut removed = false;
+    for (_, bytes, path) in archives {
+        if total <= max_bytes {
+            break;
+        }
+        fs::remove_file(path)?;
+        total = total.saturating_sub(bytes);
+        removed = true;
+    }
+    if removed {
+        sync_directory(dir)?;
+    }
+    Ok(())
+}
+
 fn active_path(dir: &Path) -> PathBuf {
     dir.join(JOURNAL_ACTIVE_NAME)
 }
@@ -650,6 +690,26 @@ mod tests {
                 .records
                 .len(),
             1
+        );
+    }
+
+    #[test]
+    fn archive_retention_removes_oldest_segments_over_the_total_bound() {
+        let dir = tempdir().expect("tempdir");
+        for generation in [1_u64, 2_u64] {
+            let path = journal_path(dir.path(), generation);
+            let mut file = create_new_private(&path).expect("archive");
+            file.write_all(&vec![0_u8; usize::try_from(generation).expect("small")])
+                .expect("write archive");
+        }
+
+        prune_archives(dir.path(), 2).expect("prune");
+        assert!(!journal_path(dir.path(), 1).exists());
+        assert_eq!(
+            fs::metadata(journal_path(dir.path(), 2))
+                .expect("newest")
+                .len(),
+            2
         );
     }
 

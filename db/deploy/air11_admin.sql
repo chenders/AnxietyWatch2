@@ -39,6 +39,14 @@ CREATE TRIGGER air11_admin_audit_immutable
     BEFORE UPDATE OR DELETE ON air11_admin_audit
     FOR EACH ROW EXECUTE FUNCTION reject_air11_admin_audit_mutation();
 
+CREATE TRIGGER air11_admin_audit_truncate_immutable
+    BEFORE TRUNCATE ON air11_admin_audit
+    FOR EACH STATEMENT EXECUTE FUNCTION reject_air11_admin_audit_mutation();
+
+GRANT SELECT, INSERT, UPDATE ON air11_integration_config TO vitals;
+GRANT SELECT, INSERT ON air11_admin_audit TO vitals;
+REVOKE UPDATE, DELETE, TRUNCATE ON air11_admin_audit FROM vitals;
+
 COMMENT ON TABLE air11_integration_config IS
     'Non-secret AirSense opt-in state. BLE credentials remain in the external operator-managed file.';
 COMMENT ON TABLE air11_admin_audit IS

@@ -20,6 +20,7 @@ DEPLOY_REQUIRED = (
     "'requested', 'succeeded', 'failed', 'blocked'",
     "CREATE INDEX air11_admin_audit_created_idx",
     "CREATE TRIGGER air11_admin_audit_immutable",
+    "CREATE TRIGGER air11_admin_audit_truncate_immutable",
 )
 REVERT_REQUIRED = (
     "DROP TABLE IF EXISTS air11_admin_audit",
@@ -30,6 +31,7 @@ VERIFY_REQUIRED = (
     "FROM air11_admin_audit",
     "air11_admin_audit_created_idx",
     "air11_admin_audit_immutable",
+    "air11_admin_audit_truncate_immutable",
 )
 FORBIDDEN_SQL_TOKENS = (
     "CREATE TABLE samples",

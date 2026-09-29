@@ -1,7 +1,7 @@
 # Amendment 10 — AirSense acceptance scope
 
-**Date:** 2026-09-13  
-**Supersedes:** the unrelated host-health portion of T-A11-6's live acceptance gate  
+**Date:** 2026-09-13
+**Supersedes:** the unrelated host-health portion of T-A11-6's live acceptance gate
 **Affects:** T-A11-6 and `scripts/air11-pi-acceptance.sh`
 
 ## Decision

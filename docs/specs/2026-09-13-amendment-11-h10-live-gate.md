@@ -1,7 +1,7 @@
 # Amendment 11 — H10 live gate
 
-**Date:** 2026-09-13  
-**Supersedes:** Amendment 10's treatment of H10 as optional for T-A11-6  
+**Date:** 2026-09-13
+**Supersedes:** Amendment 10's treatment of H10 as optional for T-A11-6
 **Affects:** T-A11-6 and `scripts/air11-pi-acceptance.sh`
 
 ## Decision

@@ -46,4 +46,3 @@ apns_delivery [apns_registrations] 2026-09-18T12:11:00Z Chris Henderson <chender
 apns_owner_identity [apns_delivery] 2026-09-18T12:12:00Z Chris Henderson <chenders@users.noreply.github.com> # configured owning-user identity for same-user fanout
 apns_idempotency [apns_owner_identity] 2026-09-18T12:13:00Z Chris Henderson <chenders@users.noreply.github.com> # bounded duplicate-send guard
 air11_admin [envelope_clients] 2026-09-11T09:30:00Z Chris Henderson <chenders@users.noreply.github.com> # non-secret AirSense opt-in state and fixed-action audit
-

@@ -35,7 +35,7 @@ Environment=VITALS_CONSOLE_ASSETS=/usr/local/share/vitals-console/assets
 # readiness check without exposing the rest of the operator home directory.
 # A missing source is allowed so status/log reads remain available before
 # credentials are provisioned; the console never returns this file's contents.
-LoadCredential=air11-credentials.json:/var/lib/vitals/.air11/air11-credentials.json
+LoadCredential=air11-credentials.json:?/var/lib/vitals/.air11/air11-credentials.json
 Environment=AIR11_CREDENTIALS_PATH=%d/air11-credentials.json
 
 # This is an observability surface, not the safety path. Prefer collectors,
