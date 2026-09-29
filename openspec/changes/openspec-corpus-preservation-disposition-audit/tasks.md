@@ -10,7 +10,7 @@ physiological, storage, alerting, or hardware amendment is changed.
 ## Task index
 
 - [x] T-OCPA1 — Establish the bounded preservation baseline
-- [ ] T-OCPA2 — Inventory changes, amendments, documents, and evidence
+- [x] T-OCPA2 — Inventory changes, amendments, documents, and evidence
 - [ ] T-OCPA3 — Record validation, lifecycle, and discrepancy findings
 - [ ] T-OCPA4 — Produce disposition and follow-on change packets
 - [ ] T-OCPA5 — Review and obtain owner dispositions
@@ -55,7 +55,7 @@ project guidance named by the manifest.
 
 **Creates:** a sanitized inventory with stable IDs, source paths, category, purpose, authority,
 provenance, lifecycle claim, evidence state, owner/reviewer, related change/capability, and
-sensitivity class.
+sensitivity class; plus the metadata-only builder and verifier tools.
 
 **Modifies:** none of the inventoried source documents.
 
