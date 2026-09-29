@@ -1,0 +1,120 @@
+{
+  "change_id": "openspec-corpus-preservation-disposition-audit",
+  "follow_on_changes": [
+    {
+      "depends_on": [
+        "openspec-corpus-preservation-disposition-audit"
+      ],
+      "gate": "owner approval plus required review before implementation",
+      "id": "openspec-authoring-contract-foundation",
+      "intent": "Define project traceability, lifecycle, evidence, Reads/Amends, and new-task Verify conventions.",
+      "non_goals": [
+        "changing existing Verify lines",
+        "activating enforcement",
+        "private-store or deployment work"
+      ],
+      "source_groups": [
+        "change:repository-recovery-and-lifecycle",
+        "slice:normative-specs",
+        "slice:reviews"
+      ]
+    },
+    {
+      "depends_on": [
+        "openspec-corpus-preservation-disposition-audit",
+        "project-knowledge-architecture"
+      ],
+      "gate": "display/hardware review and independent physical evidence",
+      "id": "bedside-display-responsive-evidence",
+      "intent": "Own responsive layout and the complete feed-to-physical-screen acceptance chain.",
+      "non_goals": [
+        "making the panel an alarm dependency",
+        "inferring physical acceptance from process health",
+        "rewriting display source documents in the audit"
+      ],
+      "source_groups": [
+        "slice:architecture-design",
+        "slice:hardware-integration",
+        "slice:operations"
+      ]
+    },
+    {
+      "depends_on": [
+        "openspec-corpus-preservation-disposition-audit"
+      ],
+      "gate": "domain/safety review and fresh executable evidence",
+      "id": "durability-read-model-evidence",
+      "intent": "Specify received, spooled, durable, drained, committed, published, live, stale, and unknown states.",
+      "non_goals": [
+        "claiming historical evidence is current",
+        "changing storage identity outside accepted amendments"
+      ],
+      "source_groups": [
+        "change:emay-durable-ingestion",
+        "change:safety-hardening",
+        "slice:operations"
+      ]
+    },
+    {
+      "depends_on": [
+        "openspec-corpus-preservation-disposition-audit",
+        "openspec-authoring-contract-foundation"
+      ],
+      "gate": "per-change owner disposition and specialist review",
+      "id": "legacy-change-migration",
+      "intent": "Map retained legacy task plans to requirements, scenarios, tasks, and evidence through companion changes.",
+      "non_goals": [
+        "rewriting historical artifacts",
+        "silently repairing Verify contracts",
+        "inferring owner acceptance"
+      ],
+      "source_groups": [
+        "change:pi5-vitals-core",
+        "change:emay-durable-ingestion",
+        "change:safety-hardening",
+        "change:xe125-respiratory-rate"
+      ]
+    },
+    {
+      "depends_on": [
+        "openspec-corpus-preservation-disposition-audit",
+        "openspec-authoring-contract-foundation"
+      ],
+      "gate": "explicit owner approval and reviewed publication change",
+      "id": "canonical-capability-publication",
+      "intent": "Publish approved current capabilities under openspec/specs only after authority and evidence reconciliation.",
+      "non_goals": [
+        "creating canonical specs merely to satisfy validation",
+        "archiving active work",
+        "changing amendments silently"
+      ],
+      "source_groups": [
+        "slice:normative-specs",
+        "change:project-knowledge-architecture"
+      ]
+    },
+    {
+      "depends_on": [
+        "legacy-change-migration",
+        "canonical-capability-publication"
+      ],
+      "gate": "all required task Verify commands exit 0 and owner closure is recorded",
+      "id": "archive-and-closure-reconciliation",
+      "intent": "Archive only changes whose current evidence, Verify results, review, owner decision, and regressions are reconciled.",
+      "non_goals": [
+        "using archive to hide validation failures",
+        "deleting historical evidence",
+        "treating archive as acceptance"
+      ],
+      "source_groups": [
+        "slice:reviews",
+        "slice:status-updates",
+        "slice:setup-logs"
+      ]
+    }
+  ],
+  "observed_at_utc": "2026-09-29T05:40:54Z",
+  "owner_decision_state": "proposed-only",
+  "plan_id": "openspec-follow-on-plan",
+  "task_id": "T-OCPA4"
+}

@@ -1,0 +1,168 @@
+{
+  "authority": [
+    "AGENTS.md",
+    "docs/specs/AMENDMENTS.md",
+    "openspec/changes/repository-recovery-and-lifecycle/reviews/governance/owner-decision-2026-09-06.md"
+  ],
+  "change_id": "openspec-corpus-preservation-disposition-audit",
+  "disposition_id": "openspec-dispositions",
+  "dispositions": [
+    {
+      "archive_authorized": false,
+      "group_id": "change:99-last-specs",
+      "implementation_authorized": false,
+      "owner_decision": "needed",
+      "proposed_disposition": "owner-decision-needed",
+      "reason": "Empty holding change; retain its migration provenance until a destination is selected.",
+      "source_group": "99-last-specs"
+    },
+    {
+      "archive_authorized": false,
+      "group_id": "change:emay-durable-ingestion",
+      "implementation_authorized": false,
+      "owner_decision": "needed",
+      "proposed_disposition": "owner-decision-needed",
+      "reason": "Behavioral durable-ingestion plan with a structural validation finding; do not classify as spec-free without review.",
+      "source_group": "emay-durable-ingestion"
+    },
+    {
+      "archive_authorized": false,
+      "group_id": "change:openspec-corpus-preservation-disposition-audit",
+      "implementation_authorized": false,
+      "owner_decision": "needed",
+      "proposed_disposition": "retain-reference",
+      "reason": "Active audit evidence; close only after owner dispositions are recorded.",
+      "source_group": "openspec-corpus-preservation-disposition-audit"
+    },
+    {
+      "archive_authorized": false,
+      "group_id": "change:pi5-vitals-core",
+      "implementation_authorized": false,
+      "owner_decision": "needed",
+      "proposed_disposition": "owner-decision-needed",
+      "reason": "Behavioral platform plan with a structural validation finding and historical task claims.",
+      "source_group": "pi5-vitals-core"
+    },
+    {
+      "archive_authorized": false,
+      "group_id": "change:project-knowledge-architecture",
+      "implementation_authorized": false,
+      "owner_decision": "needed",
+      "proposed_disposition": "retain-reference",
+      "reason": "Valid project-level routing proposal; do not merge it with the preservation audit silently.",
+      "source_group": "project-knowledge-architecture"
+    },
+    {
+      "archive_authorized": false,
+      "group_id": "change:repository-recovery-and-lifecycle",
+      "implementation_authorized": false,
+      "owner_decision": "needed",
+      "proposed_disposition": "owner-decision-needed",
+      "reason": "Accepted policy records coexist with an unimplemented governance proposal and no tasks artifact.",
+      "source_group": "repository-recovery-and-lifecycle"
+    },
+    {
+      "archive_authorized": false,
+      "group_id": "change:safety-hardening",
+      "implementation_authorized": false,
+      "owner_decision": "needed",
+      "proposed_disposition": "owner-decision-needed",
+      "reason": "Behavioral safety work with a structural validation finding; preserve safety intent and evidence.",
+      "source_group": "safety-hardening"
+    },
+    {
+      "archive_authorized": false,
+      "group_id": "change:xe125-respiratory-rate",
+      "implementation_authorized": false,
+      "owner_decision": "needed",
+      "proposed_disposition": "retain-reference",
+      "reason": "Structurally valid active change; retain its open tasks and experimental promotion gate.",
+      "source_group": "xe125-respiratory-rate"
+    },
+    {
+      "archive_authorized": false,
+      "group_id": "slice:root-guidance",
+      "implementation_authorized": false,
+      "owner_decision": "needed",
+      "proposed_disposition": "retain-reference",
+      "reason": "Authority and orientation records; do not duplicate their rules into a weaker copy.",
+      "source_group": "AGENTS.md, CLAUDE.md, README.md, PI-KICKOFF.md"
+    },
+    {
+      "archive_authorized": false,
+      "group_id": "slice:normative-specs",
+      "implementation_authorized": false,
+      "owner_decision": "needed",
+      "proposed_disposition": "retain-reference",
+      "reason": "Decision and amendment history; authoritative conflicts require explicit disposition.",
+      "source_group": "docs/specs"
+    },
+    {
+      "archive_authorized": false,
+      "group_id": "slice:architecture-design",
+      "implementation_authorized": false,
+      "owner_decision": "needed",
+      "proposed_disposition": "owner-decision-needed",
+      "reason": "Retain design evidence; reconcile the panel-direction conflict before promoting behavior.",
+      "source_group": "docs/architecture and docs/design"
+    },
+    {
+      "archive_authorized": false,
+      "group_id": "slice:research",
+      "implementation_authorized": false,
+      "owner_decision": "needed",
+      "proposed_disposition": "owner-decision-needed",
+      "reason": "Research remains reference material unless an owner adopts a conclusion.",
+      "source_group": "docs/research"
+    },
+    {
+      "archive_authorized": false,
+      "group_id": "slice:hardware-integration",
+      "implementation_authorized": false,
+      "owner_decision": "needed",
+      "proposed_disposition": "owner-decision-needed",
+      "reason": "Promote only measured acceptance gates and interfaces into bounded changes.",
+      "source_group": "docs/hardware and docs/integration"
+    },
+    {
+      "archive_authorized": false,
+      "group_id": "slice:operations",
+      "implementation_authorized": false,
+      "owner_decision": "needed",
+      "proposed_disposition": "owner-decision-needed",
+      "reason": "Keep runbooks as operational records; link implementation tasks where required.",
+      "source_group": "docs/ops"
+    },
+    {
+      "archive_authorized": false,
+      "group_id": "slice:reviews",
+      "implementation_authorized": false,
+      "owner_decision": "needed",
+      "proposed_disposition": "retain-reference",
+      "reason": "Preserve review provenance, comments, dissent, and dispositions.",
+      "source_group": "docs/reviews"
+    },
+    {
+      "archive_authorized": false,
+      "group_id": "slice:setup-logs",
+      "implementation_authorized": false,
+      "owner_decision": "needed",
+      "proposed_disposition": "retain-reference",
+      "reason": "Historical execution evidence; do not treat it as current acceptance.",
+      "source_group": "docs/setup-logs"
+    },
+    {
+      "archive_authorized": false,
+      "group_id": "slice:status-updates",
+      "implementation_authorized": false,
+      "owner_decision": "needed",
+      "proposed_disposition": "retain-reference",
+      "reason": "Historical progress evidence; current state requires fresh verification.",
+      "source_group": "docs/status-updates"
+    }
+  ],
+  "observed_at_utc": "2026-09-29T05:40:54Z",
+  "owner_decision_state": "required-before-transformation",
+  "source_findings": "docs/knowledge/openspec-findings.json",
+  "task_id": "T-OCPA4"
+}

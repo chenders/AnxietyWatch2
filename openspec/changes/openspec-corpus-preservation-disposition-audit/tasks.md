@@ -12,7 +12,7 @@ physiological, storage, alerting, or hardware amendment is changed.
 - [x] T-OCPA1 — Establish the bounded preservation baseline
 - [x] T-OCPA2 — Inventory changes, amendments, documents, and evidence
 - [x] T-OCPA3 — Record validation, lifecycle, and discrepancy findings
-- [ ] T-OCPA4 — Produce disposition and follow-on change packets
+- [x] T-OCPA4 — Produce disposition and follow-on change packets
 - [ ] T-OCPA5 — Review and obtain owner dispositions
 
 ## 1. Preservation baseline
@@ -102,7 +102,8 @@ state; no validator result is presented as implementation or operational accepta
 amendments, owner decisions, and `openspec/changes/project-knowledge-architecture/`.
 
 **Creates:** one disposition packet for every existing OpenSpec change and each major documentation
-slice, plus a dependency-ordered list of bounded follow-on proposals.
+slice, plus a dependency-ordered list of bounded follow-on proposals and metadata-only builder and
+verifier tools.
 
 **Modifies:** none of the source corpus or existing change contracts.
 
