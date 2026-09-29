@@ -348,6 +348,16 @@ impl VitalsSource {
             Self::PolarH10Emulator => Cadence::EverySeconds(1),
         }
     }
+
+    /// Source-to-canonical conversion factor from `registry.toml`.
+    #[must_use]
+    pub const fn conversion(self, r#type: VitalsType) -> f64 {
+        match (self, r#type) {
+            (Self::ResmedAir11, VitalsType::Leak) => 60.0,
+            (Self::ResmedAir11, VitalsType::TidalVolume) => 1_000.0,
+            _ => 1.0,
+        }
+    }
 }
 
 /// Every type, for exhaustive iteration in tests and admin views.

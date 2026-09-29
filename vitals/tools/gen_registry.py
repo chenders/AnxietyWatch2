@@ -86,6 +86,7 @@ class Source:
     indication: bool = False
     expected_cadence_s: int | None = None
     on_demand: bool = False
+    conversions: tuple[tuple[str, float], ...] = ()
 
     @property
     def rust_variant(self) -> str:
@@ -143,6 +144,10 @@ class Registry:
                         indication=bool(d.get("indication", False)),
                         expected_cadence_s=d.get("expected_cadence_s"),
                         on_demand=bool(d.get("on_demand", False)),
+                        conversions=tuple(
+                            (type_name, float(factor))
+                            for type_name, factor in d.get("conversion", {}).items()
+                        ),
                     )
                     for name, d in raw.get("source", {}).items()
                 ),
@@ -174,6 +179,14 @@ def _check_unique(types: tuple[SampleType, ...], sources: tuple[Source, ...]) ->
         unknown = set(s.provides) - known
         if unknown:
             raise ValueError(f"source {s.name} provides unknown types: {sorted(unknown)}")
+        conversion_types = {type_name for type_name, _ in s.conversions}
+        unknown_conversions = conversion_types - known
+        if unknown_conversions:
+            raise ValueError(
+                f"source {s.name} converts unknown types: {sorted(unknown_conversions)}"
+            )
+        if not conversion_types <= set(s.provides):
+            raise ValueError(f"source {s.name} converts a type it does not provide")
 
 
 def _check_cadence(sources: tuple[Source, ...]) -> None:
@@ -256,6 +269,11 @@ def emit_rust(reg: Registry) -> str:
         f"            {s.id} => Some(Self::{s.rust_variant})," for s in reg.sources)
     cadences = "\n".join(
         f"            Self::{s.rust_variant} => {s.cadence}," for s in reg.sources)
+    conversions = "\n".join(
+        f"            (Self::{s.rust_variant}, VitalsType::{_pascal(type_name)}) => {rust_float(factor)},"
+        for s in reg.sources
+        for type_name, factor in s.conversions
+    )
     return f"""{BANNER_RS}
 //! Types and sources generated from `vitals/registry.toml`.
 //!
@@ -364,6 +382,15 @@ impl VitalsSource {{
     pub const fn expected_cadence(self) -> Cadence {{
         match self {{
 {cadences}
+        }}
+    }}
+
+    /// Source-to-canonical conversion factor from `registry.toml`.
+    #[must_use]
+    pub const fn conversion(self, r#type: VitalsType) -> f64 {{
+        match (self, r#type) {{
+{conversions}
+            _ => 1.0,
         }}
     }}
 }}

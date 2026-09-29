@@ -324,4 +324,6 @@ provides = [
     "tidal_volume", "minute_ventilation", "target_minute_ventilation", "ie_ratio",
     "snore_index", "flow_limitation", "inspiratory_duration", "trigger_cycle_event",
 ]
+# Device-native leak is L/s and tidal volume is L; the registry stores L/min and mL.
+conversion = { leak = 60.0, tidal_volume = 1000.0 }
 expected_cadence_s = 1

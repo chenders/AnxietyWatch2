@@ -269,10 +269,10 @@ fn build_signal(
     let values = frame
         .values_for(signal_data)
         .ok_or(Air11BuildError::SourceStartTimeInvalid)?;
-    let (r#type, multiplier) =
-        registry_mapping(source_signal).ok_or(Air11BuildError::UnsupportedSignal {
-            signal: source_signal,
-        })?;
+    let r#type = registry_mapping(source_signal).ok_or(Air11BuildError::UnsupportedSignal {
+        signal: source_signal,
+    })?;
+    let multiplier = VitalsSource::ResmedAir11.conversion(r#type);
     let source_name = str::from_utf8(signal_data.source_name())
         .map_err(|_| Air11BuildError::SourceStartTimeInvalid)?;
     let native_interval_micros = i64::from(native_interval_ms)
@@ -461,25 +461,25 @@ fn host_timestamp_micros(timestamp: SystemTime) -> Result<i64, Air11BuildError> 
         .ok_or(Air11BuildError::HostTimestampInvalid)
 }
 
-fn registry_mapping(signal: StreamSignal) -> Option<(VitalsType, f64)> {
+fn registry_mapping(signal: StreamSignal) -> Option<VitalsType> {
     Some(match signal {
-        StreamSignal::PatientFlow => (VitalsType::PatientFlow, 1.0),
-        StreamSignal::MaskPressure => (VitalsType::MaskPressure, 1.0),
-        StreamSignal::MaskPressureTwoSecond => (VitalsType::MaskPressure2s, 1.0),
-        StreamSignal::InspiratoryPressure => (VitalsType::InspiratoryPressure, 1.0),
-        StreamSignal::ExpiratoryPressure => (VitalsType::ExpiratoryPressure, 1.0),
-        StreamSignal::Leak => (VitalsType::Leak, 60.0),
-        StreamSignal::RespiratoryRate => (VitalsType::RespiratoryRate, 1.0),
-        StreamSignal::TidalVolume => (VitalsType::TidalVolume, 1_000.0),
-        StreamSignal::MinuteVentilation => (VitalsType::MinuteVentilation, 1.0),
-        StreamSignal::TargetMinuteVentilation => (VitalsType::TargetMinuteVentilation, 1.0),
-        StreamSignal::IeRatio => (VitalsType::IeRatio, 1.0),
-        StreamSignal::SnoreIndex => (VitalsType::SnoreIndex, 1.0),
-        StreamSignal::FlowLimitation => (VitalsType::FlowLimitation, 1.0),
-        StreamSignal::InspiratoryDuration => (VitalsType::InspiratoryDuration, 1.0),
-        StreamSignal::TriggerCycleEvent => (VitalsType::TriggerCycleEvent, 1.0),
-        StreamSignal::HeartRate => (VitalsType::Hr, 1.0),
-        StreamSignal::SpO2 => (VitalsType::Spo2, 1.0),
+        StreamSignal::PatientFlow => VitalsType::PatientFlow,
+        StreamSignal::MaskPressure => VitalsType::MaskPressure,
+        StreamSignal::MaskPressureTwoSecond => VitalsType::MaskPressure2s,
+        StreamSignal::InspiratoryPressure => VitalsType::InspiratoryPressure,
+        StreamSignal::ExpiratoryPressure => VitalsType::ExpiratoryPressure,
+        StreamSignal::Leak => VitalsType::Leak,
+        StreamSignal::RespiratoryRate => VitalsType::RespiratoryRate,
+        StreamSignal::TidalVolume => VitalsType::TidalVolume,
+        StreamSignal::MinuteVentilation => VitalsType::MinuteVentilation,
+        StreamSignal::TargetMinuteVentilation => VitalsType::TargetMinuteVentilation,
+        StreamSignal::IeRatio => VitalsType::IeRatio,
+        StreamSignal::SnoreIndex => VitalsType::SnoreIndex,
+        StreamSignal::FlowLimitation => VitalsType::FlowLimitation,
+        StreamSignal::InspiratoryDuration => VitalsType::InspiratoryDuration,
+        StreamSignal::TriggerCycleEvent => VitalsType::TriggerCycleEvent,
+        StreamSignal::HeartRate => VitalsType::Hr,
+        StreamSignal::SpO2 => VitalsType::Spo2,
         StreamSignal::Unknown => return None,
     })
 }

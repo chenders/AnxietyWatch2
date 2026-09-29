@@ -170,8 +170,10 @@ master_key = next(
      if document.get(name) is not None),
     None,
 )
-if not isinstance(master_key, str) or re.fullmatch(r"[0-9a-fA-F]{64}", master_key) is None:
-    raise ValueError("master pair key is not exactly 32 bytes of hexadecimal")
+if (not isinstance(master_key, str)
+        or re.fullmatch(r"[0-9a-fA-F]{64}", master_key) is None
+        or not any(character != "0" for character in master_key)):
+    raise ValueError("master pair key is not exactly 32 non-zero bytes of hexadecimal")
 
 linux_address = next(
     (document.get(name) for name in ("linux_address", "linuxAddress", "linux_mac", "linuxMac")
