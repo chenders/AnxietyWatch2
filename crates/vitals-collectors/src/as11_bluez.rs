@@ -910,8 +910,8 @@ fn ensure_event_subscription(response: &RpcResponse) -> Result<(), BluezError> {
     if object
         .get("subscriptionId")
         .and_then(serde_json::Value::as_u64)
-        .filter(|value| *value != 0)
-        .is_none()
+        .as_ref()
+        .is_none_or(|value| *value == 0)
     {
         return Err(BluezError::RpcResultInvalid {
             field: "event_subscription_id",

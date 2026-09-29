@@ -384,4 +384,62 @@ mod tests {
             other => panic!("expected recovered packet, got {other:?}"),
         }
     }
+
+    #[test]
+    fn reassembler_reports_bounded_transport_and_crc_errors() {
+        let mut oversized = FigReassembler::new();
+        assert!(!oversized.feed(&std::vec![0; FIG_MAX_PACKET + 1]));
+        assert!(oversized.feed(&std::vec![0; FIG_MAX_PACKET]));
+        assert!(oversized.feed(&std::vec![0; FIG_BUFFER_LENGTH - FIG_MAX_PACKET]));
+        assert!(!oversized.feed(b"x"));
+        oversized.clear();
+        assert!(matches!(oversized.take(), FigTake::NeedMore));
+
+        let mut header_bad = frame(0x0396, b"payload");
+        *header_bad.get_mut(4).expect("vcid byte") ^= 1;
+        assert!(oversized.feed(&header_bad));
+        assert!(matches!(oversized.take(), FigTake::HeaderCrcMismatch));
+        oversized.clear();
+
+        let mut payload_bad = frame(0x0396, b"payload");
+        *payload_bad.get_mut(FIG_PREFIX_LENGTH).expect("payload byte") ^= 1;
+        assert!(oversized.feed(&payload_bad));
+        assert!(matches!(oversized.take(), FigTake::PayloadCrcMismatch));
+        oversized.clear();
+
+        let payload_crc = crc32_ieee(b"");
+        let mut header = Vec::new();
+        header.extend_from_slice(&0x0396_u16.to_le_bytes());
+        header.extend_from_slice(&u16::try_from(FIG_MAX_PAYLOAD + 1).expect("fits").to_le_bytes());
+        header.extend_from_slice(&payload_crc.to_le_bytes());
+        let header_crc = crc32_ieee(&header);
+        let mut too_large = Vec::from(FIG_SYNC);
+        too_large.extend_from_slice(&header);
+        too_large.extend_from_slice(&header_crc.to_le_bytes());
+        assert!(oversized.feed(&too_large));
+        assert!(matches!(oversized.take(), FigTake::PayloadTooLarge));
+    }
+
+    #[test]
+    fn compaction_and_low_level_helpers_are_bounded() {
+        let mut reassembler = FigReassembler::default();
+        reassembler.buffer[1..3].copy_from_slice(b"ab");
+        reassembler.begin = 1;
+        reassembler.end = 3;
+        reassembler.compact();
+        assert_eq!(&reassembler.buffer[..2], b"ab");
+        assert_eq!(reassembler.begin, 0);
+        assert_eq!(reassembler.end, 2);
+        reassembler.buffer[..3].copy_from_slice(&FIG_SYNC[..3]);
+        reassembler.begin = 0;
+        reassembler.end = 3;
+        reassembler.retain_sync_suffix();
+        assert_eq!(reassembler.end, 3);
+        assert_eq!(find_sync(&reassembler.buffer, 0, reassembler.end), None);
+        assert_eq!(read_u16(&[1, 2], 0), Some(0x0201));
+        assert_eq!(read_u16(&[1], 0), None);
+        assert_eq!(read_u32(&[1, 2, 3, 4], 0), Some(0x0403_0201));
+        assert_eq!(read_u32(&[1, 2, 3], 0), None);
+        assert_eq!(crc32_ieee(b""), 0);
+    }
 }

@@ -612,4 +612,68 @@ mod tests {
         assert!(decode_event(br#"{"method":"EventNotification","params":{"subscriptionId":1,"dataId":"x","events":[{"event":"x","durationSeconds":4294967295}]}}"#).is_none());
         assert!(decode_event(br#"{"method":"EventNotification","params":{"subscriptionId":1,"dataId":"x","events":[{"event":"x","durationMs":1,"durationSeconds":1}]}}"#).is_none());
     }
+
+    #[test]
+    fn classifies_every_event_name_and_optional_field_alias() {
+        let json = br#"{"method":"EventNotification","params":{"subscriptionId":2,"dataId":"x","events":[{"event":"HypopneaEnd"},{"event":"CentralApneaEnd"},{"event":"ObstructiveApneaEnd"},{"event":"ApneaEnd"},{"event":"ReraEnd"},{"event":"CsrStart"},{"event":"CsrEnd"},{"event":"Other","reportTime":"t","duration_ms":1},{"event":"Other","durationMilliseconds":2},{"event":"Other","duration_s":3},{"event":"Other","backdateSeconds":4},{"event":"Other","value":-2147483648,"extra":{"a":[true,false,null]}}]}}"#;
+        let frame = decode_event(json).expect("all event variants");
+        assert_eq!(frame.event_count, 12);
+        assert_eq!(frame.events.get(0).expect("hypopnea").kind, EventKind::Hypopnea);
+        assert_eq!(frame.events.get(1).expect("central").kind, EventKind::CentralApnea);
+        assert_eq!(frame.events.get(2).expect("obstructive").kind, EventKind::ObstructiveApnea);
+        assert_eq!(frame.events.get(3).expect("apnea").kind, EventKind::UnclassifiedApnea);
+        assert_eq!(frame.events.get(4).expect("rera").kind, EventKind::Rera);
+        assert_eq!(frame.events.get(5).expect("csr start").kind, EventKind::CsrStart);
+        assert_eq!(frame.events.get(6).expect("csr end").kind, EventKind::CsrEnd);
+        assert_eq!(frame.events.get(8).expect("milliseconds").duration_ms, Some(2));
+        assert_eq!(frame.events.get(9).expect("seconds").duration_ms, Some(3_000));
+        assert_eq!(frame.events.get(10).expect("backdate").backdate_ms, Some(4_000));
+        assert_eq!(frame.events.get(11).expect("value").value, Some(i32::MIN));
+    }
+
+    #[test]
+    fn cursor_covers_escapes_numbers_and_skipped_values() {
+        let mut output = [0_u8; 40];
+        let mut strings = Cursor { buf: br#""a\"\\\/\b\f\n\r\t""#, pos: 0 };
+        assert_eq!(strings.parse_string(&mut output), Some(9));
+        assert_eq!(&output[..9], b"a\"\\/\x08\x0c\n\r\t");
+        assert!(Cursor { buf: b"\"unterminated", pos: 0 }.parse_string(&mut output).is_none());
+        assert!(Cursor { buf: b"\"ab\"", pos: 0 }.parse_string(&mut [0; 1]).is_none());
+        assert!(Cursor { buf: b"\"\x01\"", pos: 0 }.parse_string(&mut output).is_none());
+
+        let mut number = Cursor { buf: b" 4294967295,", pos: 0 };
+        assert_eq!(number.parse_u32(), Some(u32::MAX));
+        assert!(Cursor { buf: b"4294967296", pos: 0 }.parse_u32().is_none());
+        assert_eq!(Cursor { buf: b"-2147483648", pos: 0 }.parse_i32(), Some(i32::MIN));
+        assert!(Cursor { buf: b"2147483648", pos: 0 }.parse_i32().is_none());
+        assert!(Cursor { buf: b"-", pos: 0 }.parse_i32().is_none());
+
+        for value in [b"\"x\"".as_slice(), b"{}".as_slice(), b"[]".as_slice(), b"true".as_slice(), b"false".as_slice(), b"null".as_slice(), b"12".as_slice()] {
+            let mut cursor = Cursor { buf: value, pos: 0 };
+            assert!(cursor.skip_value(0).is_some());
+            assert!(cursor.at_end());
+        }
+        assert!(Cursor { buf: b"{\"a\":[true,{\"b\":null}]}", pos: 0 }.skip_value(0).is_some());
+        assert!(Cursor { buf: b"x", pos: 0 }.skip_value(0).is_none());
+        assert!(Cursor { buf: b"{}", pos: 0 }.skip_value(MAX_SKIP_DEPTH).is_none());
+    }
+
+    #[test]
+    fn rejects_missing_fields_oversized_strings_and_bad_syntax() {
+        for json in [
+            br#"{}"#.as_slice(),
+            br#"{"method":"Wrong","params":{}}"#.as_slice(),
+            br#"{"method":"EventNotification"}"#.as_slice(),
+            br#"{"method":"EventNotification","params":{}}"#.as_slice(),
+            br#"{"method":"EventNotification","params":{"subscriptionId":0,"dataId":"x","events":[]}}"#.as_slice(),
+            br#"{"method":"EventNotification","params":{"subscriptionId":1,"dataId":"x","events":[{}]}}"#.as_slice(),
+            br#"{"method":"EventNotification","params":{"subscriptionId":1,"dataId":"x","events":[{"event":"x",}]}}"#.as_slice(),
+            br#"{"method":"EventNotification","params":{"subscriptionId":1,"dataId":"x","events":[]},"method":"EventNotification"}"#.as_slice(),
+        ] {
+            assert!(decode_event(json).is_none(), "accepted invalid event JSON: {json:?}");
+        }
+        let long = "a".repeat(MAX_DATA_ID_BYTES + 1);
+        let json = format!(r#"{{"method":"EventNotification","params":{{"subscriptionId":1,"dataId":"{long}","events":[]}}}}"#);
+        assert!(decode_event(json.as_bytes()).is_none());
+    }
 }

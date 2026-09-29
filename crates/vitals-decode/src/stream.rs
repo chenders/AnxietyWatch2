@@ -844,6 +844,7 @@ mod tests {
     extern crate std;
 
     use super::*;
+    use std::{format, string::String};
 
     // De-identified fixture: it contains no pairing material, device address,
     // serial, or raw capture bytes.
@@ -958,5 +959,95 @@ mod tests {
         }
         bytes.extend_from_slice(b"]}]}}");
         assert_eq!(decode_stream(&bytes), None);
+    }
+
+    #[test]
+    fn maps_every_signal_and_interval() {
+        let aliases = [
+            (b"_RFL".as_slice(), StreamSignal::PatientFlow),
+            (b"_MKP".as_slice(), StreamSignal::MaskPressure),
+            (b"_MKF".as_slice(), StreamSignal::MaskPressureTwoSecond),
+            (b"_MKI".as_slice(), StreamSignal::InspiratoryPressure),
+            (b"_MKE".as_slice(), StreamSignal::ExpiratoryPressure),
+            (b"_LKF".as_slice(), StreamSignal::Leak),
+            (b"_RR2".as_slice(), StreamSignal::RespiratoryRate),
+            (b"_TD2".as_slice(), StreamSignal::TidalVolume),
+            (b"_MV2".as_slice(), StreamSignal::MinuteVentilation),
+            (b"_TGT".as_slice(), StreamSignal::TargetMinuteVentilation),
+            (b"_IE2".as_slice(), StreamSignal::IeRatio),
+            (b"_SNI".as_slice(), StreamSignal::SnoreIndex),
+            (b"_FFL".as_slice(), StreamSignal::FlowLimitation),
+            (b"_INT".as_slice(), StreamSignal::InspiratoryDuration),
+            (b"_BYV".as_slice(), StreamSignal::TriggerCycleEvent),
+            (b"_HRT".as_slice(), StreamSignal::HeartRate),
+            (b"_SAO".as_slice(), StreamSignal::SpO2),
+        ];
+        for (name, signal) in aliases {
+            assert_eq!(StreamSignal::from_name(name), signal);
+            assert!(signal.native_interval_ms().is_some());
+        }
+        assert_eq!(StreamSignal::from_name(b"unknown"), StreamSignal::Unknown);
+    }
+
+    #[test]
+    fn cursor_covers_strings_numbers_and_skipping() {
+        let mut out = [0_u8; MAX_SIGNAL_NAME_BYTES];
+        let mut string = Cursor { buf: br#""\u0041\u00e9\u20ac""#, pos: 0 };
+        assert_eq!(string.parse_string(&mut out), Some(6));
+        assert_eq!(&out[..6], b"A\xc3\xa9\xe2\x82\xac");
+        assert!(Cursor { buf: br#""\ud800""#, pos: 0 }.parse_string(&mut out).is_none());
+        assert!(Cursor { buf: br#""\u12xz""#, pos: 0 }.parse_string(&mut out).is_none());
+        assert!(Cursor { buf: b"\"ab\"", pos: 0 }.parse_string(&mut [0; 1]).is_none());
+        assert!(Cursor { buf: b"\"\x01\"", pos: 0 }.parse_string(&mut out).is_none());
+        assert!(Cursor { buf: br#""\q""#, pos: 0 }.parse_string(&mut out).is_none());
+
+        assert_eq!(Cursor { buf: b"0", pos: 0 }.parse_u32(), Some(0));
+        assert!(Cursor { buf: b"01", pos: 0 }.parse_u32().is_none());
+        assert!(Cursor { buf: b"4294967296", pos: 0 }.parse_u32().is_none());
+        assert_eq!(Cursor { buf: b"-12.5e-2", pos: 0 }.parse_number(), Some(-0.125));
+        assert_eq!(Cursor { buf: b"1E+2", pos: 0 }.parse_number(), Some(100.0));
+        for number in [b"-".as_slice(), b"1.".as_slice(), b"1e".as_slice(), b"1e123".as_slice(), b"01".as_slice(), b"12345678901234567890".as_slice()] {
+            assert!(Cursor { buf: number, pos: 0 }.parse_number().is_none());
+        }
+        for value in [b"\"x\"".as_slice(), b"{}".as_slice(), b"[]".as_slice(), b"true".as_slice(), b"false".as_slice(), b"null".as_slice(), b"-1.2".as_slice()] {
+            let mut cursor = Cursor { buf: value, pos: 0 };
+            assert!(cursor.skip_value(0).is_some());
+            assert!(cursor.at_end());
+        }
+        assert!(Cursor { buf: b"{\"x\":[true,{\"y\":null}]}" , pos: 0 }.skip_value(0).is_some());
+        assert!(Cursor { buf: b"x", pos: 0 }.skip_value(0).is_none());
+        assert!(Cursor { buf: b"{}", pos: 0 }.skip_value(MAX_SKIP_DEPTH).is_none());
+        assert_eq!(hex_digit(b'0'), Some(0));
+        assert_eq!(hex_digit(b'f'), Some(15));
+        assert_eq!(hex_digit(b'F'), Some(15));
+        assert_eq!(hex_digit(b'x'), None);
+        assert!(copy_name(&[0; MAX_SIGNAL_NAME_BYTES + 1]).is_none());
+        let mut length = MAX_SIGNAL_NAME_BYTES;
+        let mut bytes = [0_u8; MAX_SIGNAL_NAME_BYTES];
+        assert!(push(&mut bytes, &mut length, b'x').is_none());
+    }
+
+    #[test]
+    fn decodes_all_supported_signal_groups_and_rejects_structural_duplicates() {
+        let names = [
+            "_RFL", "_MKP", "_MKF", "_MKI", "_MKE", "_LKF", "_RR2", "_TD2", "_MV2",
+            "_TGT", "_IE2", "_SNI", "_FFL", "_INT", "_BYV", "_HRT", "_SAO",
+        ];
+        let mut data = String::from("[");
+        for (index, name) in names.iter().enumerate() {
+            if index != 0 {
+                data.push(',');
+            }
+            data.push_str(&format!(r#"{{"{name}":[1,null]}}"#));
+        }
+        data.push(']');
+        let json = format!(r#"{{"method":"StreamData","params":{{"streamId":1,"intervalMs":200,"startTime":"x","data":{data}}}}}"#);
+        let frame = decode_stream(json.as_bytes()).expect("all signals");
+        assert_eq!(frame.signal_count, names.len() as u8);
+        assert_eq!(frame.value_count, (names.len() * 2) as u16);
+        assert!(frame.signals.iter().take(names.len()).all(|signal| signal.sample_interval_ms == 200));
+        assert!(decode_stream(br#"{"method":"StreamData","params":{"streamId":1,"intervalMs":200,"startTime":"x","data":[{"_RR2":[]},{"_RR2":[1]}]}}"#).is_none());
+        assert!(decode_stream(br#"{"method":"StreamData","params":{"streamId":1,"intervalMs":0,"startTime":"x"}}"#).is_none());
+        assert!(decode_stream(br#"{"method":"StreamData","params":{"streamId":1,"intervalMs":300001,"startTime":"x"}}"#).is_none());
     }
 }
