@@ -462,7 +462,7 @@ impl Collector {
         self.publish()?;
 
         if let Some(frame) = decode_event(&envelope) {
-            self.process_event_frame(frame, receipt_unix_micros)?;
+            self.process_event_frame(&frame, receipt_unix_micros)?;
             return self.publish();
         }
         let Some(frame) = decode_stream(&envelope) else {
@@ -515,7 +515,7 @@ impl Collector {
 
     fn process_event_frame(
         &mut self,
-        frame: EventFrame,
+        frame: &EventFrame,
         receipt_unix_micros: i64,
     ) -> Result<(), FatalFailure> {
         self.status.event_notifications = self.status.event_notifications.saturating_add(1);
@@ -631,7 +631,7 @@ impl Collector {
                 VitalsType::RespiratoryRate => self.status.latest.respiratory_rate = Some(latest),
                 VitalsType::Leak => self.status.latest.leak_lpm = Some(latest),
                 VitalsType::MaskPressure | VitalsType::MaskPressure2s => {
-                    self.status.latest.pressure_cmh2o = Some(latest)
+                    self.status.latest.pressure_cmh2o = Some(latest);
                 }
                 _ => {}
             }
