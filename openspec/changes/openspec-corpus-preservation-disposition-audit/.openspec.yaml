@@ -1,0 +1,4 @@
+schema: spec-driven
+skip_specs: true
+created: 2026-09-29
+goal: Preserve and classify the project's OpenSpec and knowledge corpus before any migration, canonicalization, or archival decision.
