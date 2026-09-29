@@ -1083,6 +1083,10 @@ mod tests {
                 .is_none()
             );
         }
+    }
+
+    #[test]
+    fn cursor_skips_values_and_checks_bounded_helpers() {
         for value in [
             b"\"x\"".as_slice(),
             b"{}".as_slice(),
