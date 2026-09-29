@@ -109,8 +109,30 @@
     } else cards.push(unavailable("Host readouts", results.host));
     if (results.clock.ok) {
       const c = results.clock.data;
-      cards.push(statusCard("Clock", c.ntp_synchronized ? "LIVE" : "FAILING", `NTP synchronized=${c.ntp_synchronized}; RTC drift=${c.drift_usec ?? "not reported"} µs`, 0, `expect ≤ ${FEED_EXPECT_S}s`));
+      const clockState = c.ntp_synchronized ? "UNKNOWN" : "FAILING";
+      const clockReason = c.ntp_synchronized
+        ? `NTP synchronized=true; RTC time ${c.rtc_time_measured ? "reported" : "not reported"}; ${c.rtc_battery_unmeasured_reason || "RTC battery state was not measured"}`
+        : `NTP synchronized=false; ${c.rtc_battery_unmeasured_reason || "RTC battery state was not measured"}`;
+      cards.push(statusCard("Clock", clockState, clockReason, 0, `expect ≤ ${FEED_EXPECT_S}s`));
     } else cards.push(unavailable("Clock", results.clock));
+    const version = results.version.ok ? results.version.data : null;
+    const buildMeasured = version?.git_commit && version.git_commit !== "UNKNOWN" && version?.build_epoch_s && version.build_epoch_s !== "UNKNOWN";
+    cards.push(statusCard(
+      "Build identity",
+      buildMeasured ? "LIVE" : "UNKNOWN",
+      buildMeasured ? `commit ${version.git_commit}; built at UTC epoch ${version.build_epoch_s}` : "build commit/time could not be measured",
+      buildMeasured ? 0 : null,
+      "expect on every console build",
+    ));
+    cards.push(statusCard(
+      "Schema revision",
+      version?.schema_revision != null && version?.pending_migrations != null ? (version.pending_migrations === 0 ? "LIVE" : "FAILING") : "UNKNOWN",
+      version?.schema_revision != null && version?.pending_migrations != null
+        ? `schema revision ${version.schema_revision}; pending migrations ${version.pending_migrations}`
+        : version?.schema_unmeasured_reason || "schema revision/pending migrations not measured",
+      version?.schema_revision != null && version?.pending_migrations != null ? 0 : null,
+      "expect on every console build",
+    ));
     const priority = { UNKNOWN: 0, FAILING: 1, LIVE: 2 };
     cards.sort((a, b) => priority[a.state] - priority[b.state]);
     return { screen: "overview", eyebrow: "Appliance posture", title: "Overview", intro: "Exceptions lead; healthy systems recede.", sections: [{ title: "Host and daemon", cards }] };
@@ -296,8 +318,8 @@
     const values = await Promise.all(Object.values(requests));
     const results = Object.fromEntries(keys.map((key, i) => [key, values[i]]));
     if (results.health.ok) lastSuccessMs = Date.now();
-    if (results.version.ok) document.querySelector("#build-id").textContent = `Build: ${results.version.data.git || results.version.data.version}`;
-    return ({ overview, display, ingest, attempts, air11: air11Page })[screen](results);
+    if (results.version.ok) document.querySelector("#build-id").textContent = `Build: ${results.version.data.git_commit || results.version.data.version}`;
+    return { model: ({ overview, display, ingest, attempts, air11: air11Page })[screen](results), healthOk: results.health.ok };
   }
 
   function actionMessage(ok, message) {
@@ -416,8 +438,11 @@
 
   async function refresh() {
     document.querySelector("#reconnect").disabled = true;
-    model = await loadModel();
-    render();
+    const loaded = await loadModel();
+    if (loaded.healthOk || model == null) {
+      model = loaded.model;
+      render();
+    }
     document.querySelector("#reconnect").disabled = false;
   }
 
