@@ -440,7 +440,10 @@ pub async fn security_middleware(
     next: Next,
 ) -> Response {
     let path = request.uri().path();
-    if path.starts_with("/api/v1/client/") || matches!(path, "/api/health" | "/api/version") {
+    if path.starts_with("/api/v1/client/")
+        || matches!(path, "/api/health" | "/api/version")
+        || request.method() == Method::GET && matches!(path, "/api/air11" | "/api/air11/history")
+    {
         return next.run(request).await;
     }
     // The browser must load the login page and its static assets before it has a session.
@@ -848,6 +851,27 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(admin_response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn security_allows_read_only_air11_projection_without_admin_cookie() {
+        let security = Arc::new(configured());
+        let app = Router::new()
+            .route("/api/air11", get(|| async { StatusCode::OK }))
+            .route("/api/air11/history", get(|| async { StatusCode::OK }))
+            .layer(axum::middleware::from_fn_with_state(
+                security,
+                security_middleware,
+            ));
+
+        for uri in ["/api/air11", "/api/air11/history"] {
+            let response = app
+                .clone()
+                .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK, "{uri}");
+        }
     }
 
     #[test]

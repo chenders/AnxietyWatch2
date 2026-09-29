@@ -26,6 +26,19 @@ CREATE TABLE air11_admin_audit (
 CREATE INDEX air11_admin_audit_created_idx
     ON air11_admin_audit (created_at DESC, id DESC);
 
+CREATE FUNCTION reject_air11_admin_audit_mutation()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RAISE EXCEPTION 'air11_admin_audit is append-only; operation=% is forbidden', TG_OP;
+END;
+$$;
+
+CREATE TRIGGER air11_admin_audit_immutable
+    BEFORE UPDATE OR DELETE ON air11_admin_audit
+    FOR EACH ROW EXECUTE FUNCTION reject_air11_admin_audit_mutation();
+
 COMMENT ON TABLE air11_integration_config IS
     'Non-secret AirSense opt-in state. BLE credentials remain in the external operator-managed file.';
 COMMENT ON TABLE air11_admin_audit IS
