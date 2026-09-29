@@ -1,0 +1,39 @@
+{
+  "change_id": "openspec-corpus-preservation-disposition-audit",
+  "task_id": "T-OCPA1",
+  "observed_at_utc": "2026-09-29T05:34:21Z",
+  "repository_root": "$HOME/Source/AnxietyWatch2",
+  "branch": "task/resmed-air11-integration",
+  "working_tree_note": "The working tree already contained tracked modifications and untracked material before this baseline; no source corpus file was changed by T-OCPA1.",
+  "source_mutation_policy": "read-only; do not rewrite, move, delete, or rename source artifacts",
+  "scope_roots": [
+    {"path": "AGENTS.md", "role": "project worker and acceptance rules", "handling": "authority-reference"},
+    {"path": "CLAUDE.md", "role": "project instruction symlink", "handling": "authority-reference"},
+    {"path": "README.md", "role": "project orientation", "handling": "source-reference"},
+    {"path": "PI-KICKOFF.md", "role": "project kickoff and context", "handling": "source-reference"},
+    {"path": "openspec", "role": "OpenSpec configuration and change corpus", "handling": "source-reference"},
+    {"path": "docs/specs", "role": "accepted and draft specifications/amendments", "handling": "authority-reference"},
+    {"path": "docs/architecture", "role": "architecture records", "handling": "source-reference"},
+    {"path": "docs/design", "role": "design and interaction records", "handling": "source-reference"},
+    {"path": "docs/research", "role": "research and exploratory evidence", "handling": "source-reference"},
+    {"path": "docs/hardware", "role": "hardware records and evidence", "handling": "source-reference"},
+    {"path": "docs/integration", "role": "integration records and evidence", "handling": "source-reference"},
+    {"path": "docs/ops", "role": "operational procedures and records", "handling": "source-reference"},
+    {"path": "docs/reviews", "role": "review and decision records", "handling": "source-reference"},
+    {"path": "docs/setup-logs", "role": "setup and execution records", "handling": "source-reference"},
+    {"path": "docs/status-updates", "role": "historical progress records", "handling": "source-reference"}
+  ],
+  "excluded_or_not_audited": [
+    "The .git directory and all Git object/database internals",
+    "Build, target, virtual-environment, dependency, and cache directories",
+    "Private, credential-bearing, binary-evidence, and untracked material outside the declared roots; metadata-only handling is required",
+    "docs/knowledge outputs created by this audit",
+    "Any path not listed in scope_roots is not audited by this baseline"
+  ],
+  "created_paths": [
+    "docs/knowledge/openspec-preservation-manifest.json",
+    "tools/verify_openspec_preservation.py"
+  ],
+  "evidence_state": "measured-good for manifest structure and root existence; source-content preservation is recorded as an operator assertion and is not inferred from this validator",
+  "owner_disposition": "not yet recorded; this baseline does not authorize migration, archive, canonicalization, or cleanup"
+}
