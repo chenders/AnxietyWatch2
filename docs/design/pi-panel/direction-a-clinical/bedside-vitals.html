@@ -1,0 +1,481 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>AnxietyWatch — Bedside vitals</title>
+<style>
+/*
+  Bedside monitor: 800x480 by default.  The ?size=WxH option is deliberately
+  limited to the review sizes below so a kiosk never grows a scrollbar.
+
+  Contrast audit against #050607: text #e7edf0 = 17.1:1, muted #aebbc2 =
+  10.5:1, cyan #63d8e5 = 11.7:1, green #71dc95 = 11.8:1, amber #e8bd5b =
+  11.8:1, slate #c1cbd1 = 13.1:1. Unknown is also marked with ?, a dashed
+  border, and an explicit label; color is never its only meaning.
+*/
+:root {
+  --bg:#050607; --surface:#0d1215; --surface-hi:#131b20; --line:#3d4a52;
+  --text:#e7edf0; --muted:#aebbc2; --quiet:#77868e;
+  --spo2:#63d8e5; --hr:#71dc95; --resp:#e8bd5b; --pap:#d7a6ee;
+  --unknown:#c1cbd1; --stale:#77838a; --danger:#ef8178;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:"Helvetica Neue",Helvetica,Arial,sans-serif;
+  --W:800px; --H:480px;
+}
+* { box-sizing:border-box; }
+html,body { margin:0; min-height:100%; background:#1b2024; color:var(--text); font-family:var(--sans); }
+body { touch-action:none; user-select:none; -webkit-user-select:none; }
+body.kiosk { overflow:hidden; background:#000; position:relative; width:100vw; height:100vh; }
+body.kiosk #review { display:none; }
+/* Keep the authored appliance geometry stable and fit the complete frame to
+   the active HDMI viewport. Without this, Chromium exposes the 800x480 page
+   at the top-left of a larger output and leaves the rest unused. */
+body.kiosk #app { position:absolute; left:50%; top:50%; margin:0;
+  transform:translate(-50%,-50%) scale(var(--panel-scale,1));
+  transform-origin:center center; }
+#app { width:var(--W); height:var(--H); margin:20px auto; padding:13px 16px 12px; background:var(--bg); overflow:hidden; display:grid; grid-template-rows:27px 105px 104px 74px 1fr; gap:8px; }
+.mono { font-family:var(--mono); font-variant-numeric:tabular-nums; }
+header { min-width:0; border-bottom:1px solid var(--line); display:flex; align-items:flex-start; justify-content:space-between; }
+.kicker { color:var(--muted); font-size:13px; line-height:1; letter-spacing:2px; font-weight:700; }
+.title { margin-top:4px; color:var(--text); font-size:21px; line-height:1; letter-spacing:1px; font-weight:600; }
+.header-right { display:flex; align-items:flex-end; flex-direction:column; gap:3px; }
+.clock { color:var(--text); font-size:18px; line-height:1; }
+.feed { color:var(--hr); font-size:11px; letter-spacing:1.1px; font-weight:700; }
+.feed.bad { color:var(--danger); }
+.hero,.details,.sources { min-width:0; display:grid; gap:8px; }
+.hero { grid-template-columns:repeat(3,1fr); }
+.details { grid-template-columns:1.15fr 1fr; }
+.sources { grid-template-columns:repeat(4,1fr); }
+.card,.source { min-width:0; border:1px solid var(--line); background:var(--surface); padding:9px 11px; overflow:hidden; }
+.card.unknown,.source.unknown { border-style:dashed; border-color:var(--unknown); }
+.card-head { display:flex; align-items:flex-start; justify-content:space-between; gap:8px; }
+.label { color:var(--muted); font-size:14px; letter-spacing:1.5px; font-weight:700; white-space:nowrap; }
+.sub { margin-top:3px; color:var(--quiet); font-size:12px; letter-spacing:.7px; white-space:nowrap; }
+.badge { flex:0 0 auto; color:var(--hr); border:1px solid currentColor; padding:3px 5px 2px; font-size:11px; line-height:1; letter-spacing:.8px; font-weight:700; }
+.badge.unknown { color:var(--unknown); }
+.badge.warn { color:var(--resp); }
+.badge.bad { color:var(--danger); }
+.big { margin-top:9px; color:var(--text); font:700 48px/.82 var(--mono); letter-spacing:-2px; white-space:nowrap; }
+.big.cyan { color:var(--spo2); } .big.green { color:var(--hr); } .big.amber { color:var(--resp); } .big.pap { color:var(--pap); }
+.big.missing { color:var(--unknown); }
+.unit { margin-left:5px; color:var(--muted); font-size:14px; letter-spacing:.4px; }
+.age { margin-top:9px; color:var(--muted); font:13px/1.15 var(--mono); white-space:nowrap; }
+.age strong { color:var(--text); font-weight:500; }
+.detail-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; min-width:0; }
+.bp-reading { margin-top:12px; color:var(--text); font:700 43px/.85 var(--mono); letter-spacing:-2px; white-space:nowrap; }
+.bp-meta { display:grid; grid-template-columns:repeat(3,1fr); gap:9px; margin-top:11px; }
+.meta-label { color:var(--quiet); font-size:11px; letter-spacing:1px; }
+.meta-value { margin-top:3px; color:var(--text); font:16px/1 var(--mono); white-space:nowrap; }
+.meta-value.missing { color:var(--unknown); }
+.pap-values { display:grid; grid-template-columns:repeat(3,1fr); gap:7px; height:55px; margin-top:5px; align-items:center; }
+.pap-value { color:var(--pap); font:700 21px/.9 var(--mono); white-space:nowrap; }
+.pap-value span { display:block; margin-bottom:3px; color:var(--quiet); font:10px/1 var(--sans); letter-spacing:.8px; }
+.pap-value.missing { color:var(--unknown); }
+#pap-card { position:relative; padding:8px 9px; }
+#pap-card #pap-age { position:absolute; left:9px; bottom:6px; margin:0; font-size:10px; }
+#pap-card .breath-visual { min-height:55px; height:55px; padding-left:4px; gap:4px; }
+#pap-card .lung-icon { width:55px; height:55px; }
+#pap-card .breath-copy strong { font-size:14px; }
+.big.stale,.bp-reading.stale,.meta-value.stale,.pap-value.stale { color:var(--stale); }
+.badge.stale { color:var(--resp); border-color:var(--resp); }
+.breath-visual { min-width:0; min-height:68px; display:flex; align-items:center; justify-content:center; gap:7px; color:var(--unknown); border-left:1px solid var(--line); padding-left:8px; }
+.lung-icon { width:68px; height:68px; flex:0 0 auto; overflow:visible; }
+.lung-icon .lung { fill:currentColor; opacity:.95; transform-box:fill-box; transform-origin:center bottom; }
+.lung-icon .airway { fill:none; stroke:currentColor; stroke-width:5; stroke-linecap:round; opacity:.8; }
+.breath-visual.good { color:var(--hr); }
+.breath-visual.warn { color:var(--resp); }
+.breath-visual.bad { color:var(--danger); }
+.breath-visual.good .lung { animation:lung-breathe var(--breath-duration,5s) ease-in-out infinite; }
+.breath-copy { min-width:0; font-family:var(--mono); text-align:left; }
+.breath-copy span { display:block; color:var(--quiet); font:10px/1 var(--sans); letter-spacing:.8px; }
+.breath-copy strong { display:block; margin-top:4px; color:currentColor; font-size:17px; white-space:nowrap; }
+.breath-copy strong.stale { color:var(--stale); }
+@keyframes lung-breathe { 0%,100% { transform:scale(.64,.76); filter:drop-shadow(0 0 0 transparent); } 50% { transform:scale(1.12,1.08); filter:drop-shadow(0 0 5px currentColor); } }
+@media (prefers-reduced-motion:reduce) { .breath-visual.good .lung { animation:none; } }
+.source { padding:8px 10px; display:grid; grid-template-columns:1fr auto; grid-template-rows:auto 1fr; gap:5px 6px; }
+.source-name { color:var(--muted); font-size:12px; letter-spacing:1px; font-weight:700; }
+.source-state { color:var(--hr); font:700 11px/1 var(--mono); text-align:right; }
+.source-state.unknown { color:var(--unknown); }
+.source-detail { grid-column:1/-1; color:var(--quiet); font:12px/1.15 var(--mono); overflow-wrap:anywhere; }
+footer { min-width:0; border-top:1px solid var(--line); padding-top:7px; display:flex; justify-content:space-between; align-items:flex-start; gap:14px; color:var(--quiet); font:11px/1.25 var(--mono); letter-spacing:.5px; }
+.signal-field { min-width:0; flex:1; }
+.signal-head { display:flex; justify-content:space-between; gap:12px; color:var(--muted); font-size:10px; letter-spacing:1px; font-weight:700; }
+.signal-head span:last-child { color:var(--quiet); font-weight:500; }
+.signal-svg { display:block; width:100%; height:76px; margin-top:3px; overflow:visible; }
+.signal-svg .guide { fill:none; stroke:var(--line); stroke-width:1; opacity:.5; }
+.signal-svg .ribbon { fill:var(--tone-color); fill-opacity:.78; stroke:none; }
+.signal-svg .ribbon.live { opacity:1; }
+.signal-svg .ribbon.oxygen { stroke:var(--spo2); }
+.signal-svg .ribbon.pulse { stroke:var(--hr); }
+.signal-svg .ribbon.breath { stroke:var(--resp); }
+.signal-svg .ribbon.pressure { stroke:var(--pap); }
+.signal-svg .ribbon.stale { stroke:var(--stale); opacity:.8; }
+.signal-svg .ribbon.unknown { stroke:var(--unknown); opacity:.5; }
+.signal-svg .ribbon.tone-good,.signal-svg .ribbon.tone-warn,.signal-svg .ribbon.tone-bad,.signal-svg .ribbon.tone-stale,.signal-svg .ribbon.tone-unknown { stroke:var(--tone-color) !important; }
+.signal-svg .ribbon.tone-stale,.signal-svg .ribbon.tone-unknown { opacity:.8; }
+.signal-svg .dot { display:none; stroke:var(--bg); stroke-width:2; }
+.signal-svg .dot.oxygen { fill:var(--spo2); }
+.signal-svg .dot.pulse { fill:var(--hr); }
+.signal-svg .dot.breath { fill:var(--resp); }
+.signal-svg .dot.pressure { fill:var(--pap); }
+.signal-svg .dot.unknown { display:none; }
+.signal-svg .dot.stale { fill:var(--stale); }
+.signal-svg .dot.unknown { fill:var(--unknown); }
+.signal-svg .dot.tone-good,.signal-svg .dot.tone-warn,.signal-svg .dot.tone-bad,.signal-svg .dot.tone-stale,.signal-svg .dot.tone-unknown { fill:var(--tone-color) !important; }
+.signal-svg text { fill:var(--quiet); font:10px var(--mono); letter-spacing:1px; }
+.signal-svg .value { font-weight:700; letter-spacing:.4px; }
+.signal-svg .value.oxygen.live { fill:var(--spo2); } .signal-svg .value.pulse.live { fill:var(--hr); }
+.signal-svg .value.breath.live { fill:var(--resp); } .signal-svg .value.pressure.live { fill:var(--pap); }
+.signal-svg .value.stale { fill:var(--stale); } .signal-svg .value.unknown { fill:var(--unknown); }
+.signal-svg .value.tone-good,.signal-svg .value.tone-warn,.signal-svg .value.tone-bad,.signal-svg .value.tone-stale,.signal-svg .value.tone-unknown { fill:var(--tone-color) !important; }
+@keyframes ribbon-flow { to { stroke-dashoffset:-44; } }
+@media (prefers-reduced-motion:reduce) { .signal-svg .ribbon.live { animation:none; } }
+#review { width:var(--W); margin:25px auto 50px; color:#c1c9cd; font-size:15px; line-height:1.5; }
+#review h1 { margin:0 0 5px; color:var(--text); font-size:22px; }
+#review p { margin:7px 0; }
+#review button { min-width:100px; min-height:44px; margin:4px 5px 4px 0; padding:8px 12px; color:var(--muted); background:transparent; border:1px solid var(--line); font:700 13px var(--mono); cursor:pointer; }
+#review button[aria-pressed=true] { color:#000; background:var(--spo2); border-color:var(--spo2); }
+@media (max-width:820px) { #app { margin:0; } #review { width:var(--W); max-width:100%; padding:14px; margin:0; } }
+</style>
+</head>
+<body>
+<main id="app" aria-live="polite">
+  <header>
+    <div><div class="kicker">ANXIETYWATCH · BEDSIDE MONITOR</div><div class="title">VITALS / LAST OBSERVED</div></div>
+    <div class="header-right"><div id="clock" class="clock mono">--:--:--</div><div id="feed" class="feed">CHECKING FEED</div></div>
+  </header>
+  <section class="hero" aria-label="Selected current vitals">
+    <article id="spo2-card" class="card unknown"><div class="card-head"><div><div class="label">SpO₂</div><div id="spo2-sub" class="sub">OXIMETER SELECTION</div></div><div id="spo2-badge" class="badge unknown">UNKNOWN</div></div><div><span id="spo2" class="big cyan missing">—</span><span class="unit">%</span></div><div id="spo2-age" class="age">LAST <strong>—</strong></div></article>
+    <article id="hr-card" class="card unknown"><div class="card-head"><div><div class="label">HEART RATE</div><div id="hr-sub" class="sub">BEST AVAILABLE SOURCE</div></div><div id="hr-badge" class="badge unknown">UNKNOWN</div></div><div><span id="hr" class="big green missing">—</span><span class="unit">bpm</span></div><div id="hr-age" class="age">LAST <strong>—</strong></div></article>
+    <article id="resp-card" class="card unknown"><div class="card-head"><div><div class="label">RESPIRATION</div><div id="resp-sub" class="sub">CPAP WHEN ACTIVE</div></div><div id="resp-badge" class="badge unknown">UNKNOWN</div></div><div><span id="resp" class="big amber missing">—</span><span class="unit">/min</span></div><div id="resp-age" class="age">LAST <strong>—</strong></div></article>
+  </section>
+  <section class="details" aria-label="Last blood pressure and PAP data">
+    <article class="card" id="bp-card"><div class="card-head"><div><div class="label">BLOOD PRESSURE</div><div class="sub">A&amp;D UA-651BLE · LAST RECORDED</div></div><div id="bp-badge" class="badge unknown">NO READING</div></div><div id="bp-reading" class="bp-reading">— / — <span class="unit">mmHg</span></div><div class="bp-meta"><div><div class="meta-label">MAP</div><div id="bp-map" class="meta-value missing">—</div></div><div><div class="meta-label">PULSE</div><div id="bp-pulse" class="meta-value missing">—</div></div><div><div class="meta-label">TAKEN</div><div id="bp-age" class="meta-value missing">—</div></div></div></article>
+    <article class="card unknown" id="pap-card"><div class="card-head"><div><div class="label">PAP / CPAP</div><div id="pap-sub" class="sub">SESSION FEED</div></div><div id="pap-badge" class="badge unknown">UNKNOWN</div></div><div class="pap-values"><div id="pap-ahi" class="pap-value missing"><span>AHI /h</span>—</div><div id="pap-leak" class="pap-value missing"><span>LEAK L/m</span>—</div><div id="breath-visual" class="breath-visual bad" aria-label="No current breathing measurement"><svg class="lung-icon" viewBox="0 0 100 100" aria-hidden="true"><path class="lung" d="M47 29C39 31 24 43 20 59c-4 16 1 27 14 27 10 0 14-10 15-23V36c0-5-1-7-2-7Zm6 0c8 2 23 14 27 30 4 16-1 27-14 27-10 0-14-10-15-23V36c0-5 1-7 2-7Z"/><path class="airway" d="M50 15v25M50 31c-5 4-7 8-8 13M50 31c5 4 7 8 8 13"/></svg><div class="breath-copy"><span id="breath-state">NO LIVE DATA</span><strong id="breath-rate">—</strong></div></div></div><div id="pap-age" class="age">SESSION <strong>—</strong></div></article>
+  </section>
+  <section class="sources" aria-label="Source availability">
+    <article id="src-emay" class="source unknown"><div class="source-name">EMAY SLEEPO2</div><div id="src-emay-state" class="source-state unknown">UNKNOWN</div><div id="src-emay-detail" class="source-detail">SpO₂ / pulse not measured</div></article>
+    <article id="src-wellue" class="source unknown"><div class="source-name">WELLUE</div><div id="src-wellue-state" class="source-state unknown">FALLBACK</div><div id="src-wellue-detail" class="source-detail">Fallback feed not present</div></article>
+    <article id="src-h10" class="source unknown"><div class="source-name">POLAR H10</div><div id="src-h10-state" class="source-state unknown">UNKNOWN</div><div id="src-h10-detail" class="source-detail">ECG heart rate not measured</div></article>
+    <article id="src-cpap" class="source unknown"><div class="source-name">CPAP</div><div id="src-cpap-state" class="source-state unknown">UNKNOWN</div><div id="src-cpap-detail" class="source-detail">No session evidence</div></article>
+  </section>
+  <footer>
+    <div class="signal-field" aria-label="Data availability field, not a clinical score">
+      <div class="signal-head"><span>LIVE STREAMGRAPH</span><span>BAND = RECENT VALUE · GREEN = NO LOW SIGNAL · YELLOW→RED = SEVERITY · GREY = NO DATA/STALE</span></div>
+      <svg id="signal-svg" class="signal-svg" viewBox="0 0 680 76" role="img" aria-label="Current data availability across oxygen, pulse, breath, and pressure">
+        <path class="guide" d="M106 38H500"/>
+        <path id="ribbon-oxygen" class="ribbon oxygen"/><path id="ribbon-pulse" class="ribbon pulse"/><path id="ribbon-breath" class="ribbon breath"/><path id="ribbon-pressure" class="ribbon pressure"/>
+        <circle id="dot-oxygen" class="dot oxygen" r="4"/><circle id="dot-pulse" class="dot pulse" r="4"/><circle id="dot-breath" class="dot breath" r="4"/><circle id="dot-pressure" class="dot pressure" r="4"/>
+        <text id="signal-value-oxygen" class="value oxygen" x="676" y="13" text-anchor="end"/>
+        <text id="signal-value-pulse" class="value pulse" x="676" y="32" text-anchor="end"/>
+        <text id="signal-value-breath" class="value breath" x="676" y="51" text-anchor="end"/>
+        <text id="signal-value-pressure" class="value pressure" x="676" y="70" text-anchor="end"/>
+      </svg>
+    </div>
+    <div id="updated">FEED AGE —</div>
+  </footer>
+</main>
+<section id="review" aria-label="Bedside vitals review controls">
+  <h1>Bedside vitals kiosk</h1>
+  <p>Fixed appliance view. The physical kiosk defaults to 800×480; these alternate frames are for sizing and browser review only.</p>
+  <div id="sizes"></div>
+  <p><strong>Data contract:</strong> status.json supplies durable BP plus H10/EMAY. Optional <code>?wellue=...</code> and <code>?cpap=...</code> JSON feeds are accepted. A missing feed stays UNKNOWN; no value is fabricated or carried forward as current.</p>
+</section>
+<script>
+"use strict";
+const query = new URLSearchParams(location.search);
+const SIZES = {"800x480":[800,480], "1024x600":[1024,600], "1280x720":[1280,720]};
+const requestedSize = query.get("size") || "800x480";
+const [WIDTH, HEIGHT] = SIZES[requestedSize] || SIZES["800x480"];
+document.documentElement.style.setProperty("--W", `${WIDTH}px`);
+document.documentElement.style.setProperty("--H", `${HEIGHT}px`);
+function fitKioskPanel() {
+  if (!document.body.classList.contains("kiosk")) return;
+  const scale = Math.min(window.innerWidth / WIDTH, window.innerHeight / HEIGHT);
+  document.documentElement.style.setProperty("--panel-scale", String(Math.max(scale, 0.01)));
+}
+if (query.get("kiosk") === "1") {
+  document.body.classList.add("kiosk");
+  fitKioskPanel();
+  window.addEventListener("resize", fitKioskPanel);
+  if (window.visualViewport) window.visualViewport.addEventListener("resize", fitKioskPanel);
+}
+const statusUrl = query.get("status") || "status.json";
+const healthUrl = query.get("health") || "health.json";
+const wellueUrl = query.get("wellue") || "";
+const cpapUrl = query.get("cpap") || "";
+const FRESH = 20;
+// BP is store-and-forward: a reading remains recent for 30 minutes.
+const BP_STALE_AFTER_SECONDS = 30 * 60;
+const BP_CHECK_SECONDS = 300;
+const bpCheckEnabled = query.get("bp-check") === "1";
+const byId = id => document.getElementById(id);
+const finite = value => typeof value === "number" && Number.isFinite(value);
+const parsedBpStartValue = query.get("bp-check-start");
+const parsedBpStart = parsedBpStartValue === null ? NaN : Number(parsedBpStartValue);
+const bpCheckStartedAt = finite(parsedBpStart) ? parsedBpStart : Date.now() / 1000;
+let bpCheckComplete = false;
+const valueOf = (object, names) => { for (const name of names) if (finite(object && object[name])) return object[name]; return null; };
+function metricState(item) { return item && finite(item.value) ? (item.live ? "live" : "stale") : "unknown"; }
+function breathState(now, pap) { if (!pap) return "bad"; if (pap.active && fresh(pap, now)) return "good"; if (pap.rr == null) return "bad"; return "warn"; }
+function ageSeconds(timestamp, now) { return finite(timestamp) ? now - timestamp : null; }
+function ageText(age) {
+  if (!finite(age) || age < 0) return "unknown";
+  if (age < 2) return "just now";
+  if (age < 60) return `${Math.floor(age)} s ago`;
+  const minutes = Math.floor(age / 60);
+  if (minutes < 60) return `${minutes} m ago`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours} h ${String(minutes % 60).padStart(2, "0")} m ago`;
+}
+function fresh(sample, now) {
+  const age = ageSeconds(sample && sample.sample_at, now);
+  const written = sample && sample.written_at == null ? age : ageSeconds(sample.written_at, now);
+  return age != null && age >= 0 && age <= FRESH && (written == null || (written >= 0 && written <= FRESH));
+}
+function readingObject(source) { return source && typeof source === "object" && source.reading && typeof source.reading === "object" ? source.reading : source; }
+function oximeter(source, name, now) {
+  const item = readingObject(source);
+  if (!item || typeof item !== "object") return null;
+  const spo2 = valueOf(item, ["spo2", "oxygen_saturation"]);
+  const pulse = valueOf(item, ["pulse_bpm", "pulse", "heart_rate"]);
+  if (spo2 == null && pulse == null) return null;
+  return { name, spo2, pulse, sample_at: item.sample_at || item.timestamp || item.updated_at, written_at: item.written_at, live: fresh(item, now), stored: item.stored === true };
+}
+/* EMAY is the preferred oximeter; Wellue is a fallback only. This ordering is
+   shared by SpO2 and pulse values so the displayed pair has one provenance. */
+function newestSource(first, second) {
+  if (!first) return second;
+  if (!second) return first;
+  const firstTime = Number(first.written_at || first.updated_at || 0);
+  const secondTime = Number(second.written_at || second.updated_at || 0);
+  return secondTime > firstTime ? second : first;
+}
+function chooseOximeter(now, emay, wellue) {
+  const choices = [oximeter(emay, "EMAY", now), oximeter(wellue, "WELLUE", now)].filter(Boolean);
+  return choices.find(choice => choice.live) || choices[0] || null;
+}
+function heartRate(now, status, ox) {
+  // H10 is ECG-derived and wins for HR. The selected oximeter is the fallback;
+  // its pulse remains paired with the selected SpO2 source. The cuff is last.
+  const h10 = status && status.h10;
+  if (h10 && valueOf(h10, ["hr", "heart_rate"]) != null && fresh(h10, now)) return { value:valueOf(h10, ["hr", "heart_rate"]), name:"POLAR H10", sample_at:h10.sample_at, live:true };
+  if (ox && ox.pulse != null) return { value:ox.pulse, name:ox.name, sample_at:ox.sample_at, live:ox.live };
+  const bp = status && status.bp;
+  if (bp && finite(bp.pulse_bpm)) return { value:bp.pulse_bpm, name:"A&D CUFF", sample_at:bp.sample_at, live:false };
+  return null;
+}
+function cpapObject(source) {
+  const root = readingObject(source);
+  if (!root || typeof root !== "object") return null;
+  const item = root.session && typeof root.session === "object" ? {...root, ...root.session} : root;
+  const rr = valueOf(item, ["respiratory_rate", "resp_rate", "resp", "rr"]);
+  const active = item.on === true || item.therapy_on === true || item.session_active === true || item.status === "on" || item.status === "active";
+  const hasPap = ["ahi", "leak_lpm", "leak", "pressure_cmh2o", "pressure"].some(key => finite(item[key]));
+  if (!active && !hasPap && rr == null) return null;
+  return { active, rr, ahi:valueOf(item,["ahi","ahi_per_hour"]), leak:valueOf(item,["leak_lpm","leak"]), pressure:valueOf(item,["pressure_cmh2o","pressure"]), sample_at:item.sample_at || item.updated_at || item.written_at, written_at:item.written_at, session_at:item.session_at };
+}
+/* CPAP flow/therapy data outranks inferred respiration. A future direct sensor
+   can be supplied as status.direct_respiration; H10 is only a last fallback. */
+function chooseRespiration(now, status, cpap) {
+  if (cpap && cpap.rr != null && (cpap.active || fresh(cpap, now))) return { value:cpap.rr, name:"CPAP", sample_at:cpap.sample_at, live:cpap.active && fresh(cpap, now) };
+  const direct = status && status.direct_respiration;
+  if (direct && valueOf(direct,["respiratory_rate","rr"]) != null && fresh(direct, now)) return { value:valueOf(direct,["respiratory_rate","rr"]), name:direct.source || "DIRECT SENSOR", sample_at:direct.sample_at, live:true };
+  const h10 = status && status.h10;
+  if (h10 && valueOf(h10,["respiratory_rate"]) != null && fresh(h10, now)) return { value:valueOf(h10,["respiratory_rate"]), name:"H10 INFERRED", sample_at:h10.sample_at, live:true };
+  return null;
+}
+function oximeterIssue(status, wellue) {
+  const emay=status && status.emay;
+  const emayIssue=!emay ? "EMAY unavailable" : emay.link && emay.link !== "up" ? `EMAY ${String(emay.link).toUpperCase()}` : !fresh(emay,Date.now()/1000) ? "EMAY stale" : "EMAY not measured";
+  const wellueIssue=!wellue ? "Wellue unavailable" : wellue.link && wellue.link !== "up" ? `Wellue ${String(wellue.link).toUpperCase()}` : !fresh(wellue,Date.now()/1000) ? "Wellue stale" : "Wellue not measured";
+  return `${emayIssue} · ${wellueIssue}`;
+}
+/* These are the old CNS-depression detector's lower-value ramps. They are
+   signal severity only: they do not turn this bedside page into the detector,
+   which also requires dose-window, quality-gate, baseline, and fusion state. */
+function clinicalSeverity(kind, value) {
+  if (!finite(value)) return null;
+  const ramp=(onset,floor)=>onset > floor ? Math.min(1,Math.max(0,(onset-value)/(onset-floor))) : value <= floor ? 1 : 0;
+  if (kind === "oxygen") return value <= 80 ? 1 : ramp(88,85);
+  if (kind === "breath") return ramp(10,5);
+  if (kind === "pulse") return ramp(50,40);
+  return null;
+}
+function signalTone(kind, item) {
+  if (!item || !finite(item.value)) return "tone-unknown";
+  if (item.live !== true) return "tone-stale";
+  const severity=clinicalSeverity(kind,item.value);
+  if (severity == null || severity === 0) return "tone-good";
+  return severity >= .5 ? "tone-bad" : "tone-warn";
+}
+function toneColor(kind, item) {
+  const tone=signalTone(kind,item);
+  if (tone === "tone-unknown" || tone === "tone-stale") return "#77838a";
+  const severity=clinicalSeverity(kind,item.value);
+  if (severity == null || severity === 0) return "#55cfa5";
+  const hue=Math.max(0,150 - Math.min(1,severity * 1.5) * 150);
+  return `hsl(${hue.toFixed(0)} 72% 58%)`;
+}
+window.__bedsideTest = { chooseOximeter, chooseRespiration, heartRate, cpapObject, breathState, metricState, oximeterIssue, signalTone };
+const model = { status:null, health:null, wellue:null, cpap:null, error:null, fetchedAt:0 };
+function setCard(id, state) { const element=byId(id); if (element) element.className = `card ${state === "working" ? "" : "unknown"}`; }
+function setBadge(id, label, state="unknown") { const element=byId(id); if (!element) return; element.textContent=label; element.className=`badge ${state === "working" ? "" : state === "stale" ? "stale" : state === "warn" ? "warn" : state === "bad" ? "bad" : "unknown"}`; }
+function setValue(id, value, digits=0) { const element=byId(id); if (!element) return; const present=finite(value); element.textContent=present ? (digits ? Number(value).toFixed(digits) : Math.round(value)) : "—"; element.classList.toggle("missing", !present); }
+function setStale(id, stale) { const element=byId(id); if (element) element.classList.toggle("stale", stale); }
+function normalizeStatus(value) {
+  if (value && value.schema === 2) return value;
+  // The Pi's panel-status-merge currently publishes schema 1 with the same
+  // source objects nested beside the legacy top-level Wellue reading. Keep the
+  // page honest while accepting that deployed compatibility shape.
+  if (value && value.schema === 1 && value.bp && (value.emay || value.wellue || value.h10)) {
+    return { ...value, schema: 2, emay: value.emay || null, wellue: value.wellue || null };
+  }
+  throw new Error("unsupported status schema");
+}
+function renderMetric(card, badge, valueId, ageId, subId, item, unit="") {
+  if (!item || !finite(item.value)) { setCard(card,"unknown"); setBadge(badge,item && item.reason ? "UNAVAILABLE" : "UNKNOWN",item && item.reason ? "bad" : "unknown"); setValue(valueId,null); setStale(valueId,false); byId(subId).textContent=item && item.name ? item.name : "SOURCE NOT AVAILABLE"; byId(ageId).innerHTML=`STATUS <strong>${item && item.reason ? item.reason : "not measured"}</strong>`; return; }
+  const live=item.live === true; setCard(card, live ? "working" : "unknown"); setBadge(badge, live ? "LIVE" : "STALE", live ? "working" : "stale"); setValue(valueId,item.value); setStale(valueId,!live); byId(subId).textContent=item.name; byId(ageId).innerHTML=`${live ? "LAST" : "STALE"} <strong>${ageText(ageSeconds(item.sample_at, Date.now()/1000))}</strong>`;
+}
+function sourceDetail(source, selectedName, liveName) {
+  if (!source) return "feed not present";
+  if (source.finger === false) return `link ${source.link || "unknown"}; no finger detected`;
+  if (source.link && source.link !== "up" && source.link !== "stored") return `link ${source.link}; no current sample`;
+  if (selectedName === liveName) return "selected for current display";
+  return "not selected or not fresh";
+}
+function renderSource(id, stateId, detailId, label, state, detail) { const card=byId(id); card.className=`source ${state === "LIVE" ? "" : "unknown"}`; byId(stateId).textContent=state; byId(stateId).className=`source-state ${state === "LIVE" ? "" : "unknown"}`; byId(detailId).textContent=detail; }
+function collectorFailure(status) {
+  if (status && status.health && status.health.overall) {
+    const healthAge = ageSeconds(status.health.checked_at, Date.now() / 1000);
+    if (!finite(healthAge) || healthAge < 0 || healthAge > 120) return "health evidence is stale; collector state cannot be verified";
+    if (status.health.overall !== "OK") {
+      const components = status.health.components || {};
+      const blockers = Object.entries(components).filter(([, component]) => component && component.state && component.state !== "OK").map(([name, component]) => `${name}=${component.detail || component.state}`);
+      return `health=${status.health.overall}: ${blockers.join("; ") || "source health is degraded"}`;
+    }
+  }
+  const candidates = [
+    status && status.bp_collector,
+    status && status.wellue_collector,
+    status && status.collectors && status.collectors.bp,
+    status && status.collectors && status.collectors.wellue,
+    status && status.health && status.health.components && status.health.components.bp,
+    status && status.health && status.health.components && status.health.components.wellue,
+  ];
+  for (const candidate of candidates) {
+    if (!candidate || typeof candidate !== "object") continue;
+    const state = String(candidate.state || candidate.status || "").toUpperCase();
+    if (["ERROR", "DOWN", "FAILED", "DEGRADED"].includes(state)) return candidate.detail || state;
+  }
+  return null;
+}
+function renderBpCheck(now, status) {
+  if (!bpCheckEnabled || bpCheckComplete) return;
+  const sampleAt = status && status.bp && status.bp.sample_at;
+  if (finite(sampleAt) && sampleAt >= bpCheckStartedAt) {
+    bpCheckComplete = true;
+    setBadge("bp-badge","RECEIVED","working"); byId("bp-age").textContent="NEW SAMPLE";
+    return;
+  }
+  const remaining = BP_CHECK_SECONDS - (now - bpCheckStartedAt);
+  if (remaining <= 0) {
+    setBadge("bp-badge","ACTION","bad"); byId("bp-age").textContent="CHECK CUFF";
+  } else if (model.error) {
+    setBadge("bp-badge","ACTION","bad"); byId("bp-age").textContent="FEED UNAVAILABLE";
+  } else {
+    setBadge("bp-badge","CHECKING","warn"); byId("bp-age").textContent=`WAIT ${Math.ceil(remaining)}s`;
+  }
+}
+function renderBreathVisual(now, pap) {
+  const state=breathState(now,pap), visual=byId("breath-visual"), rate=byId("breath-rate"), label=byId("breath-state");
+  visual.className=`breath-visual ${state}`;
+  const live=state === "good", hasRate=pap && finite(pap.rr);
+  rate.textContent=hasRate ? `${Math.round(pap.rr)}/min` : "—";
+  rate.classList.toggle("stale",hasRate && !live);
+  label.textContent=live && hasRate ? "LIVE BREATH" : live ? "THERAPY ACTIVE" : state === "warn" ? "STALE" : "NO LIVE DATA";
+  visual.setAttribute("aria-label",live && hasRate ? `Live CPAP breathing rate ${Math.round(pap.rr)} per minute` : live ? "CPAP therapy active; breathing rate not measured" : hasRate ? `Stale CPAP breathing rate ${Math.round(pap.rr)} per minute` : "No current breathing measurement");
+  if (live && hasRate) visual.style.setProperty("--breath-duration",`${Math.max(2,60 / pap.rr)}s`); else visual.style.removeProperty("--breath-duration");
+}
+function renderPapValue(id, value, stale) {
+  const element=byId(id); if (!element) return;
+  element.classList.toggle("missing",!finite(value)); setStale(id,finite(value) && stale);
+  const span=element.querySelector("span"); element.textContent=finite(value) ? String(value) : "—"; if (span) element.prepend(span);
+}
+function signalState(item) { return item && finite(item.value) ? (item.live ? "live" : "stale") : "unknown"; }
+const streamHistory=[];
+const STREAM_SECONDS=60;
+const STREAM_MAX=60;
+function curvePath(points) {
+  if (!points.length) return "";
+  if (points.length === 1) return `M ${points[0][0].toFixed(1)} ${points[0][1].toFixed(1)}`;
+  let path=`M ${points[0][0].toFixed(1)} ${points[0][1].toFixed(1)}`;
+  for (let i=0;i<points.length-1;i++) {
+    const p0=points[i-1] || points[i], p1=points[i], p2=points[i+1], p3=points[i+2] || p2;
+    const c1=[p1[0]+(p2[0]-p0[0])/6,p1[1]+(p2[1]-p0[1])/6];
+    const c2=[p2[0]-(p3[0]-p1[0])/6,p2[1]-(p3[1]-p1[1])/6];
+    path += ` C ${c1[0].toFixed(1)} ${c1[1].toFixed(1)},${c2[0].toFixed(1)} ${c2[1].toFixed(1)},${p2[0].toFixed(1)} ${p2[1].toFixed(1)}`;
+  }
+  return path;
+}
+function streamLayerPath(name, history, maxValue) {
+  const top=[], bottom=[], center=38, x0=108, x1=500, bandHeight=15;
+  for (const sample of history) {
+    const x=x1 - Math.min(STREAM_SECONDS, Math.max(0, history.atNow - sample.at)) / STREAM_SECONDS * (x1-x0);
+    const amounts=[];
+    for (const key of ["oxygen","pulse","breath","pressure"]) {
+      const item=sample.signals[key];
+      amounts.push(item && finite(item.value) ? Math.min(1,Math.max(0,item.value / maxValue[key])) * bandHeight : 0);
+    }
+    let cursor=center - amounts.reduce((sum,amount)=>sum+amount,0) / 2;
+    const index=["oxygen","pulse","breath","pressure"].indexOf(name);
+    for (let i=0;i<index;i++) cursor += amounts[i];
+    top.push([x,cursor]); bottom.push([x,cursor+amounts[index]]);
+  }
+  if (!top.length) return "";
+  const topPath=curvePath(top), bottomPath=curvePath(bottom.reverse()).replace(/^M /,"L ");
+  return `${topPath} ${bottomPath} Z`;
+}
+function renderSignalField(now, signals) {
+  const previous=streamHistory.length ? streamHistory[streamHistory.length - 1] : null;
+  const liveSignals={}, sampleAt={};
+  for (const [name,item] of Object.entries(signals)) {
+    if (item && item.live === true && finite(item.sample_at)) {
+      liveSignals[name]={...item}; sampleAt[name]=item.sample_at;
+    }
+  }
+  const hasNewSample=Object.keys(sampleAt).some(name=>!previous || sampleAt[name] > (previous.sampleAt[name] || 0));
+  if (hasNewSample) streamHistory.push({at:now,sampleAt,signals:liveSignals});
+  while (streamHistory.length > STREAM_MAX || (streamHistory.length > 0 && now - streamHistory[0].at > STREAM_SECONDS)) streamHistory.shift();
+  const history=streamHistory.map(sample=>sample); history.atNow=now;
+  const maxValue={oxygen:1,pulse:1,breath:1,pressure:1};
+  for (const sample of history) for (const name of Object.keys(maxValue)) if (sample.signals[name] && finite(sample.signals[name].value)) maxValue[name]=Math.max(maxValue[name],sample.signals[name].value);
+  for (const [name,item] of Object.entries(signals)) {
+    const state=signalState(item), tone=signalTone(name,item), color=toneColor(name,item), path=byId(`ribbon-${name}`), dot=byId(`dot-${name}`), value=byId(`signal-value-${name}`);
+    path.setAttribute("class",`ribbon ${name} ${state} ${tone}`); path.style.setProperty("--tone-color",color); path.setAttribute("d",streamLayerPath(name,history,maxValue));
+    dot.setAttribute("class",`dot ${name} ${state} ${tone}`); dot.style.setProperty("--tone-color",color); dot.setAttribute("cx","500"); dot.setAttribute("cy","38");
+    value.setAttribute("class",`value ${name} ${state} ${tone}`); value.style.setProperty("--tone-color",color); value.textContent=item ? `${item.display}${state === "stale" ? " · STALE" : ""}` : "NO READING";
+  }
+}
+function render(now) {
+  const status=model.status, wellue=newestSource(model.wellue,status && status.wellue), ox=chooseOximeter(now,status && status.emay,wellue), hr=heartRate(now,status,ox), cpap=cpapObject(model.cpap || (status && (status.cpap || status.pap))), resp=chooseRespiration(now,status,cpap);
+  if (status) status.health = model.health;
+  const feedAge=ageSeconds(model.fetchedAt,now), feedOk=model.status && model.error===null && feedAge != null && feedAge <= FRESH;
+  byId("clock").textContent=new Date().toLocaleTimeString([], {hour12:false}); byId("feed").textContent=feedOk ? "STATUS FEED LIVE" : "FEED UNKNOWN"; byId("feed").className=feedOk ? "feed" : "feed bad";
+  renderMetric("spo2-card","spo2-badge","spo2","spo2-age","spo2-sub",ox && ox.spo2 != null ? {value:ox.spo2,name:ox.name,sample_at:ox.sample_at,live:ox.live} : {name:"EMAY → WELLUE",reason:oximeterIssue(status,wellue)});
+  renderMetric("hr-card","hr-badge","hr","hr-age","hr-sub",hr);
+  renderMetric("resp-card","resp-badge","resp","resp-age","resp-sub",resp);
+  byId("resp-sub").textContent=resp ? resp.name : "CPAP WHEN ACTIVE";
+  const bp=status && status.bp; const bpPresent=bp && finite(bp.sample_at); const bpAge=bpPresent ? ageSeconds(bp.sample_at,now) : null; const bpStale=bpPresent && (!finite(bpAge) || bpAge > BP_STALE_AFTER_SECONDS);
+  setCard("bp-card","unknown"); setBadge("bp-badge",bpPresent ? (bpStale ? "STALE" : "RECENT") : "NO READING",bpStale ? "stale" : bpPresent ? "working" : "unknown"); byId("bp-reading").innerHTML=bpPresent ? `${finite(bp.systolic)?Math.round(bp.systolic):"—"} / ${finite(bp.diastolic)?Math.round(bp.diastolic):"—"} <span class="unit">mmHg</span>` : `— / — <span class="unit">mmHg</span>`; setStale("bp-reading",bpStale); setValue("bp-map",bpPresent?bp.map:null); setStale("bp-map",bpStale); setValue("bp-pulse",bpPresent?bp.pulse_bpm:null); setStale("bp-pulse",bpStale); byId("bp-pulse").textContent=bpPresent && finite(bp.pulse_bpm) ? `${Math.round(bp.pulse_bpm)} bpm` : "—"; byId("bp-age").textContent=bpPresent ? ageText(bpAge) : "—";
+  const pap=cpap, papHasData=Boolean(pap && (finite(pap.rr) || finite(pap.ahi) || finite(pap.leak))), papLive=breathState(now,pap) === "good"; setCard("pap-card",papLive ? "working" : "unknown"); setBadge("pap-badge",papLive ? "ON" : papHasData ? "STALE" : "UNKNOWN",papLive ? "working" : papHasData ? "stale" : "unknown"); byId("pap-sub").textContent=papLive ? "THERAPY ACTIVE" : "SESSION FEED"; renderPapValue("pap-ahi",pap&&pap.ahi,!papLive); renderPapValue("pap-leak",pap&&pap.leak,!papLive); renderBreathVisual(now,pap); byId("pap-age").innerHTML=`SESSION <strong>${pap ? ageText(ageSeconds(pap.sample_at || pap.session_at,now)) : "not measured"}</strong>`;
+  renderSource("src-emay","src-emay-state","src-emay-detail","EMAY",ox && ox.name === "EMAY" && ox.live ? "LIVE" : "PREFERRED", sourceDetail(status && status.emay, ox && ox.name, "EMAY")); renderSource("src-wellue","src-wellue-state","src-wellue-detail","WELLUE",ox && ox.name === "WELLUE" && ox.live ? "LIVE" : "FALLBACK", sourceDetail(wellue, ox && ox.name, "WELLUE")); const h10=status&&status.h10; renderSource("src-h10","src-h10-state","src-h10-detail","H10",hr&&hr.name === "POLAR H10" ? "LIVE" : "UNKNOWN",hr&&hr.name === "POLAR H10" ? "ECG heart rate selected" : "no fresh ECG heart rate"); renderSource("src-cpap","src-cpap-state","src-cpap-detail","CPAP",papLive ? "LIVE" : papHasData ? "STALE" : "UNKNOWN",papLive ? "therapy active; direct respiration preferred" : papHasData ? "last session only; not current" : "no session evidence"); renderSignalField(now,{oxygen:ox&&ox.spo2!=null ? {value:ox.spo2,live:ox.live,display:`${Math.round(ox.spo2)} %`} : null,pulse:hr&&hr.value!=null ? {...hr,display:`${Math.round(hr.value)} bpm`} : null,breath:resp&&resp.value!=null ? {...resp,display:`${Math.round(resp.value)} /min`} : null,pressure:bpPresent ? {value:finite(bp.map)?bp.map:bp.systolic,live:!bpStale,display:finite(bp.map)?`MAP ${Math.round(bp.map)} mmHg`:finite(bp.systolic)?`SYS ${Math.round(bp.systolic)} mmHg`:"NO VALUE"} : null}); renderBpCheck(now,status); byId("updated").textContent=`FEED AGE ${feedOk ? ageText(now-model.fetchedAt) : "unknown"}`;
+}
+async function fetchJson(url) { const response=await fetch(`${url}${url.includes("?")?"&":"?"}_=${Date.now()}`,{cache:"no-store"}); if(!response.ok) throw new Error(`HTTP ${response.status}`); return response.json(); }
+async function poll() { try { const status=await fetchJson(statusUrl); model.status=normalizeStatus(status); model.error=null; } catch (error) { model.status=null; model.error=error.message || String(error); } try { const health=await fetchJson(healthUrl); model.health=health && health.schema === 1 ? health : null; } catch (_) { model.health=null; } if (wellueUrl) { try { model.wellue=await fetchJson(wellueUrl); } catch (_) { model.wellue=null; } } if (cpapUrl) { try { model.cpap=await fetchJson(cpapUrl); } catch (_) { model.cpap=null; } } model.fetchedAt=Date.now()/1000; render(model.fetchedAt); }
+const sizes=byId("sizes"); for (const size of Object.keys(SIZES)) { const button=document.createElement("button"); button.textContent=size; button.setAttribute("aria-pressed",size===requestedSize); button.onclick=()=>{ const next=new URL(location.href); next.searchParams.set("size",size); location.href=next; }; sizes.append(button); }
+render(Date.now()/1000); poll(); setInterval(poll,2000); setInterval(()=>render(Date.now()/1000),1000);
+</script>
+</body>
+</html>
