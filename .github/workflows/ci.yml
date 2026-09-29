@@ -1,5 +1,12 @@
 name: CI
-on: [push, pull_request]
+
+# Feature-branch pushes already produce the pull_request `synchronize` event.
+# Restrict push runs to main so a force-push on an open PR cannot run the full
+# matrix twice for the same commit.
+on:
+  push:
+    branches: [main]
+  pull_request:
 
 jobs:
   # Every job below once targeted the C tree that the Rust decision deleted.
