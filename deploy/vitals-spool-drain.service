@@ -1,6 +1,6 @@
 [Unit]
 Description=Crash-safe PostgreSQL spool drainer
-Documentation=openspec/changes/pi5-vitals-core/tasks.md T-D5
+Documentation=https://github.com/chenders/AnxietyWatch2/blob/main/openspec/changes/pi5-vitals-core/tasks.md#T-D5
 After=postgresql@16-main.service vitalsd.service
 Requires=postgresql@16-main.service
 Conflicts=sqitch-deploy.service
