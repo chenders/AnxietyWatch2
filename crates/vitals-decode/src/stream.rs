@@ -993,31 +993,123 @@ mod tests {
     #[test]
     fn cursor_covers_strings_numbers_and_skipping() {
         let mut out = [0_u8; MAX_SIGNAL_NAME_BYTES];
-        let mut string = Cursor { buf: br#""\u0041\u00e9\u20ac""#, pos: 0 };
+        let mut string = Cursor {
+            buf: br#""\u0041\u00e9\u20ac""#,
+            pos: 0,
+        };
         assert_eq!(string.parse_string(&mut out), Some(6));
         assert_eq!(&out[..6], b"A\xc3\xa9\xe2\x82\xac");
-        assert!(Cursor { buf: br#""\ud800""#, pos: 0 }.parse_string(&mut out).is_none());
-        assert!(Cursor { buf: br#""\u12xz""#, pos: 0 }.parse_string(&mut out).is_none());
-        assert!(Cursor { buf: b"\"ab\"", pos: 0 }.parse_string(&mut [0; 1]).is_none());
-        assert!(Cursor { buf: b"\"\x01\"", pos: 0 }.parse_string(&mut out).is_none());
-        assert!(Cursor { buf: br#""\q""#, pos: 0 }.parse_string(&mut out).is_none());
+        assert!(
+            Cursor {
+                buf: br#""\ud800""#,
+                pos: 0
+            }
+            .parse_string(&mut out)
+            .is_none()
+        );
+        assert!(
+            Cursor {
+                buf: br#""\u12xz""#,
+                pos: 0
+            }
+            .parse_string(&mut out)
+            .is_none()
+        );
+        assert!(
+            Cursor {
+                buf: b"\"ab\"",
+                pos: 0
+            }
+            .parse_string(&mut [0; 1])
+            .is_none()
+        );
+        assert!(
+            Cursor {
+                buf: b"\"\x01\"",
+                pos: 0
+            }
+            .parse_string(&mut out)
+            .is_none()
+        );
+        assert!(
+            Cursor {
+                buf: br#""\q""#,
+                pos: 0
+            }
+            .parse_string(&mut out)
+            .is_none()
+        );
 
         assert_eq!(Cursor { buf: b"0", pos: 0 }.parse_u32(), Some(0));
         assert!(Cursor { buf: b"01", pos: 0 }.parse_u32().is_none());
-        assert!(Cursor { buf: b"4294967296", pos: 0 }.parse_u32().is_none());
-        assert_eq!(Cursor { buf: b"-12.5e-2", pos: 0 }.parse_number(), Some(-0.125));
-        assert_eq!(Cursor { buf: b"1E+2", pos: 0 }.parse_number(), Some(100.0));
-        for number in [b"-".as_slice(), b"1.".as_slice(), b"1e".as_slice(), b"1e123".as_slice(), b"01".as_slice(), b"12345678901234567890".as_slice()] {
-            assert!(Cursor { buf: number, pos: 0 }.parse_number().is_none());
+        assert!(
+            Cursor {
+                buf: b"4294967296",
+                pos: 0
+            }
+            .parse_u32()
+            .is_none()
+        );
+        assert_eq!(
+            Cursor {
+                buf: b"-12.5e-2",
+                pos: 0
+            }
+            .parse_number(),
+            Some(-0.125)
+        );
+        assert_eq!(
+            Cursor {
+                buf: b"1E+2",
+                pos: 0
+            }
+            .parse_number(),
+            Some(100.0)
+        );
+        for number in [
+            b"-".as_slice(),
+            b"1.".as_slice(),
+            b"1e".as_slice(),
+            b"1e123".as_slice(),
+            b"01".as_slice(),
+            b"12345678901234567890".as_slice(),
+        ] {
+            assert!(
+                Cursor {
+                    buf: number,
+                    pos: 0
+                }
+                .parse_number()
+                .is_none()
+            );
         }
-        for value in [b"\"x\"".as_slice(), b"{}".as_slice(), b"[]".as_slice(), b"true".as_slice(), b"false".as_slice(), b"null".as_slice(), b"-1.2".as_slice()] {
+        for value in [
+            b"\"x\"".as_slice(),
+            b"{}".as_slice(),
+            b"[]".as_slice(),
+            b"true".as_slice(),
+            b"false".as_slice(),
+            b"null".as_slice(),
+            b"-1.2".as_slice(),
+        ] {
             let mut cursor = Cursor { buf: value, pos: 0 };
             assert!(cursor.skip_value(0).is_some());
             assert!(cursor.at_end());
         }
-        assert!(Cursor { buf: b"{\"x\":[true,{\"y\":null}]}" , pos: 0 }.skip_value(0).is_some());
+        assert!(
+            Cursor {
+                buf: b"{\"x\":[true,{\"y\":null}]}",
+                pos: 0
+            }
+            .skip_value(0)
+            .is_some()
+        );
         assert!(Cursor { buf: b"x", pos: 0 }.skip_value(0).is_none());
-        assert!(Cursor { buf: b"{}", pos: 0 }.skip_value(MAX_SKIP_DEPTH).is_none());
+        assert!(
+            Cursor { buf: b"{}", pos: 0 }
+                .skip_value(MAX_SKIP_DEPTH)
+                .is_none()
+        );
         assert_eq!(hex_digit(b'0'), Some(0));
         assert_eq!(hex_digit(b'f'), Some(15));
         assert_eq!(hex_digit(b'F'), Some(15));
@@ -1031,8 +1123,8 @@ mod tests {
     #[test]
     fn decodes_all_supported_signal_groups_and_rejects_structural_duplicates() {
         let names = [
-            "_RFL", "_MKP", "_MKF", "_MKI", "_MKE", "_LKF", "_RR2", "_TD2", "_MV2",
-            "_TGT", "_IE2", "_SNI", "_FFL", "_INT", "_BYV", "_HRT", "_SAO",
+            "_RFL", "_MKP", "_MKF", "_MKI", "_MKE", "_LKF", "_RR2", "_TD2", "_MV2", "_TGT", "_IE2",
+            "_SNI", "_FFL", "_INT", "_BYV", "_HRT", "_SAO",
         ];
         let mut data = String::from("[");
         for (index, name) in names.iter().enumerate() {
@@ -1042,7 +1134,9 @@ mod tests {
             let _ = write!(data, r#"{{"{name}":[1,null]}}"#);
         }
         data.push(']');
-        let json = format!(r#"{{"method":"StreamData","params":{{"streamId":1,"intervalMs":200,"startTime":"x","data":{data}}}}}"#);
+        let json = format!(
+            r#"{{"method":"StreamData","params":{{"streamId":1,"intervalMs":200,"startTime":"x","data":{data}}}}}"#
+        );
         let frame = decode_stream(json.as_bytes()).expect("all signals");
         assert_eq!(
             frame.signal_count,
@@ -1052,7 +1146,13 @@ mod tests {
             frame.value_count,
             u16::try_from(names.len() * 2).expect("value count fits")
         );
-        assert!(frame.signals.iter().take(names.len()).all(|signal| signal.sample_interval_ms == 200));
+        assert!(
+            frame
+                .signals
+                .iter()
+                .take(names.len())
+                .all(|signal| signal.sample_interval_ms == 200)
+        );
         assert!(decode_stream(br#"{"method":"StreamData","params":{"streamId":1,"intervalMs":200,"startTime":"x","data":[{"_RR2":[]},{"_RR2":[1]}]}}"#).is_none());
         assert!(decode_stream(br#"{"method":"StreamData","params":{"streamId":1,"intervalMs":0,"startTime":"x"}}"#).is_none());
         assert!(decode_stream(br#"{"method":"StreamData","params":{"streamId":1,"intervalMs":300001,"startTime":"x"}}"#).is_none());

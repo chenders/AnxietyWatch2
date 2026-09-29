@@ -402,7 +402,9 @@ mod tests {
         oversized.clear();
 
         let mut payload_bad = frame(0x0396, b"payload");
-        *payload_bad.get_mut(FIG_PREFIX_LENGTH).expect("payload byte") ^= 1;
+        *payload_bad
+            .get_mut(FIG_PREFIX_LENGTH)
+            .expect("payload byte") ^= 1;
         assert!(oversized.feed(&payload_bad));
         assert!(matches!(oversized.take(), FigTake::PayloadCrcMismatch));
         oversized.clear();
@@ -410,7 +412,11 @@ mod tests {
         let payload_crc = crc32_ieee(b"");
         let mut header = Vec::new();
         header.extend_from_slice(&0x0396_u16.to_le_bytes());
-        header.extend_from_slice(&u16::try_from(FIG_MAX_PAYLOAD + 1).expect("fits").to_le_bytes());
+        header.extend_from_slice(
+            &u16::try_from(FIG_MAX_PAYLOAD + 1)
+                .expect("fits")
+                .to_le_bytes(),
+        );
         header.extend_from_slice(&payload_crc.to_le_bytes());
         let header_crc = crc32_ieee(&header);
         let mut too_large = Vec::from(FIG_SYNC);
