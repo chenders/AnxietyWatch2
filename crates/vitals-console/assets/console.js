@@ -343,7 +343,7 @@
     const results = Object.fromEntries(keys.map((key, i) => [key, values[i]]));
     if (results.health.ok) lastSuccessMs = Date.now();
     if (results.version.ok) document.querySelector("#build-id").textContent = `Build: ${results.version.data.git_commit || results.version.data.version}`;
-    if (results.host?.error?.includes("HTTP 401") || results.clock?.error?.includes("HTTP 401")) loginPanel.hidden = false;
+    if (Object.values(results).some(result => result.error?.includes("HTTP 401"))) loginPanel.hidden = false;
     return { model: ({ overview, display, ingest, attempts, air11: air11Page })[screen](results), healthOk: results.health.ok };
   }
 

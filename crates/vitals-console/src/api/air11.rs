@@ -1282,22 +1282,6 @@ async fn record_audit(
         .map_err(|_| ())
 }
 
-async fn record_audit_transaction(
-    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    action: &str,
-    outcome: &str,
-    detail: &str,
-) -> Result<(), ()> {
-    sqlx::query("INSERT INTO air11_admin_audit (action, outcome, detail) VALUES ($1, $2, $3)")
-        .bind(action)
-        .bind(outcome)
-        .bind(detail)
-        .execute(&mut **transaction)
-        .await
-        .map(|_| ())
-        .map_err(|_| ())
-}
-
 async fn set_opt_in(pool: &sqlx::PgPool, opted_in: bool) -> Result<(), ()> {
     let mut transaction = pool.begin().await.map_err(|_| ())?;
     sqlx::query("SELECT set_air11_opt_in($1)")
@@ -1305,14 +1289,6 @@ async fn set_opt_in(pool: &sqlx::PgPool, opted_in: bool) -> Result<(), ()> {
         .execute(&mut *transaction)
         .await
         .map_err(|_| ())?;
-    let action = if opted_in { "opt_in" } else { "opt_out" };
-    record_audit_transaction(
-        &mut transaction,
-        action,
-        "succeeded",
-        "non-secret opt-in state changed",
-    )
-    .await?;
     transaction.commit().await.map_err(|_| ())
 }
 

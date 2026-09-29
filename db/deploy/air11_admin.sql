@@ -36,6 +36,12 @@ AS $$
     VALUES (TRUE, p_opted_in)
     ON CONFLICT (singleton) DO UPDATE
         SET opted_in = EXCLUDED.opted_in, updated_at = now();
+    INSERT INTO air11_admin_audit (action, outcome, detail)
+    VALUES (
+        CASE WHEN p_opted_in THEN 'opt_in' ELSE 'opt_out' END,
+        'succeeded',
+        'non-secret opt-in state changed'
+    );
 $$;
 
 REVOKE ALL ON FUNCTION set_air11_opt_in(BOOLEAN) FROM PUBLIC;
