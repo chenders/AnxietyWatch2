@@ -25,6 +25,8 @@ Environment=VITALS_CONSOLE_ALLOWED_NETWORKS=127.0.0.0/8,10.0.0.0/8,172.16.0.0/12
 # Missing or unreadable token material leaves the page read-only.
 Environment=VITALS_CONSOLE_AIR11_ACTIONS=1
 Environment=VITALS_CONSOLE_ADMIN_TOKEN_FILE=/etc/vitals/console-admin-token
+# Optional until the operator provisions the root-owned password verifier.
+EnvironmentFile=-/etc/vitals/vitals-console.env
 Environment=VITALSD_SOCKET=/run/vitals/vitalsd.sock
 Environment=DATABASE_URL=host=/var/run/postgresql user=vitals dbname=vitals
 # systemd consumes one percent sign; the process receives `%2F` URL escapes.

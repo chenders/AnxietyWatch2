@@ -51,8 +51,8 @@ fresh AES session key from each successful session nonce.
 
 The final transport send boundary SHALL reject every method except the fixed
   authentication and observation set: `RequestSession`, `CheckSessionIntegrity`,
-`GetVersion`, `GetDateTime`, and `StartStream`. It SHALL never expose a generic
-method caller to production code.
+`GetVersion`, `GetDateTime`, `SubscribeEvent`, and `StartStream`. It SHALL never
+expose a generic method caller to production code.
 
 #### Scenario: A control method is attempted
 

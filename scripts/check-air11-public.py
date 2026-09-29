@@ -89,6 +89,7 @@ CONSOLE_REQUIRED_LINES = (
     "Environment=VITALS_CONSOLE_ALLOWED_NETWORKS=127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fd00::/8,::1/128",
     "Environment=VITALS_CONSOLE_AIR11_ACTIONS=1",
     "Environment=VITALS_CONSOLE_ADMIN_TOKEN_FILE=/etc/vitals/console-admin-token",
+    "EnvironmentFile=-/etc/vitals/vitals-console.env",
     "LoadCredential=air11-credentials.json:?/var/lib/vitals/.air11/air11-credentials.json",
     "Environment=AIR11_CREDENTIALS_PATH=%d/air11-credentials.json",
     "ProtectHome=true",
@@ -97,7 +98,6 @@ CONSOLE_REQUIRED_LINES = (
     "RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6",
 )
 CONSOLE_FORBIDDEN_TOKENS = (
-    "EnvironmentFile=",
     "AF_BLUETOOTH",
     "ExecStart=/bin/sh",
     "ExecStart=/bin/bash",

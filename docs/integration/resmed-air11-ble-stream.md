@@ -93,8 +93,9 @@ these methods can be sent:
 1. `RequestSession`;
 2. `CheckSessionIntegrity`;
 3. `GetVersion`;
-4. `GetDateTime`; and
-5. `StartStream` with the fixed stream ids and bounded intervals.
+4. `GetDateTime`;
+5. `SubscribeEvent`; and
+6. `StartStream` with the fixed stream ids and bounded intervals.
 
 `Set`, therapy transitions, reset, erase, pairing, OTA, time-setting,
 arbitrary `Get`, and unknown methods are rejected before a GATT write. There is

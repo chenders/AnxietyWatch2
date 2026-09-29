@@ -443,7 +443,15 @@ pub async fn security_middleware(
     if path.starts_with("/api/v1/client/")
         || matches!(path, "/api/health" | "/api/version")
         || request.method() == Method::GET && matches!(path, "/api/air11" | "/api/air11/history")
+        || path == "/api/air11"
+            && request.method() == Method::POST
+            && request.headers().contains_key("authorization")
+            && request.headers().contains_key("x-air11-action-token")
     {
+        // AirSense POSTs use two independent fixed capabilities (the external
+        // admin bearer and per-process action token), validated by the handler.
+        // They do not use the browser session cookie, so do not pass through
+        // the session/CSRF branch above.
         return next.run(request).await;
     }
     // The browser must load the login page and its static assets before it has a session.

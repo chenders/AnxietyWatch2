@@ -995,7 +995,18 @@ fn actions_enabled(state: &AppState) -> bool {
     state.air11_actions_enabled && state.air11_admin_token.is_some()
 }
 
-async fn build_view(state: &AppState) -> Air11View {
+fn admin_token_matches(state: &AppState, headers: &HeaderMap) -> bool {
+    let Some(expected) = state.air11_admin_token.as_ref() else {
+        return false;
+    };
+    headers
+        .get(AUTHORIZATION_HEADER)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.strip_prefix("Bearer "))
+        == Some(expected.as_str())
+}
+
+async fn build_view(state: &AppState, headers: &HeaderMap) -> Air11View {
     let credentials = credential_view(&credentials_path());
     let (config, service, logs, audit_result, latest_result) = tokio::join!(
         config_view(state),
@@ -1010,7 +1021,7 @@ async fn build_view(state: &AppState) -> Air11View {
     Air11View {
         actions_enabled: enabled,
         admin_auth_configured: state.air11_admin_token.is_some(),
-        action_token: if enabled {
+        action_token: if enabled && admin_token_matches(state, headers) {
             state
                 .air11_action_token
                 .as_ref()
@@ -1033,8 +1044,8 @@ async fn build_view(state: &AppState) -> Air11View {
 }
 
 /// GET `/api/air11`.
-pub async fn air11_handler(State(state): State<AppState>) -> Json<Air11View> {
-    Json(build_view(&state).await)
+pub async fn air11_handler(State(state): State<AppState>, headers: HeaderMap) -> Json<Air11View> {
+    Json(build_view(&state, &headers).await)
 }
 
 /// GET `/api/air11/history?window_hours=48`.
@@ -1215,17 +1226,13 @@ fn check_action_token(
             "AirSense action blocked: action token is missing or invalid",
         ));
     }
-    let Some(expected_admin_token) = state.air11_admin_token.as_ref() else {
+    if state.air11_admin_token.is_none() {
         return Err(error_reply(
             StatusCode::FORBIDDEN,
             "AirSense action blocked: external console-admin credential is unavailable",
         ));
-    };
-    let supplied_admin_token = headers
-        .get(AUTHORIZATION_HEADER)
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.strip_prefix("Bearer "));
-    if supplied_admin_token != Some(expected_admin_token.as_str()) {
+    }
+    if !admin_token_matches(state, headers) {
         return Err(error_reply(
             StatusCode::UNAUTHORIZED,
             "AirSense action blocked: console-admin authorization is missing or invalid",
@@ -1492,7 +1499,7 @@ pub async fn air11_action_handler(
         action: action_label,
         message: "AirSense action completed; refresh status for current service evidence"
             .to_string(),
-        view: build_view(&state).await,
+        view: build_view(&state, &headers).await,
     }))
 }
 
@@ -1681,6 +1688,24 @@ mod tests {
     fn malformed_local_network_allowlist_fails_closed() {
         assert!(parse_allowed_networks("192.168.1.0/33").is_err());
         assert!(parse_allowed_networks(",192.168.1.0/24").is_err());
+    }
+
+    #[test]
+    fn action_capability_is_visible_only_with_the_external_admin_token() {
+        let state = test_state();
+        let empty = HeaderMap::new();
+        assert!(!admin_token_matches(&state, &empty));
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            AUTHORIZATION_HEADER,
+            axum::http::HeaderValue::from_static("Bearer wrong-token"),
+        );
+        assert!(!admin_token_matches(&state, &headers));
+        headers.insert(
+            AUTHORIZATION_HEADER,
+            axum::http::HeaderValue::from_static("Bearer admin-token"),
+        );
+        assert!(admin_token_matches(&state, &headers));
     }
 
     #[test]

@@ -58,7 +58,9 @@
 
   async function get(path) {
     try {
-      const response = await fetch(path, { headers: { Accept: "application/json" }, cache: "no-store" });
+      const headers = { Accept: "application/json" };
+      if (path === "/api/air11" && air11AdminToken) headers.Authorization = `Bearer ${air11AdminToken}`;
+      const response = await fetch(path, { headers, cache: "no-store" });
       const body = await response.json().catch(() => null);
       if (!response.ok) return { ok: false, error: `${path} returned HTTP ${response.status}${body?.error ? `: ${body.error}` : ""}` };
       return { ok: true, data: body };
@@ -253,7 +255,7 @@
       metric("Finalized evidence", air11TimestampLabel(status.therapy_finalized_host_unix_micros)),
     ].join("");
 
-    const actionDisabled = data.actions_enabled ? "" : " disabled";
+    const actionDisabled = data.actions_enabled && data.action_token ? "" : " disabled";
     const button = (action, label, className, confirmation = "") => `<button type="button" class="air11-button ${className}" data-air11-action="${action}" data-air11-confirm="${confirmation}"${actionDisabled}>${h.esc(label)}</button>`;
     const startReason = !optedIn ? "Opt in first" : credentials.state !== "ready" ? "Credential file is not ready" : "Start the fixed read-only collector";
     const lifecycle = `<div class="air11-actions">
@@ -339,7 +341,7 @@
   }
 
   function bindAir11Actions() {
-    document.querySelectorAll("[data-air11-save-auth]").forEach(button => button.addEventListener("click", () => {
+    document.querySelectorAll("[data-air11-save-auth]").forEach(button => button.addEventListener("click", async () => {
       const value = document.querySelector("#air11-admin-token")?.value || "";
       if (!value) {
         actionMessage(false, "Console-admin token not saved: the field is empty.");
@@ -347,8 +349,8 @@
         return;
       }
       air11AdminToken = value;
-      actionMessage(true, "Console-admin token held in memory for this tab; it has not been sent yet.");
-      render();
+      actionMessage(true, "Console-admin token held in memory for this tab; refreshing the fixed action capability.");
+      await refresh();
     }));
     document.querySelectorAll("[data-air11-clear-auth]").forEach(button => button.addEventListener("click", () => {
       air11AdminToken = "";

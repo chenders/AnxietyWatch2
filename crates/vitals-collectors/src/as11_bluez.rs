@@ -8,7 +8,7 @@
 //! and never performs application pairing or sends control RPCs.
 
 use std::{
-    collections::HashSet,
+    collections::{HashSet, VecDeque},
     future::Future,
     sync::{Arc, Mutex},
     time::Duration,
@@ -52,6 +52,7 @@ const DEVICE_NAME_PREFIX: &str = "ResMed";
 const NOTIFICATION_TIMEOUT: Duration = Duration::from_secs(5);
 const GATT_WRITE_TIMEOUT: Duration = Duration::from_secs(10);
 const WRITE_QUEUE_CAPACITY: usize = 1;
+const PENDING_NOTIFICATION_CAPACITY: usize = 32;
 
 /// A bounded `BlueZ` operation failure.  It contains operation names and limits,
 /// never a target address, credential, session key, or device payload.
@@ -373,6 +374,7 @@ pub struct Air11BleTransport {
     crypto: Arc<Mutex<SessionCrypto>>,
     notifications: BoxStream<'static, Vec<u8>>,
     fig: FigReassembler,
+    pending_notifications: VecDeque<Vec<u8>>,
     writer_task: JoinHandle<()>,
     next_request_id: u64,
 }
@@ -431,6 +433,7 @@ impl Air11BleTransport {
             crypto,
             notifications: Box::pin(notification_stream),
             fig: FigReassembler::new(),
+            pending_notifications: VecDeque::with_capacity(PENDING_NOTIFICATION_CAPACITY),
             writer_task,
             next_request_id: 1,
         })
@@ -502,6 +505,9 @@ impl Air11BleTransport {
     /// # Errors
     /// Returns a bounded FIG, envelope, or notification error.
     pub async fn next_stream_envelope(&mut self) -> Result<Vec<u8>, BluezError> {
+        if let Some(envelope) = self.pending_notifications.pop_front() {
+            return Ok(envelope);
+        }
         let (vcid, payload) = self.next_fig().await?;
         if vcid != ENCRYPTED_RESPONSE_VCID {
             return Err(BluezError::FigProtocol {
@@ -555,7 +561,15 @@ impl Air11BleTransport {
             };
             match crate::as11_rpc::correlate_response(request, vcid, &plaintext) {
                 Ok(response) => return Ok(response),
-                Err(error) if crate::as11_rpc::is_response_noise(&error) => {}
+                Err(error) if crate::as11_rpc::is_response_noise(&error) => {
+                    if matches!(error, RpcResponseError::Notification) {
+                        retain_stream_notification(
+                            &mut self.pending_notifications,
+                            vcid,
+                            plaintext,
+                        )?;
+                    }
+                }
                 Err(error) => return Err(BluezError::Response(error)),
             }
         }
@@ -959,6 +973,23 @@ fn ensure_confirmation(response: &RpcResponse) -> Result<(), BluezError> {
     }
 }
 
+fn retain_stream_notification(
+    pending: &mut VecDeque<Vec<u8>>,
+    vcid: u16,
+    plaintext: Vec<u8>,
+) -> Result<(), BluezError> {
+    if vcid != ENCRYPTED_RESPONSE_VCID {
+        return Ok(());
+    }
+    if pending.len() >= PENDING_NOTIFICATION_CAPACITY {
+        return Err(BluezError::FigProtocol {
+            reason: "pending_notification_queue_full",
+        });
+    }
+    pending.push_back(plaintext);
+    Ok(())
+}
+
 fn device_error(response: &RpcResponse) -> BluezError {
     response
         .device_error()
@@ -1009,6 +1040,18 @@ mod tests {
                 valid: false
             })
         ));
+    }
+
+    #[test]
+    #[test]
+    fn stream_notifications_are_retained_in_arrival_order() {
+        let mut pending = VecDeque::new();
+        retain_stream_notification(&mut pending, ENCRYPTED_RESPONSE_VCID, b"first".to_vec())
+            .expect("first notification");
+        retain_stream_notification(&mut pending, ENCRYPTED_RESPONSE_VCID, b"second".to_vec())
+            .expect("second notification");
+        assert_eq!(pending.pop_front().as_deref(), Some(b"first".as_slice()));
+        assert_eq!(pending.pop_front().as_deref(), Some(b"second".as_slice()));
     }
 
     #[test]
