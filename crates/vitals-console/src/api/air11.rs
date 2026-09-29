@@ -1456,16 +1456,18 @@ pub async fn air11_action_handler(
         Air11Action::OptOut => {
             let pool = require_pool(&state)?;
             let service = service_view(&state).await;
-            if service.active_state == "active" {
+            if !matches!(service.active_state.as_str(), "inactive" | "failed") {
+                let status = if service.active_state == "unknown" {
+                    StatusCode::SERVICE_UNAVAILABLE
+                } else {
+                    StatusCode::CONFLICT
+                };
                 return Err(error_reply(
-                    StatusCode::CONFLICT,
-                    "AirSense opt-out blocked: active_state=active; stop the collector first",
-                ));
-            }
-            if service.active_state == "unknown" {
-                return Err(error_reply(
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "AirSense opt-out blocked: service state is unknown; inspect systemd first",
+                    status,
+                    format!(
+                        "AirSense opt-out blocked: active_state={}; service is not stopped",
+                        service.active_state
+                    ),
                 ));
             }
             set_opt_in(pool, false).await.map_err(|()| {

@@ -497,16 +497,11 @@ for path in paths:
 final = json.loads(paths[-1].read_text(encoding="utf-8"))
 if final.get("link_state") != "streaming":
     raise SystemExit(f"final link_state={final.get('link_state')}; expected streaming")
-if final.get("measurement_state") not in {"measured", "quarantined"}:
+if final.get("measurement_state") != "measured":
     raise SystemExit(
-        f"final measurement_state={final.get('measurement_state')}; "
-        "expected measured or quarantined"
+        f"final measurement_state={final.get('measurement_state')}; expected measured"
     )
-if final.get("measurement_state") == "quarantined":
-    blocker = final.get("blocker")
-    if not isinstance(blocker, str) or not blocker:
-        raise SystemExit("final quarantined state has no named blocker")
-elif final.get("blocker") is not None:
+if final.get("blocker") is not None:
     raise SystemExit("final measured state has a blocker")
 if not streaming:
     raise SystemExit("no snapshot reached link_state=streaming")

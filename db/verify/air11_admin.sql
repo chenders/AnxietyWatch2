@@ -18,8 +18,8 @@ SELECT 1 / count(*) FROM pg_indexes
  WHERE tablename = 'air11_admin_audit'
    AND indexname = 'air11_admin_audit_created_idx'
    AND indexdef LIKE '%(created_at DESC, id DESC)%';
-SELECT 1 / count(*) FROM pg_trigger
+SELECT 1 / CASE WHEN count(*) = 2 THEN 1 ELSE 0 END
+  FROM pg_trigger
  WHERE tgrelid = 'air11_admin_audit'::regclass
    AND tgname IN ('air11_admin_audit_immutable', 'air11_admin_audit_truncate_immutable')
-   AND NOT tgisinternal
- HAVING count(*) = 2;
+   AND NOT tgisinternal;

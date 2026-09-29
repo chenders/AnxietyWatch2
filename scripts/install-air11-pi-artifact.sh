@@ -48,9 +48,10 @@ source_path="$root/$local_path"
     exit 1
 }
 
-remote_tmp="/tmp/aw2-air11-install-${artifact}-$$"
+remote_dir=$(ssh "$PI_HOST" 'mktemp -d -p /tmp aw2-air11-install.XXXXXX')
+remote_tmp="$remote_dir/$artifact"
 cleanup() {
-    ssh "$PI_HOST" "rm -f -- '$remote_tmp'" >/dev/null 2>&1 || true
+    ssh "$PI_HOST" "rm -rf -- '$remote_dir'" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
