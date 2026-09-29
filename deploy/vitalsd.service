@@ -1,7 +1,7 @@
 [Unit]
 # The single writer. Collectors append here; vitalsd alone touches the store.
 Description=vitals core daemon
-Documentation=openspec/changes/pi5-vitals-core/tasks.md T-D4
+Documentation=https://github.com/chenders/AnxietyWatch2/blob/main/openspec/changes/pi5-vitals-core/tasks.md#T-D4
 After=network.target
 
 [Service]
