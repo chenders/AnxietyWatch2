@@ -1190,4 +1190,147 @@ mod tests {
             Err(ProtocolError::BpConnectForbidden)
         );
     }
+
+    #[test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "the complete typed protocol fixture is intentionally exhaustive"
+    )]
+    fn every_client_and_server_variant_round_trips() {
+        let capabilities = CapabilitySet::empty()
+            .with(Capability::Connect)
+            .with(Capability::Resolve)
+            .with(Capability::Subscribe)
+            .with(Capability::Write);
+        let acquire = Acquire {
+            source: Source::H10,
+            intent: Intent::Connect,
+            priority: Priority::new(4),
+            deadline: 20,
+            max_hold: 30,
+            preemptible: false,
+            device_selector: Some("target".to_owned()),
+            capabilities,
+            reason: "round trip".to_owned(),
+        };
+        let client_messages = vec![
+            hello(Source::H10, capabilities),
+            ClientMessage::Acquire(acquire),
+            ClientMessage::Release(Release {
+                lease_id: LeaseId::new(1),
+                reason: "release".to_owned(),
+            }),
+            ClientMessage::Cancel(Cancel {
+                lease_id: LeaseId::new(1),
+                operation_id: 2,
+                reason: "cancel".to_owned(),
+            }),
+            ClientMessage::Health,
+        ];
+        for message in client_messages {
+            let frame_result = encode(&message);
+            assert!(frame_result.is_ok());
+            let Ok(frame) = frame_result else {
+                return;
+            };
+            assert_eq!(decode(&frame), Ok(message));
+        }
+        for (operation_id, kind) in [
+            (1, OperationKind::ObserveDevice),
+            (2, OperationKind::DiscoverTarget),
+            (3, OperationKind::Connect),
+            (4, OperationKind::Resolve),
+            (5, OperationKind::Subscribe),
+            (6, OperationKind::Write),
+        ] {
+            let message = ClientMessage::Operation(Operation {
+                lease_id: LeaseId::new(1),
+                operation_id,
+                kind,
+                target: "target".to_owned(),
+                payload: vec![1, 2],
+            });
+            let frame_result = encode(&message);
+            assert!(frame_result.is_ok());
+            let Ok(frame) = frame_result else {
+                return;
+            };
+            assert_eq!(decode(&frame), Ok(message));
+        }
+
+        let server_messages = vec![
+            ServerMessage::HelloAccepted {
+                generation: Generation::new(1),
+            },
+            ServerMessage::LeaseGranted {
+                lease_id: LeaseId::new(1),
+                generation: Generation::new(1),
+                expires_at: 10,
+            },
+            ServerMessage::LeaseQueued { ticket: 2 },
+            ServerMessage::OperationAccepted { operation_id: 3 },
+            ServerMessage::Resolved {
+                operation_id: 4,
+                handle: "handle".to_owned(),
+            },
+            ServerMessage::DeviceState {
+                operation_id: 5,
+                connected: true,
+                services_resolved: false,
+            },
+            ServerMessage::Frame {
+                lease_id: LeaseId::new(1),
+                operation_id: 6,
+                indication: true,
+                payload: vec![1, 2],
+            },
+            ServerMessage::Disconnected {
+                operation_id: 7,
+                reason: "reason".to_owned(),
+            },
+            ServerMessage::Released {
+                lease_id: LeaseId::new(1),
+            },
+            ServerMessage::Health {
+                generation: Generation::new(1),
+                queue_depth: 2,
+            },
+            ServerMessage::Error {
+                operation_id: 8,
+                code: 2,
+                detail: "detail".to_owned(),
+            },
+            ServerMessage::Cancelled { operation_id: 9 },
+        ];
+        for message in server_messages {
+            let frame_result = encode_server(&message);
+            assert!(frame_result.is_ok());
+            let Ok(frame) = frame_result else {
+                return;
+            };
+            assert_eq!(decode_server(&frame), Ok(message));
+        }
+    }
+
+    #[test]
+    fn protocol_error_display_names_each_blocker() {
+        let errors = [
+            ProtocolError::FrameTooLarge { length: 2, max: 1 },
+            ProtocolError::Truncated,
+            ProtocolError::BadMagic,
+            ProtocolError::UnsupportedVersion(2),
+            ProtocolError::UnknownKind(99),
+            ProtocolError::UnknownServerKind(99),
+            ProtocolError::InvalidPayload,
+            ProtocolError::InvalidUtf8,
+            ProtocolError::UnknownCapabilityBits(128),
+            ProtocolError::HandshakeRequired,
+            ProtocolError::HelloAlreadyReceived,
+            ProtocolError::BpConnectForbidden,
+            ProtocolError::QueueFull { capacity: 1 },
+        ];
+        for error in errors {
+            assert!(!error.to_string().is_empty());
+        }
+    }
 }
