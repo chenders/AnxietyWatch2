@@ -1284,7 +1284,7 @@ fn usb_identity(path: &Path) -> (Option<String>, Option<(u16, u16)>) {
 #[cfg(test)]
 mod tests {
     use super::{
-        BoxFuture, BoxPayloadStream, BrokerState, ClientInfo, ClientMessage, OwnerOperations,
+        BoxFuture, BoxPayloadStream, BrokerState, ClientInfo, ClientMessage, OwnerOperations, Path,
         cleanup_client, controller_inventory, deadline_after, parse_selector, physical_device_path,
         process_message,
     };
@@ -1613,6 +1613,60 @@ mod tests {
         assert!(parse_selector("address=not-an-address").is_err());
         assert!(parse_selector("bus=usb").is_err());
         Ok(())
+    }
+
+    #[test]
+    fn selector_parser_exercises_all_field_validation_paths() {
+        for value in [
+            "address=AA:BB:CC:DD:EE:FF;bus=uart",
+            "serial=serial;bus=other",
+            "bus=usb;vid_pid=0a12:0001",
+        ] {
+            assert!(parse_selector(value).is_ok(), "{value}");
+        }
+        for value in [
+            "field-without-equals",
+            "sysfs_path=/sys;broken",
+            "vid_pid=0001:0002",
+            "vid_pid=000g:0001",
+            "vid_pid=0001:000g",
+            "serial=serial;bus=invalid",
+            "serial=serial;unknown=value",
+            "bus=uart;vid_pid=0a12:0001",
+            "bus=other;vid_pid=0a12:0001",
+            "bus=other",
+        ] {
+            assert!(parse_selector(value).is_err(), "{value}");
+        }
+    }
+
+    #[test]
+    fn usb_identity_reads_serial_and_valid_or_invalid_vid_pid() -> std::io::Result<()> {
+        let root =
+            std::env::temp_dir().join(format!("vitals-ble-broker-identity-{}", std::process::id()));
+        let nested = root.join("device/child");
+        fs::create_dir_all(&nested)?;
+        fs::write(root.join("serial"), " serial-value \n")?;
+        fs::write(root.join("idVendor"), "0a12\n")?;
+        fs::write(root.join("idProduct"), "0001\n")?;
+        assert_eq!(
+            super::usb_identity(&nested),
+            (Some("serial-value".to_owned()), Some((0x0a12, 1)))
+        );
+        fs::write(root.join("idVendor"), "invalid\n")?;
+        assert_eq!(
+            super::usb_identity(&nested).0,
+            Some("serial-value".to_owned())
+        );
+        fs::remove_file(root.join("serial"))?;
+        assert_eq!(super::usb_identity(&nested), (None, None));
+        fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn inventory_failure_and_non_controller_entries_are_observable() {
+        assert!(controller_inventory(Path::new("/path/that/does/not/exist")).is_err());
     }
 
     #[test]
