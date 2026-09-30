@@ -1308,12 +1308,14 @@ mod tests {
 
     struct FakeOwner {
         policy: AdapterPolicy,
+        fail_operations: bool,
     }
 
     impl FakeOwner {
         fn new() -> Self {
             Self {
                 policy: AdapterPolicy::new(Generation::new(1)),
+                fail_operations: false,
             }
         }
     }
@@ -1346,7 +1348,11 @@ mod tests {
         }
 
         fn health(&self) -> BoxFuture<'_, Result<AdapterHealth, OwnerError>> {
-            Box::pin(async {
+            let fail = self.fail_operations;
+            Box::pin(async move {
+                if fail {
+                    return Err(OwnerError::WorkerStopped);
+                }
                 Ok(AdapterHealth {
                     generation: Generation::new(1),
                     runtime_name: "fake".to_owned(),
@@ -1363,7 +1369,11 @@ mod tests {
             _target: Option<bluer::Address>,
             _duration: std::time::Duration,
         ) -> BoxFuture<'a, Result<DiscoveryReport, OwnerError>> {
-            Box::pin(async {
+            let fail = self.fail_operations;
+            Box::pin(async move {
+                if fail {
+                    return Err(OwnerError::WorkerStopped);
+                }
                 Ok(DiscoveryReport {
                     events: 1,
                     target_found: true,
@@ -1377,7 +1387,11 @@ mod tests {
             _lease: &'a crate::Lease,
             _address: bluer::Address,
         ) -> BoxFuture<'a, Result<DeviceObservation, OwnerError>> {
-            Box::pin(async {
+            let fail = self.fail_operations;
+            Box::pin(async move {
+                if fail {
+                    return Err(OwnerError::WorkerStopped);
+                }
                 Ok(DeviceObservation {
                     connected: true,
                     services_resolved: true,
@@ -1391,7 +1405,13 @@ mod tests {
             _address: bluer::Address,
             _duration: std::time::Duration,
         ) -> BoxFuture<'a, Result<(), OwnerError>> {
-            Box::pin(async { Ok(()) })
+            let fail = self.fail_operations;
+            Box::pin(async move {
+                if fail {
+                    return Err(OwnerError::WorkerStopped);
+                }
+                Ok(())
+            })
         }
 
         fn disconnect<'a>(
@@ -1399,7 +1419,13 @@ mod tests {
             _lease: &'a crate::Lease,
             _address: bluer::Address,
         ) -> BoxFuture<'a, Result<(), OwnerError>> {
-            Box::pin(async { Ok(()) })
+            let fail = self.fail_operations;
+            Box::pin(async move {
+                if fail {
+                    return Err(OwnerError::WorkerStopped);
+                }
+                Ok(())
+            })
         }
 
         fn resolve<'a>(
@@ -1409,7 +1435,13 @@ mod tests {
             _service_uuid: bluer::Uuid,
             _characteristic_uuid: bluer::Uuid,
         ) -> BoxFuture<'a, Result<Self::Characteristic, OwnerError>> {
-            Box::pin(async { Ok(FakeCharacteristic(1)) })
+            let fail = self.fail_operations;
+            Box::pin(async move {
+                if fail {
+                    return Err(OwnerError::WorkerStopped);
+                }
+                Ok(FakeCharacteristic(1))
+            })
         }
 
         fn subscribe<'a>(
@@ -1418,7 +1450,11 @@ mod tests {
             characteristic: &'a Self::Characteristic,
         ) -> BoxFuture<'a, Result<BoxPayloadStream, OwnerError>> {
             assert_eq!(characteristic.0, 1);
-            Box::pin(async {
+            let fail = self.fail_operations;
+            Box::pin(async move {
+                if fail {
+                    return Err(OwnerError::WorkerStopped);
+                }
                 Ok(Box::pin(stream::iter(vec![vec![1_u8, 2, 3]])) as BoxPayloadStream)
             })
         }
@@ -1431,7 +1467,13 @@ mod tests {
             _payload: &'a [u8],
         ) -> BoxFuture<'a, Result<(), OwnerError>> {
             assert_eq!(characteristic.0, 1);
-            Box::pin(async { Ok(()) })
+            let fail = self.fail_operations;
+            Box::pin(async move {
+                if fail {
+                    return Err(OwnerError::WorkerStopped);
+                }
+                Ok(())
+            })
         }
     }
 
@@ -1540,6 +1582,86 @@ mod tests {
             ServerMessage::Error { code: 3, .. }
         ));
         assert!(task.await.map_err(|error| error.to_string())?.is_err());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn fake_owner_propagates_typed_operation_failures() -> Result<(), String> {
+        let state = fake_state();
+        let capabilities = CapabilitySet::empty()
+            .with(Capability::KernelObserve)
+            .with(Capability::Discover)
+            .with(Capability::Connect)
+            .with(Capability::Resolve)
+            .with(Capability::Subscribe)
+            .with(Capability::Write);
+        state.clients.lock().await.insert(
+            1,
+            ClientInfo {
+                source: Source::H10,
+                capabilities,
+                leases: Vec::new(),
+            },
+        );
+        let (sender, mut responses) = mpsc::channel(32);
+        let acquire = crate::Acquire {
+            source: Source::H10,
+            intent: Intent::Connect,
+            priority: Priority::new(1),
+            deadline: 30,
+            max_hold: 60,
+            preemptible: false,
+            device_selector: Some("AA:BB:CC:DD:EE:FF".to_owned()),
+            capabilities,
+            reason: "fake failure test".to_owned(),
+        };
+        process_message(1, ClientMessage::Acquire(acquire), &state, &sender).await?;
+        let lease_id = match responses.recv().await {
+            Some(ServerMessage::LeaseGranted { lease_id, .. }) => lease_id,
+            other => return Err(format!("expected lease grant, got {other:?}")),
+        };
+        state.owner.lock().await.fail_operations = true;
+        assert!(
+            process_message(1, ClientMessage::Health, &state, &sender)
+                .await
+                .is_err()
+        );
+        let operation =
+            |operation_id: u64, kind: crate::OperationKind, target: &str| crate::Operation {
+                lease_id,
+                operation_id,
+                kind,
+                target: target.to_owned(),
+                payload: vec![1],
+            };
+        state
+            .handles
+            .lock()
+            .await
+            .insert("fake".to_owned(), FakeCharacteristic(1));
+        for (operation_id, kind, target) in [
+            (1, crate::OperationKind::ObserveDevice, "AA:BB:CC:DD:EE:FF"),
+            (2, crate::OperationKind::DiscoverTarget, "AA:BB:CC:DD:EE:FF"),
+            (3, crate::OperationKind::Connect, "AA:BB:CC:DD:EE:FF"),
+            (
+                4,
+                crate::OperationKind::Resolve,
+                "0000180d-0000-1000-8000-00805f9b34fb|00002a37-0000-1000-8000-00805f9b34fb",
+            ),
+            (5, crate::OperationKind::Subscribe, "fake"),
+            (6, crate::OperationKind::Write, "fake"),
+        ] {
+            process_message(
+                1,
+                ClientMessage::Operation(operation(operation_id, kind, target)),
+                &state,
+                &sender,
+            )
+            .await?;
+            assert!(
+                matches!(responses.recv().await, Some(ServerMessage::Error { operation_id: id, .. }) if id == operation_id)
+            );
+        }
         Ok(())
     }
 
