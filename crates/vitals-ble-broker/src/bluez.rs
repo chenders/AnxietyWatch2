@@ -1530,6 +1530,30 @@ mod runtime {
                 .await
                 .unwrap();
             assert_eq!((report.events, report.target_found), (0, false));
+
+            let (adapter, _device, _characteristic) = fake_adapter();
+            {
+                let mut state = adapter.state.lock().unwrap();
+                state.discovery_pending = true;
+                state.fail_set_filter_call = Some(2);
+            }
+            let mut owner = fake_owner(adapter);
+            let lease = fake_lease(
+                &mut owner,
+                crate::lease::Source::Diagnostics,
+                crate::lease::Intent::Discover,
+            );
+            assert_eq!(
+                owner
+                    .discover(
+                        &lease,
+                        bluer::DiscoveryFilter::default(),
+                        None,
+                        Duration::from_millis(1),
+                    )
+                    .await,
+                Err(OwnerError::FilterRestoreFailed)
+            );
         }
 
         #[tokio::test]
@@ -1674,6 +1698,40 @@ mod runtime {
             ));
             device.state.lock().unwrap().services = Ok(vec![FakeService {
                 state: Arc::new(std::sync::Mutex::new(FakeServiceState {
+                    uuid: Ok(bluer::Uuid::from_u128(1)),
+                    characteristics: Ok(vec![characteristic.clone()]),
+                })),
+            }]);
+            assert!(
+                owner
+                    .resolve(
+                        &gatt,
+                        Address::new([1, 2, 3, 4, 5, 6]),
+                        bluer::Uuid::nil(),
+                        bluer::Uuid::nil()
+                    )
+                    .await
+                    .is_err()
+            );
+            device.state.lock().unwrap().services = Ok(vec![FakeService {
+                state: Arc::new(std::sync::Mutex::new(FakeServiceState {
+                    uuid: Ok(bluer::Uuid::nil()),
+                    characteristics: Ok(vec![fake_characteristic(bluer::Uuid::from_u128(1))]),
+                })),
+            }]);
+            assert!(
+                owner
+                    .resolve(
+                        &gatt,
+                        Address::new([1, 2, 3, 4, 5, 6]),
+                        bluer::Uuid::nil(),
+                        bluer::Uuid::nil()
+                    )
+                    .await
+                    .is_err()
+            );
+            device.state.lock().unwrap().services = Ok(vec![FakeService {
+                state: Arc::new(std::sync::Mutex::new(FakeServiceState {
                     uuid: Err(backend_error("read service UUID")),
                     characteristics: Ok(vec![characteristic.clone()]),
                 })),
@@ -1704,6 +1762,57 @@ mod runtime {
                     .await
                     .is_err()
             );
+
+            let (adapter, _device, _characteristic) = fake_adapter();
+            let mut owner = fake_owner(adapter);
+            let observe = fake_lease(
+                &mut owner,
+                crate::lease::Source::Bp,
+                crate::lease::Intent::KernelObserve,
+            );
+            assert!(
+                owner
+                    .resolve(
+                        &observe,
+                        Address::new([1, 2, 3, 4, 5, 6]),
+                        bluer::Uuid::nil(),
+                        bluer::Uuid::nil()
+                    )
+                    .await
+                    .is_ok()
+            );
+        }
+
+        #[tokio::test]
+        async fn fake_backend_exercises_scheduler_helpers() {
+            let (adapter, _device, _characteristic) = fake_adapter();
+            let mut owner = fake_owner(adapter);
+            assert_eq!(owner.controller().runtime_name, "fake");
+            let active = fake_lease(
+                &mut owner,
+                crate::lease::Source::Diagnostics,
+                crate::lease::Intent::Discover,
+            );
+            let queued = owner
+                .acquire(
+                    LeaseRequest::new(
+                        crate::lease::Source::Diagnostics,
+                        crate::lease::Intent::Discover,
+                        crate::Priority::new(1),
+                        100,
+                        100,
+                        None,
+                        crate::CapabilitySet::empty(),
+                    ),
+                    0,
+                )
+                .unwrap();
+            if let AcquireResult::Queued { ticket, .. } = queued {
+                assert!(owner.cancel(ticket));
+            }
+            owner.release(active.id(), 1);
+            assert!(owner.invalidate_generation(Generation::new(2)).is_ok());
+            assert_eq!(owner.generation(), Generation::new(2));
         }
 
         #[test]
