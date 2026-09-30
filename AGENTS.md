@@ -92,6 +92,10 @@ id and a type id be transposed at a call site without the compiler noticing. A s
 ## Tests
 
 - Every new or changed behavior gets a test. Coverage gates: 90% decoders, 85% store/daemon.
+- For the AirSense broker migration, use staged testing: first prioritize the most valuable
+  tests that fit approximately one hour; after each numbered migration step, add the most
+  important safety tests in approximately 30–45 minutes; finish with the full 100% broker
+  coverage gate. Insert any prerequisite test before its dependent step when safety requires it.
 - Never assert float equality. Use a tolerance: `(a - b).abs() < 1e-9`.
 - Fixed reference timestamps. No wall clock in assertions.
 - Fixing a failing test is always in scope, related to your task or not.
