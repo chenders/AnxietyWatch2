@@ -94,9 +94,12 @@ the broker client.
 The reusable broker surface must not require a device-specific enum, a
 physiology registry, an application credential format, a product status file,
 or a BlueZ object path. The Linux BlueZ implementation is an optional backend
-behind typed adapter/GATT seams. Product integration supplies worker identity,
-priority policy, stable hardware selector configuration, and source-specific
-application protocol above that seam. The public package must preserve bounded
+behind typed adapter/GATT seams. Amendment 12 requires those seams to be used by
+both the production owner and deterministic coverage tests: the fake backend may
+control typed hardware results, but it must not replace broker policy or claim
+physical BlueZ evidence. Product integration supplies worker identity, priority
+policy, stable hardware selector configuration, and source-specific application
+protocol above that seam. The public package must preserve bounded
 payloads, no generic D-Bus calls, fail-closed capability checks, lease cleanup,
 and deterministic tests.
 

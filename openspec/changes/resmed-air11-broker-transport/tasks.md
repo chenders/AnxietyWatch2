@@ -6,7 +6,9 @@ do not authorize pairing, service enablement, adapter changes, reboot, or live
 Pi acceptance.
 
 **Amends:** `docs/specs/AMENDMENTS.md` is mandatory for every task. This change
-follows amendments 01, 02, 04, 05, 06, 07, 10, 11, and 12. It supersedes the
+follows amendments 01, 02, 04, 05, 06, 07, 10, 11, and 12. Amendment 12 was
+accepted during implementation to make the Linux BlueZ owner deterministically
+failure-injectable without weakening the 100% coverage gate. It supersedes the
 old direct-BlueZ transport assumption in the AirSense stream design only where
 it conflicts with the broker ownership decision.
 
@@ -53,7 +55,7 @@ it conflicts with the broker ownership decision.
 
 **Modifies:** broker coverage harness, deterministic fake-owner/protocol tests, and CI coverage gate
 
-**Do:** Add a Linux `cargo llvm-cov` gate for `vitals-ble-broker` with all features and targets. Require 100% executable line, function, and region coverage. Exercise every broker policy, protocol, client, server, capability, cancellation, cleanup, malformed-input, backpressure, generation, and Linux-owner decision path through deterministic tests. Do not exclude uncovered production code merely because it is difficult to exercise; add a test seam or remove dead code. Keep actual BlueZ/Pi acceptance separate from coverage.
+**Do:** Add a Linux `cargo llvm-cov` gate for `vitals-ble-broker` with all features and targets. Require 100% executable line, function, and region coverage. Exercise every broker policy, protocol, client, server, capability, cancellation, cleanup, malformed-input, backpressure, generation, and Linux-owner decision path through deterministic tests. Put the hardware-facing Linux owner behind the typed backend seam required by amendment 12; use a stateful fake backend for deterministic hardware-result and error branches without replacing broker policy. Do not exclude uncovered production code merely because it is difficult to exercise; add a test seam or remove dead code. Keep actual BlueZ/Pi acceptance separate from coverage.
 
 **Verify:** `cargo llvm-cov --package vitals-ble-broker --all-features --all-targets --fail-under-lines 100 --fail-under-functions 100 --fail-under-regions 100 --summary-only`
 

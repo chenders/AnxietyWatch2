@@ -22,6 +22,7 @@ wins**. If you find a contradiction, report it rather than implementing either v
 | **09** | [Production mobile enrollment, request authentication, and TLS topology](2026-08-30-amendment-09-mobile-enrollment-and-tls.md) | Amendment 02 mobile key custody; Amendment 07 client API; admin §9c bind/auth deferral; iOS §6.1 enrollment gate | T-I1, T-I2, T-I4, T-I5, T-I7, T-I17, T-I18, T-M2a, T-M2h |
 | **10** | [AirSense acceptance scope](2026-09-13-amendment-10-air11-acceptance-scope.md) | T-A11-6's unrelated host-health gates | T-A11-6 |
 | **11** | [H10 live gate](2026-09-13-amendment-11-h10-live-gate.md) | Amendment 10's treatment of H10 as optional for T-A11-6 | T-A11-6 |
+| **12** | [Deterministic BlueZ backend test seam](2026-09-16-amendment-12-broker-bluez-test-seams.md) | Concrete Linux BlueZ owner was not deterministically failure-injectable for the 100% broker coverage gate | T-A11-BROKER-COV and dependent broker work |
 | — | [C vs Rust evaluation](2026-08-03-c-vs-rust-evaluation.md) | the C11 decision | all code tasks |
 | — | [Review synthesis and fix tracker](../reviews/SYNTHESIS.md) | — | status of every finding |
 
