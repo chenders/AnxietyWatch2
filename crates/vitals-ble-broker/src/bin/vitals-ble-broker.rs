@@ -7,23 +7,37 @@ fn main() {
 }
 
 #[cfg(all(feature = "linux", target_os = "linux"))]
-fn main() {
-    let config = match vitals_ble_broker::server::BrokerConfig::from_env() {
-        Ok(config) => config,
-        Err(error) => {
+fn main() -> std::process::ExitCode {
+    match startup(vitals_ble_broker::server::BrokerConfig::from_env()) {
+        Ok(()) => std::process::ExitCode::SUCCESS,
+        Err((code, error)) => {
             eprintln!("vitals-ble-broker: {error}");
-            std::process::exit(64);
+            std::process::ExitCode::from(code)
         }
-    };
-    let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
+    }
+}
+
+#[cfg(all(feature = "linux", target_os = "linux"))]
+fn startup(
+    config: Result<vitals_ble_broker::server::BrokerConfig, String>,
+) -> Result<(), (u8, String)> {
+    let config = config.map_err(|error| (64, error))?;
+    let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
-    else {
-        eprintln!("vitals-ble-broker: could not start tokio runtime");
-        std::process::exit(70);
-    };
-    if let Err(error) = runtime.block_on(vitals_ble_broker::server::run(config)) {
-        eprintln!("vitals-ble-broker: {error}");
-        std::process::exit(70);
+        .map_err(|error| (70, format!("could not start tokio runtime: {error}")))?;
+    runtime
+        .block_on(vitals_ble_broker::server::run(config))
+        .map_err(|error| (70, error))
+}
+
+#[cfg(all(test, feature = "linux", target_os = "linux"))]
+mod tests {
+    #[test]
+    fn startup_reports_configuration_failure_without_starting_bluetooth() {
+        assert_eq!(
+            super::startup(Err("VITALS_BLE_ADAPTER_SELECTOR is unset".to_owned())),
+            Err((64, "VITALS_BLE_ADAPTER_SELECTOR is unset".to_owned()))
+        );
     }
 }
