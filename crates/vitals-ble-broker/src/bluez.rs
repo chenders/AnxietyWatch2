@@ -891,3 +891,154 @@ mod runtime {
 
 #[cfg(all(feature = "linux", target_os = "linux"))]
 pub use runtime::LinuxBluezAdapterOwner;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::lease::LeaseId;
+
+    fn evidence() -> ControllerEvidence {
+        ControllerEvidence {
+            runtime_name: "hci-test".to_owned(),
+            address: Some("controller".to_owned()),
+            sysfs_path: Some("usb-test".to_owned()),
+            serial: Some("serial-test".to_owned()),
+            bus: ControllerBus::Usb,
+            vid_pid: Some((0x0a12, 0x0001)),
+        }
+    }
+
+    #[test]
+    fn stable_identity_accepts_each_allowed_identity_and_rejects_unstable_bus_pair() {
+        for selector in [
+            ControllerSelector {
+                address: Some("controller".to_owned()),
+                ..ControllerSelector::default()
+            },
+            ControllerSelector {
+                sysfs_path: Some("usb-test".to_owned()),
+                ..ControllerSelector::default()
+            },
+            ControllerSelector {
+                serial: Some("serial-test".to_owned()),
+                ..ControllerSelector::default()
+            },
+            ControllerSelector {
+                bus: Some(ControllerBus::Usb),
+                vid_pid: Some((0x0a12, 0x0001)),
+                ..ControllerSelector::default()
+            },
+        ] {
+            assert!(selector.has_stable_identity());
+        }
+        assert!(
+            !ControllerSelector {
+                bus: Some(ControllerBus::Uart),
+                vid_pid: Some((0x0a12, 0x0001)),
+                ..ControllerSelector::default()
+            }
+            .has_stable_identity()
+        );
+    }
+
+    #[test]
+    fn selector_matching_checks_every_evidence_field() {
+        let base = evidence();
+        for selector in [
+            ControllerSelector {
+                address: Some("wrong".to_owned()),
+                ..ControllerSelector::default()
+            },
+            ControllerSelector {
+                sysfs_path: Some("wrong".to_owned()),
+                ..ControllerSelector::default()
+            },
+            ControllerSelector {
+                serial: Some("wrong".to_owned()),
+                ..ControllerSelector::default()
+            },
+            ControllerSelector {
+                address: Some("controller".to_owned()),
+                bus: Some(ControllerBus::Uart),
+                vid_pid: Some((0x0a12, 0x0001)),
+                ..ControllerSelector::default()
+            },
+            ControllerSelector {
+                bus: Some(ControllerBus::Usb),
+                vid_pid: Some((1, 2)),
+                ..ControllerSelector::default()
+            },
+        ] {
+            assert_eq!(
+                resolve_controller(&selector, std::slice::from_ref(&base)),
+                Err(ResolutionError::NoMatch { candidates: 1 })
+            );
+        }
+    }
+
+    #[test]
+    fn resolution_and_owner_error_messages_name_blockers() {
+        assert!(
+            ResolutionError::EmptySelector
+                .to_string()
+                .contains("no stable")
+        );
+        assert!(
+            ResolutionError::NoMatch { candidates: 2 }
+                .to_string()
+                .contains("2 inventory")
+        );
+        assert!(
+            ResolutionError::Ambiguous { matches: 3 }
+                .to_string()
+                .contains("3 controllers")
+        );
+        assert!(
+            OpenError::Resolution(ResolutionError::EmptySelector)
+                .to_string()
+                .contains("no stable")
+        );
+        assert!(
+            OpenError::Bluez {
+                class: BluezFailureClass::AdapterMissing,
+                operation: "open",
+            }
+            .to_string()
+            .contains("AdapterMissing")
+        );
+        let lease = LeaseId::new(7);
+        for error in [
+            OwnerError::LeaseNotOwned { lease },
+            OwnerError::WrongIntent {
+                lease,
+                expected: "GATT",
+            },
+            OwnerError::BpConnectForbidden,
+            OwnerError::Bluez {
+                class: BluezFailureClass::Unknown,
+                operation: "test",
+            },
+            OwnerError::FilterRestoreFailed,
+            OwnerError::WorkerStopped,
+            OwnerError::DeadlineExceeded { operation: "test" },
+        ] {
+            assert!(!error.to_string().is_empty());
+        }
+    }
+
+    #[test]
+    fn adapter_policy_advances_and_invalidates_generation() {
+        let mut policy = AdapterPolicy::new(Generation::new(1));
+        assert_eq!(policy.generation(), Generation::new(1));
+        assert!(policy.advance(1).granted.is_empty());
+        assert!(policy.invalidate_generation(Generation::new(2)).is_ok());
+        assert_eq!(policy.generation(), Generation::new(2));
+        assert_eq!(
+            policy.invalidate_generation(Generation::new(2)),
+            Err(PolicyError::GenerationNotAdvanced {
+                current: Generation::new(2),
+                requested: Generation::new(2),
+            })
+        );
+    }
+}
