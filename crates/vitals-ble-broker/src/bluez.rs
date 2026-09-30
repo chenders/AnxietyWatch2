@@ -402,7 +402,7 @@ impl AdapterPolicy {
 
 #[cfg(all(feature = "linux", target_os = "linux"))]
 mod runtime {
-    #![allow(clippy::missing_errors_doc)]
+    #![allow(clippy::elidable_lifetime_names, clippy::missing_errors_doc)]
 
     use super::{
         AcquireResult, AdapterHealth, AdapterPolicy, BluezFailureClass, ControllerEvidence,
@@ -410,23 +410,260 @@ mod runtime {
         LeaseRequest, OpenError, OwnerError, PolicyError, ReleaseOutcome, ResolvedController,
         SchedulerEvent, resolve_controller,
     };
-    use std::{collections::HashMap, sync::Arc, time::Duration};
+    use std::{collections::HashMap, future::Future, pin::Pin, sync::Arc, time::Duration};
 
     use bluer::{Adapter, Address, Session, gatt::remote::Characteristic};
-    use futures::StreamExt;
+    use futures::{Stream, StreamExt};
     use tokio::sync::{Mutex, OwnedMutexGuard};
+
+    type BackendFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+    pub type BackendStream<T> = Pin<Box<dyn Stream<Item = T> + Send>>;
+
+    #[allow(missing_docs)]
+    pub trait CharacteristicIo: Clone + Send + Sync + 'static {
+        fn uuid<'a>(&'a self) -> BackendFuture<'a, Result<bluer::Uuid, OwnerError>>;
+        fn notify<'a>(&'a self) -> BackendFuture<'a, Result<BackendStream<Vec<u8>>, OwnerError>>;
+        fn write<'a>(&'a self, payload: &'a [u8]) -> BackendFuture<'a, Result<(), OwnerError>>;
+    }
+
+    #[allow(missing_docs)]
+    pub trait ServiceIo: Clone + Send + Sync + 'static {
+        type Characteristic: CharacteristicIo;
+        fn uuid<'a>(&'a self) -> BackendFuture<'a, Result<bluer::Uuid, OwnerError>>;
+        fn characteristics<'a>(
+            &'a self,
+        ) -> BackendFuture<'a, Result<Vec<Self::Characteristic>, OwnerError>>;
+    }
+
+    #[allow(missing_docs)]
+    pub trait DeviceIo: Clone + Send + Sync + 'static {
+        type Service: ServiceIo<Characteristic = Self::Characteristic>;
+        type Characteristic: CharacteristicIo;
+        fn connected<'a>(&'a self) -> BackendFuture<'a, Result<bool, OwnerError>>;
+        fn services_resolved<'a>(&'a self) -> BackendFuture<'a, Result<bool, OwnerError>>;
+        fn connect<'a>(&'a self) -> BackendFuture<'a, Result<(), OwnerError>>;
+        fn disconnect<'a>(&'a self) -> BackendFuture<'a, Result<(), OwnerError>>;
+        fn services<'a>(&'a self) -> BackendFuture<'a, Result<Vec<Self::Service>, OwnerError>>;
+    }
+
+    #[allow(missing_docs)]
+    pub trait AdapterIo: Clone + Send + Sync + 'static {
+        type Device: DeviceIo<Characteristic = Self::Characteristic>;
+        type Characteristic: CharacteristicIo;
+        fn powered<'a>(&'a self) -> BackendFuture<'a, Result<bool, OwnerError>>;
+        fn discovering<'a>(&'a self) -> BackendFuture<'a, Result<bool, OwnerError>>;
+        fn discovery_filter<'a>(&'a self) -> BackendFuture<'a, bluer::DiscoveryFilter>;
+        fn set_discovery_filter<'a>(
+            &'a self,
+            filter: bluer::DiscoveryFilter,
+        ) -> BackendFuture<'a, Result<(), OwnerError>>;
+        fn discover_devices<'a>(
+            &'a self,
+        ) -> BackendFuture<'a, Result<BackendStream<bluer::AdapterEvent>, OwnerError>>;
+        fn device(&self, address: Address) -> Result<Self::Device, OwnerError>;
+        fn set_powered<'a>(&'a self, powered: bool) -> BackendFuture<'a, Result<(), OwnerError>>;
+    }
+
+    impl CharacteristicIo for Characteristic {
+        fn uuid<'a>(&'a self) -> BackendFuture<'a, Result<bluer::Uuid, OwnerError>> {
+            Box::pin(async move {
+                self.uuid().await.map_err(|error| OwnerError::Bluez {
+                    class: classify_bluer_error(&error),
+                    operation: "read characteristic UUID",
+                })
+            })
+        }
+
+        fn notify<'a>(&'a self) -> BackendFuture<'a, Result<BackendStream<Vec<u8>>, OwnerError>> {
+            Box::pin(async move {
+                self.notify()
+                    .await
+                    .map(|stream| Box::pin(stream) as BackendStream<Vec<u8>>)
+                    .map_err(|error| OwnerError::Bluez {
+                        class: classify_bluer_error(&error),
+                        operation: "subscribe characteristic",
+                    })
+            })
+        }
+
+        fn write<'a>(&'a self, payload: &'a [u8]) -> BackendFuture<'a, Result<(), OwnerError>> {
+            Box::pin(async move {
+                self.write(payload)
+                    .await
+                    .map_err(|error| OwnerError::Bluez {
+                        class: classify_bluer_error(&error),
+                        operation: "write characteristic",
+                    })
+            })
+        }
+    }
+
+    impl ServiceIo for bluer::gatt::remote::Service {
+        type Characteristic = Characteristic;
+
+        fn uuid<'a>(&'a self) -> BackendFuture<'a, Result<bluer::Uuid, OwnerError>> {
+            Box::pin(async move {
+                self.uuid().await.map_err(|error| OwnerError::Bluez {
+                    class: classify_bluer_error(&error),
+                    operation: "read service UUID",
+                })
+            })
+        }
+
+        fn characteristics<'a>(
+            &'a self,
+        ) -> BackendFuture<'a, Result<Vec<Self::Characteristic>, OwnerError>> {
+            Box::pin(async move {
+                self.characteristics()
+                    .await
+                    .map_err(|error| OwnerError::Bluez {
+                        class: classify_bluer_error(&error),
+                        operation: "resolve characteristics",
+                    })
+            })
+        }
+    }
+
+    impl DeviceIo for bluer::Device {
+        type Service = bluer::gatt::remote::Service;
+        type Characteristic = Characteristic;
+
+        fn connected<'a>(&'a self) -> BackendFuture<'a, Result<bool, OwnerError>> {
+            Box::pin(async move {
+                self.is_connected()
+                    .await
+                    .map_err(|error| OwnerError::Bluez {
+                        class: classify_bluer_error(&error),
+                        operation: "read Connected",
+                    })
+            })
+        }
+
+        fn services_resolved<'a>(&'a self) -> BackendFuture<'a, Result<bool, OwnerError>> {
+            Box::pin(async move {
+                self.is_services_resolved()
+                    .await
+                    .map_err(|error| OwnerError::Bluez {
+                        class: classify_bluer_error(&error),
+                        operation: "read ServicesResolved",
+                    })
+            })
+        }
+
+        fn connect<'a>(&'a self) -> BackendFuture<'a, Result<(), OwnerError>> {
+            Box::pin(async move {
+                bluer::Device::connect(self)
+                    .await
+                    .map_err(|error| OwnerError::Bluez {
+                        class: classify_bluer_error(&error),
+                        operation: "connect device",
+                    })
+            })
+        }
+
+        fn disconnect<'a>(&'a self) -> BackendFuture<'a, Result<(), OwnerError>> {
+            Box::pin(async move {
+                self.disconnect().await.map_err(|error| OwnerError::Bluez {
+                    class: classify_bluer_error(&error),
+                    operation: "disconnect device",
+                })
+            })
+        }
+
+        fn services<'a>(&'a self) -> BackendFuture<'a, Result<Vec<Self::Service>, OwnerError>> {
+            Box::pin(async move {
+                self.services().await.map_err(|error| OwnerError::Bluez {
+                    class: classify_bluer_error(&error),
+                    operation: "resolve services",
+                })
+            })
+        }
+    }
+
+    impl AdapterIo for Adapter {
+        type Device = bluer::Device;
+        type Characteristic = Characteristic;
+
+        fn powered<'a>(&'a self) -> BackendFuture<'a, Result<bool, OwnerError>> {
+            Box::pin(async move {
+                self.is_powered().await.map_err(|_| OwnerError::Bluez {
+                    class: BluezFailureClass::DaemonUnavailable,
+                    operation: "read Powered",
+                })
+            })
+        }
+
+        fn discovering<'a>(&'a self) -> BackendFuture<'a, Result<bool, OwnerError>> {
+            Box::pin(async move {
+                self.is_discovering().await.map_err(|_| OwnerError::Bluez {
+                    class: BluezFailureClass::DaemonUnavailable,
+                    operation: "read Discovering",
+                })
+            })
+        }
+
+        fn discovery_filter<'a>(&'a self) -> BackendFuture<'a, bluer::DiscoveryFilter> {
+            Box::pin(async move { self.discovery_filter().await })
+        }
+
+        fn set_discovery_filter<'a>(
+            &'a self,
+            filter: bluer::DiscoveryFilter,
+        ) -> BackendFuture<'a, Result<(), OwnerError>> {
+            Box::pin(async move {
+                self.set_discovery_filter(filter)
+                    .await
+                    .map_err(|error| OwnerError::Bluez {
+                        class: classify_bluer_error(&error),
+                        operation: "set discovery filter",
+                    })
+            })
+        }
+
+        fn discover_devices<'a>(
+            &'a self,
+        ) -> BackendFuture<'a, Result<BackendStream<bluer::AdapterEvent>, OwnerError>> {
+            Box::pin(async move {
+                self.discover_devices()
+                    .await
+                    .map(|stream| Box::pin(stream) as BackendStream<bluer::AdapterEvent>)
+                    .map_err(|error| OwnerError::Bluez {
+                        class: classify_bluer_error(&error),
+                        operation: "start discovery",
+                    })
+            })
+        }
+
+        fn device(&self, address: Address) -> Result<Self::Device, OwnerError> {
+            self.device(address).map_err(|_| OwnerError::Bluez {
+                class: BluezFailureClass::DeviceMissing,
+                operation: "materialize device",
+            })
+        }
+
+        fn set_powered<'a>(&'a self, powered: bool) -> BackendFuture<'a, Result<(), OwnerError>> {
+            Box::pin(async move {
+                self.set_powered(powered)
+                    .await
+                    .map_err(|_| OwnerError::Bluez {
+                        class: BluezFailureClass::DaemonUnavailable,
+                        operation: "set adapter power",
+                    })
+            })
+        }
+    }
 
     /// A Linux `BlueZ` adapter owner. All application-level `BlueZ` operations pass
     /// through this value; workers receive only typed results from its methods.
-    pub struct BluezAdapterOwner {
-        _session: Session,
-        adapter: Adapter,
+    pub struct BluezAdapterOwner<A: AdapterIo> {
+        _session: Option<Session>,
+        adapter: A,
         controller: ResolvedController,
         policy: AdapterPolicy,
         writes: Mutex<HashMap<Address, Arc<Mutex<()>>>>,
     }
 
-    impl BluezAdapterOwner {
+    impl BluezAdapterOwner<Adapter> {
         /// Open a `BlueZ` session only after stable inventory resolution.
         ///
         /// # Errors
@@ -464,14 +701,16 @@ mod runtime {
                         operation: "construct selected adapter",
                     })?;
             Ok(Self {
-                _session: session,
+                _session: Some(session),
                 adapter,
                 controller,
                 policy: AdapterPolicy::new(generation),
                 writes: Mutex::new(HashMap::new()),
             })
         }
+    }
 
+    impl<A: AdapterIo> BluezAdapterOwner<A> {
         /// Return the validated controller and current runtime alias.
         #[must_use]
         pub fn controller(&self) -> &ResolvedController {
@@ -514,33 +753,13 @@ mod runtime {
         /// Change adapter power only under an explicit recovery lease.
         pub async fn set_powered(&self, lease: &Lease, powered: bool) -> Result<(), OwnerError> {
             self.check_lease(lease, crate::lease::Intent::PowerRecovery)?;
-            self.adapter
-                .set_powered(powered)
-                .await
-                .map_err(|error| OwnerError::Bluez {
-                    class: classify_bluer_error(&error),
-                    operation: "set adapter power",
-                })
+            self.adapter.set_powered(powered).await
         }
 
         /// Read adapter health without inferring readiness from process state.
         pub async fn health(&self) -> Result<AdapterHealth, OwnerError> {
-            let powered = self
-                .adapter
-                .is_powered()
-                .await
-                .map_err(|_| OwnerError::Bluez {
-                    class: BluezFailureClass::DaemonUnavailable,
-                    operation: "read Powered",
-                })?;
-            let discovering =
-                self.adapter
-                    .is_discovering()
-                    .await
-                    .map_err(|_| OwnerError::Bluez {
-                        class: BluezFailureClass::DaemonUnavailable,
-                        operation: "read Discovering",
-                    })?;
+            let powered = self.adapter.powered().await?;
+            let discovering = self.adapter.discovering().await?;
             Ok(AdapterHealth {
                 generation: self.policy.generation(),
                 runtime_name: self.controller.runtime_name.clone(),
@@ -560,36 +779,20 @@ mod runtime {
             self.check_lease(lease, crate::lease::Intent::Discover)?;
             let adapter = self.adapter.clone();
             let task = tokio::spawn(async move {
-                if adapter
-                    .is_discovering()
-                    .await
-                    .map_err(|_| OwnerError::Bluez {
-                        class: BluezFailureClass::DaemonUnavailable,
-                        operation: "read Discovering",
-                    })?
-                {
+                if adapter.discovering().await? {
                     return Err(OwnerError::Bluez {
                         class: BluezFailureClass::DiscoveryBusy,
                         operation: "start discovery",
                     });
                 }
                 let previous = adapter.discovery_filter().await;
-                adapter
-                    .set_discovery_filter(filter)
-                    .await
-                    .map_err(|error| OwnerError::Bluez {
-                        class: classify_bluer_error(&error),
-                        operation: "set discovery filter",
-                    })?;
+                adapter.set_discovery_filter(filter).await?;
                 let mut events = match adapter.discover_devices().await {
                     Ok(events) => events,
                     Err(error) => {
                         let restored = adapter.set_discovery_filter(previous).await.is_ok();
                         return if restored {
-                            Err(OwnerError::Bluez {
-                                class: classify_bluer_error(&error),
-                                operation: "start discovery",
-                            })
+                            Err(error)
                         } else {
                             Err(OwnerError::FilterRestoreFailed)
                         };
@@ -632,28 +835,9 @@ mod runtime {
             address: Address,
         ) -> Result<DeviceObservation, OwnerError> {
             self.check_lease(lease, crate::lease::Intent::KernelObserve)?;
-            let device = self
-                .adapter
-                .device(address)
-                .map_err(|_| OwnerError::Bluez {
-                    class: BluezFailureClass::DeviceMissing,
-                    operation: "materialize device",
-                })?;
-            let connected = device
-                .is_connected()
-                .await
-                .map_err(|error| OwnerError::Bluez {
-                    class: classify_bluer_error(&error),
-                    operation: "read Connected",
-                })?;
-            let services_resolved =
-                device
-                    .is_services_resolved()
-                    .await
-                    .map_err(|error| OwnerError::Bluez {
-                        class: classify_bluer_error(&error),
-                        operation: "read ServicesResolved",
-                    })?;
+            let device = self.adapter.device(address)?;
+            let connected = device.connected().await?;
+            let services_resolved = device.services_resolved().await?;
             Ok(DeviceObservation {
                 connected,
                 services_resolved,
@@ -671,20 +855,9 @@ mod runtime {
             if lease.source() == crate::lease::Source::Bp {
                 return Err(OwnerError::BpConnectForbidden);
             }
-            let device = self
-                .adapter
-                .device(address)
-                .map_err(|_| OwnerError::Bluez {
-                    class: BluezFailureClass::DeviceMissing,
-                    operation: "materialize device",
-                })?;
-            if let Ok(result) =
-                tokio::time::timeout(duration, bluer::Device::connect(&device)).await
-            {
-                result.map_err(|error| OwnerError::Bluez {
-                    class: classify_bluer_error(&error),
-                    operation: "connect device",
-                })
+            let device = self.adapter.device(address)?;
+            if let Ok(result) = tokio::time::timeout(duration, device.connect()).await {
+                result
             } else {
                 let _ = device.disconnect().await;
                 Err(OwnerError::DeadlineExceeded {
@@ -696,20 +869,8 @@ mod runtime {
         /// Disconnect a device under its device lease.
         pub async fn disconnect(&self, lease: &Lease, address: Address) -> Result<(), OwnerError> {
             self.check_lease(lease, crate::lease::Intent::Connect)?;
-            let device = self
-                .adapter
-                .device(address)
-                .map_err(|_| OwnerError::Bluez {
-                    class: BluezFailureClass::DeviceMissing,
-                    operation: "materialize device",
-                })?;
-            device
-                .disconnect()
-                .await
-                .map_err(|error| OwnerError::Bluez {
-                    class: classify_bluer_error(&error),
-                    operation: "disconnect device",
-                })
+            let device = self.adapter.device(address)?;
+            device.disconnect().await
         }
 
         /// Resolve one typed remote characteristic by service and characteristic UUID.
@@ -719,45 +880,16 @@ mod runtime {
             address: Address,
             service_uuid: bluer::Uuid,
             characteristic_uuid: bluer::Uuid,
-        ) -> Result<Characteristic, OwnerError> {
+        ) -> Result<<A::Device as DeviceIo>::Characteristic, OwnerError> {
             self.check_gatt_lease(lease)?;
-            let device = self
-                .adapter
-                .device(address)
-                .map_err(|_| OwnerError::Bluez {
-                    class: BluezFailureClass::DeviceMissing,
-                    operation: "materialize device",
-                })?;
-            let services = device.services().await.map_err(|error| OwnerError::Bluez {
-                class: classify_bluer_error(&error),
-                operation: "resolve services",
-            })?;
+            let device = self.adapter.device(address)?;
+            let services = device.services().await?;
             for service in services {
-                if service.uuid().await.map_err(|error| OwnerError::Bluez {
-                    class: classify_bluer_error(&error),
-                    operation: "read service UUID",
-                })? != service_uuid
-                {
+                if service.uuid().await? != service_uuid {
                     continue;
                 }
-                let characteristics =
-                    service
-                        .characteristics()
-                        .await
-                        .map_err(|error| OwnerError::Bluez {
-                            class: classify_bluer_error(&error),
-                            operation: "resolve characteristics",
-                        })?;
-                for characteristic in characteristics {
-                    if characteristic
-                        .uuid()
-                        .await
-                        .map_err(|error| OwnerError::Bluez {
-                            class: classify_bluer_error(&error),
-                            operation: "read characteristic UUID",
-                        })?
-                        == characteristic_uuid
-                    {
+                for characteristic in service.characteristics().await? {
+                    if characteristic.uuid().await? == characteristic_uuid {
                         return Ok(characteristic);
                     }
                 }
@@ -772,16 +904,10 @@ mod runtime {
         pub async fn subscribe(
             &self,
             lease: &Lease,
-            characteristic: &Characteristic,
-        ) -> Result<impl futures::Stream<Item = Vec<u8>> + use<>, OwnerError> {
+            characteristic: &<A::Device as DeviceIo>::Characteristic,
+        ) -> Result<BackendStream<Vec<u8>>, OwnerError> {
             self.check_gatt_lease(lease)?;
-            characteristic
-                .notify()
-                .await
-                .map_err(|error| OwnerError::Bluez {
-                    class: classify_bluer_error(&error),
-                    operation: "subscribe characteristic",
-                })
+            characteristic.notify().await
         }
 
         /// Serialize writes to one peer while allowing different peers to proceed independently.
@@ -789,18 +915,12 @@ mod runtime {
             &self,
             lease: &Lease,
             address: Address,
-            characteristic: &Characteristic,
+            characteristic: &<A::Device as DeviceIo>::Characteristic,
             payload: &[u8],
         ) -> Result<(), OwnerError> {
             self.check_lease(lease, crate::lease::Intent::Gatt)?;
             let guard = self.write_guard(address).await;
-            let result = characteristic
-                .write(payload)
-                .await
-                .map_err(|error| OwnerError::Bluez {
-                    class: classify_bluer_error(&error),
-                    operation: "write characteristic",
-                });
+            let result = characteristic.write(payload).await;
             drop(guard);
             result
         }
@@ -886,10 +1006,18 @@ mod runtime {
         }
     }
 
-    pub use BluezAdapterOwner as LinuxBluezAdapterOwner;
+    /// Production `BlueZ` owner backed by the real Linux adapter.
+    pub type LinuxBluezAdapterOwner = BluezAdapterOwner<Adapter>;
 
     #[cfg(test)]
     mod tests {
+        #![allow(
+            clippy::bool_assert_comparison,
+            clippy::panic,
+            clippy::too_many_lines,
+            clippy::unwrap_used
+        )]
+
         use super::*;
         use crate::bluez::ControllerBus;
 
@@ -898,6 +1026,675 @@ mod runtime {
                 kind,
                 message: String::new(),
             }
+        }
+
+        #[derive(Clone)]
+        struct FakeCharacteristic {
+            state: Arc<std::sync::Mutex<FakeCharacteristicState>>,
+        }
+
+        #[derive(Clone)]
+        struct FakeCharacteristicState {
+            uuid: bluer::Uuid,
+            notify: Result<Vec<Vec<u8>>, OwnerError>,
+            write: Result<(), OwnerError>,
+        }
+
+        #[derive(Clone)]
+        struct FakeService {
+            state: Arc<std::sync::Mutex<FakeServiceState>>,
+        }
+
+        #[derive(Clone)]
+        struct FakeServiceState {
+            uuid: Result<bluer::Uuid, OwnerError>,
+            characteristics: Result<Vec<FakeCharacteristic>, OwnerError>,
+        }
+
+        #[derive(Clone)]
+        struct FakeDevice {
+            state: Arc<std::sync::Mutex<FakeDeviceState>>,
+        }
+
+        #[derive(Clone)]
+        struct FakeDeviceState {
+            connected: Result<bool, OwnerError>,
+            services_resolved: Result<bool, OwnerError>,
+            connect: Result<(), OwnerError>,
+            connect_pending: bool,
+            disconnect: Result<(), OwnerError>,
+            services: Result<Vec<FakeService>, OwnerError>,
+        }
+
+        #[derive(Clone)]
+        struct FakeAdapter {
+            state: Arc<std::sync::Mutex<FakeAdapterState>>,
+        }
+
+        struct FakeAdapterState {
+            powered: Result<bool, OwnerError>,
+            discovering: Result<bool, OwnerError>,
+            set_powered: Result<(), OwnerError>,
+            set_filter: Result<(), OwnerError>,
+            set_filter_calls: usize,
+            fail_set_filter_call: Option<usize>,
+            discovery: Result<Vec<bluer::AdapterEvent>, OwnerError>,
+            discovery_pending: bool,
+            device: Result<FakeDevice, OwnerError>,
+        }
+
+        impl CharacteristicIo for FakeCharacteristic {
+            fn uuid<'a>(&'a self) -> BackendFuture<'a, Result<bluer::Uuid, OwnerError>> {
+                let uuid = self.state.lock().unwrap().uuid;
+                Box::pin(async move { Ok(uuid) })
+            }
+
+            fn notify<'a>(
+                &'a self,
+            ) -> BackendFuture<'a, Result<BackendStream<Vec<u8>>, OwnerError>> {
+                let result = self.state.lock().unwrap().notify.clone();
+                Box::pin(async move {
+                    result.map(|payloads| {
+                        Box::pin(futures::stream::iter(payloads)) as BackendStream<_>
+                    })
+                })
+            }
+
+            fn write<'a>(
+                &'a self,
+                _payload: &'a [u8],
+            ) -> BackendFuture<'a, Result<(), OwnerError>> {
+                let result = self.state.lock().unwrap().write.clone();
+                Box::pin(async move { result })
+            }
+        }
+
+        impl ServiceIo for FakeService {
+            type Characteristic = FakeCharacteristic;
+
+            fn uuid<'a>(&'a self) -> BackendFuture<'a, Result<bluer::Uuid, OwnerError>> {
+                let result = self.state.lock().unwrap().uuid.clone();
+                Box::pin(async move { result })
+            }
+
+            fn characteristics<'a>(
+                &'a self,
+            ) -> BackendFuture<'a, Result<Vec<Self::Characteristic>, OwnerError>> {
+                let result = self.state.lock().unwrap().characteristics.clone();
+                Box::pin(async move { result })
+            }
+        }
+
+        impl DeviceIo for FakeDevice {
+            type Service = FakeService;
+            type Characteristic = FakeCharacteristic;
+
+            fn connected<'a>(&'a self) -> BackendFuture<'a, Result<bool, OwnerError>> {
+                let result = self.state.lock().unwrap().connected.clone();
+                Box::pin(async move { result })
+            }
+
+            fn services_resolved<'a>(&'a self) -> BackendFuture<'a, Result<bool, OwnerError>> {
+                let result = self.state.lock().unwrap().services_resolved.clone();
+                Box::pin(async move { result })
+            }
+
+            fn connect<'a>(&'a self) -> BackendFuture<'a, Result<(), OwnerError>> {
+                if self.state.lock().unwrap().connect_pending {
+                    return Box::pin(async {
+                        futures::future::pending::<Result<(), OwnerError>>().await
+                    });
+                }
+                let result = self.state.lock().unwrap().connect.clone();
+                Box::pin(async move { result })
+            }
+
+            fn disconnect<'a>(&'a self) -> BackendFuture<'a, Result<(), OwnerError>> {
+                let result = self.state.lock().unwrap().disconnect.clone();
+                Box::pin(async move { result })
+            }
+
+            fn services<'a>(&'a self) -> BackendFuture<'a, Result<Vec<Self::Service>, OwnerError>> {
+                let result = self.state.lock().unwrap().services.clone();
+                Box::pin(async move { result })
+            }
+        }
+
+        impl AdapterIo for FakeAdapter {
+            type Device = FakeDevice;
+            type Characteristic = FakeCharacteristic;
+
+            fn powered<'a>(&'a self) -> BackendFuture<'a, Result<bool, OwnerError>> {
+                let result = self.state.lock().unwrap().powered.clone();
+                Box::pin(async move { result })
+            }
+
+            fn discovering<'a>(&'a self) -> BackendFuture<'a, Result<bool, OwnerError>> {
+                let result = self.state.lock().unwrap().discovering.clone();
+                Box::pin(async move { result })
+            }
+
+            fn discovery_filter<'a>(&'a self) -> BackendFuture<'a, bluer::DiscoveryFilter> {
+                Box::pin(async { bluer::DiscoveryFilter::default() })
+            }
+
+            fn set_discovery_filter<'a>(
+                &'a self,
+                _filter: bluer::DiscoveryFilter,
+            ) -> BackendFuture<'a, Result<(), OwnerError>> {
+                let mut state = self.state.lock().unwrap();
+                state.set_filter_calls = state.set_filter_calls.saturating_add(1);
+                let result = if state.fail_set_filter_call == Some(state.set_filter_calls) {
+                    Err(backend_error("set discovery filter"))
+                } else {
+                    state.set_filter.clone()
+                };
+                Box::pin(async move { result })
+            }
+
+            fn discover_devices<'a>(
+                &'a self,
+            ) -> BackendFuture<'a, Result<BackendStream<bluer::AdapterEvent>, OwnerError>>
+            {
+                let state = self.state.lock().unwrap();
+                if state.discovery_pending {
+                    return Box::pin(async {
+                        Ok(Box::pin(futures::stream::pending()) as BackendStream<_>)
+                    })
+                        as BackendFuture<
+                            'a,
+                            Result<BackendStream<bluer::AdapterEvent>, OwnerError>,
+                        >;
+                }
+                let result = state.discovery.clone();
+                Box::pin(async move {
+                    result.map(|events| Box::pin(futures::stream::iter(events)) as BackendStream<_>)
+                })
+            }
+
+            fn device(&self, _address: Address) -> Result<Self::Device, OwnerError> {
+                self.state.lock().unwrap().device.clone()
+            }
+
+            fn set_powered<'a>(
+                &'a self,
+                _powered: bool,
+            ) -> BackendFuture<'a, Result<(), OwnerError>> {
+                let result = self.state.lock().unwrap().set_powered.clone();
+                Box::pin(async move { result })
+            }
+        }
+
+        fn backend_error(operation: &'static str) -> OwnerError {
+            OwnerError::Bluez {
+                class: BluezFailureClass::DaemonUnavailable,
+                operation,
+            }
+        }
+
+        fn fake_owner(adapter: FakeAdapter) -> BluezAdapterOwner<FakeAdapter> {
+            BluezAdapterOwner {
+                _session: None,
+                adapter,
+                controller: ResolvedController {
+                    selector: ControllerSelector::default(),
+                    runtime_name: "fake".to_owned(),
+                },
+                policy: AdapterPolicy::new(Generation::new(1)),
+                writes: Mutex::new(HashMap::new()),
+            }
+        }
+
+        fn fake_lease(
+            owner: &mut BluezAdapterOwner<FakeAdapter>,
+            source: crate::lease::Source,
+            intent: crate::lease::Intent,
+        ) -> Lease {
+            match owner.acquire(
+                LeaseRequest::new(
+                    source,
+                    intent,
+                    crate::Priority::new(1),
+                    100,
+                    100,
+                    None,
+                    crate::CapabilitySet::empty(),
+                ),
+                0,
+            ) {
+                Ok(AcquireResult::Granted(lease)) => lease,
+                other => panic!("expected fake lease, got {other:?}"),
+            }
+        }
+
+        fn fake_characteristic(uuid: bluer::Uuid) -> FakeCharacteristic {
+            FakeCharacteristic {
+                state: Arc::new(std::sync::Mutex::new(FakeCharacteristicState {
+                    uuid,
+                    notify: Ok(vec![vec![1, 2, 3]]),
+                    write: Ok(()),
+                })),
+            }
+        }
+
+        fn fake_adapter() -> (FakeAdapter, FakeDevice, FakeCharacteristic) {
+            let characteristic = fake_characteristic(bluer::Uuid::nil());
+            let service = FakeService {
+                state: Arc::new(std::sync::Mutex::new(FakeServiceState {
+                    uuid: Ok(bluer::Uuid::nil()),
+                    characteristics: Ok(vec![characteristic.clone()]),
+                })),
+            };
+            let device = FakeDevice {
+                state: Arc::new(std::sync::Mutex::new(FakeDeviceState {
+                    connected: Ok(true),
+                    services_resolved: Ok(true),
+                    connect: Ok(()),
+                    connect_pending: false,
+                    disconnect: Ok(()),
+                    services: Ok(vec![service]),
+                })),
+            };
+            let adapter = FakeAdapter {
+                state: Arc::new(std::sync::Mutex::new(FakeAdapterState {
+                    powered: Ok(true),
+                    discovering: Ok(false),
+                    set_powered: Ok(()),
+                    set_filter: Ok(()),
+                    set_filter_calls: 0,
+                    fail_set_filter_call: None,
+                    discovery: Ok(vec![bluer::AdapterEvent::DeviceAdded(Address::new([
+                        1, 2, 3, 4, 5, 6,
+                    ]))]),
+                    discovery_pending: false,
+                    device: Ok(device.clone()),
+                })),
+            };
+            (adapter, device, characteristic)
+        }
+
+        #[tokio::test]
+        async fn fake_backend_runs_successful_owner_operations() {
+            let (adapter, _device, _characteristic) = fake_adapter();
+            let mut owner = fake_owner(adapter);
+            assert_eq!(owner.health().await.unwrap().powered, true);
+
+            let power = fake_lease(
+                &mut owner,
+                crate::lease::Source::Diagnostics,
+                crate::lease::Intent::PowerRecovery,
+            );
+            owner.set_powered(&power, true).await.unwrap();
+            owner.release(power.id(), 1);
+
+            let discover = fake_lease(
+                &mut owner,
+                crate::lease::Source::Diagnostics,
+                crate::lease::Intent::Discover,
+            );
+            let report = owner
+                .discover(
+                    &discover,
+                    bluer::DiscoveryFilter::default(),
+                    Some(Address::new([1, 2, 3, 4, 5, 6])),
+                    Duration::from_millis(10),
+                )
+                .await
+                .unwrap();
+            assert!(report.target_found);
+            owner.release(discover.id(), 2);
+
+            let observe = fake_lease(
+                &mut owner,
+                crate::lease::Source::Bp,
+                crate::lease::Intent::KernelObserve,
+            );
+            assert_eq!(
+                owner
+                    .observe(&observe, Address::new([1, 2, 3, 4, 5, 6]))
+                    .await
+                    .unwrap(),
+                DeviceObservation {
+                    connected: true,
+                    services_resolved: true,
+                }
+            );
+            owner.release(observe.id(), 3);
+
+            let connect = fake_lease(
+                &mut owner,
+                crate::lease::Source::AirSense,
+                crate::lease::Intent::Connect,
+            );
+            owner
+                .connect(
+                    &connect,
+                    Address::new([1, 2, 3, 4, 5, 6]),
+                    Duration::from_millis(10),
+                )
+                .await
+                .unwrap();
+            owner
+                .disconnect(&connect, Address::new([1, 2, 3, 4, 5, 6]))
+                .await
+                .unwrap();
+            owner.release(connect.id(), 4);
+
+            let gatt = fake_lease(
+                &mut owner,
+                crate::lease::Source::AirSense,
+                crate::lease::Intent::Gatt,
+            );
+            let characteristic = owner
+                .resolve(
+                    &gatt,
+                    Address::new([1, 2, 3, 4, 5, 6]),
+                    bluer::Uuid::nil(),
+                    bluer::Uuid::nil(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(
+                owner
+                    .subscribe(&gatt, &characteristic)
+                    .await
+                    .unwrap()
+                    .collect::<Vec<_>>()
+                    .await,
+                vec![vec![1, 2, 3]]
+            );
+            owner
+                .write(
+                    &gatt,
+                    Address::new([1, 2, 3, 4, 5, 6]),
+                    &characteristic,
+                    &[9, 8, 7],
+                )
+                .await
+                .unwrap();
+        }
+
+        #[tokio::test]
+        async fn fake_backend_exercises_discovery_failures_and_deadlines() {
+            let (adapter, _device, _characteristic) = fake_adapter();
+            adapter.state.lock().unwrap().discovering = Ok(true);
+            let mut owner = fake_owner(adapter);
+            let lease = fake_lease(
+                &mut owner,
+                crate::lease::Source::Diagnostics,
+                crate::lease::Intent::Discover,
+            );
+            assert!(matches!(
+                owner
+                    .discover(
+                        &lease,
+                        bluer::DiscoveryFilter::default(),
+                        None,
+                        Duration::from_millis(1),
+                    )
+                    .await,
+                Err(OwnerError::Bluez {
+                    class: BluezFailureClass::DiscoveryBusy,
+                    ..
+                })
+            ));
+
+            let (adapter, _device, _characteristic) = fake_adapter();
+            adapter.state.lock().unwrap().set_filter = Err(backend_error("set discovery filter"));
+            let mut owner = fake_owner(adapter);
+            let lease = fake_lease(
+                &mut owner,
+                crate::lease::Source::Diagnostics,
+                crate::lease::Intent::Discover,
+            );
+            assert!(
+                owner
+                    .discover(
+                        &lease,
+                        bluer::DiscoveryFilter::default(),
+                        None,
+                        Duration::from_millis(1)
+                    )
+                    .await
+                    .is_err()
+            );
+
+            let (adapter, _device, _characteristic) = fake_adapter();
+            adapter.state.lock().unwrap().discovery = Err(backend_error("start discovery"));
+            let mut owner = fake_owner(adapter);
+            let lease = fake_lease(
+                &mut owner,
+                crate::lease::Source::Diagnostics,
+                crate::lease::Intent::Discover,
+            );
+            assert!(matches!(
+                owner
+                    .discover(
+                        &lease,
+                        bluer::DiscoveryFilter::default(),
+                        None,
+                        Duration::from_millis(1)
+                    )
+                    .await,
+                Err(OwnerError::Bluez { .. })
+            ));
+
+            let (adapter, _device, _characteristic) = fake_adapter();
+            {
+                let mut state = adapter.state.lock().unwrap();
+                state.discovery = Err(backend_error("start discovery"));
+                state.fail_set_filter_call = Some(2);
+            }
+            let mut owner = fake_owner(adapter);
+            let lease = fake_lease(
+                &mut owner,
+                crate::lease::Source::Diagnostics,
+                crate::lease::Intent::Discover,
+            );
+            assert_eq!(
+                owner
+                    .discover(
+                        &lease,
+                        bluer::DiscoveryFilter::default(),
+                        None,
+                        Duration::from_millis(1)
+                    )
+                    .await,
+                Err(OwnerError::FilterRestoreFailed)
+            );
+
+            let (adapter, _device, _characteristic) = fake_adapter();
+            adapter.state.lock().unwrap().discovery_pending = true;
+            let mut owner = fake_owner(adapter);
+            let lease = fake_lease(
+                &mut owner,
+                crate::lease::Source::Diagnostics,
+                crate::lease::Intent::Discover,
+            );
+            let report = owner
+                .discover(
+                    &lease,
+                    bluer::DiscoveryFilter::default(),
+                    None,
+                    Duration::from_millis(1),
+                )
+                .await
+                .unwrap();
+            assert_eq!((report.events, report.target_found), (0, false));
+        }
+
+        #[tokio::test]
+        async fn fake_backend_exercises_device_and_gatt_failures() {
+            let (adapter, _device, _characteristic) = fake_adapter();
+            adapter.state.lock().unwrap().device = Err(backend_error("materialize device"));
+            let mut owner = fake_owner(adapter);
+            let observe = fake_lease(
+                &mut owner,
+                crate::lease::Source::Bp,
+                crate::lease::Intent::KernelObserve,
+            );
+            assert!(
+                owner
+                    .observe(&observe, Address::new([1, 2, 3, 4, 5, 6]))
+                    .await
+                    .is_err()
+            );
+
+            let (adapter, device, _characteristic) = fake_adapter();
+            device.state.lock().unwrap().connected = Err(backend_error("read Connected"));
+            let mut owner = fake_owner(adapter);
+            let observe = fake_lease(
+                &mut owner,
+                crate::lease::Source::Bp,
+                crate::lease::Intent::KernelObserve,
+            );
+            assert!(
+                owner
+                    .observe(&observe, Address::new([1, 2, 3, 4, 5, 6]))
+                    .await
+                    .is_err()
+            );
+
+            let (adapter, _device, _characteristic) = fake_adapter();
+            let mut owner = fake_owner(adapter);
+            assert_eq!(
+                owner.acquire(
+                    LeaseRequest::new(
+                        crate::lease::Source::Bp,
+                        crate::lease::Intent::Connect,
+                        crate::Priority::new(1),
+                        100,
+                        100,
+                        None,
+                        crate::CapabilitySet::empty(),
+                    ),
+                    0,
+                ),
+                Err(PolicyError::BpConnectForbidden)
+            );
+
+            let (adapter, device, _characteristic) = fake_adapter();
+            device.state.lock().unwrap().connect = Err(backend_error("connect device"));
+            let mut owner = fake_owner(adapter);
+            let connect = fake_lease(
+                &mut owner,
+                crate::lease::Source::AirSense,
+                crate::lease::Intent::Connect,
+            );
+            assert!(
+                owner
+                    .connect(
+                        &connect,
+                        Address::new([1, 2, 3, 4, 5, 6]),
+                        Duration::from_millis(1)
+                    )
+                    .await
+                    .is_err()
+            );
+
+            let (adapter, device, _characteristic) = fake_adapter();
+            device.state.lock().unwrap().connect_pending = true;
+            let mut owner = fake_owner(adapter);
+            let connect = fake_lease(
+                &mut owner,
+                crate::lease::Source::AirSense,
+                crate::lease::Intent::Connect,
+            );
+            assert_eq!(
+                owner
+                    .connect(
+                        &connect,
+                        Address::new([1, 2, 3, 4, 5, 6]),
+                        Duration::from_millis(1)
+                    )
+                    .await,
+                Err(OwnerError::DeadlineExceeded {
+                    operation: "connect device"
+                })
+            );
+
+            let (adapter, device, _characteristic) = fake_adapter();
+            device.state.lock().unwrap().disconnect = Err(backend_error("disconnect device"));
+            let mut owner = fake_owner(adapter);
+            let connect = fake_lease(
+                &mut owner,
+                crate::lease::Source::AirSense,
+                crate::lease::Intent::Connect,
+            );
+            assert!(
+                owner
+                    .disconnect(&connect, Address::new([1, 2, 3, 4, 5, 6]))
+                    .await
+                    .is_err()
+            );
+
+            let (adapter, device, characteristic) = fake_adapter();
+            device.state.lock().unwrap().services = Err(backend_error("resolve services"));
+            let mut owner = fake_owner(adapter);
+            let gatt = fake_lease(
+                &mut owner,
+                crate::lease::Source::AirSense,
+                crate::lease::Intent::Gatt,
+            );
+            assert!(
+                owner
+                    .resolve(
+                        &gatt,
+                        Address::new([1, 2, 3, 4, 5, 6]),
+                        bluer::Uuid::nil(),
+                        bluer::Uuid::nil()
+                    )
+                    .await
+                    .is_err()
+            );
+
+            device.state.lock().unwrap().services = Ok(vec![]);
+            assert!(matches!(
+                owner
+                    .resolve(
+                        &gatt,
+                        Address::new([1, 2, 3, 4, 5, 6]),
+                        bluer::Uuid::nil(),
+                        bluer::Uuid::nil()
+                    )
+                    .await,
+                Err(OwnerError::Bluez {
+                    class: BluezFailureClass::GattRejected,
+                    ..
+                })
+            ));
+            device.state.lock().unwrap().services = Ok(vec![FakeService {
+                state: Arc::new(std::sync::Mutex::new(FakeServiceState {
+                    uuid: Err(backend_error("read service UUID")),
+                    characteristics: Ok(vec![characteristic.clone()]),
+                })),
+            }]);
+            assert!(
+                owner
+                    .resolve(
+                        &gatt,
+                        Address::new([1, 2, 3, 4, 5, 6]),
+                        bluer::Uuid::nil(),
+                        bluer::Uuid::nil()
+                    )
+                    .await
+                    .is_err()
+            );
+            characteristic.state.lock().unwrap().notify =
+                Err(backend_error("subscribe characteristic"));
+            assert!(owner.subscribe(&gatt, &characteristic).await.is_err());
+            characteristic.state.lock().unwrap().write = Err(backend_error("write characteristic"));
+            assert!(
+                owner
+                    .write(
+                        &gatt,
+                        Address::new([1, 2, 3, 4, 5, 6]),
+                        &characteristic,
+                        &[1]
+                    )
+                    .await
+                    .is_err()
+            );
         }
 
         #[test]
