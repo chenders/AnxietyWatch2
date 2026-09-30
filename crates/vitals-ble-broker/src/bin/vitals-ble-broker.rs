@@ -6,9 +6,19 @@ fn main() {
     std::process::exit(64);
 }
 
-#[cfg(all(feature = "linux", target_os = "linux"))]
+#[cfg(all(feature = "linux", target_os = "linux", not(test)))]
 fn main() -> std::process::ExitCode {
-    match startup(vitals_ble_broker::server::BrokerConfig::from_env()) {
+    finish(startup(vitals_ble_broker::server::BrokerConfig::from_env()))
+}
+
+#[cfg(all(feature = "linux", target_os = "linux", test))]
+fn main() -> std::process::ExitCode {
+    finish(Err((64, "test startup rejection".to_owned())))
+}
+
+#[cfg(all(feature = "linux", target_os = "linux"))]
+fn finish(result: Result<(), (u8, String)>) -> std::process::ExitCode {
+    match result {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err((code, error)) => {
             eprintln!("vitals-ble-broker: {error}");
@@ -38,6 +48,16 @@ mod tests {
         assert_eq!(
             super::startup(Err("VITALS_BLE_ADAPTER_SELECTOR is unset".to_owned())),
             Err((64, "VITALS_BLE_ADAPTER_SELECTOR is unset".to_owned()))
+        );
+    }
+
+    #[test]
+    fn test_entrypoint_and_exit_codes_are_deterministic() {
+        assert_eq!(super::main(), std::process::ExitCode::from(64));
+        assert_eq!(super::finish(Ok(())), std::process::ExitCode::SUCCESS);
+        assert_eq!(
+            super::finish(Err((70, "broker stopped".to_owned()))),
+            std::process::ExitCode::from(70)
         );
     }
 }
