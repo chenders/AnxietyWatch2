@@ -1126,19 +1126,31 @@ pub async fn air11_history_handler(
          )
          SELECT registry.name,
                 registry.unit,
-                (EXTRACT(epoch FROM time_bucket(INTERVAL '1 minute', s.timestamp)) * 1000000)::bigint,
+                (EXTRACT(epoch FROM time_bucket_gapfill(
+                    INTERVAL '1 minute', s.timestamp,
+                    start => latest_window.start_bucket,
+                    finish => now()
+                )) * 1000000)::bigint,
                 AVG(s.value),
                 MIN(s.value),
                 MAX(s.value),
-                COUNT(*)::bigint
+                COUNT(s.value)::bigint
          FROM samples AS s
          JOIN vitals_type AS registry ON registry.id = s.type
          CROSS JOIN latest_window
          WHERE s.source = $1
            AND latest_window.start_bucket IS NOT NULL
            AND s.timestamp >= latest_window.start_bucket
-         GROUP BY registry.name, registry.unit, time_bucket(INTERVAL '1 minute', s.timestamp)
-         ORDER BY registry.name, time_bucket(INTERVAL '1 minute', s.timestamp)"
+         GROUP BY registry.name, registry.unit, time_bucket_gapfill(
+             INTERVAL '1 minute', s.timestamp,
+             start => latest_window.start_bucket,
+             finish => now()
+         )
+         ORDER BY registry.name, time_bucket_gapfill(
+             INTERVAL '1 minute', s.timestamp,
+             start => latest_window.start_bucket,
+             finish => now()
+         )",
     )
     .bind(source)
     .bind(u8::try_from(window_hours).map_or(48, i32::from))
