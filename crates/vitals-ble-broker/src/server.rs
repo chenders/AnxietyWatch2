@@ -48,7 +48,7 @@ const QUEUED_ERROR: u8 = 5;
 type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 type BoxPayloadStream = Pin<Box<dyn Stream<Item = Vec<u8>> + Send>>;
 
-trait BrokerOwner: Send + 'static {
+trait OwnerOperations: Send + 'static {
     type Characteristic: Clone + Send + Sync + 'static;
 
     fn generation(&self) -> Generation;
@@ -106,7 +106,7 @@ trait BrokerOwner: Send + 'static {
     ) -> BoxFuture<'a, Result<(), crate::bluez::OwnerError>>;
 }
 
-impl BrokerOwner for LinuxBluezAdapterOwner {
+impl OwnerOperations for LinuxBluezAdapterOwner {
     type Characteristic = bluer::gatt::remote::Characteristic;
 
     fn generation(&self) -> Generation {
@@ -218,6 +218,10 @@ impl BrokerOwner for LinuxBluezAdapterOwner {
         ))
     }
 }
+
+trait BrokerOwner: OwnerOperations {}
+
+impl<T: OwnerOperations> BrokerOwner for T {}
 
 /// Configuration for one broker process.
 #[derive(Clone, Debug)]
@@ -1280,7 +1284,7 @@ fn usb_identity(path: &Path) -> (Option<String>, Option<(u16, u16)>) {
 #[cfg(test)]
 mod tests {
     use super::{
-        BoxFuture, BoxPayloadStream, BrokerOwner, BrokerState, ClientInfo, ClientMessage,
+        BoxFuture, BoxPayloadStream, BrokerState, ClientInfo, ClientMessage, OwnerOperations,
         cleanup_client, controller_inventory, deadline_after, parse_selector, physical_device_path,
         process_message,
     };
@@ -1312,7 +1316,7 @@ mod tests {
         }
     }
 
-    impl BrokerOwner for FakeOwner {
+    impl OwnerOperations for FakeOwner {
         type Characteristic = FakeCharacteristic;
 
         fn generation(&self) -> Generation {
