@@ -1313,6 +1313,31 @@ mod tests {
     }
 
     #[test]
+    fn private_protocol_codecs_reject_invalid_values_and_bounds() {
+        assert_eq!(decode_bool(2), Err(ProtocolError::InvalidPayload));
+        assert_eq!(source_from_code(99), Err(ProtocolError::InvalidPayload));
+        assert_eq!(intent_from_code(99), Err(ProtocolError::InvalidPayload));
+        assert_eq!(operation_from_code(99), Err(ProtocolError::InvalidPayload));
+        assert_eq!(
+            capabilities_from_bits(0x80),
+            Err(ProtocolError::UnknownCapabilityBits(0x80))
+        );
+        assert!(matches!(
+            bounded_length(MAX_STRING_BYTES + 1),
+            Err(ProtocolError::FrameTooLarge { .. })
+        ));
+        let mut writer = Writer::default();
+        assert!(writer.string(&"x".repeat(MAX_STRING_BYTES + 1)).is_err());
+        assert!(writer.bytes(&[1, 2, 3]).is_ok());
+        let mut reader = Reader::new(&[1, 2]);
+        assert_eq!(reader.take::<4>(), Err(ProtocolError::Truncated));
+        let mut reader = Reader::new(&[0, 0, 0, 2, 1]);
+        assert_eq!(reader.bytes_field(), Err(ProtocolError::Truncated));
+        let mut reader = Reader::new(&[1, 0]);
+        assert_eq!(reader.optional_string(), Err(ProtocolError::Truncated));
+    }
+
+    #[test]
     fn protocol_error_display_names_each_blocker() {
         let errors = [
             ProtocolError::FrameTooLarge { length: 2, max: 1 },
