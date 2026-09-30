@@ -1338,6 +1338,101 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::expect_used)]
+    fn codec_helpers_cover_success_and_frame_rejection_paths() {
+        for source in [
+            Source::Bp,
+            Source::H10,
+            Source::SleepO2,
+            Source::AirSense,
+            Source::Wellue,
+            Source::Diagnostics,
+        ] {
+            assert_eq!(source_from_code(source_code(source)), Ok(source));
+        }
+        for intent in [
+            Intent::KernelObserve,
+            Intent::Discover,
+            Intent::Connect,
+            Intent::Gatt,
+            Intent::Stream,
+            Intent::PowerRecovery,
+        ] {
+            assert_eq!(intent_from_code(intent_code(intent)), Ok(intent));
+        }
+        for kind in [
+            OperationKind::ObserveDevice,
+            OperationKind::DiscoverTarget,
+            OperationKind::Connect,
+            OperationKind::Resolve,
+            OperationKind::Subscribe,
+            OperationKind::Write,
+        ] {
+            assert_eq!(operation_from_code(operation_code(kind)), Ok(kind));
+        }
+        assert_eq!(decode_bool(0), Ok(false));
+        assert_eq!(decode_bool(1), Ok(true));
+
+        let mut writer = Writer::default();
+        writer.u8(7);
+        writer.u16(8);
+        writer.u64(9);
+        writer.optional_string(None).expect("test writer");
+        writer.optional_string(Some("ok")).expect("test writer");
+        writer.bytes(&[1, 2]).expect("test writer");
+        let bytes = writer.finish();
+        let mut reader = Reader::new(&bytes);
+        assert_eq!(reader.u8(), Ok(7));
+        assert_eq!(reader.u16(), Ok(8));
+        assert_eq!(reader.u64(), Ok(9));
+        assert_eq!(reader.optional_string(), Ok(None));
+        assert_eq!(reader.optional_string(), Ok(Some("ok".to_owned())));
+        assert_eq!(reader.bytes_field(), Ok(vec![1, 2]));
+        assert_eq!(reader.remaining(), 0);
+
+        assert!(matches!(
+            encode(&ClientMessage::Hello(Hello {
+                protocol_version: PROTOCOL_VERSION,
+                source: Source::H10,
+                adapter_selector: "x".repeat(MAX_STRING_BYTES + 1),
+                device_selector: None,
+                capabilities: CapabilitySet::empty(),
+            })),
+            Err(ProtocolError::FrameTooLarge { .. })
+        ));
+        assert_eq!(
+            decode(b"VBT1\0\x02\0\0\0\0\0"),
+            Err(ProtocolError::UnsupportedVersion(2))
+        );
+        let mut unknown_client = b"VBT1\0\x01\x7f\0\0\0\0".to_vec();
+        assert_eq!(
+            decode(&unknown_client),
+            Err(ProtocolError::UnknownKind(0x7f))
+        );
+        let Some(kind) = unknown_client.get_mut(6) else {
+            return;
+        };
+        *kind = 0;
+        assert_eq!(decode(&unknown_client), Err(ProtocolError::Truncated));
+        assert!(matches!(
+            encode_server(&ServerMessage::Error {
+                operation_id: 1,
+                code: 1,
+                detail: "x".repeat(MAX_STRING_BYTES + 1),
+            }),
+            Err(ProtocolError::FrameTooLarge { .. })
+        ));
+
+        let mut transport = FakeTransport::new(Generation::new(4), 4);
+        assert!(transport.accepted().is_empty());
+        assert!(transport.hello().is_none());
+        let handshake = encode(&hello(Source::H10, CapabilitySet::empty())).expect("test frame");
+        assert!(transport.send(&handshake).is_ok());
+        assert!(transport.hello().is_some());
+        assert_eq!(transport.accepted().len(), 0);
+    }
+
+    #[test]
     fn protocol_error_display_names_each_blocker() {
         let errors = [
             ProtocolError::FrameTooLarge { length: 2, max: 1 },
