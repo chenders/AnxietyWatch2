@@ -117,5 +117,7 @@ migration is accepted.
   existing read-only RPC, FIG, crypto, reconnect, journal, and status tests.
 - Static checks prove no `bluer`/BlueZ import remains in the AirSense worker and
   the unit contains no `hciN` identity.
+- `docs/TEST_SEAMS_EXPLAINED.md` documents the deterministic owner, protocol, client,
+  scheduler, and Linux-backend seams used to satisfy the 100% broker coverage gate.
 - Linux/Pi evidence is separate from host tests and is not claimed by this
   change's host verification.
