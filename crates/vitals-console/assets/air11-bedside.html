@@ -63,7 +63,7 @@
       const key = keyMap.get(series.name);
       if (!key || !Array.isArray(series.points)) continue;
       for (const point of series.points) {
-        if (!point || !Number.isFinite(Number(point.t_micros)) || !Number.isFinite(Number(point.value))) continue;
+        if (!point || !Number.isFinite(Number(point.t_micros)) || point.value == null || !Number.isFinite(Number(point.value))) continue;
         const t = Number(point.t_micros) / 1000000;
         const target = byTime.get(t) || { t };
         target[key] = Number(point.value);
