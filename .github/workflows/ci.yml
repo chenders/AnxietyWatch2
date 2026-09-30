@@ -302,9 +302,12 @@ jobs:
       # not with the one where it was first noticed.
       - name: Install D-Bus headers
         run: sudo apt-get update -qq && sudo apt-get install -y -qq libdbus-1-dev pkg-config
-      # Decoders are the highest-value and most testable code here, so they carry
-      # the hard gate. A flat workspace number would let untested decoder paths
-      # hide behind well-covered glue.
+      # The broker is an ownership and safety boundary. Every executable broker
+      # path must be deterministic and covered; a report-only gate is not enough.
+      - name: Coverage gate — vitals-ble-broker
+        run: cargo llvm-cov --package vitals-ble-broker --all-features --all-targets --fail-under-lines 100 --fail-under-functions 100 --fail-under-regions 100 --summary-only
+      # Decoders are the highest-value physiological code and retain their own
+      # hard gate rather than hiding behind workspace-wide glue coverage.
       - name: Coverage gate — vitals-decode
         run: cargo llvm-cov --package vitals-decode --fail-under-lines 90 --summary-only
       - name: Coverage report — workspace
