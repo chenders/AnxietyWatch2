@@ -9,9 +9,12 @@
 
 use std::{
     collections::{HashMap, HashSet},
-    fs, io,
+    fs,
+    future::Future,
+    io,
     os::unix::fs::{FileTypeExt as _, PermissionsExt as _},
     path::{Path, PathBuf},
+    pin::Pin,
     str::FromStr as _,
     sync::Arc,
     time::{Duration, Instant},
@@ -20,11 +23,11 @@ use std::{
 use crate::bluez::{ControllerBus, ControllerEvidence, ControllerSelector, LinuxBluezAdapterOwner};
 use crate::{
     Acquire, Capability, CapabilitySet, ClientMessage, DeviceId, Generation, Intent, Lease,
-    LeaseId, LeaseRequest, Operation, OperationKind, ProtocolError, Release, ServerMessage, Source,
-    encode_server,
+    LeaseId, LeaseRequest, Operation, OperationKind, ProtocolError, Release, ReleaseOutcome,
+    ServerMessage, Source, encode_server,
 };
 use futures::{
-    StreamExt as _,
+    Stream, StreamExt as _,
     future::{AbortHandle, Abortable},
 };
 use tokio::{
@@ -41,6 +44,180 @@ const OPERATION_ERROR: u8 = 2;
 const AUTH_ERROR: u8 = 3;
 const OWNER_ERROR: u8 = 4;
 const QUEUED_ERROR: u8 = 5;
+
+type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+type BoxPayloadStream = Pin<Box<dyn Stream<Item = Vec<u8>> + Send>>;
+
+trait BrokerOwner: Send + 'static {
+    type Characteristic: Clone + Send + Sync + 'static;
+
+    fn generation(&self) -> Generation;
+    fn acquire(
+        &mut self,
+        request: LeaseRequest,
+        now: crate::lease::Tick,
+    ) -> Result<crate::AcquireResult, crate::PolicyError>;
+    fn release(&mut self, lease: LeaseId, now: crate::lease::Tick) -> ReleaseOutcome;
+    fn cancel(&mut self, ticket: crate::lease::QueueTicket) -> bool;
+    fn health(
+        &self,
+    ) -> BoxFuture<'_, Result<crate::bluez::AdapterHealth, crate::bluez::OwnerError>>;
+    fn discover<'a>(
+        &'a self,
+        lease: &'a Lease,
+        filter: bluer::DiscoveryFilter,
+        target: Option<bluer::Address>,
+        duration: Duration,
+    ) -> BoxFuture<'a, Result<crate::bluez::DiscoveryReport, crate::bluez::OwnerError>>;
+    fn observe<'a>(
+        &'a self,
+        lease: &'a Lease,
+        address: bluer::Address,
+    ) -> BoxFuture<'a, Result<crate::bluez::DeviceObservation, crate::bluez::OwnerError>>;
+    fn connect<'a>(
+        &'a self,
+        lease: &'a Lease,
+        address: bluer::Address,
+        duration: Duration,
+    ) -> BoxFuture<'a, Result<(), crate::bluez::OwnerError>>;
+    fn disconnect<'a>(
+        &'a self,
+        lease: &'a Lease,
+        address: bluer::Address,
+    ) -> BoxFuture<'a, Result<(), crate::bluez::OwnerError>>;
+    fn resolve<'a>(
+        &'a self,
+        lease: &'a Lease,
+        address: bluer::Address,
+        service_uuid: bluer::Uuid,
+        characteristic_uuid: bluer::Uuid,
+    ) -> BoxFuture<'a, Result<Self::Characteristic, crate::bluez::OwnerError>>;
+    fn subscribe<'a>(
+        &'a self,
+        lease: &'a Lease,
+        characteristic: &'a Self::Characteristic,
+    ) -> BoxFuture<'a, Result<BoxPayloadStream, crate::bluez::OwnerError>>;
+    fn write<'a>(
+        &'a self,
+        lease: &'a Lease,
+        address: bluer::Address,
+        characteristic: &'a Self::Characteristic,
+        payload: &'a [u8],
+    ) -> BoxFuture<'a, Result<(), crate::bluez::OwnerError>>;
+}
+
+impl BrokerOwner for LinuxBluezAdapterOwner {
+    type Characteristic = bluer::gatt::remote::Characteristic;
+
+    fn generation(&self) -> Generation {
+        LinuxBluezAdapterOwner::generation(self)
+    }
+
+    fn acquire(
+        &mut self,
+        request: LeaseRequest,
+        now: crate::lease::Tick,
+    ) -> Result<crate::AcquireResult, crate::PolicyError> {
+        LinuxBluezAdapterOwner::acquire(self, request, now)
+    }
+
+    fn release(&mut self, lease: LeaseId, now: crate::lease::Tick) -> ReleaseOutcome {
+        LinuxBluezAdapterOwner::release(self, lease, now)
+    }
+
+    fn cancel(&mut self, ticket: crate::lease::QueueTicket) -> bool {
+        LinuxBluezAdapterOwner::cancel(self, ticket)
+    }
+
+    fn health(
+        &self,
+    ) -> BoxFuture<'_, Result<crate::bluez::AdapterHealth, crate::bluez::OwnerError>> {
+        Box::pin(LinuxBluezAdapterOwner::health(self))
+    }
+
+    fn discover<'a>(
+        &'a self,
+        lease: &'a Lease,
+        filter: bluer::DiscoveryFilter,
+        target: Option<bluer::Address>,
+        duration: Duration,
+    ) -> BoxFuture<'a, Result<crate::bluez::DiscoveryReport, crate::bluez::OwnerError>> {
+        Box::pin(LinuxBluezAdapterOwner::discover(
+            self, lease, filter, target, duration,
+        ))
+    }
+
+    fn observe<'a>(
+        &'a self,
+        lease: &'a Lease,
+        address: bluer::Address,
+    ) -> BoxFuture<'a, Result<crate::bluez::DeviceObservation, crate::bluez::OwnerError>> {
+        Box::pin(LinuxBluezAdapterOwner::observe(self, lease, address))
+    }
+
+    fn connect<'a>(
+        &'a self,
+        lease: &'a Lease,
+        address: bluer::Address,
+        duration: Duration,
+    ) -> BoxFuture<'a, Result<(), crate::bluez::OwnerError>> {
+        Box::pin(LinuxBluezAdapterOwner::connect(
+            self, lease, address, duration,
+        ))
+    }
+
+    fn disconnect<'a>(
+        &'a self,
+        lease: &'a Lease,
+        address: bluer::Address,
+    ) -> BoxFuture<'a, Result<(), crate::bluez::OwnerError>> {
+        Box::pin(LinuxBluezAdapterOwner::disconnect(self, lease, address))
+    }
+
+    fn resolve<'a>(
+        &'a self,
+        lease: &'a Lease,
+        address: bluer::Address,
+        service_uuid: bluer::Uuid,
+        characteristic_uuid: bluer::Uuid,
+    ) -> BoxFuture<'a, Result<Self::Characteristic, crate::bluez::OwnerError>> {
+        Box::pin(LinuxBluezAdapterOwner::resolve(
+            self,
+            lease,
+            address,
+            service_uuid,
+            characteristic_uuid,
+        ))
+    }
+
+    fn subscribe<'a>(
+        &'a self,
+        lease: &'a Lease,
+        characteristic: &'a Self::Characteristic,
+    ) -> BoxFuture<'a, Result<BoxPayloadStream, crate::bluez::OwnerError>> {
+        Box::pin(async move {
+            LinuxBluezAdapterOwner::subscribe(self, lease, characteristic)
+                .await
+                .map(|stream| Box::pin(stream) as BoxPayloadStream)
+        })
+    }
+
+    fn write<'a>(
+        &'a self,
+        lease: &'a Lease,
+        address: bluer::Address,
+        characteristic: &'a Self::Characteristic,
+        payload: &'a [u8],
+    ) -> BoxFuture<'a, Result<(), crate::bluez::OwnerError>> {
+        Box::pin(LinuxBluezAdapterOwner::write(
+            self,
+            lease,
+            address,
+            characteristic,
+            payload,
+        ))
+    }
+}
 
 /// Configuration for one broker process.
 #[derive(Clone, Debug)]
@@ -134,14 +311,14 @@ pub async fn run(config: BrokerConfig) -> Result<(), String> {
     }
 }
 
-struct BrokerState {
-    owner: Mutex<LinuxBluezAdapterOwner>,
+struct BrokerState<O: BrokerOwner> {
+    owner: Mutex<O>,
     selector_text: String,
     allowed_uid: Option<u32>,
     started: Instant,
     clients: Mutex<HashMap<u64, ClientInfo>>,
     leases: Mutex<HashMap<LeaseId, LeaseInfo>>,
-    handles: Mutex<HashMap<String, bluer::gatt::remote::Characteristic>>,
+    handles: Mutex<HashMap<String, O::Characteristic>>,
     operations: Mutex<HashMap<(u64, u64), AbortHandle>>,
     next_client: Mutex<u64>,
 }
@@ -160,7 +337,10 @@ struct LeaseInfo {
     address: Option<bluer::Address>,
 }
 
-async fn serve_client(stream: UnixStream, state: Arc<BrokerState>) -> Result<(), String> {
+async fn serve_client<O: BrokerOwner>(
+    stream: UnixStream,
+    state: Arc<BrokerState<O>>,
+) -> Result<(), String> {
     if let Some(expected_uid) = state.allowed_uid {
         let credentials = stream
             .peer_cred()
@@ -232,7 +412,10 @@ async fn serve_client(stream: UnixStream, state: Arc<BrokerState>) -> Result<(),
     result
 }
 
-fn validate_hello(state: &BrokerState, hello: &crate::Hello) -> Result<(), String> {
+fn validate_hello<O: BrokerOwner>(
+    state: &BrokerState<O>,
+    hello: &crate::Hello,
+) -> Result<(), String> {
     if hello.adapter_selector != state.selector_text {
         return Err(format!(
             "worker authentication rejected: adapter selector mismatch for source={:?}",
@@ -258,10 +441,10 @@ fn validate_hello(state: &BrokerState, hello: &crate::Hello) -> Result<(), Strin
     Ok(())
 }
 
-async fn process_message(
+async fn process_message<O: BrokerOwner>(
     client_id: u64,
     message: ClientMessage,
-    state: &Arc<BrokerState>,
+    state: &Arc<BrokerState<O>>,
     sender: &mpsc::Sender<ServerMessage>,
 ) -> Result<(), String> {
     match message {
@@ -299,10 +482,10 @@ async fn process_message(
 }
 
 #[allow(clippy::too_many_lines)]
-async fn acquire_lease(
+async fn acquire_lease<O: BrokerOwner>(
     client_id: u64,
     acquire: Acquire,
-    state: &Arc<BrokerState>,
+    state: &Arc<BrokerState<O>>,
     sender: &mpsc::Sender<ServerMessage>,
 ) -> Result<(), String> {
     let client = state
@@ -404,10 +587,10 @@ async fn acquire_lease(
     }
 }
 
-async fn start_operation(
+async fn start_operation<O: BrokerOwner>(
     client_id: u64,
     operation: Operation,
-    state: &Arc<BrokerState>,
+    state: &Arc<BrokerState<O>>,
     sender: &mpsc::Sender<ServerMessage>,
 ) -> Result<(), String> {
     let operation_id = operation.operation_id;
@@ -446,10 +629,10 @@ async fn start_operation(
     Ok(())
 }
 
-async fn cancel_operation(
+async fn cancel_operation<O: BrokerOwner>(
     client_id: u64,
     cancel: crate::Cancel,
-    state: &Arc<BrokerState>,
+    state: &Arc<BrokerState<O>>,
     sender: &mpsc::Sender<ServerMessage>,
 ) -> Result<(), String> {
     if let Err(error) = lease_info(client_id, cancel.lease_id, state).await {
@@ -476,10 +659,10 @@ async fn cancel_operation(
 }
 
 #[allow(clippy::too_many_lines)]
-async fn process_operation(
+async fn process_operation<O: BrokerOwner>(
     client_id: u64,
     operation: Operation,
-    state: &Arc<BrokerState>,
+    state: &Arc<BrokerState<O>>,
     sender: &mpsc::Sender<ServerMessage>,
 ) -> Result<(), String> {
     let info = match lease_info(client_id, operation.lease_id, state).await {
@@ -716,10 +899,10 @@ async fn process_operation(
     }
 }
 
-async fn release_lease(
+async fn release_lease<O: BrokerOwner>(
     client_id: u64,
     release: Release,
-    state: &Arc<BrokerState>,
+    state: &Arc<BrokerState<O>>,
     sender: &mpsc::Sender<ServerMessage>,
 ) -> Result<(), String> {
     let info = match lease_info(client_id, release.lease_id, state).await {
@@ -758,7 +941,7 @@ async fn release_lease(
     Ok(())
 }
 
-async fn cleanup_client(client_id: u64, state: &Arc<BrokerState>) {
+async fn cleanup_client<O: BrokerOwner>(client_id: u64, state: &Arc<BrokerState<O>>) {
     let operation_handles = {
         let mut operations = state.operations.lock().await;
         let keys: Vec<(u64, u64)> = operations
@@ -807,10 +990,10 @@ async fn cleanup_client(client_id: u64, state: &Arc<BrokerState>) {
         .retain(|handle, _| !handle.starts_with(&format!("c{client_id}-")));
 }
 
-async fn lease_info(
+async fn lease_info<O: BrokerOwner>(
     client_id: u64,
     lease_id: LeaseId,
-    state: &Arc<BrokerState>,
+    state: &Arc<BrokerState<O>>,
 ) -> Result<LeaseInfo, String> {
     state
         .leases
@@ -827,11 +1010,15 @@ async fn lease_info(
         })
 }
 
-async fn insert_lease(state: &Arc<BrokerState>, info: LeaseInfo) {
+async fn insert_lease<O: BrokerOwner>(state: &Arc<BrokerState<O>>, info: LeaseInfo) {
     state.leases.lock().await.insert(info.lease.id(), info);
 }
 
-async fn remove_lease(client_id: u64, lease_id: LeaseId, state: &Arc<BrokerState>) {
+async fn remove_lease<O: BrokerOwner>(
+    client_id: u64,
+    lease_id: LeaseId,
+    state: &Arc<BrokerState<O>>,
+) {
     state.leases.lock().await.remove(&lease_id);
     if let Some(client) = state.clients.lock().await.get_mut(&client_id) {
         client.leases.retain(|id| *id != lease_id);
@@ -1092,9 +1279,301 @@ fn usb_identity(path: &Path) -> (Option<String>, Option<(u16, u16)>) {
 
 #[cfg(test)]
 mod tests {
-    use super::{controller_inventory, deadline_after, parse_selector, physical_device_path};
-    use crate::bluez::ControllerBus;
-    use std::fs;
+    use super::{
+        BoxFuture, BoxPayloadStream, BrokerOwner, BrokerState, ClientInfo, ClientMessage,
+        cleanup_client, controller_inventory, deadline_after, parse_selector, physical_device_path,
+        process_message,
+    };
+    use crate::bluez::{
+        AdapterHealth, AdapterPolicy, ControllerBus, DeviceObservation, DiscoveryReport, OwnerError,
+    };
+    use crate::{
+        AcquireResult, Capability, CapabilitySet, Generation, Intent, LeaseRequest, Priority,
+        ServerMessage, Source,
+    };
+    use futures::stream;
+    use std::sync::Arc;
+    use std::time::Instant;
+    use std::{collections::HashMap, fs};
+    use tokio::sync::{Mutex, mpsc};
+
+    #[derive(Clone)]
+    struct FakeCharacteristic(u8);
+
+    struct FakeOwner {
+        policy: AdapterPolicy,
+    }
+
+    impl FakeOwner {
+        fn new() -> Self {
+            Self {
+                policy: AdapterPolicy::new(Generation::new(1)),
+            }
+        }
+    }
+
+    impl BrokerOwner for FakeOwner {
+        type Characteristic = FakeCharacteristic;
+
+        fn generation(&self) -> Generation {
+            self.policy.generation()
+        }
+
+        fn acquire(
+            &mut self,
+            request: LeaseRequest,
+            now: crate::lease::Tick,
+        ) -> Result<AcquireResult, crate::PolicyError> {
+            self.policy.acquire(request, now)
+        }
+
+        fn release(
+            &mut self,
+            lease: crate::LeaseId,
+            now: crate::lease::Tick,
+        ) -> crate::ReleaseOutcome {
+            self.policy.release(lease, now)
+        }
+
+        fn cancel(&mut self, ticket: crate::QueueTicket) -> bool {
+            self.policy.cancel(ticket)
+        }
+
+        fn health(&self) -> BoxFuture<'_, Result<AdapterHealth, OwnerError>> {
+            Box::pin(async {
+                Ok(AdapterHealth {
+                    generation: Generation::new(1),
+                    runtime_name: "fake".to_owned(),
+                    powered: true,
+                    discovering: false,
+                })
+            })
+        }
+
+        fn discover<'a>(
+            &'a self,
+            _lease: &'a crate::Lease,
+            _filter: bluer::DiscoveryFilter,
+            _target: Option<bluer::Address>,
+            _duration: std::time::Duration,
+        ) -> BoxFuture<'a, Result<DiscoveryReport, OwnerError>> {
+            Box::pin(async {
+                Ok(DiscoveryReport {
+                    events: 1,
+                    target_found: true,
+                    filter_restored: true,
+                })
+            })
+        }
+
+        fn observe<'a>(
+            &'a self,
+            _lease: &'a crate::Lease,
+            _address: bluer::Address,
+        ) -> BoxFuture<'a, Result<DeviceObservation, OwnerError>> {
+            Box::pin(async {
+                Ok(DeviceObservation {
+                    connected: true,
+                    services_resolved: true,
+                })
+            })
+        }
+
+        fn connect<'a>(
+            &'a self,
+            _lease: &'a crate::Lease,
+            _address: bluer::Address,
+            _duration: std::time::Duration,
+        ) -> BoxFuture<'a, Result<(), OwnerError>> {
+            Box::pin(async { Ok(()) })
+        }
+
+        fn disconnect<'a>(
+            &'a self,
+            _lease: &'a crate::Lease,
+            _address: bluer::Address,
+        ) -> BoxFuture<'a, Result<(), OwnerError>> {
+            Box::pin(async { Ok(()) })
+        }
+
+        fn resolve<'a>(
+            &'a self,
+            _lease: &'a crate::Lease,
+            _address: bluer::Address,
+            _service_uuid: bluer::Uuid,
+            _characteristic_uuid: bluer::Uuid,
+        ) -> BoxFuture<'a, Result<Self::Characteristic, OwnerError>> {
+            Box::pin(async { Ok(FakeCharacteristic(1)) })
+        }
+
+        fn subscribe<'a>(
+            &'a self,
+            _lease: &'a crate::Lease,
+            characteristic: &'a Self::Characteristic,
+        ) -> BoxFuture<'a, Result<BoxPayloadStream, OwnerError>> {
+            assert_eq!(characteristic.0, 1);
+            Box::pin(async {
+                Ok(Box::pin(stream::iter(vec![vec![1_u8, 2, 3]])) as BoxPayloadStream)
+            })
+        }
+
+        fn write<'a>(
+            &'a self,
+            _lease: &'a crate::Lease,
+            _address: bluer::Address,
+            characteristic: &'a Self::Characteristic,
+            _payload: &'a [u8],
+        ) -> BoxFuture<'a, Result<(), OwnerError>> {
+            assert_eq!(characteristic.0, 1);
+            Box::pin(async { Ok(()) })
+        }
+    }
+
+    fn fake_state() -> Arc<BrokerState<FakeOwner>> {
+        Arc::new(BrokerState {
+            owner: Mutex::new(FakeOwner::new()),
+            selector_text: "bus=usb;vid_pid=0a12:0001".to_owned(),
+            allowed_uid: None,
+            started: Instant::now(),
+            clients: Mutex::new(HashMap::new()),
+            leases: Mutex::new(HashMap::new()),
+            handles: Mutex::new(HashMap::new()),
+            operations: Mutex::new(HashMap::new()),
+            next_client: Mutex::new(1),
+        })
+    }
+
+    #[tokio::test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "the fake-owner dispatch fixture covers every typed operation"
+    )]
+    async fn fake_owner_exercises_successful_dispatch_and_cleanup() -> Result<(), String> {
+        let state = fake_state();
+        let capabilities = CapabilitySet::empty()
+            .with(Capability::KernelObserve)
+            .with(Capability::Discover)
+            .with(Capability::Connect)
+            .with(Capability::Resolve)
+            .with(Capability::Subscribe)
+            .with(Capability::Write);
+        state.clients.lock().await.insert(
+            1,
+            ClientInfo {
+                source: Source::H10,
+                capabilities,
+                leases: Vec::new(),
+            },
+        );
+        let (sender, mut responses) = mpsc::channel(32);
+        process_message(1, ClientMessage::Health, &state, &sender).await?;
+        assert!(matches!(
+            responses.recv().await,
+            Some(ServerMessage::Health { .. })
+        ));
+        let acquire = crate::Acquire {
+            source: Source::H10,
+            intent: Intent::Connect,
+            priority: Priority::new(2),
+            deadline: 30,
+            max_hold: 60,
+            preemptible: false,
+            device_selector: Some("AA:BB:CC:DD:EE:FF".to_owned()),
+            capabilities,
+            reason: "fake-owner test".to_owned(),
+        };
+        process_message(1, ClientMessage::Acquire(acquire), &state, &sender).await?;
+        let lease_id = match responses.recv().await {
+            Some(ServerMessage::LeaseGranted { lease_id, .. }) => lease_id,
+            other => return Err(format!("expected lease grant, got {other:?}")),
+        };
+        let address = "AA:BB:CC:DD:EE:FF";
+        let operation =
+            |operation_id: u64, kind: crate::OperationKind, target: &str| crate::Operation {
+                lease_id,
+                operation_id,
+                kind,
+                target: target.to_owned(),
+                payload: vec![4, 5],
+            };
+        for (operation_id, kind, target) in [
+            (1, crate::OperationKind::ObserveDevice, address),
+            (2, crate::OperationKind::DiscoverTarget, address),
+            (3, crate::OperationKind::Connect, address),
+            (
+                4,
+                crate::OperationKind::Resolve,
+                "0000180d-0000-1000-8000-00805f9b34fb|00002a37-0000-1000-8000-00805f9b34fb",
+            ),
+        ] {
+            process_message(
+                1,
+                ClientMessage::Operation(operation(operation_id, kind, target)),
+                &state,
+                &sender,
+            )
+            .await?;
+            let response = responses.recv().await.ok_or("operation response missing")?;
+            assert!(matches!(
+                response,
+                ServerMessage::DeviceState { .. }
+                    | ServerMessage::OperationAccepted { .. }
+                    | ServerMessage::Resolved { .. }
+            ));
+        }
+        process_message(
+            1,
+            ClientMessage::Operation(operation(5, crate::OperationKind::Subscribe, "c1-o4")),
+            &state,
+            &sender,
+        )
+        .await?;
+        assert!(matches!(
+            responses.recv().await,
+            Some(ServerMessage::OperationAccepted { operation_id: 5 })
+        ));
+        assert!(matches!(
+            responses.recv().await,
+            Some(ServerMessage::Frame {
+                operation_id: 5,
+                ..
+            })
+        ));
+        assert!(matches!(
+            responses.recv().await,
+            Some(ServerMessage::Disconnected {
+                operation_id: 5,
+                ..
+            })
+        ));
+        process_message(
+            1,
+            ClientMessage::Operation(operation(6, crate::OperationKind::Write, "c1-o4")),
+            &state,
+            &sender,
+        )
+        .await?;
+        assert!(matches!(
+            responses.recv().await,
+            Some(ServerMessage::OperationAccepted { operation_id: 6 })
+        ));
+        process_message(
+            1,
+            ClientMessage::Release(crate::Release {
+                lease_id,
+                reason: "finished".to_owned(),
+            }),
+            &state,
+            &sender,
+        )
+        .await?;
+        assert!(matches!(
+            responses.recv().await,
+            Some(ServerMessage::Released { lease_id: released }) if released == lease_id
+        ));
+        cleanup_client(1, &state).await;
+        Ok(())
+    }
 
     #[test]
     fn physical_device_path_collapses_bluetooth_interface_aliases() -> std::io::Result<()> {
