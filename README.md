@@ -117,7 +117,7 @@ cargo clippy --workspace --all-targets --all-features -- -D warnings
 Build the AirSense executables explicitly when only that integration is being staged:
 
 ```sh
-cargo build --release -p vitals-collectors \\
+cargo build --release -p vitals-collectors \
   --bin resmed-air11-collector --bin resmed-air11-onboard
 ```
 
@@ -132,11 +132,11 @@ python3 vitals/tools/gen_registry.py --check
 The allowlisted installer copies only the collector, onboarding utility, or fixed systemd unit. It uses a temporary remote directory and installs root-owned files at fixed destinations. Run it from the repository after building:
 
 ```sh
-PI_HOST=vitals@<pi-host> PI_PATH=/path/to/checkout \\
+PI_HOST=vitals@<pi-host> PI_PATH=/path/to/checkout \
   scripts/install-air11-pi-artifact.sh collector
-PI_HOST=vitals@<pi-host> PI_PATH=/path/to/checkout \\
+PI_HOST=vitals@<pi-host> PI_PATH=/path/to/checkout \
   scripts/install-air11-pi-artifact.sh onboard
-PI_HOST=vitals@<pi-host> PI_PATH=/path/to/checkout \\
+PI_HOST=vitals@<pi-host> PI_PATH=/path/to/checkout \
   scripts/install-air11-pi-artifact.sh unit
 ```
 
@@ -162,10 +162,10 @@ It must be a regular owner-readable file with no group/other permissions, normal
 If the target address is already known, continue to the readiness check. If bounded discovery or first pairing is explicitly authorized, run the installed utility interactively:
 
 ```sh
-sudo -u vitals -H -- resmed-air11-onboard discover --adapter hci0 --duration 30 \\
+sudo -u vitals -H -- resmed-air11-onboard discover --adapter hci0 --duration 30 \
   --credentials /var/lib/vitals/.air11/air11-credentials.json
 # or, for an explicitly authorized first-pair flow:
-sudo -u vitals -H -- resmed-air11-onboard pair --adapter hci0 --duration 30 \\
+sudo -u vitals -H -- resmed-air11-onboard pair --adapter hci0 --duration 30 \
   --credentials /var/lib/vitals/.air11/air11-credentials.json
 ```
 
