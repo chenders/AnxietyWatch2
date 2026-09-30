@@ -887,6 +887,100 @@ mod runtime {
     }
 
     pub use BluezAdapterOwner as LinuxBluezAdapterOwner;
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use crate::bluez::ControllerBus;
+
+        fn error(kind: bluer::ErrorKind) -> bluer::Error {
+            bluer::Error {
+                kind,
+                message: String::new(),
+            }
+        }
+
+        #[test]
+        fn classify_bluer_errors_preserves_safety_categories() {
+            for kind in [bluer::ErrorKind::NotFound, bluer::ErrorKind::DoesNotExist] {
+                assert_eq!(
+                    classify_bluer_error(&error(kind)),
+                    BluezFailureClass::DeviceMissing
+                );
+            }
+            assert_eq!(
+                classify_bluer_error(&error(bluer::ErrorKind::DiscoveryActive)),
+                BluezFailureClass::DiscoveryBusy
+            );
+            assert_eq!(
+                classify_bluer_error(&error(bluer::ErrorKind::ServicesUnresolved)),
+                BluezFailureClass::ServicesUnresolved
+            );
+            for kind in [
+                bluer::ErrorKind::ConnectionAttemptFailed,
+                bluer::ErrorKind::AuthenticationCanceled,
+                bluer::ErrorKind::AuthenticationFailed,
+                bluer::ErrorKind::AuthenticationRejected,
+                bluer::ErrorKind::AuthenticationTimeout,
+                bluer::ErrorKind::InProgress,
+                bluer::ErrorKind::NotReady,
+            ] {
+                assert_eq!(
+                    classify_bluer_error(&error(kind)),
+                    BluezFailureClass::ConnectRejected
+                );
+            }
+            assert_eq!(
+                classify_bluer_error(&error(bluer::ErrorKind::Internal(
+                    bluer::InternalErrorKind::DBusConnectionLost,
+                ))),
+                BluezFailureClass::ControllerLost
+            );
+            for kind in [
+                bluer::ErrorKind::NotAvailable,
+                bluer::ErrorKind::Internal(bluer::InternalErrorKind::InvalidValue),
+            ] {
+                assert_eq!(
+                    classify_bluer_error(&error(kind)),
+                    BluezFailureClass::DaemonUnavailable
+                );
+            }
+            for kind in [
+                bluer::ErrorKind::NotPermitted,
+                bluer::ErrorKind::NotAuthorized,
+                bluer::ErrorKind::NotSupported,
+            ] {
+                assert_eq!(
+                    classify_bluer_error(&error(kind)),
+                    BluezFailureClass::GattRejected
+                );
+            }
+            assert_eq!(
+                classify_bluer_error(&error(bluer::ErrorKind::AlreadyConnected)),
+                BluezFailureClass::Unknown
+            );
+        }
+
+        #[tokio::test]
+        async fn open_rejects_a_resolved_runtime_alias_that_is_not_present() {
+            let selector = ControllerSelector {
+                address: Some("controller-that-is-not-present".to_owned()),
+                ..ControllerSelector::default()
+            };
+            let inventory = [ControllerEvidence {
+                runtime_name: "alias-that-is-not-present".to_owned(),
+                address: Some("controller-that-is-not-present".to_owned()),
+                sysfs_path: None,
+                serial: None,
+                bus: ControllerBus::Other,
+                vid_pid: None,
+            }];
+            assert!(matches!(
+                BluezAdapterOwner::open(&selector, &inventory, Generation::new(1)).await,
+                Err(OpenError::Bluez { .. })
+            ));
+        }
+    }
 }
 
 #[cfg(all(feature = "linux", target_os = "linux"))]
