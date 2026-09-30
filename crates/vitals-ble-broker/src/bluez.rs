@@ -997,6 +997,7 @@ mod runtime {
             };
             assert_eq!(owner.generation(), Generation::new(1));
             assert!(!owner.controller().runtime_name.is_empty());
+            let _ = owner.health().await;
             let request = LeaseRequest::new(
                 crate::Source::Diagnostics,
                 crate::Intent::PowerRecovery,
