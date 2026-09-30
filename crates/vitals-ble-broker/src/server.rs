@@ -1092,7 +1092,8 @@ fn usb_identity(path: &Path) -> (Option<String>, Option<(u16, u16)>) {
 
 #[cfg(test)]
 mod tests {
-    use super::{deadline_after, physical_device_path};
+    use super::{controller_inventory, deadline_after, parse_selector, physical_device_path};
+    use crate::bluez::ControllerBus;
     use std::fs;
 
     #[test]
@@ -1104,6 +1105,67 @@ mod tests {
         fs::write(root.join("idVendor"), "0a12\n")?;
         fs::write(root.join("idProduct"), "0001\n")?;
         assert_eq!(physical_device_path(&interface), root);
+        fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn selector_parser_accepts_stable_fields_and_rejects_ambiguous_input()
+    -> Result<(), &'static str> {
+        assert!(parse_selector("").is_err());
+        assert!(parse_selector("not-an-address").is_err());
+        assert!(parse_selector("AA:BB:CC:DD:EE:FF").is_ok());
+        let selector = parse_selector(
+            "address=AA:BB:CC:DD:EE:FF;sysfs_path=/sys/devices/usb;serial=serial;bus=usb;vid_pid=0a12:0001",
+        )
+        .map_err(|_| "fixed selector fixture")?;
+        assert_eq!(selector.address.as_deref(), Some("AA:BB:CC:DD:EE:FF"));
+        assert_eq!(selector.bus, Some(ControllerBus::Usb));
+        assert_eq!(selector.vid_pid, Some((0x0a12, 1)));
+        assert!(parse_selector("sysfs_path=").is_err());
+        assert!(parse_selector("unknown=value").is_err());
+        assert!(parse_selector("bus=unknown").is_err());
+        assert!(parse_selector("vid_pid=0001").is_err());
+        assert!(parse_selector("vid_pid=zzzz:0001").is_err());
+        assert!(parse_selector("address=not-an-address").is_err());
+        assert!(parse_selector("bus=usb").is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn inventory_deduplicates_runtime_aliases_by_physical_device() -> std::io::Result<()> {
+        let root = std::env::temp_dir().join(format!(
+            "vitals-ble-broker-inventory-{}",
+            std::process::id()
+        ));
+        let usb = root.join("devices/usb/1-1");
+        let uart = root.join("devices/serial/ttyS0");
+        fs::create_dir_all(&usb)?;
+        fs::create_dir_all(&uart)?;
+        fs::write(usb.join("idVendor"), "0a12\n")?;
+        fs::write(usb.join("idProduct"), "0001\n")?;
+        fs::write(usb.join("serial"), "usb-serial\n")?;
+        for name in ["hci0", "hci0:77"] {
+            let class = root.join(name);
+            fs::create_dir_all(&class)?;
+            std::os::unix::fs::symlink(&usb, class.join("device"))?;
+            fs::write(class.join("address"), "AA:BB:CC:DD:EE:FF\n")?;
+        }
+        let class = root.join("hci1");
+        fs::create_dir_all(&class)?;
+        std::os::unix::fs::symlink(&uart, class.join("device"))?;
+        let records = controller_inventory(&root)?;
+        assert_eq!(records.len(), 2);
+        assert!(
+            records
+                .iter()
+                .any(|record| record.bus == ControllerBus::Usb)
+        );
+        assert!(
+            records
+                .iter()
+                .any(|record| record.bus == ControllerBus::Uart)
+        );
         fs::remove_dir_all(root)?;
         Ok(())
     }
