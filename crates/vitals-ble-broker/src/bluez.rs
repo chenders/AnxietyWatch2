@@ -962,6 +962,95 @@ mod runtime {
         }
 
         #[tokio::test]
+        async fn owner_policy_and_lease_guards_run_against_the_selected_adapter() {
+            let Ok(inventory) = std::fs::read_dir("/sys/class/bluetooth") else {
+                return;
+            };
+            let Some(name) = inventory
+                .filter_map(Result::ok)
+                .map(|entry| entry.file_name().to_string_lossy().into_owned())
+                .find(|name| name.starts_with("hci") && !name.contains(':'))
+            else {
+                return;
+            };
+            let address =
+                match std::fs::read_to_string(format!("/sys/class/bluetooth/{name}/address")) {
+                    Ok(address) => address.trim().to_owned(),
+                    Err(_) => return,
+                };
+            let evidence = ControllerEvidence {
+                runtime_name: name,
+                address: Some(address.clone()),
+                sysfs_path: None,
+                serial: None,
+                bus: ControllerBus::Other,
+                vid_pid: None,
+            };
+            let selector = ControllerSelector {
+                address: Some(address),
+                ..ControllerSelector::default()
+            };
+            let Ok(mut owner) =
+                BluezAdapterOwner::open(&selector, &[evidence], Generation::new(1)).await
+            else {
+                return;
+            };
+            assert_eq!(owner.generation(), Generation::new(1));
+            assert!(!owner.controller().runtime_name.is_empty());
+            let request = LeaseRequest::new(
+                crate::Source::Diagnostics,
+                crate::Intent::PowerRecovery,
+                crate::Priority::new(1),
+                10,
+                10,
+                None,
+                crate::CapabilitySet::empty(),
+            );
+            let Ok(AcquireResult::Granted(lease)) = owner.acquire(request, 0) else {
+                return;
+            };
+            let stale = lease;
+            assert!(owner.release(stale.id(), 1).granted.is_empty());
+            assert!(matches!(
+                owner.set_powered(&stale, true).await,
+                Err(OwnerError::LeaseNotOwned { .. })
+            ));
+            assert!(matches!(
+                owner
+                    .observe(&stale, Address::new([1, 2, 3, 4, 5, 6]))
+                    .await,
+                Err(OwnerError::LeaseNotOwned { .. })
+            ));
+            assert!(matches!(
+                owner
+                    .connect(
+                        &stale,
+                        Address::new([1, 2, 3, 4, 5, 6]),
+                        Duration::from_millis(1)
+                    )
+                    .await,
+                Err(OwnerError::LeaseNotOwned { .. })
+            ));
+            assert!(matches!(
+                owner
+                    .disconnect(&stale, Address::new([1, 2, 3, 4, 5, 6]))
+                    .await,
+                Err(OwnerError::LeaseNotOwned { .. })
+            ));
+            assert!(matches!(
+                owner
+                    .resolve(
+                        &stale,
+                        Address::new([1, 2, 3, 4, 5, 6]),
+                        bluer::Uuid::nil(),
+                        bluer::Uuid::nil()
+                    )
+                    .await,
+                Err(OwnerError::LeaseNotOwned { .. })
+            ));
+        }
+
+        #[tokio::test]
         async fn open_rejects_a_resolved_runtime_alias_that_is_not_present() {
             let selector = ControllerSelector {
                 address: Some("controller-that-is-not-present".to_owned()),
