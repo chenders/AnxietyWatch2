@@ -10,11 +10,11 @@ follows amendments 01, 02, 04, 05, 06, 07, 10, 11, and 12. It supersedes the
 old direct-BlueZ transport assumption in the AirSense stream design only where
 it conflicts with the broker ownership decision.
 
-- [ ] T-A11-BROKER-0 — Publish the broker migration contract and design · documentation · host either
-- [ ] T-A11-BROKER-1 — Expose bounded discovery and write operations in the broker client · implement-complex · host/Linux
+- [x] T-A11-BROKER-0 — Publish the broker migration contract and design · documentation · host either
+- [x] T-A11-BROKER-1 — Expose bounded discovery and write operations in the broker client · implement-complex · host/Linux
 - [ ] T-A11-BROKER-COV — Enforce 100% executable broker coverage · implement-complex · Linux/CI
-- [ ] T-A11-BROKER-2 — Replace direct AirSense BlueZ transport with the broker lease · implement-complex · Linux/Pi for transport, either for tests
-- [ ] T-A11-BROKER-3 — Update stable-selector deployment and direct-owner gates · implement-standard · host either
+- [x] T-A11-BROKER-2 — Replace direct AirSense BlueZ transport with the broker lease · implement-complex · Linux/Pi for transport, either for tests
+- [x] T-A11-BROKER-3 — Update stable-selector deployment and direct-owner gates · implement-standard · host either
 - [ ] T-A11-BROKER-4 — Run broker transport and offline acceptance checks · implement-complex · host; Pi separately
 
 ## T-A11-BROKER-0 — Publish the broker migration contract and design
