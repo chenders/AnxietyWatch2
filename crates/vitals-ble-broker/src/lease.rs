@@ -1191,4 +1191,111 @@ mod tests {
         assert!(scheduler.active().is_empty());
         assert_eq!(scheduler.queued_len(), 0);
     }
+
+    #[test]
+    fn lease_contract_accessors_and_blocker_messages_are_exhaustive() {
+        let lease_request = request(Source::AirSense, Intent::Gatt, 7, Some("peer"));
+        assert_eq!(lease_request.source(), Source::AirSense);
+        assert_eq!(lease_request.intent(), Intent::Gatt);
+        assert_eq!(lease_request.priority(), Priority::new(7));
+        assert_eq!(lease_request.deadline(), 100);
+        assert_eq!(lease_request.max_hold(), 20);
+        assert_eq!(lease_request.device().map(DeviceId::as_str), Some("peer"));
+        assert_eq!(lease_request.capabilities(), CapabilitySet::empty());
+        assert!(!lease_request.is_preemptible());
+        assert_eq!(lease_request.reason(), "test request");
+
+        let mut scheduler = LeaseScheduler::new(Generation::new(3));
+        let granted = scheduler.acquire(lease_request.clone(), 4);
+        let Ok(AcquireResult::Granted(lease)) = granted else {
+            return;
+        };
+        assert_eq!(lease.id().value(), 1);
+        assert_eq!(lease.source(), Source::AirSense);
+        assert_eq!(lease.intent(), Intent::Gatt);
+        assert_eq!(lease.priority(), Priority::new(7));
+        assert_eq!(lease.generation(), Generation::new(3));
+        assert_eq!(lease.acquired_at(), 4);
+        assert_eq!(lease.expires_at(), 24);
+        assert_eq!(lease.device().map(DeviceId::as_str), Some("peer"));
+        assert_eq!(lease.reason(), "test request");
+        assert!(!lease.is_preemptible());
+
+        let queued = scheduler.acquire(
+            request(Source::Diagnostics, Intent::Gatt, 1, Some("peer")),
+            5,
+        );
+        assert!(matches!(queued, Ok(AcquireResult::Queued { .. })));
+        assert!(AcquireResult::Granted(lease.clone()).lease().is_some());
+        if let Ok(AcquireResult::Queued { ticket, .. }) = queued {
+            assert_eq!(ticket.value(), 1);
+            assert!(
+                AcquireResult::Queued {
+                    ticket,
+                    blocker: NamedBlocker::DiscoveryOwned {
+                        owner: lease.id(),
+                        generation: lease.generation(),
+                        deadline: lease.expires_at(),
+                    },
+                }
+                .lease()
+                .is_none()
+            );
+            assert_eq!(
+                AcquireResult::Queued {
+                    ticket,
+                    blocker: NamedBlocker::DiscoveryOwned {
+                        owner: lease.id(),
+                        generation: lease.generation(),
+                        deadline: lease.expires_at(),
+                    },
+                }
+                .ticket(),
+                Some(ticket)
+            );
+        }
+
+        for blocker in [
+            NamedBlocker::DiscoveryOwned {
+                owner: lease.id(),
+                generation: lease.generation(),
+                deadline: lease.expires_at(),
+            },
+            NamedBlocker::ConnectAdmissionOwned {
+                owner: lease.id(),
+                generation: lease.generation(),
+                deadline: lease.expires_at(),
+            },
+            NamedBlocker::DeviceOwned {
+                owner: lease.id(),
+                generation: lease.generation(),
+                deadline: lease.expires_at(),
+            },
+            NamedBlocker::RecoveryOwned {
+                owner: lease.id(),
+                generation: lease.generation(),
+                deadline: lease.expires_at(),
+            },
+        ] {
+            assert!(!blocker.to_string().is_empty());
+        }
+        for error in [
+            PolicyError::DeadlineExpired {
+                now: 5,
+                deadline: 4,
+            },
+            PolicyError::ZeroHold,
+            PolicyError::BpConnectForbidden,
+            PolicyError::WellueDisabled,
+            PolicyError::RecoveryNotAuthorized {
+                source: Source::H10,
+            },
+            PolicyError::GenerationNotAdvanced {
+                current: Generation::new(3),
+                requested: Generation::new(2),
+            },
+        ] {
+            assert!(!error.to_string().is_empty());
+        }
+    }
 }
