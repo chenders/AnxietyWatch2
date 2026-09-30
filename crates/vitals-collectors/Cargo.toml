@@ -8,6 +8,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+vitals-ble-broker = { path = "../vitals-ble-broker", features = ["linux"] }
 vitals-core = { path = "../vitals-core" }
 vitals-decode = { path = "../vitals-decode" }
 vitals-proto = { path = "../vitals-proto" }

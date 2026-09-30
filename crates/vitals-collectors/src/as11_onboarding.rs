@@ -525,8 +525,8 @@ mod linux {
         PAIRING_RESPONSE_TIMEOUT, PairingConfirmation, PairingRequest, PairingResponse,
         PairingStart, parse_pairing_response,
     };
-    use crate::as11_bluez::{self, BluezError};
     use crate::as11_config::normalize_linux_target;
+    use crate::as11_onboarding_bluez::{self, BluezError};
 
     const DEVICE_NAME_PREFIX: &str = "ResMed";
 
@@ -734,12 +734,11 @@ mod linux {
             if !bounded("connection_state", device.is_connected()).await? {
                 bounded("gatt_connect", device.connect()).await?;
             }
-            let (tx, rx, mtu, write_op) =
-                as11_bluez::resolve_pipe(&device)
-                    .await
-                    .map_err(|_| OnboardingError::Bluez {
-                        operation: "gatt_service_resolution",
-                    })?;
+            let (tx, rx, mtu, write_op) = as11_onboarding_bluez::resolve_pipe(&device)
+                .await
+                .map_err(|_| OnboardingError::Bluez {
+                    operation: "gatt_service_resolution",
+                })?;
             let notifications = bounded("rx_subscribe", rx.notify()).await?;
             Ok(Self {
                 device,
@@ -815,11 +814,11 @@ mod linux {
             &mut self,
             request: &PairingRequest,
         ) -> Result<PairingResponse, OnboardingError> {
-            let packet = as11_bluez::encode_fig(PAIRING_REQUEST_VCID, request.payload())
+            let packet = as11_onboarding_bluez::encode_fig(PAIRING_REQUEST_VCID, request.payload())
                 .map_err(|_| OnboardingError::PairingTransport)?;
             match timeout(
                 PAIRING_OPERATION_TIMEOUT,
-                as11_bluez::write_packet(&self.tx, &packet, self.mtu, self.write_op),
+                as11_onboarding_bluez::write_packet(&self.tx, &packet, self.mtu, self.write_op),
             )
             .await
             {

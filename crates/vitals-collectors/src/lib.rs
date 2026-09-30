@@ -4,12 +4,15 @@
 //! sample-building gates live here so they compile and test anywhere.
 
 #[cfg(target_os = "linux")]
-pub mod as11_bluez;
+pub mod as11_broker;
 pub mod as11_build;
+#[cfg(target_os = "linux")]
+pub mod as11_common;
 pub mod as11_config;
 pub mod as11_crypto;
 pub mod as11_journal;
 pub mod as11_onboarding;
+mod as11_onboarding_bluez;
 pub mod as11_rpc;
 pub mod as11_session;
 pub mod as11_status;

@@ -6,6 +6,8 @@
 //! have the fixed parameter shape, and a forbidden method must be rejected
 //! before the transport is called.
 
+use std::{future::Future, pin::Pin};
+
 use serde::{
     Deserializer,
     de::{self, MapAccess, Visitor},
@@ -371,6 +373,22 @@ pub trait RpcTransport {
     fn write(&mut self, vcid: u16, payload: &[u8]) -> Result<(), Self::Error>;
 }
 
+/// A transport that can perform one final asynchronous FIG/GATT write.
+pub trait AsyncRpcTransport {
+    /// The transport-specific failure type.
+    type Error;
+
+    /// Writes one already-framed-lane JSON body.
+    ///
+    /// # Errors
+    /// Returns the transport-specific failure when the underlying GATT write fails.
+    fn write<'a>(
+        &'a mut self,
+        vcid: u16,
+        payload: &'a [u8],
+    ) -> Pin<Box<dyn Future<Output = Result<(), Self::Error>> + Send + 'a>>;
+}
+
 /// A final send boundary that enforces the read-only method allowlist.
 pub struct ReadOnlyRpcLink<T> {
     transport: T,
@@ -431,6 +449,26 @@ where
             .map(|()| {
                 let _ = method;
             })
+    }
+}
+
+impl<T> ReadOnlyRpcLink<T>
+where
+    T: AsyncRpcTransport,
+{
+    /// Validates and asynchronously sends one typed, allowlisted request.
+    ///
+    /// # Errors
+    /// Returns [`RpcSendError::Rejected`] before any transport call when the
+    /// request body is malformed or not allowlisted. Returns
+    /// [`RpcSendError::Transport`] when the asynchronous transport fails.
+    pub async fn send_async(&mut self, request: &RpcRequest) -> Result<(), RpcSendError<T::Error>> {
+        validate_wire_request(&request.payload, Some(request.method), Some(request.id))
+            .map_err(RpcSendError::Rejected)?;
+        self.transport
+            .write(request.request_vcid(), &request.payload)
+            .await
+            .map_err(RpcSendError::Transport)
     }
 }
 

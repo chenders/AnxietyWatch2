@@ -1,8 +1,8 @@
 //! Read-only Linux `AirSense` 11 stream collector.
 //!
 //! The portable configuration, journal, status, identity, and sample policy
-//! live in the library. This binary owns only `BlueZ`, the bounded raw journal,
-//! and the existing `vitalsd` socket path. It never opens `PostgreSQL` and never
+//! live in the library. This binary owns only the broker lease, bounded raw
+//! journal, and existing `vitalsd` socket path. It never opens `PostgreSQL` and never
 //! sends a control, pairing, reset, erase, OTA, or assumed `StopStream` RPC.
 
 #[cfg(not(target_os = "linux"))]
@@ -25,7 +25,7 @@ use tokio::net::UnixStream;
 use tokio::signal::unix::{SignalKind, signal};
 #[cfg(target_os = "linux")]
 use vitals_collectors::{
-    as11_bluez::Air11BleTransport,
+    as11_broker::Air11BleTransport,
     as11_build::Air11SampleBuilder,
     as11_config::{self, Air11Credentials},
     as11_journal::RawJournal,
@@ -67,7 +67,8 @@ async fn main() {
 #[cfg(target_os = "linux")]
 struct Options {
     credentials_path: PathBuf,
-    adapter: String,
+    adapter_selector: String,
+    broker_socket: PathBuf,
     state_dir: PathBuf,
     socket: PathBuf,
     status_path: PathBuf,
@@ -334,16 +335,21 @@ fn publish_status(path: &Path, status: &Air11Status) -> Result<(), FatalFailure>
 #[cfg(target_os = "linux")]
 impl Collector {
     async fn collect_connection(&mut self) -> Result<ConnectionOutcome, FatalFailure> {
-        let mut transport =
-            match Air11BleTransport::connect(&self.credentials, &self.options.adapter).await {
-                Ok(transport) => transport,
-                Err(error) => {
-                    return Ok(ConnectionOutcome::Lost(ConnectionLost {
-                        detail: format!("AirSense connection failed: {error}"),
-                        reconnect_succeeded: false,
-                    }));
-                }
-            };
+        let mut transport = match Air11BleTransport::connect(
+            &self.credentials,
+            &self.options.broker_socket,
+            &self.options.adapter_selector,
+        )
+        .await
+        {
+            Ok(transport) => transport,
+            Err(error) => {
+                return Ok(ConnectionOutcome::Lost(ConnectionLost {
+                    detail: format!("AirSense connection failed: {error}"),
+                    reconnect_succeeded: false,
+                }));
+            }
+        };
         self.status.link_state = LinkState::Connected;
         self.status.blocker = None;
         self.publish()?;
@@ -462,7 +468,7 @@ impl Collector {
         self.publish()?;
 
         if let Some(frame) = decode_event(&envelope) {
-            self.process_event_frame(frame, receipt_unix_micros)?;
+            self.process_event_frame(&frame, receipt_unix_micros)?;
             return self.publish();
         }
         let Some(frame) = decode_stream(&envelope) else {
@@ -515,7 +521,7 @@ impl Collector {
 
     fn process_event_frame(
         &mut self,
-        frame: EventFrame,
+        frame: &EventFrame,
         receipt_unix_micros: i64,
     ) -> Result<(), FatalFailure> {
         self.status.event_notifications = self.status.event_notifications.saturating_add(1);
@@ -631,7 +637,7 @@ impl Collector {
                 VitalsType::RespiratoryRate => self.status.latest.respiratory_rate = Some(latest),
                 VitalsType::Leak => self.status.latest.leak_lpm = Some(latest),
                 VitalsType::MaskPressure | VitalsType::MaskPressure2s => {
-                    self.status.latest.pressure_cmh2o = Some(latest)
+                    self.status.latest.pressure_cmh2o = Some(latest);
                 }
                 _ => {}
             }
@@ -706,7 +712,11 @@ async fn append_samples(socket: &Path, samples: Vec<WireSample>) -> Result<usize
 fn parse_options() -> Result<Options, String> {
     let mut credentials_path =
         as11_config::default_credentials_path().map_err(|error| error.to_string())?;
-    let mut adapter = String::from("hci0");
+    let mut adapter_selector = std::env::var("VITALS_BLE_ADAPTER_SELECTOR").unwrap_or_default();
+    let mut broker_socket = PathBuf::from(
+        std::env::var("VITALS_BLE_BROKER_SOCKET")
+            .unwrap_or_else(|_| "/run/vitals/ble-broker.sock".to_owned()),
+    );
     let mut state_dir = PathBuf::from(DEFAULT_STATE_DIR);
     let mut socket = PathBuf::from(DEFAULT_VITALSD_SOCKET);
     let mut status_path = None;
@@ -722,16 +732,22 @@ fn parse_options() -> Result<Options, String> {
                     .ok_or_else(|| "--credentials requires a path".to_owned())?;
                 credentials_path = PathBuf::from(path);
             }
-            "--adapter" => {
-                let name = args
+            "--adapter-selector" => {
+                let selector = args
                     .next()
-                    .ok_or_else(|| "--adapter requires a name".to_owned())?;
-                adapter = name
+                    .ok_or_else(|| "--adapter-selector requires a selector".to_owned())?;
+                adapter_selector = selector
                     .into_string()
-                    .map_err(|_| "--adapter name is not UTF-8".to_owned())?;
-                if adapter.is_empty() {
-                    return Err("--adapter cannot be empty".to_owned());
+                    .map_err(|_| "--adapter-selector is not UTF-8".to_owned())?;
+                if adapter_selector.is_empty() {
+                    return Err("--adapter-selector cannot be empty".to_owned());
                 }
+            }
+            "--broker-socket" => {
+                let path = args
+                    .next()
+                    .ok_or_else(|| "--broker-socket requires a path".to_owned())?;
+                broker_socket = PathBuf::from(path);
             }
             "--state-dir" => {
                 let path = args
@@ -753,17 +769,21 @@ fn parse_options() -> Result<Options, String> {
             }
             "--help" => {
                 println!(
-                    "usage: resmed-air11-collector [--credentials PATH] [--adapter NAME] [--state-dir PATH] [--socket PATH] [--status PATH]"
+                    "usage: resmed-air11-collector [--credentials PATH] [--adapter-selector SELECTOR] [--broker-socket PATH] [--state-dir PATH] [--socket PATH] [--status PATH]"
                 );
                 std::process::exit(0);
             }
             _ => return Err(format!("unknown option={argument}")),
         }
     }
+    if adapter_selector.is_empty() {
+        return Err("stable adapter selector is required via --adapter-selector or VITALS_BLE_ADAPTER_SELECTOR".to_owned());
+    }
     let status_path = status_path.unwrap_or_else(|| state_dir.join("status.json"));
     Ok(Options {
         credentials_path,
-        adapter,
+        adapter_selector,
+        broker_socket,
         state_dir,
         socket,
         status_path,

@@ -1,4 +1,4 @@
-//! Linux `BlueZ` transport for the read-only `AirSense` 11 stream.
+//! Linux `BlueZ` transport retained for the separate `AirSense` onboarding path.
 //!
 //! This module is deliberately the only `AirSense` code that knows about `BlueZ`.
 //! It connects to the configured address, resolves the exact FD56 service and
@@ -6,6 +6,7 @@
 //! typed requests accepted by [`crate::as11_rpc::ReadOnlyRpcLink`].  It uses
 //! a bounded target-discovery fallback when `BlueZ` has no usable device object
 //! and never performs application pairing or sends control RPCs.
+#![allow(dead_code)]
 
 use std::{
     collections::HashSet,
@@ -128,6 +129,8 @@ pub enum BluezError {
     Transport(TransportError),
     /// The correlated response was malformed or arrived on the wrong lane.
     Response(RpcResponseError),
+    /// The broker rejected or could not complete a typed operation.
+    Broker(vitals_ble_broker::BrokerClientError),
     /// Portable crypto rejected a configured or received value.
     Crypto(CryptoError),
     /// Portable envelope encryption/decryption failed.
@@ -171,6 +174,7 @@ impl core::fmt::Display for BluezError {
                 "air11 event subscription selector={selector} valid={valid}"
             ),
             Self::RpcRejected(error) => write!(f, "air11 RPC rejected: {error}"),
+            Self::Broker(error) => write!(f, "air11 broker: {error}"),
             Self::Transport(error) => write!(f, "air11 transport: {error}"),
             Self::Response(error) => write!(f, "air11 response: {error}"),
             Self::Crypto(error) => write!(f, "air11 crypto: {error}"),
@@ -212,6 +216,8 @@ pub enum TransportError {
     WriteNotPending,
     /// The characteristic write failed.
     GattWriteFailed,
+    /// The broker rejected or could not complete a typed write.
+    BrokerWriteFailed,
     /// The characteristic write exceeded its deadline.
     GattWriteDeadline,
     /// The MTU leaves no room for an ATT value.
@@ -237,6 +243,7 @@ impl core::fmt::Display for TransportError {
             Self::WaiterStatePoisoned => f.write_str("GATT waiter state poisoned"),
             Self::WriteNotPending => f.write_str("no GATT write acknowledgement is pending"),
             Self::GattWriteFailed => f.write_str("GATT write failed"),
+            Self::BrokerWriteFailed => f.write_str("broker GATT write failed"),
             Self::GattWriteDeadline => f.write_str("GATT write deadline expired"),
             Self::MtuTooSmall { mtu } => write!(f, "negotiated MTU={mtu} is too small"),
             Self::Envelope(error) => write!(f, "envelope encryption failed: {error}"),
@@ -884,7 +891,10 @@ fn crc32_ieee(bytes: &[u8]) -> u32 {
     !crc
 }
 
-fn result_string(response: &RpcResponse, field: &'static str) -> Result<String, BluezError> {
+pub(crate) fn result_string(
+    response: &RpcResponse,
+    field: &'static str,
+) -> Result<String, BluezError> {
     let result = response.result().ok_or_else(|| device_error(response))?;
     result
         .get(field)
@@ -894,7 +904,7 @@ fn result_string(response: &RpcResponse, field: &'static str) -> Result<String, 
         .ok_or(BluezError::RpcResultInvalid { field })
 }
 
-fn ensure_success(response: &RpcResponse) -> Result<(), BluezError> {
+pub(crate) fn ensure_success(response: &RpcResponse) -> Result<(), BluezError> {
     if response.result().is_some() {
         Ok(())
     } else {
@@ -902,7 +912,7 @@ fn ensure_success(response: &RpcResponse) -> Result<(), BluezError> {
     }
 }
 
-fn ensure_event_subscription(response: &RpcResponse) -> Result<(), BluezError> {
+pub(crate) fn ensure_event_subscription(response: &RpcResponse) -> Result<(), BluezError> {
     let result = response.result().ok_or_else(|| device_error(response))?;
     let object = result.as_object().ok_or(BluezError::RpcResultInvalid {
         field: "event_subscription_result",
@@ -910,8 +920,7 @@ fn ensure_event_subscription(response: &RpcResponse) -> Result<(), BluezError> {
     if object
         .get("subscriptionId")
         .and_then(serde_json::Value::as_u64)
-        .filter(|value| *value != 0)
-        .is_none()
+        .is_none_or(|value| value == 0)
     {
         return Err(BluezError::RpcResultInvalid {
             field: "event_subscription_id",
@@ -944,7 +953,7 @@ fn ensure_event_subscription(response: &RpcResponse) -> Result<(), BluezError> {
     Ok(())
 }
 
-fn ensure_confirmation(response: &RpcResponse) -> Result<(), BluezError> {
+pub(crate) fn ensure_confirmation(response: &RpcResponse) -> Result<(), BluezError> {
     let result = response.result().ok_or_else(|| device_error(response))?;
     if result
         .get("confirmation")
@@ -959,7 +968,7 @@ fn ensure_confirmation(response: &RpcResponse) -> Result<(), BluezError> {
     }
 }
 
-fn device_error(response: &RpcResponse) -> BluezError {
+pub(crate) fn device_error(response: &RpcResponse) -> BluezError {
     response
         .device_error()
         .map_or(BluezError::RpcResultInvalid { field: "result" }, |error| {
