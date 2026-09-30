@@ -1383,10 +1383,12 @@ mod tests {
         BoxFuture, BoxPayloadStream, BrokerState, ClientInfo, ClientMessage, OWNER_ERROR,
         OwnerOperations, Path, UnixStream, address_for_lease, capability_for, cleanup_client,
         controller_inventory, deadline_after, error_message, operation_address, parse_selector,
-        physical_device_path, process_message, read_message, serve_client, validate_hello,
+        physical_device_path, prepare_socket, process_message, read_message, run, serve_client,
+        validate_hello,
     };
     use crate::bluez::{
-        AdapterHealth, AdapterPolicy, ControllerBus, DeviceObservation, DiscoveryReport, OwnerError,
+        AdapterHealth, AdapterPolicy, ControllerBus, ControllerSelector, DeviceObservation,
+        DiscoveryReport, OwnerError,
     };
     use crate::{
         AcquireResult, Capability, CapabilitySet, Generation, Intent, LeaseRequest, Priority,
@@ -1585,6 +1587,41 @@ mod tests {
             operations: Mutex::new(HashMap::new()),
             next_client: Mutex::new(1),
         })
+    }
+
+    #[tokio::test]
+    async fn run_rejects_a_selector_without_a_local_adapter() {
+        let config = super::BrokerConfig {
+            socket: std::env::temp_dir().join(format!("vitals-broker-run-{}", std::process::id())),
+            selector_text: "address=00:00:00XX:XX:XX".to_owned(),
+            selector: ControllerSelector {
+                address: Some("00:00:00XX:XX:XX".to_owned()),
+                ..ControllerSelector::default()
+            },
+            allowed_uid: None,
+        };
+        let result = run(config).await;
+        assert!(result.is_err());
+        if let Err(error) = result {
+            assert!(error.contains("broker adapter open failed"));
+        }
+    }
+
+    #[test]
+    fn prepare_socket_refuses_files_and_replaces_sockets() -> std::io::Result<()> {
+        let root =
+            std::env::temp_dir().join(format!("vitals-broker-socket-{}", std::process::id()));
+        fs::create_dir_all(&root)?;
+        let file = root.join("not-a-socket");
+        fs::write(&file, b"guard")?;
+        assert!(prepare_socket(&file).is_err());
+        let socket = root.join("broker.sock");
+        let listener = std::os::unix::net::UnixListener::bind(&socket)?;
+        drop(listener);
+        prepare_socket(&socket)?;
+        assert!(!socket.exists());
+        fs::remove_dir_all(root)?;
+        Ok(())
     }
 
     #[tokio::test]
