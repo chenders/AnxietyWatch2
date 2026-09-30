@@ -13,10 +13,9 @@ Between a medication warning label about breathing and a clinical sleep study mo
 
 ## Should I use this?
 
-**Not as a working monitor today.** There is no supported installer, the production collectors are incomplete, and neither the detection engine nor the physical alarm exists. If you are looking for a system to install and trust tonight, this is not it. 
+**Not as a clinically validated or emergency monitor.** The repository is experimental and the full CNS detector, supervised alarm path, and physical alarm are not complete. The ResMed AirSense 11 integration has a bounded Linux/Pi installation and read-only live-monitoring path, but it still must not be relied on for diagnosis, treatment, or emergency response.
 
-Instead: **Read it, audit it, or reuse its engineering.** 
-The most transferable materials are the [accepted architecture amendments](docs/specs/AMENDMENTS.md), the [alarm-timing reassessment](docs/research/klaxon-alarm-timing-reassessment.md), the hardware protocol notes for the [Polar H10](docs/hardware/POLAR_H10.md) and [EMAY SleepO2](docs/hardware/EMAY_OXIMETER.md), and the project's rigorous approach to safety invariants.
+Use it to **read, audit, develop, or run the explicitly bounded AirSense integration** on hardware you control. Keep validated monitoring and professional care in place. The most transferable materials are the [accepted architecture amendments](docs/specs/AMENDMENTS.md), the [AirSense integration guide](docs/integration/resmed-air11-user-guide.md), the [alarm-timing reassessment](docs/research/klaxon-alarm-timing-reassessment.md), and the project's safety invariants.
 
 ## Status: what is real, and what is still a design
 
@@ -34,10 +33,10 @@ The most transferable materials are the [accepted architecture amendments](docs/
 - The TimescaleDB hypertable, compression, one-minute aggregates, and raw-data retention are defined in migrations, but this chain is **not claimed as verified-deployed** while primary-key reconciliation remains open.
 
 ### Designed, not built
-- `bp-collector` and the production collector fleet.
+- `bp-collector` and the complete production collector fleet.
 - `cns-engine`: quality gate, personal baseline, fusion, and hysteretic tier machine.
 - `klaxond`: supervised alarm channels and the hardware dead-man switch.
-- The Rust HTTP API, admin console, and web-dashboard backend. (A bedside panel exists as a display-only hardware-validation stopgap, but it is not a detector and cannot wake anyone).
+- A clinically validated detector or emergency alarm. The Rust HTTP API, admin console, and AirSense read-only console path are present; a bedside panel exists as a display-only hardware-validation stopgap, but it is not a detector and cannot wake anyone.
 
 ## The rule everything else serves
 
@@ -88,6 +87,145 @@ viewers: bedside panel · web dashboard · admin console · phone
 ```
 
 The target radio-packet-to-tier-evaluation latency is p99 under two seconds. The alert path is native services under systemd: no network and no container between a sample and an alarm output.
+
+## Install, run, and use the AirSense 11 integration
+
+This is the currently documented operational path. It is **read-only**: it collects the authenticated live stream and stores observations through the existing `vitalsd`/PostgreSQL pipeline. It does not control therapy, pair implicitly, modify Bluetooth adapters, or replace medical monitoring. Follow the complete [AirSense operator guide](docs/integration/resmed-air11-user-guide.md) before using a real device.
+
+### 1. Prepare the host
+
+Use a 64-bit Linux Raspberry Pi with:
+
+- Rust `1.97.1` and the pinned target in [`rust-toolchain.toml`](rust-toolchain.toml);
+- BlueZ, systemd, a working `vitalsd` Unix socket, and the existing spool/drain services;
+- PostgreSQL 16 with the project's TimescaleDB schema deployed; and
+- an operator-approved AirSense credential source and a device in app mode when discovery is required.
+
+The repository does not provide a one-command production installer. Install and configure the base Pi services through the reviewed deployment procedure first. Keep the AirSense unit disabled until the bounded acceptance run is authorized.
+
+### 2. Build and verify
+
+From a checkout on the Pi (or from a compatible cross-build environment):
+
+```sh
+rustup show active-toolchain
+cargo build --release
+cargo test --workspace
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+```
+
+Build the AirSense executables explicitly when only that integration is being staged:
+
+```sh
+cargo build --release -p vitals-collectors \\
+  --bin resmed-air11-collector --bin resmed-air11-onboard
+```
+
+Generated registry files must remain current:
+
+```sh
+python3 vitals/tools/gen_registry.py --check
+```
+
+### 3. Stage the Pi artifacts
+
+The allowlisted installer copies only the collector, onboarding utility, or fixed systemd unit. It uses a temporary remote directory and installs root-owned files at fixed destinations. Run it from the repository after building:
+
+```sh
+PI_HOST=vitals@<pi-host> PI_PATH=/path/to/checkout \\
+  scripts/install-air11-pi-artifact.sh collector
+PI_HOST=vitals@<pi-host> PI_PATH=/path/to/checkout \\
+  scripts/install-air11-pi-artifact.sh onboard
+PI_HOST=vitals@<pi-host> PI_PATH=/path/to/checkout \\
+  scripts/install-air11-pi-artifact.sh unit
+```
+
+Install and verify the AirSense Sqitch change with the deployment's approved database target; do not put a database password in a copied command:
+
+```sh
+sqitch deploy
+sqitch verify
+```
+
+Install `deploy/vitals-console.service` and, only if fixed lifecycle actions are required, provision a separate owner-readable console-admin token and the narrowly scoped polkit rule. Never reuse the AirSense master key as the console-admin token.
+
+### 4. Provision credentials and discover the target
+
+The `vitals` service account must own a private credential file at:
+
+```text
+/var/lib/vitals/.air11/air11-credentials.json
+```
+
+It must be a regular owner-readable file with no group/other permissions, normally mode `0600`. Keep the client id, explicit Linux target address, and 32-byte master pair key out of shell arguments, logs, the browser, and Git. The admin console exposes readiness facts only.
+
+If the target address is already known, continue to the readiness check. If bounded discovery or first pairing is explicitly authorized, run the installed utility interactively:
+
+```sh
+sudo -u vitals -H -- resmed-air11-onboard discover --adapter hci0 --duration 30 \\
+  --credentials /var/lib/vitals/.air11/air11-credentials.json
+# or, for an explicitly authorized first-pair flow:
+sudo -u vitals -H -- resmed-air11-onboard pair --adapter hci0 --duration 30 \\
+  --credentials /var/lib/vitals/.air11/air11-credentials.json
+```
+
+These are finite onboarding operations. They do not start collection or change unrelated Bluetooth configuration.
+
+### 5. Start and use the console
+
+Enable the console according to the host deployment procedure, then open it only from the private LAN:
+
+```text
+http://<private-pi-address>:8480/console/?screen=air11&dir=a
+```
+
+The AirSense page has three presentation directions (`dir=a`, `dir=b`, and `dir=c`) over one backend view-model. The read-only kiosk is:
+
+```text
+http://<private-pi-address>:8480/console/air11-kiosk.html
+```
+
+In the admin page:
+
+1. Confirm credential readiness and database/configuration state.
+2. Provision the separate console-admin capability if lifecycle controls are needed.
+3. Choose **Opt in** and enter the displayed confirmation phrase.
+4. Choose **Start collector** and enter its displayed confirmation phrase.
+5. Require `active/running`, `STREAMING`, and `MEASURED`; a connected device alone is not success.
+
+The page distinguishes measured, bad, unavailable, stale, and unknown states. Missing physiology is never converted to zero. Use the fixed Stop, Restart, and Opt out actions for lifecycle changes; opt-out is performed only after stopping the collector.
+
+For authorized host diagnosis:
+
+```sh
+journalctl -u vitals-air11.service --no-pager -n 80
+```
+
+Treat an unavailable journal, database, credential, or measurement as a named blocker—not as an empty healthy result.
+
+### 6. Run bounded live acceptance
+
+Only on the real Pi, after physical/operator authorization:
+
+```sh
+scripts/air11-pi-acceptance.sh --duration 60 --require-postgres --require-h10
+```
+
+The duration must be 20–3600 seconds and the script requires an interactive, duration-specific confirmation. It starts or restarts only the already-installed AirSense unit, checks credential shape without printing secrets, verifies measured/null evidence and database rows, exercises a reconnect, and stops a unit that it started. A nonzero exit status is failed acceptance. The script never pairs, scans indefinitely, enables a unit, edits `/boot/firmware`, changes routes, or sends a therapy-control RPC.
+
+### Development and diagnostics
+
+Useful local checks are:
+
+```sh
+python3 scripts/check-air11-public.py --self-test
+python3 scripts/check-air11-admin-sql.py --self-test
+python3 scripts/check-console-assets.py --self-test
+cargo fmt --all -- --check
+cargo test --workspace
+```
+
+Keep raw credentials, BLE journals, EDF files, and unredacted logs outside Git. Read [AMENDMENTS.md](docs/specs/AMENDMENTS.md) before changing storage, identity, time, units, or safety behavior.
 
 An accepted optional mobility experiment allows a supported BLE sensor to reach an iPhone, then cross
 private Wi-Fi to the Pi; the Pi's condition is mirrored back through the iPhone to the existing BLE
