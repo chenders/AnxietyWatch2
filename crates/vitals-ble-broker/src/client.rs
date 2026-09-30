@@ -642,3 +642,54 @@ impl BrokerClient {
         operation
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn client_error_display_and_conversions_name_each_blocker() {
+        let errors = [
+            ClientError::Io(std::io::Error::other("socket")),
+            ClientError::Protocol(ProtocolError::Truncated),
+            ClientError::Broker {
+                code: 4,
+                detail: "owner stopped".to_owned(),
+            },
+            ClientError::UnexpectedResponse("Health"),
+            ClientError::Queued { ticket: 7 },
+            ClientError::DeadlineExceeded {
+                operation: "connect",
+            },
+            ClientError::CancellationFailed {
+                operation: "connect",
+                detail: "cancel rejected".to_owned(),
+            },
+        ];
+        for error in errors {
+            assert!(!error.to_string().is_empty());
+        }
+        assert!(matches!(
+            ClientError::from(std::io::Error::other("io")),
+            ClientError::Io(_)
+        ));
+        assert!(matches!(
+            ClientError::from(ProtocolError::Truncated),
+            ClientError::Protocol(ProtocolError::Truncated)
+        ));
+    }
+
+    #[tokio::test]
+    async fn source_default_connect_reports_socket_failure() {
+        let socket =
+            std::env::temp_dir().join(format!("vitals-client-missing-{}", std::process::id()));
+        let result = BrokerClient::connect(
+            socket,
+            "bus=usb;vid_pid=0a12:0001",
+            "peer",
+            CapabilitySet::empty(),
+        )
+        .await;
+        assert!(matches!(result, Err(ClientError::Io(_))));
+    }
+}
