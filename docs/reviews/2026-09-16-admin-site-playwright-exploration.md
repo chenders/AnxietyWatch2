@@ -1,7 +1,7 @@
 # Admin/site Playwright exploration
 
 **Date:** 2026-09-16 UTC
-**Target:** `pi-host` over the LAN (`:8480` console and `:8975` bedside panel)
+**Target:** the appliance over the LAN (`:8480` console and `:8975` bedside panel)
 **Method:** Chromium through Playwright, headless, with direct navigation through every
 known console screen/layout and every static bedside page. Viewports tested were
 `1280×900` and `800×480` where appropriate.
@@ -99,7 +99,7 @@ The universal console navigation exposes:
 `/console/air11-bedside.html` and the `:8975/air11.html?kiosk=1` wrapper request:
 
 ```text
-GET http://pi-host:8480/api/air11/history?window_hours=48
+GET http://the-appliance:8480/api/air11/history?window_hours=48
 ```
 
 The endpoint returns HTTP 404. The page consequently displays:
@@ -136,7 +136,7 @@ full Amendment 12 therapy-session inspection requirement.
 The aircraft tracker is functional at:
 
 ```text
-http://pi-host:8975/noise-watch.html
+the appliance's `:8975/noise-watch.html` route
 ```
 
 However, it is not present in the `:8480/console/` navigation and none of the universal
@@ -205,7 +205,7 @@ console errors during an otherwise clean exploration.
 
 ## Follow-up verification after the exploration
 
-At 2026-09-16 02:20 UTC, the routed history handler was deployed to `pi-host` and
+At 2026-09-16 02:20 UTC, the routed history handler was deployed to the appliance and
 verified directly:
 
 - `GET /api/air11/history?window_hours=48` returned HTTP 200.

@@ -1,7 +1,7 @@
 [Unit]
 Description=Read-only ResMed AirSense 11 therapy stream
-After=bluetooth.service vitalsd.service
-Requires=bluetooth.service vitalsd.service
+After=bluetooth.service vitalsd.service vitals-ble-broker.service
+Requires=bluetooth.service vitalsd.service vitals-ble-broker.service
 StartLimitIntervalSec=300
 StartLimitBurst=5
 
@@ -13,8 +13,9 @@ UMask=0077
 
 # systemd copies the operator-managed vitals credential into a private,
 # read-only runtime file before the collector sandbox is applied.
+EnvironmentFile=/etc/vitals/ble-broker.env
 LoadCredential=air11-credentials.json:/var/lib/vitals/.air11/air11-credentials.json
-ExecStart=/usr/local/bin/resmed-air11-collector --adapter hci0 --credentials %d/air11-credentials.json --state-dir /var/lib/vitals/air11 --socket /run/vitals/vitalsd.sock --status /run/vitals-air11/status.json
+ExecStart=/usr/local/bin/resmed-air11-collector --adapter-selector ${VITALS_BLE_ADAPTER_SELECTOR} --broker-socket ${VITALS_BLE_BROKER_SOCKET} --credentials %d/air11-credentials.json --state-dir /var/lib/vitals/air11 --socket /run/vitals/vitalsd.sock --status /run/vitals-air11/status.json
 
 Restart=always
 RestartSec=5

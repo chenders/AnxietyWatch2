@@ -1,0 +1,38 @@
+[Unit]
+Description=Per-adapter BlueZ broker for vitals collectors
+After=bluetooth.service vitalsd.service
+Requires=bluetooth.service
+Before=vitals-bp.service vitals-h10.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/vitals-ble-broker
+Restart=always
+RestartSec=3
+EnvironmentFile=/etc/vitals/ble-broker.env
+Environment=VITALS_BLE_BROKER_SOCKET=/run/vitals/ble-broker.sock
+# VITALS_BLE_ADAPTER_SELECTOR must identify hardware, never hci0/hci1 or a
+# USB-port path. Prefer address=... when the controller exposes one; for a
+# single known USB controller, bus=usb;vid_pid=... is port-independent and
+# still fails closed if more than one matching controller is present.
+User=vitals
+Group=vitals
+# vitalsd.service owns /run/vitals. Declaring the same RuntimeDirectory here
+# would let a broker restart remove vitalsd.sock while vitalsd still runs.
+UMask=0007
+OOMScoreAdjust=-1000
+MemoryMin=64M
+MemoryHigh=192M
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/run/vitals
+ProtectHome=true
+RestrictAddressFamilies=AF_UNIX AF_NETLINK
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

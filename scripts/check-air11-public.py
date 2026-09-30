@@ -22,13 +22,16 @@ PRIVATE_DEVICE = re.compile(r"(?i)\b(?:SleepO2-2_|ResMed\s+)[0-9]{4,}\b")
 RAW_EXTENSIONS = {".pcap", ".pcapng", ".snoop", ".hci"}
 
 REQUIRED_SERVICE_LINES = (
-    "After=bluetooth.service vitalsd.service",
-    "Requires=bluetooth.service vitalsd.service",
+    "After=bluetooth.service vitalsd.service vitals-ble-broker.service",
+    "Requires=bluetooth.service vitalsd.service vitals-ble-broker.service",
+    "EnvironmentFile=/etc/vitals/ble-broker.env",
     "User=vitals",
     "Group=vitals",
     "UMask=0077",
     "ExecStart=/usr/local/bin/resmed-air11-collector",
     "--credentials %d/air11-credentials.json",
+    "--adapter-selector ${VITALS_BLE_ADAPTER_SELECTOR}",
+    "--broker-socket ${VITALS_BLE_BROKER_SOCKET}",
     "--state-dir /var/lib/vitals/air11",
     "--socket /run/vitals/vitalsd.sock",
     "--status /run/vitals-air11/status.json",
@@ -57,7 +60,6 @@ SKIP_PATHS = {"scripts/check-public-info.py"}
 
 FORBIDDEN_SERVICE_TOKENS = (
     "Environment=",
-    "EnvironmentFile=",
     "DATABASE_URL",
     "postgres://",
     "AF_INET",
@@ -69,6 +71,12 @@ FORBIDDEN_SERVICE_TOKENS = (
     "StopStream",
 )
 UNIT_START_LIMITS = ("StartLimitIntervalSec=300", "StartLimitBurst=5")
+AIR11_TRANSPORT_SOURCES = (
+    "crates/vitals-collectors/src/as11_broker.rs",
+    "crates/vitals-collectors/src/as11_common.rs",
+    "crates/vitals-collectors/src/bin/resmed_air11_collector.rs",
+)
+DIRECT_AIR11_TRANSPORT = re.compile(r"(?:^|::)bluer|\bhci[0-9]+\b")
 CONSOLE_REQUIRED_LINES = (
     "ExecStart=/usr/local/bin/vitals-console",
     "User=vitals",
@@ -154,11 +162,36 @@ def service_findings(text: str) -> list[str]:
         for token in FORBIDDEN_SERVICE_TOKENS
         if token in text
     )
+    environment_files = [
+        line for line in text.splitlines() if line.startswith("EnvironmentFile=")
+    ]
+    findings.extend(
+        f"unexpected service environment file: {line}"
+        for line in environment_files
+        if line != "EnvironmentFile=/etc/vitals/ble-broker.env"
+    )
     exec_lines = [line for line in text.splitlines() if line.startswith("ExecStart=")]
     if len(exec_lines) != 1:
         findings.append(f"expected one collector ExecStart, found {len(exec_lines)}")
     elif "--credentials %d/air11-credentials.json" not in exec_lines[0]:
         findings.append("collector ExecStart does not use the private systemd credential path")
+    return findings
+
+
+def air11_transport_findings(root: Path) -> list[str]:
+    findings: list[str] = []
+    for relative in AIR11_TRANSPORT_SOURCES:
+        path = root / relative
+        try:
+            text = path.read_text()
+        except OSError as error:
+            findings.append(f"cannot read AirSense transport source {relative}: {error}")
+            continue
+        for line_number, line in enumerate(text.splitlines(), start=1):
+            if DIRECT_AIR11_TRANSPORT.search(line):
+                findings.append(
+                    f"direct AirSense BlueZ/runtime-alias access in {relative}:{line_number}"
+                )
     return findings
 
 
@@ -264,6 +297,7 @@ def scan(root: Path) -> list[str]:
     service = root / "deploy/vitals-air11.service"
     console = root / "deploy/vitals-console.service"
     findings = acceptance_findings(root)
+    findings.extend(air11_transport_findings(root))
     try:
         findings.extend(service_findings(service.read_text()))
     except OSError as error:
@@ -283,6 +317,10 @@ def self_test(root: Path) -> None:
     service = good.read_text()
     if service_findings(service):
         raise AssertionError("checked-in AirSense service does not satisfy its own gate")
+    if air11_transport_findings(root):
+        raise AssertionError("checked-in AirSense worker contains direct Bluetooth access")
+    if not DIRECT_AIR11_TRANSPORT.search("bluer::Session hci0"):
+        raise AssertionError("transport gate self-test setup failed")
     mutated = service.replace("ProtectHome=true", "ProtectHome=false", 1)
     if not service_findings(mutated):
         raise AssertionError("service gate did not reject a weakened ProtectHome")
