@@ -1285,9 +1285,9 @@ fn usb_identity(path: &Path) -> (Option<String>, Option<(u16, u16)>) {
 mod tests {
     use super::{
         BoxFuture, BoxPayloadStream, BrokerState, ClientInfo, ClientMessage, OWNER_ERROR,
-        OwnerOperations, Path, address_for_lease, capability_for, cleanup_client,
+        OwnerOperations, Path, UnixStream, address_for_lease, capability_for, cleanup_client,
         controller_inventory, deadline_after, error_message, operation_address, parse_selector,
-        physical_device_path, process_message, validate_hello,
+        physical_device_path, process_message, serve_client, validate_hello,
     };
     use crate::bluez::{
         AdapterHealth, AdapterPolicy, ControllerBus, DeviceObservation, DiscoveryReport, OwnerError,
@@ -1300,6 +1300,7 @@ mod tests {
     use std::sync::Arc;
     use std::time::Instant;
     use std::{collections::HashMap, fs};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::sync::{Mutex, mpsc};
 
     #[derive(Clone)]
@@ -1446,6 +1447,60 @@ mod tests {
             operations: Mutex::new(HashMap::new()),
             next_client: Mutex::new(1),
         })
+    }
+
+    #[tokio::test]
+    async fn serve_client_covers_handshake_and_protocol_rejection() -> Result<(), String> {
+        async fn receive(stream: &mut UnixStream) -> Result<ServerMessage, String> {
+            let mut header = [0_u8; 11];
+            stream
+                .read_exact(&mut header)
+                .await
+                .map_err(|error| error.to_string())?;
+            let length = u32::from_be_bytes([header[7], header[8], header[9], header[10]]) as usize;
+            let mut frame = header.to_vec();
+            let mut payload = vec![0_u8; length];
+            stream
+                .read_exact(&mut payload)
+                .await
+                .map_err(|error| error.to_string())?;
+            frame.extend_from_slice(&payload);
+            crate::decode_server(&frame).map_err(|error| error.to_string())
+        }
+
+        let state = fake_state();
+        let (mut peer, broker) = UnixStream::pair().map_err(|error| error.to_string())?;
+        let task = tokio::spawn(serve_client(broker, state.clone()));
+        let hello = ClientMessage::Hello(crate::Hello {
+            protocol_version: crate::PROTOCOL_VERSION,
+            source: Source::H10,
+            adapter_selector: "bus=usb;vid_pid=0a12:0001".to_owned(),
+            device_selector: Some("peer".to_owned()),
+            capabilities: CapabilitySet::empty(),
+        });
+        let frame = crate::encode(&hello).map_err(|error| error.to_string())?;
+        peer.write_all(&frame)
+            .await
+            .map_err(|error| error.to_string())?;
+        assert!(matches!(
+            receive(&mut peer).await?,
+            ServerMessage::HelloAccepted { generation } if generation == Generation::new(1)
+        ));
+        drop(peer);
+        assert!(task.await.map_err(|error| error.to_string())?.is_ok());
+
+        let (mut peer, broker) = UnixStream::pair().map_err(|error| error.to_string())?;
+        let task = tokio::spawn(serve_client(broker, state));
+        let frame = crate::encode(&ClientMessage::Health).map_err(|error| error.to_string())?;
+        peer.write_all(&frame)
+            .await
+            .map_err(|error| error.to_string())?;
+        assert!(matches!(
+            receive(&mut peer).await?,
+            ServerMessage::Error { code: 3, .. }
+        ));
+        assert!(task.await.map_err(|error| error.to_string())?.is_err());
+        Ok(())
     }
 
     #[tokio::test]
