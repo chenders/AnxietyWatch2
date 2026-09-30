@@ -2,6 +2,7 @@
   "use strict";
   window.ConsoleDirections = window.ConsoleDirections || {};
   window.ConsoleDirections.b = (model, h) => {
+    if (model.screen === "air11" && window.renderAir11) return window.renderAir11(model, h, "b");
     const row = (item, index) => `<article class="check-row state-${item.state.toLowerCase()}">
       <span class="check-number" aria-hidden="true">${String(index + 1).padStart(2, "0")}</span>
       <div class="check-copy"><h2>${h.esc(item.title)}</h2><p>${h.esc(item.reason)}</p>${item.detail ? `<p class="detail">${h.esc(item.detail)}</p>` : ""}</div>

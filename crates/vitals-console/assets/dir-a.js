@@ -2,6 +2,7 @@
   "use strict";
   window.ConsoleDirections = window.ConsoleDirections || {};
   window.ConsoleDirections.a = (model, h) => {
+    if (model.screen === "air11" && window.renderAir11) return window.renderAir11(model, h, "a");
     const card = item => `<article class="status-card state-${item.state.toLowerCase()}">
       <div class="status-line"><span class="glyph" aria-hidden="true">${h.glyph(item.state)}</span><strong>${h.esc(item.state)}</strong></div>
       <h2>${h.esc(item.title)}</h2>

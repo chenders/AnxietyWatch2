@@ -1,5 +1,12 @@
 name: CI
-on: [push, pull_request]
+
+# Feature-branch pushes already produce the pull_request `synchronize` event.
+# Restrict push runs to main so a force-push on an open PR cannot run the full
+# matrix twice for the same commit.
+on:
+  push:
+    branches: [main]
+  pull_request:
 
 jobs:
   # Every job below once targeted the C tree that the Rust decision deleted.
@@ -16,7 +23,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Reject personal and setup-specific information
-        run: python3 scripts/check-public-info.py --self-test
+        run: |
+          python3 scripts/check-public-info.py --self-test
+          python3 scripts/check-air11-public.py --self-test
+          python3 scripts/check-air11-admin-sql.py --self-test
+          bash -n scripts/air11-pi-acceptance.sh
+          scripts/air11-pi-acceptance.sh --help
 
   h10-graph-performance:
     runs-on: ubuntu-latest
@@ -92,6 +104,33 @@ jobs:
             echo "::error::a test skipped in CI -- the Postgres service did not come up"
             exit 1
           fi
+      - name: AirSense offline, replay, and allowlist gates
+        run: |
+          # Keep these explicit: the normal workspace run proves compilation,
+          # while these filters make the offline evidence and final send-boundary
+          # safety contract visible in the CI log. A missing filter match is an
+          # error; cargo test otherwise exits zero after running no tests.
+          run_nonempty() {
+            package=$1
+            filter=$2
+            listed=$(cargo test -p "$package" --all-features "$filter" -- --list)
+            count=$(printf '%s\n' "$listed" | grep -cE ': test$' || true)
+            if [ "$count" -lt 1 ]; then
+              echo "::error::offline gate $package/$filter listed no tests"
+              return 1
+            fi
+            echo "offline gate $package/$filter: $count tests"
+            cargo test -p "$package" --all-features "$filter"
+          }
+          run_nonempty vitals-decode fig::
+          run_nonempty vitals-decode stream::
+          run_nonempty vitals-collectors as11_build::
+          run_nonempty vitals-collectors as11_config::
+          run_nonempty vitals-collectors as11_journal::
+          run_nonempty vitals-collectors as11_status::
+          run_nonempty vitals-collectors as11_supervision::
+          run_nonempty vitals-collectors as11_vitalsd::
+          run_nonempty vitals-collectors as11_rpc::
 
   # The two design gates (docs/design/**/{palette,panel}-check.mjs) verify the
   # colour, contrast, CVD-separation and layout claims that the imported designs
@@ -125,6 +164,8 @@ jobs:
       # the only way they break is the runner image's default node moving.
       - uses: actions/setup-node@v4
         with: { node-version: '22' }
+      - name: Console asset syntax and kiosk contract
+        run: python3 scripts/check-console-assets.py --self-test
 
       - name: Design gates pass
         run: |

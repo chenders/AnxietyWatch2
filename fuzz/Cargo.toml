@@ -50,3 +50,24 @@ path = "fuzz_targets/healthkit_payload.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "fuzz_fig"
+path = "fuzz_targets/fuzz_fig.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_stream"
+path = "fuzz_targets/fuzz_stream.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_events"
+path = "fuzz_targets/fuzz_events.rs"
+test = false
+doc = false
+bench = false

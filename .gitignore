@@ -29,7 +29,6 @@ fuzz/coverage/
 
 __pycache__/
 *.pyc
-.idea/deployment.xml
 
 # PHI: raw capture output. bp_capture.py fsyncs real measurements here by
 # design, btmon writes .snoop, T-B1 writes night*.log. None belongs in git.

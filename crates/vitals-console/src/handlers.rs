@@ -55,6 +55,14 @@ pub struct AppState {
     pub client_origin: Option<String>,
     /// Operator-visible server label included in enrollment artifacts.
     pub server_display_label: String,
+    /// Whether the fixed `AirSense` admin actions are enabled by policy.
+    pub air11_actions_enabled: bool,
+    /// Per-process CSRF capability for fixed `AirSense` actions.
+    pub air11_action_token: Option<std::sync::Arc<String>>,
+    /// External console-admin capability; never sent to the browser.
+    pub air11_admin_token: Option<std::sync::Arc<String>>,
+    /// Peer networks permitted to reach the `AirSense` admin API.
+    pub air11_allowed_networks: std::sync::Arc<Vec<crate::api::air11::AllowedNetwork>>,
 }
 
 /// Require a database pool; return a named 503 when absent.
@@ -908,6 +916,12 @@ mod tests {
             server_instance_id: None,
             client_origin: None,
             server_display_label: "test server".to_string(),
+            air11_actions_enabled: false,
+            air11_action_token: None,
+            air11_admin_token: None,
+            air11_allowed_networks: std::sync::Arc::new(
+                crate::api::air11::default_allowed_networks(),
+            ),
         }
     }
 

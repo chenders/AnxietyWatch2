@@ -124,6 +124,16 @@ escalates on its own.
 Stop and ask before: repartitioning, `dtoverlay` edits, `pgbackrest restore` into a live cluster,
 dropping tables, or anything that touches `/boot/firmware`.
 
+### Pi artifact installation
+
+Never use an ambiguous multi-source `scp` or an ad-hoc `install` destination. In particular,
+`/dev/null` is a device node, never a copy destination. Use `scripts/install-air11-pi-artifact.sh`
+for AirSense binaries and its unit: it has an allowlist of destination paths, copies first to a
+regular file under `/tmp`, validates the temporary file, installs only to the selected allowlisted
+path, and verifies the resulting type/mode/owner. If that helper cannot be used, stop rather than
+constructing a replacement command inline. Verify `/dev/null` remains a character device after any
+Pi deployment command.
+
 Gate G1 is absolute: **never apply `dtoverlay=disable-bt` until the Sena dongle is verified UP as
 `hci1`.** It removes the onboard controller and leaves the box with no Bluetooth at all.
 

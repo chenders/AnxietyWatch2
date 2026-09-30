@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>AirSense 11 · Night field</title>
+<link rel="stylesheet" href="/console/air11-bedside.css">
+</head>
+<body>
+<main id="visual-wrap">
+  <canvas id="field" width="800" height="480" role="img" aria-label="AirSense visual night field"></canvas>
+  <p id="accessible-status" class="sr-only" aria-live="polite">Waiting for AirSense evidence.</p>
+  <details id="guide">
+    <summary>How this picture maps to the machine</summary>
+    <p>The central living field is a visual translation of the current read-only stream, not a medical score.</p>
+    <ul>
+      <li>The expanding green breath-field is the machine-reported respiration rhythm.</li>
+      <li>The teal mask ring is delivered pressure; amber escaping motes represent reported leak.</li>
+      <li>The lower trails show stored respiration, leak, and pressure history from the latest gap-bounded observation window. Gaps stay empty; this is not limited to when the page opened.</li>
+      <li>AHI is intentionally not derived here. Separate read-only event notifications are captured and session state is shown, but numeric AHI still requires trustworthy coverage and the device summary/report path.</li>
+    </ul>
+  </details>
+</main>
+<script>
+"use strict";
+(() => {
+  const canvas = document.querySelector("#field");
+  const ctx = canvas.getContext("2d");
+  const accessible = document.querySelector("#accessible-status");
+  const W = canvas.width, H = canvas.height;
+  const REFRESH_MS = 5000, HISTORY_REFRESH_MS = 60000, FRESH_MS = 15000, WINDOW_S = 48 * 60 * 60, GAP_S = 90;
+  const state = { data: null, history: [], historyBoundary: "unknown", historyBlocker: null, lastSuccess: 0, error: null };
+  const esc = value => String(value == null ? "" : value).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;", "'":"&#39;"}[c]));
+  const num = value => Number.isFinite(Number(value)) ? Number(value) : null;
+  const row = (names) => {
+    const rows = state.data && Array.isArray(state.data.latest) ? state.data.latest : [];
+    return rows.find(item => names.includes(item.name)) || null;
+  };
+  const value = names => { const item = row(names); return item ? num(item.value) : null; };
+  const hostAge = () => {
+    const micros = state.data && state.data.status && state.data.status.last_host_receipt_unix_micros;
+    return micros == null || !Number.isFinite(Number(micros)) ? null : Date.now() / 1000 - Number(micros) / 1000000;
+  };
+  const fresh = () => state.lastSuccess > 0 && Date.now() - state.lastSuccess <= FRESH_MS && hostAge() != null && hostAge() >= 0 && hostAge() <= FRESH_MS / 1000;
+  const measured = () => Boolean(state.data && state.data.status && state.data.status.link_state === "streaming" && state.data.status.measurement_state === "measured" && fresh() && !(state.data.status.blocker) && !(state.data.service && state.data.service.blocker));
+  const ageText = seconds => seconds == null || seconds < 0 || !Number.isFinite(seconds) ? "not observed" : seconds < 60 ? `${Math.floor(seconds)}s ago` : `${Math.floor(seconds / 60)}m ago`;
+  const fmt = (value, digits = 1) => value == null ? "not measured" : Number(value).toLocaleString(undefined, {maximumFractionDigits: digits});
+
+  function applyHistory(document) {
+    if (!document || document.state !== "observed" || !Array.isArray(document.series)) {
+      state.history = [];
+      state.historyBoundary = document && typeof document.boundary === "string" ? document.boundary : "unknown";
+      state.historyBlocker = document && document.blocker ? document.blocker : "stored AirSense history is not available";
+      return;
+    }
+    const byTime = new Map();
+    const keyMap = new Map([
+      ["respiratory_rate", "respiration"], ["leak", "leak"], ["mask_pressure", "pressure"],
+      ["flow_limitation", "flow"], ["snore_index", "snore"],
+    ]);
+    for (const series of document.series) {
+      const key = keyMap.get(series.name);
+      if (!key || !Array.isArray(series.points)) continue;
+      for (const point of series.points) {
+        if (!point || !Number.isFinite(Number(point.t_micros)) || point.value == null || !Number.isFinite(Number(point.value))) continue;
+        const t = Number(point.t_micros) / 1000000;
+        const target = byTime.get(t) || { t };
+        target[key] = Number(point.value);
+        byTime.set(t, target);
+      }
+    }
+    state.history = [...byTime.values()].sort((a, b) => a.t - b.t);
+    state.historyBoundary = typeof document.boundary === "string" ? document.boundary : "unknown";
+    state.historyBlocker = null;
+  }
+
+  async function refreshHistory() {
+    try {
+      const response = await fetch("/api/air11/history?window_hours=48", {headers:{Accept:"application/json"}, cache:"no-store"});
+      const document = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(document && document.error ? document.error : `HTTP ${response.status}`);
+      applyHistory(document);
+    } catch (error) {
+      state.history = [];
+      state.historyBoundary = "unknown";
+      state.historyBlocker = error instanceof Error ? error.message : String(error);
+    }
+    draw(performance.now());
+  }
+
+  function text(text, x, y, font, color, align = "left") { ctx.font = font; ctx.fillStyle = color; ctx.textAlign = align; ctx.textBaseline = "alphabetic"; ctx.fillText(text, x, y); }
+  function line(points, color, width = 1) {
+    if (points.length < 2) return;
+    ctx.beginPath(); points.forEach(([x, y], index) => index ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.strokeStyle = color; ctx.lineWidth = width; ctx.stroke();
+  }
+  function trail(key, color, y, amplitude, low, high, now) {
+    const points = [], first = now - WINDOW_S;
+    let previous = null;
+    for (const item of state.history) {
+      if (item[key] == null) { previous = null; continue; }
+      const x = 68 + Math.max(0, Math.min(1, (item.t - first) / WINDOW_S)) * 664;
+      const ratio = (item[key] - low) / (high - low || 1);
+      const point = [x, y + amplitude / 2 - ratio * amplitude];
+      if (previous && item.t - previous.t <= GAP_S) points.push(point); else { line(points, color, 1.8); points.length = 0; points.push(point); }
+      previous = item;
+    }
+    line(points, color, 1.8);
+  }
+  function drawMotes(cx, cy, leak, pressureRadius, now) {
+    if (leak == null) return;
+    const count = Math.min(18, Math.floor(Math.max(0, leak) / 2));
+    for (let i = 0; i < count; i++) {
+      const angle = i * 2.399 + now / 1800 * (i % 2 ? 1 : -1);
+      const radius = pressureRadius + 15 + ((now / 16 + i * 31) % 72);
+      const alpha = .35 + .35 * Math.sin(now / 500 + i);
+      ctx.fillStyle = `rgba(255,154,121,${Math.max(.08, alpha)})`;
+      ctx.beginPath(); ctx.arc(cx + Math.cos(angle) * radius, cy + Math.sin(angle) * radius * .62, 2 + (i % 3), 0, Math.PI * 2); ctx.fill();
+    }
+  }
+  function draw(now) {
+    const t = Date.now() / 1000, live = measured();
+    const respiration = value(["respiratory_rate"]), leak = value(["leak"]), pressure = value(["mask_pressure"]), flow = value(["flow_limitation"]);
+    const status = state.data && state.data.status;
+    const therapyState = status && status.therapy_state ? String(status.therapy_state) : "not_measured";
+    const eventCount = status && Number.isFinite(Number(status.event_records)) ? Number(status.event_records) : null;
+    const blocker = (status && status.blocker) || (state.data && state.data.service && state.data.service.blocker);
+    const bg = ctx.createLinearGradient(0, 0, 0, H); bg.addColorStop(0, "#071617"); bg.addColorStop(1, "#020708"); ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+    ctx.strokeStyle = "#214741"; ctx.lineWidth = 1; ctx.strokeRect(.5, .5, W - 1, H - 1);
+    text("AIRSENSE 11 · NIGHT FIELD", 24, 27, "800 11px ui-monospace,monospace", "#9dc2ba");
+    text(live ? "STREAM MEASURED" : blocker ? "ATTENTION NEEDED" : "FIELD PAUSED · NOT CURRENT", 776, 27, "800 11px ui-monospace,monospace", live ? "#73e8b0" : blocker ? "#ff9989" : "#ffd27a", "right");
+    text("BREATH RHYTHM", 24, 58, "800 10px ui-monospace,monospace", "#55756f");
+    text("MASK SEAL", 776, 58, "800 10px ui-monospace,monospace", "#55756f", "right");
+    const cx = 400, cy = 222;
+    const pressureRadius = pressure == null ? 92 : 82 + Math.min(28, Math.max(0, pressure * 1.5));
+    const pulse = live && respiration != null ? (Math.sin((t % (60 / Math.max(respiration, .1))) / (60 / Math.max(respiration, .1)) * Math.PI * 2) + 1) / 2 : 0;
+    if (live && respiration != null) {
+      for (let i = 0; i < 3; i++) { const r = 48 + i * 27 + pulse * (i === 0 ? 11 : 6); ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.strokeStyle = `rgba(115,232,176,${.35 - i * .08})`; ctx.lineWidth = 2; ctx.stroke(); }
+    } else { ctx.setLineDash([5, 7]); ctx.beginPath(); ctx.arc(cx, cy, 76, 0, Math.PI * 2); ctx.strokeStyle = "#8d9da0"; ctx.lineWidth = 2; ctx.stroke(); ctx.setLineDash([]); }
+    ctx.beginPath(); ctx.arc(cx, cy, pressureRadius, 0, Math.PI * 2); ctx.strokeStyle = live ? "#6ed9d3" : "#55756f"; ctx.lineWidth = 3; ctx.stroke();
+    ctx.beginPath(); ctx.arc(cx, cy, pressureRadius + 10, -Math.PI * .78, -Math.PI * .28); ctx.strokeStyle = "#ffd27a"; ctx.lineWidth = 2; ctx.stroke();
+    ctx.fillStyle = live ? `rgba(114,233,174,${.16 + pulse * .13})` : "#192627"; ctx.beginPath(); ctx.ellipse(cx - 19, cy, 27 + pulse * 5, 39 + pulse * 8, -.16, 0, Math.PI * 2); ctx.ellipse(cx + 19, cy, 27 + pulse * 5, 39 + pulse * 8, .16, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = live ? "#73e8b0" : "#8d9da0"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(cx, cy - 30); ctx.lineTo(cx, cy + 30); ctx.stroke();
+    if (live) drawMotes(cx, cy, leak, pressureRadius, now);
+    text("PRESSURE", cx, cy + 67, "800 9px ui-monospace,monospace", "#6ed9d3", "center");
+    text("respiration · mask seal · delivered pressure", cx, 337, "11px ui-monospace,monospace", "#55756f", "center");
+    // Empty event constellation: absence of AHI is itself visible evidence.
+    ctx.strokeStyle = "#315653"; ctx.setLineDash([2, 5]); ctx.beginPath(); ctx.arc(690, 112, 37, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+    text("AHI · NOT IN", 690, 103, "800 9px ui-monospace,monospace", "#ffd27a", "center");
+    text("CURRENT STREAM", 690, 122, "8px ui-monospace,monospace", "#8d9da0", "center");
+    text(eventCount == null ? "EVENTS NOT EXPOSED" : `EVENTS ${eventCount}`, 690, 137, "8px ui-monospace,monospace", "#55756f", "center");
+    text(`SESSION ${therapyState.toUpperCase()}`, 690, 151, "7px ui-monospace,monospace", therapyState === "provisional" ? "#ff9989" : "#55756f", "center");
+    // Flow limitation is shown as a gate, not a number.
+    text("FLOW", 55, 105, "800 9px ui-monospace,monospace", "#ffd27a");
+    for (let i = 0; i < 5; i++) { const filled = flow != null && flow > i / 5; ctx.fillStyle = filled ? "#ffd27a" : "#214741"; ctx.fillRect(55 + i * 15, 115, 10, 3 + i * 4); }
+    text("restriction signal", 55, 145, "8px ui-monospace,monospace", "#55756f");
+    // Long-exposure lower field: no axes, no interpolation, only changing traces.
+    ctx.strokeStyle = "#214741"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(68, 370); ctx.lineTo(732, 370); ctx.stroke();
+    text("STORED THERAPY HISTORY", 68, 358, "800 10px ui-monospace,monospace", "#9dc2ba");
+    text("breath", 24, 394, "800 9px ui-monospace,monospace", "#73e8b0");
+    text("seal", 24, 420, "800 9px ui-monospace,monospace", "#ff9a79");
+    text("pressure", 24, 446, "800 9px ui-monospace,monospace", "#ffd27a");
+    trail("respiration", "#73e8b0", 385, 18, 0, 30, t); trail("leak", "#ff9a79", 411, 18, 0, 40, t); trail("pressure", "#ffd27a", 437, 18, 8, 20, t);
+    const historyLabel = state.history.length > 1 ? `STORED HISTORY · ${state.historyBoundary === "latest_gap_bounded_window_provisional_until_therapy_sessions_exist" ? "PROVISIONAL BOUNDARY" : "BOUNDARY UNKNOWN"}` : state.historyBlocker ? "STORED HISTORY UNAVAILABLE" : "GATHERING STORED HISTORY";
+    // Four-symbol key: enough grammar to read the field without turning it into a dashboard.
+    const key = [[88, "#73e8b0", "◌", "breath"], [265, "#6ed9d3", "○", "pressure"], [446, "#ff9a79", "·", "reported leak"], [640, "#ffd27a", "▥", "flow signal"]];
+    for (const [x, color, symbol, label] of key) { text(symbol, x, 465, "16px ui-monospace,monospace", color, "center"); text(label, x + 12, 465, "8px ui-monospace,monospace", "#55756f"); }
+    text(historyLabel, 732, 477, "8px ui-monospace,monospace", "#55756f", "right");
+    if (!live) {
+      ctx.fillStyle = "rgba(2,7,8,.48)"; ctx.fillRect(0, 0, W, H);
+      ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.clip(); ctx.strokeStyle = "rgba(141,157,160,.22)"; ctx.lineWidth = 1; ctx.setLineDash([7, 8]);
+      for (let x = -H; x < W + H; x += 24) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x + H, H); ctx.stroke(); }
+      ctx.restore(); ctx.setLineDash([]);
+      text(blocker ? "READ THE BLOCKER" : "FIELD PAUSED", cx, 245, "800 18px ui-monospace,monospace", blocker ? "#ff9989" : "#ffd27a", "center");
+    }
+    accessible.textContent = live ? `Current AirSense stream measured. Respiration ${fmt(respiration)} breaths per minute; leak ${fmt(leak)} litres per minute; mask pressure ${fmt(pressure)} centimetres of water. Stored history is ${state.history.length > 1 ? "available" : "not available"}. Therapy session is ${therapyState}; ${eventCount == null ? "event count is not exposed" : `${eventCount} event records captured`}. AHI is not derived from this stream.` : `AirSense current evidence is not confirmed. ${state.error || "No current measurement is being shown."}`;
+  }
+  async function refresh() {
+    try { const response = await fetch("/api/air11", {headers:{Accept:"application/json"}, cache:"no-store"}); const body = await response.json().catch(() => null); if (!response.ok) throw new Error(body && body.error ? body.error : `HTTP ${response.status}`); state.data = body; state.error = null; state.lastSuccess = Date.now(); }
+    catch (error) { state.error = error instanceof Error ? error.message : String(error); }
+    draw(performance.now());
+  }
+  function frame(now) { draw(now); requestAnimationFrame(frame); }
+  canvas.addEventListener("click", () => { const guide = document.querySelector("#guide"); guide.open = !guide.open; });
+  draw(0); refresh(); refreshHistory(); setInterval(refresh, REFRESH_MS); setInterval(refreshHistory, HISTORY_REFRESH_MS); requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
