@@ -1799,6 +1799,182 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::too_many_lines)]
+    async fn authorization_and_duplicate_operation_paths_fail_closed() -> Result<(), String> {
+        let state = fake_state();
+        state.clients.lock().await.insert(
+            1,
+            ClientInfo {
+                source: Source::H10,
+                capabilities: CapabilitySet::empty(),
+                leases: Vec::new(),
+            },
+        );
+        state.clients.lock().await.insert(
+            2,
+            ClientInfo {
+                source: Source::Bp,
+                capabilities: CapabilitySet::empty()
+                    .with(Capability::Connect)
+                    .with(Capability::Discover)
+                    .with(Capability::Write),
+                leases: Vec::new(),
+            },
+        );
+        let (sender, mut responses) = mpsc::channel(32);
+        let acquire = |source, intent, capabilities| crate::Acquire {
+            source,
+            intent,
+            priority: Priority::new(1),
+            deadline: 30,
+            max_hold: 60,
+            preemptible: false,
+            device_selector: Some("AA:BB:CC:DD:EE:FF".to_owned()),
+            capabilities,
+            reason: "authorization test".to_owned(),
+        };
+        process_message(
+            1,
+            ClientMessage::Acquire(acquire(
+                Source::AirSense,
+                Intent::Connect,
+                CapabilitySet::from_capability(Capability::Connect),
+            )),
+            &state,
+            &sender,
+        )
+        .await?;
+        assert!(matches!(
+            responses.recv().await,
+            Some(ServerMessage::Error { code: 3, .. })
+        ));
+
+        process_message(
+            1,
+            ClientMessage::Acquire(acquire(
+                Source::H10,
+                Intent::Connect,
+                CapabilitySet::from_capability(Capability::Connect),
+            )),
+            &state,
+            &sender,
+        )
+        .await?;
+        assert!(matches!(
+            responses.recv().await,
+            Some(ServerMessage::Error { code: 3, .. })
+        ));
+
+        process_message(
+            2,
+            ClientMessage::Acquire(acquire(
+                Source::Bp,
+                Intent::Connect,
+                CapabilitySet::from_capability(Capability::Connect),
+            )),
+            &state,
+            &sender,
+        )
+        .await?;
+        assert!(matches!(
+            responses.recv().await,
+            Some(ServerMessage::Error { code: 3, .. })
+        ));
+
+        if let Some(client) = state.clients.lock().await.get_mut(&1) {
+            client.capabilities = CapabilitySet::from_capability(Capability::Connect);
+        }
+        process_message(
+            1,
+            ClientMessage::Acquire(acquire(
+                Source::H10,
+                Intent::Connect,
+                CapabilitySet::from_capability(Capability::Connect),
+            )),
+            &state,
+            &sender,
+        )
+        .await?;
+        let lease_id = match responses.recv().await {
+            Some(ServerMessage::LeaseGranted { lease_id, .. }) => lease_id,
+            other => return Err(format!("expected lease grant, got {other:?}")),
+        };
+        process_message(
+            1,
+            ClientMessage::Acquire(acquire(
+                Source::H10,
+                Intent::Connect,
+                CapabilitySet::from_capability(Capability::Connect),
+            )),
+            &state,
+            &sender,
+        )
+        .await?;
+        assert!(matches!(
+            responses.recv().await,
+            Some(ServerMessage::Error { code: 5, .. })
+        ));
+
+        process_message(
+            1,
+            ClientMessage::Operation(crate::Operation {
+                lease_id,
+                operation_id: 10,
+                kind: crate::OperationKind::ObserveDevice,
+                target: "AA:BB:CC:DD:EE:FF".to_owned(),
+                payload: Vec::new(),
+            }),
+            &state,
+            &sender,
+        )
+        .await?;
+        assert!(matches!(
+            responses.recv().await,
+            Some(ServerMessage::Error { code: 3, .. })
+        ));
+
+        state
+            .operations
+            .lock()
+            .await
+            .insert((1, 11), futures::future::AbortHandle::new_pair().0);
+        process_message(
+            1,
+            ClientMessage::Operation(crate::Operation {
+                lease_id,
+                operation_id: 11,
+                kind: crate::OperationKind::Connect,
+                target: "AA:BB:CC:DD:EE:FF".to_owned(),
+                payload: Vec::new(),
+            }),
+            &state,
+            &sender,
+        )
+        .await?;
+        assert!(matches!(
+            responses.recv().await,
+            Some(ServerMessage::Error { code: 3, .. })
+        ));
+
+        process_message(
+            1,
+            ClientMessage::Cancel(crate::Cancel {
+                lease_id: crate::LeaseId::new(999),
+                operation_id: 10,
+                reason: "unknown lease".to_owned(),
+            }),
+            &state,
+            &sender,
+        )
+        .await?;
+        assert!(matches!(
+            responses.recv().await,
+            Some(ServerMessage::Error { code: 3, .. })
+        ));
+        Ok(())
+    }
+
+    #[tokio::test]
     #[expect(
         clippy::too_many_lines,
         reason = "the fake-owner dispatch fixture covers every typed operation"
