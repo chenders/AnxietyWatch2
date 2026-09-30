@@ -1,7 +1,6 @@
-#![cfg(all(feature = "linux", target_os = "linux"))]
-
 //! Linux integration tests for the typed broker client.
 
+#![cfg(all(feature = "linux", target_os = "linux"))]
 #![expect(
     clippy::expect_used,
     clippy::too_many_lines,
@@ -60,6 +59,113 @@ async fn expect_operation(stream: &mut UnixStream, operation_id: u64) {
             if operation.operation_id == operation_id
     ));
     send_server(stream, ServerMessage::OperationAccepted { operation_id }).await;
+}
+
+#[tokio::test]
+async fn typed_client_reports_deadlines_and_cancellation_blockers() -> Result<(), String> {
+    let path = socket_path("timeouts");
+    let _ = std::fs::remove_file(&path);
+    let listener = UnixListener::bind(&path).map_err(|error| error.to_string())?;
+    let server = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.map_err(|error| error.to_string())?;
+        let _ = read_frame(&mut stream).await;
+        send_server(
+            &mut stream,
+            ServerMessage::HelloAccepted {
+                generation: Generation::new(1),
+            },
+        )
+        .await;
+        let _ = read_frame(&mut stream).await;
+        send_server(
+            &mut stream,
+            ServerMessage::LeaseGranted {
+                lease_id: LeaseId::new(1),
+                generation: Generation::new(1),
+                expires_at: 10,
+            },
+        )
+        .await;
+
+        for (_operation_id, cancellation) in [
+            (1_u64, ServerMessage::Cancelled { operation_id: 1 }),
+            (
+                2,
+                ServerMessage::Error {
+                    operation_id: 2,
+                    code: 4,
+                    detail: "cancel rejected".to_owned(),
+                },
+            ),
+            (3, ServerMessage::OperationAccepted { operation_id: 3 }),
+        ] {
+            let _ = read_frame(&mut stream).await;
+            let _ = read_frame(&mut stream).await;
+            send_server(&mut stream, cancellation).await;
+        }
+        let _ = read_frame(&mut stream).await;
+        let _ = read_frame(&mut stream).await;
+        Ok::<(), String>(())
+    });
+
+    let capabilities = CapabilitySet::empty()
+        .with(Capability::Connect)
+        .with(Capability::Subscribe)
+        .with(Capability::Write);
+    let mut client =
+        BrokerClient::connect_source(Source::AirSense, &path, SELECTOR, TARGET, capabilities)
+            .await
+            .map_err(|error| error.to_string())?;
+    client
+        .acquire_lease(
+            vitals_ble_broker::Intent::Connect,
+            Priority::new(1),
+            10,
+            10,
+            TARGET,
+            capabilities,
+            "timeout test",
+        )
+        .await
+        .map_err(|error| error.to_string())?;
+    assert!(matches!(
+        client
+            .connect_device_bounded(TARGET, Duration::from_millis(1))
+            .await,
+        Err(vitals_ble_broker::BrokerClientError::DeadlineExceeded {
+            operation: "connect"
+        })
+    ));
+    assert!(matches!(
+        client
+            .discover_target_bounded(TARGET, Duration::from_millis(1))
+            .await,
+        Err(vitals_ble_broker::BrokerClientError::CancellationFailed {
+            operation: "discover",
+            ..
+        })
+    ));
+    assert!(matches!(
+        client
+            .subscribe_bounded("handle", Duration::from_millis(1))
+            .await,
+        Err(vitals_ble_broker::BrokerClientError::CancellationFailed {
+            operation: "subscribe",
+            ..
+        })
+    ));
+    assert!(matches!(
+        client
+            .write_bounded("handle", &[1], Duration::from_millis(1))
+            .await,
+        Err(vitals_ble_broker::BrokerClientError::CancellationFailed {
+            operation: "write",
+            ..
+        })
+    ));
+    server.await.map_err(|error| error.to_string())??;
+    let _ = std::fs::remove_file(path);
+    Ok(())
 }
 
 #[tokio::test]
