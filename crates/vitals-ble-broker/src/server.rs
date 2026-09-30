@@ -20,7 +20,10 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::bluez::{ControllerBus, ControllerEvidence, ControllerSelector, LinuxBluezAdapterOwner};
+use crate::bluez::{
+    AdapterIo, BluezAdapterOwner, ControllerBus, ControllerEvidence, ControllerSelector, DeviceIo,
+    LinuxBluezAdapterOwner,
+};
 use crate::{
     Acquire, Capability, CapabilitySet, ClientMessage, DeviceId, Generation, Intent, Lease,
     LeaseId, LeaseRequest, Operation, OperationKind, ProtocolError, Release, ReleaseOutcome,
@@ -106,11 +109,11 @@ trait OwnerOperations: Send + 'static {
     ) -> BoxFuture<'a, Result<(), crate::bluez::OwnerError>>;
 }
 
-impl OwnerOperations for LinuxBluezAdapterOwner {
-    type Characteristic = bluer::gatt::remote::Characteristic;
+impl<A: AdapterIo> OwnerOperations for BluezAdapterOwner<A> {
+    type Characteristic = <A::Device as DeviceIo>::Characteristic;
 
     fn generation(&self) -> Generation {
-        LinuxBluezAdapterOwner::generation(self)
+        BluezAdapterOwner::<A>::generation(self)
     }
 
     fn acquire(
@@ -118,21 +121,21 @@ impl OwnerOperations for LinuxBluezAdapterOwner {
         request: LeaseRequest,
         now: crate::lease::Tick,
     ) -> Result<crate::AcquireResult, crate::PolicyError> {
-        LinuxBluezAdapterOwner::acquire(self, request, now)
+        BluezAdapterOwner::<A>::acquire(self, request, now)
     }
 
     fn release(&mut self, lease: LeaseId, now: crate::lease::Tick) -> ReleaseOutcome {
-        LinuxBluezAdapterOwner::release(self, lease, now)
+        BluezAdapterOwner::<A>::release(self, lease, now)
     }
 
     fn cancel(&mut self, ticket: crate::lease::QueueTicket) -> bool {
-        LinuxBluezAdapterOwner::cancel(self, ticket)
+        BluezAdapterOwner::<A>::cancel(self, ticket)
     }
 
     fn health(
         &self,
     ) -> BoxFuture<'_, Result<crate::bluez::AdapterHealth, crate::bluez::OwnerError>> {
-        Box::pin(LinuxBluezAdapterOwner::health(self))
+        Box::pin(BluezAdapterOwner::<A>::health(self))
     }
 
     fn discover<'a>(
@@ -142,7 +145,7 @@ impl OwnerOperations for LinuxBluezAdapterOwner {
         target: Option<bluer::Address>,
         duration: Duration,
     ) -> BoxFuture<'a, Result<crate::bluez::DiscoveryReport, crate::bluez::OwnerError>> {
-        Box::pin(LinuxBluezAdapterOwner::discover(
+        Box::pin(BluezAdapterOwner::<A>::discover(
             self, lease, filter, target, duration,
         ))
     }
@@ -152,7 +155,7 @@ impl OwnerOperations for LinuxBluezAdapterOwner {
         lease: &'a Lease,
         address: bluer::Address,
     ) -> BoxFuture<'a, Result<crate::bluez::DeviceObservation, crate::bluez::OwnerError>> {
-        Box::pin(LinuxBluezAdapterOwner::observe(self, lease, address))
+        Box::pin(BluezAdapterOwner::<A>::observe(self, lease, address))
     }
 
     fn connect<'a>(
@@ -161,7 +164,7 @@ impl OwnerOperations for LinuxBluezAdapterOwner {
         address: bluer::Address,
         duration: Duration,
     ) -> BoxFuture<'a, Result<(), crate::bluez::OwnerError>> {
-        Box::pin(LinuxBluezAdapterOwner::connect(
+        Box::pin(BluezAdapterOwner::<A>::connect(
             self, lease, address, duration,
         ))
     }
@@ -171,7 +174,7 @@ impl OwnerOperations for LinuxBluezAdapterOwner {
         lease: &'a Lease,
         address: bluer::Address,
     ) -> BoxFuture<'a, Result<(), crate::bluez::OwnerError>> {
-        Box::pin(LinuxBluezAdapterOwner::disconnect(self, lease, address))
+        Box::pin(BluezAdapterOwner::<A>::disconnect(self, lease, address))
     }
 
     fn resolve<'a>(
@@ -181,7 +184,7 @@ impl OwnerOperations for LinuxBluezAdapterOwner {
         service_uuid: bluer::Uuid,
         characteristic_uuid: bluer::Uuid,
     ) -> BoxFuture<'a, Result<Self::Characteristic, crate::bluez::OwnerError>> {
-        Box::pin(LinuxBluezAdapterOwner::resolve(
+        Box::pin(BluezAdapterOwner::<A>::resolve(
             self,
             lease,
             address,
@@ -196,9 +199,9 @@ impl OwnerOperations for LinuxBluezAdapterOwner {
         characteristic: &'a Self::Characteristic,
     ) -> BoxFuture<'a, Result<BoxPayloadStream, crate::bluez::OwnerError>> {
         Box::pin(async move {
-            LinuxBluezAdapterOwner::subscribe(self, lease, characteristic)
+            BluezAdapterOwner::<A>::subscribe(self, lease, characteristic)
                 .await
-                .map(|stream| Box::pin(stream) as BoxPayloadStream)
+                .map(|stream| stream as BoxPayloadStream)
         })
     }
 
@@ -209,7 +212,7 @@ impl OwnerOperations for LinuxBluezAdapterOwner {
         characteristic: &'a Self::Characteristic,
         payload: &'a [u8],
     ) -> BoxFuture<'a, Result<(), crate::bluez::OwnerError>> {
-        Box::pin(LinuxBluezAdapterOwner::write(
+        Box::pin(BluezAdapterOwner::<A>::write(
             self,
             lease,
             address,
@@ -222,6 +225,99 @@ impl OwnerOperations for LinuxBluezAdapterOwner {
 trait BrokerOwner: OwnerOperations {}
 
 impl<T: OwnerOperations> BrokerOwner for T {}
+
+#[cfg(test)]
+#[allow(
+    clippy::match_wildcard_for_single_variants,
+    clippy::panic,
+    clippy::unwrap_used
+)]
+pub(crate) async fn exercise_linux_owner_dispatch<A: AdapterIo>(owner: &mut BluezAdapterOwner<A>) {
+    assert_eq!(OwnerOperations::generation(owner), Generation::new(1));
+    let address = bluer::Address::new([1, 2, 3, 4, 5, 6]);
+    let request = |source, intent| {
+        LeaseRequest::new(
+            source,
+            intent,
+            crate::Priority::new(1),
+            100,
+            100,
+            None,
+            CapabilitySet::empty(),
+        )
+    };
+
+    let discover =
+        OwnerOperations::acquire(owner, request(Source::Diagnostics, Intent::Discover), 0).unwrap();
+    let discover = match discover {
+        crate::AcquireResult::Granted(lease) => lease,
+        other => panic!("expected discovery lease, got {other:?}"),
+    };
+    let queued =
+        OwnerOperations::acquire(owner, request(Source::Diagnostics, Intent::Discover), 0).unwrap();
+    if let crate::AcquireResult::Queued { ticket, .. } = queued {
+        assert!(OwnerOperations::cancel(owner, ticket));
+    }
+    OwnerOperations::health(owner).await.unwrap();
+    OwnerOperations::discover(
+        owner,
+        &discover,
+        bluer::DiscoveryFilter::default(),
+        Some(address),
+        Duration::from_millis(10),
+    )
+    .await
+    .unwrap();
+    OwnerOperations::release(owner, discover.id(), 1);
+
+    let observe =
+        OwnerOperations::acquire(owner, request(Source::Bp, Intent::KernelObserve), 2).unwrap();
+    let observe = match observe {
+        crate::AcquireResult::Granted(lease) => lease,
+        other => panic!("expected observe lease, got {other:?}"),
+    };
+    OwnerOperations::observe(owner, &observe, address)
+        .await
+        .unwrap();
+    OwnerOperations::release(owner, observe.id(), 3);
+
+    let connect =
+        OwnerOperations::acquire(owner, request(Source::AirSense, Intent::Connect), 4).unwrap();
+    let connect = match connect {
+        crate::AcquireResult::Granted(lease) => lease,
+        other => panic!("expected connect lease, got {other:?}"),
+    };
+    OwnerOperations::connect(owner, &connect, address, Duration::from_millis(10))
+        .await
+        .unwrap();
+    OwnerOperations::disconnect(owner, &connect, address)
+        .await
+        .unwrap();
+    OwnerOperations::release(owner, connect.id(), 5);
+
+    let gatt = OwnerOperations::acquire(owner, request(Source::AirSense, Intent::Gatt), 6).unwrap();
+    let gatt = match gatt {
+        crate::AcquireResult::Granted(lease) => lease,
+        other => panic!("expected GATT lease, got {other:?}"),
+    };
+    let characteristic = OwnerOperations::resolve(
+        owner,
+        &gatt,
+        address,
+        bluer::Uuid::nil(),
+        bluer::Uuid::nil(),
+    )
+    .await
+    .unwrap();
+    let mut stream = OwnerOperations::subscribe(owner, &gatt, &characteristic)
+        .await
+        .unwrap();
+    let _ = stream.next().await;
+    OwnerOperations::write(owner, &gatt, address, &characteristic, &[1, 2, 3])
+        .await
+        .unwrap();
+    OwnerOperations::release(owner, gatt.id(), 7);
+}
 
 /// Configuration for one broker process.
 #[derive(Clone, Debug)]

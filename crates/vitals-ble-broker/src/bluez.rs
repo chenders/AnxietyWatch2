@@ -656,7 +656,7 @@ mod runtime {
     /// A Linux `BlueZ` adapter owner. All application-level `BlueZ` operations pass
     /// through this value; workers receive only typed results from its methods.
     pub struct BluezAdapterOwner<A: AdapterIo> {
-        _session: Option<Session>,
+        session: Option<Session>,
         adapter: A,
         controller: ResolvedController,
         policy: AdapterPolicy,
@@ -700,17 +700,27 @@ mod runtime {
                         class: BluezFailureClass::AdapterMissing,
                         operation: "construct selected adapter",
                     })?;
-            Ok(Self {
-                _session: Some(session),
-                adapter,
-                controller,
-                policy: AdapterPolicy::new(generation),
-                writes: Mutex::new(HashMap::new()),
-            })
+            let mut owner = Self::from_backend(adapter, controller, generation);
+            owner.session = Some(session);
+            Ok(owner)
         }
     }
 
     impl<A: AdapterIo> BluezAdapterOwner<A> {
+        pub(crate) fn from_backend(
+            adapter: A,
+            controller: ResolvedController,
+            generation: Generation,
+        ) -> Self {
+            Self {
+                session: None,
+                adapter,
+                controller,
+                policy: AdapterPolicy::new(generation),
+                writes: Mutex::new(HashMap::new()),
+            }
+        }
+
         /// Return the validated controller and current runtime alias.
         #[must_use]
         pub fn controller(&self) -> &ResolvedController {
@@ -1233,16 +1243,14 @@ mod runtime {
         }
 
         fn fake_owner(adapter: FakeAdapter) -> BluezAdapterOwner<FakeAdapter> {
-            BluezAdapterOwner {
-                _session: None,
+            BluezAdapterOwner::from_backend(
                 adapter,
-                controller: ResolvedController {
+                ResolvedController {
                     selector: ControllerSelector::default(),
                     runtime_name: "fake".to_owned(),
                 },
-                policy: AdapterPolicy::new(Generation::new(1)),
-                writes: Mutex::new(HashMap::new()),
-            }
+                Generation::new(1),
+            )
         }
 
         fn fake_lease(
@@ -1317,7 +1325,8 @@ mod runtime {
         async fn fake_backend_runs_successful_owner_operations() {
             let (adapter, _device, _characteristic) = fake_adapter();
             let mut owner = fake_owner(adapter);
-            assert_eq!(owner.health().await.unwrap().powered, true);
+            crate::server::exercise_linux_owner_dispatch(&mut owner).await;
+            assert!(owner.health().await.unwrap().powered);
 
             let power = fake_lease(
                 &mut owner,
@@ -1871,7 +1880,10 @@ mod runtime {
 }
 
 #[cfg(all(feature = "linux", target_os = "linux"))]
-pub use runtime::LinuxBluezAdapterOwner;
+#[doc(hidden)]
+pub use runtime::{
+    AdapterIo, BluezAdapterOwner, CharacteristicIo, DeviceIo, LinuxBluezAdapterOwner,
+};
 
 #[cfg(test)]
 mod tests {
