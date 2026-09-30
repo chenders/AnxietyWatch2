@@ -318,9 +318,9 @@ pub struct Air11HistoryQuery {
 #[derive(Debug, Clone, Serialize)]
 pub struct Air11HistoryPoint {
     pub t_micros: i64,
-    pub value: f64,
-    pub min: f64,
-    pub max: f64,
+    pub value: Option<f64>,
+    pub min: Option<f64>,
+    pub max: Option<f64>,
     pub count: i64,
 }
 
@@ -1103,7 +1103,18 @@ pub async fn air11_history_handler(
         });
     };
     let source = VitalsSource::ResmedAir11.id();
-    let rows = sqlx::query_as::<_, (String, String, i64, f64, f64, f64, i64)>(
+    let rows = sqlx::query_as::<
+        _,
+        (
+            String,
+            String,
+            i64,
+            Option<f64>,
+            Option<f64>,
+            Option<f64>,
+            i64,
+        ),
+    >(
         "WITH minute_presence AS (
              SELECT time_bucket(INTERVAL '1 minute', timestamp) AS bucket
              FROM samples
@@ -1123,34 +1134,35 @@ pub async fn air11_history_handler(
                         MIN(bucket)
                     ) AS start_bucket
              FROM ordered_presence
+         ), bucketed AS (
+             SELECT registry.name,
+                    registry.unit,
+                    time_bucket_gapfill(
+                        INTERVAL '1 minute', s.timestamp,
+                        start => latest_window.start_bucket,
+                        finish => now()
+                    ) AS bucket,
+                    AVG(s.value) AS value,
+                    MIN(s.value) AS min,
+                    MAX(s.value) AS max,
+                    COUNT(s.value)::bigint AS count
+             FROM samples AS s
+             JOIN vitals_type AS registry ON registry.id = s.type
+             CROSS JOIN latest_window
+             WHERE s.source = $1
+               AND latest_window.start_bucket IS NOT NULL
+               AND s.timestamp >= latest_window.start_bucket
+             GROUP BY registry.name, registry.unit, bucket
          )
-         SELECT registry.name,
-                registry.unit,
-                (EXTRACT(epoch FROM time_bucket_gapfill(
-                    INTERVAL '1 minute', s.timestamp,
-                    start => latest_window.start_bucket,
-                    finish => now()
-                )) * 1000000)::bigint,
-                AVG(s.value),
-                MIN(s.value),
-                MAX(s.value),
-                COUNT(s.value)::bigint
-         FROM samples AS s
-         JOIN vitals_type AS registry ON registry.id = s.type
-         CROSS JOIN latest_window
-         WHERE s.source = $1
-           AND latest_window.start_bucket IS NOT NULL
-           AND s.timestamp >= latest_window.start_bucket
-         GROUP BY registry.name, registry.unit, time_bucket_gapfill(
-             INTERVAL '1 minute', s.timestamp,
-             start => latest_window.start_bucket,
-             finish => now()
-         )
-         ORDER BY registry.name, time_bucket_gapfill(
-             INTERVAL '1 minute', s.timestamp,
-             start => latest_window.start_bucket,
-             finish => now()
-         )",
+         SELECT name,
+                unit,
+                (EXTRACT(epoch FROM bucket) * 1000000)::bigint,
+                value,
+                min,
+                max,
+                count
+         FROM bucketed
+         ORDER BY name, bucket",
     )
     .bind(source)
     .bind(u8::try_from(window_hours).map_or(48, i32::from))
