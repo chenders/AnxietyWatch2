@@ -5,6 +5,8 @@
 //! exposes an axum handler for the corresponding `/api/*` route. The `ops`
 //! module injects system primitives so every collector is testable off-host.
 
+/// AirSense 11 status projection, kiosk feed, and fixed lifecycle actions.
+pub mod air11;
 /// Clock synchronization status (`/api/clock`).
 pub mod clock;
 /// Display/compositor/browser state (`/api/display`).

@@ -2,6 +2,7 @@
   "use strict";
   window.ConsoleDirections = window.ConsoleDirections || {};
   window.ConsoleDirections.c = (model, h) => {
+    if (model.screen === "air11" && window.renderAir11) return window.renderAir11(model, h, "c");
     const node = (item, index) => `<article class="flow-node state-${item.state.toLowerCase()}">
       <div class="node-top"><span class="node-index">${index + 1}</span><strong><span aria-hidden="true">${h.glyph(item.state)}</span> ${h.esc(item.state)}</strong></div>
       <h2>${h.esc(item.title)}</h2><p>${h.esc(item.reason)}</p>
