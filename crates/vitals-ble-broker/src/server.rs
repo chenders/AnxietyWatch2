@@ -1287,7 +1287,7 @@ mod tests {
         BoxFuture, BoxPayloadStream, BrokerState, ClientInfo, ClientMessage, OWNER_ERROR,
         OwnerOperations, Path, UnixStream, address_for_lease, capability_for, cleanup_client,
         controller_inventory, deadline_after, error_message, operation_address, parse_selector,
-        physical_device_path, process_message, serve_client, validate_hello,
+        physical_device_path, process_message, read_message, serve_client, validate_hello,
     };
     use crate::bluez::{
         AdapterHealth, AdapterPolicy, ControllerBus, DeviceObservation, DiscoveryReport, OwnerError,
@@ -1447,6 +1447,46 @@ mod tests {
             operations: Mutex::new(HashMap::new()),
             next_client: Mutex::new(1),
         })
+    }
+
+    #[tokio::test]
+    async fn read_message_rejects_truncated_bad_and_oversized_frames() -> Result<(), String> {
+        let (writer, mut reader) = tokio::io::duplex(32);
+        drop(writer);
+        assert_eq!(
+            read_message(&mut reader).await,
+            Err("broker socket closed".to_owned())
+        );
+        let (mut writer, mut reader) = tokio::io::duplex(32);
+        writer
+            .write_all(&[0_u8; 11])
+            .await
+            .map_err(|error| error.to_string())?;
+        drop(writer);
+        assert!(read_message(&mut reader).await.is_err());
+        let (mut writer, mut reader) = tokio::io::duplex(32);
+        let mut oversized = b"VBT1\x00\x01\x00".to_vec();
+        oversized.extend_from_slice(
+            &u32::try_from(crate::MAX_FRAME_BYTES)
+                .map_err(|error| error.to_string())?
+                .to_be_bytes(),
+        );
+        writer
+            .write_all(&oversized)
+            .await
+            .map_err(|error| error.to_string())?;
+        drop(writer);
+        assert!(read_message(&mut reader).await.is_err());
+        let (mut writer, mut reader) = tokio::io::duplex(32);
+        let mut truncated = b"VBT1\x00\x01\x05".to_vec();
+        truncated.extend_from_slice(&1_u32.to_be_bytes());
+        writer
+            .write_all(&truncated)
+            .await
+            .map_err(|error| error.to_string())?;
+        drop(writer);
+        assert!(read_message(&mut reader).await.is_err());
+        Ok(())
     }
 
     #[tokio::test]
