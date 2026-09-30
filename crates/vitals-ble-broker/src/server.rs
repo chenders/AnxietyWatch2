@@ -374,6 +374,10 @@ pub async fn run(config: BrokerConfig) -> Result<(), String> {
     let owner = LinuxBluezAdapterOwner::open(&config.selector, &inventory, generation)
         .await
         .map_err(|error| format!("broker adapter open failed: {error}"))?;
+    run_with_owner(config, owner).await
+}
+
+async fn run_with_owner<O: BrokerOwner>(config: BrokerConfig, owner: O) -> Result<(), String> {
     prepare_socket(&config.socket).map_err(|error| {
         format!(
             "broker socket setup failed for {}: {error}",
@@ -1383,8 +1387,8 @@ mod tests {
         BoxFuture, BoxPayloadStream, BrokerState, ClientInfo, ClientMessage, OWNER_ERROR,
         OwnerOperations, Path, UnixStream, address_for_lease, capability_for, cleanup_client,
         controller_inventory, deadline_after, error_message, operation_address, parse_selector,
-        physical_device_path, prepare_socket, process_message, read_message, run, serve_client,
-        validate_hello,
+        physical_device_path, prepare_socket, process_message, read_message, run, run_with_owner,
+        serve_client, validate_hello,
     };
     use crate::bluez::{
         AdapterHealth, AdapterPolicy, ControllerBus, ControllerSelector, DeviceObservation,
@@ -1587,6 +1591,32 @@ mod tests {
             operations: Mutex::new(HashMap::new()),
             next_client: Mutex::new(1),
         })
+    }
+
+    #[tokio::test]
+    async fn run_with_fake_owner_binds_socket_and_accepts_client() -> Result<(), String> {
+        let socket =
+            std::env::temp_dir().join(format!("vitals-broker-loop-{}", std::process::id()));
+        let config = super::BrokerConfig {
+            socket: socket.clone(),
+            selector_text: "fake".to_owned(),
+            selector: ControllerSelector::default(),
+            allowed_uid: None,
+        };
+        let task = tokio::spawn(run_with_owner(config, FakeOwner::new()));
+        let mut connected = false;
+        for _ in 0..20 {
+            if UnixStream::connect(&socket).await.is_ok() {
+                connected = true;
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+        }
+        assert!(connected);
+        task.abort();
+        let _ = task.await;
+        let _ = fs::remove_file(socket);
+        Ok(())
     }
 
     #[tokio::test]
