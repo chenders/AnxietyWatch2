@@ -1767,6 +1767,30 @@ mod tests {
                 target: target.to_owned(),
                 payload: vec![1],
             };
+        for (operation_id, kind, target) in [
+            (7, crate::OperationKind::ObserveDevice, "not-an-address"),
+            (8, crate::OperationKind::DiscoverTarget, "not-an-address"),
+            (9, crate::OperationKind::Resolve, "malformed"),
+            (
+                10,
+                crate::OperationKind::Resolve,
+                "not-a-uuid|also-not-a-uuid",
+            ),
+            (11, crate::OperationKind::Subscribe, "unknown"),
+            (12, crate::OperationKind::Write, "unknown"),
+        ] {
+            process_message(
+                1,
+                ClientMessage::Operation(operation(operation_id, kind, target)),
+                &state,
+                &sender,
+            )
+            .await?;
+            assert!(matches!(
+                responses.recv().await,
+                Some(ServerMessage::Error { code: OWNER_ERROR, operation_id: id, .. }) if id == operation_id
+            ));
+        }
         state
             .handles
             .lock()
