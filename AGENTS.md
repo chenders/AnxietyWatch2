@@ -13,6 +13,12 @@ not run.
 
 ## Scope
 
+**OpenSpec is mandatory before work begins.** Every planned change must have an OpenSpec
+change with proposal/design/spec/tasks artifacts before implementation starts. If no suitable
+change exists, create and validate one first; do not begin untracked implementation. Keep the
+artifacts synchronized as scope changes, and treat the task's exact `Verify:` command as the
+acceptance contract.
+
 Work one task at a time. Read **only** the files in that task's `Reads:` list — not the whole repo.
 Every task declares a context budget; if you find yourself reading far beyond the list, the task is
 mis-scoped. Say so rather than proceeding.
@@ -138,6 +144,10 @@ doc in the same commit. A plan doc that does not reflect what shipped is a defec
 ## Workflow — every change ships this way
 
 **Nothing lands on `main` except through a reviewed PR.** The pre-push hook blocks direct pushes.
+
+- Use OpenSpec to track this migration: keep proposal/design/spec/tasks artifacts synchronized,
+  record completed and remaining work there, and run each exact `Verify:` command before ticking
+  its task.
 
 ```
 worktree → branch → commit → push → PR → /respond-to-copilot → squash-merge
