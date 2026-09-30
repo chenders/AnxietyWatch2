@@ -13,6 +13,16 @@ crate. The broker revision containing the stable-controller selector and typed
 operations is a prerequisite; this change does not duplicate or fork that
 owner.
 
+The broker boundary is deliberately extraction-ready. Product names,
+credentials, AirSense RPCs, physiological types, and bedside status remain in
+AnxietyWatch2 integration crates. The reusable boundary consists of bounded
+versioned messages, opaque worker/device selectors, capability-gated leases,
+operation deadlines/cancellation, typed GATT operations, generation changes,
+and redacted errors. A future extraction may publish those pieces without
+publishing this product's collectors or health data model; that extraction is a
+separate OpenSpec change and is not allowed to weaken this migration's safety
+gates.
+
 ## Lease and operation sequence
 
 1. Load the existing private credential through systemd's `LoadCredential`.
@@ -78,6 +88,21 @@ Rollback is source-scoped: stop the broker client, verify lease and subscription
 release, then restore the prior approved collector only if that owner is
 explicitly authorized. The direct BlueZ AirSense unit must never run alongside
 the broker client.
+
+## Future library boundary
+
+The reusable broker surface must not require a device-specific enum, a
+physiology registry, an application credential format, a product status file,
+or a BlueZ object path. The Linux BlueZ implementation is an optional backend
+behind typed adapter/GATT seams. Product integration supplies worker identity,
+priority policy, stable hardware selector configuration, and source-specific
+application protocol above that seam. The public package must preserve bounded
+payloads, no generic D-Bus calls, fail-closed capability checks, lease cleanup,
+and deterministic tests.
+
+The separate `ble-broker-library-extraction` OpenSpec change defines packaging,
+API stability, licensing, documentation, and publication after the operational
+migration is accepted.
 
 ## Verification
 

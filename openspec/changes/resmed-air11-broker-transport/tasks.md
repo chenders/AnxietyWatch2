@@ -63,13 +63,13 @@ it conflicts with the broker ownership decision.
 
 **Context budget:** ~18k tokens · **Depends:** T-A11-BROKER-COV · **Review required:** yes, including security and physiology/unit review
 
-**Reads:** `AGENTS.md` · `docs/specs/AMENDMENTS.md` · `openspec/changes/resmed-air11-broker-transport/{proposal,design,specs/resmed-air11-broker-transport/spec}.md` · `openspec/changes/resmed-air11-ble-stream/{design,tasks}.md` · AirSense `as11_bluez.rs` · AirSense collector binary · AirSense Cargo manifests · broker client/protocol types
+**Reads:** `AGENTS.md` · `docs/specs/AMENDMENTS.md` · `openspec/changes/resmed-air11-broker-transport/{proposal,design,specs/resmed-air11-broker-transport/spec}.md` · `openspec/changes/resmed-air11-ble-stream/{design,tasks}.md` · AirSense `as11_broker.rs` and `as11_common.rs` · AirSense collector binary · AirSense Cargo manifests · broker client/protocol types
 
 **Modifies:** AirSense transport, collector wiring, Cargo manifests/lockfile, and transport tests
 
 **Do:** Replace `bluer` session/device/characteristic and writer-task ownership with `BrokerClient` source handshake, bounded lease, exact UUID resolution, RX subscription, TX writes, broker event consumption, and release cleanup. Preserve application crypto, FIG reassembly, RPC allowlist, journal ordering, status, sample identity, and reconnect state. Remove the direct discovery fallback from the worker; if materialization is missing, call the typed bounded broker discovery operation under its authorized boundary. Never add a direct-BlueZ fallback or use `hciN` as identity.
 
-**Verify:** `cargo fmt --all --check && cargo test -p vitals-collectors --all-features && cargo clippy -p vitals-collectors --all-targets --all-features -- -D warnings && cargo build --bin resmed-air11-collector --all-features && ! rg -n '(^|::)bluer|BlueZ|hci[0-9]+' crates/vitals-collectors/src/as11_bluez.rs crates/vitals-collectors/src/bin/resmed_air11_collector.rs`
+**Verify:** `cargo fmt --all --check && cargo test -p vitals-collectors --all-features && cargo clippy -p vitals-collectors --all-targets --all-features -- -D warnings && cargo build --bin resmed-air11-collector --all-features && ! rg -n '(^|::)bluer|hci[0-9]+' crates/vitals-collectors/src/as11_broker.rs crates/vitals-collectors/src/as11_common.rs crates/vitals-collectors/src/bin/resmed_air11_collector.rs`
 
 **Expect:** exit 0 in the integrated AirSense plus broker workspace. A host without Linux BlueZ may run portable tests only; it must not use a mock BlueZ implementation.
 
