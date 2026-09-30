@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>AnxietyWatch2 console</title>
   <link rel="stylesheet" href="/console/base.css">
+  <link rel="stylesheet" href="/console/air11.css">
   <link id="direction-style" rel="stylesheet" href="/console/dir-a.css">
 </head>
 <body data-dir="a" data-feed="loading">
@@ -16,8 +17,8 @@
       <a data-screen-link="display" href="?screen=display">Display path</a>
       <a data-screen-link="ingest" href="?screen=ingest">Ingest</a>
       <a data-screen-link="attempts" href="?screen=attempts">Attempt history</a>
-      <a href="/console/mobile-enrollment.html">Mobile enrollment</a>
-      <a href="/console/apns-send.html">APNs send</a>
+      <a data-screen-link="air11" href="?screen=air11">AirSense 11</a>
+      <a class="kiosk-link" href="/console/air11-kiosk.html">AS11 kiosk</a>
     </nav>
     <form class="layout-picker" aria-label="Change console layout">
       <label for="layout-direction">Layout</label>
@@ -36,6 +37,15 @@
     <span>Cards retain their last known outcome and reason; this document cannot vouch for current state.</span>
     <button id="reconnect" type="button">Reconnect now</button>
   </aside>
+  <section id="console-login" aria-labelledby="console-login-title" hidden>
+    <h1 id="console-login-title">Admin session required</h1>
+    <form id="console-login-form">
+      <label for="console-password">Console admin password</label>
+      <input id="console-password" name="password" type="password" autocomplete="current-password" required>
+      <button type="submit">Sign in</button>
+      <p id="console-login-status" role="status"></p>
+    </form>
+  </section>
   <main id="console-main" tabindex="-1" aria-live="polite">
     <section class="loading" aria-labelledby="loading-title">
       <h1 id="loading-title">Loading actual appliance observations</h1>
@@ -47,7 +57,6 @@
     <span>Feed: <b id="feed-age">not observed</b> · expect ≤ 45s</span>
     <span id="build-id">Build: UNKNOWN — /api/version not observed</span>
   </footer>
-  <script src="/console/console-model.js"></script>
   <script src="/console/console.js"></script>
 </body>
 </html>

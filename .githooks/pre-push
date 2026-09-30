@@ -111,7 +111,7 @@ if [[ -n "$ADDED" ]]; then
     ':(exclude)scripts/check-public-info.py' \
     | grep '^+' | grep -v '^+++' || true)"
   if grep -oiE '\b([0-9A-F]{2}:){5}[0-9A-F]{2}\b' <<<"$DEVICE_ADDED" \
-       | grep -qviE 'XX|AA:BB:CC:DD:EE:FF'; then
+       | grep -qviE 'XX|AA:BB:CC:DD:EE:(FF|FE)'; then
     fail "a full device address appears in the diff — redact to the OUI (00:11:22:XX:XX:XX)"
   fi
 

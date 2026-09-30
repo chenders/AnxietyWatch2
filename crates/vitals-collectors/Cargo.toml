@@ -13,8 +13,30 @@ vitals-core = { path = "../vitals-core" }
 vitals-decode = { path = "../vitals-decode" }
 vitals-proto = { path = "../vitals-proto" }
 vitals-registry = { path = "../vitals-registry" }
+aes = { version = "0.8", default-features = false }
+cbc = { version = "0.1", default-features = false, features = ["block-padding"] }
+crypto-bigint = { version = "0.5", default-features = false }
+getrandom = "0.3"
+hmac = "0.12"
+serde = "1"
+serde_json = "1"
+sha2 = "0.10"
+zeroize = "1"
+
+[[bin]]
+name = "resmed-air11-collector"
+path = "src/bin/resmed_air11_collector.rs"
+
+[[bin]]
+name = "resmed-air11-onboard"
+path = "src/bin/resmed_air11_onboard.rs"
 
 [target.'cfg(target_os = "linux")'.dependencies]
+bluer = { version = "0.17", features = ["bluetoothd"] }
+# `bluer` uses D-Bus on Linux. Enable its vendored libdbus build so the Pi
+# binary does not depend on a separately installed development package.
+dbus = { version = "0.9", features = ["vendored"] }
+futures = "0.3"
 tokio = { version = "1", features = ["io-util", "macros", "net", "rt", "signal", "sync", "time"] }
 
 [lints]

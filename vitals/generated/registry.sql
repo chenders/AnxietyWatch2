@@ -149,6 +149,76 @@ VALUES (29, 'body_mass', 'kg', 0.1, 500.0, 0.01)
 ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, unit = EXCLUDED.unit,
     range_lo = EXCLUDED.range_lo, range_hi = EXCLUDED.range_hi,
     precision = EXCLUDED.precision;
+INSERT INTO vitals_type (id, name, unit, range_lo, range_hi, precision)
+VALUES (30, 'patient_flow', 'L/s', -20.0, 20.0, 0.001)
+ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, unit = EXCLUDED.unit,
+    range_lo = EXCLUDED.range_lo, range_hi = EXCLUDED.range_hi,
+    precision = EXCLUDED.precision;
+INSERT INTO vitals_type (id, name, unit, range_lo, range_hi, precision)
+VALUES (31, 'mask_pressure', 'cmH2O', 0.0, 50.0, 0.1)
+ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, unit = EXCLUDED.unit,
+    range_lo = EXCLUDED.range_lo, range_hi = EXCLUDED.range_hi,
+    precision = EXCLUDED.precision;
+INSERT INTO vitals_type (id, name, unit, range_lo, range_hi, precision)
+VALUES (32, 'mask_pressure_2s', 'cmH2O', 0.0, 50.0, 0.1)
+ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, unit = EXCLUDED.unit,
+    range_lo = EXCLUDED.range_lo, range_hi = EXCLUDED.range_hi,
+    precision = EXCLUDED.precision;
+INSERT INTO vitals_type (id, name, unit, range_lo, range_hi, precision)
+VALUES (33, 'inspiratory_pressure', 'cmH2O', 0.0, 50.0, 0.1)
+ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, unit = EXCLUDED.unit,
+    range_lo = EXCLUDED.range_lo, range_hi = EXCLUDED.range_hi,
+    precision = EXCLUDED.precision;
+INSERT INTO vitals_type (id, name, unit, range_lo, range_hi, precision)
+VALUES (34, 'expiratory_pressure', 'cmH2O', 0.0, 50.0, 0.1)
+ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, unit = EXCLUDED.unit,
+    range_lo = EXCLUDED.range_lo, range_hi = EXCLUDED.range_hi,
+    precision = EXCLUDED.precision;
+INSERT INTO vitals_type (id, name, unit, range_lo, range_hi, precision)
+VALUES (35, 'leak', 'L/min', 0.0, 300.0, 0.1)
+ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, unit = EXCLUDED.unit,
+    range_lo = EXCLUDED.range_lo, range_hi = EXCLUDED.range_hi,
+    precision = EXCLUDED.precision;
+INSERT INTO vitals_type (id, name, unit, range_lo, range_hi, precision)
+VALUES (36, 'tidal_volume', 'mL', 0.0, 5000.0, 0.1)
+ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, unit = EXCLUDED.unit,
+    range_lo = EXCLUDED.range_lo, range_hi = EXCLUDED.range_hi,
+    precision = EXCLUDED.precision;
+INSERT INTO vitals_type (id, name, unit, range_lo, range_hi, precision)
+VALUES (37, 'minute_ventilation', 'L/min', 0.0, 60.0, 0.1)
+ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, unit = EXCLUDED.unit,
+    range_lo = EXCLUDED.range_lo, range_hi = EXCLUDED.range_hi,
+    precision = EXCLUDED.precision;
+INSERT INTO vitals_type (id, name, unit, range_lo, range_hi, precision)
+VALUES (38, 'target_minute_ventilation', 'L/min', 0.0, 60.0, 0.1)
+ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, unit = EXCLUDED.unit,
+    range_lo = EXCLUDED.range_lo, range_hi = EXCLUDED.range_hi,
+    precision = EXCLUDED.precision;
+INSERT INTO vitals_type (id, name, unit, range_lo, range_hi, precision)
+VALUES (39, 'ie_ratio', 'ratio', 0.0, 10.0, 0.01)
+ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, unit = EXCLUDED.unit,
+    range_lo = EXCLUDED.range_lo, range_hi = EXCLUDED.range_hi,
+    precision = EXCLUDED.precision;
+INSERT INTO vitals_type (id, name, unit, range_lo, range_hi, precision)
+VALUES (40, 'snore_index', 'index', 0.0, 100.0, 0.1)
+ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, unit = EXCLUDED.unit,
+    range_lo = EXCLUDED.range_lo, range_hi = EXCLUDED.range_hi,
+    precision = EXCLUDED.precision;
+INSERT INTO vitals_type (id, name, unit, range_lo, range_hi, precision)
+VALUES (41, 'flow_limitation', 'ratio', 0.0, 1.0, 0.01)
+ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, unit = EXCLUDED.unit,
+    range_lo = EXCLUDED.range_lo, range_hi = EXCLUDED.range_hi,
+    precision = EXCLUDED.precision;
+INSERT INTO vitals_type (id, name, unit, range_lo, range_hi, precision)
+VALUES (42, 'inspiratory_duration', 'seconds', 0.0, 10.0, 0.001)
+ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, unit = EXCLUDED.unit,
+    range_lo = EXCLUDED.range_lo, range_hi = EXCLUDED.range_hi,
+    precision = EXCLUDED.precision;
+INSERT INTO vitals_type (id, name, unit, range_lo, range_hi, precision)
+VALUES (43, 'trigger_cycle_event', 'code', 0.0, 255.0, 1.0)
+ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, unit = EXCLUDED.unit,
+    range_lo = EXCLUDED.range_lo, range_hi = EXCLUDED.range_hi,
+    precision = EXCLUDED.precision;
 
 INSERT INTO vitals_source (id, name, transport)
 VALUES (0, 'emay', 'ble')
@@ -168,6 +238,10 @@ ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name,
     transport = EXCLUDED.transport;
 INSERT INTO vitals_source (id, name, transport)
 VALUES (4, 'acconeer_xe125', 'usb_serial')
+ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name,
+    transport = EXCLUDED.transport;
+INSERT INTO vitals_source (id, name, transport)
+VALUES (5, 'resmed_air11', 'ble')
 ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name,
     transport = EXCLUDED.transport;
 INSERT INTO vitals_source (id, name, transport)

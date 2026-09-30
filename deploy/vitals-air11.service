@@ -1,0 +1,53 @@
+[Unit]
+Description=Read-only ResMed AirSense 11 therapy stream
+After=bluetooth.service vitalsd.service
+Requires=bluetooth.service vitalsd.service
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=vitals
+Group=vitals
+UMask=0077
+
+# systemd copies the operator-managed vitals credential into a private,
+# read-only runtime file before the collector sandbox is applied.
+LoadCredential=air11-credentials.json:/var/lib/vitals/.air11/air11-credentials.json
+ExecStart=/usr/local/bin/resmed-air11-collector --adapter hci0 --credentials %d/air11-credentials.json --state-dir /var/lib/vitals/air11 --socket /run/vitals/vitalsd.sock --status /run/vitals-air11/status.json
+
+Restart=always
+RestartSec=5
+TimeoutStopSec=10
+KillSignal=SIGTERM
+
+# Keep a collector failure visible to the service manager and bound resource use.
+OOMScoreAdjust=-1000
+MemoryMin=64M
+MemoryHigh=192M
+
+# No network, device, privilege escalation, or writable host filesystem access.
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectClock=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_UNIX AF_NETLINK AF_BLUETOOTH
+CapabilityBoundingSet=
+AmbientCapabilities=
+StateDirectory=vitals/air11
+StateDirectoryMode=0700
+RuntimeDirectory=vitals-air11
+RuntimeDirectoryMode=0750
+
+[Install]
+WantedBy=multi-user.target

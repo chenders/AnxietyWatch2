@@ -1,0 +1,13 @@
+// Install as /etc/polkit-1/rules.d/60-vitals-air11-console.rules.
+// This is the only privilege bridge used by the console: the service account
+// may control the single read-only AirSense unit, never arbitrary units.
+polkit.addRule(function (action, subject) {
+    var unit = action.lookup("unit");
+    var verb = action.lookup("verb");
+    if (action.id === "org.freedesktop.systemd1.manage-units"
+        && subject.user === "vitals"
+        && unit === "vitals-air11.service"
+        && (verb === "start" || verb === "stop" || verb === "restart")) {
+        return polkit.Result.YES;
+    }
+});
