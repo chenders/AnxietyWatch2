@@ -1284,9 +1284,10 @@ fn usb_identity(path: &Path) -> (Option<String>, Option<(u16, u16)>) {
 #[cfg(test)]
 mod tests {
     use super::{
-        BoxFuture, BoxPayloadStream, BrokerState, ClientInfo, ClientMessage, OwnerOperations, Path,
-        cleanup_client, controller_inventory, deadline_after, parse_selector, physical_device_path,
-        process_message,
+        BoxFuture, BoxPayloadStream, BrokerState, ClientInfo, ClientMessage, OWNER_ERROR,
+        OwnerOperations, Path, address_for_lease, capability_for, cleanup_client,
+        controller_inventory, deadline_after, error_message, operation_address, parse_selector,
+        physical_device_path, process_message, validate_hello,
     };
     use crate::bluez::{
         AdapterHealth, AdapterPolicy, ControllerBus, DeviceObservation, DiscoveryReport, OwnerError,
@@ -1705,6 +1706,135 @@ mod tests {
         );
         fs::remove_dir_all(root)?;
         Ok(())
+    }
+
+    #[test]
+    fn broker_helpers_fail_closed_with_typed_blockers() {
+        assert_eq!(
+            capability_for(crate::OperationKind::ObserveDevice),
+            Capability::KernelObserve
+        );
+        assert_eq!(
+            capability_for(crate::OperationKind::DiscoverTarget),
+            Capability::Discover
+        );
+        assert_eq!(
+            capability_for(crate::OperationKind::Connect),
+            Capability::Connect
+        );
+        assert_eq!(
+            capability_for(crate::OperationKind::Resolve),
+            Capability::Resolve
+        );
+        assert_eq!(
+            capability_for(crate::OperationKind::Subscribe),
+            Capability::Subscribe
+        );
+        assert_eq!(
+            capability_for(crate::OperationKind::Write),
+            Capability::Write
+        );
+        let Ok(address) = "AA:BB:CC:DD:EE:FF".parse() else {
+            return;
+        };
+        assert_eq!(
+            operation_address("AA:BB:CC:DD:EE:FF", Some(address)),
+            Ok(address)
+        );
+        assert!(operation_address("invalid", None).is_err());
+        let Ok(other) = "11:22:33:44:55:66".parse() else {
+            return;
+        };
+        assert!(operation_address("AA:BB:CC:DD:EE:FF", Some(other)).is_err());
+        assert!(matches!(
+            error_message(3, OWNER_ERROR, "blocker"),
+            ServerMessage::Error {
+                operation_id: 3,
+                code: OWNER_ERROR,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn hello_validation_rejects_selector_device_and_bp_authority() {
+        let state = fake_state();
+        let hello = |source, selector: &str, device_selector, capabilities| crate::Hello {
+            protocol_version: crate::PROTOCOL_VERSION,
+            source,
+            adapter_selector: selector.to_owned(),
+            device_selector,
+            capabilities,
+        };
+        assert!(
+            validate_hello(
+                &state,
+                &hello(
+                    Source::H10,
+                    "wrong",
+                    Some("peer".to_owned()),
+                    CapabilitySet::empty()
+                )
+            )
+            .is_err()
+        );
+        assert!(
+            validate_hello(
+                &state,
+                &hello(
+                    Source::H10,
+                    "bus=usb;vid_pid=0a12:0001",
+                    None,
+                    CapabilitySet::empty()
+                )
+            )
+            .is_err()
+        );
+        assert!(
+            validate_hello(
+                &state,
+                &hello(
+                    Source::Bp,
+                    "bus=usb;vid_pid=0a12:0001",
+                    Some("peer".to_owned()),
+                    CapabilitySet::from_capability(Capability::Connect),
+                )
+            )
+            .is_err()
+        );
+        assert!(
+            validate_hello(
+                &state,
+                &hello(
+                    Source::H10,
+                    "bus=usb;vid_pid=0a12:0001",
+                    Some("peer".to_owned()),
+                    CapabilitySet::empty(),
+                )
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn lease_address_is_derived_only_from_a_valid_device_selector() {
+        let lease = LeaseRequest::new(
+            Source::H10,
+            Intent::Connect,
+            Priority::new(1),
+            10,
+            10,
+            Some(crate::DeviceId::new("AA:BB:CC:DD:EE:FF")),
+            CapabilitySet::empty(),
+        );
+        let mut policy = AdapterPolicy::new(Generation::new(1));
+        let Ok(AcquireResult::Granted(lease)) = policy.acquire(lease, 0) else {
+            return;
+        };
+        assert_eq!(
+            address_for_lease(&lease).map(|value| value.to_string()),
+            Some("AA:BB:CC:DD:EE:FF".to_owned())
+        );
     }
 
     #[test]
