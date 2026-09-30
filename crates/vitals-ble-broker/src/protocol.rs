@@ -1409,10 +1409,9 @@ mod tests {
             decode(&unknown_client),
             Err(ProtocolError::UnknownKind(0x7f))
         );
-        let Some(kind) = unknown_client.get_mut(6) else {
-            return;
-        };
-        *kind = 0;
+        if let Some(kind) = unknown_client.get_mut(6) {
+            *kind = 0;
+        }
         assert_eq!(decode(&unknown_client), Err(ProtocolError::Truncated));
         assert!(matches!(
             encode_server(&ServerMessage::Error {
