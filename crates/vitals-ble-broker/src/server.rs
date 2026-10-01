@@ -248,11 +248,11 @@ pub(crate) async fn exercise_linux_owner_dispatch<A: AdapterIo>(owner: &mut Blue
     };
 
     let discover =
-        OwnerOperations::acquire(owner, request(Source::Diagnostics, Intent::Discover), 0).unwrap();
-    let discover = match discover {
-        crate::AcquireResult::Granted(lease) => lease,
-        other => panic!("expected discovery lease, got {other:?}"),
-    };
+        OwnerOperations::acquire(owner, request(Source::Diagnostics, Intent::Discover), 0)
+            .unwrap()
+            .lease()
+            .cloned()
+            .unwrap();
     let queued =
         OwnerOperations::acquire(owner, request(Source::Diagnostics, Intent::Discover), 0).unwrap();
     if let crate::AcquireResult::Queued { ticket, .. } = queued {
@@ -270,23 +270,21 @@ pub(crate) async fn exercise_linux_owner_dispatch<A: AdapterIo>(owner: &mut Blue
     .unwrap();
     OwnerOperations::release(owner, discover.id(), 1);
 
-    let observe =
-        OwnerOperations::acquire(owner, request(Source::Bp, Intent::KernelObserve), 2).unwrap();
-    let observe = match observe {
-        crate::AcquireResult::Granted(lease) => lease,
-        other => panic!("expected observe lease, got {other:?}"),
-    };
+    let observe = OwnerOperations::acquire(owner, request(Source::Bp, Intent::KernelObserve), 2)
+        .unwrap()
+        .lease()
+        .cloned()
+        .unwrap();
     OwnerOperations::observe(owner, &observe, address)
         .await
         .unwrap();
     OwnerOperations::release(owner, observe.id(), 3);
 
-    let connect =
-        OwnerOperations::acquire(owner, request(Source::AirSense, Intent::Connect), 4).unwrap();
-    let connect = match connect {
-        crate::AcquireResult::Granted(lease) => lease,
-        other => panic!("expected connect lease, got {other:?}"),
-    };
+    let connect = OwnerOperations::acquire(owner, request(Source::AirSense, Intent::Connect), 4)
+        .unwrap()
+        .lease()
+        .cloned()
+        .unwrap();
     OwnerOperations::connect(owner, &connect, address, Duration::from_millis(10))
         .await
         .unwrap();
@@ -295,11 +293,11 @@ pub(crate) async fn exercise_linux_owner_dispatch<A: AdapterIo>(owner: &mut Blue
         .unwrap();
     OwnerOperations::release(owner, connect.id(), 5);
 
-    let gatt = OwnerOperations::acquire(owner, request(Source::AirSense, Intent::Gatt), 6).unwrap();
-    let gatt = match gatt {
-        crate::AcquireResult::Granted(lease) => lease,
-        other => panic!("expected GATT lease, got {other:?}"),
-    };
+    let gatt = OwnerOperations::acquire(owner, request(Source::AirSense, Intent::Gatt), 6)
+        .unwrap()
+        .lease()
+        .cloned()
+        .unwrap();
     let characteristic = OwnerOperations::resolve(
         owner,
         &gatt,
