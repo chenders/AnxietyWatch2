@@ -11,6 +11,7 @@ Restart=always
 RestartSec=3
 EnvironmentFile=/etc/vitals/ble-broker.env
 Environment=VITALS_BLE_BROKER_SOCKET=/run/vitals/ble-broker.sock
+Environment=VITALS_BLE_BROKER_METRICS_PATH=/run/vitals/ble-broker.prom
 # VITALS_BLE_ADAPTER_SELECTOR must identify hardware, never hci0/hci1 or a
 # USB-port path. Prefer address=... when the controller exposes one; for a
 # single known USB controller, bus=usb;vid_pid=... is port-independent and

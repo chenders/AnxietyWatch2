@@ -60,6 +60,7 @@ mod tests {
     fn startup_reports_runtime_failure_without_binding_a_socket() {
         let config = BrokerConfig {
             socket: PathBuf::from("/tmp/vitals-ble-broker-coverage.sock"),
+            metrics_path: PathBuf::from("/tmp/vitals-ble-broker-coverage.prom"),
             selector_text: "address=00:00:00XX:XX:XX".to_owned(),
             selector: ControllerSelector {
                 address: Some("00:00:00XX:XX:XX".to_owned()),

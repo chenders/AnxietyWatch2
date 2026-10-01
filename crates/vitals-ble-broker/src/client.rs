@@ -615,13 +615,9 @@ impl BrokerClient {
             header[7], header[8], header[9], header[10],
         ]))
         .map_err(|_| ClientError::Protocol(ProtocolError::InvalidPayload))?;
-        let frame_length =
-            11_usize
-                .checked_add(payload_length)
-                .ok_or(ProtocolError::FrameTooLarge {
-                    length: usize::MAX,
-                    max: crate::MAX_FRAME_BYTES,
-                })?;
+        // The wire length is a u32 and this daemon runs on 64-bit Linux, so
+        // adding the fixed header cannot overflow `usize`.
+        let frame_length = 11_usize + payload_length;
         if frame_length > crate::MAX_FRAME_BYTES {
             return Err(ClientError::Protocol(ProtocolError::FrameTooLarge {
                 length: frame_length,

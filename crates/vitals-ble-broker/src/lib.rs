@@ -13,6 +13,8 @@ pub mod lease;
 mod protocol;
 #[cfg(all(feature = "linux", target_os = "linux"))]
 pub mod server;
+#[cfg(all(feature = "linux", target_os = "linux"))]
+mod telemetry;
 
 pub use lease::{
     AcquireResult, Capability, CapabilitySet, DeviceId, Generation, Intent, Lease, LeaseId,

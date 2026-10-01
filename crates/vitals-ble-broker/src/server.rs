@@ -24,10 +24,11 @@ use crate::bluez::{
     AdapterIo, BluezAdapterOwner, ControllerBus, ControllerEvidence, ControllerSelector, DeviceIo,
     LinuxBluezAdapterOwner,
 };
+use crate::telemetry::{OperationResult, Telemetry};
 use crate::{
     Acquire, Capability, CapabilitySet, ClientMessage, DeviceId, Generation, Intent, Lease,
     LeaseId, LeaseRequest, Operation, OperationKind, ProtocolError, Release, ReleaseOutcome,
-    ServerMessage, Source, encode_server,
+    ServerMessage, Source, encode, encode_server,
 };
 use futures::{
     Stream, StreamExt as _,
@@ -322,6 +323,8 @@ pub(crate) async fn exercise_linux_owner_dispatch<A: AdapterIo>(owner: &mut Blue
 pub struct BrokerConfig {
     /// Private worker socket path.
     pub socket: PathBuf,
+    /// Prometheus textfile snapshot path.
+    pub metrics_path: PathBuf,
     /// Stable selector text expected from every worker.
     pub selector_text: String,
     /// Stable selector resolved against the local controller inventory.
@@ -352,6 +355,8 @@ impl BrokerConfig {
         Ok(Self {
             socket: std::env::var_os("VITALS_BLE_BROKER_SOCKET")
                 .map_or_else(|| "/run/vitals/ble-broker.sock".into(), PathBuf::from),
+            metrics_path: std::env::var_os("VITALS_BLE_BROKER_METRICS_PATH")
+                .map_or_else(|| "/run/vitals/ble-broker.prom".into(), PathBuf::from),
             selector_text,
             selector,
             allowed_uid,
@@ -387,8 +392,12 @@ async fn run_with_owner<O: BrokerOwner>(config: BrokerConfig, owner: O) -> Resul
     fs::set_permissions(&config.socket, fs::Permissions::from_mode(SOCKET_MODE))
         .map_err(|error| format!("broker socket permissions failed: {error}"))?;
 
+    let telemetry = Arc::new(Telemetry::new());
+    let _metrics_exporter =
+        tokio::spawn(Arc::clone(&telemetry).export_loop(config.metrics_path.clone()));
     let state = Arc::new(BrokerState {
         owner: Mutex::new(owner),
+        telemetry,
         selector_text: config.selector_text,
         allowed_uid: config.allowed_uid,
         started: Instant::now(),
@@ -415,6 +424,7 @@ async fn run_with_owner<O: BrokerOwner>(config: BrokerConfig, owner: O) -> Resul
 
 struct BrokerState<O: BrokerOwner> {
     owner: Mutex<O>,
+    telemetry: Arc<Telemetry>,
     selector_text: String,
     allowed_uid: Option<u32>,
     started: Instant,
@@ -457,9 +467,11 @@ async fn serve_client<O: BrokerOwner>(
 
     let (mut reader, mut writer) = stream.into_split();
     let (sender, mut responses) = mpsc::channel::<ServerMessage>(SOCKET_QUEUE);
+    let telemetry = Arc::clone(&state.telemetry);
     let writer_task = tokio::spawn(async move {
         while let Some(message) = responses.recv().await {
             let frame = encode_server(&message).map_err(|error| error.to_string())?;
+            telemetry.response_bytes(frame.len());
             writer
                 .write_all(&frame)
                 .await
@@ -470,12 +482,16 @@ async fn serve_client<O: BrokerOwner>(
 
     let hello = read_message(&mut reader).await?;
     let ClientMessage::Hello(hello) = hello else {
+        state.telemetry.client_rejected();
         let _ = sender
             .send(error_message(0, AUTH_ERROR, "worker handshake required"))
             .await;
         return Err("worker handshake required".to_owned());
     };
-    validate_hello(&state, &hello)?;
+    if let Err(error) = validate_hello(&state, &hello) {
+        state.telemetry.client_rejected();
+        return Err(error);
+    }
     let client_id = {
         let mut next = state.next_client.lock().await;
         let id = *next;
@@ -485,6 +501,10 @@ async fn serve_client<O: BrokerOwner>(
     let generation = state.owner.lock().await.generation();
     let source = hello.source;
     let capabilities = hello.capabilities;
+    state.telemetry.client_connected(source);
+    if let Ok(frame) = encode(&ClientMessage::Hello(hello.clone())) {
+        state.telemetry.request_bytes(source, frame.len());
+    }
     state.clients.lock().await.insert(
         client_id,
         ClientInfo {
@@ -501,6 +521,9 @@ async fn serve_client<O: BrokerOwner>(
             Err(error) if error == "broker socket closed" => break Ok(()),
             Err(error) => break Err(error),
         };
+        if let Ok(frame) = encode(&message) {
+            state.telemetry.request_bytes(source, frame.len());
+        }
         if let Err(error) = process_message(client_id, message, &state, &sender).await {
             break Err(error);
         }
@@ -646,6 +669,7 @@ async fn acquire_lease<O: BrokerOwner>(
     let result = state.owner.lock().await.acquire(request, now);
     match result {
         Ok(crate::AcquireResult::Granted(lease)) => {
+            state.telemetry.lease_granted(acquire.source);
             let address = address_for_lease(&lease);
             let id = lease.id();
             if let Some(client) = state.clients.lock().await.get_mut(&client_id) {
@@ -673,6 +697,7 @@ async fn acquire_lease<O: BrokerOwner>(
             Ok(())
         }
         Ok(crate::AcquireResult::Queued { ticket, blocker }) => {
+            state.telemetry.lease_queued(acquire.source);
             // Source clients currently use bounded retries rather than holding
             // an unbounded socket wait. Cancel the scheduler entry immediately
             // so a dead worker can never strand a lease request.
@@ -696,6 +721,14 @@ async fn start_operation<O: BrokerOwner>(
     sender: &mpsc::Sender<ServerMessage>,
 ) -> Result<(), String> {
     let operation_id = operation.operation_id;
+    let operation_kind = operation.kind;
+    let source = state
+        .clients
+        .lock()
+        .await
+        .get(&client_id)
+        .map(|client| client.source)
+        .ok_or_else(|| "operation blocked: worker is not authenticated".to_owned())?;
     let (abort_handle, abort_registration) = AbortHandle::new_pair();
     let mut operations = state.operations.lock().await;
     if operations.contains_key(&(client_id, operation_id)) {
@@ -714,11 +747,23 @@ async fn start_operation<O: BrokerOwner>(
     let state = Arc::clone(state);
     let sender = sender.clone();
     tokio::spawn(async move {
+        let started = Instant::now();
         let result = Abortable::new(
             process_operation(client_id, operation, &state, &sender),
             abort_registration,
         )
         .await;
+        let telemetry_result = match &result {
+            Ok(Ok(())) => OperationResult::Success,
+            Ok(Err(_)) => OperationResult::Failure,
+            Err(_) => OperationResult::Cancelled,
+        };
+        state.telemetry.operation_finished(
+            source,
+            operation_kind,
+            started.elapsed(),
+            telemetry_result,
+        );
         if let Ok(Err(error)) = result {
             let _ = send_response(&sender, error_message(operation_id, OWNER_ERROR, &error)).await;
         }
@@ -942,12 +987,14 @@ async fn process_operation<O: BrokerOwner>(
                     )
                     .await?;
                     let sender = sender.clone();
+                    let telemetry = Arc::clone(&state.telemetry);
                     let lease_id = operation.lease_id;
                     let operation_id = operation.operation_id;
                     let indication = info.lease.source() == Source::Bp;
                     tokio::spawn(async move {
                         futures::pin_mut!(stream);
                         while let Some(payload) = stream.next().await {
+                            telemetry.notification_bytes(payload.len());
                             if sender
                                 .send(ServerMessage::Frame {
                                     lease_id,
@@ -1027,6 +1074,7 @@ async fn release_lease<O: BrokerOwner>(
         .lock()
         .await
         .release(release.lease_id, elapsed_tick(state.started));
+    state.telemetry.lease_released(info.lease.source());
     remove_lease(client_id, release.lease_id, state).await;
     send_response(
         sender,
@@ -1058,12 +1106,13 @@ async fn cleanup_client<O: BrokerOwner>(client_id: u64, state: &Arc<BrokerState<
     for handle in operation_handles {
         handle.abort();
     }
-    let leases = state
-        .clients
-        .lock()
-        .await
-        .remove(&client_id)
-        .map_or_else(Vec::new, |client| client.leases);
+    let removed_client = state.clients.lock().await.remove(&client_id);
+    let (source, leases) = removed_client.map_or((None, Vec::new()), |client| {
+        (Some(client.source), client.leases)
+    });
+    if let Some(source) = source {
+        state.telemetry.client_disconnected(source);
+    }
     for lease_id in leases {
         if let Ok(info) = lease_info(client_id, lease_id, state).await {
             if info.lease.source() != Source::Bp
@@ -1392,6 +1441,7 @@ mod tests {
         AdapterHealth, AdapterPolicy, ControllerBus, ControllerSelector, DeviceObservation,
         DiscoveryReport, OwnerError,
     };
+    use crate::telemetry::Telemetry;
     use crate::{
         AcquireResult, Capability, CapabilitySet, Generation, Intent, LeaseRequest, Priority,
         ServerMessage, Source,
@@ -1580,6 +1630,7 @@ mod tests {
     fn fake_state() -> Arc<BrokerState<FakeOwner>> {
         Arc::new(BrokerState {
             owner: Mutex::new(FakeOwner::new()),
+            telemetry: Arc::new(Telemetry::new()),
             selector_text: "bus=usb;vid_pid=0a12:0001".to_owned(),
             allowed_uid: None,
             started: Instant::now(),
@@ -1597,6 +1648,7 @@ mod tests {
             std::env::temp_dir().join(format!("vitals-broker-loop-{}", std::process::id()));
         let config = super::BrokerConfig {
             socket: socket.clone(),
+            metrics_path: socket.with_extension("prom"),
             selector_text: "fake".to_owned(),
             selector: ControllerSelector::default(),
             allowed_uid: None,
@@ -1621,6 +1673,8 @@ mod tests {
     async fn run_rejects_a_selector_without_a_local_adapter() {
         let config = super::BrokerConfig {
             socket: std::env::temp_dir().join(format!("vitals-broker-run-{}", std::process::id())),
+            metrics_path: std::env::temp_dir()
+                .join(format!("vitals-broker-run-{}.prom", std::process::id())),
             selector_text: "address=00:00:00XX:XX:XX".to_owned(),
             selector: ControllerSelector {
                 address: Some("00:00:00XX:XX:XX".to_owned()),

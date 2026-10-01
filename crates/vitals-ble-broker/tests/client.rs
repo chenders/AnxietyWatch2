@@ -382,3 +382,274 @@ async fn typed_client_covers_successful_lease_operations_and_events() -> Result<
     let _ = std::fs::remove_file(path);
     Ok(())
 }
+
+async fn connect_with_response(
+    name: &str,
+    response: ServerMessage,
+) -> Result<vitals_ble_broker::BrokerClientError, String> {
+    let path = socket_path(name);
+    let _ = std::fs::remove_file(&path);
+    let listener = UnixListener::bind(&path).map_err(|error| error.to_string())?;
+    let server = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.map_err(|error| error.to_string())?;
+        let _ = read_frame(&mut stream).await;
+        send_server(&mut stream, response).await;
+        Ok::<(), String>(())
+    });
+    let Err(result) = BrokerClient::connect_source(
+        Source::AirSense,
+        &path,
+        SELECTOR,
+        TARGET,
+        CapabilitySet::empty(),
+    )
+    .await
+    else {
+        return Err("scripted handshake unexpectedly succeeded".to_owned());
+    };
+    server.await.map_err(|error| error.to_string())??;
+    let _ = std::fs::remove_file(path);
+    Ok(result)
+}
+
+async fn acquire_test(
+    client: &mut BrokerClient,
+) -> Result<(), vitals_ble_broker::BrokerClientError> {
+    client
+        .acquire_lease(
+            vitals_ble_broker::Intent::Connect,
+            Priority::new(1),
+            1,
+            1,
+            TARGET,
+            CapabilitySet::empty(),
+            "test",
+        )
+        .await
+        .map(|_| ())
+}
+
+#[tokio::test]
+async fn typed_client_reports_handshake_rejections() -> Result<(), String> {
+    assert!(matches!(
+        connect_with_response(
+            "hello-error",
+            ServerMessage::Error {
+                operation_id: 0,
+                code: 3,
+                detail: "bad hello".to_owned(),
+            },
+        )
+        .await?,
+        vitals_ble_broker::BrokerClientError::Broker { code: 3, .. }
+    ));
+    assert!(matches!(
+        connect_with_response(
+            "hello-unexpected",
+            ServerMessage::Released {
+                lease_id: LeaseId::new(2),
+            },
+        )
+        .await?,
+        vitals_ble_broker::BrokerClientError::UnexpectedResponse("HelloAccepted")
+    ));
+    Ok(())
+}
+
+#[tokio::test]
+async fn typed_client_reports_operation_rejections() -> Result<(), String> {
+    let path = socket_path("rejections");
+    let _ = std::fs::remove_file(&path);
+    let listener = UnixListener::bind(&path).map_err(|error| error.to_string())?;
+    let server = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.map_err(|error| error.to_string())?;
+        let _ = read_frame(&mut stream).await;
+        send_server(
+            &mut stream,
+            ServerMessage::HelloAccepted {
+                generation: Generation::new(4),
+            },
+        )
+        .await;
+        for response in [
+            ServerMessage::LeaseQueued { ticket: 11 },
+            ServerMessage::Error {
+                operation_id: 0,
+                code: 4,
+                detail: "lease rejected".to_owned(),
+            },
+            ServerMessage::DeviceState {
+                operation_id: 0,
+                connected: false,
+                services_resolved: false,
+            },
+            ServerMessage::LeaseGranted {
+                lease_id: LeaseId::new(12),
+                generation: Generation::new(4),
+                expires_at: 44,
+            },
+        ] {
+            let _ = read_frame(&mut stream).await;
+            send_server(&mut stream, response).await;
+        }
+        for response in [
+            ServerMessage::Error {
+                operation_id: 1,
+                code: 5,
+                detail: "observe rejected".to_owned(),
+            },
+            ServerMessage::OperationAccepted { operation_id: 2 },
+            ServerMessage::OperationAccepted { operation_id: 3 },
+            ServerMessage::Error {
+                operation_id: 4,
+                code: 6,
+                detail: "resolve rejected".to_owned(),
+            },
+            ServerMessage::Error {
+                operation_id: 5,
+                code: 7,
+                detail: "subscribe rejected".to_owned(),
+            },
+            ServerMessage::DeviceState {
+                operation_id: 6,
+                connected: true,
+                services_resolved: false,
+            },
+        ] {
+            let _ = read_frame(&mut stream).await;
+            send_server(&mut stream, response).await;
+        }
+        send_server(
+            &mut stream,
+            ServerMessage::Error {
+                operation_id: 0,
+                code: 8,
+                detail: "event stream ended".to_owned(),
+            },
+        )
+        .await;
+        let _ = read_frame(&mut stream).await;
+        send_server(
+            &mut stream,
+            ServerMessage::Error {
+                operation_id: 0,
+                code: 9,
+                detail: "release rejected".to_owned(),
+            },
+        )
+        .await;
+        Ok::<(), String>(())
+    });
+    let mut client = BrokerClient::connect_source(
+        Source::AirSense,
+        &path,
+        SELECTOR,
+        TARGET,
+        CapabilitySet::empty(),
+    )
+    .await
+    .map_err(|error| error.to_string())?;
+    assert!(matches!(
+        acquire_test(&mut client).await,
+        Err(vitals_ble_broker::BrokerClientError::Queued { ticket: 11 })
+    ));
+    assert!(matches!(
+        acquire_test(&mut client).await,
+        Err(vitals_ble_broker::BrokerClientError::Broker { code: 4, .. })
+    ));
+    assert!(matches!(
+        acquire_test(&mut client).await,
+        Err(vitals_ble_broker::BrokerClientError::UnexpectedResponse(
+            "LeaseGranted"
+        ))
+    ));
+    acquire_test(&mut client)
+        .await
+        .map_err(|error| error.to_string())?;
+    assert!(matches!(
+        client
+            .observe_device_bounded(TARGET, Duration::from_secs(1))
+            .await,
+        Err(vitals_ble_broker::BrokerClientError::Broker { code: 5, .. })
+    ));
+    assert!(matches!(
+        client
+            .observe_device_bounded(TARGET, Duration::from_secs(1))
+            .await,
+        Err(vitals_ble_broker::BrokerClientError::UnexpectedResponse(
+            "DeviceState"
+        ))
+    ));
+    client
+        .connect_device_bounded(TARGET, Duration::from_secs(1))
+        .await
+        .map_err(|error| error.to_string())?;
+    assert!(matches!(
+        client
+            .resolve_characteristic_bounded("service", "characteristic", Duration::from_secs(1))
+            .await,
+        Err(vitals_ble_broker::BrokerClientError::Broker { code: 6, .. })
+    ));
+    assert!(matches!(
+        client
+            .subscribe_bounded("handle", Duration::from_secs(1))
+            .await,
+        Err(vitals_ble_broker::BrokerClientError::Broker { code: 7, .. })
+    ));
+    assert!(matches!(
+        client
+            .write_bounded("handle", &[], Duration::from_secs(1))
+            .await,
+        Err(vitals_ble_broker::BrokerClientError::UnexpectedResponse(
+            "OperationAccepted"
+        ))
+    ));
+    assert!(matches!(
+        client.next_event().await,
+        Err(vitals_ble_broker::BrokerClientError::Broker { code: 8, .. })
+    ));
+    assert!(matches!(
+        client.release("rejected").await,
+        Err(vitals_ble_broker::BrokerClientError::Broker { code: 9, .. })
+    ));
+    server.await.map_err(|error| error.to_string())??;
+    let _ = std::fs::remove_file(path);
+    Ok(())
+}
+
+#[tokio::test]
+async fn typed_client_rejects_an_oversized_server_frame() -> Result<(), String> {
+    let path = socket_path("oversized");
+    let _ = std::fs::remove_file(&path);
+    let listener = UnixListener::bind(&path).map_err(|error| error.to_string())?;
+    let server = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.map_err(|error| error.to_string())?;
+        let _ = read_frame(&mut stream).await;
+        let mut header = [0_u8; 11];
+        let length =
+            u32::try_from(vitals_ble_broker::MAX_FRAME_BYTES).map_err(|error| error.to_string())?;
+        header[7..11].copy_from_slice(&length.to_be_bytes());
+        stream
+            .write_all(&header)
+            .await
+            .map_err(|error| error.to_string())?;
+        Ok::<(), String>(())
+    });
+    let result = BrokerClient::connect_source(
+        Source::AirSense,
+        &path,
+        SELECTOR,
+        TARGET,
+        CapabilitySet::empty(),
+    )
+    .await;
+    assert!(matches!(
+        result,
+        Err(vitals_ble_broker::BrokerClientError::Protocol(
+            vitals_ble_broker::ProtocolError::FrameTooLarge { .. }
+        ))
+    ));
+    server.await.map_err(|error| error.to_string())??;
+    let _ = std::fs::remove_file(path);
+    Ok(())
+}
