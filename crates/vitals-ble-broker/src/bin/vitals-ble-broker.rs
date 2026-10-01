@@ -43,12 +43,32 @@ fn startup(
 
 #[cfg(all(test, feature = "linux", target_os = "linux"))]
 mod tests {
+    use std::path::PathBuf;
+
+    use vitals_ble_broker::bluez::ControllerSelector;
+    use vitals_ble_broker::server::BrokerConfig;
+
     #[test]
     fn startup_reports_configuration_failure_without_starting_bluetooth() {
         assert_eq!(
             super::startup(Err("VITALS_BLE_ADAPTER_SELECTOR is unset".to_owned())),
             Err((64, "VITALS_BLE_ADAPTER_SELECTOR is unset".to_owned()))
         );
+    }
+
+    #[test]
+    fn startup_reports_runtime_failure_without_binding_a_socket() {
+        let config = BrokerConfig {
+            socket: PathBuf::from("/tmp/vitals-ble-broker-coverage.sock"),
+            selector_text: "address=00:00:00XX:XX:XX".to_owned(),
+            selector: ControllerSelector {
+                address: Some("00:00:00XX:XX:XX".to_owned()),
+                ..ControllerSelector::default()
+            },
+            allowed_uid: None,
+        };
+        let result = super::startup(Ok(config));
+        assert!(matches!(result, Err((70, _))));
     }
 
     #[test]
