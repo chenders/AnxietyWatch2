@@ -417,6 +417,7 @@ mod runtime {
     use tokio::sync::{Mutex, OwnedMutexGuard};
 
     type BackendFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+    /// A typed asynchronous stream returned by a backend.
     pub type BackendStream<T> = Pin<Box<dyn Stream<Item = T> + Send>>;
 
     #[allow(missing_docs)]
@@ -1991,7 +1992,8 @@ mod runtime {
 #[cfg(all(feature = "linux", target_os = "linux"))]
 #[doc(hidden)]
 pub use runtime::{
-    AdapterIo, BluezAdapterOwner, CharacteristicIo, DeviceIo, LinuxBluezAdapterOwner,
+    AdapterIo, BackendStream, BluezAdapterOwner, CharacteristicIo, DeviceIo,
+    LinuxBluezAdapterOwner, ServiceIo,
 };
 
 #[cfg(test)]
