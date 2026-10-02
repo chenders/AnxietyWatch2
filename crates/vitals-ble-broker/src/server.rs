@@ -363,6 +363,31 @@ impl BrokerConfig {
     }
 }
 
+/// Run the production broker entry point and return its process exit code.
+#[must_use]
+pub fn entrypoint() -> std::process::ExitCode {
+    finish(startup(BrokerConfig::from_env()))
+}
+
+fn finish(result: Result<(), (u8, String)>) -> std::process::ExitCode {
+    match result {
+        Ok(()) => std::process::ExitCode::SUCCESS,
+        Err((code, error)) => {
+            eprintln!("vitals-ble-broker: {error}");
+            std::process::ExitCode::from(code)
+        }
+    }
+}
+
+fn startup(config: Result<BrokerConfig, String>) -> Result<(), (u8, String)> {
+    let config = config.map_err(|error| (64, error))?;
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|error| (70, format!("could not start tokio runtime: {error}")))?;
+    runtime.block_on(run(config)).map_err(|error| (70, error))
+}
+
 /// Run the broker until the listener or an accepted client fails fatally.
 ///
 /// # Errors
@@ -1430,12 +1455,12 @@ fn usb_identity(path: &Path) -> (Option<String>, Option<(u16, u16)>) {
 #[cfg(test)]
 mod tests {
     use super::{
-        BoxFuture, BoxPayloadStream, BrokerState, ClientInfo, ClientMessage, LeaseInfo,
-        OWNER_ERROR, OwnerOperations, Path, UnixStream, address_for_lease, cancel_operation,
-        capability_for, cleanup_client, controller_inventory, deadline_after, error_message,
-        insert_lease, operation_address, parse_selector, physical_device_path, prepare_socket,
-        process_message, process_operation, read_message, run, run_with_owner, serve_client,
-        validate_hello,
+        BoxFuture, BoxPayloadStream, BrokerConfig, BrokerState, ClientInfo, ClientMessage,
+        LeaseInfo, OWNER_ERROR, OwnerOperations, Path, UnixStream, address_for_lease,
+        cancel_operation, capability_for, cleanup_client, controller_inventory, deadline_after,
+        error_message, insert_lease, operation_address, parse_selector, physical_device_path,
+        prepare_socket, process_message, process_operation, read_message, run, run_with_owner,
+        serve_client, startup, validate_hello,
     };
     use crate::bluez::{
         AdapterHealth, AdapterPolicy, ControllerBus, ControllerSelector, DeviceObservation,
@@ -1450,7 +1475,7 @@ mod tests {
     use std::sync::Arc;
     use std::task::{Context, Poll};
     use std::time::Instant;
-    use std::{collections::HashMap, fs, pin::Pin};
+    use std::{collections::HashMap, fs, path::PathBuf, pin::Pin};
     use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt, ReadBuf};
     use tokio::sync::{Mutex, mpsc};
 
@@ -1706,6 +1731,31 @@ mod tests {
     #[test]
     fn config_from_env_reports_missing_selector() {
         assert!(super::BrokerConfig::from_env().is_err());
+        assert_eq!(super::entrypoint(), std::process::ExitCode::from(64));
+        assert_eq!(
+            super::startup(Err("VITALS_BLE_ADAPTER_SELECTOR is unset".to_owned())),
+            Err((64, "VITALS_BLE_ADAPTER_SELECTOR is unset".to_owned()))
+        );
+        assert_eq!(super::finish(Ok(())), std::process::ExitCode::SUCCESS);
+        assert_eq!(
+            super::finish(Err((70, "broker stopped".to_owned()))),
+            std::process::ExitCode::from(70)
+        );
+    }
+
+    #[test]
+    fn startup_reports_runtime_failure_without_binding_a_socket() {
+        let config = BrokerConfig {
+            socket: PathBuf::from("/tmp/vitals-ble-broker-coverage.sock"),
+            metrics_path: PathBuf::from("/tmp/vitals-ble-broker-coverage.prom"),
+            selector_text: "serial=coverage-selector".to_owned(),
+            selector: ControllerSelector {
+                serial: Some("coverage-selector".to_owned()),
+                ..ControllerSelector::default()
+            },
+            allowed_uid: None,
+        };
+        assert!(matches!(startup(Ok(config)), Err((70, _))));
     }
 
     #[test]
