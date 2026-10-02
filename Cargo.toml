@@ -24,6 +24,7 @@ repository = "https://github.com/chenders/AnxietyWatch2"
 [workspace.lints.rust]
 unsafe_code = "forbid"
 missing_docs = "warn"
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(coverage)"] }
 
 [workspace.lints.clippy]
 # Warnings are failures here, same as the C build's -Werror.

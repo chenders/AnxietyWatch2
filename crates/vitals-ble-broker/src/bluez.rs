@@ -1152,9 +1152,7 @@ mod runtime {
 
             fn connect<'a>(&'a self) -> BackendFuture<'a, Result<(), OwnerError>> {
                 if self.state.lock().unwrap().connect_pending {
-                    return Box::pin(async {
-                        futures::future::pending::<Result<(), OwnerError>>().await
-                    });
+                    return Box::pin(futures::future::pending::<Result<(), OwnerError>>());
                 }
                 let result = self.state.lock().unwrap().connect.clone();
                 Box::pin(async move { result })
@@ -1254,26 +1252,29 @@ mod runtime {
             )
         }
 
+        #[allow(clippy::expect_used)]
         fn fake_lease(
             owner: &mut BluezAdapterOwner<FakeAdapter>,
             source: crate::lease::Source,
             intent: crate::lease::Intent,
         ) -> Lease {
-            match owner.acquire(
-                LeaseRequest::new(
-                    source,
-                    intent,
-                    crate::Priority::new(1),
-                    100,
-                    100,
-                    None,
-                    crate::CapabilitySet::empty(),
-                ),
-                0,
-            ) {
-                Ok(AcquireResult::Granted(lease)) => lease,
-                other => panic!("expected fake lease, got {other:?}"),
-            }
+            owner
+                .acquire(
+                    LeaseRequest::new(
+                        source,
+                        intent,
+                        crate::Priority::new(1),
+                        100,
+                        100,
+                        None,
+                        crate::CapabilitySet::empty(),
+                    ),
+                    0,
+                )
+                .expect("fake lease acquisition")
+                .lease()
+                .cloned()
+                .expect("granted fake lease")
         }
 
         fn fake_characteristic(uuid: bluer::Uuid) -> FakeCharacteristic {
@@ -1533,6 +1534,28 @@ mod runtime {
             assert_eq!((report.events, report.target_found), (0, false));
 
             let (adapter, _device, _characteristic) = fake_adapter();
+            adapter.state.lock().unwrap().discovery =
+                Ok(vec![bluer::AdapterEvent::DeviceAdded(Address::new([
+                    9, 8, 7, 6, 5, 4,
+                ]))]);
+            let mut owner = fake_owner(adapter);
+            let lease = fake_lease(
+                &mut owner,
+                crate::lease::Source::Diagnostics,
+                crate::lease::Intent::Discover,
+            );
+            let report = owner
+                .discover(
+                    &lease,
+                    bluer::DiscoveryFilter::default(),
+                    Some(Address::new([1, 2, 3, 4, 5, 6])),
+                    Duration::from_millis(1),
+                )
+                .await
+                .unwrap();
+            assert_eq!((report.events, report.target_found), (1, false));
+
+            let (adapter, _device, _characteristic) = fake_adapter();
             {
                 let mut state = adapter.state.lock().unwrap();
                 state.discovery_pending = true;
@@ -1782,6 +1805,192 @@ mod runtime {
                     .await
                     .is_ok()
             );
+
+            let (adapter, _device, characteristic) = fake_adapter();
+            let mut owner = fake_owner(adapter);
+            let stale = fake_lease(
+                &mut owner,
+                crate::lease::Source::Diagnostics,
+                crate::lease::Intent::PowerRecovery,
+            );
+            owner.release(stale.id(), 1);
+            assert!(matches!(
+                owner.set_powered(&stale, true).await,
+                Err(OwnerError::LeaseNotOwned { .. })
+            ));
+            assert!(matches!(
+                owner
+                    .observe(&stale, Address::new([1, 2, 3, 4, 5, 6]))
+                    .await,
+                Err(OwnerError::LeaseNotOwned { .. })
+            ));
+            assert!(matches!(
+                owner
+                    .connect(
+                        &stale,
+                        Address::new([1, 2, 3, 4, 5, 6]),
+                        Duration::from_millis(1)
+                    )
+                    .await,
+                Err(OwnerError::LeaseNotOwned { .. })
+            ));
+            assert!(matches!(
+                owner
+                    .disconnect(&stale, Address::new([1, 2, 3, 4, 5, 6]))
+                    .await,
+                Err(OwnerError::LeaseNotOwned { .. })
+            ));
+            assert!(matches!(
+                owner
+                    .resolve(
+                        &stale,
+                        Address::new([1, 2, 3, 4, 5, 6]),
+                        bluer::Uuid::nil(),
+                        bluer::Uuid::nil()
+                    )
+                    .await,
+                Err(OwnerError::LeaseNotOwned { .. })
+            ));
+            assert!(matches!(
+                owner.subscribe(&stale, &characteristic).await,
+                Err(OwnerError::LeaseNotOwned { .. })
+            ));
+            assert!(matches!(
+                owner
+                    .write(
+                        &stale,
+                        Address::new([1, 2, 3, 4, 5, 6]),
+                        &characteristic,
+                        &[1]
+                    )
+                    .await,
+                Err(OwnerError::LeaseNotOwned { .. })
+            ));
+
+            let (adapter, _device, characteristic) = fake_adapter();
+            let mut owner = fake_owner(adapter);
+            let stale_bp = fake_lease(
+                &mut owner,
+                crate::lease::Source::Bp,
+                crate::lease::Intent::KernelObserve,
+            );
+            owner.release(stale_bp.id(), 1);
+            assert!(matches!(
+                owner
+                    .resolve(
+                        &stale_bp,
+                        Address::new([1, 2, 3, 4, 5, 6]),
+                        bluer::Uuid::nil(),
+                        bluer::Uuid::nil()
+                    )
+                    .await,
+                Err(OwnerError::LeaseNotOwned { .. })
+            ));
+            assert!(matches!(
+                owner.subscribe(&stale_bp, &characteristic).await,
+                Err(OwnerError::LeaseNotOwned { .. })
+            ));
+            let stale_gatt = fake_lease(
+                &mut owner,
+                crate::lease::Source::AirSense,
+                crate::lease::Intent::Gatt,
+            );
+            owner.release(stale_gatt.id(), 2);
+            assert!(matches!(
+                owner
+                    .resolve(
+                        &stale_gatt,
+                        Address::new([1, 2, 3, 4, 5, 6]),
+                        bluer::Uuid::nil(),
+                        bluer::Uuid::nil()
+                    )
+                    .await,
+                Err(OwnerError::LeaseNotOwned { .. })
+            ));
+
+            let discovery = fake_lease(
+                &mut owner,
+                crate::lease::Source::Diagnostics,
+                crate::lease::Intent::Discover,
+            );
+            assert!(matches!(
+                owner.set_powered(&discovery, true).await,
+                Err(OwnerError::WrongIntent { .. })
+            ));
+            owner.release(discovery.id(), 3);
+            let connect = fake_lease(
+                &mut owner,
+                crate::lease::Source::AirSense,
+                crate::lease::Intent::Connect,
+            );
+            assert!(matches!(
+                owner
+                    .discover(
+                        &connect,
+                        bluer::DiscoveryFilter::default(),
+                        None,
+                        Duration::from_millis(1)
+                    )
+                    .await,
+                Err(OwnerError::WrongIntent { .. })
+            ));
+            owner.release(connect.id(), 4);
+            let gatt = fake_lease(
+                &mut owner,
+                crate::lease::Source::AirSense,
+                crate::lease::Intent::Gatt,
+            );
+            assert!(matches!(
+                owner
+                    .connect(
+                        &gatt,
+                        Address::new([1, 2, 3, 4, 5, 6]),
+                        Duration::from_millis(1)
+                    )
+                    .await,
+                Err(OwnerError::WrongIntent { .. })
+            ));
+            owner.release(gatt.id(), 5);
+            let recovery = fake_lease(
+                &mut owner,
+                crate::lease::Source::Diagnostics,
+                crate::lease::Intent::PowerRecovery,
+            );
+            assert!(matches!(
+                owner
+                    .resolve(
+                        &recovery,
+                        Address::new([1, 2, 3, 4, 5, 6]),
+                        bluer::Uuid::nil(),
+                        bluer::Uuid::nil()
+                    )
+                    .await,
+                Err(OwnerError::WrongIntent { .. })
+            ));
+            owner.release(recovery.id(), 6);
+            let stream = crate::lease::test_lease(
+                crate::lease::Source::Diagnostics,
+                crate::lease::Intent::Stream,
+            );
+            owner.policy.scheduler.insert_test_lease(stream.clone());
+            assert!(matches!(
+                owner.check_lease(&stream, crate::lease::Intent::Connect),
+                Err(OwnerError::WrongIntent { .. })
+            ));
+
+            let bp_connect =
+                crate::lease::test_lease(crate::lease::Source::Bp, crate::lease::Intent::Connect);
+            owner.policy.scheduler.insert_test_lease(bp_connect.clone());
+            assert_eq!(
+                owner
+                    .connect(
+                        &bp_connect,
+                        Address::new([1, 2, 3, 4, 5, 6]),
+                        Duration::from_millis(1)
+                    )
+                    .await,
+                Err(OwnerError::BpConnectForbidden)
+            );
         }
 
         #[tokio::test]
@@ -1877,6 +2086,8 @@ mod runtime {
             );
         }
 
+        // Physical-adapter acceptance is intentionally outside deterministic coverage.
+        #[cfg(not(coverage))]
         #[tokio::test]
         async fn owner_policy_and_lease_guards_run_against_the_selected_adapter() {
             let Ok(inventory) = std::fs::read_dir("/sys/class/bluetooth") else {

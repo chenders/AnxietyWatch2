@@ -400,8 +400,15 @@ pub async fn run(config: BrokerConfig) -> Result<(), String> {
     let generation = Generation::new(1);
     let owner = LinuxBluezAdapterOwner::open(&config.selector, &inventory, generation)
         .await
-        .map_err(|error| format!("broker adapter open failed: {error}"))?;
-    run_with_owner(config, owner).await
+        .map_err(|error| format!("broker adapter open failed: {error}"));
+    run_with_owner_result(config, owner).await
+}
+
+async fn run_with_owner_result<O: BrokerOwner>(
+    config: BrokerConfig,
+    owner: Result<O, String>,
+) -> Result<(), String> {
+    run_with_owner(config, owner?).await
 }
 
 async fn run_with_owner<O: BrokerOwner>(config: BrokerConfig, owner: O) -> Result<(), String> {
@@ -1460,7 +1467,7 @@ mod tests {
         cancel_operation, capability_for, cleanup_client, controller_inventory, deadline_after,
         error_message, insert_lease, operation_address, parse_selector, physical_device_path,
         prepare_socket, process_message, process_operation, read_message, run, run_with_owner,
-        serve_client, startup, validate_hello,
+        run_with_owner_result, serve_client, startup, validate_hello,
     };
     use crate::bluez::{
         AdapterHealth, AdapterPolicy, ControllerBus, ControllerSelector, DeviceObservation,
@@ -1498,6 +1505,8 @@ mod tests {
     struct FakeOwner {
         policy: AdapterPolicy,
         fail_operations: bool,
+        pending_connect: bool,
+        delayed_stream: bool,
     }
 
     impl FakeOwner {
@@ -1505,6 +1514,8 @@ mod tests {
             Self {
                 policy: AdapterPolicy::new(Generation::new(1)),
                 fail_operations: false,
+                pending_connect: false,
+                delayed_stream: false,
             }
         }
     }
@@ -1595,7 +1606,11 @@ mod tests {
             _duration: std::time::Duration,
         ) -> BoxFuture<'a, Result<(), OwnerError>> {
             let fail = self.fail_operations;
+            let pending = self.pending_connect;
             Box::pin(async move {
+                if pending {
+                    return futures::future::pending::<Result<(), OwnerError>>().await;
+                }
                 if fail {
                     return Err(OwnerError::WorkerStopped);
                 }
@@ -1640,9 +1655,17 @@ mod tests {
         ) -> BoxFuture<'a, Result<BoxPayloadStream, OwnerError>> {
             assert_eq!(characteristic.0, 1);
             let fail = self.fail_operations;
+            let delayed = self.delayed_stream;
             Box::pin(async move {
                 if fail {
                     return Err(OwnerError::WorkerStopped);
+                }
+                if delayed {
+                    let stream = stream::once(async {
+                        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+                        vec![1_u8, 2, 3]
+                    });
+                    return Ok(Box::pin(stream) as BoxPayloadStream);
                 }
                 Ok(Box::pin(stream::iter(vec![vec![1_u8, 2, 3]])) as BoxPayloadStream)
             })
@@ -1682,6 +1705,60 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::expect_used)]
+    async fn cleanup_client_releases_connect_leases_and_aborts_operations() {
+        let state = fake_state();
+        let capabilities = CapabilitySet::from_capability(Capability::Connect);
+        let lease = state
+            .owner
+            .lock()
+            .await
+            .acquire(
+                LeaseRequest::new(
+                    Source::AirSense,
+                    Intent::Connect,
+                    Priority::new(1),
+                    30,
+                    60,
+                    Some(DeviceId::new("AA:BB:CC:DD:EE:FF")),
+                    capabilities,
+                ),
+                0,
+            )
+            .expect("fake connect lease")
+            .lease()
+            .cloned()
+            .expect("granted connect lease");
+        state.clients.lock().await.insert(
+            7,
+            ClientInfo {
+                source: Source::AirSense,
+                capabilities,
+                leases: vec![lease.id()],
+            },
+        );
+        state.leases.lock().await.insert(
+            lease.id(),
+            LeaseInfo {
+                lease: lease.clone(),
+                client_id: 7,
+                capabilities,
+                address: Some(
+                    std::str::FromStr::from_str("AA:BB:CC:DD:EE:FF").expect("valid test address"),
+                ),
+            },
+        );
+        let (handle, _registration) = futures::future::AbortHandle::new_pair();
+        let probe = handle.clone();
+        state.operations.lock().await.insert((7, 1), handle);
+        cleanup_client(7, &state).await;
+        assert!(probe.is_aborted());
+        assert!(state.clients.lock().await.get(&7).is_none());
+        assert!(state.leases.lock().await.get(&lease.id()).is_none());
+        assert!(state.operations.lock().await.is_empty());
+    }
+
+    #[tokio::test]
     async fn run_with_fake_owner_binds_socket_and_accepts_client() -> Result<(), String> {
         let socket =
             std::env::temp_dir().join(format!("vitals-broker-loop-{}", std::process::id()));
@@ -1702,6 +1779,7 @@ mod tests {
             tokio::time::sleep(std::time::Duration::from_millis(1)).await;
         }
         assert!(connected);
+        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
         task.abort();
         let _ = task.await;
         let _ = fs::remove_file(socket);
@@ -1725,7 +1803,7 @@ mod tests {
             },
             allowed_uid: None,
         };
-        let result = run_with_owner(config, FakeOwner::new()).await;
+        let result = run_with_owner_result(config, Ok(FakeOwner::new())).await;
         assert!(result.is_err());
         let _ = fs::remove_dir_all(directory);
         Ok(())
@@ -1752,8 +1830,37 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::expect_used)]
     fn config_from_env_reports_missing_selector() {
+        if let Ok(case) = std::env::var("VITALS_BLE_CONFIG_COVERAGE_CHILD") {
+            let result = super::BrokerConfig::from_env();
+            if case == "valid" {
+                let config = result.expect("configured broker environment");
+                assert_eq!(config.selector_text, "serial=configured");
+                assert_eq!(config.allowed_uid, Some(42));
+                assert_eq!(config.socket, PathBuf::from("/tmp/configured.sock"));
+                assert_eq!(config.metrics_path, PathBuf::from("/tmp/configured.prom"));
+            } else {
+                assert!(result.is_err());
+            }
+            return;
+        }
         assert!(super::BrokerConfig::from_env().is_err());
+        let executable = std::env::current_exe().expect("test executable");
+        for (case, allowed_uid) in [("valid", "42"), ("invalid", "not-a-uid")] {
+            let status = std::process::Command::new(&executable)
+                .arg("--exact")
+                .arg("server::tests::config_from_env_reports_missing_selector")
+                .arg("--nocapture")
+                .env("VITALS_BLE_CONFIG_COVERAGE_CHILD", case)
+                .env("VITALS_BLE_ADAPTER_SELECTOR", "serial=configured")
+                .env("VITALS_BLE_ALLOWED_UID", allowed_uid)
+                .env("VITALS_BLE_BROKER_SOCKET", "/tmp/configured.sock")
+                .env("VITALS_BLE_BROKER_METRICS_PATH", "/tmp/configured.prom")
+                .status()
+                .expect("run config environment child");
+            assert!(status.success());
+        }
         assert_eq!(super::entrypoint(), std::process::ExitCode::from(64));
         assert_eq!(
             super::startup(Err("VITALS_BLE_ADAPTER_SELECTOR is unset".to_owned())),
@@ -1847,6 +1954,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::expect_used, clippy::too_many_lines)]
     async fn serve_client_covers_handshake_and_protocol_rejection() -> Result<(), String> {
         async fn receive(stream: &mut UnixStream) -> Result<ServerMessage, String> {
             let mut header = [0_u8; 11];
@@ -1885,6 +1993,86 @@ mod tests {
         ));
         drop(peer);
         assert!(task.await.map_err(|error| error.to_string())?.is_ok());
+
+        let bad_hello = ClientMessage::Hello(crate::Hello {
+            protocol_version: crate::PROTOCOL_VERSION,
+            source: Source::H10,
+            adapter_selector: "wrong-selector".to_owned(),
+            device_selector: Some("peer".to_owned()),
+            capabilities: CapabilitySet::empty(),
+        });
+        let (mut peer, broker) = UnixStream::pair().map_err(|error| error.to_string())?;
+        let task = tokio::spawn(serve_client(broker, fake_state()));
+        let frame = crate::encode(&bad_hello).map_err(|error| error.to_string())?;
+        peer.write_all(&frame)
+            .await
+            .map_err(|error| error.to_string())?;
+        let validation_result = task.await.map_err(|error| error.to_string())?;
+        assert!(matches!(validation_result, Err(error) if error.contains("selector mismatch")));
+
+        let mut auth_state = fake_state();
+        Arc::get_mut(&mut auth_state)
+            .expect("unique auth test state")
+            .allowed_uid = Some(u32::MAX);
+        let (mut peer, broker) = UnixStream::pair().map_err(|error| error.to_string())?;
+        let task = tokio::spawn(serve_client(broker, auth_state));
+        let frame = crate::encode(&hello).map_err(|error| error.to_string())?;
+        let _ = peer.write_all(&frame).await;
+        let auth_result = task.await.map_err(|error| error.to_string())?;
+        assert!(matches!(auth_result, Err(error) if error.contains("authentication rejected")));
+
+        let malformed_state = fake_state();
+        let (mut peer, broker) = UnixStream::pair().map_err(|error| error.to_string())?;
+        let task = tokio::spawn(serve_client(broker, malformed_state));
+        peer.write_all(&frame)
+            .await
+            .map_err(|error| error.to_string())?;
+        assert!(matches!(
+            receive(&mut peer).await?,
+            ServerMessage::HelloAccepted { .. }
+        ));
+        peer.write_all(b"NOPE\0\x01\0\0\0\0\0")
+            .await
+            .map_err(|error| error.to_string())?;
+        let malformed_result = task.await.map_err(|error| error.to_string())?;
+        assert!(
+            matches!(malformed_result, Err(error) if error.contains("invalid protocol frame magic"))
+        );
+
+        let writer_state = fake_state();
+        let (mut peer, broker) = UnixStream::pair().map_err(|error| error.to_string())?;
+        let task = tokio::spawn(serve_client(broker, writer_state));
+        peer.write_all(&frame)
+            .await
+            .map_err(|error| error.to_string())?;
+        assert!(matches!(
+            receive(&mut peer).await?,
+            ServerMessage::HelloAccepted { .. }
+        ));
+        let health = crate::encode(&ClientMessage::Health).map_err(|error| error.to_string())?;
+        peer.write_all(&health)
+            .await
+            .map_err(|error| error.to_string())?;
+        drop(peer);
+        let writer_result = task.await.map_err(|error| error.to_string())?;
+        assert!(writer_result.is_err());
+
+        let failing_state = fake_state();
+        failing_state.owner.lock().await.fail_operations = true;
+        let (mut peer, broker) = UnixStream::pair().map_err(|error| error.to_string())?;
+        let task = tokio::spawn(serve_client(broker, failing_state));
+        peer.write_all(&frame)
+            .await
+            .map_err(|error| error.to_string())?;
+        assert!(matches!(
+            receive(&mut peer).await?,
+            ServerMessage::HelloAccepted { .. }
+        ));
+        peer.write_all(&health)
+            .await
+            .map_err(|error| error.to_string())?;
+        let failing_result = task.await.map_err(|error| error.to_string())?;
+        assert!(matches!(failing_result, Err(error) if error.contains("worker stopped")));
 
         let (mut peer, broker) = UnixStream::pair().map_err(|error| error.to_string())?;
         let task = tokio::spawn(serve_client(broker, state));
@@ -2165,6 +2353,38 @@ mod tests {
             Some(ServerMessage::Error { code: 3, .. })
         ));
 
+        state.owner.lock().await.pending_connect = true;
+        process_message(
+            1,
+            ClientMessage::Operation(crate::Operation {
+                lease_id,
+                operation_id: 12,
+                kind: crate::OperationKind::Connect,
+                target: "AA:BB:CC:DD:EE:FF".to_owned(),
+                payload: Vec::new(),
+            }),
+            &state,
+            &sender,
+        )
+        .await?;
+        tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+        process_message(
+            1,
+            ClientMessage::Cancel(crate::Cancel {
+                lease_id,
+                operation_id: 12,
+                reason: "cancel pending".to_owned(),
+            }),
+            &state,
+            &sender,
+        )
+        .await?;
+        assert!(matches!(
+            responses.recv().await,
+            Some(ServerMessage::Cancelled { operation_id: 12 })
+        ));
+        tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+
         process_message(
             1,
             ClientMessage::Cancel(crate::Cancel {
@@ -2298,6 +2518,35 @@ mod tests {
             responses.recv().await,
             Some(ServerMessage::OperationAccepted { operation_id: 6 })
         ));
+        state.owner.lock().await.delayed_stream = true;
+        let (closed_sender, mut closed_responses) = mpsc::channel(4);
+        process_message(
+            1,
+            ClientMessage::Operation(operation(7, crate::OperationKind::Subscribe, "c1-o4")),
+            &state,
+            &closed_sender,
+        )
+        .await?;
+        assert!(matches!(
+            closed_responses.recv().await,
+            Some(ServerMessage::OperationAccepted { operation_id: 7 })
+        ));
+        drop(closed_responses);
+        drop(closed_sender);
+        tokio::time::sleep(std::time::Duration::from_millis(30)).await;
+        state.owner.lock().await.fail_operations = true;
+        let _ = state.owner.lock().await.acquire(
+            LeaseRequest::new(
+                Source::H10,
+                Intent::Connect,
+                Priority::new(1),
+                100,
+                100,
+                Some(DeviceId::new("AA:BB:CC:DD:EE:FF")),
+                CapabilitySet::from_capability(Capability::Connect),
+            ),
+            0,
+        );
         process_message(
             1,
             ClientMessage::Release(crate::Release {
@@ -2467,7 +2716,7 @@ mod tests {
 
         let lease = {
             let mut owner = state.owner.lock().await;
-            match owner
+            owner
                 .acquire(
                     LeaseRequest::new(
                         Source::H10,
@@ -2481,12 +2730,9 @@ mod tests {
                     0,
                 )
                 .map_err(|error| error.to_string())?
-            {
-                AcquireResult::Granted(lease) => lease,
-                other @ AcquireResult::Queued { .. } => {
-                    return Err(format!("expected lease, got {other:?}"));
-                }
-            }
+                .lease()
+                .cloned()
+                .ok_or("expected granted lease")?
         };
         let lease_id = lease.id();
         insert_lease(
@@ -2559,7 +2805,7 @@ mod tests {
         );
         let bp_lease = {
             let mut owner = state.owner.lock().await;
-            match owner
+            owner
                 .acquire(
                     LeaseRequest::new(
                         Source::Bp,
@@ -2573,12 +2819,9 @@ mod tests {
                     0,
                 )
                 .map_err(|error| error.to_string())?
-            {
-                AcquireResult::Granted(lease) => lease,
-                other @ AcquireResult::Queued { .. } => {
-                    return Err(format!("expected BP lease, got {other:?}"));
-                }
-            }
+                .lease()
+                .cloned()
+                .ok_or("expected granted BP lease")?
         };
         let bp_lease_id = bp_lease.id();
         insert_lease(
@@ -2850,18 +3093,20 @@ mod tests {
             )
             .is_err()
         );
-        assert!(
-            validate_hello(
-                &state,
-                &hello(
-                    Source::Bp,
-                    "bus=usb;vid_pid=0a12:0001",
-                    Some("peer".to_owned()),
-                    CapabilitySet::from_capability(Capability::Connect),
+        for capability in [Capability::Connect, Capability::Discover, Capability::Write] {
+            assert!(
+                validate_hello(
+                    &state,
+                    &hello(
+                        Source::Bp,
+                        "bus=usb;vid_pid=0a12:0001",
+                        Some("peer".to_owned()),
+                        CapabilitySet::from_capability(capability),
+                    )
                 )
-            )
-            .is_err()
-        );
+                .is_err()
+            );
+        }
         assert!(
             validate_hello(
                 &state,

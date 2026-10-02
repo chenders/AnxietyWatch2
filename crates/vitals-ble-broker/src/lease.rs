@@ -675,6 +675,11 @@ impl LeaseScheduler {
         &self.active
     }
 
+    #[cfg(test)]
+    pub(crate) fn insert_test_lease(&mut self, lease: Lease) {
+        self.active.push(lease);
+    }
+
     /// Return the number of queued requests.
     #[must_use]
     pub const fn queued_len(&self) -> usize {
@@ -885,11 +890,6 @@ impl LeaseScheduler {
                 return true;
             }
         }
-        if active.intent == Intent::Discover && request.intent == Intent::Connect
-            || active.intent == Intent::Connect && request.intent == Intent::Discover
-        {
-            return true;
-        }
         matches!(
             (active.device(), request.device()),
             (Some(active_device), Some(request_device))
@@ -947,6 +947,23 @@ impl LeaseScheduler {
 }
 
 #[cfg(test)]
+pub(crate) fn test_lease(source: Source, intent: Intent) -> Lease {
+    Lease {
+        id: LeaseId::new(99),
+        source,
+        intent,
+        priority: Priority::new(1),
+        generation: Generation::new(1),
+        acquired_at: 0,
+        expires_at: 100,
+        preemptible: false,
+        device: None,
+        reason: "test lease".to_owned(),
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
 
@@ -961,6 +978,20 @@ mod tests {
             CapabilitySet::empty(),
         )
         .with_reason("test request")
+    }
+
+    fn grant_result(result: Result<AcquireResult, PolicyError>) -> Lease {
+        match result {
+            Ok(AcquireResult::Granted(lease)) => lease,
+            _ => panic!("expected granted lease"),
+        }
+    }
+
+    fn queued_result(result: Result<AcquireResult, PolicyError>) -> (QueueTicket, NamedBlocker) {
+        match result {
+            Ok(AcquireResult::Queued { ticket, blocker }) => (ticket, blocker),
+            _ => panic!("expected queued request"),
+        }
     }
 
     #[test]
@@ -996,10 +1027,12 @@ mod tests {
         assert_eq!(scheduler.generation(), Generation::new(4));
         assert_eq!(scheduler.queued_len(), 0);
         assert!(scheduler.active_lease(LeaseId::new(1)).is_none());
-        let result = scheduler.acquire(request, 0);
-        let Ok(AcquireResult::Granted(lease)) = result else {
-            return;
-        };
+        let lease = scheduler
+            .acquire(request, 0)
+            .expect("accessor lease")
+            .lease()
+            .cloned()
+            .expect("granted accessor lease");
         assert_eq!(lease.id(), LeaseId::new(1));
         assert_eq!(lease.source(), Source::H10);
         assert_eq!(lease.intent(), Intent::Connect);
@@ -1031,6 +1064,93 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::expect_used)]
+    fn scheduler_rejects_expired_requests_and_reports_preemption_candidates() {
+        assert!(
+            std::panic::catch_unwind(|| {
+                grant_result(Err(PolicyError::ZeroHold));
+            })
+            .is_err()
+        );
+        assert!(
+            std::panic::catch_unwind(|| {
+                queued_result(Err(PolicyError::ZeroHold));
+            })
+            .is_err()
+        );
+        let mut scheduler = LeaseScheduler::new(Generation::new(1));
+        assert_eq!(
+            scheduler.acquire(request(Source::H10, Intent::Gatt, 1, None), 100),
+            Err(PolicyError::DeadlineExpired {
+                now: 100,
+                deadline: 100
+            })
+        );
+        assert!(
+            scheduler
+                .preemption_for(QueueTicket(99), Priority::new(5))
+                .is_none()
+        );
+        let active = scheduler
+            .acquire(
+                request(Source::AirSense, Intent::Gatt, 1, Some("peer")).preemptible(true),
+                0,
+            )
+            .expect("active lease")
+            .lease()
+            .cloned()
+            .expect("granted active lease");
+        let queued = scheduler
+            .acquire(request(Source::H10, Intent::Gatt, 5, Some("peer")), 1)
+            .expect("queued lease");
+        let ticket = queued.ticket().expect("queued ticket");
+        assert!(scheduler.preemption_for(ticket, Priority::new(4)).is_none());
+        let preemption = scheduler
+            .preemption_for(ticket, Priority::new(5))
+            .expect("preemption candidate");
+        assert_eq!(preemption.active_lease, active.id());
+        assert_eq!(preemption.active_source, Source::AirSense);
+        assert!(Intent::KernelObserve.is_device_operation());
+        assert!(Intent::Connect.is_device_operation());
+        assert!(Intent::Gatt.is_device_operation());
+        assert!(Intent::Stream.is_device_operation());
+        assert!(!Intent::Discover.is_device_operation());
+        assert!(!Intent::PowerRecovery.is_device_operation());
+
+        let mut recovery = LeaseScheduler::new(Generation::new(2));
+        assert!(matches!(
+            recovery.acquire(
+                request(Source::Diagnostics, Intent::PowerRecovery, 1, None),
+                0
+            ),
+            Ok(AcquireResult::Granted(_))
+        ));
+        let (_, blocker) =
+            queued_result(recovery.acquire(request(Source::H10, Intent::Gatt, 2, Some("peer")), 1));
+        assert!(matches!(blocker, NamedBlocker::RecoveryOwned { .. }));
+
+        let mut discovery = LeaseScheduler::new(Generation::new(3));
+        assert!(matches!(
+            discovery.acquire(request(Source::AirSense, Intent::Discover, 1, None), 0),
+            Ok(AcquireResult::Granted(_))
+        ));
+        assert!(matches!(
+            discovery.acquire(request(Source::H10, Intent::Connect, 2, None), 1),
+            Ok(AcquireResult::Queued { .. })
+        ));
+
+        let mut connections = LeaseScheduler::new(Generation::new(4));
+        assert!(matches!(
+            connections.acquire(request(Source::AirSense, Intent::Connect, 1, None), 0),
+            Ok(AcquireResult::Granted(_))
+        ));
+        assert!(matches!(
+            connections.acquire(request(Source::H10, Intent::Connect, 2, None), 1),
+            Ok(AcquireResult::Queued { .. })
+        ));
+    }
+
+    #[test]
     fn granted_lease_uses_max_hold_not_request_deadline() {
         let mut scheduler = LeaseScheduler::new(Generation::new(1));
         let mut lease_request = request(Source::AirSense, Intent::Discover, 1, None);
@@ -1043,14 +1163,17 @@ mod tests {
             lease_request.device,
             lease_request.capabilities,
         );
-        let result = scheduler.acquire(lease_request, 100);
-        let Ok(AcquireResult::Granted(lease)) = result else {
-            return;
-        };
+        let lease = scheduler
+            .acquire(lease_request, 100)
+            .expect("bounded lease")
+            .lease()
+            .cloned()
+            .expect("granted bounded lease");
         assert_eq!(lease.expires_at(), 120);
     }
 
     #[test]
+    #[allow(clippy::manual_let_else)]
     fn discovery_is_singleton_and_names_owner() {
         let mut scheduler = LeaseScheduler::new(Generation::new(7));
         let first = scheduler.acquire(request(Source::AirSense, Intent::Discover, 2, None), 0);
@@ -1058,9 +1181,7 @@ mod tests {
         scheduler.set_wellue_enabled(true);
         let second = scheduler.acquire(request(Source::Wellue, Intent::Discover, 1, None), 1);
         assert!(matches!(&second, Ok(AcquireResult::Queued { .. })));
-        let Ok(AcquireResult::Queued { blocker, .. }) = second else {
-            return;
-        };
+        let (_, blocker) = queued_result(second);
         let text = blocker.to_string();
         assert!(text.contains("owner=1"));
         assert!(text.contains("generation=7"));
@@ -1072,9 +1193,7 @@ mod tests {
         let mut scheduler = LeaseScheduler::new(Generation::new(1));
         let first = scheduler.acquire(request(Source::AirSense, Intent::Discover, 1, None), 0);
         assert!(matches!(&first, Ok(AcquireResult::Granted(_))));
-        let Ok(AcquireResult::Granted(lease)) = first else {
-            return;
-        };
+        let lease = grant_result(first);
         let low = scheduler.acquire(request(Source::Diagnostics, Intent::Discover, 1, None), 1);
         let high = scheduler.acquire(request(Source::Bp, Intent::KernelObserve, 9, Some("bp")), 2);
         assert!(matches!(low, Ok(AcquireResult::Queued { .. })));
@@ -1093,32 +1212,17 @@ mod tests {
         let mut scheduler = LeaseScheduler::new(Generation::new(1));
         let first = scheduler.acquire(request(Source::AirSense, Intent::Discover, 1, None), 0);
         assert!(matches!(&first, Ok(AcquireResult::Granted(_))));
-        let Ok(AcquireResult::Granted(lease)) = first else {
-            return;
-        };
+        let lease = grant_result(first);
         let low = scheduler.acquire(request(Source::Diagnostics, Intent::Discover, 1, None), 1);
         scheduler.set_wellue_enabled(true);
         let high = scheduler.acquire(request(Source::Wellue, Intent::Discover, 3, None), 2);
         assert!(matches!(&low, Ok(AcquireResult::Queued { .. })));
-        let Ok(AcquireResult::Queued {
-            ticket: low_ticket, ..
-        }) = low
-        else {
-            return;
-        };
+        let (low_ticket, _) = queued_result(low);
         assert!(matches!(&high, Ok(AcquireResult::Queued { .. })));
-        let Ok(AcquireResult::Queued {
-            ticket: high_ticket,
-            ..
-        }) = high
-        else {
-            return;
-        };
+        let (high_ticket, _) = queued_result(high);
         let outcome = scheduler.release(lease.id(), 3);
         assert_eq!(outcome.granted.len(), 1);
-        let Some(granted) = outcome.granted.first() else {
-            return;
-        };
+        let granted = outcome.granted.first().expect("dispatched lease");
         assert_eq!(granted.source(), Source::Wellue);
         assert_ne!(low_ticket, high_ticket);
     }
@@ -1193,9 +1297,7 @@ mod tests {
         .with_reason(first_request.reason);
         let first = scheduler.acquire(first_request, 0);
         assert!(matches!(&first, Ok(AcquireResult::Granted(_))));
-        let Ok(AcquireResult::Granted(first_lease)) = first else {
-            return;
-        };
+        let first_lease = grant_result(first);
         let queued = scheduler.acquire(request(Source::Diagnostics, Intent::Discover, 2, None), 1);
         assert!(matches!(queued, Ok(AcquireResult::Queued { .. })));
         let outcome = scheduler.advance(2);
@@ -1210,19 +1312,13 @@ mod tests {
             request(Source::Diagnostics, Intent::Discover, 1, None).preemptible(true);
         let active = scheduler.acquire(active_request, 0);
         assert!(matches!(&active, Ok(AcquireResult::Granted(_))));
-        let Ok(AcquireResult::Granted(active_lease)) = active else {
-            return;
-        };
+        let active_lease = grant_result(active);
         let queued = scheduler.acquire(request(Source::AirSense, Intent::Discover, 5, None), 1);
         assert!(matches!(&queued, Ok(AcquireResult::Queued { .. })));
-        let Ok(AcquireResult::Queued { ticket, .. }) = queued else {
-            return;
-        };
+        let (ticket, _) = queued_result(queued);
         let preemption = scheduler.preemption_for(ticket, Priority::new(5));
         assert!(preemption.is_some());
-        let Some(preemption) = preemption else {
-            return;
-        };
+        let preemption = preemption.expect("preemption candidate");
         assert_eq!(preemption.active_lease, active_lease.id());
         assert_eq!(scheduler.active().len(), 1);
     }
@@ -1233,9 +1329,7 @@ mod tests {
         let first = scheduler.acquire(request(Source::AirSense, Intent::Discover, 1, None), 0);
         assert!(matches!(first, Ok(AcquireResult::Granted(_))));
         let queued = scheduler.acquire(request(Source::Diagnostics, Intent::Discover, 1, None), 1);
-        let Ok(AcquireResult::Queued { ticket, .. }) = queued else {
-            return;
-        };
+        let (ticket, _) = queued_result(queued);
         assert!(scheduler.cancel(ticket));
         assert_eq!(scheduler.queued_len(), 0);
         assert_eq!(scheduler.active().len(), 1);
@@ -1251,9 +1345,7 @@ mod tests {
         assert!(matches!(queued, Ok(AcquireResult::Queued { .. })));
         let events = scheduler.invalidate_generation(Generation::new(2));
         assert!(events.is_ok());
-        let Ok(events) = events else {
-            return;
-        };
+        let events = events.expect("generation invalidation events");
         assert_eq!(events.len(), 2);
         assert!(scheduler.active().is_empty());
         assert_eq!(scheduler.queued_len(), 0);
@@ -1274,9 +1366,7 @@ mod tests {
 
         let mut scheduler = LeaseScheduler::new(Generation::new(3));
         let granted = scheduler.acquire(lease_request.clone(), 4);
-        let Ok(AcquireResult::Granted(lease)) = granted else {
-            return;
-        };
+        let lease = grant_result(granted);
         assert_eq!(lease.id().value(), 1);
         assert_eq!(lease.source(), Source::AirSense);
         assert_eq!(lease.intent(), Intent::Gatt);

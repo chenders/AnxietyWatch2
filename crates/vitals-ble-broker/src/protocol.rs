@@ -1012,6 +1012,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::expect_used)]
     fn round_trip_preserves_typed_operation_and_payload() {
         let message = ClientMessage::Operation(Operation {
             lease_id: LeaseId::from_wire(4),
@@ -1022,13 +1023,12 @@ mod tests {
         });
         let frame_result = encode(&message);
         assert!(frame_result.is_ok());
-        let Ok(frame) = frame_result else {
-            return;
-        };
+        let frame = frame_result.expect("operation frame");
         assert_eq!(decode(&frame), Ok(message));
     }
 
     #[test]
+    #[allow(clippy::expect_used)]
     fn server_events_round_trip_with_bounded_payload() {
         let message = ServerMessage::Frame {
             lease_id: LeaseId::new(7),
@@ -1038,9 +1038,7 @@ mod tests {
         };
         let frame_result = encode_server(&message);
         assert!(frame_result.is_ok());
-        let Ok(frame) = frame_result else {
-            return;
-        };
+        let frame = frame_result.expect("server frame");
         assert_eq!(decode_server(&frame), Ok(message));
     }
 
@@ -1054,9 +1052,7 @@ mod tests {
         );
         let frame_result = encode(&ClientMessage::Health);
         assert!(frame_result.is_ok());
-        let Ok(mut frame) = frame_result else {
-            return;
-        };
+        let mut frame = frame_result.expect("health frame");
         frame.push(1);
         assert_eq!(decode(&frame), Err(ProtocolError::InvalidPayload));
 
@@ -1090,6 +1086,16 @@ mod tests {
         .expect("server frame");
         server.push(1);
         assert_eq!(decode_server(&server), Err(ProtocolError::InvalidPayload));
+        let mut server_payload_trailing = encode_server(&ServerMessage::HelloAccepted {
+            generation: Generation::new(1),
+        })
+        .expect("server frame");
+        server_payload_trailing[10] = 9;
+        server_payload_trailing.push(1);
+        assert_eq!(
+            decode_server(&server_payload_trailing),
+            Err(ProtocolError::InvalidPayload)
+        );
         assert_eq!(
             decode_server(b"VBT1\0\x01\x7f\0\0\0\0"),
             Err(ProtocolError::UnknownServerKind(0x7f))
@@ -1105,13 +1111,10 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::expect_used)]
     fn unknown_capability_bits_are_rejected() {
-        let Ok(mut frame) = encode(&hello(Source::H10, CapabilitySet::empty())) else {
-            return;
-        };
-        let Some(capability_byte) = frame.last_mut() else {
-            return;
-        };
+        let mut frame = encode(&hello(Source::H10, CapabilitySet::empty())).expect("hello frame");
+        let capability_byte = frame.last_mut().expect("capability byte");
         *capability_byte = 0x80;
         assert_eq!(
             decode(&frame),
@@ -1120,18 +1123,51 @@ mod tests {
     }
 
     #[test]
-    #[allow(clippy::expect_used)]
+    #[allow(clippy::expect_used, clippy::too_many_lines)]
     fn fake_transport_requires_handshake_and_bounds_queue() {
         let mut transport = FakeTransport::new(Generation::new(3), 1);
         let health_result = encode(&ClientMessage::Health);
         assert!(health_result.is_ok());
-        let Ok(health) = health_result else {
-            return;
-        };
+        let health = health_result.expect("health frame");
         assert_eq!(
             transport.send(&health),
             Err(ProtocolError::HandshakeRequired)
         );
+        for message in [
+            ClientMessage::Acquire(Acquire {
+                source: Source::H10,
+                intent: Intent::Connect,
+                priority: Priority::new(1),
+                deadline: 10,
+                max_hold: 10,
+                preemptible: false,
+                device_selector: None,
+                capabilities: CapabilitySet::empty(),
+                reason: "pre-handshake".to_owned(),
+            }),
+            ClientMessage::Operation(Operation {
+                lease_id: LeaseId::new(1),
+                operation_id: 1,
+                kind: OperationKind::Connect,
+                target: "target".to_owned(),
+                payload: Vec::new(),
+            }),
+            ClientMessage::Release(Release {
+                lease_id: LeaseId::new(1),
+                reason: "pre-handshake".to_owned(),
+            }),
+            ClientMessage::Cancel(Cancel {
+                lease_id: LeaseId::new(1),
+                operation_id: 1,
+                reason: "pre-handshake".to_owned(),
+            }),
+        ] {
+            let frame = encode(&message).expect("pre-handshake frame");
+            assert_eq!(
+                transport.send(&frame),
+                Err(ProtocolError::HandshakeRequired)
+            );
+        }
         let mut unsupported = hello(Source::H10, CapabilitySet::empty());
         if let ClientMessage::Hello(value) = &mut unsupported {
             value.protocol_version = 2;
@@ -1143,9 +1179,7 @@ mod tests {
         );
         let handshake_result = encode(&hello(Source::H10, CapabilitySet::empty()));
         assert!(handshake_result.is_ok());
-        let Ok(handshake) = handshake_result else {
-            return;
-        };
+        let handshake = handshake_result.expect("handshake frame");
         assert_eq!(
             transport.send(&handshake),
             Ok(FakeReply::HelloAccepted {
@@ -1165,9 +1199,7 @@ mod tests {
         });
         let acquire_result = encode(&acquire);
         assert!(acquire_result.is_ok());
-        let Ok(acquire_frame) = acquire_result else {
-            return;
-        };
+        let acquire_frame = acquire_result.expect("acquire frame");
         assert_eq!(transport.send(&acquire_frame), Ok(FakeReply::Accepted));
         assert_eq!(
             transport.send(&acquire_frame),
@@ -1186,6 +1218,30 @@ mod tests {
                 queue_depth: 1
             })
         );
+        let mut accepted_transport = FakeTransport::new(Generation::new(3), 4);
+        let handshake = encode(&hello(Source::H10, CapabilitySet::empty())).expect("hello");
+        assert!(accepted_transport.send(&handshake).is_ok());
+        for message in [
+            ClientMessage::Release(Release {
+                lease_id: LeaseId::new(1),
+                reason: "release".to_owned(),
+            }),
+            ClientMessage::Cancel(Cancel {
+                lease_id: LeaseId::new(1),
+                operation_id: 1,
+                reason: "cancel".to_owned(),
+            }),
+            ClientMessage::Operation(Operation {
+                lease_id: LeaseId::new(1),
+                operation_id: 2,
+                kind: OperationKind::ObserveDevice,
+                target: "target".to_owned(),
+                payload: Vec::new(),
+            }),
+        ] {
+            let frame = encode(&message).expect("accepted frame");
+            assert_eq!(accepted_transport.send(&frame), Ok(FakeReply::Accepted));
+        }
     }
 
     #[test]
@@ -1196,11 +1252,7 @@ mod tests {
             Source::Bp,
             CapabilitySet::from_capability(Capability::Connect),
         );
-        let frame_result = encode(&handshake);
-        assert!(frame_result.is_ok());
-        let Ok(frame) = frame_result else {
-            return;
-        };
+        let frame = encode(&handshake).expect("BP handshake frame");
         assert_eq!(
             transport.send(&frame),
             Err(ProtocolError::BpConnectForbidden)
@@ -1210,11 +1262,7 @@ mod tests {
             Source::Bp,
             CapabilitySet::from_capability(Capability::KernelObserve),
         );
-        let frame_result = encode(&good_handshake);
-        assert!(frame_result.is_ok());
-        let Ok(frame) = frame_result else {
-            return;
-        };
+        let frame = encode(&good_handshake).expect("good BP handshake");
         assert!(matches!(
             transport.send(&frame),
             Ok(FakeReply::HelloAccepted { .. })
@@ -1226,11 +1274,7 @@ mod tests {
             target: "bp".to_owned(),
             payload: Vec::new(),
         });
-        let frame_result = encode(&operation);
-        assert!(frame_result.is_ok());
-        let Ok(frame) = frame_result else {
-            return;
-        };
+        let frame = encode(&operation).expect("BP operation");
         assert_eq!(
             transport.send(&frame),
             Err(ProtocolError::BpConnectForbidden)
@@ -1258,10 +1302,7 @@ mod tests {
     }
 
     #[test]
-    #[expect(
-        clippy::too_many_lines,
-        reason = "the complete typed protocol fixture is intentionally exhaustive"
-    )]
+    #[allow(clippy::expect_used)]
     fn every_client_and_server_variant_round_trips() {
         let capabilities = CapabilitySet::empty()
             .with(Capability::Connect)
@@ -1294,11 +1335,7 @@ mod tests {
             ClientMessage::Health,
         ];
         for message in client_messages {
-            let frame_result = encode(&message);
-            assert!(frame_result.is_ok());
-            let Ok(frame) = frame_result else {
-                return;
-            };
+            let frame = encode(&message).expect("client frame");
             assert_eq!(decode(&frame), Ok(message));
         }
         for (operation_id, kind) in [
@@ -1316,11 +1353,7 @@ mod tests {
                 target: "target".to_owned(),
                 payload: vec![1, 2],
             });
-            let frame_result = encode(&message);
-            assert!(frame_result.is_ok());
-            let Ok(frame) = frame_result else {
-                return;
-            };
+            let frame = encode(&message).expect("operation frame");
             assert_eq!(decode(&frame), Ok(message));
         }
 
@@ -1369,11 +1402,7 @@ mod tests {
             ServerMessage::Cancelled { operation_id: 9 },
         ];
         for message in server_messages {
-            let frame_result = encode_server(&message);
-            assert!(frame_result.is_ok());
-            let Ok(frame) = frame_result else {
-                return;
-            };
+            let frame = encode_server(&message).expect("server frame");
             assert_eq!(decode_server(&frame), Ok(message));
         }
     }
