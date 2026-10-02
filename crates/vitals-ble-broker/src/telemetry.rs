@@ -370,7 +370,11 @@ pub enum OperationResult {
 }
 
 fn metric_line(output: &mut String, name: &str, labels: &str, value: u64) {
-    let _ = writeln!(output, "{name}{labels}{value}");
+    if labels.is_empty() {
+        let _ = writeln!(output, "{name} {value}");
+    } else {
+        let _ = writeln!(output, "{name}{labels}{value}");
+    }
 }
 
 fn operation_counter(counters: &[AtomicU64; OPERATION_COUNT], index: usize) -> &AtomicU64 {
@@ -487,6 +491,7 @@ mod tests {
         assert!(snapshot.contains("source=\"airsense\""));
         assert!(snapshot.contains("operation=\"write\""));
         assert!(snapshot.contains("estimated_direct_mode_rss_bytes_saved"));
+        assert!(snapshot.contains("vitals_ble_broker_process_rss_bytes "));
     }
 
     #[tokio::test]
