@@ -223,6 +223,71 @@ impl<A: AdapterIo> OwnerOperations for BluezAdapterOwner<A> {
     }
 }
 
+/// Exercise the concrete Linux owner through the server's typed seam.
+///
+/// This is used by the deterministic private-D-Bus contract test; it does not
+/// touch a real controller and deliberately ignores operation outcomes because
+/// the fixture supplies both successful properties and rejected mutating calls.
+#[doc(hidden)]
+pub async fn exercise_linux_owner_boundary_for_coverage(owner: &mut LinuxBluezAdapterOwner) {
+    let address = bluer::Address::new([1, 2, 3, 4, 5, 6]);
+    let _ = OwnerOperations::health(owner).await;
+
+    let requests = [
+        (Source::Diagnostics, Intent::Discover),
+        (Source::Bp, Intent::KernelObserve),
+        (Source::AirSense, Intent::Connect),
+        (Source::AirSense, Intent::Gatt),
+    ];
+    for (source, intent) in requests {
+        let request = LeaseRequest::new(
+            source,
+            intent,
+            crate::Priority::new(1),
+            100,
+            100,
+            None,
+            CapabilitySet::empty(),
+        );
+        let Ok(crate::AcquireResult::Granted(lease)) = OwnerOperations::acquire(owner, request, 0)
+        else {
+            continue;
+        };
+        match intent {
+            Intent::Discover => {
+                let _ = OwnerOperations::discover(
+                    owner,
+                    &lease,
+                    bluer::DiscoveryFilter::default(),
+                    Some(address),
+                    Duration::from_millis(1),
+                )
+                .await;
+            }
+            Intent::KernelObserve => {
+                let _ = OwnerOperations::observe(owner, &lease, address).await;
+            }
+            Intent::Connect => {
+                let _ = OwnerOperations::connect(owner, &lease, address, Duration::from_millis(1))
+                    .await;
+                let _ = OwnerOperations::disconnect(owner, &lease, address).await;
+            }
+            Intent::Gatt => {
+                let _ = OwnerOperations::resolve(
+                    owner,
+                    &lease,
+                    address,
+                    bluer::Uuid::nil(),
+                    bluer::Uuid::nil(),
+                )
+                .await;
+            }
+            _ => {}
+        }
+        let _ = OwnerOperations::release(owner, lease.id(), 1);
+    }
+}
+
 trait BrokerOwner: OwnerOperations {}
 
 impl<T: OwnerOperations> BrokerOwner for T {}

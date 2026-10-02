@@ -1352,6 +1352,15 @@ mod tests {
     }
 
     #[test]
+    fn simultaneous_connect_requests_are_serialized() {
+        let mut scheduler = LeaseScheduler::new(Generation::new(1));
+        let active = scheduler.acquire(request(Source::AirSense, Intent::Connect, 1, None), 0);
+        assert!(matches!(active, Ok(AcquireResult::Granted(_))));
+        let queued = scheduler.acquire(request(Source::H10, Intent::Connect, 1, None), 1);
+        assert!(matches!(queued, Ok(AcquireResult::Queued { .. })));
+    }
+
+    #[test]
     fn lease_contract_accessors_and_blocker_messages_are_exhaustive() {
         let lease_request = request(Source::AirSense, Intent::Gatt, 7, Some("peer"));
         assert_eq!(lease_request.source(), Source::AirSense);

@@ -1994,6 +1994,7 @@ mod runtime {
         }
 
         #[tokio::test]
+        #[allow(clippy::expect_used)]
         async fn fake_backend_exercises_scheduler_helpers() {
             let (adapter, _device, _characteristic) = fake_adapter();
             let mut owner = fake_owner(adapter);
@@ -2017,9 +2018,8 @@ mod runtime {
                     0,
                 )
                 .unwrap();
-            if let AcquireResult::Queued { ticket, .. } = queued {
-                assert!(owner.cancel(ticket));
-            }
+            let ticket = queued.ticket().expect("queued scheduler helper request");
+            assert!(owner.cancel(ticket));
             owner.release(active.id(), 1);
             assert!(owner.invalidate_generation(Generation::new(2)).is_ok());
             assert_eq!(owner.generation(), Generation::new(2));

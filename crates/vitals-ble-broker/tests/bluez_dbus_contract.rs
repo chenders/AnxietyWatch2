@@ -175,11 +175,10 @@ async fn exercise_real_bluer_wrappers() -> Result<(), String> {
         address: Some("controller-test".to_owned()),
         ..ControllerSelector::default()
     };
-    assert!(
-        BluezAdapterOwner::open(&selector, &[evidence], Generation::new(1))
-            .await
-            .is_ok()
-    );
+    let mut owner = BluezAdapterOwner::open(&selector, &[evidence], Generation::new(1))
+        .await
+        .map_err(|error| format!("open fake BlueZ owner: {error}"))?;
+    vitals_ble_broker::server::exercise_linux_owner_boundary_for_coverage(&mut owner).await;
     let missing_evidence = ControllerEvidence {
         runtime_name: "adapter_missing".to_owned(),
         address: Some("missing-controller".to_owned()),
