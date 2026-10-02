@@ -61,9 +61,9 @@ mod tests {
         let config = BrokerConfig {
             socket: PathBuf::from("/tmp/vitals-ble-broker-coverage.sock"),
             metrics_path: PathBuf::from("/tmp/vitals-ble-broker-coverage.prom"),
-            selector_text: "address=00:00:00XX:XX:XX".to_owned(),
+            selector_text: "serial=coverage-selector".to_owned(),
             selector: ControllerSelector {
-                address: Some("00:00:00XX:XX:XX".to_owned()),
+                serial: Some("coverage-selector".to_owned()),
                 ..ControllerSelector::default()
             },
             allowed_uid: None,

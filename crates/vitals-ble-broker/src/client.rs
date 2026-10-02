@@ -676,6 +676,34 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::expect_used)]
+    async fn cancellation_send_failure_is_named() {
+        let (stream, peer) = tokio::net::UnixStream::pair().expect("unix pair");
+        let (reader, writer) = stream.into_split();
+        let (peer_reader, peer_writer) = peer.into_split();
+        drop(peer_reader);
+        drop(peer_writer);
+        let mut client = BrokerClient {
+            reader,
+            writer,
+            source: Source::H10,
+            lease: BrokerLease {
+                id: LeaseId::new(1),
+                generation: Generation::new(1),
+                expires_at: 10,
+            },
+            next_operation: 1,
+        };
+        assert!(matches!(
+            client.cancel_after_deadline(1, "connect").await,
+            ClientError::CancellationFailed {
+                operation: "connect",
+                ..
+            }
+        ));
+    }
+
+    #[tokio::test]
     async fn source_default_connect_reports_socket_failure() {
         let socket =
             std::env::temp_dir().join(format!("vitals-client-missing-{}", std::process::id()));

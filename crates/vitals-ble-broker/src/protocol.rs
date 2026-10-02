@@ -309,24 +309,8 @@ impl std::error::Error for ProtocolError {}
 /// the encoded message exceeds [`MAX_FRAME_BYTES`].
 pub fn encode(message: &ClientMessage) -> Result<Vec<u8>, ProtocolError> {
     let (kind, payload) = encode_payload(message)?;
-    let frame_size =
-        HEADER_BYTES
-            .checked_add(payload.len())
-            .ok_or(ProtocolError::FrameTooLarge {
-                length: usize::MAX,
-                max: MAX_FRAME_BYTES,
-            })?;
-    if frame_size > MAX_FRAME_BYTES {
-        return Err(ProtocolError::FrameTooLarge {
-            length: frame_size,
-            max: MAX_FRAME_BYTES,
-        });
-    }
-    let payload_length =
-        u32::try_from(payload.len()).map_err(|_| ProtocolError::FrameTooLarge {
-            length: payload.len(),
-            max: u32::MAX as usize,
-        })?;
+    let frame_size = HEADER_BYTES + payload.len();
+    let payload_length = bounded_u32(payload.len())?;
     let mut frame = Vec::with_capacity(frame_size);
     frame.extend_from_slice(b"VBT1");
     frame.extend_from_slice(&PROTOCOL_VERSION.to_be_bytes());
@@ -358,8 +342,7 @@ pub fn decode(frame: &[u8]) -> Result<ClientMessage, ProtocolError> {
         return Err(ProtocolError::UnsupportedVersion(version));
     }
     let kind = reader.u8()?;
-    let payload_length =
-        usize::try_from(reader.u32()?).map_err(|_| ProtocolError::InvalidPayload)?;
+    let payload_length = reader.u32()? as usize;
     let payload = reader.bytes(payload_length)?;
     if reader.remaining() != 0 {
         return Err(ProtocolError::InvalidPayload);
@@ -517,8 +500,7 @@ pub fn decode_server(frame: &[u8]) -> Result<ServerMessage, ProtocolError> {
         }),
         9 => Ok(ServerMessage::Health {
             generation: Generation::new(reader.u64()?),
-            queue_depth: usize::try_from(reader.u64()?)
-                .map_err(|_| ProtocolError::InvalidPayload)?,
+            queue_depth: decode_queue_depth(reader.u64()?)?,
         }),
         10 => Ok(ServerMessage::Error {
             operation_id: reader.u64()?,
@@ -539,25 +521,27 @@ pub fn decode_server(frame: &[u8]) -> Result<ServerMessage, ProtocolError> {
     })
 }
 
+#[cfg(target_pointer_width = "64")]
+#[allow(clippy::cast_possible_truncation, clippy::unnecessary_wraps)]
+fn decode_queue_depth(value: u64) -> Result<usize, ProtocolError> {
+    Ok(value as usize)
+}
+
+#[cfg(not(target_pointer_width = "64"))]
+fn decode_queue_depth(value: u64) -> Result<usize, ProtocolError> {
+    usize::try_from(value).map_err(|_| ProtocolError::InvalidPayload)
+}
+
+fn bounded_u32(length: usize) -> Result<u32, ProtocolError> {
+    u32::try_from(length).map_err(|_| ProtocolError::FrameTooLarge {
+        length,
+        max: MAX_FRAME_BYTES,
+    })
+}
+
 fn encode_frame(kind: u8, payload: &[u8]) -> Result<Vec<u8>, ProtocolError> {
-    let frame_size =
-        HEADER_BYTES
-            .checked_add(payload.len())
-            .ok_or(ProtocolError::FrameTooLarge {
-                length: usize::MAX,
-                max: MAX_FRAME_BYTES,
-            })?;
-    if frame_size > MAX_FRAME_BYTES {
-        return Err(ProtocolError::FrameTooLarge {
-            length: frame_size,
-            max: MAX_FRAME_BYTES,
-        });
-    }
-    let payload_length =
-        u32::try_from(payload.len()).map_err(|_| ProtocolError::FrameTooLarge {
-            length: payload.len(),
-            max: MAX_FRAME_BYTES,
-        })?;
+    let frame_size = HEADER_BYTES + payload.len();
+    let payload_length = bounded_u32(payload.len())?;
     let mut frame = Vec::with_capacity(frame_size);
     frame.extend_from_slice(b"VBT1");
     frame.extend_from_slice(&PROTOCOL_VERSION.to_be_bytes());
@@ -583,8 +567,7 @@ fn decode_frame(frame: &[u8]) -> Result<(u8, &[u8]), ProtocolError> {
         return Err(ProtocolError::UnsupportedVersion(version));
     }
     let kind = reader.u8()?;
-    let payload_length =
-        usize::try_from(reader.u32()?).map_err(|_| ProtocolError::InvalidPayload)?;
+    let payload_length = reader.u32()? as usize;
     let payload = reader.bytes(payload_length)?;
     if reader.remaining() != 0 {
         return Err(ProtocolError::InvalidPayload);
@@ -913,10 +896,7 @@ impl Writer {
     }
 
     fn bytes(&mut self, value: &[u8]) -> Result<(), ProtocolError> {
-        let length = u32::try_from(value.len()).map_err(|_| ProtocolError::FrameTooLarge {
-            length: value.len(),
-            max: MAX_FRAME_BYTES,
-        })?;
+        let length = bounded_u32(value.len())?;
         self.bytes.extend_from_slice(&length.to_be_bytes());
         self.bytes.extend_from_slice(value);
         Ok(())
@@ -934,10 +914,8 @@ fn bounded_length(length: usize) -> Result<u16, ProtocolError> {
             max: MAX_STRING_BYTES,
         });
     }
-    u16::try_from(length).map_err(|_| ProtocolError::FrameTooLarge {
-        length,
-        max: MAX_STRING_BYTES,
-    })
+    #[allow(clippy::cast_possible_truncation)]
+    Ok(length as u16)
 }
 
 struct Reader<'a> {
@@ -1010,7 +988,7 @@ impl<'a> Reader<'a> {
     }
 
     fn bytes_field(&mut self) -> Result<Vec<u8>, ProtocolError> {
-        let length = usize::try_from(self.u32()?).map_err(|_| ProtocolError::InvalidPayload)?;
+        let length = self.u32()? as usize;
         Ok(self.bytes(length)?.to_vec())
     }
 
@@ -1067,6 +1045,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::expect_used, clippy::indexing_slicing)]
     fn malformed_and_trailing_frames_fail_closed() {
         assert_eq!(decode(b"VBT1"), Err(ProtocolError::Truncated));
         assert_eq!(
@@ -1080,6 +1059,49 @@ mod tests {
         };
         frame.push(1);
         assert_eq!(decode(&frame), Err(ProtocolError::InvalidPayload));
+
+        let mut payload_trailing = encode(&ClientMessage::Health).expect("health frame");
+        payload_trailing[7] = 0;
+        payload_trailing[8] = 0;
+        payload_trailing[9] = 0;
+        payload_trailing[10] = 1;
+        payload_trailing.push(1);
+        assert_eq!(
+            decode(&payload_trailing),
+            Err(ProtocolError::InvalidPayload)
+        );
+        assert_eq!(
+            decode(&vec![0; MAX_FRAME_BYTES + 1]),
+            Err(ProtocolError::FrameTooLarge {
+                length: MAX_FRAME_BYTES + 1,
+                max: MAX_FRAME_BYTES
+            })
+        );
+        assert_eq!(
+            decode_server(&vec![0; MAX_FRAME_BYTES + 1]),
+            Err(ProtocolError::FrameTooLarge {
+                length: MAX_FRAME_BYTES + 1,
+                max: MAX_FRAME_BYTES
+            })
+        );
+        let mut server = encode_server(&ServerMessage::HelloAccepted {
+            generation: Generation::new(1),
+        })
+        .expect("server frame");
+        server.push(1);
+        assert_eq!(decode_server(&server), Err(ProtocolError::InvalidPayload));
+        assert_eq!(
+            decode_server(b"VBT1\0\x01\x7f\0\0\0\0"),
+            Err(ProtocolError::UnknownServerKind(0x7f))
+        );
+        assert_eq!(
+            decode_server(b"NOPE\0\x01\0\0\0\0\0"),
+            Err(ProtocolError::BadMagic)
+        );
+        assert_eq!(
+            decode_server(b"VBT1\0\x02\0\0\0\0\0"),
+            Err(ProtocolError::UnsupportedVersion(2))
+        );
     }
 
     #[test]
@@ -1098,6 +1120,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::expect_used)]
     fn fake_transport_requires_handshake_and_bounds_queue() {
         let mut transport = FakeTransport::new(Generation::new(3), 1);
         let health_result = encode(&ClientMessage::Health);
@@ -1108,6 +1131,15 @@ mod tests {
         assert_eq!(
             transport.send(&health),
             Err(ProtocolError::HandshakeRequired)
+        );
+        let mut unsupported = hello(Source::H10, CapabilitySet::empty());
+        if let ClientMessage::Hello(value) = &mut unsupported {
+            value.protocol_version = 2;
+        }
+        let unsupported_frame = encode(&unsupported).expect("unsupported hello");
+        assert_eq!(
+            transport.send(&unsupported_frame),
+            Err(ProtocolError::UnsupportedVersion(2))
         );
         let handshake_result = encode(&hello(Source::H10, CapabilitySet::empty()));
         assert!(handshake_result.is_ok());
@@ -1141,9 +1173,23 @@ mod tests {
             transport.send(&acquire_frame),
             Err(ProtocolError::QueueFull { capacity: 1 })
         );
+        let hello_again = encode(&hello(Source::H10, CapabilitySet::empty())).expect("hello");
+        assert_eq!(
+            transport.send(&hello_again),
+            Err(ProtocolError::HelloAlreadyReceived)
+        );
+        let health = encode(&ClientMessage::Health).expect("health");
+        assert_eq!(
+            transport.send(&health),
+            Ok(FakeReply::Health {
+                generation: Generation::new(3),
+                queue_depth: 1
+            })
+        );
     }
 
     #[test]
+    #[allow(clippy::expect_used)]
     fn fake_transport_rejects_bp_connect_at_handshake_and_operation() {
         let mut transport = FakeTransport::new(Generation::new(1), 4);
         let handshake = hello(
@@ -1187,6 +1233,26 @@ mod tests {
         };
         assert_eq!(
             transport.send(&frame),
+            Err(ProtocolError::BpConnectForbidden)
+        );
+
+        let mut acquire_transport = FakeTransport::new(Generation::new(1), 4);
+        let acquire = ClientMessage::Acquire(Acquire {
+            source: Source::Bp,
+            intent: Intent::Connect,
+            priority: Priority::new(1),
+            deadline: 1,
+            max_hold: 1,
+            preemptible: false,
+            device_selector: None,
+            capabilities: CapabilitySet::empty(),
+            reason: "bp".to_owned(),
+        });
+        let acquire_frame = encode(&acquire).expect("acquire");
+        let good = encode(&hello(Source::Bp, CapabilitySet::empty())).expect("hello");
+        assert!(acquire_transport.send(&good).is_ok());
+        assert_eq!(
+            acquire_transport.send(&acquire_frame),
             Err(ProtocolError::BpConnectForbidden)
         );
     }
@@ -1324,6 +1390,27 @@ mod tests {
         );
         assert!(matches!(
             bounded_length(MAX_STRING_BYTES + 1),
+            Err(ProtocolError::FrameTooLarge { .. })
+        ));
+        let mut invalid_string = Writer::default();
+        invalid_string.u16(1);
+        invalid_string.bytes.push(0xff);
+        let invalid_bytes = invalid_string.finish();
+        let mut invalid_reader = Reader::new(&invalid_bytes);
+        assert_eq!(invalid_reader.string(), Err(ProtocolError::InvalidUtf8));
+        let too_long_bytes = [0xff, 0xff];
+        let mut too_long_reader = Reader::new(&too_long_bytes);
+        assert!(matches!(
+            too_long_reader.string(),
+            Err(ProtocolError::FrameTooLarge { .. })
+        ));
+        let mut invalid_optional = Reader::new(&[2]);
+        assert_eq!(
+            invalid_optional.optional_string(),
+            Err(ProtocolError::InvalidPayload)
+        );
+        assert!(matches!(
+            bounded_u32(usize::MAX),
             Err(ProtocolError::FrameTooLarge { .. })
         ));
         let mut writer = Writer::default();

@@ -89,6 +89,24 @@ fn raw_journal_precedes_sync_append_and_ack() {
 }
 
 #[test]
+fn registration_failures_and_ledger_rejections_are_named() {
+    for failure in [
+        RegistrationFailure::ManagementRejected,
+        RegistrationFailure::ControllerUnavailable,
+        RegistrationFailure::PolicyRejected,
+    ] {
+        assert!(!failure.to_string().is_empty());
+    }
+    let mut ledger = BpFrameLedger::received();
+    assert!(ledger.journal_synced());
+    assert!(!ledger.journal_synced());
+    assert!(ledger.sync_append_sent());
+    assert!(!ledger.sync_append_sent());
+    assert!(ledger.durable_reply());
+    assert!(!ledger.durable_reply());
+}
+
+#[test]
 fn registration_failure_is_observable_and_not_success() {
     let mut boundary = KernelPolicyBoundary::new(selector(), "bp-cuff", AddressType::Random);
     let request = boundary.prepare_registration(&[controller("hci0")], Generation::new(1));

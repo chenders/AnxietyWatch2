@@ -490,6 +490,21 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn exporter_runs_periodically() {
+        let directory =
+            std::env::temp_dir().join(format!("ble-telemetry-loop-{}", std::process::id()));
+        let _ = fs::create_dir_all(&directory);
+        let path = directory.join("broker.prom");
+        let telemetry = std::sync::Arc::new(Telemetry::new());
+        let task = tokio::spawn(telemetry.clone().export_loop(path.clone()));
+        tokio::time::sleep(Duration::from_millis(1)).await;
+        task.abort();
+        let _ = task.await;
+        assert!(path.exists());
+        let _ = fs::remove_dir_all(directory);
+    }
+
+    #[tokio::test]
     async fn exports_atomically() {
         let directory = std::env::temp_dir().join(format!("ble-telemetry-{}", std::process::id()));
         let _ = fs::create_dir_all(&directory);

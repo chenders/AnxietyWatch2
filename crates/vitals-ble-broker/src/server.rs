@@ -256,9 +256,8 @@ pub(crate) async fn exercise_linux_owner_dispatch<A: AdapterIo>(owner: &mut Blue
             .unwrap();
     let queued =
         OwnerOperations::acquire(owner, request(Source::Diagnostics, Intent::Discover), 0).unwrap();
-    if let crate::AcquireResult::Queued { ticket, .. } = queued {
-        assert!(OwnerOperations::cancel(owner, ticket));
-    }
+    let ticket = queued.ticket().unwrap();
+    assert!(OwnerOperations::cancel(owner, ticket));
     OwnerOperations::health(owner).await.unwrap();
     OwnerOperations::discover(
         owner,
@@ -1431,11 +1430,12 @@ fn usb_identity(path: &Path) -> (Option<String>, Option<(u16, u16)>) {
 #[cfg(test)]
 mod tests {
     use super::{
-        BoxFuture, BoxPayloadStream, BrokerState, ClientInfo, ClientMessage, OWNER_ERROR,
-        OwnerOperations, Path, UnixStream, address_for_lease, capability_for, cleanup_client,
-        controller_inventory, deadline_after, error_message, operation_address, parse_selector,
-        physical_device_path, prepare_socket, process_message, read_message, run, run_with_owner,
-        serve_client, validate_hello,
+        BoxFuture, BoxPayloadStream, BrokerState, ClientInfo, ClientMessage, LeaseInfo,
+        OWNER_ERROR, OwnerOperations, Path, UnixStream, address_for_lease, cancel_operation,
+        capability_for, cleanup_client, controller_inventory, deadline_after, error_message,
+        insert_lease, operation_address, parse_selector, physical_device_path, prepare_socket,
+        process_message, process_operation, read_message, run, run_with_owner, serve_client,
+        validate_hello,
     };
     use crate::bluez::{
         AdapterHealth, AdapterPolicy, ControllerBus, ControllerSelector, DeviceObservation,
@@ -1443,15 +1443,29 @@ mod tests {
     };
     use crate::telemetry::Telemetry;
     use crate::{
-        AcquireResult, Capability, CapabilitySet, Generation, Intent, LeaseRequest, Priority,
-        ServerMessage, Source,
+        AcquireResult, Capability, CapabilitySet, DeviceId, Generation, Intent, LeaseRequest,
+        Priority, ServerMessage, Source,
     };
     use futures::stream;
     use std::sync::Arc;
+    use std::task::{Context, Poll};
     use std::time::Instant;
-    use std::{collections::HashMap, fs};
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use std::{collections::HashMap, fs, pin::Pin};
+    use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt, ReadBuf};
     use tokio::sync::{Mutex, mpsc};
+
+    #[derive(Clone)]
+    struct ErrorReader;
+
+    impl AsyncRead for ErrorReader {
+        fn poll_read(
+            self: Pin<&mut Self>,
+            _context: &mut Context<'_>,
+            _buffer: &mut ReadBuf<'_>,
+        ) -> Poll<std::io::Result<()>> {
+            Poll::Ready(Err(std::io::Error::other("reader failure")))
+        }
+    }
 
     #[derive(Clone)]
     struct FakeCharacteristic(u8);
@@ -1675,9 +1689,9 @@ mod tests {
             socket: std::env::temp_dir().join(format!("vitals-broker-run-{}", std::process::id())),
             metrics_path: std::env::temp_dir()
                 .join(format!("vitals-broker-run-{}.prom", std::process::id())),
-            selector_text: "address=00:00:00XX:XX:XX".to_owned(),
+            selector_text: "serial=coverage-selector".to_owned(),
             selector: ControllerSelector {
-                address: Some("00:00:00XX:XX:XX".to_owned()),
+                serial: Some("coverage-selector".to_owned()),
                 ..ControllerSelector::default()
             },
             allowed_uid: None,
@@ -1687,6 +1701,11 @@ mod tests {
         if let Err(error) = result {
             assert!(error.contains("broker adapter open failed"));
         }
+    }
+
+    #[test]
+    fn config_from_env_reports_missing_selector() {
+        assert!(super::BrokerConfig::from_env().is_err());
     }
 
     #[test]
@@ -1747,6 +1766,14 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn read_message_reports_non_eof_header_errors() {
+        assert_eq!(
+            read_message(&mut ErrorReader).await,
+            Err("broker frame header read failed: reader failure".to_owned())
+        );
+    }
+
+    #[tokio::test]
     async fn serve_client_covers_handshake_and_protocol_rejection() -> Result<(), String> {
         async fn receive(stream: &mut UnixStream) -> Result<ServerMessage, String> {
             let mut header = [0_u8; 11];
@@ -1801,6 +1828,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::too_many_lines)]
     async fn fake_owner_propagates_typed_operation_failures() -> Result<(), String> {
         let state = fake_state();
         let capabilities = CapabilitySet::empty()
@@ -1831,10 +1859,11 @@ mod tests {
             reason: "fake failure test".to_owned(),
         };
         process_message(1, ClientMessage::Acquire(acquire), &state, &sender).await?;
-        let lease_id = match responses.recv().await {
-            Some(ServerMessage::LeaseGranted { lease_id, .. }) => lease_id,
-            other => return Err(format!("expected lease grant, got {other:?}")),
-        };
+        assert!(matches!(
+            responses.recv().await,
+            Some(ServerMessage::LeaseGranted { .. })
+        ));
+        let lease_id = crate::LeaseId::new(1);
         state.owner.lock().await.fail_operations = true;
         assert!(
             process_message(1, ClientMessage::Health, &state, &sender)
@@ -2001,10 +2030,11 @@ mod tests {
             &sender,
         )
         .await?;
-        let lease_id = match responses.recv().await {
-            Some(ServerMessage::LeaseGranted { lease_id, .. }) => lease_id,
-            other => return Err(format!("expected lease grant, got {other:?}")),
-        };
+        assert!(matches!(
+            responses.recv().await,
+            Some(ServerMessage::LeaseGranted { .. })
+        ));
+        let lease_id = crate::LeaseId::new(1);
         process_message(
             1,
             ClientMessage::Acquire(acquire(
@@ -2120,10 +2150,11 @@ mod tests {
             reason: "fake-owner test".to_owned(),
         };
         process_message(1, ClientMessage::Acquire(acquire), &state, &sender).await?;
-        let lease_id = match responses.recv().await {
-            Some(ServerMessage::LeaseGranted { lease_id, .. }) => lease_id,
-            other => return Err(format!("expected lease grant, got {other:?}")),
-        };
+        assert!(matches!(
+            responses.recv().await,
+            Some(ServerMessage::LeaseGranted { .. })
+        ));
+        let lease_id = crate::LeaseId::new(1);
         let address = "AA:BB:CC:DD:EE:FF";
         let operation =
             |operation_id: u64, kind: crate::OperationKind, target: &str| crate::Operation {
@@ -2209,6 +2240,325 @@ mod tests {
             Some(ServerMessage::Released { lease_id: released }) if released == lease_id
         ));
         cleanup_client(1, &state).await;
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[allow(clippy::too_many_lines)]
+    async fn server_rejection_and_bp_release_paths_are_observable() -> Result<(), String> {
+        let state = fake_state();
+        state.clients.lock().await.insert(
+            1,
+            ClientInfo {
+                source: Source::H10,
+                capabilities: CapabilitySet::from_capability(Capability::Connect),
+                leases: Vec::new(),
+            },
+        );
+        let (sender, mut responses) = mpsc::channel(32);
+        process_message(
+            1,
+            ClientMessage::Hello(crate::Hello {
+                protocol_version: crate::PROTOCOL_VERSION,
+                source: Source::H10,
+                adapter_selector: "bus=usb;vid_pid=0a12:0001".to_owned(),
+                device_selector: Some("peer".to_owned()),
+                capabilities: CapabilitySet::empty(),
+            }),
+            &state,
+            &sender,
+        )
+        .await?;
+        assert!(matches!(
+            responses.recv().await,
+            Some(ServerMessage::Error { code: 3, .. })
+        ));
+        process_message(
+            1,
+            ClientMessage::Acquire(crate::Acquire {
+                source: Source::H10,
+                intent: Intent::Connect,
+                priority: Priority::new(1),
+                deadline: 30,
+                max_hold: 0,
+                preemptible: false,
+                device_selector: Some("AA:BB:CC:DD:EE:FF".to_owned()),
+                capabilities: CapabilitySet::from_capability(Capability::Connect),
+                reason: "zero hold".to_owned(),
+            }),
+            &state,
+            &sender,
+        )
+        .await?;
+        assert!(matches!(
+            responses.recv().await,
+            Some(ServerMessage::Error {
+                code: super::OPERATION_ERROR,
+                ..
+            })
+        ));
+        process_message(
+            1,
+            ClientMessage::Release(crate::Release {
+                lease_id: crate::LeaseId::new(99),
+                reason: "unknown".to_owned(),
+            }),
+            &state,
+            &sender,
+        )
+        .await?;
+        assert!(matches!(
+            responses.recv().await,
+            Some(ServerMessage::Error {
+                code: super::AUTH_ERROR,
+                ..
+            })
+        ));
+
+        state.clients.lock().await.insert(
+            2,
+            ClientInfo {
+                source: Source::Bp,
+                capabilities: CapabilitySet::from_capability(Capability::KernelObserve),
+                leases: Vec::new(),
+            },
+        );
+        process_message(
+            2,
+            ClientMessage::Acquire(crate::Acquire {
+                source: Source::Bp,
+                intent: Intent::KernelObserve,
+                priority: Priority::new(1),
+                deadline: 30,
+                max_hold: 30,
+                preemptible: false,
+                device_selector: Some("AA:BB:CC:DD:EE:FF".to_owned()),
+                capabilities: CapabilitySet::from_capability(Capability::KernelObserve),
+                reason: "bp".to_owned(),
+            }),
+            &state,
+            &sender,
+        )
+        .await?;
+        assert!(matches!(
+            responses.recv().await,
+            Some(ServerMessage::LeaseGranted { .. })
+        ));
+        let lease_id = crate::LeaseId::new(1);
+        process_message(
+            2,
+            ClientMessage::Release(crate::Release {
+                lease_id,
+                reason: "bp done".to_owned(),
+            }),
+            &state,
+            &sender,
+        )
+        .await?;
+        assert!(matches!(
+            responses.recv().await,
+            Some(ServerMessage::Released { .. })
+        ));
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[allow(clippy::too_many_lines)]
+    async fn process_operation_and_cancel_authorization_paths_are_observable() -> Result<(), String>
+    {
+        let state = fake_state();
+        state.clients.lock().await.insert(
+            1,
+            ClientInfo {
+                source: Source::H10,
+                capabilities: CapabilitySet::empty(),
+                leases: Vec::new(),
+            },
+        );
+        let (sender, mut responses) = mpsc::channel(8);
+        let operation = crate::Operation {
+            lease_id: crate::LeaseId::new(999),
+            operation_id: 1,
+            kind: crate::OperationKind::Connect,
+            target: "AA:BB:CC:DD:EE:FF".to_owned(),
+            payload: Vec::new(),
+        };
+        process_operation(1, operation, &state, &sender).await?;
+        assert!(matches!(
+            responses.recv().await,
+            Some(ServerMessage::Error {
+                code: super::AUTH_ERROR,
+                ..
+            })
+        ));
+
+        let lease = {
+            let mut owner = state.owner.lock().await;
+            match owner
+                .acquire(
+                    LeaseRequest::new(
+                        Source::H10,
+                        Intent::Connect,
+                        Priority::new(1),
+                        100,
+                        100,
+                        Some(DeviceId::new("AA:BB:CC:DD:EE:FF")),
+                        CapabilitySet::empty(),
+                    ),
+                    0,
+                )
+                .map_err(|error| error.to_string())?
+            {
+                AcquireResult::Granted(lease) => lease,
+                other @ AcquireResult::Queued { .. } => {
+                    return Err(format!("expected lease, got {other:?}"));
+                }
+            }
+        };
+        let lease_id = lease.id();
+        insert_lease(
+            &state,
+            LeaseInfo {
+                lease,
+                client_id: 1,
+                capabilities: CapabilitySet::empty(),
+                address: Some(
+                    "AA:BB:CC:DD:EE:FF"
+                        .parse()
+                        .map_err(|error| format!("address: {error}"))?,
+                ),
+            },
+        )
+        .await;
+        state
+            .clients
+            .lock()
+            .await
+            .get_mut(&1)
+            .ok_or("missing client")?
+            .leases
+            .push(lease_id);
+        process_operation(
+            1,
+            crate::Operation {
+                lease_id,
+                operation_id: 2,
+                kind: crate::OperationKind::Connect,
+                target: "AA:BB:CC:DD:EE:FF".to_owned(),
+                payload: Vec::new(),
+            },
+            &state,
+            &sender,
+        )
+        .await?;
+        assert!(matches!(
+            responses.recv().await,
+            Some(ServerMessage::Error {
+                code: super::AUTH_ERROR,
+                ..
+            })
+        ));
+        state.owner.lock().await.release(lease_id, 1);
+
+        process_message(
+            1,
+            ClientMessage::Cancel(crate::Cancel {
+                lease_id,
+                operation_id: 77,
+                reason: "already done".to_owned(),
+            }),
+            &state,
+            &sender,
+        )
+        .await?;
+        assert!(matches!(
+            responses.recv().await,
+            Some(ServerMessage::Cancelled { operation_id: 77 })
+        ));
+
+        state.clients.lock().await.insert(
+            2,
+            ClientInfo {
+                source: Source::Bp,
+                capabilities: CapabilitySet::from_capability(Capability::Connect),
+                leases: Vec::new(),
+            },
+        );
+        let bp_lease = {
+            let mut owner = state.owner.lock().await;
+            match owner
+                .acquire(
+                    LeaseRequest::new(
+                        Source::Bp,
+                        Intent::KernelObserve,
+                        Priority::new(1),
+                        100,
+                        100,
+                        Some(DeviceId::new("AA:BB:CC:DD:EE:FF")),
+                        CapabilitySet::from_capability(Capability::KernelObserve),
+                    ),
+                    0,
+                )
+                .map_err(|error| error.to_string())?
+            {
+                AcquireResult::Granted(lease) => lease,
+                other @ AcquireResult::Queued { .. } => {
+                    return Err(format!("expected BP lease, got {other:?}"));
+                }
+            }
+        };
+        let bp_lease_id = bp_lease.id();
+        insert_lease(
+            &state,
+            LeaseInfo {
+                lease: bp_lease,
+                client_id: 2,
+                capabilities: CapabilitySet::from_capability(Capability::Connect),
+                address: Some(
+                    "AA:BB:CC:DD:EE:FF"
+                        .parse()
+                        .map_err(|error| format!("address: {error}"))?,
+                ),
+            },
+        )
+        .await;
+        process_operation(
+            2,
+            crate::Operation {
+                lease_id: bp_lease_id,
+                operation_id: 3,
+                kind: crate::OperationKind::Connect,
+                target: "AA:BB:CC:DD:EE:FF".to_owned(),
+                payload: Vec::new(),
+            },
+            &state,
+            &sender,
+        )
+        .await?;
+        assert!(matches!(
+            responses.recv().await,
+            Some(ServerMessage::Error {
+                code: super::AUTH_ERROR,
+                ..
+            })
+        ));
+
+        let (closed_sender, closed_responses) = mpsc::channel(1);
+        drop(closed_responses);
+        assert!(
+            cancel_operation(
+                1,
+                crate::Cancel {
+                    lease_id,
+                    operation_id: 78,
+                    reason: "closed".to_owned(),
+                },
+                &state,
+                &closed_sender,
+            )
+            .await
+            .is_err()
+        );
         Ok(())
     }
 
@@ -2310,8 +2660,10 @@ mod tests {
         ));
         let usb = root.join("devices/usb/1-1");
         let uart = root.join("devices/serial/ttyS0");
+        let other = root.join("devices/other/controller");
         fs::create_dir_all(&usb)?;
         fs::create_dir_all(&uart)?;
+        fs::create_dir_all(&other)?;
         fs::write(usb.join("idVendor"), "0a12\n")?;
         fs::write(usb.join("idProduct"), "0001\n")?;
         fs::write(usb.join("serial"), "usb-serial\n")?;
@@ -2324,8 +2676,11 @@ mod tests {
         let class = root.join("hci1");
         fs::create_dir_all(&class)?;
         std::os::unix::fs::symlink(&uart, class.join("device"))?;
+        let class = root.join("hci2");
+        fs::create_dir_all(&class)?;
+        std::os::unix::fs::symlink(&other, class.join("device"))?;
         let records = controller_inventory(&root)?;
-        assert_eq!(records.len(), 2);
+        assert_eq!(records.len(), 3);
         assert!(
             records
                 .iter()
@@ -2336,11 +2691,17 @@ mod tests {
                 .iter()
                 .any(|record| record.bus == ControllerBus::Uart)
         );
+        assert!(
+            records
+                .iter()
+                .any(|record| record.bus == ControllerBus::Other)
+        );
         fs::remove_dir_all(root)?;
         Ok(())
     }
 
     #[test]
+    #[allow(clippy::unwrap_used)]
     fn broker_helpers_fail_closed_with_typed_blockers() {
         assert_eq!(
             capability_for(crate::OperationKind::ObserveDevice),
@@ -2366,18 +2727,12 @@ mod tests {
             capability_for(crate::OperationKind::Write),
             Capability::Write
         );
-        let Ok(address) = "AA:BB:CC:DD:EE:FF".parse() else {
-            return;
-        };
-        assert_eq!(
-            operation_address("AA:BB:CC:DD:EE:FF", Some(address)),
-            Ok(address)
-        );
+        let address = bluer::Address::new([0, 1, 2, 3, 4, 5]);
+        let target = address.to_string();
+        assert_eq!(operation_address(&target, Some(address)), Ok(address));
         assert!(operation_address("invalid", None).is_err());
-        let Ok(other) = "11:22:33:44:55:66".parse() else {
-            return;
-        };
-        assert!(operation_address("AA:BB:CC:DD:EE:FF", Some(other)).is_err());
+        let other = bluer::Address::new([6, 7, 8, 9, 10, 11]);
+        assert!(operation_address(&target, Some(other)).is_err());
         assert!(matches!(
             error_message(3, OWNER_ERROR, "blocker"),
             ServerMessage::Error {
@@ -2449,6 +2804,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::unwrap_used)]
     fn lease_address_is_derived_only_from_a_valid_device_selector() {
         let lease = LeaseRequest::new(
             Source::H10,
@@ -2460,9 +2816,7 @@ mod tests {
             CapabilitySet::empty(),
         );
         let mut policy = AdapterPolicy::new(Generation::new(1));
-        let Ok(AcquireResult::Granted(lease)) = policy.acquire(lease, 0) else {
-            return;
-        };
+        let lease = policy.acquire(lease, 0).unwrap().lease().cloned().unwrap();
         assert_eq!(
             address_for_lease(&lease).map(|value| value.to_string()),
             Some("AA:BB:CC:DD:EE:FF".to_owned())
