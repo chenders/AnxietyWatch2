@@ -964,6 +964,73 @@ mod tests {
     }
 
     #[test]
+    fn all_lease_accessors_are_observable() {
+        let device = DeviceId::new("coverage-device");
+        assert_eq!(device.as_str(), "coverage-device");
+        let request = LeaseRequest::new(
+            Source::H10,
+            Intent::Connect,
+            Priority::new(3),
+            100,
+            20,
+            Some(device),
+            CapabilitySet::from_capability(Capability::Connect),
+        )
+        .with_reason("coverage reason")
+        .preemptible(true);
+        assert_eq!(request.source(), Source::H10);
+        assert_eq!(request.intent(), Intent::Connect);
+        assert_eq!(request.priority(), Priority::new(3));
+        assert_eq!(request.deadline(), 100);
+        assert_eq!(request.max_hold(), 20);
+        assert!(request.is_preemptible());
+        assert!(request.is_preemptible());
+        assert!(request.capabilities().contains(Capability::Connect));
+        assert_eq!(request.reason(), "coverage reason");
+        assert_eq!(
+            request.device().map(DeviceId::as_str),
+            Some("coverage-device")
+        );
+
+        let mut scheduler = LeaseScheduler::new(Generation::new(4));
+        assert_eq!(scheduler.generation(), Generation::new(4));
+        assert_eq!(scheduler.queued_len(), 0);
+        assert!(scheduler.active_lease(LeaseId::new(1)).is_none());
+        let result = scheduler.acquire(request, 0);
+        let Ok(AcquireResult::Granted(lease)) = result else {
+            return;
+        };
+        assert_eq!(lease.id(), LeaseId::new(1));
+        assert_eq!(lease.source(), Source::H10);
+        assert_eq!(lease.intent(), Intent::Connect);
+        assert_eq!(lease.priority(), Priority::new(3));
+        assert_eq!(lease.generation(), Generation::new(4));
+        assert_eq!(lease.acquired_at(), 0);
+        assert_eq!(lease.expires_at(), 20);
+        assert!(lease.is_preemptible());
+        assert_eq!(
+            lease.device().map(DeviceId::as_str),
+            Some("coverage-device")
+        );
+        assert_eq!(lease.reason(), "coverage reason");
+        assert_eq!(scheduler.active_lease(lease.id()), Some(&lease));
+        assert_eq!(AcquireResult::Granted(lease.clone()).lease(), Some(&lease));
+        assert_eq!(AcquireResult::Granted(lease).ticket(), None);
+        assert_eq!(
+            AcquireResult::Queued {
+                ticket: QueueTicket(7),
+                blocker: NamedBlocker::DiscoveryOwned {
+                    owner: LeaseId::new(1),
+                    generation: Generation::new(4),
+                    deadline: 20
+                }
+            }
+            .ticket(),
+            Some(QueueTicket(7))
+        );
+    }
+
+    #[test]
     fn granted_lease_uses_max_hold_not_request_deadline() {
         let mut scheduler = LeaseScheduler::new(Generation::new(1));
         let mut lease_request = request(Source::AirSense, Intent::Discover, 1, None);

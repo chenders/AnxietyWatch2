@@ -1709,6 +1709,29 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn run_with_owner_reports_socket_setup_failure() -> Result<(), String> {
+        let directory = std::env::temp_dir().join(format!(
+            "vitals-broker-invalid-socket-{}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
+        let config = BrokerConfig {
+            socket: directory.clone(),
+            metrics_path: directory.join("metrics.prom"),
+            selector_text: "serial=coverage-selector".to_owned(),
+            selector: ControllerSelector {
+                serial: Some("coverage-selector".to_owned()),
+                ..ControllerSelector::default()
+            },
+            allowed_uid: None,
+        };
+        let result = run_with_owner(config, FakeOwner::new()).await;
+        assert!(result.is_err());
+        let _ = fs::remove_dir_all(directory);
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn run_rejects_a_selector_without_a_local_adapter() {
         let config = super::BrokerConfig {
             socket: std::env::temp_dir().join(format!("vitals-broker-run-{}", std::process::id())),
