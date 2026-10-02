@@ -1281,7 +1281,7 @@ mod tests {
         );
 
         let mut acquire_transport = FakeTransport::new(Generation::new(1), 4);
-        let acquire = ClientMessage::Acquire(Acquire {
+        let acquire = Acquire {
             source: Source::Bp,
             intent: Intent::Connect,
             priority: Priority::new(1),
@@ -1291,12 +1291,26 @@ mod tests {
             device_selector: None,
             capabilities: CapabilitySet::empty(),
             reason: "bp".to_owned(),
-        });
-        let acquire_frame = encode(&acquire).expect("acquire");
+        };
+        let acquire_frame = encode(&ClientMessage::Acquire(acquire.clone())).expect("acquire");
         let good = encode(&hello(Source::Bp, CapabilitySet::empty())).expect("hello");
         assert!(acquire_transport.send(&good).is_ok());
         assert_eq!(
             acquire_transport.send(&acquire_frame),
+            Err(ProtocolError::BpConnectForbidden)
+        );
+
+        let mut capability_transport = FakeTransport::new(Generation::new(1), 4);
+        assert!(capability_transport.send(&good).is_ok());
+        let capability_acquire = Acquire {
+            intent: Intent::KernelObserve,
+            capabilities: CapabilitySet::from_capability(Capability::Connect),
+            ..acquire
+        };
+        let capability_frame =
+            encode(&ClientMessage::Acquire(capability_acquire)).expect("capability acquire");
+        assert_eq!(
+            capability_transport.send(&capability_frame),
             Err(ProtocolError::BpConnectForbidden)
         );
     }

@@ -1970,11 +1970,11 @@ mod runtime {
             owner.release(recovery.id(), 6);
             let stream = crate::lease::test_lease(
                 crate::lease::Source::Diagnostics,
-                crate::lease::Intent::Stream,
+                crate::lease::Intent::Connect,
             );
             owner.policy.scheduler.insert_test_lease(stream.clone());
             assert!(matches!(
-                owner.check_lease(&stream, crate::lease::Intent::Connect),
+                owner.check_lease(&stream, crate::lease::Intent::Stream),
                 Err(OwnerError::WrongIntent { .. })
             ));
 

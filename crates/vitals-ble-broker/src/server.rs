@@ -238,6 +238,7 @@ pub async fn exercise_linux_owner_boundary_for_coverage(owner: &mut LinuxBluezAd
         (Source::Bp, Intent::KernelObserve),
         (Source::AirSense, Intent::Connect),
         (Source::AirSense, Intent::Gatt),
+        (Source::Diagnostics, Intent::PowerRecovery),
     ];
     for (source, intent) in requests {
         let request = LeaseRequest::new(
@@ -282,7 +283,7 @@ pub async fn exercise_linux_owner_boundary_for_coverage(owner: &mut LinuxBluezAd
                 )
                 .await;
             }
-            _ => {}
+            Intent::Stream | Intent::PowerRecovery => {}
         }
         let _ = OwnerOperations::release(owner, lease.id(), 1);
     }
