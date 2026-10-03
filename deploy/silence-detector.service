@@ -10,7 +10,8 @@ Restart=always
 RestartSec=3
 User=vitals
 Group=vitals
-Environment=DATABASE_URL=postgresql://vitals@localhost/vitals?host=%2Fvar%2Frun%2Fpostgresql
+# systemd expands a single percent as a unit specifier; %% reaches SQLx as %.
+Environment=DATABASE_URL=postgresql://vitals@localhost/vitals?host=%%2Fvar%%2Frun%%2Fpostgresql
 
 # The detector reads PostgreSQL only; it must not become a remote shell or
 # compete with the ingest safety path under memory pressure.
