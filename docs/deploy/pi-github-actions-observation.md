@@ -65,10 +65,13 @@ After the executable-mode fix, workflow `37099671541` started the binary at
 
 The corrected unit now uses a SQLx-compatible Unix-socket URL. The deployment helper also waits for
 service stabilization, requires structured successful states for long-running units, preserves the
-completed BP oneshot exception, and records service state/exit/restart blockers. The corrected
-service remains disabled until a reviewed release passes direct Pi verification across multiple
-30-second cycles. No successful silence-detector evaluation or notification delivery is inferred
-from the earlier green activation receipt.
+completed BP oneshot exception, and records service state/exit/restart blockers. The first post-fix
+activation attempt, workflow `37109378859`, failed closed in preflight because the downloaded udev
+rule retained mode `0600` while the manifest required `0644`; no live release or service state was
+mutated. The workflow now restores both systemd-unit and udev-rule modes after artifact download.
+The corrected service remains disabled until a reviewed release passes direct Pi verification across
+multiple 30-second cycles. No successful silence-detector evaluation or notification delivery is
+inferred from the earlier green activation receipt.
 
 ## Manual rollback rehearsal
 

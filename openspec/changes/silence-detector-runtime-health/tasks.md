@@ -4,6 +4,7 @@ Acceptance is each `Verify:` command's exit code. Do not tick a box before runni
 
 - [x] **T-SD-1 — Correct the SQLx URL contract and artifact modes** · implement-standard
 - [x] **T-SD-2 — Require stable structured service health** · implement-complex
+- [x] **T-SD-5 — Restore downloaded nonbinary artifact modes** · implement-standard
 - [ ] **T-SD-3 — Verify the corrected daemon on the Pi before enabling it** · human · Pi
 - [x] **T-SD-4 — Record the incident and final acceptance evidence** · docs
 
@@ -21,6 +22,12 @@ unstable long-running services; preserve the completed BP oneshot exception; and
 blockers in activation failures.
 
 **Verify:** `cargo test -p vitals-deploy && cargo clippy -p vitals-deploy --all-targets -- -D warnings && cargo fmt --all -- --check`
+
+## T-SD-5 — Restore downloaded nonbinary artifact modes
+
+**Do:** Restore mode `0644` for downloaded systemd-unit and udev-rule artifacts after GitHub artifact extraction, so the manifest's mode contract is satisfied before activation.
+
+**Verify:** `rg -q 'path.*units.*rules' .github/workflows/pi-deploy.yml && rg -q 'chmod 644' .github/workflows/pi-deploy.yml`
 
 ## T-SD-3 — Verify the corrected daemon on the Pi before enabling it
 
