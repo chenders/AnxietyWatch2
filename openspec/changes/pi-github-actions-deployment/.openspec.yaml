@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-10-03
+skip_specs: true
+goal: Deliver controlled native GitHub Actions deployments to the Pi with staged releases, backup gates, health checks, and operator-controlled rollback.
