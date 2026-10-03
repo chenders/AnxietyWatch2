@@ -1393,27 +1393,41 @@ fn spool_state() -> Result<SpoolState, Box<dyn Error>> {
     });
     files.sort();
 
+    let (data_bytes, data_fingerprint) = spool_fingerprint(&files)?;
+    Ok(SpoolState {
+        file_count: u64::try_from(files.len())?,
+        bytes: data_bytes,
+        fingerprint: data_fingerprint,
+    })
+}
+
+fn spool_fingerprint(files: &[PathBuf]) -> Result<(u64, String), Box<dyn Error>> {
     let mut data_bytes = 0_u64;
-    let mut digest = Sha256::new();
-    for path in &files {
+    let mut file_fingerprints = Vec::with_capacity(files.len());
+    for path in files {
         let metadata = fs::metadata(path)?;
         data_bytes = data_bytes.saturating_add(metadata.len());
-        let relative = path.strip_prefix(directory)?.to_string_lossy();
-        digest.update(relative.as_bytes());
-        digest.update([0_u8]);
-        digest.update(metadata.len().to_le_bytes());
-        digest.update(sha256_file(path)?.as_bytes());
+        let mut file_digest = Sha256::new();
+        file_digest.update(metadata.len().to_le_bytes());
+        file_digest.update(sha256_file(path)?.as_bytes());
+        let mut encoded = String::with_capacity(64);
+        for byte in file_digest.finalize() {
+            use std::fmt::Write as _;
+            write!(&mut encoded, "{byte:02x}")?;
+        }
+        file_fingerprints.push(encoded);
+    }
+    file_fingerprints.sort_unstable();
+    let mut digest = Sha256::new();
+    for fingerprint in file_fingerprints {
+        digest.update(fingerprint.as_bytes());
     }
     let mut data_fingerprint = String::with_capacity(64);
     for byte in digest.finalize() {
         use std::fmt::Write as _;
         write!(&mut data_fingerprint, "{byte:02x}")?;
     }
-    Ok(SpoolState {
-        file_count: u64::try_from(files.len())?,
-        bytes: data_bytes,
-        fingerprint: data_fingerprint,
-    })
+    Ok((data_bytes, data_fingerprint))
 }
 
 fn same_snapshot_state(left: &Snapshot, right: &Snapshot) -> bool {
@@ -1908,8 +1922,8 @@ mod tests {
     use super::{
         ArtifactFile, ExternalState, LiveFile, Manifest, ServiceState, Snapshot, SpoolState,
         artifact_file, health_is_fresh, missing_blocker, same_snapshot_state,
-        service_states_are_healthy, sha256_file, stage_manifest_files, validate_manifest,
-        validate_relative_path, validate_release_name, validate_staged_files,
+        service_states_are_healthy, sha256_file, spool_fingerprint, stage_manifest_files,
+        validate_manifest, validate_relative_path, validate_release_name, validate_staged_files,
         validate_target_architecture, verify_hash,
     };
     use std::fs;
@@ -2037,6 +2051,23 @@ mod tests {
         let first = sha256_file(&path)?;
         let second = sha256_file(&path)?;
         assert_eq!(first, second);
+        Ok(())
+    }
+
+    #[test]
+    fn spool_fingerprint_ignores_segment_filename_but_detects_content()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let directory = tempdir()?;
+        let first_path = directory.path().join("segment-first.spool");
+        file(&first_path, b"header")?;
+        let first = spool_fingerprint(std::slice::from_ref(&first_path))?;
+        let second_path = directory.path().join("segment-second.spool");
+        fs::rename(&first_path, &second_path)?;
+        let renamed = spool_fingerprint(std::slice::from_ref(&second_path))?;
+        assert_eq!(first, renamed);
+        file(&second_path, b"changed")?;
+        let changed = spool_fingerprint(std::slice::from_ref(&second_path))?;
+        assert_ne!(first, changed);
         Ok(())
     }
 
