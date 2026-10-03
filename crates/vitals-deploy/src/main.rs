@@ -2072,6 +2072,36 @@ mod tests {
     }
 
     #[test]
+    fn spool_fingerprint_preserves_multiset_count_across_rename()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let directory = tempdir()?;
+        let first_path = directory.path().join("segment-first.spool");
+        let second_path = directory.path().join("segment-second.spool");
+        file(&first_path, b"first")?;
+        file(&second_path, b"second")?;
+        let baseline = spool_fingerprint(&[first_path.clone(), second_path.clone()])?;
+        let renamed_path = directory.path().join("segment-renamed.spool");
+        fs::rename(&first_path, &renamed_path)?;
+        assert_eq!(
+            baseline,
+            spool_fingerprint(&[renamed_path.clone(), second_path.clone()])?
+        );
+        let third_path = directory.path().join("segment-third.spool");
+        file(&third_path, b"third")?;
+        assert_ne!(
+            baseline,
+            spool_fingerprint(&[
+                renamed_path.clone(),
+                second_path.clone(),
+                third_path.clone(),
+            ])?
+        );
+        fs::remove_file(third_path)?;
+        assert_eq!(baseline, spool_fingerprint(&[renamed_path, second_path])?);
+        Ok(())
+    }
+
+    #[test]
     fn stages_manifest_files_and_validates_the_staged_copy()
     -> Result<(), Box<dyn std::error::Error>> {
         let repository = tempdir()?;
