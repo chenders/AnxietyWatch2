@@ -24,4 +24,7 @@ CREATE INDEX notification_events_subject_transition_idx
 COMMENT ON TABLE notification_events IS
     'Detector events retain transition identity so outbound channels can coalesce repeats without losing audit evidence.';
 
+GRANT SELECT, INSERT ON notification_events TO vitals;
+GRANT USAGE, SELECT ON SEQUENCE notification_events_id_seq TO vitals;
+
 COMMIT;

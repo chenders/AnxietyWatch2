@@ -1,0 +1,3 @@
+schema: spec-driven
+created: 2026-10-03
+goal: Make silence-detector persistence and the root deployment helper safe for production activation.
