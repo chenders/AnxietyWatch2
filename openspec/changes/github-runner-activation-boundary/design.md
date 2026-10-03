@@ -27,7 +27,7 @@ checksums, target kinds, backup gate, spool identity, health, and rollback.
 ## Verification ladder
 
 1. Validate the OpenSpec change and unit text locally.
-2. Install the unit on `minidude`, run `systemd-analyze verify`, reload, and restart the runner.
+2. Install the unit on the Pi, run `systemd-analyze verify`, reload, and restart the runner.
 3. Confirm the runner is active, the runner account cannot directly write the target roots, and the
    helper's staged activation can proceed through the existing protected workflow.
 4. Confirm the deployment receipt reports activation or an explicit named blocker, and restart the

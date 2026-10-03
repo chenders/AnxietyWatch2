@@ -8,7 +8,7 @@ alerting, or database requirements.
 
 - [x] T-GRAB-1 — Specify the sandbox-compatible activation boundary · documentation · host either
 - [x] T-GRAB-2 — Add the narrowly allowlisted runner write paths · implement-standard · host either
-- [x] T-GRAB-3 — Install, verify, and exercise the boundary on `minidude` · human · Pi
+- [x] T-GRAB-3 — Install, verify, and exercise the boundary on the Pi · human · Pi
 - [x] T-GRAB-4 — Normalize executable modes and reject failed service health · implement-complex · host/Pi
 
 ## T-GRAB-1 — Specify the sandbox-compatible activation boundary
@@ -71,7 +71,7 @@ health and trigger the existing rollback path. Do not treat an inactive oneshot 
 
 **Verify:** `cargo test -p vitals-deploy && cargo clippy -p vitals-deploy --all-targets -- -D warnings && cargo fmt --all -- --check && rg -q "chmod 755" .github/workflows/pi-deploy.yml && rg -q 'starts_with\("failed"\)' crates/vitals-deploy/src/main.rs && git diff --check`
 
-## T-GRAB-3 — Install, verify, and exercise the boundary on `minidude`
+## T-GRAB-3 — Install, verify, and exercise the boundary on the Pi
 
 **Depends:** T-GRAB-2 · **Review required:** yes
 
