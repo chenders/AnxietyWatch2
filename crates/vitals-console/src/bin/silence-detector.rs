@@ -254,15 +254,27 @@ async fn main() {
 #[cfg(test)]
 mod tests {
     use super::database_url_is_supported;
+    use sqlx::postgres::PgConnectOptions;
+    use std::str::FromStr;
 
     #[test]
     fn accepts_sqlx_postgres_url_schemes() {
         assert!(database_url_is_supported(
-            "postgresql://vitals@/vitals?host=%2Fvar%2Frun%2Fpostgresql"
+            "postgresql://vitals@localhost/vitals?host=%2Fvar%2Frun%2Fpostgresql"
         ));
         assert!(database_url_is_supported(
             "postgres://vitals@localhost/vitals"
         ));
+    }
+
+    #[test]
+    fn accepts_the_configured_unix_socket_url() {
+        assert!(
+            PgConnectOptions::from_str(
+                "postgresql://vitals@localhost/vitals?host=%2Fvar%2Frun%2Fpostgresql"
+            )
+            .is_ok()
+        );
     }
 
     #[test]
