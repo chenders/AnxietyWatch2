@@ -926,10 +926,13 @@ fn health_is_acceptable(after: &Snapshot, before: &Snapshot, expected_release: &
         && socket_exists(Path::new("/run/vitals/vitalsd.sock"))
         && after.database.state != "unknown"
         && after.runner.state != "unknown"
-        && after
-            .services
-            .iter()
-            .all(|service| !service.state.starts_with("unknown:"))
+        && service_states_are_healthy(&after.services)
+}
+
+fn service_states_are_healthy(services: &[ServiceState]) -> bool {
+    services.iter().all(|service| {
+        !service.state.starts_with("unknown:") && !service.state.starts_with("failed")
+    })
 }
 
 fn socket_exists(path: &Path) -> bool {
@@ -1752,7 +1755,11 @@ fn artifact_file(
         source: relative,
         destination: destination.to_owned(),
         sha256: sha256_file(source)?,
-        mode: file_mode(source)?,
+        mode: if kind == "binary" {
+            0o755
+        } else {
+            file_mode(source)?
+        },
         kind: kind.to_owned(),
     })
 }
@@ -1900,8 +1907,9 @@ fn rustc_version() -> String {
 mod tests {
     use super::{
         ArtifactFile, ExternalState, LiveFile, Manifest, ServiceState, Snapshot, SpoolState,
-        health_is_fresh, missing_blocker, same_snapshot_state, sha256_file, stage_manifest_files,
-        validate_manifest, validate_relative_path, validate_release_name, validate_staged_files,
+        artifact_file, health_is_fresh, missing_blocker, same_snapshot_state,
+        service_states_are_healthy, sha256_file, stage_manifest_files, validate_manifest,
+        validate_relative_path, validate_release_name, validate_staged_files,
         validate_target_architecture, verify_hash,
     };
     use std::fs;
@@ -1934,6 +1942,36 @@ mod tests {
             files,
             blockers: Vec::new(),
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn built_binaries_have_service_executable_mode() -> Result<(), Box<dyn std::error::Error>> {
+        use std::os::unix::fs::PermissionsExt;
+
+        let directory = tempdir()?;
+        let source = directory.path().join("vitalsd");
+        file(&source, b"binary")?;
+        fs::set_permissions(&source, fs::Permissions::from_mode(0o700))?;
+        let value = artifact_file(directory.path(), &source, "bin/vitalsd", "binary")?;
+        assert_eq!(value.mode, 0o755);
+        Ok(())
+    }
+
+    #[test]
+    fn failed_or_unknown_service_states_are_not_healthy() {
+        assert!(service_states_are_healthy(&[ServiceState {
+            name: "vitalsd".to_owned(),
+            state: "active".to_owned(),
+        }]));
+        assert!(!service_states_are_healthy(&[ServiceState {
+            name: "vitalsd".to_owned(),
+            state: "failed".to_owned(),
+        }]));
+        assert!(!service_states_are_healthy(&[ServiceState {
+            name: "vitalsd".to_owned(),
+            state: "unknown: timeout".to_owned(),
+        }]));
     }
 
     #[test]

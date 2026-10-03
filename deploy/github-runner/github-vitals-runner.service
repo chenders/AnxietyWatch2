@@ -23,6 +23,7 @@ NoNewPrivileges=no
 PrivateTmp=yes
 ProtectHome=yes
 ProtectSystem=full
+ReadWritePaths=/usr/local/lib/vitals /usr/local/bin /usr/local/share/vitals-console/assets /etc/systemd/system /etc/udev/rules.d
 MemoryHigh=1G
 CPUQuota=200%
 
