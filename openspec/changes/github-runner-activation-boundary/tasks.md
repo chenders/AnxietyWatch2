@@ -7,7 +7,7 @@ owner-approved OpenSpec authoring guidance. This change does not alter physiolog
 alerting, or database requirements.
 
 - [x] T-GRAB-1 — Specify the sandbox-compatible activation boundary · documentation · host either
-- [ ] T-GRAB-2 — Add the narrowly allowlisted runner write paths · implement-standard · host either
+- [x] T-GRAB-2 — Add the narrowly allowlisted runner write paths · implement-standard · host either
 - [ ] T-GRAB-3 — Install, verify, and exercise the boundary on `minidude` · human · Pi
 
 ## T-GRAB-1 — Specify the sandbox-compatible activation boundary
