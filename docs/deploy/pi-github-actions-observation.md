@@ -78,10 +78,11 @@ but it did not contain the new per-service `services` evidence: the workflow inv
 root-owned helper installed before that release, so the strengthened helper was not actually the
 live activation controller. Direct runtime observation then found the live database lacks the
 `status_observations.next_repeat_at` column and `notification_events` table required by the daemon;
-all persistence queries failed. The repository's `silence_detector` Sqitch change exists but the
-current proposal explicitly treats schema changes as a non-goal, so the service was stopped and
-remains disabled pending both an explicitly reviewed activation-helper update and schema-migration decision. No
-successful silence-detector evaluation or notification delivery is inferred from any green
+all persistence queries failed. The repository's `silence_detector` Sqitch change exists, while automatic schema migration from
+the GitHub activation workflow is intentionally a non-goal. The separate
+`silence-detector-live-activation` change now provides operator-gated migration and helper-refresh
+procedures; the service was stopped and remains disabled until those receipts and runtime evidence
+pass. No successful silence-detector evaluation or notification delivery is inferred from any green
 activation receipt.
 
 ## Manual rollback rehearsal
