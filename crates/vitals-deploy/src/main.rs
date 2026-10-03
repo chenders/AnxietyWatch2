@@ -173,6 +173,10 @@ struct LiveFile {
 struct ServiceState {
     name: String,
     state: String,
+    sub_state: String,
+    result: String,
+    exec_main_status: Option<i32>,
+    restart_count: Option<u64>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -537,10 +541,17 @@ fn run_activation(
         install_live_targets(staging_root, &manifest)?;
         run_systemctl(["daemon-reload"])?;
         restart_targets(&manifest)?;
-        let after = snapshot_state()?;
-        let health_ok = health_is_acceptable(&after, &before, &manifest.source_sha);
-        if !health_ok {
-            return Err("post-activation health blocked: service, database, socket, or spool evidence failed".into());
+        let after = snapshot_after_restart()?;
+        let blockers = health_blockers(&after, &before, &manifest.source_sha);
+        if !blockers.is_empty() {
+            let summary = blockers
+                .iter()
+                .map(|blocker| {
+                    format!("{}={} ({})", blocker.subject, blocker.value, blocker.reason)
+                })
+                .collect::<Vec<_>>()
+                .join("; ");
+            return Err(format!("post-activation health blocked: {summary}").into());
         }
         Ok(after)
     })();
@@ -920,19 +931,124 @@ fn restart_targets(manifest: &Manifest) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn health_is_acceptable(after: &Snapshot, before: &Snapshot, expected_release: &str) -> bool {
-    after.current_release.as_deref() == Some(expected_release)
-        && after.spool == before.spool
-        && socket_exists(Path::new("/run/vitals/vitalsd.sock"))
-        && after.database.state != "unknown"
-        && after.runner.state != "unknown"
-        && service_states_are_healthy(&after.services)
+fn health_blockers(after: &Snapshot, before: &Snapshot, expected_release: &str) -> Vec<Blocker> {
+    let mut blockers = Vec::new();
+    if after.current_release.as_deref() != Some(expected_release) {
+        blockers.push(Blocker {
+            kind: "release".to_owned(),
+            subject: "current_release".to_owned(),
+            value: after
+                .current_release
+                .clone()
+                .unwrap_or_else(|| "missing".to_owned()),
+            reason: format!("expected release {expected_release}"),
+        });
+    }
+    if after.spool != before.spool {
+        blockers.push(Blocker {
+            kind: "spool_identity".to_owned(),
+            subject: "spool".to_owned(),
+            value: format!(
+                "before={} after={}",
+                before.spool.fingerprint, after.spool.fingerprint
+            ),
+            reason: "spool changed during activation".to_owned(),
+        });
+    }
+    if !socket_exists(Path::new("/run/vitals/vitalsd.sock")) {
+        blockers.push(Blocker {
+            kind: "socket".to_owned(),
+            subject: "vitalsd".to_owned(),
+            value: "/run/vitals/vitalsd.sock missing".to_owned(),
+            reason: "vitalsd must expose its control socket after activation".to_owned(),
+        });
+    }
+    for (subject, state) in [("database", &after.database), ("runner", &after.runner)] {
+        if state.state == "unknown" {
+            blockers.push(Blocker {
+                kind: "unknown_state".to_owned(),
+                subject: subject.to_owned(),
+                value: state.detail.clone(),
+                reason: "external state must be measured after activation".to_owned(),
+            });
+        }
+    }
+    let services_healthy = service_states_are_healthy(&after.services);
+    for service in &after.services {
+        if !services_healthy && !service_state_is_healthy(service) {
+            blockers.push(Blocker {
+                kind: "service_health".to_owned(),
+                subject: service.name.clone(),
+                value: service_state_detail(service),
+                reason: "service must be stable and successful after activation".to_owned(),
+            });
+        }
+        if let Some(before_service) = before
+            .services
+            .iter()
+            .find(|candidate| candidate.name == service.name)
+            && let (Some(before_count), Some(after_count)) =
+                (before_service.restart_count, service.restart_count)
+            && after_count > before_count
+        {
+            blockers.push(Blocker {
+                kind: "service_restart".to_owned(),
+                subject: service.name.clone(),
+                value: format!("before={before_count} after={after_count}"),
+                reason: "service restart count increased during activation".to_owned(),
+            });
+        }
+    }
+    blockers
+}
+
+fn service_state_is_healthy(service: &ServiceState) -> bool {
+    if service.state.starts_with("unknown:") {
+        return false;
+    }
+    let successful_exit = service.result == "success" && service.exec_main_status == Some(0);
+    if service.name == "vitals-bp-autoconnect" {
+        (service.state == "active" && service.sub_state == "running" && successful_exit)
+            || (service.state == "inactive" && service.sub_state == "dead" && successful_exit)
+    } else {
+        service.state == "active" && service.sub_state == "running" && successful_exit
+    }
 }
 
 fn service_states_are_healthy(services: &[ServiceState]) -> bool {
-    services.iter().all(|service| {
-        !service.state.starts_with("unknown:") && !service.state.starts_with("failed")
-    })
+    services.iter().all(service_state_is_healthy)
+}
+
+fn service_state_detail(service: &ServiceState) -> String {
+    format!(
+        "state={} sub_state={} result={} exec_main_status={} restart_count={}",
+        service.state,
+        service.sub_state,
+        service.result,
+        service
+            .exec_main_status
+            .map_or_else(|| "unknown".to_owned(), |value| value.to_string()),
+        service
+            .restart_count
+            .map_or_else(|| "unknown".to_owned(), |value| value.to_string())
+    )
+}
+
+fn snapshot_after_restart() -> Result<Snapshot, Box<dyn Error>> {
+    std::thread::sleep(Duration::from_secs(5));
+    let mut snapshot = snapshot_state()?;
+    for _ in 0..5 {
+        if !snapshot
+            .services
+            .iter()
+            .any(|service| matches!(service.state.as_str(), "activating" | "deactivating"))
+        {
+            return Ok(snapshot);
+        }
+        std::thread::sleep(Duration::from_secs(1));
+        snapshot = snapshot_state()?;
+    }
+    Ok(snapshot)
 }
 
 fn socket_exists(path: &Path) -> bool {
@@ -1227,10 +1343,7 @@ fn snapshot_state() -> Result<Snapshot, Box<dyn Error>> {
     }
     let mut services = Vec::new();
     for name in LIVE_SERVICES {
-        services.push(ServiceState {
-            name: (*name).to_owned(),
-            state: service_state(name),
-        });
+        services.push(service_state(name));
     }
     services.sort_by(|left, right| left.name.cmp(&right.name));
     let spool = spool_state()?;
@@ -1249,21 +1362,69 @@ fn snapshot_state() -> Result<Snapshot, Box<dyn Error>> {
     })
 }
 
-fn service_state(name: &str) -> String {
-    match Command::new("systemctl").args(["is-active", name]).output() {
-        Ok(output) => {
-            let state = String::from_utf8_lossy(&output.stdout).trim().to_owned();
-            if state.is_empty() {
-                let detail = String::from_utf8_lossy(&output.stderr).trim().to_owned();
-                format!(
-                    "unknown: systemctl is-active {name} exited {}: {detail}",
-                    output.status
-                )
-            } else {
-                state
-            }
+fn parse_service_show(name: &str, output: &str) -> ServiceState {
+    let properties = output
+        .lines()
+        .filter_map(|line| line.split_once('='))
+        .map(|(key, value)| (key.to_owned(), value.to_owned()))
+        .collect::<BTreeMap<_, _>>();
+    let property = |key: &str, fallback: &str| {
+        properties
+            .get(key)
+            .filter(|value| !value.is_empty())
+            .cloned()
+            .unwrap_or_else(|| fallback.to_owned())
+    };
+    ServiceState {
+        name: name.to_owned(),
+        state: property("ActiveState", "unknown: ActiveState was not reported"),
+        sub_state: property("SubState", "unknown"),
+        result: property("Result", "unknown"),
+        exec_main_status: properties
+            .get("ExecMainStatus")
+            .and_then(|value| value.parse().ok()),
+        restart_count: properties
+            .get("NRestarts")
+            .and_then(|value| value.parse().ok()),
+    }
+}
+
+fn unknown_service_state(name: &str, detail: &str) -> ServiceState {
+    ServiceState {
+        name: name.to_owned(),
+        state: format!("unknown: {detail}"),
+        sub_state: "unknown".to_owned(),
+        result: "unknown".to_owned(),
+        exec_main_status: None,
+        restart_count: None,
+    }
+}
+
+fn service_state(name: &str) -> ServiceState {
+    match Command::new("systemctl")
+        .args([
+            "show",
+            name,
+            "--property=ActiveState",
+            "--property=SubState",
+            "--property=Result",
+            "--property=ExecMainStatus",
+            "--property=NRestarts",
+        ])
+        .output()
+    {
+        Ok(output) if output.status.success() => {
+            parse_service_show(name, &String::from_utf8_lossy(&output.stdout))
         }
-        Err(error) => format!("unknown: systemctl is-active {name} unavailable: {error}"),
+        Ok(output) => unknown_service_state(
+            name,
+            &format!(
+                "systemctl show exited {}: {}",
+                output.status,
+                String::from_utf8_lossy(&output.stderr).trim()
+            ),
+        ),
+        Err(error) => unknown_service_state(name, &format!("systemctl show unavailable: {error}")),
     }
 }
 
@@ -1769,10 +1930,10 @@ fn artifact_file(
         source: relative,
         destination: destination.to_owned(),
         sha256: sha256_file(source)?,
-        mode: if kind == "binary" {
-            0o755
-        } else {
-            file_mode(source)?
+        mode: match kind {
+            "binary" => 0o755,
+            "systemd-unit" | "udev-rule" => 0o644,
+            _ => file_mode(source)?,
         },
         kind: kind.to_owned(),
     })
@@ -1921,7 +2082,7 @@ fn rustc_version() -> String {
 mod tests {
     use super::{
         ArtifactFile, ExternalState, LiveFile, Manifest, ServiceState, Snapshot, SpoolState,
-        artifact_file, health_is_fresh, missing_blocker, same_snapshot_state,
+        artifact_file, health_is_fresh, missing_blocker, parse_service_show, same_snapshot_state,
         service_states_are_healthy, sha256_file, spool_fingerprint, stage_manifest_files,
         validate_manifest, validate_relative_path, validate_release_name, validate_staged_files,
         validate_target_architecture, verify_hash,
@@ -1972,20 +2133,108 @@ mod tests {
         Ok(())
     }
 
+    #[cfg(unix)]
     #[test]
-    fn failed_or_unknown_service_states_are_not_healthy() {
-        assert!(service_states_are_healthy(&[ServiceState {
-            name: "vitalsd".to_owned(),
-            state: "active".to_owned(),
-        }]));
-        assert!(!service_states_are_healthy(&[ServiceState {
-            name: "vitalsd".to_owned(),
-            state: "failed".to_owned(),
-        }]));
-        assert!(!service_states_are_healthy(&[ServiceState {
-            name: "vitalsd".to_owned(),
-            state: "unknown: timeout".to_owned(),
-        }]));
+    fn deployed_units_use_readable_systemd_mode() -> Result<(), Box<dyn std::error::Error>> {
+        let directory = tempdir()?;
+        let source = directory.path().join("silence-detector.service");
+        file(&source, b"[Service]\n")?;
+        let value = artifact_file(
+            directory.path(),
+            &source,
+            "units/deploy/silence-detector.service",
+            "systemd-unit",
+        )?;
+        assert_eq!(value.mode, 0o644);
+        Ok(())
+    }
+
+    fn service(
+        name: &str,
+        state: &str,
+        sub_state: &str,
+        result: &str,
+        exec_main_status: Option<i32>,
+        restart_count: Option<u64>,
+    ) -> ServiceState {
+        ServiceState {
+            name: name.to_owned(),
+            state: state.to_owned(),
+            sub_state: sub_state.to_owned(),
+            result: result.to_owned(),
+            exec_main_status,
+            restart_count,
+        }
+    }
+
+    #[test]
+    fn parses_systemd_service_state_and_restart_evidence() {
+        let parsed = parse_service_show(
+            "silence-detector",
+            "ActiveState=active\nSubState=running\nResult=success\nExecMainStatus=0\nNRestarts=2\n",
+        );
+        assert_eq!(parsed.name, "silence-detector");
+        assert_eq!(parsed.state, "active");
+        assert_eq!(parsed.sub_state, "running");
+        assert_eq!(parsed.result, "success");
+        assert_eq!(parsed.exec_main_status, Some(0));
+        assert_eq!(parsed.restart_count, Some(2));
+    }
+
+    #[test]
+    fn service_health_requires_stable_successful_long_running_services() {
+        assert!(service_states_are_healthy(&[service(
+            "vitalsd",
+            "active",
+            "running",
+            "success",
+            Some(0),
+            Some(0),
+        )]));
+        assert!(!service_states_are_healthy(&[service(
+            "vitalsd",
+            "activating",
+            "auto-restart",
+            "success",
+            Some(0),
+            Some(1),
+        )]));
+        assert!(!service_states_are_healthy(&[service(
+            "vitalsd",
+            "failed",
+            "failed",
+            "exit-code",
+            Some(70),
+            Some(1),
+        )]));
+        assert!(!service_states_are_healthy(&[service(
+            "vitalsd",
+            "unknown: timeout",
+            "unknown",
+            "unknown",
+            None,
+            None,
+        )]));
+    }
+
+    #[test]
+    fn completed_bp_autoconnect_oneshot_may_be_inactive() {
+        assert!(service_states_are_healthy(&[service(
+            "vitals-bp-autoconnect",
+            "inactive",
+            "dead",
+            "success",
+            Some(0),
+            Some(0),
+        )]));
+        assert!(!service_states_are_healthy(&[service(
+            "vitals-bp-autoconnect",
+            "inactive",
+            "dead",
+            "exit-code",
+            Some(1),
+            Some(1),
+        )]));
     }
 
     #[test]
@@ -2134,10 +2383,14 @@ mod tests {
                 size: 0,
                 sha256: None,
             }],
-            services: vec![ServiceState {
-                name: "example".to_owned(),
-                state: "inactive".to_owned(),
-            }],
+            services: vec![service(
+                "vitals-bp-autoconnect",
+                "inactive",
+                "dead",
+                "success",
+                Some(0),
+                Some(0),
+            )],
             spool: SpoolState {
                 file_count: 0,
                 bytes: 0,
