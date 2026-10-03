@@ -5,74 +5,62 @@ Status: **complete**. Per Amendment 18, T-R8 closes on finite evidence rather th
 ## Delivery under observation
 
 - Host: `$PI_HOST`
-- Branch: `chore/github-runner-deployment-plan`
-- Activated source SHA: `9b4fff2091be39a5f8517ab52a99cfd764e6658b`
-- Target: console binary, console assets, and `vitals-console.service` only
+- Merged source SHA: `a60304ef952575d757af4bfc6a2c551ad251f990`
+- Activation workflow: [37099671541](https://github.com/chenders/AnxietyWatch2/actions/runs/37099671541)
+- Target: the reviewed native release set and its selected systemd units
 - Activation receipt: `/var/lib/vitals/recovery/github-deploy-latest.json`
 - Result: `activated=true`, `preflight_ok=true`, `health_ok=true`, `spool_unchanged=true`,
   `backup_gate=true`
-- Rollback release retained: `/usr/local/lib/vitals/releases/pre-runner-20260927`
-- Rollback command retained in the activation receipt; no rollback was needed for the successful
-  minor activation.
+- Backup label: `20261002-213707F`
+- Recovery gate spool fingerprint: `b94eb3f373c9fdaed40e624c3fe36a21d85694925078575ad0e99f3de73ea564`
+- Rollback release retained: `/usr/local/lib/vitals/releases/2c30fc371eb4b1e7eb47347d7a82d01eac6f3093`
+- Root helper installed from the reviewed ARM64 artifact: SHA-256
+  `8183674d80389c6a434f089c33911eb0e6d5a8fe526d703ffac44d783757754c`
 
-The protected activation job in `.github/workflows/pi-deploy.yml` is restricted to `main`. The
-approved branch validation therefore used the same root helper and gates directly on the Pi; the
-branch workflow was exercised only in build-only mode.
+The two earlier activation attempts were retained as evidence: `37096166778` failed closed on a
+stale spool identity, and `37097541745` passed preflight but rolled back when the old filename-based
+fingerprint changed across writer restart. Neither was reported as successful deployment.
 
-## Evidence collected
+## Recovery and gate evidence
 
-Build-only workflow run `36371955874` completed successfully for commit
-`a76f0f8e60c35a349d1aad71db67064a28c663c7`:
-<https://github.com/chenders/AnxietyWatch2/actions/runs/36371955874>
+The fresh full pgBackRest backup and non-vacuous isolated restore verification used label
+`20261002-213707F`, checked 31 tables with no mismatches, and completed `pg_amcheck`. The encrypted
+backup set and the pending spool were copied to the operator-controlled off-Pi recovery directory
+`$OFF_PI_RECOVERY_PATH/20261002-213707F-github-deploy`; the end-to-end checksum comparison passed
+for 2,212 files. The encryption key remains only in the root-only Pi configuration.
 
-A second, manually dispatched build-only run `36372549404` also completed successfully for the
-same commit; its `activate=false` input skipped the production job:
-<https://github.com/chenders/AnxietyWatch2/actions/runs/36372549404>
+The spool-seal timer was stopped only for gate creation and activation, then restarted after the
+result. The reviewed helper's content-based fingerprint remained stable across the controlled writer
+restart while preserving the one 37-byte pending segment.
 
-These deliveries are supporting evidence only, not a mandatory count or elapsed-time gate.
+## Post-deploy evidence
 
-At the post-deployment observation sample on 2026-09-28 03:08 UTC:
+A read-only snapshot was taken at `2026-10-03T05:33:42Z`, after a scheduled spool-seal cycle:
 
-- active release: `9b4fff2091be39a5f8517ab52a99cfd764e6658b`
-- PostgreSQL: `ready`
+- active release: `a60304ef952575d757af4bfc6a2c551ad251f990`
+- PostgreSQL: `ready`, schema `public`, `samples` present
 - GitHub runner: `active`
-- `vitalsd`, `vitals-console`, and `vitals-spool-drain`: `active`
-- spool: one 37-byte segment; drainer repeatedly reported offset 37 and `inserted=0`
-- `vitals-spool-seal.timer`: `active`
-- `vitalsd` socket and deployment lock: present/clear
-
-The scheduled spool-seal/drainer idle path continued to run after activation without changing the
-release or database state. Three read-only samples 65 seconds apart retained release
-`9b4fff2091be39a5f8517ab52a99cfd764e6658b`, PostgreSQL `ready`, runner `active`, one 37-byte spool
-segment, and active `vitalsd`/console/drainer services. The segment fingerprint rotated as the seal
-timer published fresh empty segments; byte count and database state remained unchanged.
+- `vitalsd`, `vitals-console`, `vitals-spool-drain`, `vitals-h10`, and `vitals-bp`: `active`
+- `vitals-bp-autoconnect`: `inactive` (oneshot unit after completion)
+- `silence-detector`: `inactive` (host unit is not loaded; not treated as an unknown or failed state)
+- vitalsd socket: present
+- spool: one 37-byte segment, unchanged content fingerprint
+- `vitals-spool-seal.timer`: `active`; the observed seal cycle completed with `count=0 durable=true`
+- memory: 7.9 GiB total, 3.4 GiB available; root filesystem 2% used
+- priority journal errors since activation: none
 
 ## Manual rollback rehearsal
 
-Receipt: `/var/lib/vitals/recovery/manual-rollback-rehearsal.json`
+Receipt: `/var/lib/vitals/recovery/manual-rollback-rehearsal-20261002.json`.
 
-On 2026-09-28 08:05 UTC, the operator manually switched from release
-`9b4fff2091be39a5f8517ab52a99cfd764e6658b` to `pre-runner-20260927`, daemon-reloaded, and restarted
-`vitals-console`. The rollback exit code was `0`, the rollback state checks passed, and the
-`vitalsd` socket, database/runner observability, and spool evidence remained valid. The operator
-then restored the deployed release with exit code `0`; the restore state checks passed and
-`spool_unchanged` was `true`.
+At `2026-10-03T05:32:33Z`, the operator switched from release
+`a60304ef952575d757af4bfc6a2c551ad251f990` to the prior full release
+`2c30fc371eb4b1e7eb47347d7a82d01eac6f3093`, daemon-reloaded, and restarted the selected services.
+The rollback exit code was `0`; release, database, runner, socket, service, and spool checks passed.
+The deployed release was restored with exit code `0`, the same checks passed, spool identity remained
+unchanged, and the spool-seal timer was restored active.
 
 ## Operator decision
 
 Retain `scripts/sync-to-pi.sh` as the emergency/manual recovery path. It is not called by the
 GitHub workflow and is not being retired by this change.
-
-## Known host conditions
-
-These were observed before the successful console-only activation and are outside its selected
-targets: `silence-detector.service` is not installed on the legacy host, and `vitals-bp` is in its
-known retry loop because the BLE broker socket is absent. `NetworkManager-wait-online.service` and
-`nvmf-autoconnect.service` are also listed as failed host units. They remain named observations,
-not evidence that the console activation changed the data path.
-
-## Migration decision
-
-`scripts/sync-to-pi.sh` remains installed as an **emergency/manual rollback and recovery path**.
-It is not called by the GitHub workflow. The post-deploy evidence, manual rollback rehearsal, and
-operator retain decision are now recorded.

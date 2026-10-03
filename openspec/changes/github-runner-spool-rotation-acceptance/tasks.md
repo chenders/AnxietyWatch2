@@ -1,7 +1,7 @@
 # Tasks: Stable spool identity for activation
 
 - [x] T-SPOOL-1 — Implement content-based spool fingerprint and test the restart boundary · implement-complex · host
-- [ ] T-SPOOL-2 — Install the helper, recreate the recovery gate, and run the gated deployment · human · Pi
+- [x] T-SPOOL-2 — Install the helper, recreate the recovery gate, and run the gated deployment · human · Pi
 
 ## T-SPOOL-1 — Implement content-based spool fingerprint and test the restart boundary
 
