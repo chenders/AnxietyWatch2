@@ -217,11 +217,21 @@ async fn run_once(pool: &PgPool, detector: &mut SilenceDetector, now_epoch_s: i6
     }
 }
 
+fn database_url_is_supported(value: &str) -> bool {
+    value.starts_with("postgres://") || value.starts_with("postgresql://")
+}
+
 #[tokio::main]
 async fn main() {
     let database_url = match env::var("DATABASE_URL") {
-        Ok(value) if !value.is_empty() => value,
-        _ => {
+        Ok(value) if database_url_is_supported(&value) => value,
+        Ok(_) => {
+            eprintln!(
+                "silence detector blocked: DATABASE_URL must be a postgres:// or postgresql:// URL"
+            );
+            std::process::exit(64);
+        }
+        Err(_) => {
             eprintln!("silence detector blocked: DATABASE_URL is unset");
             std::process::exit(64);
         }
@@ -238,5 +248,28 @@ async fn main() {
         let now_epoch_s = Utc::now().timestamp();
         run_once(&pool, &mut detector, now_epoch_s).await;
         tokio::time::sleep(Duration::from_secs(30)).await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::database_url_is_supported;
+
+    #[test]
+    fn accepts_sqlx_postgres_url_schemes() {
+        assert!(database_url_is_supported(
+            "postgresql://vitals@/vitals?host=%2Fvar%2Frun%2Fpostgresql"
+        ));
+        assert!(database_url_is_supported(
+            "postgres://vitals@localhost/vitals"
+        ));
+    }
+
+    #[test]
+    fn rejects_libpq_keyword_connection_strings() {
+        assert!(!database_url_is_supported(
+            "host=/var/run/postgresql user=vitals dbname=vitals"
+        ));
+        assert!(!database_url_is_supported(""));
     }
 }

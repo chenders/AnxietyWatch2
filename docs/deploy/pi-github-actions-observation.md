@@ -42,12 +42,33 @@ A read-only snapshot was taken at `2026-10-03T05:33:42Z`, after a scheduled spoo
 - GitHub runner: `active`
 - `vitalsd`, `vitals-console`, `vitals-spool-drain`, `vitals-h10`, and `vitals-bp`: `active`
 - `vitals-bp-autoconnect`: `inactive` (oneshot unit after completion)
-- `silence-detector`: `inactive` (host unit is not loaded; not treated as an unknown or failed state)
+- `silence-detector`: `inactive` and `disabled`; the unit and binary are present, but the service was
+  deliberately left off pending the runtime fix below
 - vitalsd socket: present
 - spool: one 37-byte segment, unchanged content fingerprint
 - `vitals-spool-seal.timer`: `active`; the observed seal cycle completed with `count=0 durable=true`
 - memory: 7.9 GiB total, 3.4 GiB available; root filesystem 2% used
 - priority journal errors since activation: none
+
+## Silence-detector incident and remediation
+
+The earliest Pi journal evidence is `2026-09-27T19:52:03-07:00`, immediately after the appliance
+integration merge `79201d3` introduced the daemon and unit. The daemon exited with status 70 because
+the unit supplied a libpq keyword connection string to SQLx, which requires a PostgreSQL URL.
+
+On `$PI_HOST`, workflow `37092938522` first exposed a separate artifact-mode failure at
+`2026-10-02T20:28:57-07:00`: the restored binary was mode `0700` and systemd reported `203/EXEC`.
+After the executable-mode fix, workflow `37099671541` started the binary at
+`2026-10-02T22:30:56-07:00`; it then reached the database connection and repeatedly reported
+`relative URL without a base`. The operator stopped the resulting restart loop at
+`2026-10-02T22:31:21-07:00`.
+
+The corrected unit now uses a SQLx-compatible Unix-socket URL. The deployment helper also waits for
+service stabilization, requires structured successful states for long-running units, preserves the
+completed BP oneshot exception, and records service state/exit/restart blockers. The corrected
+service remains disabled until a reviewed release passes direct Pi verification across multiple
+30-second cycles. No successful silence-detector evaluation or notification delivery is inferred
+from the earlier green activation receipt.
 
 ## Manual rollback rehearsal
 
