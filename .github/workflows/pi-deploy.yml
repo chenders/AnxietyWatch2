@@ -137,7 +137,7 @@ jobs:
         run: |
           set -euo pipefail
           # upload-artifact/download-artifact does not preserve executable mode bits.
-          find "$RUNNER_TEMP/vitals-deploy-artifact" -type f -path '*/bin/*' -exec chmod 700 {} +
+          find "$RUNNER_TEMP/vitals-deploy-artifact" -type f -path '*/bin/*' -exec chmod 755 {} +
           manifest=$(find "$RUNNER_TEMP/vitals-deploy-artifact" -type f -name manifest.json -print -quit)
           test -n "$manifest"
           test "$(jq -r .source_sha "$manifest")" = "$GITHUB_SHA"
