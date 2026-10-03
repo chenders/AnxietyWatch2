@@ -1,12 +1,12 @@
 # Pi GitHub Actions delivery observation
 
-Status: **complete**. Per Amendment 18, T-R8 closes on finite evidence rather than elapsed time.
+Status: **pending final Pi verification**. Per Amendment 18, T-R8 closes on finite evidence rather than elapsed time.
 
 ## Delivery under observation
 
 - Host: `$PI_HOST`
-- Merged source SHA: `a60304ef952575d757af4bfc6a2c551ad251f990`
-- Activation workflow: [37099671541](https://github.com/chenders/AnxietyWatch2/actions/runs/37099671541)
+- Merged source SHA: `0b4fd8cf5169276a131b3525b0beb35e50cec346`
+- Activation workflow: [37111157822](https://github.com/chenders/AnxietyWatch2/actions/runs/37111157822)
 - Target: the reviewed native release set and its selected systemd units
 - Activation receipt: `/var/lib/vitals/recovery/github-deploy-latest.json`
 - Result: `activated=true`, `preflight_ok=true`, `health_ok=true`, `spool_unchanged=true`,
@@ -63,15 +63,19 @@ After the executable-mode fix, workflow `37099671541` started the binary at
 `relative URL without a base`. The operator stopped the resulting restart loop at
 `2026-10-02T22:31:21-07:00`.
 
-The corrected unit now uses a SQLx-compatible Unix-socket URL. The deployment helper also waits for
-service stabilization, requires structured successful states for long-running units, preserves the
-completed BP oneshot exception, and records service state/exit/restart blockers. The first post-fix
-activation attempt, workflow `37109378859`, failed closed in preflight because the downloaded udev
-rule retained mode `0600` while the manifest required `0644`; no live release or service state was
-mutated. The workflow now restores both systemd-unit and udev-rule modes after artifact download.
-The corrected service remains disabled until a reviewed release passes direct Pi verification across
-multiple 30-second cycles. No successful silence-detector evaluation or notification delivery is
-inferred from the earlier green activation receipt.
+The corrected unit uses a SQLx PostgreSQL URL for the Unix socket, with doubled percent signs so
+systemd passes `%2F` to SQLx rather than interpreting it as a unit specifier. The deployment helper
+waits for three consecutive stable post-restart observations, requires structured successful states
+for long-running units, preserves the completed BP oneshot exception, and records per-service state,
+result, exit status, restart count, and health in activation receipts. The first post-fix activation
+attempt, workflow `37109378859`, failed closed in preflight because the downloaded udev rule retained
+mode `0600` while the manifest required `0644`; no live release or service state was mutated. The
+next activation, workflow `37111157822`, exposed the systemd percent-specifier defect: the service
+entered an auto-restart loop and the helper's single transient health sample incorrectly passed.
+The service was stopped manually and remains disabled. The percent escaping and stable observation
+fixes are pending deployment and direct Pi verification across multiple 30-second cycles. No
+successful silence-detector evaluation or notification delivery is inferred from the earlier green
+activation receipt.
 
 ## Manual rollback rehearsal
 

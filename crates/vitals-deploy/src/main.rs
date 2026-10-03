@@ -239,7 +239,19 @@ struct ActivationReceipt {
     backup_gate: bool,
     rollback_command: String,
     rollback_completed: bool,
+    services: Vec<ReceiptService>,
     blocked: Vec<Blocker>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+struct ReceiptService {
+    name: String,
+    state: String,
+    sub_state: String,
+    result: String,
+    exec_main_status: Option<i32>,
+    restart_count: Option<u64>,
+    healthy: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -518,6 +530,7 @@ fn run_activation(
             backup_gate: true,
             rollback_command: "not available: activation did not begin".to_owned(),
             rollback_completed: false,
+            services: receipt_services(&before.services),
             blocked,
         };
         write_json(receipt_path, &receipt)?;
@@ -568,11 +581,13 @@ fn run_activation(
                 backup_gate: true,
                 rollback_command,
                 rollback_completed: false,
+                services: receipt_services(&after.services),
                 blocked: Vec::new(),
             };
             write_json(receipt_path, &receipt)
         }
         Err(error) => {
+            let failed_snapshot = snapshot_state().ok();
             let rollback = rollback_live_targets(&backups, old_current.as_deref())
                 .and_then(|()| run_systemctl(["daemon-reload"]))
                 .and_then(|()| restart_all_targets());
@@ -592,6 +607,9 @@ fn run_activation(
                 backup_gate: true,
                 rollback_command,
                 rollback_completed,
+                services: failed_snapshot
+                    .as_ref()
+                    .map_or_else(Vec::new, |snapshot| receipt_services(&snapshot.services)),
                 blocked: vec![Blocker {
                     kind: "activation".to_owned(),
                     subject: "service health".to_owned(),
@@ -1019,6 +1037,38 @@ fn service_states_are_healthy(services: &[ServiceState]) -> bool {
     services.iter().all(service_state_is_healthy)
 }
 
+fn service_states_are_stable(previous: &[ServiceState], current: &[ServiceState]) -> bool {
+    service_states_are_healthy(current)
+        && previous.len() == current.len()
+        && current.iter().all(|service| {
+            let Some(previous_service) = previous
+                .iter()
+                .find(|candidate| candidate.name == service.name)
+            else {
+                return false;
+            };
+            match (previous_service.restart_count, service.restart_count) {
+                (Some(before), Some(after)) => after <= before,
+                _ => false,
+            }
+        })
+}
+
+fn receipt_services(services: &[ServiceState]) -> Vec<ReceiptService> {
+    services
+        .iter()
+        .map(|service| ReceiptService {
+            name: service.name.clone(),
+            state: service.state.clone(),
+            sub_state: service.sub_state.clone(),
+            result: service.result.clone(),
+            exec_main_status: service.exec_main_status,
+            restart_count: service.restart_count,
+            healthy: service_state_is_healthy(service),
+        })
+        .collect()
+}
+
 fn service_state_detail(service: &ServiceState) -> String {
     format!(
         "state={} sub_state={} result={} exec_main_status={} restart_count={}",
@@ -1036,19 +1086,19 @@ fn service_state_detail(service: &ServiceState) -> String {
 
 fn snapshot_after_restart() -> Result<Snapshot, Box<dyn Error>> {
     std::thread::sleep(Duration::from_secs(5));
-    let mut snapshot = snapshot_state()?;
-    for _ in 0..5 {
-        if !snapshot
-            .services
-            .iter()
-            .any(|service| matches!(service.state.as_str(), "activating" | "deactivating"))
-        {
-            return Ok(snapshot);
+    let mut previous = snapshot_state()?;
+    for _ in 0..3 {
+        if !service_states_are_healthy(&previous.services) {
+            return Ok(previous);
         }
-        std::thread::sleep(Duration::from_secs(1));
-        snapshot = snapshot_state()?;
+        std::thread::sleep(Duration::from_secs(2));
+        let current = snapshot_state()?;
+        if !service_states_are_stable(&previous.services, &current.services) {
+            return Ok(current);
+        }
+        previous = current;
     }
-    Ok(snapshot)
+    Ok(previous)
 }
 
 fn socket_exists(path: &Path) -> bool {
@@ -2083,9 +2133,9 @@ mod tests {
     use super::{
         ArtifactFile, ExternalState, LiveFile, Manifest, ServiceState, Snapshot, SpoolState,
         artifact_file, health_is_fresh, missing_blocker, parse_service_show, same_snapshot_state,
-        service_states_are_healthy, sha256_file, spool_fingerprint, stage_manifest_files,
-        validate_manifest, validate_relative_path, validate_release_name, validate_staged_files,
-        validate_target_architecture, verify_hash,
+        service_states_are_healthy, service_states_are_stable, sha256_file, spool_fingerprint,
+        stage_manifest_files, validate_manifest, validate_relative_path, validate_release_name,
+        validate_staged_files, validate_target_architecture, verify_hash,
     };
     use std::fs;
     use std::time::Duration;
@@ -2235,6 +2285,51 @@ mod tests {
             Some(1),
             Some(1),
         )]));
+    }
+
+    #[test]
+    fn service_health_requires_restart_count_stability() {
+        let before = [service(
+            "silence-detector",
+            "active",
+            "running",
+            "success",
+            Some(0),
+            Some(0),
+        )];
+        assert!(service_states_are_stable(
+            &before,
+            &[service(
+                "silence-detector",
+                "active",
+                "running",
+                "success",
+                Some(0),
+                Some(0),
+            )]
+        ));
+        assert!(!service_states_are_stable(
+            &before,
+            &[service(
+                "silence-detector",
+                "active",
+                "running",
+                "success",
+                Some(0),
+                Some(1),
+            )]
+        ));
+        assert!(!service_states_are_stable(
+            &before,
+            &[service(
+                "silence-detector",
+                "activating",
+                "auto-restart",
+                "exit-code",
+                Some(64),
+                Some(1),
+            )]
+        ));
     }
 
     #[test]
