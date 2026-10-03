@@ -33,5 +33,14 @@ checksums, target kinds, backup gate, spool identity, health, and rollback.
 4. Confirm the deployment receipt reports activation or an explicit named blocker, and restart the
    spool-seal timer after the maintenance window.
 
+## Follow-up found during acceptance
+
+The first successful activation exposed two additional boundary defects: the runner's `UMask=0077`
+caused manifest binary modes of `0700`, which prevented the `vitals` service user from executing
+those files, and the helper treated `failed` service states as acceptable because it rejected only
+`unknown:` states. Binary modes are now normalized to `0755` and failed service states are a health
+failure that triggers rollback. The existing `silence-detector` host failure remains an explicit
+blocker for a full target-set activation; it must not be hidden by the receipt.
+
 No direct write test is performed against live targets by the unprivileged account. The protected
 helper remains the only activation writer.

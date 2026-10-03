@@ -20,3 +20,18 @@ The repository-scoped GitHub runner service SHALL permit the root-owned `vitals-
 - **WHEN** the manifest, backup gate, spool fingerprint, health evidence, or rollback precondition is invalid
 - **THEN** `vitals-deploy` rejects or rolls back the activation with a reason naming the blocking value
 - **AND** no deployment is reported as successful
+
+### Requirement: Runtime executable and service-state acceptance
+The deployment manifest SHALL assign mode `0755` to every deployed service binary independent of the runner process umask, and activation SHALL reject a post-restart snapshot containing a failed or unknown service state.
+
+#### Scenario: Restricted runner umask does not make a service binary unexecutable
+- **GIVEN** the runner uses a restrictive umask while building and downloading an artifact
+- **WHEN** the manifest is generated and the staged artifact is restored for activation
+- **THEN** each binary destination has mode `0755`
+- **AND** the service user can execute its selected binary
+
+#### Scenario: A selected service fails after restart
+- **GIVEN** activation has installed the release and restarted its selected services
+- **WHEN** the post-activation snapshot reports a service state beginning with `failed` or `unknown:`
+- **THEN** the helper records activation as unsuccessful and attempts rollback
+- **AND** the receipt names the failed or unknown state rather than reporting health success

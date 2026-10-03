@@ -9,6 +9,7 @@ alerting, or database requirements.
 - [x] T-GRAB-1 — Specify the sandbox-compatible activation boundary · documentation · host either
 - [x] T-GRAB-2 — Add the narrowly allowlisted runner write paths · implement-standard · host either
 - [x] T-GRAB-3 — Install, verify, and exercise the boundary on `minidude` · human · Pi
+- [x] T-GRAB-4 — Normalize executable modes and reject failed service health · implement-complex · host/Pi
 
 ## T-GRAB-1 — Specify the sandbox-compatible activation boundary
 
@@ -53,6 +54,22 @@ for forbidden in ('/var/lib/vitals/spool', '/var/lib/postgresql', '/boot', '/var
     assert forbidden not in line, forbidden
 PY
 git diff --check`
+
+## T-GRAB-4 — Normalize executable modes and reject failed service health
+
+**Depends:** T-GRAB-3 · **Review required:** yes
+
+**Reads:** `openspec/changes/github-runner-activation-boundary/{proposal,design,specs/github-runner-activation-boundary/spec}.md`,
+`.github/workflows/pi-deploy.yml`, `crates/vitals-deploy/src/main.rs`, and the failed activation
+receipt from the first full target-set deployment.
+
+**Modifies:** `.github/workflows/pi-deploy.yml` and `crates/vitals-deploy/src/main.rs`.
+
+**Do:** Normalize binary artifact modes to `0755` instead of inheriting the runner umask, restore
+that mode after artifact download, and make a failed or unknown post-activation service state fail
+health and trigger the existing rollback path. Do not treat an inactive oneshot service as failed.
+
+**Verify:** `cargo test -p vitals-deploy && cargo clippy -p vitals-deploy --all-targets -- -D warnings && cargo fmt --all -- --check && rg -q "chmod 755" .github/workflows/pi-deploy.yml && rg -q 'starts_with\("failed"\)' crates/vitals-deploy/src/main.rs && git diff --check`
 
 ## T-GRAB-3 — Install, verify, and exercise the boundary on `minidude`
 
