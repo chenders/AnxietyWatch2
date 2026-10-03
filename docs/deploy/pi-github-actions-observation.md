@@ -5,12 +5,13 @@ Status: **pending final Pi verification**. Per Amendment 18, T-R8 closes on fini
 ## Delivery under observation
 
 - Host: `$PI_HOST`
-- Merged source SHA: `0b4fd8cf5169276a131b3525b0beb35e50cec346`
-- Activation workflow: [37111157822](https://github.com/chenders/AnxietyWatch2/actions/runs/37111157822)
+- Merged source SHA: `bbc4cf85dc4d1124261c61c0365d628ba36eb5ab`
+- Activation workflow: [37113131668](https://github.com/chenders/AnxietyWatch2/actions/runs/37113131668)
 - Target: the reviewed native release set and its selected systemd units
 - Activation receipt: `/var/lib/vitals/recovery/github-deploy-latest.json`
-- Result: `activated=true`, `preflight_ok=true`, `health_ok=true`, `spool_unchanged=true`,
-  `backup_gate=true`
+- Deployment receipt: `activated=true`, `preflight_ok=true`, `health_ok=true`,
+  `spool_unchanged=true`, `backup_gate=true`; runtime acceptance remains pending because database
+  persistence is not yet verified
 - Backup label: `20261002-213707F`
 - Recovery gate spool fingerprint: `b94eb3f373c9fdaed40e624c3fe36a21d85694925078575ad0e99f3de73ea564`
 - Rollback release retained: `/usr/local/lib/vitals/releases/2c30fc371eb4b1e7eb47347d7a82d01eac6f3093`
@@ -72,9 +73,15 @@ attempt, workflow `37109378859`, failed closed in preflight because the download
 mode `0600` while the manifest required `0644`; no live release or service state was mutated. The
 next activation, workflow `37111157822`, exposed the systemd percent-specifier defect: the service
 entered an auto-restart loop and the helper's single transient health sample incorrectly passed.
-The service was stopped manually and remains disabled. The percent escaping and stable observation
-fixes are pending deployment and direct Pi verification across multiple 30-second cycles. No
-successful silence-detector evaluation or notification delivery is inferred from the earlier green
+The activation receipt for corrected release `bbc4cf85dc4d1124261c61c0365d628ba36eb5ab` was green,
+but it did not contain the new per-service `services` evidence: the workflow invoked the
+root-owned helper installed before that release, so the strengthened helper was not actually the
+live activation controller. Direct runtime observation then found the live database lacks the
+`status_observations.next_repeat_at` column and `notification_events` table required by the daemon;
+all persistence queries failed. The repository's `silence_detector` Sqitch change exists but the
+current proposal explicitly treats schema changes as a non-goal, so the service was stopped and
+remains disabled pending both an explicitly reviewed activation-helper update and schema-migration decision. No
+successful silence-detector evaluation or notification delivery is inferred from any green
 activation receipt.
 
 ## Manual rollback rehearsal
