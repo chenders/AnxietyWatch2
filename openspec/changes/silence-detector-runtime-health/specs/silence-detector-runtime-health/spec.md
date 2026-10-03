@@ -16,6 +16,16 @@ keyword connection string before opening a pool.
 - **THEN** it exits with configuration status 64 and names the required URL form
 - **AND** it does not enter its database retry loop
 
+### Requirement: Systemd preserves the SQLx URL
+The silence-detector unit SHALL escape percent signs required by the URL encoding so systemd passes
+SQLx the encoded Unix-socket path unchanged.
+
+#### Scenario: Encoded socket path survives unit loading
+- **GIVEN** the unit contains `host=%%2Fvar%%2Frun%%2Fpostgresql`
+- **WHEN** systemd loads the unit
+- **THEN** the daemon receives `host=%2Fvar%2Frun%2Fpostgresql`
+- **AND** systemd does not report an invalid unit specifier
+
 ### Requirement: Stable service health is required for activation
 The deployment helper SHALL wait through the post-restart settling window and SHALL accept only
 stable successful long-running services; completed `vitals-bp-autoconnect` oneshots MAY be inactive

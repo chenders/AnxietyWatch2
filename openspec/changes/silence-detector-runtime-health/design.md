@@ -2,9 +2,11 @@
 
 ## Database connection
 
-The service uses a SQLx PostgreSQL URL with the local PostgreSQL Unix socket. The binary rejects
-libpq keyword strings before attempting a connection, so a malformed deployment fails closed with a
-configuration error rather than entering an unbounded restart storm.
+The service uses a SQLx PostgreSQL URL with the local PostgreSQL Unix socket. Because systemd
+interprets a single percent as a unit specifier, the unit doubles the URL-encoding percent signs;
+systemd then passes the required `%2F` bytes to SQLx. The binary rejects libpq keyword strings
+before attempting a connection, so a malformed deployment fails closed with a configuration error
+rather than entering an unbounded restart storm.
 
 ## Service evidence
 
@@ -14,9 +16,11 @@ has a successful result and zero main-process exit status, and has not increased
 during activation. The completed `vitals-bp-autoconnect` oneshot may be `inactive/dead` only with a
 successful result and zero exit status.
 
-Activation waits five seconds after restarting targets and observes transient activating states for
-up to five additional seconds. It then records named blockers, including the service's structured
-state, rather than treating a successful `systemctl restart` command as proof of process health.
+Activation waits five seconds after restarting targets, then requires three consecutive two-second
+stable observations. It records named blockers, including the service's structured state, result,
+exit status, and restart count, rather than treating a successful `systemctl restart` command as
+proof of process health. Activation receipts retain the same per-service evidence, including the
+derived health result.
 
 ## Rollback
 
