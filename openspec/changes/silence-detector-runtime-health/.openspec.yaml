@@ -1,0 +1,3 @@
+schema: spec-driven
+created: 2026-10-03
+goal: Make the off-page silence detector start with a valid SQLx database URL and make Pi activation reject unstable service restart loops with actionable evidence.
