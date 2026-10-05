@@ -93,7 +93,10 @@ operation attempts. The detector was corrected to use the newest persisted sampl
 evidence when it is newer than an attempt failure. After deploying that correction, the final runtime
 receipt recorded three 30-second cycles, 8 persisted status observations, 8 notification events, and
 unchanged `NRestarts=0`; `silence-detector` is now `enabled`, `active/running`, with `Result=success`
-and `ExecMainStatus=0`.
+and `ExecMainStatus=0`. The final deployed detector was built from source commit `8b169e3` and
+has SHA-256 `3597bcb9362cfb053852952fb38e1794a96f468cb63d881e5a3f4628e713d9ad` at
+`/usr/local/bin/silence-detector`; the protected runtime receipt remains at
+`/var/lib/vitals/recovery/silence-detector-runtime-latest.json`.
 
 ## Manual rollback rehearsal
 
