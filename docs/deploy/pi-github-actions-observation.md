@@ -34,9 +34,10 @@ The spool-seal timer was stopped only for gate creation and activation, then res
 result. The reviewed helper's content-based fingerprint remained stable across the controlled writer
 restart while preserving the one 37-byte pending segment.
 
-## Post-deploy evidence
+## Historical post-deploy evidence for GitHub Actions T-R8
 
-A read-only snapshot was taken at `2026-10-03T05:33:42Z`, after a scheduled spool-seal cycle:
+A read-only snapshot was taken at `2026-10-03T05:33:42Z`, after a scheduled spool-seal cycle. This
+snapshot predates the separate operator-gated T-LA detector acceptance below:
 
 - active release: `a60304ef952575d757af4bfc6a2c551ad251f990`
 - PostgreSQL: `ready`, schema `public`, `samples` present
@@ -84,6 +85,8 @@ the GitHub activation workflow is intentionally a non-goal. The separate
 procedures; the service was stopped and remains disabled until those receipts and runtime evidence
 pass. No successful silence-detector evaluation or notification delivery is inferred from any green
 activation receipt.
+
+## T-LA-4/T-LA-5 manual detector acceptance
 
 On `2026-10-04`, the operator-gated schema procedure applied the migration and repaired the `vitals`
 role grants for `notification_events`; the helper refresh receipt and schema receipt both verified.

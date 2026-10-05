@@ -4,6 +4,8 @@
 
 **Amends:** `silence-detector-runtime-health` — production schema/helper activation was explicitly outside that change's scope.
 
+**Scope:** T-LA-4/T-LA-5 are manual Pi gates, independent of GitHub Actions deployment acceptance T-R8.
+
 Acceptance is each `Verify:` command's exit code. Do not tick a box before running its command.
 
 - [x] **T-LA-1 — Fail closed on missing detector schema** · implement-standard
