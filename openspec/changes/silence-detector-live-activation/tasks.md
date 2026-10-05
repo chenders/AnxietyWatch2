@@ -9,8 +9,8 @@ Acceptance is each `Verify:` command's exit code. Do not tick a box before runni
 - [x] **T-LA-1 — Fail closed on missing detector schema** · implement-standard
 - [x] **T-LA-2 — Add backup-gated detector schema procedure** · implement-complex
 - [x] **T-LA-3 — Add operator-only root helper replacement procedure** · implement-complex
-- [ ] **T-LA-4 — Apply schema and refresh helper on the Pi** · human · Pi
-- [ ] **T-LA-5 — Verify persistence and cycles, then enable explicitly** · human · Pi
+- [x] **T-LA-4 — Apply schema and refresh helper on the Pi** · human · Pi
+- [x] **T-LA-5 — Verify persistence and cycles, then enable explicitly** · human · Pi
 
 ## T-LA-1 — Fail closed on missing detector schema
 
