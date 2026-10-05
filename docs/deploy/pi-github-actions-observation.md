@@ -109,6 +109,14 @@ The rollback exit code was `0`; release, database, runner, socket, service, and 
 The deployed release was restored with exit code `0`, the same checks passed, spool identity remained
 unchanged, and the spool-seal timer was restored active.
 
+## Deferred device-by-device validation
+
+The optional EMAY, BP, and Air11 collectors are **not validated** because their devices were not
+present during this acceptance. When each device is available, validate it separately: confirm its
+inventory/configuration, start only its collector and dependencies, observe real device data and
+stable service health, verify persistence and unchanged restart counts, then enable that collector.
+Their current state is deferred/not measured, not healthy or validated.
+
 ## Operator decision
 
 Retain `scripts/sync-to-pi.sh` as the emergency/manual recovery path. It is not called by the
