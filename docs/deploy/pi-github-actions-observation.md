@@ -85,6 +85,16 @@ procedures; the service was stopped and remains disabled until those receipts an
 pass. No successful silence-detector evaluation or notification delivery is inferred from any green
 activation receipt.
 
+On `2026-10-04`, the operator-gated schema procedure applied the migration and repaired the `vitals`
+role grants for `notification_events`; the helper refresh receipt and schema receipt both verified.
+The H10, BLE broker, and Bluetooth prerequisite units were started for acceptance. The detector initially
+found no `attempts.kind = 'source'` rows because collectors persist durable samples rather than console
+operation attempts. The detector was corrected to use the newest persisted sample as successful source
+evidence when it is newer than an attempt failure. After deploying that correction, the final runtime
+receipt recorded three 30-second cycles, 8 persisted status observations, 8 notification events, and
+unchanged `NRestarts=0`; `silence-detector` is now `enabled`, `active/running`, with `Result=success`
+and `ExecMainStatus=0`.
+
 ## Manual rollback rehearsal
 
 Receipt: `/var/lib/vitals/recovery/manual-rollback-rehearsal-20261002.json`.
