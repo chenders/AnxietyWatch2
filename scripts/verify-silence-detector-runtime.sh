@@ -5,6 +5,7 @@ set -euo pipefail
 if [[ "${1:-}" == "--self-test" ]]; then
     grep -Fq 'NRestarts' "$0"
     grep -Fq 'notification_events' "$0"
+    grep -Fq 'binary_sha256' "$0"
     grep -Fq 'VITALS_ENABLE_CONFIRM' "$0"
     grep -Fq 'sleep 30' "$0"
     printf '%s\n' 'verify-silence-detector-runtime: self-test passed'
@@ -25,6 +26,7 @@ if (( EUID != 0 )); then
 fi
 
 unit=silence-detector.service
+binary=/usr/local/bin/silence-detector
 receipt=${VITALS_RUNTIME_RECEIPT:-/var/lib/vitals/recovery/silence-detector-runtime-latest.json}
 cycles=3
 interval_s=30
@@ -34,6 +36,11 @@ initial_enabled=$(systemctl is-enabled "$unit" 2>/dev/null || true)
     printf 'runtime verification blocked: initial enablement=%s, expected disabled\n' "$initial_enabled" >&2
     exit 1
 }
+[[ -f "$binary" && ! -L "$binary" ]] || {
+    printf 'runtime verification blocked: detector binary is missing or symlinked: %s\n' "$binary" >&2
+    exit 1
+}
+binary_sha256=$(sha256sum "$binary" | awk '{print $1}')
 start_epoch=$(date +%s)
 enabled_by_script=false
 cleanup() {
@@ -108,6 +115,7 @@ tmp_receipt=$(mktemp "${receipt}.tmp.XXXXXX")
 trap 'rm -f "$tmp_receipt"' EXIT
 jq -n \
     --arg unit "$unit" \
+    --arg binary_sha256 "$binary_sha256" \
     --argjson cycles "$cycles" \
     --argjson interval_s "$interval_s" \
     --arg baseline_restarts "$baseline_restarts" \
@@ -115,7 +123,7 @@ jq -n \
     --arg status_recent "$status_recent" \
     --arg events_recent "$events_recent" \
     --arg verified_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-    '{unit: $unit, enabled: true, cycles: $cycles, interval_s: $interval_s, baseline_restarts: ($baseline_restarts | tonumber), final_restarts: ($final_restarts | tonumber), status_recent: ($status_recent | tonumber), events_recent: ($events_recent | tonumber), verified_at: $verified_at, verified: true}' \
+    '{unit: $unit, binary_sha256: $binary_sha256, enabled: true, cycles: $cycles, interval_s: $interval_s, baseline_restarts: ($baseline_restarts | tonumber), final_restarts: ($final_restarts | tonumber), status_recent: ($status_recent | tonumber), events_recent: ($events_recent | tonumber), verified_at: $verified_at, verified: true}' \
     > "$tmp_receipt"
 chown root:root "$tmp_receipt"
 chmod 600 "$tmp_receipt"

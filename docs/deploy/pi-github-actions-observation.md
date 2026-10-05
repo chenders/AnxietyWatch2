@@ -1,6 +1,6 @@
 # Pi GitHub Actions delivery observation
 
-Status: **pending final Pi verification**. Per Amendment 18, T-R8 closes on finite evidence rather than elapsed time.
+Status: **GitHub deployment observation remains historical; manual silence-detector acceptance is complete**. Per Amendment 18, T-R8 closes on finite evidence rather than elapsed time.
 
 ## Delivery under observation
 
@@ -10,8 +10,8 @@ Status: **pending final Pi verification**. Per Amendment 18, T-R8 closes on fini
 - Target: the reviewed native release set and its selected systemd units
 - Activation receipt: `/var/lib/vitals/recovery/github-deploy-latest.json`
 - Deployment receipt: `activated=true`, `preflight_ok=true`, `health_ok=true`,
-  `spool_unchanged=true`, `backup_gate=true`; runtime acceptance remains pending because database
-  persistence is not yet verified
+  `spool_unchanged=true`, `backup_gate=true`; the GitHub workflow did not perform the separate
+  operator-gated silence-detector schema/runtime acceptance recorded below
 - Backup label: `20261002-213707F`
 - Recovery gate spool fingerprint: `b94eb3f373c9fdaed40e624c3fe36a21d85694925078575ad0e99f3de73ea564`
 - Rollback release retained: `/usr/local/lib/vitals/releases/2c30fc371eb4b1e7eb47347d7a82d01eac6f3093`
