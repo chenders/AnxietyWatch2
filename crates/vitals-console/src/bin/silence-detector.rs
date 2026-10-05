@@ -50,8 +50,14 @@ fn parse_state(value: &str) -> Option<HealthState> {
 fn evidence_from_attempts(attempts: &[AttemptRow], latest_sample_epoch_s: Option<i64>) -> Evidence {
     let latest = attempts.first();
     let latest_attempt_epoch_s = latest.map(|attempt| epoch(attempt.started_at));
-    let sample_is_newer = latest_sample_epoch_s
-        .is_some_and(|sample| latest_attempt_epoch_s.is_none_or(|attempt| sample > attempt));
+    let latest_attempt_observation_epoch_s = latest.map(|attempt| {
+        attempt
+            .finished_at
+            .map_or_else(|| epoch(attempt.started_at), epoch)
+    });
+    let sample_is_newer = latest_sample_epoch_s.is_some_and(|sample| {
+        latest_attempt_observation_epoch_s.is_none_or(|attempt| sample > attempt)
+    });
     let last_attempt_failure = latest.and_then(|attempt| {
         if attempt.finished_at.is_some() && attempt.outcome.as_deref() != Some("succeeded") {
             Some(
@@ -77,12 +83,22 @@ fn evidence_from_attempts(attempts: &[AttemptRow], latest_sample_epoch_s: Option
             })
         })?
     });
-    Evidence {
-        last_attempt_epoch_s: latest_sample_epoch_s.or(latest_attempt_epoch_s),
-        last_attempt_failure: (!sample_is_newer).then_some(last_attempt_failure).flatten(),
-        last_success_epoch_s: latest_sample_epoch_s.or(last_success_epoch_s),
-        inflight: (!sample_is_newer).then_some(inflight).flatten(),
-        learned_interval_s: None,
+    if sample_is_newer {
+        Evidence {
+            last_attempt_epoch_s: latest_sample_epoch_s,
+            last_attempt_failure: None,
+            last_success_epoch_s: latest_sample_epoch_s.or(last_success_epoch_s),
+            inflight: None,
+            learned_interval_s: None,
+        }
+    } else {
+        Evidence {
+            last_attempt_epoch_s: latest_attempt_epoch_s,
+            last_attempt_failure,
+            last_success_epoch_s,
+            inflight,
+            learned_interval_s: None,
+        }
     }
 }
 
@@ -356,11 +372,40 @@ mod tests {
             outcome: Some("failed".to_string()),
             detail: Some("connection failed".to_string()),
         };
-        let evidence = evidence_from_attempts(&[attempt], Some(1_700_000_000));
+        let evidence = evidence_from_attempts(&[attempt], Some(1_700_000_005));
         assert_eq!(
             evidence.last_attempt_failure.as_deref(),
             Some("connection failed")
         );
+        assert_eq!(evidence.last_attempt_epoch_s, Some(1_700_000_000));
+    }
+
+    #[test]
+    fn sample_after_failed_attempt_clears_the_failure() {
+        let attempt = AttemptRow {
+            started_at: DateTime::<Utc>::UNIX_EPOCH + TimeDelta::seconds(1_700_000_000),
+            expected_duration_s: 30,
+            finished_at: Some(DateTime::<Utc>::UNIX_EPOCH + TimeDelta::seconds(1_700_000_010)),
+            outcome: Some("failed".to_string()),
+            detail: Some("connection failed".to_string()),
+        };
+        let evidence = evidence_from_attempts(&[attempt], Some(1_700_000_020));
+        assert!(evidence.last_attempt_failure.is_none());
+        assert_eq!(evidence.last_attempt_epoch_s, Some(1_700_000_020));
+    }
+
+    #[test]
+    fn successful_attempt_remains_authoritative_until_a_new_sample() {
+        let attempt = AttemptRow {
+            started_at: DateTime::<Utc>::UNIX_EPOCH + TimeDelta::seconds(1_700_000_000),
+            expected_duration_s: 30,
+            finished_at: Some(DateTime::<Utc>::UNIX_EPOCH + TimeDelta::seconds(1_700_000_010)),
+            outcome: Some("succeeded".to_string()),
+            detail: None,
+        };
+        let evidence = evidence_from_attempts(&[attempt], Some(1_700_000_005));
+        assert_eq!(evidence.last_attempt_epoch_s, Some(1_700_000_000));
+        assert_eq!(evidence.last_success_epoch_s, Some(1_700_000_010));
     }
 
     #[test]
