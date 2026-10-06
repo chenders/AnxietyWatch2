@@ -21,7 +21,7 @@ jobs:
   public-info:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Reject personal and setup-specific information
         run: |
           python3 scripts/check-public-info.py --self-test
@@ -33,10 +33,10 @@ jobs:
   h10-graph-performance:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with: { node-version: '22' }
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with: { python-version: '3.12' }
       - name: Install Python test tools
         run: python -m pip install 'pytest>=8.0' 'ruff>=0.6'
@@ -65,7 +65,7 @@ jobs:
     env:
       VITALS_TEST_PG: postgres://postgres:scratch@localhost:5432/postgres
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install psql and D-Bus headers
         # libdbus-1-dev: hr-spike links BlueZ via `bluer`, which is Linux-only.
         # macOS compiles only the non-Linux stub, so CI is the first place the
@@ -159,10 +159,10 @@ jobs:
         docs/design/web-dashboard/palette-check.mjs:--spo2
         docs/design/pi-panel/direction-a-clinical/panel-check.mjs:--klaxon
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # Pinned rather than inherited: these gates are plain ESM with no deps, so
       # the only way they break is the runner image's default node moving.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with: { node-version: '22' }
       - name: Console asset syntax and kiosk contract
         run: python3 scripts/check-console-assets.py --self-test
@@ -242,8 +242,8 @@ jobs:
   registry-is-generated:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with: { python-version: '3.12' }
       # A hand-edited generated file must not survive. gen_registry.py --check
       # regenerates to a temp dir and diffs.
@@ -271,7 +271,7 @@ jobs:
   fuzz-smoke:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@nightly
       - uses: Swatinem/rust-cache@v2
       # Every radio decoder gets 60s of fuzzing per push. Decoders are the only
@@ -315,7 +315,7 @@ jobs:
   coverage:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with: { components: llvm-tools-preview }
       - uses: taiki-e/install-action@cargo-llvm-cov
@@ -337,7 +337,7 @@ jobs:
   specs-are-reconciled:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # The repo once described three different systems: four amendments changed
       # the language, storage engine, schema and key while every task brief still
       # described the superseded design. A worker obeying AGENTS.md could not see
