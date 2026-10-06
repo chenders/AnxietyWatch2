@@ -11,6 +11,20 @@ For this exercise, fully specified AnxietyWatch2 features in `openspec/` are tre
 
 This synthesis draws from the repositories' READMEs, requirements, feature documentation, architecture and client specifications, OpenSpec proposals and task queues, and the principal source trees.
 
+### How to interpret the comparison
+
+This is a **product-positioning and competitor-discovery brief**, not a claim that every listed AnxietyWatch2 capability is already running in production. It intentionally includes the fully specified OpenSpec target so that competitor research can address the system AnxietyWatch2 is being built to become.
+
+Use these distinctions when comparing products:
+
+- **AnxietyWatch v1 documented capability:** a capability represented as implemented by its source code or product documentation.
+- **AnxietyWatch2 current capability:** a capability present and usable in the current repository.
+- **AnxietyWatch2 specified target capability:** a capability fully specified in `openspec/`, but not necessarily implemented yet.
+
+A fair comparison should report both the current/observable baseline and the intended AnxietyWatch2 target. The Raspberry Pi architecture also changes the comparison unit: AnxietyWatch2 is not only a mobile app, but a local monitoring platform with an Apple client, sensors, storage, analysis, and safety infrastructure. Some competitors will overlap with only one layer.
+
+The strongest differentiator is therefore the combination of capabilities and operating model, not a claim that every individual feature is unique.
+
 ## Overall positioning
 
 ### AnxietyWatch v1
@@ -49,6 +63,39 @@ AnxietyWatch2 expands the system so that the authoritative center is a Raspberry
 - Self-hosted operation, encrypted backups, restore verification, staged deployment, and degraded-mode recovery
 
 Its primary identity is **a local-first home physiological-monitoring and safety platform with a mental-health data layer**.
+
+## At-a-glance architecture
+
+The simplest way to understand the transition is to compare where collection and authority live:
+
+```text
+AnxietyWatch v1
+
+  iPhone / Apple Watch
+          │
+          ├── HealthKit, journaling, medication, wearable data
+          ├── CPAP / pulse-oximeter imports
+          └── optional self-hosted sync and AI analysis
+                         │
+                         ▼
+                reports, charts, correlations
+
+AnxietyWatch2
+
+  BLE sensors · CPAP · HealthKit · aircraft/noise context
+                         │
+                         ▼
+              Raspberry Pi collection and broker layer
+                         │
+              durable spool · validated decoders
+                         ▼
+        local store · analysis · audit · backup · alarms
+             │              │                 │
+             ▼              ▼                 ▼
+       iPhone/watch     console/reports    bedside safety path
+```
+
+In v1, the phone is the primary application and synchronization endpoint. In AnxietyWatch2, the Pi is intended to remain useful when the phone, dashboard, internet connection, or cloud service is unavailable; Apple devices become important clients and capture surfaces within a larger local system.
 
 ## 10 search-ready descriptions
 
@@ -142,11 +189,11 @@ The Polar H10 integration captures individual RR intervals over BLE, derives per
 
 This makes the project useful both as an anxiety application and as a personal autonomic-physiology data-collection platform. It also provides a stronger signal for overnight analysis than relying only on sparse Apple Watch HRV samples.
 
-### 6. Reverse-engineered support for an inexpensive, accurate oximeter
+### 6. Reverse-engineered support for an inexpensive consumer oximeter
 
 The EMAY SleepO2 integration is a standout hardware-access feature. Rather than requiring a premium clinical monitor, the project decodes a vendor-specific Bluetooth protocol from an inexpensive consumer pulse oximeter and turns its overnight SpO₂ and pulse stream into usable, provenance-preserving data.
 
-The repository documents protocol discovery through vendor-app decompilation, including a checksum detail that ordinary awake captures would not reliably expose. The project can accurately be described as supporting a previously undocumented or previously unsupported device protocol in the open-source ecosystem. A claim that it was literally “never cracked anywhere in the world” would require external evidence and should not be made without it.
+The repository documents protocol discovery through vendor-app decompilation, including a checksum detail that ordinary awake captures would not reliably expose. The project can be described as supporting a previously undocumented or previously unsupported device protocol in the open-source ecosystem. Claims about measurement accuracy should be tied to the project's validation evidence, and a claim that the protocol was literally “never cracked anywhere in the world” would require external evidence and should not be made without it.
 
 **Search terms:** `reverse engineered SleepO2 BLE protocol`, `open-source EMAY oximeter`, `inexpensive overnight pulse oximeter data logger`, `consumer oximeter Bluetooth decoder`.
 
