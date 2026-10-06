@@ -23,7 +23,7 @@ parallelism, no prefetching a later candidate's research while an earlier one is
 Shortlist order is from `CANDIDATE_SHORTLIST.md`. The ordering is a **review order**, not a quality
 order — see `RESEARCH_METHOD.md` §2.4.
 
-**Active candidate: none.** Candidates 1–5 are complete. The next candidate is `#6 nightscout`, which is not
+**Active candidate: none.** Candidates 1–6 are complete. The next candidate is `#7 empatica`, which is not
 started and must not be begun until this file is committed.
 
 | # | Slug | Score | Status | Started | Completed | Blocker |
@@ -33,7 +33,7 @@ started and must not be begun until this file is committed.
 | 3 | `exist` | 11 | **Complete with partial inspection** | 2026-10-06 | 2026-10-06 | App binary not inspected (closed source, store-only, account-gated). The vendor's **public API reference was inspected in full** — a stronger artifact than Welltory's, because it is the analysis layer's own output contract. |
 | 4 | `oscar` | 11 | **Complete with full implementation inspection** | 2026-10-06 | 2026-10-06 | None. GPLv3 source inspected at a pinned commit; no runtime observation (nothing was executed). |
 | 5 | `sleephq` | 12 | **Complete with partial inspection** | 2026-10-06 | 2026-10-06 | App binaries not inspected (closed source, store-only, account-gated; no lawful route to the APK). No vendor source exists. The vendor's **published OpenAPI specification was inspected in full** — 21 paths, 11 models, and a documented hash algorithm. **No endpoint was called.** |
-| 6 | `nightscout` | 15 | Not started | — | — | **Inspectable from published source** |
+| 6 | `nightscout` | 15 | **Complete with full implementation inspection** | 2026-10-06 | 2026-10-06 | None. AGPL-3.0 source inspected at a pinned commit; no runtime observation (nothing was executed, no instance built or contacted). |
 | 7 | `empatica` | 14 | Not started | — | — | — |
 | 8 | `oura` | 13 | Not started | — | — | — |
 | 9 | `homeassistant` | 13 | Not started | — | — | **Inspectable from published source** |
@@ -55,7 +55,8 @@ previous one's four deliverables exist and its verification command has been run
 | **Candidate 3 of 10 — `exist`** | **Complete (with a partial inspection)** | See §Candidate 3 |
 | **Candidate 4 of 10 — `oscar`** | **Complete (full implementation inspection)** | See §Candidate 4 |
 | **Candidate 5 of 10 — `sleephq`** | **Complete (with a partial inspection)** | See §Candidate 5 |
-| Candidates 6–10 | **Not started** | No files created. No research begun. |
+| **Candidate 6 of 10 — `nightscout`** | **Complete (full implementation inspection)** | See §Candidate 6 |
+| Candidates 7–10 | **Not started** | No files created. No research begun. |
 | Pilot review by owner | **Completed** | Owner instructed the run to continue; mode switched to full sequential |
 | Full sequential run of candidates 3–10 | **Authorized** | One candidate at a time |
 
@@ -573,6 +574,182 @@ None of these can be closed without an authorized artifact inspection.
 actual target app. A first real inspection may surface problems that emulator-system-component testing
 could not.
 
+## Candidate 6 — `nightscout`
+
+| Deliverable | Path | Status |
+|---|---|---|
+| Claimed features and purpose | `nightscout/nightscout_CLAIMED_FEATURES_AND_PURPOSE.md` | Written — 16 sections, evidence table **N-1…N-60** |
+| Authorized implementation inspection | `nightscout/nightscout_IMPLEMENTATION_INSPECTION.md` | Written — **source-inspection mode, performed**: the AGPL-3.0 tree read at a pinned commit. No binary, no deployed instance, **nothing executed** |
+| Candidate-specific Prompt 2 | `nightscout/PROMPT_2.md` | Written — `PROMPT2-TECHNICAL-SYSTEMS.md` base plus the `PROMPT2-PRIVACY-AND-OPERATING-MODE` supplementary block |
+| Comparison report (Prompt 2 run) | `nightscout/nightscout_COMPARISON.md` | Written — 14 sections |
+
+**Verification command:**
+
+```sh
+ls -l docs/app_comparison/nightscout/
+```
+
+**Inspection mode:** **source inspection — performed.**
+`nightscout/cgm-remote-monitor` pinned at **`92d0834219aa771b5837dbcbf1baeb839a200cf6`**, which is the
+release commit of **v15.0.8** (2026-09-04) — so every documentation-versus-code finding below is
+*v15.0.8-docs versus v15.0.8-code*, not a stale-doc artefact. **AGPL-3.0**, Node `>=20.x`, Express +
+MongoDB, 65 dependencies, ~15 MB / 764 files, 141 files under `tests/`. The public documentation site
+(landing, security, Pushover, Admin Tools, reports) and the Nightscout Foundation site were fetched and
+SHA-256 hashed. **Nothing was executed. No instance was built, deployed or contacted. The
+runtime-observation count for this candidate is zero.**
+
+This is the **second candidate to reach the source-inspection mode** (`oscar` was the first) and the
+second to be a published-source project rather than a published-contract one. The distinction that
+matters: for `sleephq` and `exist` the strongest available artifact was a *description* of the output; for
+`nightscout` it is the *implementation*, which can be checked against its own description.
+
+**Note on the fork count.** GitHub reports **73,382 forks**. The project's own deployment instructions
+tell users to deploy from a fork, so most forks are installations, not contributions. It is recorded as a
+**deployment artifact**, not as a community-size signal. `[INFERENCE]`
+
+**Five findings, in order of consequence.**
+
+1. **The shipped default publishes the data, and the mitigation is a notice only its own admin page
+   shows.** `lib/settings.js:39` sets `authDefaultRoles: 'readable'`; `lib/authorization/storage.js:144`
+   maps `readable` to `['*:*:read']`. The project's security documentation states it outright: "In a
+default setup, anyone with your Nightscout URL can view your site." The project's own security audit
+   recommended defaulting to `denied`; the recommendation was **not applied**. The one mitigation that
+   exists is a persistent boot-time notice — "Nightscout readable by world" — injected at
+   `lib/server/bootevent.js:149–152` with `persistent: true`, visible **only on that instance's own admin
+   page**. `ALLOW_UNRESTRICTED_FRAME_EMBEDDING` also defaults to `true` (`lib/server/env.js:85`).
+   Recorded as a **disclosed default**, not as a hidden one — the disclosure is real and is the reason
+   this is finding 1 rather than a scandal.
+2. **The unit rule, refuted in production, in a shipped clinical number.** `lib/report/reportclient.js:847`
+   builds the report series in the user's **display** unit; `lib/report_plugins/dailystats.js:111` then
+   feeds it to `(average * consts.MMOL_TO_MGDL + 46.7) / 28.7`, a formula written for mmol/L. At 150 mg/dL
+   that is `(150 × 18.01559 + 46.7) / 28.7` = **95.8**, which the project's own 15.0.8 report documentation
+   confirms: "the Daily stats estimated A1c is wrong when glucose is displayed in mg/dL (for example 95.8%
+   instead of 6.9%)… The value shown in mmol/L is correct." Recorded with both halves: a real defect in a
+   real derived value, **and** the correct disclosure of it. Time-in-Range in the same report is
+   unit-consistent because its thresholds are scaled to match the series — the mechanism is narrow.
+3. **"Not measured" renders as *current*, twice, in the project's own words.** `lib/plugins/timeago.js:103–104`
+   carries `//assume current`; `lib/api/entries/index.js:66` carries `// bless absence with known type`.
+   `lib/levels.js:39–48` collapses four of six severity levels into `'current'`. The stale-data alarm is
+   **enabled by default** (15/30 min, `lib/settings.js:27–30`) — but it cannot fire when nothing has
+   arrived, because `timeago.js:26` returns early when there is no entry, and `simplealarms.js:21`
+   requires a current reading. A sensor that stops sending is therefore quieter than a sensor sending an
+   old value. This is the failure mode AnxietyWatch2's three-state rule exists for, stated by the code
+   rather than by a reviewer.
+4. **Nothing in the write path validates physiology, and two alarm engines disagree about the bottom of
+   the scale.** `lib/api3/generic/create/validate.js:15–24` checks the `identifier`; `lib/api3/shared/operationTools.js:56–75`
+   checks only `date`, `utcOffset` and `app`. No range check on a glucose value, anywhere. Separately,
+   `mgdl === 39` (Dexcom "LOW") is excluded from glucose alarms by `simplealarms.js:21` while the
+   predictive engine uses `BG_MIN = 36` with the comment `//Not 39, but why?`, and the **report layer
+   includes 39** (`reportclient.js:861–866` filters only `d.y < 39`). The same sentinel is special-cased
+   differently in four places, and the alarm engine clamps its own forecast into `[36,400]`
+   (`ar2.js:308`) rather than rejecting it.
+5. **Three of the project's own *Complete* audited subsystems are described wrongly by their audits —
+   while the requirements document beside them is right, and the code is right.** The January 2026
+   security audit gives a token-derivation rule, a JWT signing key (`API_SECRET`) and a JWT lifetime (1 h)
+   that the code does not implement (`lib/authorization/storage.js:187–193`, `lib/server/enclave.js:30,59`
+   — 8 h, key from a generated `randomString` file, and `setJWTKey` is never called anywhere, so a
+   redeploy that clears `node_modules` silently invalidates every issued JWT). The same audit's role table
+   omits a role and misnames another, and it describes the brute-force delay list as auto-clearing after
+   60 s when `lib/authorization/delaylist.js:43` is a single one-shot `setTimeout(clearList, 30000)` with
+   no interval. Not an argument that the audit programme is worthless — an argument that **"the vendor
+   audited it" is not a substitute for reading the code**, which is the load-bearing control in this
+   repository too.
+
+**Also recorded (secondary).** The **documented-default drift**: the published API3 OpenAPI description
+says autopruning defaults to `DEVICESTATUS`=60, and the code has no default at all
+(`lib/api3/generic/collection.js:32` reads the env var with no fallback). When pruning *is* enabled, its
+`$or` filter (`srvCreated` OR `created_at` OR `date`) can delete a recently modified document, and deletes
+tombstones too. **Two delete semantics coexist in one process**: API3 soft-deletes and keeps `history`,
+while API v1/v2 and the admin tools hard-delete. **Any valid token can silence any alarm**: the alarm
+socket has no rooms and `socket.join` appears nowhere in the tree, so every subscriber receives every
+alarm, and the token-path `ack` handler performs no permission check (`lib/api3/alarmSocket.js:83–90`) —
+which matches the README's own prose that alarms "can be cleared by any watcher of the data". **Alert
+delivery needs four cloud services and three accounts** on the recommended path, with the project
+documenting its own alarm-fatigue drawback. **An alarm plugin that throws is logged and dropped**
+(`lib/plugins/index.js:196–202`) — no admin notice, no persisted state, although an admin-notification
+channel exists and is used for security warnings. **There is no built-in backup and no point-in-time
+recovery**, by the project's own audit. **There is no first-party mobile app**, and therefore no
+first-party push channel. **The changelog is behind the release it ships with.**
+
+**Positives recorded as positives.** The project's residual-risk statements are unusually honest and are
+quoted as written: "**not officially approved or regulated for diabetes therapy and/or treatment in any
+way**" and "**Do not rely only on Nightscout as the only way you have of knowing your blood glucose values
+and trends**". The **sanitisation claim was checked and holds** — all six collections are purified on the
+way in. A hypothesis that a `TODO` marked a broken fallback was **checked and refuted**: the code works,
+and the comment is stale. The **`history` delta-sync surface** and the **published machine-readable API
+description** are things AnxietyWatch2 does not have.
+
+**Two hypotheses refuted per finding, and five hypotheses refuted for the candidate as a whole** — all
+recorded in `nightscout_IMPLEMENTATION_INSPECTION.md` §5.20 and *not* carried into the findings. Had the
+stale `TODO` been trusted, the package would have recorded a false defect **and missed the real one** (an
+entry with no type is stamped with the caller's type rather than left unknown). The check-before-recording
+rule is now applied per finding, not per candidate.
+
+**Claim reconciliation:** 20 checkable claims — **14 match, 5 do not, 1 forward-looking**. Four of the five
+failures are in the project's own security audit or its OpenAPI description, not in its user-facing
+marketing.
+
+**One internal contradiction inside one vendor's own documentation site, left unresolved:** the security
+page states the system "has not been designed for scenarios where a third party operates a Nightscout
+installation on behalf of others", while the landing page advertises **ten** commercial managed-hosting
+providers with pricing links. The most conservative statement governs. A vendor that publishes no privacy
+policy because it holds no data has delegated its entire privacy surface to those ten providers, and what
+those providers commit to in writing is `[UNKNOWN]`.
+
+**Process-level rules added by this candidate.** Four: the **documented-default-versus-code** check, the
+**intra-docs-site-conflict** rule, the **display-unit-reaches-a-derived-statistic** finding class, and the
+rule that an inspection mode is not an observation (already present; now exercised on a second candidate).
+
+## Residual uncertainty — `nightscout`
+
+- **N1** Whether the `readable` default is actually in effect for an anonymous caller in a default 15.0.8
+  deployment, and whether the "readable by world" notice actually renders. Both are code readings.
+  **Decisive for finding 1.** One unauthenticated request and one admin-page load against a throwaway
+  local instance would settle it; that is a separate authorization decision and was not taken.
+- **N2** Whether the A1c defect reproduces at this exact commit, and whether the fix has landed. The
+  arithmetic is reproduced here from the code and matches the vendor's published figures; it was not run.
+- **N3** Whether the stale-data alarm fires when data has flowed and then stopped (the code path suggests
+  it can) as distinct from never having arrived (the code path returns early). This distinction is easy to
+  misread and is the practical form of finding 3.
+- **N4** Whether the three audit-vs-code discrepancies are known to the maintainers, tracked, or fixed on
+  the default branch. Changes the weight of finding 5; public issue search would resolve it.
+- **N5** Whether alarms actually cross group boundaries over the socket, and whether an arbitrary token
+  actually silences an alarm. Both are code readings, both stated in prose by the README.
+- **N6** What the ten advertised hosting providers commit to — location, encryption, retention, breach
+  notification, sub-processors and governing law. No vendor endpoint or instance was contacted.
+- **N7** What the storage purifier actually strips, and whether `activity` is treated identically to
+  `entries`. The sanitisation claim was verified at the *import* level only.
+- **N8** Whether one instance can serve more than one person, and what happens if it does. The documented
+  model is one site per person; the ten hosting providers imply shared infrastructure.
+- **N9** The end-to-end behaviour of the `39` sentinel across the alarm engine, reports and UI — the code
+  shows four different special cases and the patient-safety consequence cannot be stated from source
+  alone.
+- **N10** What actually removes data in practice if the operator does nothing, given three surfaces with
+  two answers. The remaining `lib/storage` index definitions (TTL indexes, migrations) were not read.
+- **N11** Whether anything in the surrounding ecosystem (uploaders, followers, Loop/Trio/AAPS and their
+  analytics) overlaps AnxietyWatch2's sleep, SpO₂, respiratory or context surfaces. The ecosystem was not
+  surveyed, so the shortlist's premise that Nightscout is a *platform* analogue and not a *physiology*
+  competitor is verified for the core project and **unverified for the ecosystem around it**.
+- **N12** Whether `lib/plugins/{pushover,maker,speech,alexa,googlehome}.js`, `lib/server/{server,app,pushnotify}.js`,
+  the `lib/reports` bodies, `lib/times.js` and the 141 test files change any conclusion above. They were
+  not read; the report says so in its limitations section rather than implying coverage.
+- **N13** Who governs the repository and the trademark, and the bus factor. `CONTRIBUTING.md` and the
+  commit-authorship history were not analysed.
+- **N14** Whether the January 2026 "agentic control plane" RFC in `docs/proposals/` is under active
+  consideration. It is marked **Draft (2026 Proposal)** and is recorded once, in §15.3 of the claimed
+  features, explicitly as an unshipped document and not as a feature.
+
+**Most promising untried step.** A single authorised local instance on disposable infrastructure — one
+unauthenticated HTTP request, one admin-page load, and one synthetic feed — would close N1, N2, N3 and N5
+at once, converting the four decisive code readings of the most architecturally relevant candidate into
+demonstrated behaviour. It requires building and running a Node + MongoDB application, which is a separate
+authorization decision from reading a repository. It was **not performed.**
+
+**Not to be mistaken for a feature.** Nightscout's `docs/proposals/agent-control-plane-rfc.md` (RFC v1.0,
+January 2026, status *Draft*) proposes AI agents in insulin therapy management. It is a **proposal
+document**, not an accepted plan and not shipped code, and neither this file nor the comparison treats it
+as part of the product.
+
 ## Owner decisions pending
 
 1. **Pilot review.** **Resolved** — the owner instructed the run to continue; full sequential mode is
@@ -663,4 +840,35 @@ could not.
   record, and check the example's provenance before quoting it.
 - **Record a vendor's honest boundary statement as a positive.** `sleephq` states that the AirMini is
   unsupported because it has no SD card slot, and lists the machines it cannot read; that is a product
-  limit stated as a limit, and it was recorded as such rather than as a missing feature.
+  limit stated as a limit, and it was recorded as such rather than as a missing feature. `nightscout` goes
+  further: "not officially approved or regulated for diabetes therapy and/or treatment in any way", "Do
+  not rely only on Nightscout as the only way you have of knowing your blood glucose values and trends",
+  and "expect unexpected failure" are recorded as positives, quoted verbatim.
+- **A documented default that the code does not implement is a finding, independent of which of the two
+  is safer.** `nightscout`'s published API3 description says autopruning defaults to `DEVICESTATUS`=60;
+  `lib/api3/generic/collection.js:32` reads the env var with no default argument, so nothing prunes unless
+  the operator configures it. Record the divergence, name both surfaces, and let the conservative one
+  govern. Do **not** read the divergence as either surface being correct.
+- **Two current surfaces of one vendor can conflict within a single documentation site, not only across
+  sites.** `nightscout`'s security page states the system "has not been designed for scenarios where a
+  third party operates a Nightscout installation on behalf of others" while its own landing page
+  advertises ten commercial managed-hosting providers with pricing links. Recorded unresolved; the most
+  conservative statement governs. This is the third occurrence of the conflicting-surfaces rule across
+  the package, and the first that is internal to one site.
+- **A shipped derived statistic that depends on a user display preference is the sharpest form of the
+  unit finding.** `nightscout` 15.0.8 renders A1c as **95.8%** for mg/dL display and **6.9%** for mmol/L
+  display from the same underlying data (`dailystats.js:111` over a series scaled at `reportclient.js:847`),
+  and the vendor documents it. Record the mechanism, not just the number, and record the disclosure
+  alongside the defect. This is what AnxietyWatch2's "converted once, at the decoder" rule protects
+  against.
+- **A documented default that exposes the user is mitigated to the extent that the product says so where
+  the user can see it.** `nightscout`'s `readable` default is announced by a persistent boot-time notice
+  (`lib/server/bootevent.js:149–152`, `persistent: true`) that appears on the instance's own admin page.
+  Record the disclosure as a disclosure and state what it does not reach: a user who never opens the admin
+  page is unaffected by it.
+- **An "implemented and unwired" finding class applies to candidates as well as to AnxietyWatch2.**
+  Present and tested, read by no consumer, is a distinct status from absent and from working.
+- **A source tree can contain two answers to the same question, and that is itself the finding.** Two
+  delete semantics coexist in one `nightscout` process — API3 soft-deletes with a retained history, while
+  API v1/v2 and the admin tools hard-delete the same collection. Do not resolve which is "the" behaviour;
+  record that the product has both, and say which path a given caller takes.

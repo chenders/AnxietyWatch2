@@ -192,7 +192,7 @@ upgraded into another.
 |---|---|---|
 | **Not performed** | No artifact of any kind was lawfully obtainable | `bearable` |
 | **Partially performed** | No product binary, but authorized vendor-published artifacts were inspected | `welltory`, `exist`, `sleephq` |
-| **Performed** | Product source or a lawfully authorized build was inspected | **`oscar`** (GPLv3 source, pinned commit); expected for `nightscout`, `homeassistant` |
+| **Performed** | Product source or a lawfully authorized build was inspected | **`oscar`** (GPLv3 source, pinned commit); **`nightscout`** (AGPL-3.0 source, pinned commit); expected for `homeassistant` |
 
 **Vendor-published artifacts differ in strength, and the difference must be stated.** Three distinguishable
 strengths have been used:
@@ -206,10 +206,27 @@ strengths have been used:
   `sleephq` extends the mode: its OpenAPI document is complete enough to enumerate every path, every
   serializer attribute and one hash algorithm exactly (`content_hash` = MD5 of content+name, with a worked
   example and a validation endpoint), and candid enough to document its own rate-limit buckets.
-- **The implementation itself** (`oscar`) — the complete product source under a licence that requires
-  publication. This is the strongest static surface available short of running the software, and it is
-  qualitatively different from the other two: every claim about how a value is decoded, rejected, stored
-  and converted can be read at a named file and line, with no inference from a contract or a dataset.
+- **The implementation itself** (`oscar`, `nightscout`) — the complete product source under a licence that
+  requires publication. This is the strongest static surface available short of running the software, and
+  it is qualitatively different from the other two: every claim about how a value is decoded, rejected,
+  stored and converted can be read at a named file and line, with no inference from a contract or a
+  dataset.
+
+  **`nightscout` extends this mode in one direction `oscar` could not.** Because the project also publishes
+  documentation *about* its own implementation — system audits, formal requirements, test specifications,
+  an OpenAPI description — the implementation could be checked **against the vendor's description of
+  itself**, at a pinned commit that is also the release commit. That produced a class of finding neither
+  of the other two modes can produce: **doc/code drift inside one release**, where the
+  vendor's security audit, its API description and its changelog each disagree with the code they ship
+  with, while the requirements document beside the audit agrees with it. The same mode also produced the
+  opposite result twice, which matters just as much: a **sanitisation claim checked and found accurate**,
+  and a `TODO` claiming a fallback was broken that was **checked and refuted** — the comment was stale.
+  Had it been trusted, the package would have recorded a false defect and missed the real one.
+
+  The limit of this mode is unchanged and must be stated: **a vendor's self-audit is a claim about the
+  product, not validation of it.** Nightscout's `docs/audits/*` and `docs/requirements/*` are recorded as
+  the project's own statements, dated, and where they disagree with each other or with the code, the
+  disagreement is recorded and neither surface is preferred.
 
 The **documented-contract mode has a second, weaker limit that must be stated separately from the first**.
 A specification can lack the very thing a reader needs: `sleephq` publishes fields whose *types* are known
@@ -224,8 +241,12 @@ moment).
 
 **An inspection mode is not an observation.** *Performed* means the implementation was **read**. `oscar`
 was never executed: no binary was installed, no data imported, no report generated, and no CSV inspected
-as output. Static findings and runtime observations remain separate classes throughout the `oscar`
-package, and the runtime-observation count for that candidate is zero.
+as output. `nightscout` was never built, deployed or contacted: no Node process was started, no MongoDB
+instance was created, no instance — public or private — was requested, and no token, account or key was
+created. **Installing and running a candidate is a separate authorization decision from reading its
+published source**, and it has not been taken for either candidate. Static findings and runtime
+observations remain separate classes throughout the `oscar` and `nightscout` packages, and the
+runtime-observation count for both is zero.
 
 A third surface, used for `exist` and `sleephq`, is also worth checking on every remaining candidate: **self-published
 business figures** (revenue, paid-user counts). Where present, these are the only scale evidence on the
@@ -240,6 +261,23 @@ with the platform mix left as an inference rather than a reconciliation.
 behaviour. An API reference is not a live system; a dataset is not an accuracy test of a product; a
 published policy is not an implementation. No vendor endpoint is called without an explicit authorization
 decision, and every such finding is labelled *documented*, never *verified* or *working*.
+
+**Standing sub-checks, added as candidates taught them.** Each is now applied to every remaining
+candidate, and each has already produced a finding at least once:
+
+| Sub-check | What it looks for | First produced by |
+|---|---|---|
+| **Undocumented value domain** | A typed field with no enumeration, units, range or description is *unusable*, and that is a finding in its own right | `sleephq` |
+| **Write-only field** | A documented field accepted on write and absent from the read model | `sleephq` |
+| **Generated `example` blocks** | Specification examples that are filler or timestamped at fetch time, not captured records | `sleephq` |
+| **Vendor material undercutting the headline** | The vendor's own document arguing against its own product claim — recorded, never resolved either way | `oscar`, `sleephq` |
+| **Two vendor surfaces in conflict** | The most conservative statement governs; the conflict is recorded, not resolved | `bearable`, `sleephq` |
+| **Conflict internal to one docs site** | The same rule applied to two pages of a single vendor's site | `nightscout` |
+| **Honest boundary statement** | A limit described as a limit — recorded as a positive, not as a missing feature | `sleephq`, `nightscout` |
+| **Documented default the code does not implement** | Divergence between a published default and the implementation — a finding independent of which is safer | `nightscout` |
+| **Display unit reaching a derived statistic** | A shipped computed value whose result depends on a user display preference | `nightscout` |
+| **Falsified hypothesis** | A hypothesis checked against the artifact and refuted is **not** recorded as a finding | `nightscout` |
+| **Two answers in one source tree** | Contradictory behaviours for the same operation in one process — record both and name which path a caller takes | `nightscout` |
 
 ## 7. What remains unverified
 
