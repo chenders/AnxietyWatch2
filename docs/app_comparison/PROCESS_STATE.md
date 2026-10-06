@@ -23,8 +23,8 @@ parallelism, no prefetching a later candidate's research while an earlier one is
 Shortlist order is from `CANDIDATE_SHORTLIST.md`. The ordering is a **review order**, not a quality
 order — see `RESEARCH_METHOD.md` §2.4.
 
-**Active candidate: `#9 homeassistant`.** Candidates 1–8 are complete. `#9 homeassistant` is not
-started and must not be begun until this file — with candidate 8's record — is committed.
+**Active candidate: `#10 mindshift`.** Candidates 1–9 are complete. `#10 mindshift` is not
+started and must not be begun until this file — with candidate 9's record — is committed.
 
 | # | Slug | Score | Status | Started | Completed | Blocker |
 |---|---|---|---|---|---|---|
@@ -36,7 +36,7 @@ started and must not be begun until this file — with candidate 8's record — 
 | 6 | `nightscout` | 15 | **Complete with full implementation inspection** | 2026-10-06 | 2026-10-06 | None. AGPL-3.0 source inspected at a pinned commit; no runtime observation (nothing was executed, no instance built or contacted). |
 | 7 | `empatica` | 14 | **Complete with artifact-and-regulator inspection** | 2026-10-06 | 2026-10-06 | App binary not inspected (closed source, store-only, **prescription-gated**; no lawful route to the binary, and no Android artifact located at all). No vendor source exists. **No API was inspected** — the Cloud API documentation is supplied to clients only. The inspection mode is a new one: **the vendor's own published artifacts plus an independent regulator's record of the vendor's own submission.** |
 | 8 | `oura` | 13 | **Complete with documented-contract inspection** | 2026-10-06 | 2026-10-06 | No binary and no source inspected. The Terms **prohibit** reverse engineering and circumventing subscription restrictions, so Phase 2A was closed by contract and not by accident. The vendor's **published OpenAPI 3.1 contract was inspected in full** — 72 paths, 75 schemas, 274 resolvable `$ref`s — together with its legal, trust and research surfaces. **No endpoint was called, including the sandbox.** |
-| 9 | `homeassistant` | 13 | Not started | — | — | **Inspectable from published source** |
+| 9 | `homeassistant` | 13 | **Complete with full published-source inspection** | 2026-10-06 | 2026-10-06 | Apache-2.0, so Phase 2A ran on **published source** at tag `2026.9.4` (`9212531f…`) with no owner decision. The state machine has first-class `unknown`/`unavailable`; the **alert path has no branch for either** and ends the alert — sending the resolution message — when the watched entity goes absent. Raw history is **hard-deleted** after `purge_keep_days` (default 10) with no tombstone; hourly statistics are **upserted**. `components/sensor/recorder.py:239` **does not parse** under Python 3, verified four ways, and the module is imported by its own test file. **No binary, no running instance, zero runtime observations.** |
 | 10 | `mindshift` | 12 | Not started | — | — | — |
 | — | `emoods` | — | Skipped | — | — | No DNS A record for `emoods.net` at research time |
 
@@ -1073,6 +1073,142 @@ defect. A retrieval failure is **not** an absence. And the convergence of Oura's
 rules is **not** a V2 advantage: it is evidence that two independent teams reached the same conclusions,
 which is a finding about the conclusions.
 
+## Candidate 9 — `homeassistant`
+
+| Deliverable | Path | Status |
+|---|---|---|
+| Claimed features and purpose | `homeassistant/homeassistant_CLAIMED_FEATURES_AND_PURPOSE.md` | Written — 15 sections, claim ledger **H-1…H-35**, 15-row artifact SHA-256 table, gaps **G1–G11**, shortlist correction (§14.4) |
+| Authorized implementation inspection | `homeassistant/homeassistant_IMPLEMENTATION_INSPECTION.md` | Written — **performed: published source.** Pinned tag, 13-row file/hash table, the four-way syntax-error verification chain, 50-claim reconciliation, gaps **G1–G15** |
+| Candidate-specific Prompt 2 | `homeassistant/PROMPT_2.md` | Written — `PROMPT2-TECHNICAL-SYSTEMS.md` base plus the `PROMPT2-PRIVACY-AND-OPERATING-MODE.md` supplementary block |
+| Comparison report (Prompt 2 run) | `homeassistant/homeassistant_COMPARISON.md` | Written — 14 sections |
+
+**Verification command:**
+
+```sh
+ls -l docs/app_comparison/homeassistant/
+```
+
+**Inspection mode:** **performed — published source.** The strongest mode in the package, and the only one
+that required no authorization question of any kind, because the code is **Apache-2.0**. Sparse clone of
+`home-assistant/core` at tag **2026.9.4** (commit `9212531f40a0b7b23229a90d688dd79d9dfccff4`, 2026-09-27),
+110 Python files present, **eleven read** in whole or in part, every read file SHA-256 hashed. The project's
+documentation was read alongside it, and the site displays **2026.9.4**, so the docs and the source are the
+same release. **The runtime-observation count for this candidate is zero.**
+
+**Authorization basis.** Apache-2.0 (`LICENSE.md`, SHA-256 `c71d239d…`, text confirmed). Reading and quoting
+a published Apache-2.0 repository is expressly permitted by its licence: **nothing was bypassed, no
+authentication, DRM, licence check or protection was circumvented, no account was created, no instance —
+public, demo or private — was contacted, and no endpoint was called.** The third-party `habluetooth`
+package was deliberately **not** fetched.
+
+**Five findings, in order of consequence.**
+
+1. **The alert path has the exact failure mode V2 forbids.** Home Assistant's state machine has first-class
+   `STATE_UNKNOWN`/`STATE_UNAVAILABLE` (`const.py:303,313`), and its most mature alarm primitive — the
+   `alert` integration, read in full — has **no branch for either**. The alert ends whenever the watched
+   state differs from the configured alarm state (`entity.py:98`) and, on that transition, sends the user's
+   own `done_message` (`:115-126,148`). **A sensor going offline reads as "the problem is over."** The
+   published state table documents `idle`/`on`/`off` and never mentions the absent case, so the
+   documentation is *accurate* about a rule that is wrong for a missing signal. Both docstrings state
+   "DEVELOPMENT OF THE ALERT INTEGRATION IS FROZEN." (`:3,33`). **This is the sharpest external vindication
+   in the package of V2's "a missing signal never reassures" rule** — and the sharpest warning, because the
+   correct three-state model is defeated by one equality test downstream.
+2. **The three-state model exists and is lost twice** — at the alarm layer (above) and at storage:
+   `unknown`/`unavailable` are written into `states.state` as those literal strings, a **removed** state is
+   written as the **empty string `""`**, and the column is a nullable `String(255)` with **no unit and no
+   provenance** (`db_schema.py:422,478-490`). Three distinct absences collapse onto three string values in
+   one untyped column. **This refutes the shortlist's hypothesis** that a general-purpose hub has no
+   three-state honesty model (`CANDIDATE_SHORTLIST.md:317`); the correction is recorded in the
+   claimed-features file §14.4 and in this file's own rules.
+3. **Retention is a scheduled hard delete for history and an upsert for aggregates.** Raw `states`/`events`
+   rows are deleted past `purge_keep_days`, **default 10** (`purge.py:55,498-511`; `recorder/__init__.py:105`),
+   with **no tombstone and no record of removal**; short-term statistics go with them. Hourly `statistics`
+   are the opposite — a unique index on `(metadata_id, start_ts)` makes each entity-hour an **upserted row**
+   (`db_schema.py:696-722`) that the scheduled purge never deletes, so long-term aggregates persist. The
+   aggregate layer carries two things V2 lacks and they are recorded as **positives**: a **coverage weight**
+   (`mean_weight`) stored beside the mean, and **circular-mean** SQL helpers (`statistics.py:144-162`).
+4. **A delivery-confirmation mechanism exists and stops after one hop.** Local push requires confirmation
+   within `PUSH_CONFIRM_TIMEOUT = 10` seconds; on timeout the channel is torn down and a single
+   `fallback_send` runs (`push_notification.py:10,33-62`). Receipts are not persisted, there is no second
+   fallback and no escalation, and `ServiceNotFound` is merely logged and retried (`entity.py:183-193`).
+   **V2's supervised alarm and hardware dead-man switch are V2 specified target and not built**; the report
+   says so on both sides rather than scoring a win.
+5. **One file in the inspected release does not parse.** `components/sensor/recorder.py:239` reads
+   `except ValueError, TypeError:`; `ast.parse` fails with "multiple exception types must be parenthesized",
+   and the bytes are identical in the checkout, the git object database, `raw.githubusercontent.com` at the
+   tag, and on `dev` (`ea8cf79e…`; `dev` is `2792ec63…`). Three further verified facts: the module is
+   **imported by its own test file** (`:48-52`, 56 tests); the **same idiom is written correctly five lines
+   below** (`:244-249`, `with suppress(ValueError, TypeError):`); and ruff's `select` includes `E` with **no
+   per-file ignore** for the path while the only `"syntax-error"` entry lives in the separate **pylint**
+   section (`pyproject.toml:658,647,862-879` vs `:214`). **Why CI appears not to have caught a non-parsing
+   file is unexplained, and the tension is recorded as unresolved (gap G14) rather than guessed at.** The
+   function containing the error is referenced by **no test** (gap G15). It is a static fact about a file;
+   its runtime consequence is inferred, labelled, and not used rhetorically.
+
+**Claim reconciliation:** 50 checkable claims — **31 match, 10 documented-only, 2 partial, 7 outside
+classes.** Machine-counted from the table, not written from impression. The two `partial` rows (items 32
+and 34) are exactly the two places where the static fact is verified but the *consequence* rests on a file
+the inspection did not read.
+
+**Evidence gaps:** **G1–G15.** The decisive one is unchanged: **no runtime behaviour of any kind was
+observed**, so every behavioural statement is a reading or an inference.
+
+**Positive comparators recorded for the vendor, not against it** (a comparison that lists only differences
+is not a comparison): substituting an **explicit absent state** rather than clamping or truncating an
+over-long value (`core.py:2500-2507`); an acknowledgement path that **raises with a named blocker** when
+acknowledgement is disabled (`entity.py:201-206`); a completion message **armed only after a message was
+actually sent** (`:148`); an explicit `False` for a receipt that matches nothing
+(`push_notification.py:65-73`); `mean_weight` coverage weighting; circular means; opt-in-only telemetry with
+published retention; and a privacy policy that **names its own scope** and carves the separately-governed
+cloud out in the open.
+
+**Mode-record note — a first for the package.** This is the **only candidate inspected where the mode
+itself required no judgement call**: three of ten candidates were inspected from published source and this
+one closed the "can we lawfully inspect the strongest artifact?" question completely, by licence. It also
+produced the package's **first case where a mature *unrelated* project's code vindicates a V2 rule** rather
+than merely differing from it — which is stronger evidence for the rule than any competitor's marketing,
+because the project had no stake in it.
+
+## Residual uncertainty — `homeassistant`
+
+- **R1** **Is the alert false-all-clear intended or unhandled?** The code path is verified; the intent is
+  not stated anywhere read. The frozen-development docstring and the three-state documentation are the only
+  contextual clues. **Decisive for the alarm comparison.**
+- **R2** **What a running instance does with the non-parsing module.** Whether the statistics sensor path
+  loads, and under which import path, was not tested. **Decisive for the severity of finding 5.**
+- **R3** **Why CI appears not to have caught it** (gap G14). Requires the CI configuration and a CI run,
+  neither of which was retrieved.
+- **R4** **`alert/reproduce_state.py`** was listed but not read, so the restart conclusion rests on entity
+  inheritance and `cancel_on_shutdown=True` alone. **This is the report's weakest source-derived claim.**
+- **R5** **The `habluetooth` watchdog values** (`SCANNER_WATCHDOG_TIMEOUT`, `SCANNER_WATCHDOG_INTERVAL`) are
+  outside the inspected tree.
+- **R6** **The REST and WebSocket API contracts** were not read, so the external interface is not compared.
+- **R7** **Deployment, backup, upgrade and onboarding** were not inspected, despite the shortlist naming
+  Home Assistant the benchmark for them. Only the documentation's story exists.
+- **R8** **Staleness for the health sensors.** Only `last_reboot` documents an unavailable-on-unknown-
+  timestamp rule; whether the other 25 apply it uniformly is unstated.
+- **R9** **Android and Play metadata** were not retrieved; only iOS store metadata exists.
+- **R10** **Nabu Casa cloud pricing and its separate privacy notice** were not retrieved, and the push/crash
+  third parties are unnamed on the policy page.
+- **R11** **"1500+ integrations"** is single-sourced to the home page, and "top open source project by
+  contributors in 2025" names no ranking source.
+- **R12** **The shortlist correction is recorded here but not written back into `CANDIDATE_SHORTLIST.md`** —
+  a reader of that file alone still sees the refuted hypothesis.
+
+**Most promising untried step.** Two, both cheap and read-only: read `alert/reproduce_state.py` to close R4
+(the only remaining source-level gap inside the inspected tree), and read the `alert` integration's
+`automation` counterpart to test whether the same absent-state hole exists on the trigger side. **The step
+that would change the most is R2** — running the project's own test file — but it needs a working
+`homeassistant` test environment, is not required for any verdict here, and would still be a *test result*
+rather than a runtime observation of a real instance.
+
+**Not to be mistaken for a finding.** A file that does not parse is **not** evidence about the maintainers'
+intent. A frozen integration is **not** negligence; it is a lifecycle fact the project publishes about
+itself. Refuting the shortlist's hypothesis is **not** a criticism of the shortlist — it is the hypothesis
+being tested, which is what the entry invited. And the fact that a mature project shares V2's conclusions is
+**not** a V2 advantage: it is evidence that the conclusions are right, which is a weaker claim and the one
+the report actually makes.
+
 ## Owner decisions pending
 
 1. **Pilot review.** **Resolved** — the owner instructed the run to continue; full sequential mode is
@@ -1115,10 +1251,16 @@ which is a finding about the conclusions.
    was nonetheless enough to reach verdicts on architecture, provenance, missingness, units and time
    encodings; what it cannot reach is any statement about runtime behaviour, and the two items that would
    need a live call (null semantics on the wire, and the two-layer rate-limit ceilings) are recorded as
-   `[UNKNOWN]` rather than estimated.
+   `[UNKNOWN]` rather than estimated. **`homeassistant` then closed the question from a fourth direction, and
+   the cleanest one: it is Apache-2.0**, so the strongest mode available in the package ran with **no owner
+   decision at all** — and it produced the sharpest finding in the whole set, precisely because a mature and
+   unrelated project could be read rather than merely described. Combined with `oscar` and `nightscout`, this
+   means **every candidate that publishes its source has now been inspected**, and the option (b)/(c)
+   question is confined to store-only commercial apps with no published surface, where it has never yet
+   been the difference between a verdict and no verdict.
 3. **Shortlist adjustment.** `emoods` was dropped (no DNS A record for `emoods.net`). Confirm whether a
-   replacement tenth candidate is wanted. **Not blocking** — two candidates remain (`#9 homeassistant`,
-   `#10 mindshift`) and are being processed in order.
+   replacement tenth candidate is wanted. **Not blocking** — one candidate remains (`#10 mindshift`), to be
+   processed after this file is committed with candidate 9's record.
 
 ## Rules this file enforces
 
@@ -1129,6 +1271,10 @@ which is a finding about the conclusions.
   or does not exist.
 - Phase 2A is never silently skipped for a mobile candidate: it is either performed, or recorded as not
   performed with a reason.
+- A shortlist hypothesis that the inspection **refutes** is recorded as a correction — in the candidate
+  deliverables, in this file, and (when the shortlist is next edited) in `CANDIDATE_SHORTLIST.md` itself —
+  because an untested hypothesis left standing in the shortlist is a claim the package has already
+  disproved.
 - Before concluding that a candidate is uninspectable, **check every vendor-published surface**: a
   GitHub/GitLab organisation, an open-source component, a public API reference, published datasets or
   research artifacts, a public roadmap, and self-published business figures. **Three of the four
