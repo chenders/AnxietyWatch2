@@ -23,7 +23,7 @@ parallelism, no prefetching a later candidate's research while an earlier one is
 Shortlist order is from `CANDIDATE_SHORTLIST.md`. The ordering is a **review order**, not a quality
 order — see `RESEARCH_METHOD.md` §2.4.
 
-**Active candidate: none.** Candidates 1–4 are complete. The next candidate is `#5 sleephq`, which is not
+**Active candidate: none.** Candidates 1–5 are complete. The next candidate is `#6 nightscout`, which is not
 started and must not be begun until this file is committed.
 
 | # | Slug | Score | Status | Started | Completed | Blocker |
@@ -32,7 +32,7 @@ started and must not be begun until this file is committed.
 | 2 | `welltory` | 14 | **Complete with partial inspection** | 2026-10-06 | 2026-10-06 | App binary not inspected (closed source, store-only, account-gated). Vendor's **public research repos and datasets were inspected** and their citations independently verified. |
 | 3 | `exist` | 11 | **Complete with partial inspection** | 2026-10-06 | 2026-10-06 | App binary not inspected (closed source, store-only, account-gated). The vendor's **public API reference was inspected in full** — a stronger artifact than Welltory's, because it is the analysis layer's own output contract. |
 | 4 | `oscar` | 11 | **Complete with full implementation inspection** | 2026-10-06 | 2026-10-06 | None. GPLv3 source inspected at a pinned commit; no runtime observation (nothing was executed). |
-| 5 | `sleephq` | 12 | Not started | — | — | — |
+| 5 | `sleephq` | 12 | **Complete with partial inspection** | 2026-10-06 | 2026-10-06 | App binaries not inspected (closed source, store-only, account-gated; no lawful route to the APK). No vendor source exists. The vendor's **published OpenAPI specification was inspected in full** — 21 paths, 11 models, and a documented hash algorithm. **No endpoint was called.** |
 | 6 | `nightscout` | 15 | Not started | — | — | **Inspectable from published source** |
 | 7 | `empatica` | 14 | Not started | — | — | — |
 | 8 | `oura` | 13 | Not started | — | — | — |
@@ -54,7 +54,8 @@ previous one's four deliverables exist and its verification command has been run
 | **Candidate 2 of 10 — `welltory`** | **Complete (with a partial inspection)** | See §Candidate 2 |
 | **Candidate 3 of 10 — `exist`** | **Complete (with a partial inspection)** | See §Candidate 3 |
 | **Candidate 4 of 10 — `oscar`** | **Complete (full implementation inspection)** | See §Candidate 4 |
-| Candidates 5–10 | **Not started** | No files created. No research begun. |
+| **Candidate 5 of 10 — `sleephq`** | **Complete (with a partial inspection)** | See §Candidate 5 |
+| Candidates 6–10 | **Not started** | No files created. No research begun. |
 | Pilot review by owner | **Completed** | Owner instructed the run to continue; mode switched to full sequential |
 | Full sequential run of candidates 3–10 | **Authorized** | One candidate at a time |
 
@@ -340,6 +341,165 @@ pinned commit, and the reproduction commands are in
 `oscar/oscar_IMPLEMENTATION_INSPECTION.md` §10. The v1-side claims were read from the v1 tree at the paths
 named in §3.1 of the comparison. No claim rests on a model statement alone.
 
+## Candidate 5 — `sleephq`
+
+| Deliverable | Path | Status |
+|---|---|---|
+| Claimed features and purpose | `sleephq/sleephq_CLAIMED_FEATURES_AND_PURPOSE.md` | Written — 18 sections, evidence table **S-1…S-60** |
+| Authorized implementation inspection | `sleephq/sleephq_IMPLEMENTATION_INSPECTION.md` | Written — **documented-contract mode**: the published OpenAPI specification read in full. No source, no binary, no endpoint called |
+| Candidate-specific Prompt 2 | `sleephq/PROMPT_2.md` | Written — `PROMPT2-TECHNICAL-SYSTEMS.md` base plus the `PROMPT2-PRIVACY-AND-OPERATING-MODE` supplementary block |
+| Comparison report (Prompt 2 run) | `sleephq/sleephq_COMPARISON.md` | Written — 14 sections |
+
+**Verification command:**
+
+```sh
+ls -l docs/app_comparison/sleephq/
+```
+
+**Inspection mode:** **documented-contract inspection — performed for the specification, not performed for
+the binaries or any running service.** The vendor's OpenAPI document (21 paths, 11 models, OpenAPI 2.0,
+SHA-256 `9a4305e6…536a4`) and its rendered reference were read in full, together with the marketing site,
+shop pages, support/FAQ pages, privacy policy, terms, supported-devices page, App Store metadata, Play
+listing and two founder-authored articles. **Nothing was executed. No endpoint was called. No account,
+no OAuth client, no trial. The runtime-observation count for this candidate is zero.**
+
+This is the **second candidate to reach the documented-contract mode** (`exist` was the first), and the
+second for which no vendor source exists: no SleepHQ-authored code repository was found, so the
+source-inspection mode available for `oscar` is unavailable here. The third-party projects that exist (a
+Raspberry Pi uploader, an API client) are unaffiliated user work and were **not** treated as vendor
+evidence.
+
+**Five findings, in order of consequence.**
+
+1. **SleepHQ publishes the derived values AnxietyWatch2 refuses to compute — and its founder publicly
+   argues its own headline number is unreliable.** The session model carries `ahi`, `oa_count`,
+   `ca_count`, `h_count`, `ua_count`, `pressure_set_95`/`ipap_set_95`/`epap_set_95`/`flow_limit_95`,
+   `duration_90`, `drop_90`, `drop_3`, `drop_4` and `o2_score` `[DOCUMENTED CONTRACT]`. Simultaneously, the
+   founder's two articles state that CPAP machine AHI under-counts hypopnoeas, that "if the device scored
+   an AHI of zero, it could actually be closer to a 10", and give a worked case of machine AHI 6.32
+   versus a five-tech manual review of 14.3. **Those articles cite no study, no author, no journal and no
+   link** — they are unsourced vendor claims, in the vendor's own interest, and are **not** independent
+   validation of anything. That both statements coexist is the candidate's most interesting fact, and it
+   is recorded without resolving it in AnxietyWatch's favour. Separately, `_95` percentiles, the `drop_*`
+   family and `o2_score` are published with **no documented estimator, units or threshold** — an
+   undefined number that looks like a measurement.
+
+2. **The transport is the SD card, not the radio — and the automated path costs real money.** AirSense 11
+   support is explicit (8 variants), but ingestion is manual card copy, a phone OTG reader, or a
+   **AUD $399** Magic Uploader Pro whose mechanism is a **Wi-Fi SD card** and which **requires a Pro
+   subscription**. Oximetry is single-sourced by the vendor's own statement: "**only SleepHQ branded
+   devices are compatible**" — a **AUD $299** O2 Ring Pro. This is the clearest product-philosophy
+   divergence from AnxietyWatch2 in the package: V2 streams over BLE with no vendor hardware and targets
+   a replaceable EMAY `SleepO2`.
+
+3. **SleepHQ has shipped the two features V2 has only specified, and its release notes price them.** A
+   "sleep alarm" is shipped, with "**Fixed three crashes in the sleep alarm**" and "You're now told when a
+   night's recording fails to save" in the Android release notes for 2026-09-13 `[STATIC]`. Clinician
+   sharing is shipped (share links, clinical accounts, an enterprise tier). V2's multi-modal alerting,
+   supervised alarm, hardware dead-man switch, PDF reports and third-party read access are all
+   `[V2 target]`. **Recorded as a clear competitor advantage in production**, with the engineering cost
+   evidenced by the vendor's own defect history.
+
+4. **The documented contract has undocumented value domains and an undocumented AI feature.** `status`,
+   `progress`, `usage`, `omitted` and `teams_type` are typed and **undefined**; `o2_score` has no method;
+   `duration_90`/`drop_90`/`drop_3`/`drop_4` have no units or equations; `fingerprint_base64` has no
+   published algorithm; `active_energy_joules` is accepted by both journal write operations but **does not
+   appear in the journal serializer**; and `time_over_leak_threshhold` is misspelled in the vendor's own
+   schema, so the misspelling is the contract. Pro includes "Custom PDF reports with **AI Insights**", a
+   four-word description with **no model, provider, processing location or opt-in status published
+   anywhere** — the largest privacy unknown in the candidate.
+
+5. **Two vendor surfaces conflict, and one makes an absolute security claim its own policy contradicts.**
+   The FAQ says data is "encrypted both at rest and in flight ensuring your data is **completely secure at
+   all times**"; the privacy policy says the vendor is "**progressing towards** SOC 2 Type II" with HIPAA
+   controls "**designed to meet**"; the Play panel says only "encrypted in transit". The most
+   conservative statement governs: SleepHQ is recorded as **not claiming SOC 2 Type II certification**.
+   Separately, the pricing page lists the Magic Uploader on the **free** tier while the shop states it
+   "requires a SleepHQ Pro subscription" — the **second unreconciled conflict between two current vendor
+   surfaces** in this package (after Bearable).
+
+**Where SleepHQ is ahead of both AnxietyWatch versions** (stated without hedging): device breadth (~19
+families, with the unsupported machines listed too); an SD card as a store-and-forward buffer, which
+survives a dropped radio link in a way V2's BLE stream does not; shipped alerting; clinician sharing;
+an integration-friendly API included in the Pro tier with a precisely documented hash algorithm; and an
+unusually candid rate-limit disclosure that documents its own fixed-bucket edge case.
+
+**Where v2 is ahead, and where it is not.** v2's oximeter is replaceable and its data never leaves the
+owner's hardware; its store is append-only with tombstones and a versioned clock transform; its
+missingness rule (amendment 01: never `locf()`/`interpolate()`, gaps return as explicit NULLs) is
+**documented**, where SleepHQ's is not documented at all. But v2 is **not ahead on the analysis layer**:
+it computes no AHI and no percentile anywhere, and it decodes and classifies the device's own scored
+events (`events.rs`, `EventKind`) while **reading that classification nowhere** — the collector passes
+only the raw event name to the session lifecycle (`resmed_air11_collector.rs:536`,
+`as11_session.rs:156,168`). That is **implemented and unwired**. The one occurrence of the string "AHI" in
+the Rust sources is a doc comment recording the opposite — `EventKind::Rera` "contributes to RDI, not
+AHI". SleepHQ publishes an index V2 does not, and V2's refusal has no shipped replacement yet.
+
+**Additional v2 gap recorded for symmetry.** V2 itself drops raw `samples` after **2 years** (amendment
+01) while keeping a `samples_1min` aggregate, so SleepHQ Pro's "unlimited data" claim is a broader
+retention claim than V2's own rule. V2's file-level provenance is also weaker than SleepHQ's: the attempt
+ledger is `[V2 target]` (`cpap-ezshare-ingest` invariant 7, **0 of 6 tasks built**), and rejection reasons
+are currently printed to stderr and not persisted (`crates/vitals-collectors/src/bin/h10_collector.rs:330–332`).
+
+**Verification method for this candidate.** Every documented-contract claim was read from
+`https://sleephq.com/api/swagger.json` and re-checked by enumerating paths and serializer attributes
+(reproduction commands in `sleephq_IMPLEMENTATION_INSPECTION.md` §9). Every v2-side claim was re-verified
+against this tree before being written — including the `EventKind` variant list, the session lifecycle
+match arms, the 17-type `resmed_air11` registry entry, the absence of any AHI or percentile computation,
+the `Rera`/AHI doc comment, the amendment-01 retention and gap rules, and the change-status counts. No
+claim rests on a model statement alone.
+
+## Residual uncertainty — `sleephq`
+
+- **S1** Whether the session `ahi` is **relayed from the machine** or **re-derived** by SleepHQ. Not
+  documented. Decisive for whether the founder's criticism of device AHI applies to the platform's own
+  number, and therefore for finding 1.
+- **S2** The contents of the eleven `jsonb` summary blocks (`usage_summary`, `ahi_summary`,
+  `pressure_summary`, `leak_rate_summary`, `flow_limit_summary`, `resp_rate_summary`, `epap_summary`,
+  `machine_settings`, `pulse_rate_summary`, `spo2_summary`, `movement_summary`). The per-night analysis
+  depth is unknowable without them.
+- **S3** The definitions, units and equations behind `o2_score`, `duration_90`, `drop_90`, `drop_3` and
+  `drop_4` — five oximetry-derived quantities published as bare names.
+- **S4** What `_95` actually estimates: the estimator, the window, the interpolation, and whether it is
+  per session or per night.
+- **S5** Whether the free tier **deletes or merely hides** data older than 30 days. The vendor states only
+  a "view" limit. The comparison to Welltory's deleting free tier turns on this.
+- **S6** What "AI Insights" is: model, provider, whether data leaves SleepHQ's infrastructure, and whether
+  it is opt-in. A Pro-tier feature name with no published description, in a platform holding respiratory
+  and oximetry data, and alongside a policy permitting "anonymised statistical analysis and research".
+- **S7** Whether the "sleep alarm" is **supervised**, and whether it distinguishes an unmeasured or
+  failed state from measured-and-good. No SleepHQ source states either.
+- **S8** What a share link actually contains. "No personally identifiable information is shared" is
+  unfalsifiable from outside; no share link was created.
+- **S9** The meaning of `omitted` — the one field that might carry a three-state "this session was
+  excluded" meaning — and of the `ImportSerializer.status`/`progress` domains.
+- **S10** The night-boundary convention: whether a "machine date" is midnight- or noon-derived, and
+  whether it follows the device clock, the user's `time_zone` or the team's `time_zone`.
+- **S11** The `fingerprint_base64` algorithm, and why `content_hash` is documented as MD5.
+- **S12** Whether `active_energy_joules` is returned by any endpoint, or is genuinely write-only as
+  documented.
+- **S13** The clinic/enterprise API surface, documented as existing and explicitly unpublished.
+- **S14** Whether the platform's own position on AHI is coherent with advertising "track your AHI". Not
+  resolvable from outside; recorded as a tension between two vendor statements, not as an inconsistency
+  proven in behaviour.
+- **S15** All hardware properties — 1-second sampling, 24-hour battery, 12-month warranty, the vibration
+  alert, the Wi-Fi SD card mechanism, the 10-minute sync cadence — are vendor statements about devices
+  nobody in this exercise has held.
+- **S16** The claimed scale (100,000 patients / 160 countries) against Play's 10K+ Android installs. The
+  gap is reconcilable by platform mix but that reconciliation is an **inference**, not a measurement.
+- **S17** Whether the O2 Ring Pro holds any regulatory registration. No registry was searched; the
+  "medical grade" description is uncited on the page fetched. **Unknown, not absent.**
+
+**Most promising untried step.** A single authorised API session — one OAuth client, one read of
+`GET /v1/machines/{id}/machine_dates` and one `GET /v1/machines/sessions/{id}` — would close S2, S4, S9
+and S12 at once, and would convert the largest block of `unknown` in this candidate into documented
+output. It requires an account, an OAuth client registration and an explicit authorization decision. It
+was **not** performed and must not be performed without that decision.
+
+**Process-level rules added by this candidate.** Two, both recorded in §"Rules this file enforces": the
+documented-value-domain check, and the rule for handling a vendor's own material that undercuts the
+product's headline claim.
+
 ## Residual uncertainty — `oscar`
 
 - **O1** Whether v1's OSCAR-CSV import has ever been exercised against a real OSCAR export. The header
@@ -437,12 +597,18 @@ could not.
    **Running assessment.** Options **(b) and (c) would each have to justify themselves against option
    (a)**, which is now producing more than expected: because the strongest candidates are
    privacy-conscious independent products, they tend to publish API references and business figures
-   precisely because they are small. Across four candidates the blocker for store-only apps has been
+   precisely because they are small. Across five candidates the blocker for store-only apps has been
    consistent and is not expected to change: the binary cannot be lawfully obtained without an owner
    decision, and no candidate so far has needed it to reach a defensible verdict. **`oscar` resolved the
    question from the other direction** — as a GPLv3 project it is fully inspectable with no owner decision
    at all, which removes any argument that an authorization decision is needed *in order to* inspect
-   source when source is already published.
+   source when source is already published. **`sleephq` tested the mode from the opposite side**: its
+   published API is the strongest artifact available from a closed commercial vendor, and it was enough
+   to reach a verdict on architecture, lock-in and provenance — but the four questions that would decide
+   the *analysis* comparison (what the session `ahi` is derived from, what is in the `jsonb` summaries, what `_95`
+   estimates, and what `o2_score` means) are all behind an account. **This is the first candidate where a
+   single authorised read-only API session would materially change the verdict**, which is the concrete
+   case option (b)/(c) must now be weighed against option (a).
 3. **Shortlist adjustment.** `emoods` was dropped (no DNS A record for `emoods.net`). Confirm whether a
    replacement tenth candidate is wanted. **Not blocking** — nine candidates remain and are being
    processed in order.
@@ -476,3 +642,25 @@ could not.
 - **A vendor publishing its own numbers does not make those numbers independent.** Self-published
   revenue and scale figures are recorded as vendor-published; vendor-authored research is never
   presented as third-party validation.
+- **A published interface specification has a value domain as well as a type.** A field typed `string` or
+  `integer` with no enumeration, description or range is **unusable**, and that is a finding in its own
+  right, not a detail. Record every undocumented domain explicitly (`sleephq`: `status`, `progress`,
+  `usage`, `omitted`, `teams_type`, `o2_score`, the `drop_*` family; `exist`: checked and found complete).
+  Likewise record a documented field that is **write-only** (`active_energy_joules`) and a documented
+  hash whose algorithm is **not** published (`fingerprint_base64`).
+- **A vendor's own material that undercuts the product's headline claim is a finding, and is never
+  resolved in the vendor's favour or against it.** Record both statements, note which surface each comes
+  from, and hold the conclusion open. This has occurred twice: `oscar`'s internal leak-percentile review
+  is more conservative than its own report presentation, and `sleephq`'s founder publishes that device AHI
+  under-counts while the platform publishes an AHI on every session. Do not use either as independent
+  validation of an AnxietyWatch position.
+- **When two current vendor surfaces disagree, record the conflict and let the most conservative
+  statement govern.** Second occurrence (`sleephq`: the pricing page lists the Magic Uploader on the free
+  tier, the shop requires Pro; after `bearable`'s policy-versus-data-safety conflict). A conflict between
+  two surfaces of one vendor is evidence about the vendor's documentation, not about its behaviour.
+- **A specification's `example` blocks may be generated rather than captured.** `sleephq`'s machine
+  example contains filler values and timestamps equal to the fetch time. Never read an example value as a
+  record, and check the example's provenance before quoting it.
+- **Record a vendor's honest boundary statement as a positive.** `sleephq` states that the AirMini is
+  unsupported because it has no SD card slot, and lists the machines it cannot read; that is a product
+  limit stated as a limit, and it was recorded as such rather than as a missing feature.

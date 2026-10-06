@@ -191,7 +191,7 @@ upgraded into another.
 | Mode | Meaning | Candidates |
 |---|---|---|
 | **Not performed** | No artifact of any kind was lawfully obtainable | `bearable` |
-| **Partially performed** | No product binary, but authorized vendor-published artifacts were inspected | `welltory`, `exist` |
+| **Partially performed** | No product binary, but authorized vendor-published artifacts were inspected | `welltory`, `exist`, `sleephq` |
 | **Performed** | Product source or a lawfully authorized build was inspected | **`oscar`** (GPLv3 source, pinned commit); expected for `nightscout`, `homeassistant` |
 
 **Vendor-published artifacts differ in strength, and the difference must be stated.** Three distinguishable
@@ -200,24 +200,41 @@ strengths have been used:
 - **Corroborating artifacts** (`welltory`) — CC0 datasets and research repositories that provide evidence
   *about* the vendor's claims, from outside the product. A dataset is not the product, so these corroborate
   and cannot confirm.
-- **Implementing artifacts** (`exist`) — a public API reference that documents the product's own output
+- **Implementing artifacts** (`exist`, `sleephq`) — a public API reference that documents the product's own output
   contract. The correlation record, the insight record, the attribute catalogue and the sparse value model
   are the analysis layer's interface, so these are genuine static findings *of* the implementation.
+  `sleephq` extends the mode: its OpenAPI document is complete enough to enumerate every path, every
+  serializer attribute and one hash algorithm exactly (`content_hash` = MD5 of content+name, with a worked
+  example and a validation endpoint), and candid enough to document its own rate-limit buckets.
 - **The implementation itself** (`oscar`) — the complete product source under a licence that requires
   publication. This is the strongest static surface available short of running the software, and it is
   qualitatively different from the other two: every claim about how a value is decoded, rejected, stored
   and converted can be read at a named file and line, with no inference from a contract or a dataset.
+
+The **documented-contract mode has a second, weaker limit that must be stated separately from the first**.
+A specification can lack the very thing a reader needs: `sleephq` publishes fields whose *types* are known
+and whose *value domains and methods* are not (`status`, `progress`, `usage`, `omitted`, `teams_type`,
+`o2_score`, the `duration_90`/`drop_90`/`drop_3`/`drop_4` family, and every `_95` percentile). Discovering
+an undefined value domain is a finding, and it is not the same finding as an absent feature. Two further
+patterns from `sleephq` are now standing checks: a documented field that is **write-only**
+(`active_energy_joules` is accepted by the journal write operations and absent from the journal
+serializer), and a specification whose `example` blocks are **generated at fetch time** rather than
+captured from a real record (its machine example carries filler values and a timestamp equal to the fetch
+moment).
 
 **An inspection mode is not an observation.** *Performed* means the implementation was **read**. `oscar`
 was never executed: no binary was installed, no data imported, no report generated, and no CSV inspected
 as output. Static findings and runtime observations remain separate classes throughout the `oscar`
 package, and the runtime-observation count for that candidate is zero.
 
-A third surface, used for `exist`, is also worth checking on every remaining candidate: **self-published
+A third surface, used for `exist` and `sleephq`, is also worth checking on every remaining candidate: **self-published
 business figures** (revenue, paid-user counts). Where present, these are the only scale evidence on the
 shortlist that is neither a download count nor a marketing claim — but they remain vendor-published, and
 are never treated as independent. For `oscar` the equivalent check produced **no** scale figures at all:
-star and fork counts are not user counts, and none were used as such.
+star and fork counts are not user counts, and none were used as such. **`sleephq` is the case where this
+surface is present but weaker**: the only scale figure is the vendor's own "over 100,000 patients in over
+160 countries", against 10K+ Android installs, with no revenue published — recorded as vendor-published
+with the platform mix left as an inference rather than a reconciliation.
 
 **What vendor-published artifacts cannot do.** They reveal a documented contract, never observed
 behaviour. An API reference is not a live system; a dataset is not an accuracy test of a product; a
@@ -254,6 +271,15 @@ missing-data discipline is principled or merely convenient). Also unretrieved:
 `developer.exist.io/reference/object-types-and-terminology/` (404), which would have closed E5 (the unit
 model), and the public roadmap in detail.
 
+**Specific to `sleephq`** — see §"Residual uncertainty — `sleephq`" for S1–S17. The four that decide the
+analysis comparison are **S1** (whether the session `ahi` is relayed or re-derived), **S2** (the contents
+of the eleven `jsonb` summary blocks), **S4** (what every `_95` field actually estimates) and **S3**
+(`o2_score`, `duration_90`, `drop_90`, `drop_3`, `drop_4`). All four are behind an account: a single
+authorised read-only API session would close them, and none was performed. Beyond those: **S5** (whether
+the free tier deletes or hides data past 30 days), **S6** (what AI Insights is), **S7** (whether the sleep
+alarm is supervised), **S8** (what a share link contains), and **S17** (whether the O2 Ring Pro holds any
+regulatory registration — no registry was searched, so this is *unknown*, not *absent*).
+
 **Important: no API endpoint has been called for any candidate.** Every API finding is from documentation,
 not from a live response.
 
@@ -280,7 +306,15 @@ problems that this validation could not reach.
 ```sh
 # Verify the candidate packages exist
 ls -l docs/app_comparison/bearable/ docs/app_comparison/welltory/ docs/app_comparison/exist/ \
-      docs/app_comparison/oscar/
+      docs/app_comparison/oscar/ docs/app_comparison/sleephq/
+
+# The `sleephq` package: the primary artifact is the vendor's OpenAPI document
+curl -sS -o /tmp/sleephq-swagger.json https://sleephq.com/api/swagger.json
+shasum -a 256 /tmp/sleephq-swagger.json
+#   expect 9a4305e663ddc9b65c9b471e8fd04e1085f382814c3540193d85cbd8660536a4
+python3 -c "import json;d=json.load(open('/tmp/sleephq-swagger.json'));print(d['swagger'],d['host'],len(d['paths']),len(d['definitions']))"
+#   expect: 2.0 sleephq.com 21 11
+# No endpoint is called beyond fetching the published specification.
 
 # The `oscar` package: source inspection was performed at a pinned commit
 cd /tmp/aw2research && git clone --depth 1 https://gitlab.com/CrimsonNape/oscar-sql.git \
