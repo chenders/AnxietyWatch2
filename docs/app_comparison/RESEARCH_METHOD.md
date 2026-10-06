@@ -149,6 +149,10 @@ Phase 2A permits implementation inspection only under these limits:
 - An emulator that is disposable, non-personal, and authorized — for example an AVD.
 - Installing the mitmproxy CA on such a **disposable, authorized emulator only**, and only to observe
   an app that accepts user-installed CAs.
+- **Vendor-published surfaces.** Anything the vendor itself publishes for public use, including a public
+  API reference, published datasets or research artifacts, an open-source component or GitHub
+  organisation, a public roadmap, and self-published business figures. These require no owner decision,
+  because they are public and published for third parties to read.
 
 **Prohibited — not attempted at any point**
 - Third-party APK or IPA mirrors. Redistribution is not authorization to inspect, and a mirror cannot
@@ -179,6 +183,37 @@ the emulator's `-tcpdump` and TShark rather than defeating protections.
 **Sequencing rule.** Exactly one candidate is active at a time. No cross-candidate parallelism and no
 prefetching a later candidate's research while an earlier one is in progress.
 
+### 6.1 Inspection modes actually used
+
+Three modes have been reached. Which one applies is recorded per candidate, and none is ever silently
+upgraded into another.
+
+| Mode | Meaning | Candidates |
+|---|---|---|
+| **Not performed** | No artifact of any kind was lawfully obtainable | `bearable` |
+| **Partially performed** | No product binary, but authorized vendor-published artifacts were inspected | `welltory`, `exist` |
+| **Performed** | Product source or a lawfully authorized build was inspected | not yet reached; expected for `oscar`, `nightscout`, `homeassistant` |
+
+**Vendor-published artifacts differ in strength, and the difference must be stated.** Two distinguishable
+kinds have been used:
+
+- **Corroborating artifacts** (`welltory`) — CC0 datasets and research repositories that provide evidence
+  *about* the vendor's claims, from outside the product. A dataset is not the product, so these corroborate
+  and cannot confirm.
+- **Implementing artifacts** (`exist`) — a public API reference that documents the product's own output
+  contract. The correlation record, the insight record, the attribute catalogue and the sparse value model
+  are the analysis layer's interface, so these are genuine static findings *of* the implementation.
+
+A third surface, used for `exist`, is also worth checking on every remaining candidate: **self-published
+business figures** (revenue, paid-user counts). Where present, these are the only scale evidence on the
+shortlist that is neither a download count nor a marketing claim — but they remain vendor-published, and
+are never treated as independent.
+
+**What vendor-published artifacts cannot do.** They reveal a documented contract, never observed
+behaviour. An API reference is not a live system; a dataset is not an accuracy test of a product; a
+published policy is not an implementation. No vendor endpoint is called without an explicit authorization
+decision, and every such finding is labelled *documented*, never *verified* or *working*.
+
 ## 7. What remains unverified
 
 **Standing, for every candidate**
@@ -191,11 +226,26 @@ prefetching a later candidate's research while an earlier one is in progress.
 - Whether advertised features match reachable features, for every commercial candidate.
 - Long-run behaviour: retention, deletion, vendor stability, and what happens if the service ends.
 
-**Specific to `bearable`** — see `PROCESS_STATE.md` §"Residual uncertainty" for Q1–Q10, most notably:
-the actual Premium price (unpublished); whether arbitrary imported metrics can enter the correlation
-engine as outcomes; missing-data semantics for partially-covered days; the exact CSV schema; and the
-unreconciled conflict between the privacy policy's no-sharing statement and the Play Store data-safety
-declaration.
+**Specific to `bearable`** — see `PROCESS_STATE.md` §"Residual uncertainty — `bearable`" for Q1–Q10, most
+notably: the actual Premium price (unpublished); whether arbitrary imported metrics can enter the
+correlation engine as outcomes; missing-data semantics for partially-covered days; the exact CSV schema;
+and the unreconciled conflict between the privacy policy's no-sharing statement and the Play Store
+data-safety declaration.
+
+**Specific to `welltory`** — see §"Residual uncertainty — `welltory`" for W1–W12, most notably W2: the
+value and scope of the "fixed medical threshold" and whether it overrides the personal baseline. Also
+unretrieved: the iOS App Store listing, the April 2022 athlete-validation study, and the IEEE EMBC Berlin
+presentation.
+
+**Specific to `exist`** — see §"Residual uncertainty — `exist`" for E1–E12, most notably E6 (whether
+multiple comparisons are corrected, given hundreds of pairwise tests) and E12 (whether an attribute
+freezes at its last value when its source stops reporting, which is the decisive test of whether the
+missing-data discipline is principled or merely convenient). Also unretrieved:
+`developer.exist.io/reference/object-types-and-terminology/` (404), which would have closed E5 (the unit
+model), and the public roadmap in detail.
+
+**Important: no API endpoint has been called for any candidate.** Every API finding is from documentation,
+not from a live response.
 
 **Structural limitation of this pilot.** The traffic-inspection toolchain was validated only against
 emulator system components, never against a real target app. A first genuine inspection may surface
@@ -218,14 +268,18 @@ problems that this validation could not reach.
 ## 9. Reproducing this research
 
 ```sh
-# Verify the candidate package exists
-ls -l docs/app_comparison/bearable/
+# Verify the candidate packages exist
+ls -l docs/app_comparison/bearable/ docs/app_comparison/welltory/ docs/app_comparison/exist/
 
 # Confirm no stale paid-proxy references remain anywhere in the comparison docs
 grep -RInE 'Charles|charles|10\.0\.2\.2:8888' docs/app_comparison/ || echo "clean"
 
 # Confirm the shortlist and process state are present
 ls -l docs/app_comparison/CANDIDATE_SHORTLIST.md docs/app_comparison/PROCESS_STATE.md
+
+# Public-info gate before any push (tracked files only)
+python3 scripts/check-public-info.py --self-test
+python3 scripts/check-public-info.py
 ```
 
 Free inspection stack, when a candidate becomes inspectable — full procedure in
