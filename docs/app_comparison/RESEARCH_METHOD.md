@@ -20,6 +20,8 @@
 | Traffic inspection tooling (validated, not used against a target app) | mitmproxy/mitmdump **12.2.3** (Python 3.14.4, OpenSSL 3.5.5) |
 | Device tooling (validated, not used against a target app) | Android `adb` 1.0.41, Android Emulator 37.2.12.0, AVD `pixel_4_w_gapps` (Android 12 / SDK 31) |
 | Packet tooling | TShark (Wireshark) 4.6.5; `tcpdump`; `python3` |
+| PDF tooling | `pdftotext`, `pdfinfo`, `pdffonts` and `qpdf` (homebrew poppler/qpdf). **No OCR engine is installed**, which is what makes the `empatica` manual gap a blocker rather than an inconvenience |
+| Regulator data | openFDA `device/510k.json` and `device/classification.json`; 510(k) summary PDFs at `accessdata.fda.gov/cdrh_docs/pdf<YY>/K######.pdf`; the Apple lookup API (`bundleId=` form) |
 | Android SDK root | `$ANDROID_HOME` (the run used the machine's default Android SDK location) |
 
 **Model caveat.** Model- and provider-rendered web summaries were treated as **leads only**. Every
@@ -185,7 +187,7 @@ prefetching a later candidate's research while an earlier one is in progress.
 
 ### 6.1 Inspection modes actually used
 
-Four modes have been reached. Which one applies is recorded per candidate, and none is ever silently
+Five modes have been reached. Which one applies is recorded per candidate, and none is ever silently
 upgraded into another.
 
 | Mode | Meaning | Candidates |
@@ -193,6 +195,7 @@ upgraded into another.
 | **Not performed** | No artifact of any kind was lawfully obtainable | `bearable` |
 | **Partially performed** | No product binary, but authorized vendor-published artifacts were inspected | `welltory`, `exist`, `sleephq` |
 | **Performed** | Product source or a lawfully authorized build was inspected | **`oscar`** (GPLv3 source, pinned commit); **`nightscout`** (AGPL-3.0 source, pinned commit); expected for `homeassistant` |
+| **Performed — artifact and regulator record** | Neither binary nor source nor API was obtainable. The strongest available surfaces are the vendor's own **contractual and compliance documents** and an **independent regulator's record of the vendor's own submission** | **`empatica`** |
 
 **Vendor-published artifacts differ in strength, and the difference must be stated.** Three distinguishable
 strengths have been used:
@@ -227,6 +230,47 @@ strengths have been used:
   product, not validation of it.** Nightscout's `docs/audits/*` and `docs/requirements/*` are recorded as
   the project's own statements, dated, and where they disagree with each other or with the code, the
   disagreement is recorded and neither surface is preferred.
+
+**A fifth mode, instantiated by `empatica`.** The three modes above all assume an implementation surface —
+source, a published API, or a runnable binary. Empatica publishes **none of the three**: its GitHub
+organisation holds five public repos and only one is original (a documentation site, since emptied); the
+Cloud API documentation is supplied to clients only; the app is prescription-gated and iOS-only in practice,
+with no Android artifact located. What it *does* publish is a **regulated product's paperwork**, and what
+exists independently is **the regulator's own record of the vendor's own submission**. That combination is a
+stronger evidence class than marketing and a weaker one than source, so it is recorded as its own mode
+rather than folded into "partially performed".
+
+Two artifact classes are new to the package and are now first-class evidence surfaces:
+
+- **The regulator's record — queried directly, never inferred.** openFDA `device/510k.json` for every
+  clearance held by the applicant and `device/classification.json` for the **product-code definition read
+  verbatim**, plus the **510(k) summary PDF** itself. Four things this yields that no other source can: the
+  clearance **dates and applicants**; the **metric the regulator accepted** (here PPA and false-alarm rate per
+  24 h, not accuracy); the **method** by which the shipped configuration was justified (bench equivalence to
+  a predicate, plus retrospective analyses of data collected on *different* hardware); and the vendor's own
+  sentence that "**No clinical studies have been performed on the subject device**". **A product code is a
+  scope fact distinct from the fact of clearance** — the POS definition states the device "does not predict
+  seizure onsets, and is not intended as a standalone seizure monitoring device", which narrows the claim in
+  the regulator's language. Never interpret a product code without querying the classification API.
+- **The contract — a recordable counter-surface to marketing.** The EULA is quoted as a *contract*, a
+  different instrument class from a marketing page, and the disagreement between the two is recorded
+  unresolved and without any implication of bad faith. The same applies to a published compliance artifact
+  (an ISO 13485 certificate carrying the standard statement that it is not proof of conformity with
+  Regulation (UE) 2017/745) appearing next to a "CE Class IIa" claim: **record placement, not impropriety**.
+
+**The limit of this mode is the sharpest of the five, and it must be stated wherever it is used:**
+**no runtime behaviour of any kind is observable.** Alert latency, cancellation-window length, out-of-range
+handling, lapsed-subscription behaviour and sensor-failure behaviour are all `[UNKNOWN]`, and hypotheses
+about them are recorded as **open questions**, never as findings. This is the mode where the
+check-before-recording rule costs the most: where an implementation exists, hypotheses get tested and
+refuted; where one does not, they get recorded as gaps and nothing more.
+
+**An artifact that exists and cannot be read is a finding, and it blocks reconciliation.** Empatica's
+178-page, 112.8 MB User Manual was retrieved in full and has **no fonts and no text layer** (`pdffonts`
+returns an empty table; `pdftotext` returns 178 bytes across 178 pages; every page is a raster image). It is
+simultaneously an **accessibility** finding and a **verifiability** finding, and no further fetch can close
+it. If OCR is ever attempted it must be recorded with the tool, its version and the pages read, and the
+output labelled **OCR text, not the vendor's verbatim text**.
 
 The **documented-contract mode has a second, weaker limit that must be stated separately from the first**.
 A specification can lack the very thing a reader needs: `sleephq` publishes fields whose *types* are known
@@ -278,6 +322,17 @@ candidate, and each has already produced a finding at least once:
 | **Display unit reaching a derived statistic** | A shipped computed value whose result depends on a user display preference | `nightscout` |
 | **Falsified hypothesis** | A hypothesis checked against the artifact and refuted is **not** recorded as a finding | `nightscout` |
 | **Two answers in one source tree** | Contradictory behaviours for the same operation in one process — record both and name which path a caller takes | `nightscout` |
+| **Independent regulator artifact** | For a regulated candidate, query openFDA's 510(k) records **and** the product-code classification before characterising any regulatory claim; quote the regulation text verbatim. A product code is a scope fact distinct from the fact of clearance | `empatica` |
+| **Contract as counter-surface** | A vendor's EULA or terms quoted as a *contract*, a different instrument class from marketing; the disagreement is recorded unresolved and without implying bad faith | `empatica` |
+| **Compliance artifact disclaiming the adjacent claim** | A published certificate or audit placed beside a claim it does not bear — record placement, not impropriety; every notified body writes the MDR disclaimer | `empatica` |
+| **Mislabelled link** | A hyperlink whose text names one document and whose target is another — a directly observable documentation defect | `empatica` |
+| **Duplicated line in a published list** | A vendor's own published list repeating an entry — record the duplicate as observed, without interpreting the lifecycle of the standard | `empatica` |
+| **Absent item in a non-exhaustive published list** | Record the omission as an **observation** with the reason it is not a non-compliance finding (list not claimed exhaustive; the standard governs a different object than the product's path) | `empatica` |
+| **Artifact offered as evidence for a claim** | Whenever a vendor supplies a document *as* the support for a claim, read the document and test whether it supports **that** claim — the certificate, the cited 510(k) numbers and the instruction manual each failed this test for `empatica` | `empatica` |
+| **Undefined term in a decisive table** | An undefined term in the table carrying the performance claim (`corrected PPA`, materially lower than the raw values) — the undocumented-domain rule applied to a regulated document | `empatica` |
+| **Documentation lifecycle with an exact date** | A vendor deleting its own developer documentation (`developer.empatica.com` emptied 2025-02-18, four days after the 2025-02-14 E4 sunset) — recorded as a lifecycle fact, not a criticism | `empatica` |
+| **Image-only artifact** | A published document with no text layer — simultaneously an accessibility and a verifiability finding, and an evidence gap no further fetch can close | `empatica` |
+| **Unverified hash** | A hash table row is **computed or marked "not hashed"**; a plausible placeholder is worse than no value. A fabricated placeholder written and then replaced by computed SHA-256 values is recorded inside the `empatica` artifacts | `empatica` |
 
 ## 7. What remains unverified
 

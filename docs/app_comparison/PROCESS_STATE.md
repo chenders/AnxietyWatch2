@@ -23,7 +23,7 @@ parallelism, no prefetching a later candidate's research while an earlier one is
 Shortlist order is from `CANDIDATE_SHORTLIST.md`. The ordering is a **review order**, not a quality
 order — see `RESEARCH_METHOD.md` §2.4.
 
-**Active candidate: none.** Candidates 1–6 are complete. The next candidate is `#7 empatica`, which is not
+**Active candidate: none.** Candidates 1–7 are complete. The next candidate is `#8 oura`, which is not
 started and must not be begun until this file is committed.
 
 | # | Slug | Score | Status | Started | Completed | Blocker |
@@ -34,7 +34,7 @@ started and must not be begun until this file is committed.
 | 4 | `oscar` | 11 | **Complete with full implementation inspection** | 2026-10-06 | 2026-10-06 | None. GPLv3 source inspected at a pinned commit; no runtime observation (nothing was executed). |
 | 5 | `sleephq` | 12 | **Complete with partial inspection** | 2026-10-06 | 2026-10-06 | App binaries not inspected (closed source, store-only, account-gated; no lawful route to the APK). No vendor source exists. The vendor's **published OpenAPI specification was inspected in full** — 21 paths, 11 models, and a documented hash algorithm. **No endpoint was called.** |
 | 6 | `nightscout` | 15 | **Complete with full implementation inspection** | 2026-10-06 | 2026-10-06 | None. AGPL-3.0 source inspected at a pinned commit; no runtime observation (nothing was executed, no instance built or contacted). |
-| 7 | `empatica` | 14 | Not started | — | — | — |
+| 7 | `empatica` | 14 | **Complete with artifact-and-regulator inspection** | 2026-10-06 | 2026-10-06 | App binary not inspected (closed source, store-only, **prescription-gated**; no lawful route to the binary, and no Android artifact located at all). No vendor source exists. **No API was inspected** — the Cloud API documentation is supplied to clients only. The inspection mode is a new one: **the vendor's own published artifacts plus an independent regulator's record of the vendor's own submission.** |
 | 8 | `oura` | 13 | Not started | — | — | — |
 | 9 | `homeassistant` | 13 | Not started | — | — | **Inspectable from published source** |
 | 10 | `mindshift` | 12 | Not started | — | — | — |
@@ -56,7 +56,8 @@ previous one's four deliverables exist and its verification command has been run
 | **Candidate 4 of 10 — `oscar`** | **Complete (full implementation inspection)** | See §Candidate 4 |
 | **Candidate 5 of 10 — `sleephq`** | **Complete (with a partial inspection)** | See §Candidate 5 |
 | **Candidate 6 of 10 — `nightscout`** | **Complete (full implementation inspection)** | See §Candidate 6 |
-| Candidates 7–10 | **Not started** | No files created. No research begun. |
+| **Candidate 7 of 10 — `empatica`** | **Complete (artifact-and-regulator inspection)** | See §Candidate 7 |
+| Candidates 8–10 | **Not started** | No files created. No research begun. |
 | Pilot review by owner | **Completed** | Owner instructed the run to continue; mode switched to full sequential |
 | Full sequential run of candidates 3–10 | **Authorized** | One candidate at a time |
 
@@ -750,6 +751,170 @@ January 2026, status *Draft*) proposes AI agents in insulin therapy management. 
 document**, not an accepted plan and not shipped code, and neither this file nor the comparison treats it
 as part of the product.
 
+## Candidate 7 — `empatica`
+
+| Deliverable | Path | Status |
+|---|---|---|
+| Claimed features and purpose | `empatica/empatica_CLAIMED_FEATURES_AND_PURPOSE.md` | Written — 16 sections, evidence ledger **E-1…E-83**, consolidated conflict table, artifact SHA-256 table |
+| Authorized implementation inspection | `empatica/empatica_IMPLEMENTATION_INSPECTION.md` | Written — **artifact-and-regulator inspection, performed**: vendor artifacts and the FDA record read. No binary, no source, **no API**, **nothing executed** |
+| Candidate-specific Prompt 2 | `empatica/PROMPT_2.md` | Written — `PROMPT2-EVIDENCE-FIRST.md` base plus the `PROMPT2-PRIVACY-AND-OPERATING-MODE` supplementary block |
+| Comparison report (Prompt 2 run) | `empatica/empatica_COMPARISON.md` | Written — 14 sections |
+
+**Verification command:**
+
+```sh
+ls -l docs/app_comparison/empatica/
+```
+
+**Inspection mode:** **artifact and regulator inspection — performed.** This is a **new mode instance**,
+the first in the package with no binary, no source and no API. What was read: the vendor's own published
+surfaces (product, store, `/legal/`, `/cloud-api/`, `/manuals/`, privacy notice, **EULA**, E4 sunset notice),
+plus an **independent regulator's record of the vendor's own submission** — openFDA 510(k) records and
+product-code classification, and the **K250515** 510(k) summary text (2,661,556 bytes → 602 lines). All
+artifacts are SHA-256 hashed; every quoted page, the EULA, the certificate, the manual and the FDA PDF were
+retrieved directly rather than read through a secondary source. **The runtime-observation count for this
+candidate is zero, and no vendor endpoint was called.**
+
+**Why the mode changed.** The three prior modes assumed an implementation surface (source, published API, or
+runnable binary). Empatica publishes **none of the three**: the repository organisation holds 5 public repos
+and only one is original (a documentation site, since emptied); the Cloud API documentation is supplied to
+clients only; the app cannot lawfully be obtained and is iOS-only in practice. What it *does* publish is a
+**regulated product's paperwork** — and, independently, the regulator's own record of it. That is a
+stronger evidence class than marketing, so it became the mode rather than a fallback.
+
+**Six findings, in order of consequence.**
+
+1. **The headline performance figure cannot be reached from the page that makes it, and the metric the
+   regulator considered decisive is absent from the page.** The product page claims "detects possible
+   seizures with **98% accuracy**" and "demonstrating a **98% detection accuracy against the gold standard
+   of hospital-based EEG measurement**" — uncited. K250515 reports **positive percentage agreement** and
+   **false-alarm rate per 24 h**, states "**No clinical studies have been performed on the subject
+   device**", establishes the shipped configuration "by bench testing to be equivalent" to the 2018
+   predicate K181861, and derives its real-world figures from **Embrace2** hardware. Recorded precisely: the
+   page's number is **untraceable**, not shown to be false. This is separately verified as a **fact about
+   the page**, not an inference about the product.
+2. **The regime answers the question AnxietyWatch2's three-state rule answers, by regulation.** The cleared
+   product code **POS** (class 2, 21 CFR **882.1580**) is defined in the regulator's own words as a device that
+   "**does not predict seizure onsets, and is not intended as a standalone seizure monitoring device**".
+   The vendor's own scope statement is consistent and precise — GTC seizures ≥ 20 s; "**not designed to
+   detect** seizures that do not generate movements such as complex partial seizures, absence seizures or
+   non-convulsive seizures"; ages 6+. It is the first candidate whose **independently published scope limit**
+   states, in the regulator's language, the same principle V2 enforces structurally: an absent signal is not
+   a reassurance.
+3. **A four-hop cloud alert path with a physical precondition, a commercial gate and a contract that declines
+   to warrant delivery.** Watch → BLE (**phone within 15 ft**) → phone internet → Empatica Cloud → **call +
+   SMS** to 1 / 3 / 10 caregivers by plan, with a **mandatory subscription**. The EULA states the vendor
+   "**cannot guarantee that a call or text message will reach any Caregiver**", that results are not
+   warranted "**ACCURATE, COMPLETE, RELIABLE, CURRENT, OR ERROR-FREE**", that liability "**SHALL NOT EXCEED
+   THE PURCHASE PRICE PAID**", and that there is no liability for "**PERSONAL INJURY OR DEATH**". Every
+   clause is ordinary consumer-software practice; the finding is the **coexistence, unresolved, on the same
+   page** — "designed to keep you and your loved ones safe". This is the first candidate where a **contract**
+   is a primary evidence surface, and it is recorded as a counter-surface, not as a scandal.
+4. **False alarms are a first-class design problem, with numbers, and AnxietyWatch2 has stated no number.**
+   FAR per 24 h from K250515: **0.70 / 0.28** (EMU, 6–21 / >21) and **0.34 / 0.25** (real-world) —
+   paediatric ≈ **one false caregiver alert every three days**. The vendor ships three mitigations: a
+   **cancellation window before caregivers are contacted** (length unpublished), **adjustable sensing
+   precision** (high / low), and an optional **low-sensitivity mode** described as existing to reduce false
+   alarms. V2's supervised-alarm specification states no acceptable false-alarm rate for any alert type, and
+   that gap is visible only because this candidate is in the shortlist.
+5. **The vendor's own published artifact undercuts the claim printed beside it, and its instructions for use
+   cannot be read.** The EmbracePlus page claims "CE-certified as a class IIa medical device" while the
+   compliance document the vendor links is an **ISO 13485** certificate (cert. 39 05 0072201, TÜV Rheinland
+   Italia, UNI CEI EN ISO 13485:2021, valid 2025-05-08 → 2028-05-24) carrying the standard statement that it
+   "does not represent proof that the statutory requirements of … Regulations (UE) 2017/745 … have been
+   fulfilled" — **recorded as a placement tension, not impropriety**; every notified body writes that
+   sentence. Separately, the **EpiMonitor User Manual** (178 pages, 112.8 MB) has **no fonts and no text
+   layer** — `pdffonts` empty, `pdftotext` returning 178 bytes across 178 pages — so it is not searchable,
+   not screen-reader accessible, not machine-checkable, and blocks claim reconciliation on the single
+   question the comparison most wants answered.
+6. **The FDA citation on the platform page names the wrong clearances.** The page cites "( K221282 -
+   K230457 )", which are the *platform* clearances and do not name EpiMonitor; the EpiMonitor clearances
+   (**K232915**, **K250515**) are uncited. Accurate in substance, **incomplete in citation** — a reader
+   checking the supplied numbers is shown the wrong record.
+
+**Also recorded (secondary).** **Eight consolidated surface conflicts** — four of them the same shape (a
+vendor's own artifact failing to support the vendor's own text). Two are intra-page: "No black box
+   algorithms" beside "AI-powered remote monitoring", and EmbraceMini's battery stated as both "at least 7
+   days" and "14+ days" on one page. One is cross-page: EmbracePlus "up to 7 days" versus "up to 28 days".
+   One is cross-instrument. A **ninth** — "300+" versus "200+" digital measures — was considered and
+   **deliberately not counted**, because the two numbers describe different products; recorded only to show
+   it was examined. The **privacy notice** (US, last updated **2024-12-01**, ~22 months stale) explicitly
+   covers the watch, the app and the Portal, and describes **Google Analytics**, **pixel tags**,
+   **cross-device tracking**, **advertising networks** and "Custom Lists and Matching" sharing name and
+   email for ad targeting — with **two ambiguities recorded and left unresolved**: whether the advertising
+   language reaches watch-derived health data or only Portal browsing, and that additional notices control
+   on conflict. The **`/legal/` page** publishes an **ISO/IEC 27001:2022** statement and a **Safety standards
+   list**; two direct observations: **ISO 10993-1:2018 appears twice consecutively**, and **IEC 60601-1-8
+   (alarm systems) is absent** — the latter recorded as an observation, **not** a non-compliance finding,
+   because the list does not claim to be exhaustive and the standard governs equipment-generated alarm
+   signals rather than a cloud caregiver notification. A **mislabelled link**: "Read our Terms & Conditions"
+   resolves to the ISO 13485 PDF. A **documentation lifecycle fact with an exact date**: `developer.empatica.com`
+   was emptied by three commits on **2025-02-18** — four days after the **2025-02-14** E4 sunset notice, whose
+   own words are that the E4 software suite "**can no longer collect and store data, rendering services
+   inoperative**". Recorded as a lifecycle fact, not a criticism. **No security.txt, penetration test or
+   disclosure programme was found** — `[UNKNOWN]`; the Internet Archive's CDX index holds only a 2023-07-31
+   crawler *probe* with no archived response, which is the absence of a capture and not evidence about the
+   file.
+
+**Positives recorded as positives.** Empatica **publishes false-alarm rates with confidence intervals and
+   denominators**; it ships **wearing detection** as a platform signal, which is the quantity a caregiver
+   actually wants; it publishes a **standards list** and an ISO/IEC 27001:2022 statement; it states its
+   scope limits precisely; and it publishes a **contract that says what it will not promise**, which is more
+   than most consumer health products do. A correction was made in the other direction during this candidate:
+   an earlier reading that the vendor published **no security surface** was **wrong** — the detail is on
+   `/legal/`, and it was corrected in the same file. Two further self-corrections were made: a **fabricated
+   placeholder hash** written into the artifact table was replaced with computed SHA-256 values (the rule
+   "an unverified hash is worse than no hash" is now recorded in the file), and a **failure-mode hypothesis
+   about the app's Bluetooth-drop behaviour was dropped** rather than recorded, because the app cannot be
+   observed.
+
+**Claim reconciliation:** 27 checkable claims — **12 match, 7 documented-only or unverifiable, 2 partial,
+   6 do not match as stated**.
+
+**Evidence gaps:** **G1–G10**, headed by the unreadable User Manual. The decisive gap is that **no runtime
+   behaviour of any kind was observed** — alert latency, cancellation-window length, out-of-range handling,
+   lapsed-subscription behaviour and sensor-failure behaviour are all `[UNKNOWN]`, and this inspection cannot
+   answer any of them.
+
+**Mode-record note.** The manual is the first artifact in this package that **exists, was retrieved in full,
+   and cannot be read.** It is recorded simultaneously as an **accessibility** finding and a **verifiability**
+   finding, and it is the reason gap G1 is not closed by another fetch.
+
+## Residual uncertainty — `empatica`
+
+- **R1** **The User Manual's content** — 178 pages, 112.8 MB, no text layer, retrieved and unreadable. The
+  surface most likely to state limits in plain language to the wearer, and the blocker on the standalone-
+  reliance question. Closing it needs an **OCR decision**, not a fetch. **Decisive.**
+- **R2** **The 98% figure's provenance.** Not on the page; not reconstructible from K250515. The vendor's
+  **Publications** page was **not** consulted in this pass. A source may exist. **Decisive.**
+- **R3** **No runtime behaviour of any kind.** iOS-only in practice, prescription-gated, no lawful binary.
+- **R4** **The Cloud API contract** — no OpenAPI, endpoint, auth scheme, rate limit or error catalogue
+  published; "provided" to commercial clients only.
+- **R5** **Android presence** — four candidate identifiers returned 404; Play returns 403 to some non-browser
+  clients, so this is **not evidence of absence**. `[UNKNOWN]`.
+- **R6** **Plan detail** — the support-centre article returned HTTP 403 (Cloudflare).
+- **R7** **K232915's summary** returned 404 at this date; K250515 covers the same device name and product code,
+  so this is a retrieval failure, not an evidential gap.
+- **R8** **HIPAA and GDPR artifacts.** "Compliance with industry standards including HIPAA, GDPR and ISO" is
+  asserted on a marketing page; ISO/IEC 27001:2022 and ISO 13485 are published; no BAA, DPA or GDPR artifact
+  was fetched, though an EHMP **Data Processing Agreement** is listed on `/legal/`.
+- **R9** **"corrected PPA" is undefined** in K250515, and the corrected values are materially lower than the
+  raw ones (1.000 → 0.905; 0.87 → 0.86; 0.80 → 0.77).
+- **R10** **No security.txt, penetration test, disclosure programme or incident history found.** `[UNKNOWN]`.
+- **R11** **Only nine surfaces were read.** The use-case, actigraphy, sleep, CRO, academic-research, eCOA,
+  digital-biomarkers, publications, case-studies, compliance and resources-library pages were not enumerated.
+  Nothing in this comparison is a complete account of the vendor's claims.
+
+**Most promising untried step.** Two, and both are **read-only**: fetch the vendor's **Publications** page and
+follow any citation that reports the 98% figure (**R2**), and obtain an **OCR** of the manual or a text-format
+substitute (**R1**). Neither is performed here. **The step that would change the most is the one that is least
+available** — observing the app — and it is correctly out of reach without an owner decision.
+
+**Not to be mistaken for a finding.** The 98% claim is characterised as **untraceable from the page that makes
+it**, never as false. A 510(k) resting on bench equivalence plus retrospective analyses is a **lawful and
+common route**; the observation is that the marketing page does not describe the route it took. No medical or
+safety judgement is offered, and no claim is made that a clearance is improper.
+
 ## Owner decisions pending
 
 1. **Pilot review.** **Resolved** — the owner instructed the run to continue; full sequential mode is
@@ -872,3 +1037,57 @@ as part of the product.
   delete semantics coexist in one `nightscout` process — API3 soft-deletes with a retained history, while
   API v1/v2 and the admin tools hard-delete the same collection. Do not resolve which is "the" behaviour;
   record that the product has both, and say which path a given caller takes.
+- **An independent regulator's record of the vendor's own submission is a first-class evidence source, and it
+  is queried directly, never inferred.** For a regulated candidate, read openFDA's 510(k) records and the
+  **product-code classification** before characterising any regulatory claim, and quote the regulation text
+  verbatim. `empatica` was cited as cleared, so the record was read: the vendor page cites the *platform*
+  clearances and omits the device's own; and the product code's definition — "does not predict seizure onsets,
+  and is not intended as a standalone seizure monitoring device" — narrows the claim in the regulator's
+  language. **A product code is a scope fact distinct from the fact of clearance**: never interpret one
+  without querying the classification API.
+- **A vendor's contractual instrument is a distinct evidence class from its marketing, and both are recordable.**
+  `empatica`'s EULA declines to warrant that "a call or text message will reach any Caregiver" on a page
+  promising it will "keep you and your loved ones safe". Record the sentence, name the instrument, and **do
+  not imply bad faith** — the finding is the coexistence, unresolved, not a scandal. Mark the class difference
+  explicitly: a contract is not a marketing page, and that matters more than the disagreement.
+- **A vendor's published compliance artifact can disclaim the claim printed beside it.** `empatica`'s
+  EmbracePlus page claims CE Class IIa while the document it links is an ISO 13485 certificate stating it is
+  not proof of conformity with Regulation (UE) 2017/745. **Record placement, not impropriety** — every
+  notified body writes that sentence on every certificate. The same check found a **mislabelled link**
+  ("Read our Terms & Conditions" → the ISO 13485 PDF), which is a documentation defect and is recorded as one.
+- **A vendor can delete its own developer documentation, and the date is the finding.** `empatica` emptied
+  `developer.empatica.com` with three commits on **2025-02-18**, four days after the **2025-02-14** E4 sunset
+  notice. Record the lifecycle fact with its exact date and its own words ("can no longer collect and store
+  data, rendering services inoperative") as **a lifecycle fact, not a criticism** — it is the most concrete
+  available demonstration of what a vendor's interface withdrawal costs a dependent product.
+- **An artifact that exists and cannot be read is a finding in two classes at once.** `empatica`'s 178-page,
+  112.8 MB User Manual has no fonts and no text layer (`pdffonts` empty; `pdftotext` returns 178 bytes across
+  178 pages). It is simultaneously an **accessibility** finding and a **verifiability** finding, it **blocks
+  claim reconciliation**, and a further fetch cannot close it. Record it as an evidence gap with the blocker
+  named, and if OCR is ever attempted, record the tool, its version, the pages read, and mark the output as
+  **OCR text, not the vendor's verbatim text**.
+- **An undefined term in a decisive table is a finding, and this generalises the undocumented-domain rule
+  from interfaces to regulated documents.** `empatica`'s K250515 reports a "**corrected PPA**" without
+  defining it, and the corrected values are materially lower than the raw ones (1.000 → 0.905; 0.87 → 0.86;
+  0.80 → 0.77). `sleephq`'s undefined `status`/`progress`/`o2_score` domains and this are the same class at
+  different evidentiary weights.
+- **A documented defect in a published list is reported as an observation, and the absence of a standard from
+  a non-exhaustive list is not a non-compliance finding.** `empatica`'s Safety list duplicates
+  **ISO 10993-1:2018** on consecutive lines (directly observable) and omits **IEC 60601-1-8** (governs
+  equipment-generated alarm signals, not a cloud caregiver notification; the list does not claim to be
+  exhaustive). Record the duplicate; record the omission **as an observation with the reason it is not a
+  finding**.
+- **An artifact a vendor offers as evidence of one claim is tested against the claim it is placed beside.**
+  This is the standing form of the `empatica` findings: the linked certificate is placed beside a Class IIa
+  claim and bears an ISO 13485 scope; the cited 510(k) numbers are placed beside a device claim and name the
+  platform; the instruction manual is placed beside a standalone-monitoring product and cannot be read.
+  Whenever a vendor supplies a document *as* the support for a claim, read the document and check whether it
+  supports **that** claim.
+- **Vendor-published business figures and vendor-authored analyses are never independent evidence.**
+  `empatica`'s EpiAlgo analyses were submitted by the vendor and published by a regulator: the **venue** is
+  independent, the **work** is the vendor's. Say it that way. Likewise a vendor's internal document is the
+  vendor's *statement*, quoted with dates, and its numbers were not re-measured.
+- **Never fill a hash table row with a plausible value.** An unverified hash is worse than no hash. During
+  `empatica` a fabricated placeholder SHA-256 was written into the artifact table and then replaced with
+  computed values; the rule is now recorded inside that file. **Compute the hash or mark the row "not
+  hashed".**
