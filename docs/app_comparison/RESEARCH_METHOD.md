@@ -185,17 +185,17 @@ prefetching a later candidate's research while an earlier one is in progress.
 
 ### 6.1 Inspection modes actually used
 
-Three modes have been reached. Which one applies is recorded per candidate, and none is ever silently
+Four modes have been reached. Which one applies is recorded per candidate, and none is ever silently
 upgraded into another.
 
 | Mode | Meaning | Candidates |
 |---|---|---|
 | **Not performed** | No artifact of any kind was lawfully obtainable | `bearable` |
 | **Partially performed** | No product binary, but authorized vendor-published artifacts were inspected | `welltory`, `exist` |
-| **Performed** | Product source or a lawfully authorized build was inspected | not yet reached; expected for `oscar`, `nightscout`, `homeassistant` |
+| **Performed** | Product source or a lawfully authorized build was inspected | **`oscar`** (GPLv3 source, pinned commit); expected for `nightscout`, `homeassistant` |
 
-**Vendor-published artifacts differ in strength, and the difference must be stated.** Two distinguishable
-kinds have been used:
+**Vendor-published artifacts differ in strength, and the difference must be stated.** Three distinguishable
+strengths have been used:
 
 - **Corroborating artifacts** (`welltory`) — CC0 datasets and research repositories that provide evidence
   *about* the vendor's claims, from outside the product. A dataset is not the product, so these corroborate
@@ -203,11 +203,21 @@ kinds have been used:
 - **Implementing artifacts** (`exist`) — a public API reference that documents the product's own output
   contract. The correlation record, the insight record, the attribute catalogue and the sparse value model
   are the analysis layer's interface, so these are genuine static findings *of* the implementation.
+- **The implementation itself** (`oscar`) — the complete product source under a licence that requires
+  publication. This is the strongest static surface available short of running the software, and it is
+  qualitatively different from the other two: every claim about how a value is decoded, rejected, stored
+  and converted can be read at a named file and line, with no inference from a contract or a dataset.
+
+**An inspection mode is not an observation.** *Performed* means the implementation was **read**. `oscar`
+was never executed: no binary was installed, no data imported, no report generated, and no CSV inspected
+as output. Static findings and runtime observations remain separate classes throughout the `oscar`
+package, and the runtime-observation count for that candidate is zero.
 
 A third surface, used for `exist`, is also worth checking on every remaining candidate: **self-published
 business figures** (revenue, paid-user counts). Where present, these are the only scale evidence on the
 shortlist that is neither a download count nor a marketing claim — but they remain vendor-published, and
-are never treated as independent.
+are never treated as independent. For `oscar` the equivalent check produced **no** scale figures at all:
+star and fork counts are not user counts, and none were used as such.
 
 **What vendor-published artifacts cannot do.** They reveal a documented contract, never observed
 behaviour. An API reference is not a live system; a dataset is not an accuracy test of a product; a
@@ -269,7 +279,13 @@ problems that this validation could not reach.
 
 ```sh
 # Verify the candidate packages exist
-ls -l docs/app_comparison/bearable/ docs/app_comparison/welltory/ docs/app_comparison/exist/
+ls -l docs/app_comparison/bearable/ docs/app_comparison/welltory/ docs/app_comparison/exist/ \
+      docs/app_comparison/oscar/
+
+# The `oscar` package: source inspection was performed at a pinned commit
+cd /tmp/aw2research && git clone --depth 1 https://gitlab.com/CrimsonNape/oscar-sql.git \
+  && cd oscar-sql && git log -1 --format='%H'   # expect 28df2e46e35e6260e186fced997edadcf001cc24
+```
 
 # Confirm no stale paid-proxy references remain anywhere in the comparison docs
 grep -RInE 'Charles|charles|10\.0\.2\.2:8888' docs/app_comparison/ || echo "clean"

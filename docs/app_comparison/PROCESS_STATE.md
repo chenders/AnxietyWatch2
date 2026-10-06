@@ -23,7 +23,7 @@ parallelism, no prefetching a later candidate's research while an earlier one is
 Shortlist order is from `CANDIDATE_SHORTLIST.md`. The ordering is a **review order**, not a quality
 order — see `RESEARCH_METHOD.md` §2.4.
 
-**Active candidate: none.** Candidates 1–3 are complete. The next candidate is `#4 oscar`, which is not
+**Active candidate: none.** Candidates 1–4 are complete. The next candidate is `#5 sleephq`, which is not
 started and must not be begun until this file is committed.
 
 | # | Slug | Score | Status | Started | Completed | Blocker |
@@ -31,7 +31,7 @@ started and must not be begun until this file is committed.
 | 1 | `bearable` | 13 (rank 1 on dimension A) | **Complete with inspection limitation** | 2026-10-05 | 2026-10-06 | Phase 2A not performed — no lawfully authorized artifact. Public-claims research unaffected. |
 | 2 | `welltory` | 14 | **Complete with partial inspection** | 2026-10-06 | 2026-10-06 | App binary not inspected (closed source, store-only, account-gated). Vendor's **public research repos and datasets were inspected** and their citations independently verified. |
 | 3 | `exist` | 11 | **Complete with partial inspection** | 2026-10-06 | 2026-10-06 | App binary not inspected (closed source, store-only, account-gated). The vendor's **public API reference was inspected in full** — a stronger artifact than Welltory's, because it is the analysis layer's own output contract. |
-| 4 | `oscar` | 11 | Not started | — | — | **Inspectable from published source** |
+| 4 | `oscar` | 11 | **Complete with full implementation inspection** | 2026-10-06 | 2026-10-06 | None. GPLv3 source inspected at a pinned commit; no runtime observation (nothing was executed). |
 | 5 | `sleephq` | 12 | Not started | — | — | — |
 | 6 | `nightscout` | 15 | Not started | — | — | **Inspectable from published source** |
 | 7 | `empatica` | 14 | Not started | — | — | — |
@@ -53,7 +53,8 @@ previous one's four deliverables exist and its verification command has been run
 | **Candidate 1 of 10 — `bearable`** | **Complete (with an inspection limitation)** | See §Candidate 1 |
 | **Candidate 2 of 10 — `welltory`** | **Complete (with a partial inspection)** | See §Candidate 2 |
 | **Candidate 3 of 10 — `exist`** | **Complete (with a partial inspection)** | See §Candidate 3 |
-| Candidates 4–10 | **Not started** | No files created. No research begun. |
+| **Candidate 4 of 10 — `oscar`** | **Complete (full implementation inspection)** | See §Candidate 4 |
+| Candidates 5–10 | **Not started** | No files created. No research begun. |
 | Pilot review by owner | **Completed** | Owner instructed the run to continue; mode switched to full sequential |
 | Full sequential run of candidates 3–10 | **Authorized** | One candidate at a time |
 
@@ -249,6 +250,142 @@ Exist also supplies a **fourth** authorizable surface worth checking on every ca
 self-generated business disclosure (revenue and paid-user counts). It is the only scale figure on the
 shortlist that is not a download count or a marketing claim.
 
+## Candidate 4 — `oscar`
+
+| Deliverable | Path | Status |
+|---|---|---|
+| Claimed features and purpose | `oscar/oscar_CLAIMED_FEATURES_AND_PURPOSE.md` | Written — 17 sections, evidence table **O-1…O-50h** |
+| Authorized implementation inspection | `oscar/oscar_IMPLEMENTATION_INSPECTION.md` | Written — **inspection PERFORMED**, full GPLv3 source read at a pinned commit |
+| Candidate-specific Prompt 2 | `oscar/PROMPT_2.md` | Written — `PROMPT2-EVIDENCE-FIRST.md` base plus a `PROMPT2-TECHNICAL-SYSTEMS` supplementary block |
+| Comparison report (Prompt 2 run) | `oscar/oscar_COMPARISON.md` | Written |
+
+**Verification command:**
+
+```sh
+ls -l docs/app_comparison/oscar/
+```
+
+**Inspection mode:** **Performed** — the first candidate on the shortlist to reach this mode. The entire
+product source was obtained from a public GPLv3 repository and read at a pinned commit. **Nothing was
+executed**: no binary installed, no data imported, no report generated, no CSV inspected as output. The
+runtime-observation count for this candidate is **zero**.
+
+| Artifact | Value |
+|---|---|
+| Repository | `https://gitlab.com/CrimsonNape/oscar-sql.git` (the 2.0 SQL line) |
+| Commit | `28df2e46e35e6260e186fced997edadcf001cc24`, 2026-10-04, branch `master`, shallow clone (59 MB) |
+| Licence | GNU GPL v3 (`COPYING`), confirmed in the tree |
+| Ancillary (metadata only) | `gitlab.com/pholy/OSCAR-code` — the 1.x line, not inspected |
+
+**Four findings, in order of consequence.**
+
+1. **v1's CPAP importer is coupled to OSCAR's report vocabulary by column position, and that vocabulary
+   has already changed.** v1 parses the by-session export at hardcoded indices 0–20 behind a
+   `count >= 21` guard and detects the format with the six-token prefix `"date,start,ahi,rdi,oa"`. The
+   report v1 was written against — 22 columns, matching OSCAR 2.0.1 token for token, per the vendor's own
+   design record for the release note *"Add more fields to Session/by Session and Daily/by Day CSV
+   reports"* — is **27 columns** in the inspected source, with `OAHI`, `CAHI`, `A`, `OH` and `CH`
+   inserted mid-header. The detector still fires (because `OAHI` begins with `OA`) and the guard still
+   passes (because `27 >= 21`), so every field from index 4 onward is silently misassigned — including
+   index 20, where **`Leak_95th` is read as `Hours_Used`**, turning a 6.5-hour night with a leak 95th of
+   12.4 into 12.4 hours of therapy. v1 is correct against 2.0.1; the break arrives with the next OSCAR
+   release. That the 27-column form is unreleased is an **inference** from the 2026-08-06 specification
+   date and the absence of any related entry in the 2.0.1 notes, not from running the 2.0.1 binary. The
+   latent-break conclusion holds either way (§3.2 of the comparison).
+
+2. **OSCAR answers the invalid-data question three different ways in one program.** The ResMed EDF loader
+   substitutes the *previous sample* for an end-of-data sentinel (`c = last`, `resmed_loader.cpp:4361–4367`,
+   comment: "this change stops false error values from deing displayed"). The newer Apple Health loader
+   rejects an out-of-range value, **names the reason and the value**, and drops it
+   (`applehealthDataParsing.cpp:337–446`; "0 and negatives are no-reading sentinels, not measurements"),
+   with parse-time unit conversion and rejection of unknown units. The summary store writes the number
+   **`0.0`** for absent SpO2/pulse and masks it only at export with `NULLIF(col, 0)`. The newest path
+   matches this project's rules almost exactly; the oldest violates them in the precise way the rules
+   forbid; the store's violation is invisible to anything reading the published database.
+
+3. **v1's leak number is not the machine's number.** OSCAR parses the device's `Leak.95`
+   (`resmed_loader.cpp:1681–1691`) and then does not persist it (`:2540–2544`) — percentiles are
+   recomputed from the time-series. The vendor's own method review
+   (`Notes/Developer Notes/LEAK_PERCENTILE_METHOD_REVIEW_2026-04-16.md`) reproduces a **2.0×**
+   disagreement with the device on one night and names a gain-handling defect in `Day::percentile` plus
+   a time over-accumulation risk in `updateCountSummary()`. The review's own neutral framing is adopted:
+   *"a product-behavior mismatch, not necessarily a pure math bug."* **Scope limit:** v1 also has an EDF
+   leak path, so this qualification applies to the OSCAR-imported values, not to every leak number in v1.
+
+4. **OSCAR is a dependency and a reference, not a competitor, and v2 inherits none of its semantics.**
+   v2's AirSense 11 registry source declares 17 instantaneous signal types, there is **no AHI type and no
+   percentile computation anywhere in the v2 tree**, so the leak-percentile question cannot propagate.
+   One precision, to avoid overstating the gap in v2's favour: v2 *does* decode and classify the device's
+   own scored events (`events.rs:19–51`, incl. hypopnea/central/obstructive/RERA/CSR), but the
+   classification is read by nothing — only the raw event name feeds the session lifecycle
+   (`as11_session.rs:156,168`). That is **implemented and unwired**, not a shipped analysis capability.
+   The overlap with OSCAR is the *concept* of leak, not the implementation, the column, or the definition.
+
+**Where OSCAR is ahead of both AnxietyWatch versions** (stated without hedging): portable exit and
+interoperability (published schema, Python reader, three CSV modes); per-session fidelity markers
+(`summary_only`); an implemented typed/reasoned/drift-modelled/reversible device-clock correction ledger;
+~19 device loaders; and an unambiguously free, licence-enforced, zero-telemetry operating model.
+
+**Where v2 is ahead, and where it is not.** v2's rules and implemented rejection behaviour are better:
+rejections name their blocker **and the value**, uncapped, with a test asserting that **absent is not
+invalid** (`bp_build.rs:127`), and the store cannot fabricate a value. But v2 is **not yet better on
+durability of the rejection record** — rejections are `eprintln!`-ed by the collector, exactly as OSCAR's
+are `qWarning`-ed, and v2's durable attempt ledger is specified in `cpap-ezshare-ingest` (invariant 7) at
+**0 of 6 tasks built**. Likewise v2's versioned, append-only clock-correction rule is **better designed
+than OSCAR's mutable ledger and is specified, not built**. These are recorded as live v2 gaps relative to
+OSCAR, not as recommendations.
+
+**Verification method for this candidate.** Every finding above was traced to a named file and line in the
+pinned commit, and the reproduction commands are in
+`oscar/oscar_IMPLEMENTATION_INSPECTION.md` §10. The v1-side claims were read from the v1 tree at the paths
+named in §3.1 of the comparison. No claim rests on a model statement alone.
+
+## Residual uncertainty — `oscar`
+
+- **O1** Whether v1's OSCAR-CSV import has ever been exercised against a real OSCAR export. The header
+  correspondence is verified from both source trees; no end-to-end run was performed and no evidence of
+  one was found.
+- **O2** Which header OSCAR **2.0.1** actually emits. Established from the vendor's design record for the
+  report that release shipped; **not** confirmed by running the binary. The 27-column form is read from the
+  inspected commit. The "unreleased" conclusion is an inference.
+- **O3** Whether v1's detector matches the 27-column header in practice. The prefix match follows from
+  string comparison; it was not executed. A 27-column fixture would settle it empirically.
+- **O4** Whether the summary-store `0.0` sentinel reaches v1 in any form. The `NULLIF` masking is read
+  from the report SQL; no real import was performed.
+- **O5** The invalid-data policy of the **other seventeen loaders**. The three-policy finding rests on the
+  ResMed EDF, Apple Health and summary-store paths — the three that touch v1's data — and is **not** a
+  claim about OSCAR as a whole.
+- **O6** Whether the specific leak defects named in the 2026-04-16 review are still present. The *method*
+  (percentiles recomputed, not read) was confirmed in the current tree; the gain-handling and
+  over-accumulation defects were not re-confirmed.
+- **O7** Whether the localised-header fragility reproduces. Read from `tr()` in the dialog exporter; no
+  localised build was run. It does not affect the ORF report's fixed aliases.
+- **O8** The status of the five unmigrated loaders (`mseries`, `dreem`, `somnopose`, `zeo`,
+  `serialoximeter`) in 2.0, and the 1.7.2 line in full.
+- **O9** Whether the wider OSCAR Team reviews the 2.0 line, which is a short-history fork under an
+  individual namespace linked from the official download page.
+- **O10** Any scale figure at all. No download, install or active-user number exists; star and fork counts
+  are not user counts and were not used as such.
+- **O11** Whether "quarantine", as this project's rules state it, is implementable in v2's store. What is
+  established: v2 returns named rejections and logs them; it does not persist them.
+- **O12** Whether emitting a CSV that OSCAR can read would create a GPL obligation for v2. Assessed as
+  feasible in principle and already bounded by v2's stated clean-room position
+  (`cpap-ezshare-ingest/design.md` §11: "no GPL implementation code is copied"); **not legally reviewed**,
+  and no recommendation is made.
+
+**Most promising untried step.** Compile OSCAR at the pinned commit, run the Apple Health test suite, and
+feed v1's importer a 27-column fixture. That single sequence would move the two decisive findings — the
+invalid-data policy contrast and the silent column misassignment — from *static* to *observed*. It was not
+executed, and nothing in the `oscar` package should be read as though it was.
+
+**Process-level rule added by this candidate.** When a shortlisted product is a **dependency** of
+AnxietyWatch v1 rather than merely a competitor, two checks become mandatory and were not previously part
+of the method: (a) test the **format contract for drift** — compare the header or schema v1 was written
+against with the header or schema the upstream currently emits, token by token; and (b) state whether the
+inheritance is **vocabulary** (breaks when upstream changes output) or **semantic** (silently becomes a
+frozen definition of the upstream's older understanding). A dependency's defects are v1's defects, and
+their scope must be bounded explicitly in the comparison report.
+
 ## Residual uncertainty — `bearable`
 
 None of these can be closed without an authorized artifact inspection.
@@ -300,9 +437,12 @@ could not.
    **Running assessment.** Options **(b) and (c) would each have to justify themselves against option
    (a)**, which is now producing more than expected: because the strongest candidates are
    privacy-conscious independent products, they tend to publish API references and business figures
-   precisely because they are small. Across three candidates the blocker for store-only apps has been
+   precisely because they are small. Across four candidates the blocker for store-only apps has been
    consistent and is not expected to change: the binary cannot be lawfully obtained without an owner
-   decision, and no candidate so far has needed it to reach a defensible verdict.
+   decision, and no candidate so far has needed it to reach a defensible verdict. **`oscar` resolved the
+   question from the other direction** — as a GPLv3 project it is fully inspectable with no owner decision
+   at all, which removes any argument that an authorization decision is needed *in order to* inspect
+   source when source is already published.
 3. **Shortlist adjustment.** `emoods` was dropped (no DNS A record for `emoods.net`). Confirm whether a
    replacement tenth candidate is wanted. **Not blocking** — nine candidates remain and are being
    processed in order.
@@ -317,9 +457,19 @@ could not.
 - Phase 2A is never silently skipped for a mobile candidate: it is either performed, or recorded as not
   performed with a reason.
 - Before concluding that a candidate is uninspectable, **check every vendor-published surface**: a
-  GitHub organisation, an open-source component, a public API reference, published datasets or research
-  artifacts, a public roadmap, and self-published business figures. Two of the three candidates
-  processed so far yielded substantive static findings this way.
+  GitHub/GitLab organisation, an open-source component, a public API reference, published datasets or
+  research artifacts, a public roadmap, and self-published business figures. **Three of the four
+  candidates processed so far yielded substantive static findings this way**, and one (`oscar`) reached a
+  full implementation inspection from a GPLv3 repository.
+- **When a candidate is a dependency of AnxietyWatch v1, not merely a competitor, two extra checks are
+  mandatory:** test the **format contract for drift** (compare the header or schema v1 was written
+  against with what the upstream currently emits, token by token — a length check is not a schema check),
+  and state whether the inheritance is **vocabulary** (breaks when upstream changes output) or
+  **semantic** (silently freezes the upstream's older understanding). A dependency's defects are v1's
+  defects, and their scope is bounded explicitly rather than left implicit.
+- **An inspection mode is not an observation.** *Performed* means the implementation was read. Running
+  the software requires a separate, explicit authorization decision, and static findings and runtime
+  observations are never merged into one evidence class.
 - **A documented contract is not an observed behaviour.** API-reference findings are labelled as
   documented, never described as verified or working, and no vendor endpoint is called without an
   explicit authorization decision.
