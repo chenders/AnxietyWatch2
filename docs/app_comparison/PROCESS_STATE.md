@@ -23,8 +23,8 @@ parallelism, no prefetching a later candidate's research while an earlier one is
 Shortlist order is from `CANDIDATE_SHORTLIST.md`. The ordering is a **review order**, not a quality
 order — see `RESEARCH_METHOD.md` §2.4.
 
-**Active candidate: `#10 mindshift`.** Candidates 1–9 are complete. `#10 mindshift` is not
-started and must not be begun until this file — with candidate 9's record — is committed.
+**Active candidate: none — the shortlist is exhausted.** Candidates 1–10 are complete. No further candidate
+may be started without an owner decision; see **Owner decisions pending** §3.
 
 | # | Slug | Score | Status | Started | Completed | Blocker |
 |---|---|---|---|---|---|---|
@@ -37,7 +37,7 @@ started and must not be begun until this file — with candidate 9's record — 
 | 7 | `empatica` | 14 | **Complete with artifact-and-regulator inspection** | 2026-10-06 | 2026-10-06 | App binary not inspected (closed source, store-only, **prescription-gated**; no lawful route to the binary, and no Android artifact located at all). No vendor source exists. **No API was inspected** — the Cloud API documentation is supplied to clients only. The inspection mode is a new one: **the vendor's own published artifacts plus an independent regulator's record of the vendor's own submission.** |
 | 8 | `oura` | 13 | **Complete with documented-contract inspection** | 2026-10-06 | 2026-10-06 | No binary and no source inspected. The Terms **prohibit** reverse engineering and circumventing subscription restrictions, so Phase 2A was closed by contract and not by accident. The vendor's **published OpenAPI 3.1 contract was inspected in full** — 72 paths, 75 schemas, 274 resolvable `$ref`s — together with its legal, trust and research surfaces. **No endpoint was called, including the sandbox.** |
 | 9 | `homeassistant` | 13 | **Complete with full published-source inspection** | 2026-10-06 | 2026-10-06 | Apache-2.0, so Phase 2A ran on **published source** at tag `2026.9.4` (`9212531f…`) with no owner decision. The state machine has first-class `unknown`/`unavailable`; the **alert path has no branch for either** and ends the alert — sending the resolution message — when the watched entity goes absent. Raw history is **hard-deleted** after `purge_keep_days` (default 10) with no tombstone; hourly statistics are **upserted**. `components/sensor/recorder.py:239` **does not parse** under Python 3, verified four ways, and the module is imported by its own test file. **No binary, no running instance, zero runtime observations.** |
-| 10 | `mindshift` | 12 | Not started | — | — | — |
+| 10 | `mindshift` | 12 | **Complete with published-client and public-records inspection** | 2026-10-06 | 2026-10-06 | App binary not inspected (closed source, store-only; no lawful route to the binary). No vendor source and **no API contract** exists. The inspected surface is the vendor's **published web client** (741,896-byte served bundle, read as text) plus public records: two storefront listings, the App Store privacy panel, the independent registration **NCT04562948**, the peer-reviewed paper **PMID 40656972** and its **corrigendum PMID 40655914**. **No endpoint was called and no runtime was observed.** |
 | — | `emoods` | — | Skipped | — | — | No DNS A record for `emoods.net` at research time |
 
 **Sequencing rule in force.** Only one row may be **In progress**. A candidate is started only after the
@@ -57,9 +57,11 @@ previous one's four deliverables exist and its verification command has been run
 | **Candidate 5 of 10 — `sleephq`** | **Complete (with a partial inspection)** | See §Candidate 5 |
 | **Candidate 6 of 10 — `nightscout`** | **Complete (full implementation inspection)** | See §Candidate 6 |
 | **Candidate 7 of 10 — `empatica`** | **Complete (artifact-and-regulator inspection)** | See §Candidate 7 |
-| Candidates 8–10 | **Not started** | No files created. No research begun. |
+| **Candidate 8 of 10 — `oura`** | **Complete (documented-contract inspection)** | See §Candidate 8 |
+| **Candidate 9 of 10 — `homeassistant`** | **Complete (full published-source inspection)** | See §Candidate 9 |
+| **Candidate 10 of 10 — `mindshift`** | **Complete (published-client and public-records inspection)** | See §Candidate 10 |
 | Pilot review by owner | **Completed** | Owner instructed the run to continue; mode switched to full sequential |
-| Full sequential run of candidates 3–10 | **Authorized** | One candidate at a time |
+| Full sequential run of candidates 3–10 | **Authorized and completed** | One candidate at a time; shortlist exhausted |
 
 ## Candidate 1 — `bearable`
 
@@ -416,8 +418,8 @@ evidence.
    all times**"; the privacy policy says the vendor is "**progressing towards** SOC 2 Type II" with HIPAA
    controls "**designed to meet**"; the Play panel says only "encrypted in transit". The most
    conservative statement governs: SleepHQ is recorded as **not claiming SOC 2 Type II certification**.
-   Separately, the pricing page lists the Magic Uploader on the **free** tier while the shop states it
-   "requires a SleepHQ Pro subscription" — the **second unreconciled conflict between two current vendor
+   Separately, the pricing page lists the Magic Uploader on the **free** tier while the shop states "you
+   need to have a SleepHQ Pro subscription" — the **second unreconciled conflict between two current vendor
    surfaces** in this package (after Bearable).
 
 **Where SleepHQ is ahead of both AnxietyWatch versions** (stated without hedging): device breadth (~19
@@ -1164,7 +1166,7 @@ cloud out in the open.
 
 **Mode-record note — a first for the package.** This is the **only candidate inspected where the mode
 itself required no judgement call**: three of ten candidates were inspected from published source and this
-one closed the "can we lawfully inspect the strongest artifact?" question completely, by licence. It also
+one closed the question of whether the strongest artifact can lawfully be inspected completely, by licence. It also
 produced the package's **first case where a mature *unrelated* project's code vindicates a V2 rule** rather
 than merely differing from it — which is stronger evidence for the rule than any competitor's marketing,
 because the project had no stake in it.
@@ -1208,6 +1210,164 @@ itself. Refuting the shortlist's hypothesis is **not** a criticism of the shortl
 being tested, which is what the entry invited. And the fact that a mature project shares V2's conclusions is
 **not** a V2 advantage: it is evidence that the conclusions are right, which is a weaker claim and the one
 the report actually makes.
+
+## Candidate 10 — `mindshift`
+
+| Deliverable | Path | Status |
+|---|---|---|
+| Claimed features and purpose | `mindshift/mindshift_CLAIMED_FEATURES_AND_PURPOSE.md` | Written — 15 sections, claim ledger **M-1…M-58**, artifact SHA-256 table, gaps **G-1–G-12**, shortlist correction (§14.4) |
+| Authorized implementation inspection | `mindshift/mindshift_IMPLEMENTATION_INSPECTION.md` | Written — **performed: published web client and public records.** Five-way privacy-URL verification chain, static architecture findings, **56-row** claim reconciliation, **zero** runtime observations |
+| Candidate-specific Prompt 2 | `mindshift/PROMPT_2.md` | Written — `PROMPT2-EVIDENCE-FIRST.md` base plus the `PROMPT2-PRIVACY-AND-OPERATING-MODE.md` supplementary block (the same pair chosen for `empatica`) |
+| Comparison report (Prompt 2 run) | `mindshift/mindshift_COMPARISON.md` | Written — 14 sections |
+
+**Verification command:**
+
+```sh
+ls -l docs/app_comparison/mindshift/
+```
+
+**Inspection mode:** **performed — published web client and public records.** The app binary was **not**
+obtained (closed source, store-only, no lawful route), there is no vendor source, and there is **no published
+API contract** — the third candidate in the package with none. What was available instead is the vendor's
+**published client**: `index-BogFfh2L.js`, 741,896 bytes, SHA-256 `1bb16811…`, read as text. That is
+`[FOUND IN PUBLISHED CLIENT]` — a **static** class, not a runtime and not a binary. **The runtime-observation
+count for this candidate is zero.**
+
+**Authorization basis.** Documents served to any unauthenticated visitor plus public records: the site's HTML
+and JavaScript, two storefront listings and the iTunes Lookup record, the App Store App Privacy panel (which
+Apple labels "**This information has not been verified by Apple.**"), the ClinicalTrials.gov v2 record
+`NCT04562948`, and the paper and corrigendum from Europe PMC / PMC. **No DRM, licence or protection was
+circumvented; no certificate pinning was touched; no account, credential or token was used; no endpoint was
+called**, including `/api/analytics/session`, `/api/analytics/events`, `/api/admin/*` and
+`/api/resources/*` — those appear in this package only as strings read from published JavaScript.
+
+**Five findings, in order of consequence.**
+
+1. **The privacy policy both storefronts declare does not exist.** `https://mindshiftcbt.com/privacy/` returns
+a genuine **HTTP 404** (3,362 B, `<title>Page not found | MindShift CBT</title>`), verified **five independent
+ways**: the direct probe (with three control paths returning 200), the site's own **9**-URL sitemap, the
+**13**-path SPA router table, a fixed-string sweep of the 741,896-byte bundle (`Privacy Policy` → 0,
+`Terms of Use` → 0, `Terms` → 0), and a same-day re-fetch returning **byte-identical** content (SHA-256
+`4a9ba979…` unchanged). **This is the strongest verified absence in the package.** It is recorded as a
+documentation-lifecycle and discoverability defect — **not** as a data-handling finding and **not** as an
+allegation of intent. The vendor's own release notes for **v3.0.1** and **v3.0.3** say the documents were
+updated, so they existed; the URL still published does not resolve.
+2. **The vendor's own funded study is the counter-surface to its marketing.** The site renders "Clinically
+proven", "Proven, not promised." and "Most anxiety apps are guesswork." The paper it cites reports that
+"**Improvements were unrelated to the frequency with which participants used the MindShift app**", that the
+result was consistent with response "**but not remission**", and that "**the lack of a comparison group who
+abstained from using the MindShift app limits the causal inferences**". **Recorded as selective citation with
+both sides quoted, and left standing — not a misconduct allegation.**
+3. **An independent registry outranks the vendor's own noun, twice.** Registration says
+`studyType: **OBSERVATIONAL**`, `observationalModel: ECOLOGIC_OR_COMMUNITY`, **no `armsInterventionsModule`**,
+and **one** primary outcome plus three secondary. The paper's title says "trial" and its text says "**four
+primary outcomes**"; the site says "open-label clinical trial" and "**all four primary outcomes**". **Two
+conflicts — design class and primary-outcome count — both quoted, both unresolved.** The outcome count is the
+sharper of the two.
+4. **The site ships its own visitor telemetry and publishes no notice for it.** The client mints or reads a
+UUIDv4 in `sessionStorage`, `POST`s it to `/api/analytics/session` with `credentials:"include"`, and posts
+four event categories (`page_view`, `client_error`, `resource_opened`, `features_explored`) to
+`/api/analytics/events`, both ending `.catch(()=>{})`. In the same bundle: `consent` → **0**, `banner` → 0,
+`GDPR` → 0, and all six `cookie` hits are inside the bundled Sentry SDK. **The finding is the absence of a
+notice, on a site that has no privacy page to carry one — and it is static**: it establishes what the code is
+written to do, not that any endpoint is live or that any event was stored.
+5. **Two disclosure asymmetries a claims-only reading cannot see.** (a) The paper's competing-interest
+statement reads "**Lance M. Rappaport reports financial support was provided by Anxiety Canada**" — Anxiety
+Canada being the app's original co-developer — and the marketing surface that cites the paper carries no
+funding disclosure. (b) The paper's methods restrict the analysis to "**the 156 participants for whom
+entrance of their study identification code into the MindShift smartphone app verified that they downloaded
+the smartphone app**", so **224 of 380 never demonstrably installed the product**, while every headline
+surface carries 380.
+
+**Claim reconciliation:** 56 rows — **20 match, 12 documented-only, 12 do not match, 10 partial, 2 outside
+classes.** Machine-counted from the table, not written from impression. **Eight rows are `DOES NOT MATCH` for
+vendor-surface conflicts within the vendor's own material** (the dead privacy URL on both storefronts, the
+"clinical trial" class, the four-outcome claim, its internal three-versus-four inconsistency, "Clinically
+proven", "Proven, not promised.", the "4.8 rating", and the FAQ's privacy meta-description, which promises to
+explain "how it protects your privacy" on a site with no privacy document).
+
+**Evidence gaps:** **G-1–G-12.** The decisive one is **G-1**: whether a privacy policy or terms document
+exists **inside the app** is `[UNKNOWN]`, because the binary was not inspected — and the release notes say the
+documents were updated. **G-3** is the second: `anxietycanada.com` returned a **byte-identical 9,321-byte SPA
+shell for every path**, including `/robots.txt` and `/sitemap.xml`, which is a **retrieval failure** and not an
+absence of content. **A 404 and an error shell are different findings and are never merged in this file.**
+
+**Shortlist correction carried in.** The shortlist entry attributes MindShift to **Anxiety Canada** and
+describes it as non-commercial. Both are superseded: the App Store `sellerName` and the Play developer are
+**247 Labs Inc** (a for-profit Toronto consultancy), the site says the app was "**originally developed in
+partnership with** Anxiety Canada" — past tense — and a B2B surface (`/for-clinics`, `/institutions`) with
+**unpublished** pricing runs beside a "Always Free" consumer app, with Clerk organizations and Stripe billing
+visible in the published client. **This materially alters the shortlist premise, not merely its wording**, and
+it is recorded in the claimed-features file §14.4 and in **Owner decisions** §3 below.
+
+**Positive comparators recorded for the vendor** (a comparison that lists only differences is not a
+comparison): three named Canadian crisis lines at the point of use — **988**, **Kids Help Phone**, **Talk
+Suicide Canada** — with `tel:` links and qualifiers; the scope boundary stated in the user's language ("not a
+medical device, and not a replacement for therapy or crisis care", "mild-to-moderate anxiety", "Adolescents
+(13+)"); an explicit refusal of a clinician portal in favour of patient-controlled export; per-page "Last
+reviewed and updated" timestamps on content; and a published corrigendum — the process working.
+
+**Mode-record note.** Two firsts. (a) This is the package's **first candidate where the strongest artifact is
+the vendor's own peer-reviewed paper**, which makes the counter-surface to a vendor's marketing **another
+surface of the same vendor** — a *within-vendor* finding rather than a third-party one. (b) It is the **first candidate
+where a vendor's own JavaScript is a primary evidence surface**, and the discipline that made it usable is
+recorded in `RESEARCH_METHOD.md`: a served client is a **published artifact** (`[FOUND IN PUBLISHED CLIENT]`,
+static), a **zero must be counted with its match mode stated** (`Sentry` capital 20 vs case-insensitive 129;
+`Clerk` capital 44 vs case-insensitive 505), and a string in the **HTML shell** is not a string in the
+**bundle** (`i.replit.com/script.js` is in every served document including the 404s, and **0** times in the
+741,896-byte client — attribute the shell, not the client).
+
+## Residual uncertainty — `mindshift`
+
+- **R1** **Do the privacy policy and terms exist inside the app?** The release notes say they were updated;
+the web surface publishes neither and the declared URL 404s. **Decisive for the severity of finding 1 and
+for gap G-1.** Requires the binary, or a vendor statement.
+- **R2** **Does a controlled or comparative study of MindShift exist?** It decides whether "Clinically
+proven" is a present-tense claim with a source. The paper cites prior MindShift work as "[35], [36]"; read
+those. **Decisive for finding 2.**
+- **R3** **Was the quality-of-life effect size restated after the corrigendum?** The corrigendum reports
+"an unfortunate error in the calculated total score for quality-of-life from the Q-LES-Q-SF", corrects the
+baseline (M 30.76 → 47.83, SD 9.77 → 15.39) and says the primary conclusions are unchanged, but does **not**
+restate d = 0.31. `[UNKNOWN]` — gap **G-11**.
+- **R4** **Is the site's analytics disclosed anywhere at all?** No notice was found in the client. The Play
+data-safety block describes the **app**, not the website, and is a developer self-declaration Apple labels
+unverified. **Decisive for the scope of finding 4.** Requires a vendor statement; the endpoints are **not** to
+be called.
+- **R5** **Which surface reflects the shipped UI language set?** Site FAQ "English and French", App Store
+`['EN','FR','ES']`, client switch `en`/`fr`, and a **v2.0.9** release note describing the app as bilingual.
+Four surfaces, two answers — gap **G-4**.
+- **R6** **Is there a moderation policy a user can read?** The bundle contains **0** occurrences of
+`guidelines`, and no terms exist on the web; the v4.1.0 notes imply an in-app guidelines surface. Publication
+placement, not absence — gap **G-7**.
+- **R7** **Does the app implement AODA/WCAG?** The site's own role description claims it; the App Store
+accessibility section is unpopulated. A design standard is not a declared feature; the two objects are kept
+apart.
+- **R8** **What are the B2B terms and prices?** `/institutions` says "Talk to us about early access for your
+organization"; the waitlist was **not** joined. Gap **G-6**.
+- **R9** **Was the funding source visible anywhere on the marketing surface?** Not found. A negative search
+result on the surfaces read, not proof of absence.
+- **R10** **Anxiety Canada's current statements.** Unreadable — byte-identical SPA shell for every path.
+Gap **G-3**.
+- **R11** **Does the site's telemetry actually transmit?** `[UNKNOWN]`; the endpoints were never called. The
+finding is written to the level of the code and no further.
+- **R12** **The shortlist correction is recorded here but not written back into
+`CANDIDATE_SHORTLIST.md`** — a reader of that file alone still sees the superseded operator attribution and
+the superseded commercial-model description.
+
+**Most promising untried step, and it is the only one that needs an owner decision.** Every remaining
+high-value question (R1, R3, R6, R7) is behind the **app binary**, which cannot lawfully be obtained for this
+candidate. The cheap read-only steps that do not need it — reading the paper's references [35] and [36], and
+checking the registration's `history`/version fields for an amendment — are recorded in `PROMPT_2.md` as
+unresolved questions **M2**, **M10** and **M11**, and they are the ones this file recommends trying first.
+
+**Not to be mistaken for a finding.** A dead declared URL is **not** evidence of ungoverned data handling. A
+funded study is **normal**; the finding is a **disclosure asymmetry between two surfaces by the same author**,
+and the paper's candour is a point in the vendor's favour. First-party analytics with no notice on a site with
+no privacy page is a **recordable tension**, not an accusation, and it is **static** — it says what the code is
+written to do. Two hypotheses — a Segment CDP integration and a Google `gtag` tag — were tested and
+**refuted**; neither is recorded as a finding anywhere in this package. And the fact that a free CBT app has
+better crisis routing than this project is a **gap in this project**, not a defect in the candidate, and it is
+recorded as such in the comparison's §11 and §14.
 
 ## Owner decisions pending
 
@@ -1257,10 +1417,36 @@ the report actually makes.
    unrelated project could be read rather than merely described. Combined with `oscar` and `nightscout`, this
    means **every candidate that publishes its source has now been inspected**, and the option (b)/(c)
    question is confined to store-only commercial apps with no published surface, where it has never yet
-   been the difference between a verdict and no verdict.
-3. **Shortlist adjustment.** `emoods` was dropped (no DNS A record for `emoods.net`). Confirm whether a
-   replacement tenth candidate is wanted. **Not blocking** — one candidate remains (`#10 mindshift`), to be
-   processed after this file is committed with candidate 9's record.
+   been the difference between a verdict and no verdict. **`mindshift` closed it from a fifth direction, and
+   the one that should settle it: the strongest artifact was not source, not a binary and not an API
+   contract, but the vendor's *own published client* plus its *own peer-reviewed paper* and its *own
+   independent registry record*.** The 741,896-byte served JavaScript yielded the package's strongest
+   verified absence (a storefront-declared privacy URL that 404s, confirmed five ways) and its first
+   within-vendor evidence conflict — a funded paper whose reported limitations contradict the marketing
+   surface that cites it. **No owner decision was needed and no endpoint was called.** The remaining
+   high-value questions for that candidate **are** behind the binary (residual uncertainty R1, R3, R6, R7),
+   so `mindshift` is now the one candidate where option **(b)/(c) would plausibly change a verdict** rather
+   than merely deepen one — and it is also the candidate where the contract case for staying closed is
+   weakest, since nothing in the App Store or Play terms was found prohibiting local inspection of the
+   shipped app. **That decision is placed before the owner in §3 and is not taken here.**
+3. **Shortlist adjustment.** `emoods` was dropped (no DNS A record for `emoods.net`). **This decision is now
+due:** the ten-candidate shortlist is **exhausted** (10 of 10 complete). Confirm whether a replacement
+eleventh candidate is wanted, and confirm the two **shortlist corrections** that the run has accumulated:
+
+   - **`homeassistant`** — the shortlist hypothesis that a general-purpose hub has no three-state honesty
+     model was **refuted**; `STATE_UNKNOWN`/`STATE_UNAVAILABLE` are first-class (`const.py:303,313`). Recorded
+     in gap **R12** of that candidate's residual uncertainty.
+   - **`mindshift`** — the shortlist attributes the app to **Anxiety Canada** and describes it as
+     non-commercial. Both are superseded: the operator is **247 Labs Inc** (for-profit; App Store
+     `sellerName` and Play developer), the site says the app was "**originally developed in partnership with**
+     Anxiety Canada" in the past tense, and a B2B surface with **unpublished** pricing runs beside a "Always
+     Free" consumer app, with Clerk organizations and Stripe billing in the published client. Recorded in gap
+     **G-8** and in the claimed-features file §14.4.
+
+   Neither correction is a criticism of the shortlist — both are hypotheses the entries invited a run to
+test, which is what the entries were for. **Both are recorded in the candidate deliverables and in this file,
+and neither has been written back into `CANDIDATE_SHORTLIST.md`**, which still carries the old wording until
+it is next edited. **Not blocking.**
 
 ## Rules this file enforces
 
@@ -1402,3 +1588,29 @@ the report actually makes.
   `empatica` a fabricated placeholder SHA-256 was written into the artifact table and then replaced with
   computed values; the rule is now recorded inside that file. **Compute the hash or mark the row "not
   hashed".**
+- **An absence is verified by a conjunction of methods, not by one fetch.** When a vendor declares an
+  artifact and the artifact is not there, close it with the direct probe (plus a control path that returns
+  200), the vendor's own sitemap, the client's own route table, a whole-artifact string sweep, and a
+  byte-identical re-fetch. `mindshift`'s storefront-declared privacy URL is the package's strongest verified
+  absence on this basis: **no single method would have sufficed**.
+- **A published client is a static evidence class, and a reference count is meaningless without its match
+  mode.** Findings read from served JavaScript are labelled `[FOUND IN PUBLISHED CLIENT]` and state only what
+  the code is *written to do*. A string in the served HTML **shell** is not a string in the **bundle**
+  (`i.replit.com/script.js`: every document including the 404s; **0** in the 741,896-byte bundle). Counts are
+  reported with their mode, because `sentry` is 129 case-insensitive and 20 as `Sentry`.
+- **A vendor's own funded study is the counter-surface to the vendor's own marketing.** Quote the funder's
+  role from the paper's competing-interest disclosure, never infer it; never upgrade a preprint to
+  peer-reviewed; and treat an independent **registry** record (`studyType`, outcome counts) as outranking the
+  vendor's noun. Record a headline sample size against the paper's verified-install subsample when they
+  differ (`mindshift`: 380 recruited, 156 code-verified). Read a corrigendum as its own artifact, and where it
+  does not restate an affected effect size, record `[UNKNOWN]` rather than carrying the old value forward.
+- **A quote-verification sweep is a required pre-commit step, and the checker must never be circular.** The
+  target file is excluded from its own corpus; the corpus is the package docs plus the V2 and V1 trees;
+  pairing resets at every blank line and table row; HTML tags are stripped and JS `\uXXXX` escapes unescaped;
+  a markdown link inside a quotation is split out. **A MISS list is triaged** into checker artifact, author
+  paraphrase, or real defect — never auto-accepted. A paraphrase wearing quotation marks is the specific
+  failure this package exists to avoid.
+
+**The full rule register, with the sub-check table and the candidate that first produced each rule, lives in
+`RESEARCH_METHOD.md` §6.1.** This list records the rules that changed a verdict or a commit; §6.1 is
+authoritative when the two disagree.
