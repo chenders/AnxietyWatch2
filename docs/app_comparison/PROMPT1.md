@@ -142,6 +142,7 @@ For each candidate, create:
 Each file should cover:
 
 - Research date and a one-paragraph executive summary
+- Whether authorized implementation inspection was performed, unavailable, or not permitted
 - Product purpose and target user
 - Product availability status: active, beta, discontinued, region-limited, or unclear
 - User-facing workflows
@@ -156,6 +157,7 @@ Each file should cover:
 - Pricing, subscriptions, hardware costs, geographic limitations, and platform availability
 - Clinical/regulatory claims and disclaimers
 - Evidence table with URLs and confidence labels
+- Link to `{APP_SLUG}_IMPLEMENTATION_INSPECTION.md` when it exists
 - Key similarities and differences versus AnxietyWatch v1 and AnxietyWatch2, separated into current v1, current v2, and specified v2 target where relevant
 - Whether the candidate competes with the whole product or only a subsystem
 - Important weaknesses, omissions, or unresolved questions
@@ -170,6 +172,30 @@ When a candidate offers sleep or physiological monitoring, distinguish:
 - measured, stale, missing, and inferred values;
 - local alarm behavior versus phone/cloud notifications.
 
+### Phase 2A — Authorized implementation inspection for mobile apps
+
+Public claims research is not enough for an Android or iOS candidate when a lawful, authorized application artifact is available. Perform a separate implementation-inspection pass only when the researcher has permission to inspect that exact APK, AAB-derived APK, IPA, source build, test build, or device installation. Public availability alone is not authorization to bypass protections or access private data.
+
+Record the artifact's app name, package/bundle identifier, version/build, source, acquisition date, SHA-256 hash, platform, device/emulator used, tools, and inspection limits. Never put credentials, tokens, private user data, or exploitable secret material in the report.
+
+Use a layered process:
+
+1. **Static inventory:** inspect Android manifest/resources/permissions, iOS `Info.plist`/entitlements, URL schemes, background modes, declared services, bundled frameworks/SDKs, feature flags, strings, assets, local database structures, file formats, and documented or embedded endpoints. For Android, account for base and split APKs, DEX files, native libraries, and resource tables; for iOS, account for the IPA payload, Mach-O binary, embedded frameworks, Objective-C/Swift metadata, and resources.
+2. **Code and resource review:** decompile or disassemble only as permitted. Look for implemented screens, data models, API clients, BLE/service identifiers, HealthKit types, import/export paths, notification/alarm code, analytics/advertising SDKs, subscription gates, experiments, debug-only paths, remote configuration, authentication flows, certificate-pinning behavior, hard-coded endpoints, and error handling. A string or dead code is not proof that a feature is reachable, and a discovered secret must never be copied into the report.
+3. **Authorized runtime observation:** use a normal test account, synthetic data, and a controlled device or emulator. Exercise relevant workflows, record visible behavior, background behavior, permissions, offline behavior, local storage, logs, and network destinations. Do not bypass authentication, DRM, licensing, encryption, certificate pinning, anti-debugging, or platform protections. If a behavior cannot be observed, record it as blocked or unknown.
+4. **Claim reconciliation:** compare public claims with static evidence and runtime evidence. Classify each feature as publicly claimed and observed, publicly claimed but not observed, implemented but not publicly claimed, present only as unreachable/experimental code, contradicted by the artifact, or unresolved.
+5. **Non-feature findings:** record material observations about privacy, telemetry, third-party SDKs, permissions, cloud dependence, data retention, exportability, local storage, accessibility, performance, subscription gates, and security-relevant design. Do not turn a code smell into a confirmed vulnerability without evidence.
+
+Use appropriate authorized tooling for the platform—for example Android package/resource/code inspection and iOS archive/Mach-O/resource inspection—but do not prescribe or perform protection bypasses. If authorization or a usable artifact is unavailable, create the inspection deliverable anyway and state **not performed**, the reason, and what remains unknown.
+
+Create, when applicable:
+
+```text
+./docs/app_comparison/{APP_SLUG}/{APP_SLUG}_IMPLEMENTATION_INSPECTION.md
+```
+
+This file must keep public claims, static findings, runtime observations, inferences, and unknowns in separate sections. Include a claim-reconciliation table with columns for feature, public claim, static evidence, authorized runtime observation, reachability/maturity, and conclusion. Prompt 2 must read it when present and use it to distinguish claimed features from implemented and reachable features.
+
 ## Phase 3 — Create a tailored Prompt 2 for each candidate
 
 For every candidate, create:
@@ -178,7 +204,17 @@ For every candidate, create:
 ./docs/app_comparison/{APP_SLUG}/PROMPT_2.md
 ```
 
-Prompt 2 must be tailored to that candidate and should instruct a future AI to perform a deeper, feature-level and general comparison. It should be usable on its own after the candidate research file is read, while still linking back to the shared AnxietyWatch product description. It should include:
+Use one of the reusable prompt variants in this directory as the starting point:
+
+```text
+./docs/app_comparison/PROMPT2.md
+./docs/app_comparison/PROMPT2-EVIDENCE-FIRST.md
+./docs/app_comparison/PROMPT2-TECHNICAL-SYSTEMS.md
+./docs/app_comparison/PROMPT2-USER-VALUE.md
+./docs/app_comparison/PROMPT2-PRIVACY-AND-OPERATING-MODE.md
+```
+
+Choose the variant according to the candidate's primary comparison value, then tailor it with the candidate name, slug, URLs, unresolved questions, and evidence. Do not copy a generic prompt without adapting it. Prompt 2 must instruct a future AI to perform a deeper, feature-level and general comparison. It should be usable on its own after the candidate research file is read, while still linking back to the shared AnxietyWatch product description. It should include:
 
 - The candidate's name and official URLs
 - The relevant AnxietyWatch v1 and AnxietyWatch2 context
@@ -213,8 +249,11 @@ At the end of the research session, produce:
 ```text
 ./docs/app_comparison/CANDIDATE_SHORTLIST.md
 ./docs/app_comparison/{APP_SLUG}/{APP_SLUG}_CLAIMED_FEATURES_AND_PURPOSE.md
+./docs/app_comparison/{APP_SLUG}/{APP_SLUG}_IMPLEMENTATION_INSPECTION.md
 ./docs/app_comparison/{APP_SLUG}/PROMPT_2.md
 ```
+
+Create the implementation-inspection file even when inspection cannot be performed; state the reason and the resulting evidence gap. The five reusable Prompt 2 variants are templates and do not replace the candidate-specific `PROMPT_2.md` files.
 
 Do not claim that the eventual `{APP_SLUG}_COMPARISON.md` files exist until Prompt 2 has actually been run. Prompt 1 creates the research inputs and comparison prompts; the later comparison stage creates those reports.
 
