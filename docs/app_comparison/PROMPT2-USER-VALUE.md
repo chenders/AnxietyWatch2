@@ -23,7 +23,8 @@ AnxietyWatch2 target. Do not present planned Raspberry Pi capabilities as alread
 
 If the candidate is an Android or iOS app and an authorized artifact is available, do not skip inspection: read
 `{APP_SLUG}_IMPLEMENTATION_INSPECTION.md`, or perform the inspection before finalizing if the file is absent. For an
-Android emulator, configure `10.0.2.2:8888` before launching or installing the target app and record the proxy setup.
+Android emulator, configure free mitmproxy at `10.0.2.2:8080` before launching or installing the target app and
+record the proxy setup.
 Use it to identify the difference between advertised, implemented, reachable, gated, experimental, and unverified
 user-facing behavior. Record the artifact/version and inspection limits. Do not send real user data, log into
 production services, bypass platform or app protections, or access private data; if inspection is unavailable, preserve

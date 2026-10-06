@@ -23,7 +23,8 @@ outage/support history where available. Separate policy promises from technicall
 
 If an authorized Android or iOS artifact is available, do not skip inspection: read
 `{APP_SLUG}_IMPLEMENTATION_INSPECTION.md`, or perform the inspection before finalizing if the file is absent. For an
-Android emulator, configure `10.0.2.2:8888` before launching or installing the target app and record the proxy setup.
+Android emulator, configure free mitmproxy at `10.0.2.2:8080` before launching or installing the target app and
+record the proxy setup.
 Reconcile privacy claims with observed or statically evidenced permissions, background modes, analytics/advertising
 SDKs, endpoints, local storage, export paths, subscription gates, and account behavior. Record artifact/version/hash
 and inspection limits. Do not send real user data, log into production services, bypass protections, or access private

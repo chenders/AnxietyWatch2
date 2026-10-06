@@ -39,8 +39,9 @@ classes:
 - unknown or blocked behavior.
 
 The inspection record should identify the exact artifact, version/build, platform, SHA-256, tools, device/emulator,
-authorization boundary, and limitations. For an Android emulator, configure `10.0.2.2:8888` before launching or
-installing the target app, verify Charles is listening, and record the proxy setup. It may cover
+authorization boundary, and limitations. For an Android emulator, configure the free mitmproxy stack at `10.0.2.2:8080` before launching or
+installing the target app, verify mitmproxy is listening on `10.0.2.2:8080`, and record the proxy setup. Follow
+`docs/app_comparison/FREE-ANDROID-TRAFFIC-INSPECTION.md`; it may cover
 manifests/entitlements, permissions, background modes, screens, data models, APIs, BLE and HealthKit identifiers,
 local storage, exports, notifications, analytics/advertising SDKs, subscriptions, feature flags, cloud dependencies,
 and error handling. Do not treat a string, endpoint, SDK, or code path as a user-accessible feature without evidence

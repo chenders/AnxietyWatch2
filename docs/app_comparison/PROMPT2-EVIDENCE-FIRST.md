@@ -29,9 +29,10 @@ observations, experimental or unreachable paths, inference, and unknowns.
 
 An implementation-inspection pass may examine manifests/entitlements, permissions, background modes, screens, data
 models, API clients, BLE/HealthKit identifiers, local storage, export paths, notifications, analytics/advertising SDKs,
-subscriptions, feature flags, endpoints, and error handling. For an Android emulator, configure `10.0.2.2:8888`
-before launching or installing the target app and record the proxy setup; do not send real user data or log into
-production services. A string, dead code path, bundled SDK, or endpoint is not proof of a user-accessible feature. If
+subscriptions, feature flags, endpoints, and error handling. For an Android emulator, configure the free mitmproxy stack at `10.0.2.2:8080`
+before launching or installing the target app and record the proxy setup. Follow
+`docs/app_comparison/FREE-ANDROID-TRAFFIC-INSPECTION.md`; do not send real user data or log into production services.
+A string, dead code path, bundled SDK, or endpoint is not proof of a user-accessible feature. If
 inspection is unavailable or blocked, document that as an evidence gap.
 
 ## Core rules
