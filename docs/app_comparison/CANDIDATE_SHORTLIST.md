@@ -2,7 +2,12 @@
 
 **Research date:** 2026-10-06
 **Brief:** `docs/app_comparison/PROMPT1.md`
-**Mode:** pilot (shortlist built in full; only candidate 1 is processed)
+**Mode:** full sequential run — the shortlist was built in full and **all ten candidates have now been
+processed end to end**, one at a time. The rank-10 entry (MindShift) completed on 2026-10-06. Per-candidate
+status and the queue are in `PROCESS_STATE.md`; the evidence rules are in `RESEARCH_METHOD.md`.
+**Corrections:** two shortlist hypotheses were **tested and corrected** during the run — entry 9
+(Home Assistant, three-state model refuted) and entry 10 (MindShift, operator and commercial model). Both
+are marked inline in the entries below rather than silently rewritten.
 
 Status labels used throughout this package:
 
@@ -168,7 +173,7 @@ behind its correlation findings are not established from public pages at this re
 
 **Reason for inclusion.** Free and permanently free, community-maintained, and it is the practical
 destination of the SD-card data AnxietyWatch v1 imports. It is the reference implementation for
-"what a sleep clinician actually looks at" and a fair benchmark for whether AnxietyWatch's CPAP
+what a sleep clinician actually looks at, and a fair benchmark for whether AnxietyWatch's CPAP
 handling is credible or shallow. Also the closest peer to AnxietyWatch2's open-source posture.
 
 **Main comparison dimensions.** Depth of respiratory-event analysis; raw waveform/EDF handling;
@@ -314,7 +319,18 @@ benchmark for operational quality rather than clinical function.
 **Main comparison dimensions.** Local-only operation guarantees; automation/alarm reliability and
 failure signalling; integration and onboarding ergonomics; deployment, backup and upgrade story;
 how a health-specific platform must differ from a general-purpose hub; and how "unknown" states are
-surfaced (a general-purpose hub has no three-state honesty model).
+surfaced.
+
+> **Correction applied 2026-10-06, after inspection (refuted hypothesis).** This entry originally claimed
+> that a general-purpose hub has no three-state honesty model. **That hypothesis was tested and
+> refuted.** Home Assistant's state machine has `STATE_UNKNOWN` and
+> `STATE_UNAVAILABLE` as **first-class states** (`const.py:303,313`, tag `2026.9.4`,
+> commit `9212531f…`). What the inspection found instead is sharper and is the reason this candidate
+> still scores where it does: the three-state model is lost **downstream** — the `alert` integration has
+> **no branch for either absent state** and ends the alert, sending the resolution message, when the
+> watched entity goes offline (`alert/entity.py:98,115-126,148`). The finding is a **layer** finding, not
+> a platform finding. See `homeassistant/homeassistant_CLAIMED_FEATURES_AND_PURPOSE.md` §14.4,
+> `homeassistant/IMPLEMENTATION_INSPECTION.md`, and `PROCESS_STATE.md` gap **R12**.
 
 **Uncertainty / evidence gaps.** No physiological or clinical function; overlap is entirely
 architectural. Specific alarm/notification reliability guarantees are not established here.
@@ -325,19 +341,29 @@ architectural. Specific alarm/notification reliability guarantees are not establ
 
 | Field | Value |
 |---|---|
-| Company / project | Anxiety Canada (non-profit) |
+| Company / project | **247 Labs Inc** (for-profit Toronto consultancy) — *corrected after inspection; previously recorded as Anxiety Canada* |
 | URL | https://mindshiftcbt.com/ |
 | Platforms | iOS, Android |
-| Product type | Free, non-commercial, evidence-informed anxiety intervention app |
-| Overlaps | **AnxietyWatch v1** anxiety-specific layer and free/no-subscription positioning |
+| Product type | Free-to-consumer CBT app with a paid B2B/organisational surface — *corrected after inspection; previously recorded as "free, non-commercial"* |
+| Overlaps | **AnxietyWatch v1** anxiety-specific layer, and free/no-subscription positioning at the consumer tier |
 | Competing layer | v1 app (adjacent, not overlapping) |
 | Score | A 1 · B 3 · C 1 · D 1 · E 3 · F 3 = **12** |
 
 **Reason for inclusion.** Deliberately included as the *category* comparator. AnxietyWatch's name
 places it in the anxiety-app market, where the dominant purpose is intervention (CBT tools, thought
-records, exposure) rather than measurement and correlation. MindShift is free, non-commercial, and
-non-profit-backed, making it the fairest test of the claim that AnxietyWatch is not simply another
+records, exposure) rather than measurement and correlation. The consumer app is free with no
+subscription, making it the fairest test of the claim that AnxietyWatch is not simply another
 mood tracker — and a useful discoverability benchmark for the anxiety search category.
+
+> **Correction applied 2026-10-06, after inspection (materially altered premise).** This entry originally
+> attributed the app to **Anxiety Canada (non-profit)** and described it as **free and non-commercial**.
+> Both are superseded by the storefront records and the vendor's own site: the App Store `sellerName`
+> and the Google Play developer are **247 Labs Inc**, and the site says the app was "originally developed
+> in partnership with Anxiety Canada" — past tense. A B2B surface (`/for-clinics`, `/institutions`) with
+> **unpublished** pricing runs beside the "Always Free" consumer app, with Clerk organizations and Stripe
+> billing present in the vendor's published client. **The consumer tier is still free and the evidence
+> base is still real; the operator and the commercial model are what changed.** See
+> `mindshift/mindshift_CLAIMED_FEATURES_AND_PURPOSE.md` §14.4 and `PROCESS_STATE.md` gap **G-8**.
 
 **Main comparison dimensions.** Purpose (change anxiety now vs. understand anxiety over time);
 whether any physiology is involved; monetisation and data posture; evidence base and clinical
@@ -362,7 +388,7 @@ verified at this research date.
 | 7 | `empatica` | Empatica | Wearable + clinical ecosystem | v2 CNS + alarm | 14 |
 | 8 | `oura` | Oura | Wearable ecosystem | v2 data source | 13 |
 | 9 | `homeassistant` | Home Assistant | Open-source edge platform | v2 platform | 13 |
-| 10 | `mindshift` | MindShift CBT | Free non-profit app | v1 adjacent category | 12 |
+| 10 | `mindshift` | MindShift CBT | Free-to-consumer app (247 Labs Inc) | v1 adjacent category | 12 |
 
 The numeric score is deliberately *not* the ranking. Bearable is ranked first despite a lower total
 than Nightscout because dimension A (whole-product relevance to v1) is decisive for a pilot:
@@ -381,7 +407,7 @@ comparators rather than product competitors.
 | **Apple Health Records / FHIR-based PGHD tools** | Directly relevant to AnxietyWatch v1's `FHIRLabResultParser` and clinical-record import | Apple's own tooling is not a comparable product, and the FHIR ecosystem is a standard rather than a competitor. Better covered later as a standards/interop topic than as a shortlist row. |
 | **Visible (makevisible.com)** | HRV-based pacing for ME/CFS and Long Covid — symptom + physiology + personal-baseline overlap | Strong conceptual overlap but a narrower condition-specific audience than Bearable, which already covers the same comparison dimensions with more breadth. |
 | **Loop / OpenAPS / AndroidAPS** | Self-built closed-loop systems with local control and safety interlocks — architecturally instructive for the alarm path | The alerting comparison is better served by Empatica (validated alerting with clinical evidence) and the self-hosting comparison by Nightscout. Three DIY-closed-loop entries would crowd the list. |
-| **eMoods** | Would have been the strongest "free, offline, no-account, printable clinician report" comparator for v1's core loop | **Not selectable at this research date.** `emoods.net` returned no DNS A record from the research workstation, and the site could not be retrieved, so no claims could be evidenced. Re-test before any future inclusion. |
+| **eMoods** | Would have been the strongest free, offline, no-account comparator with a printable clinician report for v1's core loop | **Not selectable at this research date.** `emoods.net` returned no DNS A record from the research workstation, and the site could not be retrieved, so no claims could be evidenced. Re-test before any future inclusion. |
 
 ## 5. Known limitations of this shortlist
 
