@@ -923,6 +923,7 @@ safety judgement is offered, and no claim is made that a clearance is improper.
 | Authorized implementation inspection | `oura/oura_IMPLEMENTATION_INSPECTION.md` | Written — **documented-contract inspection, partially performed**: the vendor's published specification and legal/trust surfaces read. No binary, no source, **no endpoint called, nothing executed** |
 | Candidate-specific Prompt 2 | `oura/PROMPT_2.md` | Written — `PROMPT2-TECHNICAL-SYSTEMS.md` base plus the `PROMPT2-EVIDENCE-FIRST.md` supplementary block |
 | Comparison report (Prompt 2 run) | `oura/oura_COMPARISON.md` | Written — 14 sections |
+| Final findings, PDF | `docs/oura-final-findings.pdf` | Written — `oura_COMPARISON.md` at `be74b06` rendered with pandoc + weasyprint; extracted with `pdftotext -layout` and grepped for private identifiers (the public-info scanner skips binaries) |
 
 **Verification command:**
 
