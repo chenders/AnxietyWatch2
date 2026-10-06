@@ -23,8 +23,8 @@ parallelism, no prefetching a later candidate's research while an earlier one is
 Shortlist order is from `CANDIDATE_SHORTLIST.md`. The ordering is a **review order**, not a quality
 order — see `RESEARCH_METHOD.md` §2.4.
 
-**Active candidate: none.** Candidates 1–7 are complete. The next candidate is `#8 oura`, which is not
-started and must not be begun until this file is committed.
+**Active candidate: `#9 homeassistant`.** Candidates 1–8 are complete. `#9 homeassistant` is not
+started and must not be begun until this file — with candidate 8's record — is committed.
 
 | # | Slug | Score | Status | Started | Completed | Blocker |
 |---|---|---|---|---|---|---|
@@ -35,7 +35,7 @@ started and must not be begun until this file is committed.
 | 5 | `sleephq` | 12 | **Complete with partial inspection** | 2026-10-06 | 2026-10-06 | App binaries not inspected (closed source, store-only, account-gated; no lawful route to the APK). No vendor source exists. The vendor's **published OpenAPI specification was inspected in full** — 21 paths, 11 models, and a documented hash algorithm. **No endpoint was called.** |
 | 6 | `nightscout` | 15 | **Complete with full implementation inspection** | 2026-10-06 | 2026-10-06 | None. AGPL-3.0 source inspected at a pinned commit; no runtime observation (nothing was executed, no instance built or contacted). |
 | 7 | `empatica` | 14 | **Complete with artifact-and-regulator inspection** | 2026-10-06 | 2026-10-06 | App binary not inspected (closed source, store-only, **prescription-gated**; no lawful route to the binary, and no Android artifact located at all). No vendor source exists. **No API was inspected** — the Cloud API documentation is supplied to clients only. The inspection mode is a new one: **the vendor's own published artifacts plus an independent regulator's record of the vendor's own submission.** |
-| 8 | `oura` | 13 | Not started | — | — | — |
+| 8 | `oura` | 13 | **Complete with documented-contract inspection** | 2026-10-06 | 2026-10-06 | No binary and no source inspected. The Terms **prohibit** reverse engineering and circumventing subscription restrictions, so Phase 2A was closed by contract and not by accident. The vendor's **published OpenAPI 3.1 contract was inspected in full** — 72 paths, 75 schemas, 274 resolvable `$ref`s — together with its legal, trust and research surfaces. **No endpoint was called, including the sandbox.** |
 | 9 | `homeassistant` | 13 | Not started | — | — | **Inspectable from published source** |
 | 10 | `mindshift` | 12 | Not started | — | — | — |
 | — | `emoods` | — | Skipped | — | — | No DNS A record for `emoods.net` at research time |
@@ -915,6 +915,163 @@ it**, never as false. A 510(k) resting on bench equivalence plus retrospective a
 common route**; the observation is that the marketing page does not describe the route it took. No medical or
 safety judgement is offered, and no claim is made that a clearance is improper.
 
+## Candidate 8 — `oura`
+
+| Deliverable | Path | Status |
+|---|---|---|
+| Claimed features and purpose | `oura/oura_CLAIMED_FEATURES_AND_PURPOSE.md` | Written — 15 sections, claim ledger **O-1…O-95**, consolidated conflict table, 23-row artifact SHA-256 table, gaps **G1–G13**, second-pass record (§14.8) and quote-verification pass (§14.9) |
+| Authorized implementation inspection | `oura/oura_IMPLEMENTATION_INSPECTION.md` | Written — **documented-contract inspection, partially performed**: the vendor's published specification and legal/trust surfaces read. No binary, no source, **no endpoint called, nothing executed** |
+| Candidate-specific Prompt 2 | `oura/PROMPT_2.md` | Written — `PROMPT2-TECHNICAL-SYSTEMS.md` base plus the `PROMPT2-EVIDENCE-FIRST.md` supplementary block |
+| Comparison report (Prompt 2 run) | `oura/oura_COMPARISON.md` | Written — 14 sections |
+
+**Verification command:**
+
+```sh
+ls -l docs/app_comparison/oura/
+```
+
+**Inspection mode:** **partially performed — documented contract only.** No new mode was created; this is
+the strongest instance of the **implementing-artifact** strength already established by `sleephq`, and the
+first case in the package where **the vendor's own terms closed the stronger mode by contract** rather than
+by unavailability. What was read: the complete **OpenAPI 3.1 contract** (`openapi-1.41.json`, 454,152 bytes,
+SHA-256 `a144a343…`, pinned), the **Terms and Conditions** and **Privacy Policy** in full, the **Trust
+Center**, the science/validation articles and their author bylines, the membership, health-radar and B2B
+pages, the **Google Play** listing, and the **iTunes Lookup** metadata. All 23 artifacts are SHA-256 hashed.
+**The runtime-observation count for this candidate is zero.**
+
+**Authorization basis, quoted verbatim from the Terms §II:** reverse-engineering prohibition on (ii)
+"reverse engineer, disassemble, decompile, decode, adapt, or otherwise attempt to derive or gain access to
+any **Oura Apps** component of the Services, in whole or in part"; (vi) "attempt to probe, scan, or test the
+vulnerability of any **ŌURA** system or network or to breach security or authentication measures **without
+express authorization**"; (ix) "circumvent, bypass, disable, degrade, or otherwise interfere with any access
+controls, usage limits, security features, authentication measures, **subscription restrictions**,
+technological protection measures, or other technical or contractual restrictions that ŌURA applies to the
+Services…". **No call was issued to any Oura endpoint, including the sandbox.**
+
+**Seven findings, in order of consequence.**
+
+1. **The contract independently reaches the same design conclusions V2 states — and documents them.**
+   `PublicSleepType.deleted` (a user-deleted record is a **tombstone**, not a removal); `PublicSleepType`
+   value `rest` = "Falsely detected sleep / nap, rejected in confirm prompt by user" (a **rejected
+detection retained with its reason**); `PublicSleepAlgorithmVersion` ∈ `{v1, v2}` (per-record **algorithm
+provenance**); `PublicSleepAnalysisReason` (mutation provenance); `class_5_min` `'0'` = non wear;
+   `non_wear_time` (a measured duration, not a sentinel); a nullable `score` with **all-nullable contributor
+lists**; and **four write operations in the entire API, all webhook-subscription management** — i.e. the API
+is **read-only for health data**. The honest framing, recorded in the comparison: *both systems have these
+rules; V2 enforces them where Oura documents them.* **This is not a V2 advantage and must not be written as
+one.**
+2. **Missingness is structural and cannot state its cause.** Oura can represent *not measured* and *not
+worn*; it cannot say **why**. V2's three-state rule names the states. The sharpest form of this finding is
+the **three disagreeing character-encoded alphabets** in one activity/sleep model: `class_5_min` (`'0'`–`'5'`,
+where only `'0'` can mean non-wear), the sleep-phase strings (`'1'`–`'4'`), and `movement_30_sec` (`'1'`–`'4'`
+with **no `'0'` at all**, so movement cannot express absence). The same digit means different things in
+fields that appear side by side.
+3. **There is no alert, escalation, acknowledgement, delivery-receipt or caregiver concept in 72 paths and
+75 schemas**, and the Terms state the services are "NOT INTENDED FOR USE IN EMERGENCY OR LIFE-THREATENING
+SITUATIONS". Recorded as a **complete inventory**, not as an absence of a search hit. The comparison states
+the consequence plainly: V2's specified alarm layer is **measured against nothing**, which is weaker
+differentiation than beating a competitor — and it is the same candidate pairing in which V2's still-unstated
+**acceptable false-alarm rate** becomes visible.
+4. **Four date/time schemas are bare `type: string` with no `format`, pattern, example or description**
+   (`ISODate`, `LocalDateTime`, `LocalizedDateTime`, `UtcDateTime`) on the field that determines *when a
+measurement happened*; exactly **one field violates the document's own ISO 8601 rule**
+(`PublicHeartRateRow.timestamp_unix`, milliseconds); and only **one model** anywhere carries a UTC offset
+(`PublicSleepTimeWindow.day_tz`). Six fields state **no unit at all**. This is the comparison's largest
+reproducibility difference and the clearest place where V2's "UTC epoch seconds and nothing else" and the
+registry's one-canonical-unit rule differ from a published contract.
+5. **A contract ambiguity and an intra-document range conflict.** The `heartrate` 200 response is
+   `anyOf[TimeSeriesResponse_PublicHeartRateRow_ | TimeSeriesResponseDict]` with the second branch
+`additionalProperties: true` and **no documented criterion** for choosing between them. Separately, the same
+document states a score range **three ways** (global rule `0-100`; `[1, 100]` on the activity score and most
+contributors; `[0, 100]` on resilience contributors; unstated on sleep/readiness) — **whether `0` is valid is
+contradictory within the vendor's own document.** `ResilienceContributors` is also the one contributor model
+that **requires** all three fields and forbids null, against three sibling models where every contributor is
+nullable and none is required.
+6. **The evidence surfaces do not match the contract's quality.** "99% Heart Rate Accuracy" is an r² of
+   **0.996 measured on 49 healthy adults**; "Independently validated sensors" is a gallery containing a study
+   whose lead author the vendor itself identifies as its **Chief Scientist at the time**; "over 30 biometrics"
+   (Play) contradicts "over 50 health metrics" (home); a **2025 independent study reporting 53% agreement** and
+a **pending class action** are reported by the vendor against itself in a 2026 article, alongside its own
+79% figure. Recorded verbatim, unresolved, with the mitigation that the **basis is disclosed** in the
+accompanying artifact — the defect is in the surface that omits it.
+7. **Documentation defects, recorded as such and not as product defects.** The Quick Start claims "Each
+endpoint includes example requests and responses" while the contract contains **0 `example`/`examples`**
+keywords; "IDs … follow a consistent format" is asserted where almost no `format` is declared; the FAQ's flat
+"5000 requests per 5-minute period" sits beside a **two-layer** model whose ceilings are unpublished; and
+`PublicRestModePeriod.start_time` is described as "…rest mode ended.", identical to `end_time`. **A
+documentation defect is not a product defect**, and a retrieval failure is not an absence: `/legal`,
+`/science` and `/for-organizations` returned JavaScript error shells, not 404 pages, and are recorded
+`[UNKNOWN]`.
+
+**Claim reconciliation:** 50 checkable claims — **24 match, 9 documented-only, 6 partial, 7 do not match**
+(items 10, 11, 12, 14, 24, 25, 36), with four items outside those classes named individually. The tally was
+**wrong when first written** and was machine-counted from the table and corrected in place.
+
+**Evidence gaps:** **I1–I11** (inspection) and **G1–G13** (claims). The decisive gap is unchanged from every
+prior candidate: **no runtime behaviour of any kind was observed**, and here that was reinforced by a
+contractual prohibition rather than by an unavailable artifact.
+
+**Mode-record note — two firsts for the package's own method.**
+
+- **A verification pass that reversed the draft's direction.** A **field-class sweep** performed after the
+  first pass reversed **five verdicts**, softened a sixth, and produced **nine new findings, five of them
+  positive for the vendor**. That is recorded against the **research process**, not the vendor, and the
+  standing remedy — *sweep the structured classes before drafting a conclusion* — is now a sub-check in
+  `RESEARCH_METHOD.md`.
+- **Nine quotations survived two value-checking passes and were still not verbatim**, including a Terms
+  clause cited as the authorization basis whose paraphrase had **invented verbs**. All nine were found by
+  **machine comparing every quoted span against the fetched bytes, with the specification parsed as JSON
+  string leaves** so `\u`-escapes could not defeat matching. That sweep is now a **required pre-commit
+  step**; both earlier passes had checked **values** (hashes, counts, field types) and neither had checked
+  **words**. §14.9 of the claimed-features file carries the before/after table.
+
+## Residual uncertainty — `oura`
+
+- **R1** **Null semantics per field** — what a null means (not worn / sensor failed / rejected / not yet
+  processed) is not distinguishable in the contract. Answerable from the document for *representability*;
+  not answerable for *cause*. **Decisive for the missingness comparison.**
+- **R2** **The four bare-string date/time schemas.** The difference is carried only by the type name. Would
+  need a live sample; **not authorized**. **Decisive.**
+- **R3** **Webhook reliability in practice.** Counts and a window are documented ("10 retries" per failure
+  class; "about an hour"; "you might miss some events"); the **backoff schedule is not**, the signature
+  scheme has **no documented replay window**, and the vendor's own reference implementation reads
+  `x-oura-timestamp`, feeds it into the HMAC, and **never compares it to the current time**.
+- **R4** **The two-layer rate-limit ceilings.** `info.description` describes a per-token and a per-app limit
+  without publishing either ceiling; discoverable only from a `429` response header. `[UNKNOWN]`.
+- **R5** **`sleep_phase_30_sec` vs the vendor's blog.** The blog says the public API reports sleep stages "in
+  five-minute blocks"; the contract publishes a 30-second field. Vendor prose against vendor contract,
+  unresolved. `sleep_algorithm_version` resolves the *related* timeline question even though the prose does
+  not.
+- **R6** **`temperature_deviation` vs `temperature_trend_deviation`** — near-identical descriptions, no
+  stated difference, and no absolute-temperature field anywhere. `[UNKNOWN]`.
+- **R7** **The BLE layer, firmware, ring-side buffering and off-finger behaviour** — wholly unpublished, and
+  the app/firmware are covered by the Terms' reverse-engineering prohibition. `[UNKNOWN]`.
+- **R8** **`meal` / glucose.** In `ExtApiV2DataType` but with no REST path and no sandbox twin; Reachable
+  only, if at all, through the Enterprise API. `[UNKNOWN]`.
+- **R9** **Health Radar rates.** Blood Pressure Signals, Nighttime Breathing and Symptom Radar publish no
+  sensitivity, specificity or false-alarm figure on any read page.
+- **R10** **The 53% study and the rebuttal letter were not fetched.** The package holds the vendor's
+  characterisation of both, written by the vendor's own lead sleep-algorithm scientist.
+- **R11** **Three surfaces `[UNKNOWN]`.** `/legal`, `/science` and `/for-organizations` returned JavaScript
+  error shells. Not 404s; not evidence of absence.
+- **R12** **V2 counterpart to `sleep_analysis_reason`** (gap G12). The claimed-features file records it as
+  having no identified counterpart; confirming or refuting that needs a read of the V2 provenance code, and
+  it is `[UNKNOWN]` until then. **This is the one place where Oura appears ahead of V2 on a documented
+  capability.**
+
+**Most promising untried step.** Two, both **read-only**: fetch the 2025 *Scientific Reports* study and the
+*Sleep Advances* letter directly (R10), and read the V2 provenance/versioning code to settle R12 — the latter
+is in-tree, requires no authorization, and is the only residual item that could move a *conclusion*. **The
+step that would change the most remains the one that is unavailable**: a live API sample (R2, R4), which
+needs an owner decision that has not been taken and that the Terms separately discourage.
+
+**Not to be mistaken for a finding.** A pending class action is **not** a finding of liability. An r²
+rendered as "Accuracy %" is **not** an accusation of fraud — the basis is published in the adjacent
+artifact. An intra-vendor count discrepancy is **not** deception. A documentation defect is **not** a product
+defect. A retrieval failure is **not** an absence. And the convergence of Oura's record design with V2's
+rules is **not** a V2 advantage: it is evidence that two independent teams reached the same conclusions,
+which is a finding about the conclusions.
+
 ## Owner decisions pending
 
 1. **Pilot review.** **Resolved** — the owner instructed the run to continue; full sequential mode is
@@ -950,10 +1107,17 @@ safety judgement is offered, and no claim is made that a clearance is improper.
    the *analysis* comparison (what the session `ahi` is derived from, what is in the `jsonb` summaries, what `_95`
    estimates, and what `o2_score` means) are all behind an account. **This is the first candidate where a
    single authorised read-only API session would materially change the verdict**, which is the concrete
-   case option (b)/(c) must now be weighed against option (a).
+   case option (b)/(c) must now be weighed against option (a). **`oura` then closed the question from a
+   third direction**: the vendor's Terms **prohibit** reverse engineering and circumventing subscription
+   restrictions, so the stronger mode is barred by **contract**, not by availability — the first such case
+   in the package, and one that does not depend on an owner decision to stay closed. The published contract
+   was nonetheless enough to reach verdicts on architecture, provenance, missingness, units and time
+   encodings; what it cannot reach is any statement about runtime behaviour, and the two items that would
+   need a live call (null semantics on the wire, and the two-layer rate-limit ceilings) are recorded as
+   `[UNKNOWN]` rather than estimated.
 3. **Shortlist adjustment.** `emoods` was dropped (no DNS A record for `emoods.net`). Confirm whether a
-   replacement tenth candidate is wanted. **Not blocking** — nine candidates remain and are being
-   processed in order.
+   replacement tenth candidate is wanted. **Not blocking** — two candidates remain (`#9 homeassistant`,
+   `#10 mindshift`) and are being processed in order.
 
 ## Rules this file enforces
 

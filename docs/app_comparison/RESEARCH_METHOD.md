@@ -187,13 +187,14 @@ prefetching a later candidate's research while an earlier one is in progress.
 
 ### 6.1 Inspection modes actually used
 
-Five modes have been reached. Which one applies is recorded per candidate, and none is ever silently
+Four modes have been reached, and the count is stated against the table below rather than from memory.
+Which one applies is recorded per candidate, and none is ever silently
 upgraded into another.
 
 | Mode | Meaning | Candidates |
 |---|---|---|
 | **Not performed** | No artifact of any kind was lawfully obtainable | `bearable` |
-| **Partially performed** | No product binary, but authorized vendor-published artifacts were inspected | `welltory`, `exist`, `sleephq` |
+| **Partially performed** | No product binary, but authorized vendor-published artifacts were inspected | `welltory`, `exist`, `sleephq`, **`oura`** |
 | **Performed** | Product source or a lawfully authorized build was inspected | **`oscar`** (GPLv3 source, pinned commit); **`nightscout`** (AGPL-3.0 source, pinned commit); expected for `homeassistant` |
 | **Performed — artifact and regulator record** | Neither binary nor source nor API was obtainable. The strongest available surfaces are the vendor's own **contractual and compliance documents** and an **independent regulator's record of the vendor's own submission** | **`empatica`** |
 
@@ -209,6 +210,27 @@ strengths have been used:
   `sleephq` extends the mode: its OpenAPI document is complete enough to enumerate every path, every
   serializer attribute and one hash algorithm exactly (`content_hash` = MD5 of content+name, with a worked
   example and a validation endpoint), and candid enough to document its own rate-limit buckets.
+  **`oura` extends this mode in a third direction, and adds the first case where the *contract itself* is
+  the reason a stronger mode was not attempted.** Oura publishes a complete OpenAPI 3.1 document (72
+  paths, 75 schemas, 274 resolvable `$ref`s) under a **public static path**, and its own documentation page
+  is a JavaScript shell that merely points at it. Two consequences of method:
+
+  - **The document is large enough to support internal-consistency checking as a first-class step.**
+    Reference resolution, security-scheme declaration-versus-use, path-to-schema coverage, the
+    `required`/nullable pattern of every collection model, and the complete set of bare-`type: string`
+    schemas can all be enumerated and counted. That is how the package's first **verified positive** on a
+    vendor contract was produced — and how a plausible dangling-reference hypothesis was **refuted**
+    rather than reported.
+  - **A vendor's terms can close the stronger mode by contract rather than by availability.** For
+    `bearable` the blocker was lawful acquisition; for `empatica` it was the absence of any published
+    client. For Oura the terms **prohibit** reverse engineering and defeating subscription restrictions,
+    and those clauses are quoted **verbatim** as the authorization basis. That is a third, distinct
+    reason for a limited mode and is recorded as such.
+
+  **The limit is sharper here than anywhere else in the package**: a documented contract that is internally
+  pristine can still describe behaviour nothing was observed to perform, and **no Oura endpoint — not even
+  the sandbox — was called.** Every contract finding is labelled *documented*, never *verified*.
+
 - **The implementation itself** (`oscar`, `nightscout`) — the complete product source under a licence that
   requires publication. This is the strongest static surface available short of running the software, and
   it is qualitatively different from the other two: every claim about how a value is decoded, rejected,
@@ -333,6 +355,21 @@ candidate, and each has already produced a finding at least once:
 | **Documentation lifecycle with an exact date** | A vendor deleting its own developer documentation (`developer.empatica.com` emptied 2025-02-18, four days after the 2025-02-14 E4 sunset) — recorded as a lifecycle fact, not a criticism | `empatica` |
 | **Image-only artifact** | A published document with no text layer — simultaneously an accessibility and a verifiability finding, and an evidence gap no further fetch can close | `empatica` |
 | **Unverified hash** | A hash table row is **computed or marked "not hashed"**; a plausible placeholder is worse than no value. A fabricated placeholder written and then replaced by computed SHA-256 values is recorded inside the `empatica` artifacts | `empatica` |
+| **Field-class sweep belongs to the FIRST pass** | Before any conclusion is drafted, enumerate the artifact's **structured classes**: enumerations, `required` lists, nullable unions, bare-`type` schemas, time formats, character-encoded fields, and any pair of fields with near-identical descriptions. `oura`'s first pass read prose and skipped this; a later sweep reversed **five verdicts**, softened a sixth, and produced nine new findings — a verification pass that *reverses* the draft's direction is recorded against the **research process**, not the vendor | `oura` |
+| **Quote verification against fetched bytes** | A **separate, required, pre-commit** step: machine-compare every quoted span against the retrieved artifacts, parsing specifications as **JSON string leaves** so `\u`-escapes cannot defeat matching, and HTML both raw and tag-stripped. Nine quotations that had survived two value-checking passes were found inexact — including a **contract clause cited as an authorization basis** whose paraphrase invented verbs. **Paraphrase inside quotation marks is the failure mode this package exists to avoid** | `oura` |
+| **Every summary tally is counted, not estimated** | A verdict tally, a claim count or a "N findings" line is reproducible **from the table it summarises**. A wrong tally is corrected in place and the correction is visible | `oura` |
+| **Intra-document range conflict** | One document stating one quantity's valid range three ways (global rule `0-100`; `[1, 100]` on a headline field; `[0, 100]` on contributors; **unstated** elsewhere) — record whether `0` is valid as contradictory within the vendor's own text | `oura` |
+| **Disagreeing character-encoded alphabets** | Several digit-string fields in one contract whose characters mean different things, where **only one can encode absence** (`class_5_min` `'0'` = non-wear vs sleep-phase/movement strings with no such code). The non-wear code, the measured `non_wear_time` duration and the nullable score are recorded as **positives** | `oura` |
+| **Retrieval failure is not absence** | An error shell (JS `__next_error__`), a WAF challenge or a 5xx is **`[UNKNOWN]`, not a 404**. Only a vendor-authored not-found document is a statement that a resource is absent — and two URLs returning byte-identical 404 documents is how that was confirmed | `oura` |
+| **Record-provenance trio** | Look for a tombstone value, a retained-rejection-with-reason value, and a per-record algorithm/method version in the same model. Present in `oura`; the honest framing is "**both systems have V2's rules; V2 enforces them where Oura documents them**", never equivalence | `oura` |
+| **Documented dead field** | A field whose description says it is deprecated and returns null is a **trap the documentation disarms** — record it as documented, and do not count it as an undocumented domain | `oura` |
+| **Documented default the envelope contradicts** | A response documented as one shape and declared as `anyOf` with no selection criterion — a contract ambiguity, distinct from an undocumented value | `oura` |
+| **Lifecycle fact, exact date** | A contract published but **not yet effective** at the research date (Last Updated 2026-10-02, Effective 2026-11-04, research date 2026-10-06) is a lifecycle fact, **not a defect** | `oura` |
+| **Statistic rendered as a headline in a different category** | An `r²` (or an agreement statistic) published as an "Accuracy %" — record **verbatim with both surfaces quoted**, name the basis, and do not resolve | `oura` |
+| **Evidence-classification defect** | A gallery or heading asserting independence (`Independently validated sensors`) that contains a study whose lead author was the vendor's own staff — a *classification* defect, quoted from both surfaces, with the distinction already made correctly by the vendor elsewhere | `oura` |
+| **Internal org metadata in a public contract** | A published specification carrying internal team names (`x-owner` squad names) — observable and recordable, **not** impropriety | `oura` |
+| **Intra-vendor count discrepancy** | The same quantity stated twice by one vendor across its own surfaces (`over 30 biometrics` vs `over 50 health metrics`) — record without averaging | `oura` |
+| **Multi-entity surface mapping** | Map which legal entity contracts on which surface (four entities across five surfaces) — record; do not infer intent from the spread | `oura` |
 
 ## 7. What remains unverified
 
