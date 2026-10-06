@@ -10,9 +10,9 @@ repository.workspace = true
 [dependencies]
 # Advisory locks on the spool segment and offset file: a second writer must fail
 # rather than interleave. Amendment 05 §4.6.
-fs4 = "0.13"
+fs4 = "1.1"
 # node_id is provenance and is generated exactly once, ever.
-getrandom = "0.3"
+getrandom = "0.4"
 # Atomic no-replace publication keeps partially initialized segments hidden.
 rustix = { version = "1", features = ["fs"] }
 
