@@ -10,7 +10,8 @@ You are comparing **{APP_NAME}** with AnxietyWatch v1 and AnxietyWatch2. Produce
 ./docs/app_comparison/{APP_SLUG}/{APP_SLUG}_COMPARISON.md
 ```
 
-The report must explain both feature-level overlap and meaningful product differences in prose. A grid alone is not sufficient.
+The report must explain both feature-level overlap and meaningful product differences in prose. A grid alone is not
+sufficient.
 
 ## Read first
 
@@ -21,9 +22,14 @@ Read these local files:
 ./docs/app_comparison/{APP_SLUG}/{APP_SLUG}_CLAIMED_FEATURES_AND_PURPOSE.md
 ```
 
-Also review the candidate's cited primary sources when available. Use the research date recorded in the candidate file. Do not silently substitute current marketing pages for older evidence without recording the change.
+Also review the candidate's cited primary sources when available. Use the research date recorded in the candidate file.
+Do not silently substitute current marketing pages for older evidence without recording the change.
 
-If this is an Android or iOS candidate, do not skip implementation inspection. Read `{APP_SLUG}_IMPLEMENTATION_INSPECTION.md` when present; if an authorized artifact exists but the file is absent, perform the inspection before finalizing or explicitly document why it could not be performed. Use it to compare public claims with static implementation evidence and authorized runtime observations. Treat the following as separate evidence classes:
+If this is an Android or iOS candidate, do not skip implementation inspection. Read
+`{APP_SLUG}_IMPLEMENTATION_INSPECTION.md` when present; if an authorized artifact exists but the file is absent, perform
+the inspection before finalizing or explicitly document why it could not be performed. Use it to compare public claims
+with static implementation evidence and authorized runtime observations. Treat the following as separate evidence
+classes:
 
 - public claim;
 - reachable behavior observed at runtime;
@@ -32,9 +38,17 @@ If this is an Android or iOS candidate, do not skip implementation inspection. R
 - inferred behavior;
 - unknown or blocked behavior.
 
-The inspection record should identify the exact artifact, version/build, platform, SHA-256, tools, device/emulator, authorization boundary, and limitations. It may cover manifests/entitlements, permissions, background modes, screens, data models, APIs, BLE and HealthKit identifiers, local storage, exports, notifications, analytics/advertising SDKs, subscriptions, feature flags, cloud dependencies, and error handling. Do not treat a string, endpoint, SDK, or code path as a user-accessible feature without evidence that it is reachable.
+The inspection record should identify the exact artifact, version/build, platform, SHA-256, tools, device/emulator,
+authorization boundary, and limitations. For an Android emulator, configure `10.0.2.2:8888` before launching or
+installing the target app, verify Charles is listening, and record the proxy setup. It may cover
+manifests/entitlements, permissions, background modes, screens, data models, APIs, BLE and HealthKit identifiers,
+local storage, exports, notifications, analytics/advertising SDKs, subscriptions, feature flags, cloud dependencies,
+and error handling. Do not treat a string, endpoint, SDK, or code path as a user-accessible feature without evidence
+that it is reachable.
 
-If an authorized artifact was unavailable or inspection was not permitted, say so explicitly in the report. Do not bypass DRM, authentication, licensing, encryption, certificate pinning, anti-debugging, or platform protections; do not extract credentials or private user data. Record blocked inspection as an evidence limitation, not as proof that the feature does or does not exist.
+If an authorized artifact was unavailable or inspection was not permitted, say so explicitly in the report. Record
+blocked inspection as an evidence limitation, not as proof that the
+feature does or does not exist.
 
 Use these AnxietyWatch status labels:
 
@@ -47,12 +61,14 @@ Never present a V2 specified target as a currently shipped feature.
 
 ## Comparison method
 
-Compare the products at the correct level. {APP_NAME} may be a mobile app, wearable ecosystem, home-monitoring product, cloud service, research project, or only a subsystem competitor. State whether each conclusion concerns:
+Compare the products at the correct level. {APP_NAME} may be a mobile app, wearable ecosystem, home-monitoring product,
+cloud service, research project, or only a subsystem competitor. State whether each conclusion concerns:
 
 - the AnxietyWatch v1 application;
 - the AnxietyWatch2 Raspberry Pi platform;
 - the combined AnxietyWatch product vision; or
-- only a particular subsystem such as CPAP, HRV, anxiety journaling, medication tracking, pulse oximetry, aircraft/noise context, AI analysis, or clinical reporting.
+- only a particular subsystem such as CPAP, HRV, anxiety journaling, medication tracking, pulse oximetry, aircraft/noise
+  context, AI analysis, or clinical reporting.
 
 For every important capability, classify each product as:
 
@@ -64,7 +80,9 @@ For every important capability, classify each product as:
 
 Also record capability maturity: current, beta, experimental, planned, discontinued, or unknown.
 
-Do not infer a feature merely because a product has a nearby feature. For example, a sleep score is not automatically CPAP support; an AI chatbot is not automatically longitudinal multimodal analysis; cloud sync is not self-hosting; and a notification is not an independent local alarm.
+Do not infer a feature merely because a product has a nearby feature. For example, a sleep score is not automatically
+CPAP support; an AI chatbot is not automatically longitudinal multimodal analysis; cloud sync is not self-hosting; and a
+notification is not an independent local alarm.
 
 ## Required report structure
 
@@ -81,13 +99,16 @@ Give a concise answer to:
 
 ### 2. Scope and evidence boundary
 
-Record the candidate's platforms, availability, region/plan restrictions, hardware requirements, research date, and source limitations. Separate public claims, documented behavior, independent observation, inference, and unknowns.
+Record the candidate's platforms, availability, region/plan restrictions, hardware requirements, research date, and
+source limitations. Separate public claims, documented behavior, independent observation, inference, and unknowns.
 
-Use citations linked to the candidate evidence file. Add new sources only when necessary and record URL, title, publisher, date, and access date.
+Use citations linked to the candidate evidence file. Add new sources only when necessary and record URL, title,
+publisher, date, and access date.
 
 ### 3. Claim-versus-implementation reconciliation
 
-When implementation inspection is available, compare major public claims against static findings and authorized runtime observations. Identify features that are:
+When implementation inspection is available, compare major public claims against static findings and authorized runtime
+observations. Identify features that are:
 
 - claimed and observed;
 - claimed but not observed;
@@ -95,14 +116,15 @@ When implementation inspection is available, compare major public claims against
 - present only in experimental, gated, dead, or unreachable code; or
 - unresolved because inspection was blocked or incomplete.
 
-Include the artifact/version boundary and do not disclose credentials, private data, or sensitive exploit details. If inspection was unavailable, state why and how that limits the comparison.
+Include the artifact/version boundary and do not disclose credentials, private data, or sensitive exploit details. If
+inspection was unavailable, state why and how that limits the comparison.
 
 ### 4. Feature-level comparison
 
 Include a table with these columns:
 
 | Capability | AnxietyWatch v1 | AnxietyWatch2 current | AnxietyWatch2 specified target | {APP_NAME} | Evidence/status notes |
-|---|---|---|---|---|---|
+|------------|-----------------|-----------------------|--------------------------------|------------|-----------------------|
 
 Cover, where relevant:
 
@@ -136,7 +158,9 @@ For each scenario, explain the data path, user effort, feedback timing, and impo
 
 ### 6. Privacy, operating model, and cost
 
-Explain where data is collected, processed, stored, synchronized, exported, retained, and deleted. Identify cloud dependencies, account requirements, vendor lock-in, telemetry, model/API dependencies, and hardware dependencies. Distinguish free software from free operation.
+Explain where data is collected, processed, stored, synchronized, exported, retained, and deleted. Identify cloud
+dependencies, account requirements, vendor lock-in, telemetry, model/API dependencies, and hardware dependencies.
+Distinguish free software from free operation.
 
 ### 7. Balanced conclusion
 
@@ -150,4 +174,5 @@ State:
 - whether the products are competitors, complements, or competitors only in one subsystem;
 - which findings are well-supported and which remain uncertain.
 
-Do not describe either project as a validated diagnostic, medical device, or emergency monitor unless the evidence explicitly supports that claim. Do not turn correlation into causation.
+Do not describe either project as a validated diagnostic, medical device, or emergency monitor unless the evidence
+explicitly supports that claim. Do not turn correlation into causation.

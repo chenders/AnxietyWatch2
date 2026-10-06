@@ -1,6 +1,7 @@
 # Prompt 2 — Technical platform and monitoring comparison
 
-Use this version for a candidate such as a CPAP product, pulse-oximeter system, wearable platform, self-hosted health stack, home-monitoring project, or other technically deep competitor. Replace `{APP_NAME}` and `{APP_SLUG}`.
+Use this version for a candidate such as a CPAP product, pulse-oximeter system, wearable platform, self-hosted health
+stack, home-monitoring project, or other technically deep competitor. Replace `{APP_NAME}` and `{APP_SLUG}`.
 
 Write the report to:
 
@@ -15,9 +16,17 @@ Write the report to:
 ./docs/app_comparison/{APP_SLUG}/{APP_SLUG}_CLAIMED_FEATURES_AND_PURPOSE.md
 ```
 
-Treat AnxietyWatch2's OpenSpec capabilities as a specified target, not automatically as shipped implementation. Label every AnxietyWatch capability as v1 documented/implemented, v2 current, v2 specified target, or unresolved.
+Treat AnxietyWatch2's OpenSpec capabilities as a specified target, not automatically as shipped implementation. Label
+every AnxietyWatch capability as v1 documented/implemented, v2 current, v2 specified target, or unresolved.
 
-If {APP_NAME} has an authorized Android or iOS artifact, do not skip inspection: read `{APP_SLUG}_IMPLEMENTATION_INSPECTION.md`, or perform the inspection before finalizing if the file is absent. Include the artifact version/hash, inspection tools and limits, and a claim-versus-implementation reconciliation. Distinguish reachable runtime behavior from static code, strings, bundled SDKs, endpoints, feature flags, experimental paths, dead code, and unknowns. Do not bypass DRM, authentication, licensing, encryption, certificate pinning, anti-debugging, or platform protections, and do not extract credentials or private data. If inspection is unavailable, state exactly what could not be established.
+If {APP_NAME} has an authorized Android or iOS artifact, do not skip inspection: read
+`{APP_SLUG}_IMPLEMENTATION_INSPECTION.md`, or perform the inspection before finalizing if the file is absent. For an
+Android emulator, configure `10.0.2.2:8888` before launching or installing the target app, verify Charles is listening,
+and record the proxy setup. Include the artifact version/hash, inspection tools and limits, and a
+claim-versus-implementation reconciliation. Distinguish reachable runtime behavior from static code, strings, bundled
+SDKs, endpoints, feature flags, experimental paths, dead code, and unknowns. Do not send real user data, log into
+production services, or bypass DRM, authentication, licensing, encryption, certificate pinning, anti-debugging, or
+platform protections. If inspection is unavailable, state exactly what could not be established.
 
 ## Technical comparison questions
 
@@ -36,11 +45,13 @@ Determine, with citations, how {APP_NAME} handles:
 - behavior when the phone, internet, cloud, database, or a sensor is unavailable;
 - access control, enrollment, encryption, network trust, and auditability.
 
-Distinguish an architecture claim from demonstrated behavior. Do not reward a product for a feature merely because its hardware could theoretically provide it.
+Distinguish an architecture claim from demonstrated behavior. Do not reward a product for a feature merely because its
+hardware could theoretically provide it.
 
 ## Authorized technical inspection
 
-If package, binary, protocol, or network inspection is useful, perform it only on software and artifacts for which the researcher has lawful authorization. Do not bypass DRM, authentication, licensing, encryption, platform protections, or access controls. Do not extract credentials, private user data, or secrets. Keep technical observations separate from public marketing claims and cite the artifact, version, and inspection method.
+Do not extract credentials, private user data, or secrets. Keep technical observations separate from
+public marketing claims and cite the artifact, version, and inspection method.
 
 ## Required report structure
 
@@ -65,4 +76,5 @@ Explicitly compare these scenarios:
 - a clinician needs an export with source and quality context;
 - an alert path has a technical failure.
 
-Do not call a system medically validated, diagnostic, or an emergency monitor without appropriate evidence. A local notification is not automatically an independent alarm.
+Do not call a system medically validated, diagnostic, or an emergency monitor without appropriate evidence. A local
+notification is not automatically an independent alarm.
