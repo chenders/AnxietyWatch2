@@ -55,3 +55,11 @@ clients/apple/Packages/*/.build/
 docs/design/pi-panel/direction-a-clinical/status.json
 docs/design/pi-panel/direction-a-clinical/vitals_status.json
 docs/design/pi-panel/direction-a-clinical/vitals_h10_history.json
+
+# The app-comparison research package is local-only. It holds third-party
+# quotation and unpublished analysis, and the owner's instruction is that it is
+# never committed to this repository and never pushed to GitHub. It lives in its
+# own repository, which has no remote (see docs/app_comparison/LOCAL-ONLY.md).
+# This entry stops an ordinary `git add`; .githooks/pre-push gate 3c stops the
+# push, because .gitignore alone is not a guarantee.
+docs/app_comparison/
