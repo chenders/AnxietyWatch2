@@ -613,6 +613,19 @@ ls -l docs/app_comparison/CANDIDATE_SHORTLIST.md docs/app_comparison/PROCESS_STA
 # Public-info gate before any push (tracked files only)
 python3 scripts/check-public-info.py --self-test
 python3 scripts/check-public-info.py
+
+# The full pre-push gate, run with a synthetic push line so the ref check terminates
+printf 'refs/heads/local 0000000000000000000000000000000000000000 refs/heads/BRANCH 1111111111111111111111111111111111111111\n' \
+  | .githooks/pre-push origin "$(git config --get remote.origin.url)"
+#   exit 0, with two standing warnings that are expected and must NOT be "fixed":
+#   1. "a phone-number-shaped string is in the diff" — the `mindshift` deliverables quote
+#      the vendor's own published crisis lines verbatim (Kids Help Phone, Talk Suicide
+#      Canada and its Quebec line). Public emergency-service numbers, not personal data;
+#      the heuristic exempts only the 555-01xx fictional range. Rewording a quote to
+#      silence a linter would be the defect.
+#   2. "no .githooks/pii-denylist.local.txt — personal-term checking is off" — that file is
+#      owner-supplied and gitignored by design; it is absent in this clone, so the
+#      personal-term check did not run for this branch.
 ```
 
 Free inspection stack, when a candidate becomes inspectable — full procedure in

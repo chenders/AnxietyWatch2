@@ -1,5 +1,9 @@
 tmp/
 
+# Agent harness worktrees: full nested checkouts, hundreds of MB. The agents and
+# commands definitions directly under .claude/ ARE tracked, so ignore only this.
+.claude/worktrees/
+
 build/
 build-*/
 cmake-build-*/
