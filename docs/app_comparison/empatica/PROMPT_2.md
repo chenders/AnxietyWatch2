@@ -9,7 +9,7 @@ what contractual and operating cost. Empatica is the first candidate in the pack
 regulator's record of the vendor's own submission** is the strongest available artifact, and the first where
 a **licence** is a primary evidence surface. That is what `PROMPT2-EVIDENCE-FIRST.md` is built for. The
 privacy/operating-mode block is added because the alert path is cloud-mandatory and subscription-gated, so
-"where does the data live and what happens when it stops" is a first-order question, not a secondary one.
+*where does the data live and what happens when it stops* is a first-order question, not a secondary one.
 
 **Why not the other variants.** `PROMPT2-TECHNICAL-SYSTEMS.md` (used for `sleephq` and `nightscout`) assumes
 an inspectable implementation surface — source, a published API, or a runnable binary. **Empatica has none of
@@ -115,7 +115,7 @@ Never write them as shipped. Never write a V2 "does not X" claim without checkin
    vendor's. Say it that way.
 8. **Never upgrade a preprint to peer-reviewed**, and never present the seizure-forecasting study as a
    feature — it is a study the vendor is recruiting for, and the cleared indication excludes prediction.
-9. **Do not convert correlation into causation.** No "because Empatica does X, Y follows" without a citable
+9. **Do not convert correlation into causation.** No *because Empatica does X, Y follows* without a citable
    mechanism.
 10. **Never state float equality.** Use tolerances.
 11. **Do not reproduce third-party machine paths or personal identifiers** found in public artifacts; cite as
@@ -167,7 +167,7 @@ Use these dimensions, in this order, so the report lines up with the other candi
 7. **Data location and operating mode** — cloud-mandatory, account-mandatory, no offline mode; privacy notice
    scope and its ambiguities.
 8. **Longevity and upstream dependency** — the E4 withdrawal and documentation deletion as the concrete
-   instance of "your platform's contract can vanish".
+   instance of *your platform's contract can vanish*.
 9. **Derived measures** — 300+/200+ "digital measures" unenumerated; no published units, ranges or windows;
    contrast with `vitals/registry.toml` as a single source of truth.
 10. **What transfers and what does not** — physiology is different; architecture and evidence discipline are
@@ -229,8 +229,8 @@ path · 12. User-facing consequences · 13. Limitations, unverified claims and e
 - No medical advice; no claim that any product is unsafe; no claim that a clearance is improper.
 - No catastrophising. A bench-equivalence clearance is a **lawful and common** route. The finding is about
   what a marketing page does and does not disclose about it.
-- No unsupported superlatives, in either direction. "The only candidate in the package with an independent
-  alert path" is checkable and fine; "the most trustworthy" is not.
+- No unsupported superlatives, in either direction. *The only candidate in the package with an independent
+  alert path* is checkable and fine; "the most trustworthy" is not.
 - Distinguish **observed** from **documented** from **inferred** in the prose, not only in the tables.
 - Where the evidence does not support a conclusion, write that. A recorded gap is a valid result.
 - Do not overstate the comparison in AnxietyWatch2's favour. If V2 lacks something this candidate has — the

@@ -301,7 +301,7 @@ not get computed. That is the transferable lesson, and it is worth stating that 
 | Absent reading rendered as fine | `[UNKNOWN]` for this vendor | Forbidden by the governing rule |
 
 **Failure-mode discipline applied to this file itself.** Several of the cells above began as hypotheses —
-"the app probably doesn't tell you when Bluetooth drops" — and none of them could be tested, because the app
+*the app probably does not tell you when Bluetooth drops* — and none of them could be tested, because the app
 cannot lawfully be obtained. **They are therefore recorded as `[UNKNOWN]` open questions, not as findings.**
 That is the difference between this candidate and `nightscout`, where five hypotheses were checked against
 source and **refuted** (and dropped). Where an implementation exists, hypotheses get tested; where one does
@@ -409,7 +409,7 @@ with multi-modal delivery (amendment 03) and a hardware dead-man switch, running
    window. AnxietyWatch2 has none of the three visible in the specification read, and its alarm layer is
    specified — so this is the right moment to require a stated acceptable rate, a cancellation path and a
    sensitivity control, or to record deliberately that they are not wanted.
-2. **"Alert cancelled before the caregiver is contacted" is a requirement the vendor's own marketing implies
+2. **Alert cancellation before the caregiver is contacted** is a requirement the vendor's own marketing implies
    but does not quantify.** The window's length is unpublished. V2 should decide its own, and publish it.
 3. **The regulator's sentence is the strongest argument for V2's three-state rule.** A cleared Class II
    seizure monitor is *defined* as not being a standalone monitoring device. The regulated world's own answer

@@ -288,9 +288,10 @@ session write path: **a pipeline's upstream contract can change or vanish, and t
 
 `[PUBLIC CLAIM]` + `[THIRD PARTY]`. On `/legal/`, the link labelled "Read our Terms & Conditions" resolves to
 a **TÜV Rheinland ISO 13485 certificate PDF** (cert. no. 39 05 0072201, Empatica S.r.l., valid
-2025-05-08–2028-05-24), and that certificate carries the standard disclaimer that it "does not represent
-proof that the statutory requirements of the Directives … or Regulations (UE) 2017/745, (UE) 2017/746 have
-been fulfilled" — while the EmbracePlus page states "CE-certified as a class IIa medical device".
+2025-05-08–2028-05-24), and that certificate carries the standard TÜV disclaimer that it "does not
+represent proof that the statutory requirements of the Directives" it names (93/42/EEC, 90/385/EEC,
+98/79/EC, Regulations (UE) 2017/745 and (UE) 2017/746) have been fulfilled — while the EmbracePlus page
+states "CE-certified as a class IIa medical device".
 
 **Recorded fairly.** Every notified body writes that sentence and it is correct: ISO 13485 is a quality
 system standard, not an MDR conformity certificate, and the vendor almost certainly holds the separate CE

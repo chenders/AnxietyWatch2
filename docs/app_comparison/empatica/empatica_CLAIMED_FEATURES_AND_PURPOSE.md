@@ -174,7 +174,7 @@ Recorded without characterisation; it is the vendor's own wording.
 - **Languages.** App available in 8 languages (English, Spanish, French, Italian, German, Dutch, Danish,
   Swedish) `[PUBLIC CLAIM]`.
 - **Shipping.** Region selector with currently-shipping lists for the Americas, Europe (12 named
-  countries plus UK), and Oceania. "Other regions: check availability."
+  countries plus UK), and Oceania. "Other regions" … "Check availability in your region".
 
 **Release cadence observation.** The EpiMonitor iOS app's most recent release on the App Store at this
 research date is **2026-03-24**, roughly six and a half months earlier. The **Empatica Care** app was
@@ -253,7 +253,7 @@ observation about the business model; it is also the single most transferable co
 AnxietyWatch2's planned multi-modal alerting, which is not subscription-gated.
 
 **The subscription plan support article could not be read.** `support.empatica.com` returned HTTP 403
-(Cloudflare) for the "EpiMonitor Subscription Plans" article at the research date `[UNKNOWN]`. Plan
+(Cloudflare) for the EpiMonitor subscription-plans support article at the research date `[UNKNOWN]`. Plan
 details above are therefore from the store page only, and any annual pricing or feature differences in
 that article are not captured.
 
@@ -645,8 +645,8 @@ summary (Empatica Srl, Special 510(k), EpiMonitor; fetched and hashed):
   parameters" and "software intended to monitor vitals and non-vital physiological parameters"; valid
   **2025-05-08 to 2028-05-24**; first certification 2016-05-25; audit report no. 7993858010MB25. The
   certificate carries the standard TÜV disclaimer that it "does not represent proof that the statutory
-  requirements of the Directives 93/42/EEC, 90/385/EEC, 98/79/EC or Regulations (UE) 2017/745, (UE)
-  2017/746 have been fulfilled".
+  requirements of the Directives" it names — 93/42/EEC, 90/385/EEC, 98/79/EC, Regulations (UE) 2017/745
+  and (UE) 2017/746 — have been fulfilled.
 
 **Two findings attached to that certificate, recorded fairly.**
 
@@ -708,7 +708,7 @@ this file corrects it rather than leaving the earlier version standing.
 
 **The internal AI conflict.** On the **same EmbracePlus page**: "**No black box algorithms.** EmbracePlus
 is one of the few wearable devices that capture raw data, with no black box algorithms" and, in the
-remote-patient-monitoring section, "your medical-grade, **AI-powered** remote monitoring" `[PUBLIC CLAIM]`.
+remote-patient-monitoring section, "our medical-grade, AI-powered remote monitoring" `[PUBLIC CLAIM]`.
 Both statements are about the same platform. They are reconcilable (raw data is exposed *and* an AI model
 exists to interpret it; the watch's own detection is a deterministic algorithm) — but they are not
 reconciled *on the page*, and a reader takes away whichever sentence they read first. Recorded as a
@@ -923,7 +923,7 @@ it is structural:
 1. **The regulator's document is the only place where the accuracy numbers have denominators.** Every
    claim in this package that involves a performance figure should be checked against an independent
    record where one exists. `[REGULATOR RECORD]` checks are now a standing sub-check (`PROMPT_2.md`).
-2. **"Not intended as a standalone device" is the regulated industry's own version of the three-state
+2. **"not intended as a standalone seizure monitoring device" is the regulated industry's own version of the three-state
    rule's failure mode.** A cleared Class II seizure monitor is *required by its definition* not to be
    relied on alone, and the product that fails to say so on its marketing pages is not thereby unlawful —
    but a user reading only the pages is worse off.
