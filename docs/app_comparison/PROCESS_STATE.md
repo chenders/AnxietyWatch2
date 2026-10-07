@@ -1895,6 +1895,13 @@ claim in the file that proposed it. Closed 2026-10-06; commit `bb9fb63`.
   were read as tag starts by the checker's `<[^>]+>` strip, silently deleting ~40 KB of the corpus and
   turning two already-verified spans into misses. The tag pattern now requires well-formed tag syntax
   (`</?[A-Za-z][^<>]*>`).
+- **A token pattern without a leading boundary matches the tail of an ordinary hyphenated word.**
+  The pre-push secret gate's API-key shape matched a 20-plus-character run inside an Intercom
+  help-article slug quoted in candidate 11's claim ledger and blocked the push. Fixed in
+  `.githooks/pre-push` to require that the key starts a token — preceded by whitespace, a quote,
+  `=` or `:`, or a line start — which leaves detection unchanged for every real key shape, verified
+  against both a synthetic key and the slug. **Never `--no-verify` past a gate: fix the gate, the
+  data, or the false positive, and say which.**
 
 **The full rule register, with the sub-check table and the candidate that first produced each rule, lives in
 `RESEARCH_METHOD.md` §6.1.** This list records the rules that changed a verdict or a commit; §6.1 is
