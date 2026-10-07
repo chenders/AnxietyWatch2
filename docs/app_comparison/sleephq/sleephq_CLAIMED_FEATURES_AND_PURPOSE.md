@@ -31,7 +31,7 @@ data analytics platform.
 
 It is the **closest commercial analogue on the shortlist to the combination AnxietyWatch actually cares
 about**: AirSense 11 data plus overnight SpO₂ plus longitudinal statistics. It supports the AirSense 11
-explicitly, and it has solved the "get the data off the machine without pulling the card every morning"
+explicitly, and it has solved the *get the data off the machine without pulling the card every morning*
 problem — with hardware rather than with Bluetooth.
 
 Four findings shape everything that follows:
@@ -151,7 +151,7 @@ Three things follow. **SleepHQ ships a "sleep alarm"** — an alerting feature w
 the shipped release notes. That is direct evidence of a category (real-time alerting) that AnxietyWatch v2
 *specifies as a target* and that SleepHQ *has shipped and is still stabilising*. And "You're now told when
 a night's recording fails to save" is the vendor adding an explicit failure notification — the same
-"unknown must not be rendered as good" concern this project treats as a rule, being retrofitted.
+*unknown is never rendered as good* concern this project treats as a rule, being retrofitted.
 
 ---
 

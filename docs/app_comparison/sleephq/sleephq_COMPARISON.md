@@ -179,12 +179,12 @@ also MD5, and a second identifier, `fingerprint_base64`, has **no published algo
 | 4 | "Custom PDF reports with AI Insights" | **No AI resource, field or description anywhere in the API surface** | **Not reconciled.** Absence in the contract is not absence in the product |
 | 5 | "Set personalised alerts… for oxygen & pulse rate level events" | **No alert, threshold or notification resource** | **Not reconciled**; app/device-level, outside the public API |
 | 6 | "Automatically syncs… every 10 minutes" | No documented schedule; no webhook or push resource | **Not reconciled** |
-| 7 | "Detailed statistics for every night" | Eleven `jsonb` summary blocks on the nightly record | **Exists; contents `[UNKNOWN]`** |
-| 8 | "Track your feelings with emojis & create custom flags" | `feeling_score` (integer, no range), `notes`, `sleep_stages` (text); **no flag field** | **Partially reconciled** |
+| 7 | "Get detailed statistics on your therapy for every night" | Eleven `jsonb` summary blocks on the nightly record | **Exists; contents `[UNKNOWN]`** |
+| 8 | "Track your feelings with fun emojis & create custom flags…" | `feeling_score` (integer, no range), `notes`, `sleep_stages` (text); **no flag field** | **Partially reconciled** |
 | 9 | "Share… no personally identifiable information is shared" | **No documented share resource** | **Unfalsifiable from outside** |
 | 10 | "Download all data at any time" | Per-file `download_url`, **signed, 5-minute expiry**; no bulk-archive endpoint | **Backed, with a caveat** |
 | 11 | "SleepHQ is not a medical device" | `ahi`, event counts and an undefined `o2_score` published per session | **Compatible, and worth naming**: the platform derives clinical-looking indices while disclaiming medical-device status |
-| 12 | "Data encrypted at rest and in flight… completely secure at all times" | The specification says nothing about transport or storage; the privacy policy says "progressing towards SOC 2 Type II"; the Play panel says only "encrypted in transit" | **Most conservative statement governs** — see §10 |
+| 12 | "encrypted both at rest and in flight… completely secure at all times" | The specification says nothing about transport or storage; the privacy policy says "progressing towards SOC 2 Type II"; the Play panel says only "encrypted in transit" | **Most conservative statement governs** — see §10 |
 | 13 | "SleepHQ reads AirSense 11" | 8 AirSense 11 / AirCurve 11 variants listed | **Backed** |
 | 14 | "Only SleepHQ branded devices are compatible" (oximetry) | SD-root-relative `path` on every file upload; no generic SpO₂ import; no device write path | **Backed and deliberate** |
 
@@ -252,8 +252,8 @@ index.**
 
 ### 7.3 The case for SleepHQ's position
 
-- **A user gets an answer.** "My AHI last night was 4.2" is actionable and discussable; "your flow signal
-  is in a hypertable" is not. AnxietyWatch2 currently produces **no nightly summary of any kind** — the
+- **A user gets an answer.** *My AHI last night was 4.2* is actionable and discussable; *your flow signal
+  is in a hypertable* is not. AnxietyWatch2 currently produces **no nightly summary of any kind** — the
   analysis layer is unbuilt.
 - **The numbers are at least labelled as derived.** A consumer can see them as outputs of an analysis
   layer, not as measurements.
@@ -444,7 +444,7 @@ it the reference case rather than a competitor on this axis.
 **What this comparison legitimately concludes.** SleepHQ's release notes are evidence that shipping a
 real-time alert path with a phone component costs several crash fixes and a retrofitted failure
 notification. V2's alerting specification is more conservative in intent — a supervised alarm and a
-hardware dead-man switch are exactly the answer to "what if the alert path itself fails" — and is entirely
+hardware dead-man switch are exactly the answer to *what if the alert path itself fails* — and is entirely
 unproven. **Design intent is not a capability.** The correct statement is: *SleepHQ has the feature and
 has paid for it in defects; AnxietyWatch2 has the better-specified feature and has paid nothing yet.*
 
@@ -478,8 +478,8 @@ behaviour, and it must not be written as though SleepHQ's alarm were known to fa
 5. Read the raw signal rather than a derived index.
 
 **What neither can do:** validate any of its own numbers. SleepHQ publishes no study; AnxietyWatch2
-publishes no study. Both disclaim medical-device status — SleepHQ explicitly ("not a diagnosis and not
-medical advice"; "is not a medical device"), AnxietyWatch2 through its scope and rules. Neither should be
+publishes no study. Both disclaim medical-device status — SleepHQ explicitly ("are not a diagnosis and
+are not medical advice"; "is not a medical device"), AnxietyWatch2 through its scope and rules. Neither should be
 described as clinically validated or diagnostic, and no local notification on either platform is an
 emergency monitor.
 
@@ -582,7 +582,7 @@ what is true.
 **In one sentence:** SleepHQ is what a CPAP user buys when they want the numbers now and do not mind
 renting them; AnxietyWatch2 is what they build when they want the samples and do not mind waiting — and
 if AnxietyWatch2 intends to keep refusing to compute the numbers, it owes its users a documented
-replacement analysis, because "the raw signal is in the database" is not yet a product.
+replacement analysis, because *the raw signal is in the database* is not yet a product.
 
 ---
 

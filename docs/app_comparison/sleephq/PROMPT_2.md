@@ -98,7 +98,7 @@ Apply these to every claim in the report.
 1. **Name the evidence class.** *Public claim* / *documented contract* / *static-only finding* /
    *runtime observation* / *inference* / *unknown*. SleepHQ has **zero runtime observations**; do not
    manufacture one, and do not describe a documented field as an observed behaviour.
-2. **A documented contract is not an observed behaviour.** "`SessionSerializer` publishes `ahi`" is a
+2. **A documented contract is not an observed behaviour.** *`SessionSerializer` publishes `ahi`* is a
    statement about the interface. "SleepHQ computes an AHI" is a different statement, and is not
    established unless the vendor says so. Say which one you mean.
 3. **An undocumented value domain is a finding.** `status`, `progress`, `usage`, `omitted` and

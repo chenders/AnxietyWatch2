@@ -136,7 +136,7 @@ Three structural observations:
 3. **The mask is a modelled entity with its own statistics.** `Api_V1_MaskSerializer` publishes
    `average_ahi`, `average_pressure`, `average_leak_rate`, `average_usage_per_night` and `last_used_on`.
    So the platform ties therapy outcome to the physical mask a session used, and an import records which
-   `mask_id` produced it. "Did the new mask improve my numbers" is answerable from the documented model.
+   `mask_id` produced it. *Did the new mask improve my numbers* is answerable from the documented model.
    Neither AnxietyWatch version models a mask.
 
 ### 4.2 The documented derived-value surface — what SleepHQ computes `[DOCUMENTED]`
@@ -241,7 +241,7 @@ range**:
 An integrator polling an import for `status == 3` is guessing. The fields exist, are typed, and are
 unusable without out-of-band knowledge. **This is the most consequential weakness found in the documented
 contract**: three published status/state fields with undefined domains. It is also the reason this file
-does not report "SleepHQ distinguishes not-measured from measured-and-good" — a field called `omitted`
+does not report *SleepHQ distinguishes not-measured from measured-and-good* — a field called `omitted`
 that might carry that meaning exists, and the specification declines to say.
 
 ### 4.5 Provenance at the file level `[DOCUMENTED]`
