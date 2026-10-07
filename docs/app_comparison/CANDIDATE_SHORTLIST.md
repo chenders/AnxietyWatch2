@@ -407,7 +407,41 @@ comparators rather than product competitors.
 | **Apple Health Records / FHIR-based PGHD tools** | Directly relevant to AnxietyWatch v1's `FHIRLabResultParser` and clinical-record import | Apple's own tooling is not a comparable product, and the FHIR ecosystem is a standard rather than a competitor. Better covered later as a standards/interop topic than as a shortlist row. |
 | **Visible (makevisible.com)** | HRV-based pacing for ME/CFS and Long Covid — symptom + physiology + personal-baseline overlap | Strong conceptual overlap but a narrower condition-specific audience than Bearable, which already covers the same comparison dimensions with more breadth. |
 | **Loop / OpenAPS / AndroidAPS** | Self-built closed-loop systems with local control and safety interlocks — architecturally instructive for the alarm path | The alerting comparison is better served by Empatica (validated alerting with clinical evidence) and the self-hosting comparison by Nightscout. Three DIY-closed-loop entries would crowd the list. |
-| **eMoods** | Would have been the strongest free, offline, no-account comparator with a printable clinician report for v1's core loop | **Not selectable at this research date.** `emoods.net` returned no DNS A record from the research workstation, and the site could not be retrieved, so no claims could be evidenced. Re-test before any future inclusion. |
+| **eMoods** | Would have been the strongest free, offline, no-account comparator with a printable clinician report for v1's core loop | **Selectable after all — the original "not selectable" finding rested on a domain the vendor does not publish.** Both storefronts name **`emoodtracker.com`**, which is live and current, and the app is on both stores. See the correction below. |
+
+> **Correction applied 2026-10-07 (refuted shortlist finding, not a change in the world).** This entry
+> originally read `Not selectable at this research date. emoods.net returned no DNS A record from the
+> research workstation, and the site could not be retrieved`. **The check used a domain the vendor does
+> not publish.** `emoodtracker.com` is the address both storefronts give — the App Store `sellerUrl` and
+> the Play listing's developer website and its declared privacy-policy URL — and it answered HTTP 200 on
+> 2026-10-07 (144,821 bytes, SHA-256 `72d41b69…`). Re-checked on that date:
+>
+> - `emoods.net` is **NXDOMAIN at the `.net` TLD authority** from three independent resolvers (the
+>   workstation's, Cloudflare DoH, Google DoH) — no A, AAAA, NS or SOA — and its single Wayback capture
+>   (2013-07-28) is an archive.org error shell, so nothing shows it was ever the vendor's published site.
+>   `emoods.com` is a HugeDomains for-sale parking page, not the vendor.
+> - iOS `com.yottaram.eMoods`, seller **Yottaram, LLC**, v1.3.28, free, **4.80359 / 4,236 ratings**, last
+>   updated **2025-12-07**.
+> - Android package **`my.tracker`**, developer "eMoods", **500,000+** installs, with Play's data-safety
+>   panel showing **"No data collected"** and **"No data shared with third parties"**. The package id
+>   contains neither the app name nor the developer, which is part of why a name-and-id search for it
+>   comes back empty.
+> - The positioning is the rationale this row gave: the site's own menu lists **"Classic (Fully offline
+>   app)"**, and it states "eMoods is a free Mood Tracking app …", "Privacy is paramount and your data
+>   will ALWAYS be fully in your control.", "Printable mood tracking reports" and "Create and send PDF
+>   reports"; the Play listing states "eMoods never stores ANY of your data in the cloud or connects to
+>   any APIs. No data ever leaves your phone without your explicit action."
+>
+> This is the third shortlist correction the run has produced, after `homeassistant` and `mindshift`, and
+> it is the first one caused by the **research process** rather than by a vendor's own material.
+> **Whether to add `emoods` as an eleventh candidate remains an owner decision** — the shortlist is
+> exhausted at ten, and the reason this candidate was excluded is now known to be wrong rather than
+> merely stale. Recorded in `PROCESS_STATE.md` (candidate table and §3) and `RESEARCH_METHOD.md` §2.6,
+> §6.1 and §9. Evidence kept outside the repository under `/tmp/aw2emoods/` (not redistributed):
+> `dig.txt`, `doh.txt`, `site.html` (SHA-256 `72d41b69…`), `play_mytracker.html` (`5535e181…`),
+> `play_search.html`, `dev_emoods.html`, `appstore.html` (`07a0e530…`), `itunes_search.json`
+> (`1603fa38…`), `com2.txt` (the HugeDomains redirect), `wb.txt`, `wb2013.html`. Every vendor sentence and
+> data-safety label quoted above was re-verified as a fixed string against those bytes on 2026-10-07.
 
 ## 5. Known limitations of this shortlist
 

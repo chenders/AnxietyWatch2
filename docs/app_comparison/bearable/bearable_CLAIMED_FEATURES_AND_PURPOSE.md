@@ -287,7 +287,9 @@ and a spreadsheet can stay free indefinitely; a user who wants the analysis in t
 **Sources that could not be retrieved:** the ScienceDirect article page itself (HTTP 403; metadata
 obtained via Crossref). The two blank-entry support articles were retrieved on 2026-10-06 during the
 quote-verification sweep and their content is now recorded in §6. The `emoods.net`
-comparison candidate was unreachable by DNS and is excluded from the shortlist.
+comparison candidate was excluded from the shortlist on 2026-10-06 for having no DNS record — **that
+exclusion has since been corrected: `emoods.net` is not the vendor's domain, the vendor publishes
+`emoodtracker.com`, and the candidate is available** (`CANDIDATE_SHORTLIST.md` §4, 2026-10-07).
 
 ## 16. Key similarities and differences versus AnxietyWatch
 

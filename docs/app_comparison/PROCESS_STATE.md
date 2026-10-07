@@ -38,7 +38,7 @@ may be started without an owner decision; see **Owner decisions pending** §3.
 | 8 | `oura` | 13 | **Complete with documented-contract inspection** | 2026-10-06 | 2026-10-06 | No binary and no source inspected. The Terms **prohibit** reverse engineering and circumventing subscription restrictions, so Phase 2A was closed by contract and not by accident. The vendor's **published OpenAPI 3.1 contract was inspected in full** — 72 paths, 75 schemas, 274 resolvable `$ref`s — together with its legal, trust and research surfaces. **No endpoint was called, including the sandbox.** |
 | 9 | `homeassistant` | 13 | **Complete with full published-source inspection** | 2026-10-06 | 2026-10-06 | Apache-2.0, so Phase 2A ran on **published source** at tag `2026.9.4` (`9212531f…`) with no owner decision. The state machine has first-class `unknown`/`unavailable`; the **alert path has no branch for either** and ends the alert — sending the resolution message — when the watched entity goes absent. Raw history is **hard-deleted** after `purge_keep_days` (default 10) with no tombstone; hourly statistics are **upserted**. `components/sensor/recorder.py:239` **does not parse** under Python 3, verified four ways, and the module is imported by its own test file. **No binary, no running instance, zero runtime observations.** |
 | 10 | `mindshift` | 12 | **Complete with published-client and public-records inspection** | 2026-10-06 | 2026-10-06 | App binary not inspected (closed source, store-only; no lawful route to the binary). No vendor source and **no API contract** exists. The inspected surface is the vendor's **published web client** (741,896-byte served bundle, read as text) plus public records: two storefront listings, the App Store privacy panel, the independent registration **NCT04562948**, the peer-reviewed paper **PMID 40656972** and its **corrigendum PMID 40655914**. **No endpoint was called and no runtime was observed.** |
-| — | `emoods` | — | Skipped | — | — | No DNS A record for `emoods.net` at research time |
+| — | `emoods` | — | **Excluded in error; available when re-tested 2026-10-07** | — | — | The exclusion rested on **`emoods.net`** (NXDOMAIN at the `.net` TLD), but the vendor publishes **`emoodtracker.com`** — the site both storefronts name — which is live: iOS `com.yottaram.eMoods` v1.3.28 (4.80359 / 4,236) and Android `my.tracker` (500,000+, Play data safety "No data collected"). Full correction in `CANDIDATE_SHORTLIST.md` §4 |
 
 **Sequencing rule in force.** Only one row may be **In progress**. A candidate is started only after the
 previous one's four deliverables exist and its verification command has been run.
@@ -1464,9 +1464,21 @@ recorded as such in the comparison's §11 and §14.
    than merely deepen one — and it is also the candidate where the contract case for staying closed is
    weakest, since nothing in the App Store or Play terms was found prohibiting local inspection of the
    shipped app. **That decision is placed before the owner in §3 and is not taken here.**
-3. **Shortlist adjustment.** `emoods` was dropped (no DNS A record for `emoods.net`). **This decision is now
-due:** the ten-candidate shortlist is **exhausted** (10 of 10 complete). Confirm whether a replacement
-eleventh candidate is wanted, and confirm the two **shortlist corrections** that the run has accumulated:
+3. **Shortlist adjustment — now three corrections, one of them ours.** The ten-candidate shortlist is
+**exhausted** (10 of 10 complete). Confirm whether an eleventh candidate is wanted, and confirm the
+three **shortlist corrections** the run has accumulated:
+
+   - **`emoods` — the exclusion was wrong, and the fault is in the process, not the vendor.** It was
+     dropped because `emoods.net` had no DNS A record, but the vendor publishes **`emoodtracker.com`**
+     — the address the App Store `sellerUrl` and the Play listing both give — which is live (HTTP 200 on
+     2026-10-07, SHA-256 `72d41b69…`). iOS `com.yottaram.eMoods` v1.3.28, 4.80359 / 4,236 ratings,
+     updated 2025-12-07; Android **`my.tracker`** (an id containing neither the app name nor the
+     developer), 500,000+ installs, Play data safety "No data collected". The app is free, offline and
+     no-account, with printable and PDF clinician reports — the rationale the shortlist row itself gave.
+     **The reachability check must use the domain the vendor publishes, and it must be run against both
+     storefronts' own links**; a guessed name is not a check. Full correction in `CANDIDATE_SHORTLIST.md`
+     §4, and the rule in `RESEARCH_METHOD.md` §6.1. **Adding `emoods` as candidate 11 is an owner
+     decision** and is not taken here.
 
    - **`homeassistant`** — the shortlist hypothesis that a general-purpose hub has no three-state honesty
      model was **refuted**; `STATE_UNKNOWN`/`STATE_UNAVAILABLE` are first-class (`const.py:303,313`). Recorded
@@ -1498,7 +1510,15 @@ claim in the file that proposed it. Closed 2026-10-06; commit `bb9fb63`.
   deliverables, in this file, **and in `CANDIDATE_SHORTLIST.md` itself** — because an untested hypothesis
   left standing in the shortlist is a claim the package has already disproved. Record it by marking the entry
   inline with the date, not by silently rewriting it: the superseded wording stays visible in the correction
-  block. Two were applied on 2026-10-06 (`homeassistant`, `mindshift`; commit `bb9fb63`).
+  block. Two were applied on 2026-10-06 (`homeassistant`, `mindshift`; commit `bb9fb63`) and a third on
+  2026-10-07 (`emoods`).
+- **A reachability check must query the domain the vendor publishes, not a guessed name.** `emoods` was
+  dropped on 2026-10-06 for having no DNS record at `emoods.net`; the vendor's actual site is
+  **`emoodtracker.com`**, which both storefronts name as their developer website and privacy-policy host,
+  and which was live the whole time. The check is not "does a name resolve" but "does the address the
+  vendor gives resolve" — taken from the storefront listing itself, one per platform. **A name that returns
+  no records is evidence about the name, not about the product.** Re-tested 2026-10-07: the candidate is
+  available on both stores and current.
 - Before concluding that a candidate is uninspectable, **check every vendor-published surface**: a
   GitHub/GitLab organisation, an open-source component, a public API reference, published datasets or
   research artifacts, a public roadmap, and self-published business figures. **Three of the four
