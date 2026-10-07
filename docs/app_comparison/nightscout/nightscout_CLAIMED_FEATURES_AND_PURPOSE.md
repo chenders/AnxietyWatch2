@@ -155,7 +155,7 @@ in either direction; it is evidence of how the project describes itself.
 **What this means for the comparison.** The Foundation gives Nightscout something no other candidate in
 this package has: a **non-commercial legal entity** with a stated anti-industry-funding position, a
 charitable purpose, and an ecosystem it funds. That is structurally the nearest thing on the shortlist to
-AnxietyWatch2's "no company, no account, private" posture — and it is worth being precise about the
+AnxietyWatch2's *no company, no account, private* posture — and it is worth being precise about the
 difference: the Foundation does **not** operate a service for users. Users operate their own sites. The
 Foundation funds the ecosystem and the projects; it is not a data processor and publishes no privacy
 policy (§10.3).
@@ -194,9 +194,9 @@ alarm delivery is assembled out of IFTTT and Pushover (§7.3).
 | GitHub organisation | `nightscout` (39 public repos, 551 followers, created 2014-05-21) |
 
 **Reading the fork count correctly.** The 73,382 forks against 2,836 stars is not a community-size
-signal. Nightscout's documented deployment method includes "fork the repository and deploy from your
-fork" (the project's own GitHub-based update and redeploy instructions exist precisely because users
-deploy from a fork), so a large fraction of those forks are **running installations, not contributions**.
+signal. Nightscout's documented deployment method deploys from the user's own fork of the repository
+(the project's own GitHub-based update and redeploy instructions exist precisely because users
+deploy that way), so a large fraction of those forks are **running installations, not contributions**.
 Recorded as an inference from the deployment model documented by the project itself. The star count,
 watchers and 142 open issues are the conventional signals, and by those Nightscout is a small, long-lived,
 widely-deployed project rather than a large contributor community.
@@ -398,8 +398,8 @@ The README states: "**Alarms are generated for high and low values, which can be
 the data.**" The code matches this: the alarm socket broadcasts to its whole namespace with no rooms, and
 its native-token `ack` handler performs no permission check, so any valid access token can acknowledge —
 that is, silence — any alarm globally (§5.17 of the inspection). For a system whose documented default
-makes everyone a reader (§10), the practical audience able to silence an alarm is "anyone with the URL
-who has any token".
+makes everyone a reader (§10) — "In a default setup, anyone with your Nightscout URL can view your site"
+— the practical audience able to silence an alarm is anyone holding both the URL and any valid token.
 
 ### 7.5 Acknowledgement state does not survive a restart
 

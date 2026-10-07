@@ -65,8 +65,8 @@ data stops, what a delete means, and what a derived statistic is computed from.
 inspection were **checked and refuted**, and are therefore *not* recorded as findings (listed in §5.20).
 One of them — a stale `TODO` asserting that a fallback "doesn't work" when the code at the pinned commit
 plainly does work — would have become a false finding had the comment been trusted. This is the same
-discipline the package applies to candidates ("never mark a candidate complete on a model's assertion"),
-applied per-finding.
+discipline the package applies to candidates ("Never mark a candidate complete based only on a model's
+assertion"), applied per-finding.
 
 ---
 
@@ -436,7 +436,7 @@ LEVEL_LOW: -1, LEVEL_LOWEST: -2, LEVEL_NONE: -3
 `lib/levels.js:39–48` — `toStatusClass` returns `'current'` unless the level is `WARN` or `URGENT`.
 
 So `INFO`, `LOW`, `LOWEST` and `NONE` are four distinct severities that render **identically**. `NONE`
-means "this signal is not in an alarm state"; `LOW` and `LOWEST` mean "measured and mildly out of range".
+means *this signal is not in an alarm state*; `LOW` and `LOWEST` mean *measured and mildly out of range*.
 The presentation has no way to distinguish them, and there is no distinct rendering for "not measured" at
 all.
 
@@ -627,8 +627,8 @@ More than twenty-five explicit conversion sites were found in `lib/` alone — `
 display and returns a string, and it is reachable from computation.
 
 **Where it actually went wrong in this release is §5.3.** The report series is scaled to display units and
-then fed to an A1c formula written for mmol/L. The finding for the comparison is not "Nightscout converts
-in many places" — that is a style difference. It is that **the display unit reached a clinical
+then fed to an A1c formula written for mmol/L. The finding for the comparison is not *Nightscout converts
+in many places* — that is a style difference. It is that **the display unit reached a clinical
 derivation**, and the project shipped a wrong number as a result.
 
 ### 5.14 PHI and credentials are logged
@@ -733,7 +733,7 @@ share an implementation:
 non-persistent notices after 12 hours on a tick.
 
 **Recorded as architectural spread, not as a defect.** Each channel is defensible; the observation is that
-"warn the operator about something" has three implementations, and the loudest warning in the product —
+*warn the operator about something* has three implementations, and the loudest warning in the product —
 "readable by world" — shares no code with the security warnings raised for a weak secret, which means the
 discovery of one does not imply the discovery of the other.
 

@@ -104,7 +104,7 @@ the operational record.** That is the honest framing of this comparison, in both
 
 **The form difference is the whole comparison.** Nightscout asks the user to operate a server; AnxietyWatch
 v1 asks the user to install an app; AnxietyWatch2 asks the user to operate a small box. Nightscout's answer
-to "what if the user cannot operate a server" is a paid hosting market. AnxietyWatch2 has not needed to
+to *what if the user cannot operate a server* is a paid hosting market. AnxietyWatch2 has not needed to
 answer that question yet, and the honest reading of Nightscout's history is that it is a real question with
 a real cost.
 
@@ -383,7 +383,7 @@ Nightscout's permissive posture is defensible from its own premises. It is a dis
 by hardware that has already decided what is measurable; refusing a value at the API boundary could drop a
 genuine reading; and a `LOW` sentinel that is excluded from the *alarm* path is arguably correct, because
 the pump and the uploader app are already alarming on it. Against that: **the same permissive posture is
-what let a display unit reach a clinical derivation**, and "the user will notice the indicator" is not a
+what let a display unit reach a clinical derivation**, and *the user will notice the indicator* is not a
 safety property. The two positions are not reconciled here, and should not be: Nightscout's is a
 demonstrated operational success, AnxietyWatch2's is a specified rule with no operational record yet.
 
@@ -580,7 +580,7 @@ Answers are the inspected code's behaviour; **none was observed.**
 
 **Nightscout is the right comparison for AnxietyWatch2 and the wrong comparison for AnxietyWatch v1.**
 
-For v1, the overlap is limited to a shared "what happens when the signal stops" question, and Nightscout's
+For v1, the overlap is limited to a shared *what happens when the signal stops* question, and Nightscout's
 answer (assume current, do not alarm) is worth one paragraph in v1's risk discussion and no more.
 
 For AnxietyWatch2, Nightscout is the only candidate that has already built the layer AnxietyWatch2 is

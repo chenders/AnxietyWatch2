@@ -37,8 +37,8 @@ pretend it is. It is three other things, and they must be kept separate:
 The deliverable should let the owner decide four things: whether Nightscout's architectural choices
 validate or challenge AnxietyWatch2's; whether any of its specific mechanisms (role/permission strings,
 `history` delta sync, tombstone-plus-permanent-delete, write-path-triggered pruning, the plugin/sandbox
-seam) are worth adopting or deliberately rejecting; whether AnxietyWatch2's "private LAN, no account, no
-cloud dependency" position is justified by the *operational* record rather than only by principle; and
+seam) are worth adopting or deliberately rejecting; whether AnxietyWatch2's *private LAN, no account, no
+cloud dependency* position is justified by the *operational* record rather than only by principle; and
 whether the three-state rule and the registry-as-single-source-of-truth rule are worth their cost, given
 a widely deployed system that violates both and still functions.
 
@@ -114,8 +114,8 @@ path rests on community reverse engineering because there is no other lawful rou
    The readable-by-world warning and the A1c note are both disclosures. Say what each does and does not
    change.
 6. **The most conservative of two conflicting vendor surfaces governs**, and the conflict is recorded
-   rather than resolved (see the ten advertised hosts versus the security page's "not designed for
-   scenarios where a third party operates a Nightscout installation on behalf of others").
+   rather than resolved (see the ten advertised hosts versus the security page's "The system has not been
+   designed for scenarios where a third party operates a Nightscout installation on behalf of others").
 7. **Do not upgrade a comment into behaviour.** `//assume current` and `// bless absence with known type`
    are evidence of *intent*; the behaviour claim comes from the surrounding code, and it must be stated as
    a static finding.
@@ -138,15 +138,15 @@ that would cost. **Q1–Q4 are the decisive four.**
 | # | Question | Why it matters | What would resolve it |
 |---|---|---|---|
 | **Q1** | In a default deployment of 15.0.8, is the `readable` default actually in effect for an anonymous caller, and does the "readable by world" admin notice appear? | This is the single most consequential security claim in the whole package, and it is currently a code reading. It decides whether Nightscout's default posture is a documentation-level warning or a live exposure. | Authorised local instance on disposable infrastructure + one unauthenticated HTTP request + one admin-page load. Cost: a MongoDB and a Node app on a throwaway host. **Requires an explicit authorisation decision; not performed.** |
-| **Q2** | Does the Daily Stats A1c render as ~95.8% in mg/dL display and ~6.9% in mmol/L display at this commit, and is the fix present in a later release? | Establishes the difference between "documentation says the number was wrong" and "the shipped code produces a wrong clinical number". Also tests whether the vendor's disclosure is accurate in magnitude. | A unit test of the two functions with a fixed input (no server needed), or a running instance. Also: check the default branch and release notes for the fix. Cost: low. |
+| **Q2** | Does the Daily Stats A1c render as ~95.8% in mg/dL display and ~6.9% in mmol/L display at this commit, and is the fix present in a later release? | Establishes the difference between *documentation says the number was wrong* and *the shipped code produces a wrong clinical number*. Also tests whether the vendor's disclosure is accurate in magnitude. | A unit test of the two functions with a fixed input (no server needed), or a running instance. Also: check the default branch and release notes for the fix. Cost: low. |
 | **Q3** | With data flowing and then stopping, does the stale-data alarm fire? With data never having arrived, does anything fire at all? | The code distinguishes these two cases in a way that is easy to misread (`timeago.js:26` returns early only when there is no entry *or* the entry is in the future, so old-but-present data proceeds to `checkStatus`). This is the exact failure mode AnxietyWatch2's three-state rule exists to address. | A runtime instance with a synthetic feed, or a careful test of `timeago.checkNotifications`/`checkStatus` in isolation. Cost: low for the test, moderate for the runtime. |
-| **Q4** | Are the audit-vs-code discrepancies known to the maintainers, tracked, or fixed on the default branch or in 15.0.9? | Determines whether the three drift findings are "the project knows and is fixing it" or "the project's security documentation is currently misleading". Changes the finding's weight, not its existence. | Search the repository's issues, pull requests and the default branch for the token/JWT, delay-list, role-table and swagger-default changes. Public and read-only. Cost: low. |
+| **Q4** | Are the audit-vs-code discrepancies known to the maintainers, tracked, or fixed on the default branch or in 15.0.9? | Determines whether the three drift findings are *the project knows and is fixing it* or *the project's security documentation is currently misleading*. Changes the finding's weight, not its existence. | Search the repository's issues, pull requests and the default branch for the token/JWT, delay-list, role-table and swagger-default changes. Public and read-only. Cost: low. |
 | **Q5** | Do alarms actually cross group boundaries over the socket, and can any token actually silence an alarm in practice? | Code says both; the project's README says the second in prose. A runtime check would move this from a code reading to a demonstrated behaviour. | Two authorised WebSocket clients with distinct tokens against a local instance. Cost: moderate; needs Q1's instance. |
 | **Q6** | What do the ten advertised hosting providers commit to in writing — data location, encryption, retention, breach notification, sub-processors, and under which law do they act? | The project publishes no privacy policy because it holds no data. For any user who pays a host, the privacy question is entirely delegated. Nothing in the package currently answers it. | Read each provider's published terms and privacy page. Cost: low (public pages); note that claims remain provider claims. |
 | **Q7** | What does the storage purifier actually strip, and does it treat `activity` identically to `entries`? | The documentation's sanitisation claim was verified only at the import level. What is removed determines whether a hostile or malformed upload can store script-bearing content for later rendering. | Read `lib/server/storage-purifier.js` and `lib/api3/shared/writePurifier.js` bodies. Cost: low. |
 | **Q8** | Can one Nightscout instance serve more than one person, and what happens if it is used that way? | The documented model is one site per person. A multi-person deployment changes every security and retention conclusion at once. Relevant because the advertised hosting market implies shared infrastructure. | Read the profile/subject/role code for multi-subject support; check the hosting providers' terms. Cost: low. |
 | **Q9** | End to end, what does the `39` value do — in the alarm engine, in the reports, and in the UI? | The code has 39 special-cased differently in at least four places, including reports that *include* it and alarms that *exclude* it. The patient-safety consequence cannot be stated from source alone. | Trace the callers of `displayBg` and the report filter with a synthetic `39` entry, ideally on a running instance. Cost: low for the trace, moderate for runtime. |
-| **Q10** | Does the default retention (no application-level pruning) match what the API description promises, and what actually removes data in practice? | Three surfaces give two answers. The practical question for a user is "how long does my data live if I do nothing?" | Read the remaining `lib/storage/*` index definitions for TTL indexes; check any MongoDB migration scripts. Cost: low. |
+| **Q10** | Does the default retention (no application-level pruning) match what the API description promises, and what actually removes data in practice? | Three surfaces give two answers. The practical question for a user is *how long does my data live if I do nothing?* | Read the remaining `lib/storage/*` index definitions for TTL indexes; check any MongoDB migration scripts. Cost: low. |
 | **Q11** | Does anything in the surrounding ecosystem (uploaders, followers, analytics, upstream projects like Loop/Trio/AAPS) overlap AnxietyWatch2's sleep, SpO₂, respiratory or context surfaces? | The shortlist treats Nightscout as the platform analogue, but the ecosystem is large and was not surveyed. If a companion app does sleep or SpO₂, the competitive picture changes. | Survey the documented uploader/follower list and the ecosystem projects' feature pages. Cost: moderate. |
 | **Q12** | What is the practical effect of the security page's warning that users must verify that third-party apps "have data validation processes in place"? | The project states it does not validate consumers; the ecosystem is where data actually leaves the system. For AnxietyWatch2's "third-party read" target this is directly relevant. | Read a representative follower app's source where available; otherwise record as unresolved. Cost: moderate. |
 | **Q13** | Who governs the repository and the trademark, and what is the bus factor? | Nightscout is the reference implementation for the platform layer. Its long-term maintainability is relevant if any part of its design is adopted. | Read `CONTRIBUTING.md`, the recent commit history's authorship, and the Foundation's leadership page. Cost: low. |
@@ -192,7 +192,7 @@ boundary (§§5.4–5.5, 5.12). Then the three-state rule, reject-with-reason, q
 `assert!(b.rejected.is_empty(), "absent is not rejected")` boundary. Address the counter-argument
 honestly: Nightscout is a display and alerting system fed by hardware that already decides what is
 measurable, and an API that rejects a glucose value could drop a real low reading. Weigh that against
-"a wrong number is worse than no number downstream".
+*a wrong number is worse than no number downstream*.
 
 ### 5. Alarms: thresholds, silencing, and failure
 
@@ -284,7 +284,7 @@ does, and what AnxietyWatch2 currently does or targets. Mark each answer with it
 
 ## Tone and claim discipline
 
-- **No scoreboard.** "Nightscout 6 / AnxietyWatch2 8" is not a finding. State mechanisms and consequences.
+- **No scoreboard.** *Nightscout 6 / AnxietyWatch2 8* is not a finding. State mechanisms and consequences.
 - **No victory laps on the A1c defect.** It is one wrong number in one report, in a project with seventeen
   years of operation; it is useful because it is *verifiable*, not because it is damning. The same
   discipline applies in both directions: do not soften it into nothing, and do not present it as a verdict
@@ -318,4 +318,4 @@ does, and what AnxietyWatch2 currently does or targets. Mark each answer with it
 `nightscout_COMPARISON.md` in this directory, following the structure above. Length should be driven by
 evidence: the sections with verified code findings (units/derived values, absent data, alarms, store) will
 be longer than the sections that are documentation-only. Include the A1c arithmetic explicitly, and
-include the eight failure-mode walk-throughs even where the answer is "unknown, because it was not run".
+include the eight failure-mode walk-throughs even where the answer is *unknown, because it was not run*.
