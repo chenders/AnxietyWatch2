@@ -144,8 +144,9 @@ FDA-cleared, and not on a path to clearance" — the same posture MindShift take
    the vendor.
 9. **A correct quotation is mandatory; a paraphrase wearing quotation marks is the specific failure this
    package exists to prevent.** Every quoted fragment must verify against the retrieved bytes. Run the quote
-   checker (`/tmp/aw2research/mindshift/quotecheck.py`) as a separate pre-commit step and report its result,
-   including a zero.
+   checker (the one described in `../RESEARCH_METHOD.md` §1 and §9 — the scratch copy under
+   `/tmp/aw2research/mindshift/` did not survive the reboot, so re-create it from that description) as a
+   separate pre-commit step and report its result, including a zero.
 10. **Never state float equality.** Use tolerances.
 11. **Do not reproduce third-party machine paths or personal identifiers** found in public artifacts; cite as
     "a tester's machine path (redacted here)". **Do not reproduce the error-telemetry ingest identifier found
@@ -316,7 +317,8 @@ endpoints. They appear in this package as **strings read from published JavaScri
 `mindshift_COMPARISON.md` in this directory, following the fourteen-section structure above.
 
 When you finish: run the quote checker on every file you wrote
-(`python3 /tmp/aw2research/mindshift/quotecheck.py <file>`) and report its result **including a zero**; update
+(`python3 qc2.py <file>` after re-creating it from `../RESEARCH_METHOD.md` §1; commands and expected
+results in §9) and report its result **including a zero**; update
 `../PROCESS_STATE.md` (candidate 10 dossier, residual uncertainty turned into numbered items, active-candidate
 line) and `../RESEARCH_METHOD.md` if the inspection mode or a standing sub-check changed. Then run
 `scripts/check-public-info.py --self-test` and the gate, `git add` the files **by name**, and commit with the

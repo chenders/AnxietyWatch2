@@ -701,8 +701,9 @@ curl -s 'https://www.ebi.ac.uk/europepmc/webservices/rest/PMC12244177/fullTextXM
   -o api/fulltext_PMC12244177.xml
 
 # 9. Quote verification — a required, separate pre-commit step
-#    (run from the repository root)
-python3 /tmp/aw2research/mindshift/quotecheck.py \
+#    (run from the repository root; the checker is described in ../RESEARCH_METHOD.md §1,
+#     and the scratch copy under /tmp did not survive the reboot)
+AW2_ROOT=/tmp/aw2research/mindshift python3 qc2.py \
   docs/app_comparison/mindshift/mindshift_CLAIMED_FEATURES_AND_PURPOSE.md
 
 # 10. Hashes for the artifact record

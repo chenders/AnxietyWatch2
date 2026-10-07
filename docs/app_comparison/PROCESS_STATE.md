@@ -43,6 +43,29 @@ may be started without an owner decision; see **Owner decisions pending** §3.
 **Sequencing rule in force.** Only one row may be **In progress**. A candidate is started only after the
 previous one's four deliverables exist and its verification command has been run.
 
+## Retrospective quote-verification sweep (all ten candidates)
+
+| Step | Status | Evidence |
+|---|---|---|
+| Sweep all 40 deliverable files in **full-corpus** mode | **Complete** | 40 of 40 files report `0 not found`, run as `AW2_ROOT=/tmp/aw2research/<slug> python3 qc2.py docs/app_comparison/<slug>/<file>.md` for each of the four files of each of the ten candidates |
+| Sweep both **index files** too | **Complete** | `PROCESS_STATE.md` 72 fragments · `RESEARCH_METHOD.md` 19 fragments — `0 not found` in full mode, with a combined vendor root over all ten candidate trees (they quote across candidates) |
+| Sweep all 40 in **vendor-only** mode (`AW2_VENDOR_ONLY=1`) | **Complete** | 85 MISSes across 22 files, machine-classified: **40 V2 product-tree quotes · 21 V1 product-tree quotes · 4 sibling-candidate vendor surfaces · 20 spans of this package's own normative text or inspection-mode labels (plus CPython's own `SyntaxError` message) · 0 unexplained**. The two index files add 14 more, all V1/V2 or the package's own headings and rules |
+| Defects the second mode found, fixed against the vendor bytes | **Complete** | `empatica` ×2 misquotations (recorded in §17 of its claimed-features file), `sleephq` ×1 elided quote, `homeassistant` ×3, `nightscout` ×1, `oura` ×1 — commit `3ebe5da`; `bearable` in commit `88e25b7` |
+
+Per-candidate sweep commits: `5a28373` welltory · `d31d0cf` exist · `7e4b731` oscar · `1c36d35` sleephq ·
+`dc48c74` nightscout · `2d3c2ef` empatica · `bb2ece1` oura · `b84e30b` homeassistant · `83b3a30` mindshift
+· `88e25b7` bearable · `3ebe5da` the vendor-only corrections. **No candidate has an outstanding sweep.**
+
+**The sweep's corpus is scratch, not evidence.** The check reads the fetched vendor trees under
+`/tmp/aw2research/<slug>/`, which is where the run's artifacts lived. The machine rebooted on
+2026-10-06 and macOS cleared `/tmp`; the corpus is therefore no longer on disk, and the sweep cannot be
+re-run from a checkout alone. It is reproducible only by **re-fetching** each artifact from the URL and
+verifying the SHA-256 recorded in that candidate's deliverables, then re-running the checker described in
+`RESEARCH_METHOD.md` §1 (algorithm) and §9 (commands and expected results). This is why every deliverable
+carries its artifact URLs and hashes: the durable evidence is the quote plus its URL and digest, not the
+local copy. A `MISS` list stored only under `/tmp` was never evidence — quote the command and the
+expected result instead, as §9 does.
+
 ## Pilot status
 
 | Step | Status | Evidence |
@@ -1629,6 +1652,32 @@ claim in the file that proposed it. Closed 2026-10-06; commit `bb9fb63`.
   consistency check, not a source check. A paraphrase wearing quotation marks is the specific failure this
   package exists to avoid. Applied again to `homeassistant` on 2026-10-06: 48 MISSes, 33 of them corpus gaps
   and **15 author phrases or hypothetical dialogue wearing quote marks, reworded rather than justified**.
+- **The sweep runs in two modes, and only the second can see a cross-file echo.** The full corpus (vendor
+  tree + package docs + V2 + V1) is run first; then `AW2_VENDOR_ONLY=1`, which removes the package, V2 and V1
+  trees so a quotation cannot verify merely because a sibling deliverable reproduces the same wording. That
+  mode found the package's two worst defects: `empatica`'s `digital measures` (the page reads `digital
+  biomarkers`) and `You must have` (the EULA reads `The User must have`, a defined term). Both passed the
+  full pass. Package-wide the vendor-only run produced **85 MISSes across 22 files**, machine-classified as
+  **40 V2 product-tree quotes · 21 V1 product-tree quotes · 4 sibling-candidate vendor surfaces · 20 spans of
+  this package's own normative text, inspection-mode labels, or CPython's own `SyntaxError` message** —
+  zero unexplained. Commit `3ebe5da` fixes the defects; the two Empatica corrections are recorded in
+  `empatica_CLAIMED_FEATURES_AND_PURPOSE.md` §17 with the superseded strings in code spans.
+- **Escape decoding and markup stripping follow the bytes, not the file extension.** `exist`'s API reference
+  is an HTML page whose text layer is a JS/JSON payload (`"text": "Last night's sleep was surprisingly
+  long.\r\nMonday is…"`), so `.html`/`.xml` now receive the same `\uXXXX`/`\n`/`\r` decoding as `.js`/`.json`.
+  Inline markup inside a quoted source string is stripped on both sides: `oscar`'s oximeter dialog stores
+  `bluetooth models is <span style=" font-weight:600;">probably not</span> possible yet`, and the
+  deliverable renders those same words in markdown bold. Applying one `norm()` to the fragment and to the
+  corpus alike is what keeps a markup-only difference from reading as a misquotation.
+- **A vendor's own release artifact is a check on the pinned tree.**
+  `api.github.com/repos/nightscout/cgm-remote-monitor/releases/tags/v15.0.8` returns the release name
+  `Release 15.0.8 Chocolate Chip Muffin` and a `target_commitish` equal to the pinned commit
+  `92d0834219aa771b5837dbcbf1baeb839a200cf6`: the checkout and the published release agree.
+- **Where a vendor documents the inverse of a V2 rule, that is a documented behaviour, not an absence.**
+  Bearable's blank-entry articles state that a blank **binary** factor is assumed not to have happened and is
+  correlated as "didn't happen", while a blank **variable** factor is excluded — the inverse of
+  AnxietyWatch2's rule. Quoted, recorded `[doc]`, and the earlier "not documented / `[unknown]`" text in the
+  same file corrected when the articles were fetched.
 
 **The full rule register, with the sub-check table and the candidate that first produced each rule, lives in
 `RESEARCH_METHOD.md` §6.1.** This list records the rules that changed a verdict or a commit; §6.1 is

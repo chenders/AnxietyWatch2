@@ -1000,7 +1000,8 @@ sub-check in `RESEARCH_METHOD.md`. See gap G-8.
    unmaintained policy page, a site rebuild in progress ("next-generation rebuild" is the vendor's own
    phrase), or a document that lives in the app. All are stated where relevant.
 7. **A quote-verification sweep was run against the fetched bytes** before this file was committed
-   (`/tmp/aw2research/mindshift/quotecheck.py`, line- and paragraph-scoped pairing, HTML/XML tag-stripped,
+   (`quotecheck.py`, since superseded by `qc2.py` and described in `../RESEARCH_METHOD.md` §1; the scratch
+   copy did not survive the 2026-10-06 reboot; line- and paragraph-scoped pairing, HTML/XML tag-stripped,
    JS escapes decoded, elisions split into fragments; 158 distinct quoted fragments checked). The sweep
    **found and fixed five real misquotations** in draft: (a) a dropped "all of" in the editorial-board
    footnote; (b) a spurious "your" at the head of the FAQ data sentence (draft read `your personal data are
