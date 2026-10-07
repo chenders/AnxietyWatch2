@@ -925,7 +925,7 @@ safety judgement is offered, and no claim is made that a clearance is improper.
 | Authorized implementation inspection | `oura/oura_IMPLEMENTATION_INSPECTION.md` | Written — **documented-contract inspection, partially performed**: the vendor's published specification and legal/trust surfaces read. No binary, no source, **no endpoint called, nothing executed** |
 | Candidate-specific Prompt 2 | `oura/PROMPT_2.md` | Written — `PROMPT2-TECHNICAL-SYSTEMS.md` base plus the `PROMPT2-EVIDENCE-FIRST.md` supplementary block |
 | Comparison report (Prompt 2 run) | `oura/oura_COMPARISON.md` | Written — 14 sections |
-| Final findings, PDF | `docs/oura-final-findings.pdf` | Written — `oura_COMPARISON.md` at `be74b06` rendered with pandoc + weasyprint; extracted with `pdftotext -layout` and grepped for private identifiers (the public-info scanner skips binaries) |
+| Final findings, PDF | `docs/oura-final-findings.pdf` | Written, **regenerated 2026-10-06** from the current `oura/oura_COMPARISON.md` after the quote-verification sweep. Cover page = the document's own first page, recoverable with `pdftotext -layout -f 1 -l 1`. Pipeline: `cat title.md oura_COMPARISON.md > oura-final-findings.md; pandoc -f markdown-smart oura-final-findings.md -s -o oura-final-findings.html --css=print.css; weasyprint -s print.css oura-final-findings.html oura-final-findings.pdf` (WeasyPrint 66.0, A4, 8.6 pt). `-f markdown-smart` is required: without it the reader converts straight quotes to typographic ones and the PDF no longer matches the markdown byte-for-byte in the quoted spans. Then extracted with `pdftotext -layout` and grepped for private identifiers, because the public-info scanner skips binaries |
 
 **Verification command:**
 
