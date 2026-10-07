@@ -71,7 +71,7 @@ the operational record.** That is the honest framing of this comparison, in both
    mature, widely deployed system, and two of them (units, absent data) have *user-visible consequences*
    the project itself documented. This is the strongest external evidence in the package that the rules
    address real failure modes rather than aesthetic preferences.
-2. **The "no account, no cloud dependency" position is defensible on operational grounds,** not only on
+2. **The *no account, no cloud dependency* position is defensible on operational grounds,** not only on
    privacy grounds: Nightscout's own documentation states that a working internet connection and
    third-party cloud services are required, and its recommended alerting path needs IFTTT, Google and
    Pushover accounts. A local alerting path is a genuinely different product, not a philosophical

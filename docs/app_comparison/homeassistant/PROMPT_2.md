@@ -216,8 +216,8 @@ Organise the technical comparison around these axes, which is where Home Assista
 - V2: supervised alarm and hardware dead-man switch — **specified, not built**.
 - The fair framing: Home Assistant has *built* a delivery-confirmation mechanism and stopped after one
   hop; V2 has *specified* a fuller one. Credit the built mechanism, credit the honest `False` on an
-  unmatched receipt, and state plainly that neither answers "what if the fallback also fails, and nobody
-  notices?"
+  unmatched receipt, and state plainly that neither answers *what if the fallback also fails, and nobody
+  notices?*
 
 ### 5. Health-signal ingestion versus V2's typed registry
 

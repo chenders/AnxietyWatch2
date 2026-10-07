@@ -99,7 +99,7 @@ is part of the clause and is quoted**: it is what makes the prohibition a *permi
 than an absolute ban, and omitting it would have mis-stated the vendor's own text.
 
 **All three clauses in this section were mis-quoted in an earlier draft** and are corrected here against
-the fetched page — including an invented verb sequence in (ix) ("remove, deactivate, impair, defeat") that
+the fetched page — including an invented verb sequence in (ix) (`remove, deactivate, impair, defeat`) that
 appears nowhere in the contract. Recorded because a contract clause cited as an authorization basis must
 be exact: the correction is visible here rather than silent.
 

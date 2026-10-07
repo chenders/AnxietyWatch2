@@ -177,7 +177,7 @@ also MD5, and a second identifier, `fingerprint_base64`, has **no published algo
 | 2 | "Advanced statistics… how your pressure changes over time" | `pressure_set(_95)`, `ipap_set(_95)`, `epap_set(_95)` | **Backed** |
 | 3 | "Pan through the night… zoom to analyse airflow limitation and respiratory arousals" | `flow_limit`, `flow_limit_95`; **no waveform endpoint** | **Not reconciled.** No documented resource carries breath-level data |
 | 4 | "Custom PDF reports with AI Insights" | **No AI resource, field or description anywhere in the API surface** | **Not reconciled.** Absence in the contract is not absence in the product |
-| 5 | "Set personalised alerts… for oxygen & pulse rate level events" | **No alert, threshold or notification resource** | **Not reconciled**; app/device-level, outside the public API |
+| 5 | "set personalised alerts to receive notifications for specific oxygen & pulse rate level events" | **No alert, threshold or notification resource** | **Not reconciled**; app/device-level, outside the public API |
 | 6 | "Automatically syncs… every 10 minutes" | No documented schedule; no webhook or push resource | **Not reconciled** |
 | 7 | "Get detailed statistics on your therapy for every night" | Eleven `jsonb` summary blocks on the nightly record | **Exists; contents `[UNKNOWN]`** |
 | 8 | "Track your feelings with fun emojis & create custom flags…" | `feeling_score` (integer, no range), `notes`, `sleep_stages` (text); **no flag field** | **Partially reconciled** |

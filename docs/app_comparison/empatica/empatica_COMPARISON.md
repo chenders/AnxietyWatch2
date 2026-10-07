@@ -149,7 +149,7 @@ because it makes concrete how different the two products' threat models are.
 | Canonical unit | not published on the surfaces read | `vitals/registry.toml`, one unit per type, converted **once at the decoder** |
 | Thresholds | not published; detection sensitivity is a mode, not a number | registry-owned, single source of truth |
 | Derived measures | "**300+**" digital measures (EmbracePlus/Cloud API), "**200+**" (EmbraceMini) — **none enumerated, no units, no windows, no ranges published** | registry types only; **no AHI type, no percentile computation** `[verified in tree]` |
-| Raw data | "raw data and an extensive range of digital measures"; "No black box algorithms" | raw samples retained; raw `samples` dropped at 2 years per amendment 01 |
+| Raw data | "raw data and an extensive range of digital biomarkers"; "no black box algorithms" | raw samples retained; raw `samples` dropped at 2 years per amendment 01 |
 | Missing data model | **not published** — `[UNKNOWN]`; wearing detection is published as a *platform* signal | three states required; "not measured" is never rendered as measured |
 
 **The sharpest data-path contrast is not the sensors — it is the enumerability of the derived layer.**

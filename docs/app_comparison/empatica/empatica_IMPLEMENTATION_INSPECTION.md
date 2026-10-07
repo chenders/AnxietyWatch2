@@ -352,7 +352,7 @@ be *scored*.
   seizures, absence seizures or non-convulsive seizures."
 - "The phone needs to be kept **within 15 feet** of the EmbracePlus watch for alerts to be sent."
 - "Use in children **younger than 6** should be evaluated by a clinician on a case-by-case basis."
-- "You must have a Device that is compatible with the App … EMPATICA does not warrant that the App will be
+- "The User must have a Device that is compatible with the App … EMPATICA does not warrant that the App will be
   compatible with all mobile devices."
 - "**EMPATICA shall not be obliged to support obsolete versions** of the App or to update or provide versions
   of the App for use on any particular mobile device or operating system."

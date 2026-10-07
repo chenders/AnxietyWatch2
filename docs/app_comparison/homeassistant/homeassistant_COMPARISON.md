@@ -42,8 +42,8 @@ cannot be determined") `[DOC]`, and it is lost at the alarm layer (Finding 1) an
 and `unavailable` are written into `states.state` as those literal strings, a removed state is written as
 the **empty string `""`**, and the column is a nullable `String(255)` with no unit and no provenance
 (`db_schema.py:422,478-490`) `[SRC]`. Three distinct absences collapse onto three string values inside one
-untyped column. **The shortlist's hypothesis that "a general-purpose hub has no three-state honesty
-model" is refuted** (`../CANDIDATE_SHORTLIST.md:317`) and the correction is recorded here and in
+untyped column. **The shortlist's hypothesis that `a general-purpose hub has no three-state honesty
+model` is refuted** (`../CANDIDATE_SHORTLIST.md:317`) and the correction is recorded here and in
 `PROCESS_STATE.md`.
 
 **Finding 3 — retention is a scheduled hard delete for history and an upsert for aggregates.** Raw
@@ -60,8 +60,8 @@ forever. The aggregate layer also carries two things V2 does not have — a **co
 app to confirm within `PUSH_CONFIRM_TIMEOUT = 10` seconds; on timeout the channel is torn down and a single
 `fallback_send` runs (`push_notification.py:10,33-62`) `[SRC]`. Receipts are not persisted, there is no
 second fallback, no escalation, and no failure record. V2's supervised alarm and hardware dead-man switch
-are **V2 specified target and not built**. Neither system has a finished answer to "what if the fallback
-also fails and nobody notices?", and the report says that rather than scoring a win.
+are **V2 specified target and not built**. Neither system has a finished answer to *what if the fallback
+also fails and nobody notices?*, and the report says that rather than scoring a win.
 
 **Finding 5 — one file in the inspected release does not parse.** `components/sensor/recorder.py:239`
 reads `except ValueError, TypeError:`; `ast.parse` fails with "multiple exception types must be
@@ -186,7 +186,7 @@ match · 10 documented-only · 2 partial · 7 outside classes.** The rows that m
 | Health sensors are last-value, 30 days, units per sensor incl. one misspelling | match (docs) | companion reference table |
 | `sensor/recorder.py` fails to parse and therefore cannot load | **partial** | parse failure verified four ways; the *consequence* is inference |
 | Alert state does not survive a restart | **partial** | in-memory fields and `cancel_on_shutdown=True` verified; the component's state-reproduction file was **not read** |
-| "1500+ integrations"; "top open source project by contributors, 2025"; "over 1 million users"; `averageUserRating = 0` | outside classes | marketing counts, superlatives, and an unresolved ratings-field ambiguity — none enter a tally |
+| "1500+ integrations"; "top open source project by contributors in 2025"; "over 1 million users"; `averageUserRating = 0` | outside classes | marketing counts, superlatives, and an unresolved ratings-field ambiguity — none enter a tally |
 | The hypothesis that the recorder checks absent states explicitly | outside classes | **refuted**: no `STATE_UNAVAILABLE`/`STATE_UNKNOWN` reference exists in `components/recorder/` |
 
 **A documentation-versus-code tension worth naming.** The alert documentation's three-state table is

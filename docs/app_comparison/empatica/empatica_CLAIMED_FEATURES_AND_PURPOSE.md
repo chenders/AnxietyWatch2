@@ -265,7 +265,7 @@ that article are not captured.
 | PPG | Yes — 4-channel, multi-wavelength | Heart rate and derived measures |
 | Accelerometer + gyroscope | Yes — 3D MEMS | Motion, sleep, activity, seizure detection |
 | Skin temperature | Yes — "digital temperature sensor" | Peripheral skin temperature |
-| Raw data access | Claimed: "raw data and an extensive range of digital measures"; "No black box algorithms … one of the few wearable devices that capture raw data" | See §12 for the conflict with "AI-powered" on the same page |
+| Raw data access | Claimed: "raw data and an extensive range of digital biomarkers"; "one of the few wearable devices that capture raw data, with no black box algorithms" | See §12 for the conflict with "AI-powered" on the same page |
 | Seizure detection | Algorithm **EpiAlgo** (v2.1 in the inspected clearance), on-watch | Detects generalised tonic-clonic seizures ≥ 20 s |
 | Sensor modes | "predefined configurations … to focus on collecting specific parameters that are key to your study" | Available through the research platform; the public page says "Talk to our team" |
 
@@ -338,7 +338,7 @@ up. Use in children younger than 6 should be evaluated by a clinician on a case-
 **What the EULA adds, in the vendor's own words** `[PUBLIC CLAIM]`, from the agreement linked on the
 product page:
 
-- "You must have a Device that is compatible with the App … EMPATICA does not warrant that the App will be
+- "The User must have a Device that is compatible with the App … EMPATICA does not warrant that the App will be
   compatible with all mobile devices."
 - "The User is solely responsible for compliance with applicable data protection laws when providing the
   Caregiver(s) contact information and for verifying that the Caregiver(s) are willing, able, and
@@ -982,3 +982,34 @@ fetched is **not** evidence that they do not exist. Absence of a "do not rely on
 from four marketing pages is **not** evidence that the product never says it. The 98% claim is **not**
 characterised as false; it is characterised as **untraceable from the page that makes it**, against a
 regulator document that reports different metrics.
+
+---
+
+## 17. Corrections applied in the retrospective quote sweep (2026-10-06)
+
+The retrospective sweep in `../RESEARCH_METHOD.md` §6.1 runs each deliverable's quoted spans against the
+fetched vendor bytes **with the package's own files removed from the corpus** (`AW2_VENDOR_ONLY=1`), so a
+quotation can no longer verify merely because a sibling deliverable reproduces the same wording. That mode
+found two places in this candidate's deliverables where the words inside quotation marks were not the
+vendor's words. Both are corrected here, visibly rather than silently — the same discipline the Oura
+candidate's §14.9 applies. Superseded wording is shown in code spans, never in quotation marks.
+
+| Where | Superseded wording (the package's) | Vendor's actual wording | Source |
+|---|---|---|---|
+| §6 table, raw-data row (this file); `empatica_COMPARISON.md` §4, raw-data row | `raw data and an extensive range of digital measures` | "Access high-quality **raw data and an extensive range of digital biomarkers** with non-stop data recording" | `/embraceplus/` |
+| §8 (this file); `empatica_IMPLEMENTATION_INSPECTION.md` §"what the EULA adds" | `You must have a Device that is compatible with the App` | "**The User must have a Device that is compatible with the App**, and is solely responsible for the installation, configuration and maintenance of the App…" | the EULA linked from the product page |
+
+**Why this class of defect matters more than a typo.** `digital measures` is not an ellipsis or a
+grammatical repair; it substitutes a different noun for the vendor's own term, and it does so in a row whose
+whole purpose is to record what the vendor claims about raw-data access. `You must have` replaces a defined
+contractual term (`the User`, a defined person in the agreement) with a generic one. Both were paraphrase
+wearing quotation marks, which is the specific failure the whole package exists to avoid, and both passed
+the *full-corpus* check because a sibling deliverable and the package's own correction text contained the
+same reconstructed wording. **A quotation is verified only when it is found in the vendor's bytes.**
+
+Two further non-verbatim spans in this candidate's deliverables were flagged in the same pass and are
+**not** defects: `not intended as a standalone seizure monitoring device` is the FDA product-code POS
+class text (openFDA `pc_POS.json`, quoted in this file and in the Oura candidate's ledger), and
+`not officially approved or regulated` is Nightscout's own landing-page sentence (§11 quotes it as an
+explicit cross-candidate comparison). Both are verbatim in their own source trees; neither is a claim
+Empatica makes about its own product.
