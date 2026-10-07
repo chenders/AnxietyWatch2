@@ -306,9 +306,9 @@ answers "the signal is gone" with "the problem is over."**
   `duration = timedelta(hours=1)` (`db_schema.py:696-710`); `StatisticsShortTerm` is the same shape at
   `timedelta(minutes=5)` (`:713-722`). Columns include `mean`, `mean_weight`, `min`, `max`, `sum`,
   `state`, `last_reset_ts`.
-- **`mean_weight` is the interesting column**: a coverage weight stored next to the mean. It is how
-  "this hour was only half covered" survives into the aggregate — a partial answer to the same problem
-  V2 solves with explicit NULLs and gap-filling. Recorded as a **positive comparator**.
+- **`mean_weight` is the interesting column**: a coverage weight stored next to the mean. It is how the
+  fact that an hour was only half covered survives into the aggregate — a partial answer to the same
+  problem V2 solves with explicit NULLs and gap-filling. Recorded as a **positive comparator**.
 - **Circular statistics are implemented** — `circular_mean` SQL helpers with `weighted_sum_sin` /
   `weighted_sum_cos` (`statistics.py:144-162`). Recorded as a **positive comparator**: a numeric
   correctness concern V2's registry does not address at all.
@@ -322,7 +322,7 @@ answers "the signal is gone" with "the problem is over."**
   attached, a timeout handler is scheduled, and the message is sent. On timeout, the pending confirm is
   popped, the local channel is **torn down**, and `fallback_send(data)` is invoked.
 - `async_confirm_notification` (`:65-73`) returns `False` for an unknown `confirm_id` — an explicit
-  "this receipt does not match anything I sent" answer rather than a silent success.
+  receipt-does-not-match-anything-I-sent answer rather than a silent success.
 - **Boundaries:** one fallback hop; no second channel; no escalation to a second recipient; no persisted
   unacknowledged record; nothing written to the database on delivery or failure.
 

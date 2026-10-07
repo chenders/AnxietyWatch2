@@ -617,7 +617,7 @@ Three findings are recorded **as positives**, and are not softened by the confli
 | G-5 | Apple's App Privacy panel is internally ambiguous | Contact Info appears under both "Data Linked to You" (Name) and "Data Not Linked to You" (Email Address); the collapsed summary lists it under "Linked" | whether the store panels' "Health & Fitness" data is linked to the account is `[UNKNOWN]` |
 | G-6 | B2B pricing not published | `/institutions` says "Talk to us about early access" | the commercial model is `[UNKNOWN]`; the consumer app is free |
 | G-7 | Community moderation policy not published on the web | release notes imply a guidelines surface exists inside the app | whether a moderation policy / terms exists inside the app is `[UNKNOWN]` |
-| G-8 | `CANDIDATE_SHORTLIST.md` still carries the superseded operator wording | the shortlist was not edited during this pass | recorded as §14.4 of the claims file and as a standing item |
+| G-8 | `CANDIDATE_SHORTLIST.md` carried the superseded operator wording | a reader of the shortlist alone would have got the wrong operator | **closed 2026-10-06** — entry 10 corrected in place; see §14.4 of the claims file |
 | G-9 | The site's own analytics endpoints were never called | explicit authorization decision | whether they are live, and what they store, is `[UNKNOWN]` |
 | G-10 | Sentry/SDK configuration read as strings only | no runtime | whether telemetry actually leaves the page is `[UNKNOWN]`; the code is written to |
 | G-11 | The QoL effect size after the corrigendum was never restated | corrigendum does not include it | whether d = 0.31 changed is `[UNKNOWN]` |
@@ -726,7 +726,7 @@ match produces both false negatives (tag names pollute) and false positives (a p
   (`M-1`–`M-58`), artifact record and evidence gaps (`G-1`–`G-12`).
 - `PROMPT_2.md` — the candidate-specific second-stage brief.
 - `mindshift_COMPARISON.md` — the v1/v2 comparison.
-- `../CANDIDATE_SHORTLIST.md` — shortlist entry #10 (line 324; summary table line 365) — **carries the
-  superseded operator wording; see `mindshift_CLAIMED_FEATURES_AND_PURPOSE.md` §14.4**.
+- `../CANDIDATE_SHORTLIST.md` — shortlist entry #10 — **corrected in place 2026-10-06** (operator and
+  commercial model); see `mindshift_CLAIMED_FEATURES_AND_PURPOSE.md` §14.4.
 - `../PROCESS_STATE.md` — candidate dossier and residual uncertainty.
 - `../RESEARCH_METHOD.md` — inspection modes and the standing sub-checks added by this pass.

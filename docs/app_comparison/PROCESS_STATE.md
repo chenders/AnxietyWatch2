@@ -1194,8 +1194,14 @@ because the project had no stake in it.
   third parties are unnamed on the policy page.
 - **R11** **"1500+ integrations"** is single-sourced to the home page, and "top open source project by
   contributors in 2025" names no ranking source.
-- **R12** **The shortlist correction is recorded here but not written back into `CANDIDATE_SHORTLIST.md`** —
-  a reader of that file alone still sees the refuted hypothesis.
+- **R12** ~~The shortlist correction is recorded here but not written back into `CANDIDATE_SHORTLIST.md`~~ —
+  **closed 2026-10-06.** Entry 9 now carries the correction inline, with the superseded hypothesis preserved
+  in the correction block (commit `bb9fb63`).
+- **R13** **The `homeassistant` deliverables had not been through the quote-verification sweep** when the
+  candidate was committed — the checker was built during `mindshift`, one candidate later. Running it (with
+  the artifact tree and `.py` sources in the corpus) found **48 MISSes: 33 corpus gaps and 15 author phrases
+  or pieces of hypothetical dialogue wearing quote marks**, now reworded. No misquote of a source was found;
+  the defects were the package's own rhetorical phrasings in quotation marks.
 
 **Most promising untried step.** Two, both cheap and read-only: read `alert/reproduce_state.py` to close R4
 (the only remaining source-level gap inside the inspected tree), and read the `alert` integration's
@@ -1241,7 +1247,10 @@ circumvented; no certificate pinning was touched; no account, credential or toke
 called**, including `/api/analytics/session`, `/api/analytics/events`, `/api/admin/*` and
 `/api/resources/*` — those appear in this package only as strings read from published JavaScript.
 
-**Five findings, in order of consequence.**
+**Five of the six findings are listed here, in order of consequence.** The sixth — that the operator is not
+the organisation the shortlist named, and the app is not non-commercial — is Finding 1 in the
+claimed-features file §1 and is summarised under **Shortlist correction carried in** below. The
+claimed-features file §1 lists all six.
 
 1. **The privacy policy both storefronts declare does not exist.** `https://mindshiftcbt.com/privacy/` returns
 a genuine **HTTP 404** (3,362 B, `<title>Page not found | MindShift CBT</title>`), verified **five independent
@@ -1280,11 +1289,14 @@ the smartphone app**", so **224 of 380 never demonstrably installed the product*
 surface carries 380.
 
 **Claim reconciliation:** 56 rows — **20 match, 12 documented-only, 12 do not match, 10 partial, 2 outside
-classes.** Machine-counted from the table, not written from impression. **Eight rows are `DOES NOT MATCH` for
-vendor-surface conflicts within the vendor's own material** (the dead privacy URL on both storefronts, the
-"clinical trial" class, the four-outcome claim, its internal three-versus-four inconsistency, "Clinically
-proven", "Proven, not promised.", the "4.8 rating", and the FAQ's privacy meta-description, which promises to
-explain "how it protects your privacy" on a site with no privacy document).
+classes.** Machine-counted from the table, not written from impression. **All twelve `DOES NOT MATCH` rows
+are conflicts between a claim the vendor makes and another authoritative surface** (rows 1, 2, 9, 13, 14,
+15, 16, 21, 35, 36, 46, 55) — none is a conflict with a third-party critic. The most consequential: rows 1
+and 2 (the storefront-declared privacy URL, verified absent five ways), 9 and 13 (the study class and the
+primary-outcome count, both against the **independent registry**), 15 / 16 / 46 (marketing against the
+vendor's **own funded paper**), 14 (the site's own three-versus-four outcome inconsistency), 21 ("4.8
+rating" against the App Store's 4.32402 and Play's 3.3), 35 (FAQ "English and French" against the store's
+`['EN','FR','ES']`) and 55 (the FAQ's privacy meta-description on a site with no privacy document).
 
 **Evidence gaps:** **G-1–G-12.** The decisive one is **G-1**: whether a privacy policy or terms document
 exists **inside the app** is `[UNKNOWN]`, because the binary was not inspected — and the release notes say the
@@ -1444,9 +1456,11 @@ eleventh candidate is wanted, and confirm the two **shortlist corrections** that
      **G-8** and in the claimed-features file §14.4.
 
    Neither correction is a criticism of the shortlist — both are hypotheses the entries invited a run to
-test, which is what the entries were for. **Both are recorded in the candidate deliverables and in this file,
-and neither has been written back into `CANDIDATE_SHORTLIST.md`**, which still carries the old wording until
-it is next edited. **Not blocking.**
+test, which is what the entries were for. **Both are now recorded in the candidate deliverables, in this
+file, and written back into `CANDIDATE_SHORTLIST.md` itself** (entries 9 and 10, plus the `Type` column of
+ranking rows 9 and 10 and the file's Mode line), each marking the correction inline with its date and
+preserving the superseded wording, so that no hypothesis the package has disproved is left standing as a
+claim in the file that proposed it. Closed 2026-10-06; commit `bb9fb63`.
 
 ## Rules this file enforces
 
@@ -1458,9 +1472,10 @@ it is next edited. **Not blocking.**
 - Phase 2A is never silently skipped for a mobile candidate: it is either performed, or recorded as not
   performed with a reason.
 - A shortlist hypothesis that the inspection **refutes** is recorded as a correction — in the candidate
-  deliverables, in this file, and (when the shortlist is next edited) in `CANDIDATE_SHORTLIST.md` itself —
-  because an untested hypothesis left standing in the shortlist is a claim the package has already
-  disproved.
+  deliverables, in this file, **and in `CANDIDATE_SHORTLIST.md` itself** — because an untested hypothesis
+  left standing in the shortlist is a claim the package has already disproved. Record it by marking the entry
+  inline with the date, not by silently rewriting it: the superseded wording stays visible in the correction
+  block. Two were applied on 2026-10-06 (`homeassistant`, `mindshift`; commit `bb9fb63`).
 - Before concluding that a candidate is uninspectable, **check every vendor-published surface**: a
   GitHub/GitLab organisation, an open-source component, a public API reference, published datasets or
   research artifacts, a public roadmap, and self-published business figures. **Three of the four
@@ -1605,11 +1620,15 @@ it is next edited. **Not blocking.**
   differ (`mindshift`: 380 recruited, 156 code-verified). Read a corrigendum as its own artifact, and where it
   does not restate an affected effect size, record `[UNKNOWN]` rather than carrying the old value forward.
 - **A quote-verification sweep is a required pre-commit step, and the checker must never be circular.** The
-  target file is excluded from its own corpus; the corpus is the package docs plus the V2 and V1 trees;
-  pairing resets at every blank line and table row; HTML tags are stripped and JS `\uXXXX` escapes unescaped;
-  a markdown link inside a quotation is split out. **A MISS list is triaged** into checker artifact, author
-  paraphrase, or real defect — never auto-accepted. A paraphrase wearing quotation marks is the specific
-  failure this package exists to avoid.
+  target file is excluded from its own corpus; the corpus is the candidate's **fetched artifact tree**
+  (including `.py`/`.toml`/`.yaml` for a source-inspected candidate) plus the package docs and the V2 and V1
+  trees; pairing resets at every blank line and table row; HTML tags are stripped and JS `\uXXXX` escapes
+  unescaped; a markdown link inside a quotation is split out. **A MISS list is triaged** into checker
+  artifact, author paraphrase, or real defect — never auto-accepted. **A corpus that omits the vendor bytes
+  makes "0 not found" mean only that the quote is reproduced somewhere in the package** — an internal
+  consistency check, not a source check. A paraphrase wearing quotation marks is the specific failure this
+  package exists to avoid. Applied again to `homeassistant` on 2026-10-06: 48 MISSes, 33 of them corpus gaps
+  and **15 author phrases or hypothetical dialogue wearing quote marks, reworded rather than justified**.
 
 **The full rule register, with the sub-check table and the candidate that first produced each rule, lives in
 `RESEARCH_METHOD.md` §6.1.** This list records the rules that changed a verdict or a commit; §6.1 is

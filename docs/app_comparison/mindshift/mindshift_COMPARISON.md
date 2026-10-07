@@ -648,6 +648,7 @@ public records*, with **zero** runtime observations, and that limit governs ever
   `PROMPT2-PRIVACY-AND-OPERATING-MODE.md`), with questions **M1–M15**.
 - `../PROCESS_STATE.md` — pipeline state and residual uncertainty.
 - `../RESEARCH_METHOD.md` — evidence classes, inspection modes, and the standing sub-checks added by this pass.
-- `../CANDIDATE_SHORTLIST.md` — shortlist entry #10; **carries the superseded operator attribution**.
+- `../CANDIDATE_SHORTLIST.md` — shortlist entry #10; **corrected in place 2026-10-06** (operator and
+  commercial model).
 - `../../specs/AMENDMENTS.md` — amendments 01 (spool/TimescaleDB/tombstones), 02 (provenance/encryption),
   03 (multi-modal alerting), 07 (Rust API/admin), 09–11 (network trust/mobile enrolment).

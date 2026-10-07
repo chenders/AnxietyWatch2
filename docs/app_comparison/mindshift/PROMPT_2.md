@@ -77,8 +77,8 @@ In this order, and only these. `docs/specs/AMENDMENTS.md` is mandatory before an
 3. `../../specs/AMENDMENTS.md` — all of it
 4. `../PROCESS_STATE.md` — pipeline state, residual uncertainty, active-candidate line
 5. `../RESEARCH_METHOD.md` — evidence classes, inspection modes, standing sub-checks
-6. `../CANDIDATE_SHORTLIST.md` — why this candidate is ranked where it is (**carries superseded operator
-   wording; see the claimed-features §14.4**)
+6. `../CANDIDATE_SHORTLIST.md` — why this candidate is ranked where it is (**entry 10 was corrected in
+   place on 2026-10-06; see the claimed-features §14.4**)
 7. `../PROMPT2-EVIDENCE-FIRST.md` and `../PROMPT2-PRIVACY-AND-OPERATING-MODE.md` — the base and supplementary
    variants
 8. `../empatica/empatica_COMPARISON.md` — the closest completed comparison in **evidence posture** (a vendor

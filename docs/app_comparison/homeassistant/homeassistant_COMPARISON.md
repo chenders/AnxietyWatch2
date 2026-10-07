@@ -247,7 +247,8 @@ deeper one — and the matrix must not be read as V2 winning a row it has not bu
   measurement — which is exactly the layer V2's registry and three-state rule govern.
 
 **AnxietyWatch2.** Stored signals are typed and validated at the decoder; derived values live in the
-analysis layer, which is where the "does not clamp, does not coerce a sentinel" rule has to keep holding.
+analysis layer, which is where the rule that a decoder must not clamp an out-of-range value and must not
+coerce a sentinel has to keep holding.
 The comparison point is that Home Assistant never had to solve it, so it is not a model here either way.
 
 **Two transferable techniques, recorded as positives.**
@@ -322,10 +323,10 @@ The comparison states the gap on both sides.
   a named reason.
 - Reproducibility is protected by append-only `samples` and tombstones: removal is itself a record.
 
-**The comparison's sharpest question, put plainly:** in five years, an operator asks "what did the
-oximeter actually report on that night, and was any of it thrown away?" Home Assistant answers "here are
-the hourly means, and no record exists of what was purged." V2 intends to answer "here are the samples,
-here is the tombstone." That difference is the whole argument for the append-only rule, and it is
+**The comparison's sharpest question, put plainly:** in five years, an operator asks *what did the
+oximeter actually report on that night, and was any of it thrown away?* Home Assistant answers *here are
+the hourly means, and no record exists of what was purged.* V2 intends to answer *here are the samples,
+here is the tombstone.* That difference is the whole argument for the append-only rule, and it is
 supplied here by a working system's *absence* of the mechanism rather than by a design assertion.
 
 ---
@@ -355,8 +356,8 @@ supplied here by a working system's *absence* of the mechanism rather than by a 
 (`09`–`11`) are V2 current or V2 specified target depending on the change, and are labelled as such by
 the reader of those files — this report does not re-verify them.
 
-**Where Home Assistant instructs V2 most on this axis:** it shows that "local-first, privacy-first,
-non-profit" is compatible with a real, honest, *unnamed-third-party* gap in the push path, and that
+**Where Home Assistant instructs V2 most on this axis:** it shows that local-first, privacy-first,
+non-profit positioning is compatible with a real, honest, *unnamed-third-party* gap in the push path, and that
 disclosing the cloud carve-out is what keeps the overall posture honest. The lesson is about disclosure
 discipline, not about architecture.
 
@@ -421,7 +422,7 @@ conclusion, and it is the reason this candidate is in the package.
    no way to see, from the alert, that the signal went away rather than normalised. This is the
    user-visible form of Finding 1.
 2. **A user cannot audit what was deleted.** After 10 days, raw history is gone with no tombstone `[SRC]`.
-   An operator asking "what did the sensor report that night" gets an aggregate and no record of removal.
+   An operator asking *what did the sensor report that night* gets an aggregate and no record of removal.
 3. **A user relying on an alert across a reboot loses it.** In-memory firing state plus
    `cancel_on_shutdown=True` means the alert returns to `idle` `[SRC]`, with the caveat that the
    component's reproduction path was not read (H3).
@@ -479,8 +480,8 @@ state existed to be checked.
   does not parse; not observed.)*
 - That an alert is lost across a restart in practice. *(Inference from in-memory fields; the reproduction
   path was not read.)*
-- That "the only inference in the health path is Google's" — an absence claim grounded in the components
-  read, not in the whole platform.
+- That no inference other than Google's is made in the health path — an absence claim grounded in the
+  components read, not in the whole platform.
 
 ---
 

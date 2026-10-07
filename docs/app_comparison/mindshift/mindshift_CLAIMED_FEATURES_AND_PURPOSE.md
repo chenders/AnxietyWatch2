@@ -36,7 +36,8 @@ documented candidate in this package: it is the only candidate with a **peer-rev
 Six findings dominate.
 
 **Finding 1 — the operator is not the organisation the shortlist named, and the app is not non-commercial.**
-The shortlist entry (line 324) says "**Anxiety Canada (non-profit)**" and "Free, non-commercial". The App
+The shortlist entry (§10 of that file) originally described this candidate as a non-profit's app and as
+non-commercial. The App
 Store seller is **247 Labs Inc** (`artistId` 1389070030), the site's own About surface says MindShift "is
 designed, built, and cared for by the team at 247 Labs — the Toronto software firm that has developed the app
 from the start", and the site runs a **B2B surface** (`/institutions`, `/for-clinics`) whose public client
@@ -944,22 +945,25 @@ from the XML endpoint.
 
 ### 14.4 Correction carried into this file
 
-**The shortlist premise is materially altered, and the shortlist text still carries the old wording.**
+**The shortlist premise was materially altered. Its entry for this candidate has since been corrected in
+place, and the superseded wording is recorded here for traceability.**
 
-`CANDIDATE_SHORTLIST.md` line 324 (and the summary table at line 365) describes this candidate as
-"**Anxiety Canada (non-profit)**" with "**Free, non-commercial**, evidence-informed anxiety intervention
-app"; line 338 of the same file adds that "MindShift is free, non-commercial, and **non-profit-backed**". The storefront seller, the site's own About surface and the site's team block all name **247 Labs Inc**
-— "the Toronto software firm that has developed the app from the start" — as the operator; Anxiety Canada
-appears only in the **past tense** as the original development partner; and the site operates an **unpriced
-B2B surface** whose published client ships **Clerk organizations and Stripe billing**.
+`CANDIDATE_SHORTLIST.md` originally attributed this candidate to **Anxiety Canada (non-profit)** and
+described it as **free and non-commercial**, adding that MindShift is **non-profit-backed**. **That wording
+is superseded.** The entry now reads **247 Labs Inc** (for-profit, Toronto) as the operator and records a
+free-to-consumer app with a paid B2B surface; the correction is marked inline in
+`CANDIDATE_SHORTLIST.md` §10 with the date it was applied. The storefront seller, the site's own About
+surface and the site's team block all name **247 Labs Inc** — "the Toronto software firm that has developed
+the app from the start" — as the operator; Anxiety Canada appears only in the **past tense** as the original
+development partner; and the site operates an **unpriced B2B surface** whose published client ships **Clerk
+organizations and Stripe billing**.
 
 **Corrected position.** MindShift is a **free-to-the-consumer app operated by a for-profit software firm**,
 not a non-profit's product. The two halves must be kept apart: "free" is correct and consistent across both
 storefronts; "non-commercial" is not.
 
-This correction is recorded here, in `PROCESS_STATE.md`, and as a standing sub-check in `RESEARCH_METHOD.md`.
-The shortlist file's own wording has **not** been edited — the same outstanding-item treatment given to the
-refuted Home Assistant hypothesis (§14.4 of that candidate's file and gap R12 there). See gap G-8.
+This correction is recorded here, in `PROCESS_STATE.md`, in `CANDIDATE_SHORTLIST.md` §10, and as a standing
+sub-check in `RESEARCH_METHOD.md`. See gap G-8.
 
 ### 14.5 Evidence gaps
 
@@ -972,7 +976,7 @@ refuted Home Assistant hypothesis (§14.4 of that candidate's file and gap R12 t
 | **G-5** | Whether Spanish is shipped in the UI | store says EN/FR/ES; vendor FAQ says EN/FR | unresolved |
 | **G-6** | `anxietycanada.com` is unreadable to non-browser clients | Anxiety Canada's current role, and whether it hosts a MindShift policy, is `[UNKNOWN]` | **retrieval limitation** |
 | **G-7** | Whether the corrigendum changed the quality-of-life effect size | one of four headline outcomes had a scoring error | corrigendum does not restate it — `[UNKNOWN]` |
-| **G-8** | `CANDIDATE_SHORTLIST.md` still carries the superseded operator wording | a reader of the shortlist alone gets the wrong operator | recorded; edit outstanding |
+| **G-8** | `CANDIDATE_SHORTLIST.md` carried the superseded operator wording | a reader of the shortlist alone would have got the wrong operator | **closed 2026-10-06** — entry #10 corrected in place, with the superseded wording preserved in the correction block |
 | **G-9** | The "4.8 rating" figure cannot be reproduced | no storefront, region or date is named on the surface | unresolved |
 | **G-10** | One citing article reported for the paper | citation impact is not assessed here and coverage may be incomplete | recorded as reported only |
 | **G-11** | No peer review of the *registration* record | the registry is a sponsor-supplied document, not an independent verification of the study | scope limit, not a defect |
@@ -1016,7 +1020,7 @@ refuted Home Assistant hypothesis (§14.4 of that candidate's file and gap R12 t
   and the claim-reconciliation table.
 - `PROMPT_2.md` — the candidate-specific second-stage brief.
 - `mindshift_COMPARISON.md` — the v1/v2 comparison.
-- `../CANDIDATE_SHORTLIST.md` — shortlist entry #10 (line 324; summary table line 365) — **carries the
-  superseded operator wording, see §14.4**.
+- `../CANDIDATE_SHORTLIST.md` — shortlist entry #10 — **corrected in place 2026-10-06**; the superseded
+  wording is preserved in that entry's correction block.
 - `../PROCESS_STATE.md` — candidate dossier and residual uncertainty `R1`–`Rn`.
 - `../RESEARCH_METHOD.md` — inspection modes and standing sub-checks.

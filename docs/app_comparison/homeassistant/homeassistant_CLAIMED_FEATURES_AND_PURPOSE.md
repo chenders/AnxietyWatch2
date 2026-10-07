@@ -35,9 +35,10 @@ Seven findings, in order of consequence. Each is expanded later in the file.
    documented.** `STATE_UNKNOWN` and `STATE_UNAVAILABLE` are first-class constants
    (`homeassistant/const.py:303,313`), and the companion-app documentation states plainly that a sensor's
    "state will be unavailable if the timestamp cannot be determined" — `[DOCUMENTED]`. **This refutes the
-   shortlist's hypothesis that "a general-purpose hub has no three-state honesty model"
-   (`CANDIDATE_SHORTLIST.md:317`).** The model exists; the loss is downstream, in the alert path and in
-   storage. That correction is recorded in §14.4.
+   shortlist's hypothesis that a general-purpose hub has no three-state honesty model
+   (`CANDIDATE_SHORTLIST.md` §9).** The model exists; the loss is downstream, in the alert path and in
+   storage. That correction is recorded in §14.4 and was written back into the shortlist entry itself on
+   2026-10-06.
 3. **In storage, all three absences collapse into one string column.** A state of `unknown` or
    `unavailable` is written to `states.state` as that literal string; a *removed* state is written as the
    **empty string** `""`, with `last_changed_ts` and `last_reported_ts` set to `None`
@@ -379,7 +380,7 @@ Source: the project's privacy policy, retrieved 2026-10-06, with its own revisio
 **Why this is the sharpest finding in the package.** V2's rule is "a missing signal holds state; it never
 reassures". Home Assistant's alarm layer — in a mature, widely deployed, non-commercial platform with a
 documented `unavailable` concept — does the opposite at exactly the moment the signal disappears. The
-comparison is not "V2 is better because it says so"; it is that V2's rule is enforced by a state machine
+comparison is not that V2 asserts a better rule; it is that V2's rule is enforced by a state machine
 that has a third state, and HA's rule is enforced by an equality test that has two.
 
 ### 12.2 There is no escalation, no persisted alarm state, and no receipt
@@ -530,9 +531,11 @@ hashes are recorded in the inspection file's reproduction section rather than re
 
 ### 14.4 Correction carried into this file
 
-The shortlist asserted, as an uncertainty, that "a general-purpose hub has no three-state honesty
-model" (`CANDIDATE_SHORTLIST.md:317`). **That is wrong, and the correction is recorded here and in
-`PROCESS_STATE.md`.** Home Assistant has two first-class absent states, documents one of them in the
+The shortlist asserted, as an uncertainty, that a general-purpose hub has no three-state honesty
+model (`CANDIDATE_SHORTLIST.md` §9). **That is wrong, and the correction is recorded here and in
+`PROCESS_STATE.md`.** The shortlist entry itself was corrected in place on 2026-10-06, so the file no
+longer carries the old wording; the superseded phrasing is preserved only in the correction block there.
+Home Assistant has two first-class absent states, documents one of them in the
 companion-app reference, and has a `validate_state`/`async_set` policy for rejecting unusable values.
 The accurate statement is narrower and more useful: *the three-state model exists at the state-machine
 layer and is lost downstream — in the alert path, which has no branch for it, and in storage, which
@@ -561,7 +564,8 @@ flattens both absences into the same string column as the values.*
 
 1. The health-sensor section leans on one documentation page; the underlying Android implementation was
    not read.
-2. "No analysis of health signals" is an absence claim (`G6`/§7) and is the weakest evidence class here.
+2. The absence claim that Home Assistant performs no analysis of health signals (`G6`/§7) is the weakest
+   evidence class here.
 3. I did not read the recorder's `history/` subpackage, so the *query* side of the retention story is
    unexamined.
 4. The `alert` component's `reproduce_state.py` — which decides what happens to alerts across a
@@ -570,8 +574,9 @@ flattens both absences into the same string column as the values.*
    such.**
 5. No claim in this file was reconciled against a user-visible behaviour, because there is no runtime
    evidence.
-6. The candidate's own shortlist entry was wrong in one respect (§14.4); the entry itself was not
-   corrected in `CANDIDATE_SHORTLIST.md`, so a reader of that file alone will still see the old wording.
+6. The candidate's own shortlist entry was wrong in one respect (§14.4); **the entry has since been
+   corrected in place in `CANDIDATE_SHORTLIST.md` §9** (2026-10-06), with the superseded phrasing kept in
+   the correction block rather than deleted.
 
 ---
 

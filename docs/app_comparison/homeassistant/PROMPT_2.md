@@ -91,18 +91,19 @@ Apply these to every claim in the report.
    runtime observations**.
 2. **Never present a source reading as a public claim**, and never present a public claim as an
    implementation fact. `[FOUND IN SOURCE]` means read; it does not mean observed.
-3. **Absence of evidence is unknown, not proof of absence.** "No `STATE_UNAVAILABLE` reference exists in
-   `components/recorder/`" is a finding; "the recorder cannot represent absence" is not.
+3. **Absence of evidence is unknown, not proof of absence.** That no `STATE_UNAVAILABLE` reference exists in
+   `components/recorder/` is a finding; that the recorder cannot represent absence is not.
 4. **A reading of a code path is a static finding about that path.** The alert false-all-clear is read
-   from `entity.py`; it is not an observation of a live false alarm. Do not describe it as "users are
-   told the leak is over" without marking that as inference from the code.
+   from `entity.py`; it is not an observation of a live false alarm. Do not describe it as users being
+   told the leak is over without marking that as inference from the code.
 5. **Do not upgrade a documented default into implemented behaviour**, and do not upgrade documented
    behaviour into a verified runtime property. The nightly 04:12 purge is documented; the purge *code*
    was read; the *schedule* running at 04:12 was not verified.
 6. **A file that does not parse is a static fact about a file.** Its consequence for a running instance is
    inference. State both, separately, every time.
-7. **Require a mechanism before crediting a capability.** "Adds local control and privacy" is a claim; the
-   mechanism (self-hosted state machine, local recorder, opt-in telemetry) is what earns credit.
+7. **Require a mechanism before crediting a capability.** A claim that the platform adds local control and
+   privacy is only a claim; the mechanism (self-hosted state machine, local recorder, opt-in telemetry) is
+   what earns credit.
 8. **Vendor-published and third-party figures are labelled as such.** The star counts are third-party
    platform metadata; the user count is the vendor's claim; the `averageUserRating = 0` field is an
    **unresolved ambiguity** and must not appear in any tally or verdict.
@@ -133,8 +134,9 @@ Answer these explicitly. If the evidence does not exist, say so and label the co
   `SCANNER_WATCHDOG_INTERVAL`)? They are outside the inspected tree. Do V2's own BLE liveness expectations
   resemble the five-minute device-unavailable default (`bluetooth/const.py:34`)?
 - **H5** What is the real long-term-statistics retention? Only two code paths delete from `statistics`
-  (duplicate cleanup, user service); the scheduled purge does not. Is "hourly aggregates kept forever by
-  default" the accurate statement, and what are the consequences for a decade-old instance?
+  (duplicate cleanup, user service); the scheduled purge does not. Is the description of hourly aggregates
+  as kept forever by default the accurate statement, and what are the consequences for a decade-old
+  instance?
 - **H6** What exactly does `mean_weight` mean, and how does a partial hour survive into `mean`? Contrast
   with V2's `time_bucket_gapfill` and its rule that missing data contributes nothing.
 - **H7** Should V2 adopt a circular mean for any registry type? `statistics.py:144-162` implements it.
@@ -174,9 +176,9 @@ Organise the technical comparison around these axes, which is where Home Assista
 - AnxietyWatch v2: "a missing signal holds state; it never reassures and never escalates on its own," a
   supervised alarm path, a hardware dead-man switch — **all V2 specified target, not shipped.** Label
   every one.
-- The verdict to argue: not "V2's alarm is better" (it is not built) and not "Home Assistant's is broken"
-  (that is a static reading), but **"the platform's most mature alarm primitive has the exact failure mode
-  V2's rule forbids, in a codebase that already has the missing state available to test for."** That is
+- The verdict to argue: not that V2's alarm is better (it is not built) and not that Home Assistant's is
+  broken (that is a static reading), but **the platform's most mature alarm primitive has the exact failure
+  mode V2's rule forbids, in a codebase that already has the missing state available to test for.** That is
   the strongest available external evidence that the rule must be enforced at the alarm layer and tested,
   not assumed from a correct state machine.
 
