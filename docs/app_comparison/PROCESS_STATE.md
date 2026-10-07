@@ -38,7 +38,7 @@ may be started without an owner decision; see **Owner decisions pending** §3.
 | 8 | `oura` | 13 | **Complete with documented-contract inspection** | 2026-10-06 | 2026-10-06 | No binary and no source inspected. The Terms **prohibit** reverse engineering and circumventing subscription restrictions, so Phase 2A was closed by contract and not by accident. The vendor's **published OpenAPI 3.1 contract was inspected in full** — 72 paths, 75 schemas, 274 resolvable `$ref`s — together with its legal, trust and research surfaces. **No endpoint was called, including the sandbox.** |
 | 9 | `homeassistant` | 13 | **Complete with full published-source inspection** | 2026-10-06 | 2026-10-06 | Apache-2.0, so Phase 2A ran on **published source** at tag `2026.9.4` (`9212531f…`) with no owner decision. The state machine has first-class `unknown`/`unavailable`; the **alert path has no branch for either** and ends the alert — sending the resolution message — when the watched entity goes absent. Raw history is **hard-deleted** after `purge_keep_days` (default 10) with no tombstone; hourly statistics are **upserted**. `components/sensor/recorder.py:239` **does not parse** under Python 3, verified four ways, and the module is imported by its own test file. **No binary, no running instance, zero runtime observations.** |
 | 10 | `mindshift` | 12 | **Complete with published-client and public-records inspection** | 2026-10-06 | 2026-10-06 | App binary not inspected (closed source, store-only; no lawful route to the binary). No vendor source and **no API contract** exists. The inspected surface is the vendor's **published web client** (741,896-byte served bundle, read as text) plus public records: two storefront listings, the App Store privacy panel, the independent registration **NCT04562948**, the peer-reviewed paper **PMID 40656972** and its **corrigendum PMID 40655914**. **No endpoint was called and no runtime was observed.** |
-| — | `emoods` | — | **Excluded in error; available when re-tested 2026-10-07** | — | — | The exclusion rested on **`emoods.net`** (NXDOMAIN at the `.net` TLD), but the vendor publishes **`emoodtracker.com`** — the site both storefronts name — which is live: iOS `com.yottaram.eMoods` v1.3.28 (4.80359 / 4,236) and Android `my.tracker` (500,000+, Play data safety "No data collected"). Full correction in `CANDIDATE_SHORTLIST.md` §4 |
+| — | `emoods` | — | **Excluded in error; re-tested 2026-10-07; not added (owner decision)** | — | — | The exclusion rested on **`emoods.net`** (NXDOMAIN at the `.net` TLD), but the vendor publishes **`emoodtracker.com`** — the site both storefronts name — which is live: iOS `com.yottaram.eMoods` v1.3.28 (4.80359 / 4,236) and Android `my.tracker` (500,000+, Play data safety "No data collected"). Full correction in `CANDIDATE_SHORTLIST.md` §4 |
 
 **Sequencing rule in force.** Only one row may be **In progress**. A candidate is started only after the
 previous one's four deliverables exist and its verification command has been run.
@@ -1477,8 +1477,9 @@ three **shortlist corrections** the run has accumulated:
      no-account, with printable and PDF clinician reports — the rationale the shortlist row itself gave.
      **The reachability check must use the domain the vendor publishes, and it must be run against both
      storefronts' own links**; a guessed name is not a check. Full correction in `CANDIDATE_SHORTLIST.md`
-     §4, and the rule in `RESEARCH_METHOD.md` §6.1. **Adding `emoods` as candidate 11 is an owner
-     decision** and is not taken here.
+     §4, and the rule in `RESEARCH_METHOD.md` §6.1. **Owner decision 2026-10-07: `emoods` is not added**
+     — the correction above stands as the record, and the next candidate is chosen from §4 of the
+     shortlist instead (`PROCESS_STATE.md` records the choice when it is made).
 
    - **`homeassistant`** — the shortlist hypothesis that a general-purpose hub has no three-state honesty
      model was **refuted**; `STATE_UNKNOWN`/`STATE_UNAVAILABLE` are first-class (`const.py:303,313`). Recorded

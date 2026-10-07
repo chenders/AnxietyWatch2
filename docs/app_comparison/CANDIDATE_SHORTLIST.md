@@ -434,10 +434,10 @@ comparators rather than product competitors.
 >
 > This is the third shortlist correction the run has produced, after `homeassistant` and `mindshift`, and
 > it is the first one caused by the **research process** rather than by a vendor's own material.
-> **Whether to add `emoods` as an eleventh candidate remains an owner decision** — the shortlist is
-> exhausted at ten, and the reason this candidate was excluded is now known to be wrong rather than
-> merely stale. Recorded in `PROCESS_STATE.md` (candidate table and §3) and `RESEARCH_METHOD.md` §2.6,
-> §6.1 and §9. Evidence kept outside the repository under `/tmp/aw2emoods/` (not redistributed):
+> **Owner decision 2026-10-07: `emoods` is not added as an eleventh candidate** — the correction above
+> stands as the record of the process error, and the shortlist's remaining alternatives (§4) are the
+> candidate pool instead. Recorded in `PROCESS_STATE.md` (candidate table and §3) and
+> `RESEARCH_METHOD.md` §2.6, §6.1 and §9. Evidence kept outside the repository under `/tmp/aw2emoods/` (not redistributed):
 > `dig.txt`, `doh.txt`, `site.html` (SHA-256 `72d41b69…`), `play_mytracker.html` (`5535e181…`),
 > `play_search.html`, `dev_emoods.html`, `appstore.html` (`07a0e530…`), `itunes_search.json`
 > (`1603fa38…`), `com2.txt` (the HugeDomains redirect), `wb.txt`, `wb2013.html`. Every vendor sentence and
