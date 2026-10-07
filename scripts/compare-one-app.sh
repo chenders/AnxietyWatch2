@@ -25,6 +25,21 @@ DELIVERABLES=(
 die() { printf 'compare-one-app: %s\n' "$*" >&2; exit 1; }
 note() { printf '%s\n' "$*"; }
 
+# The package is local-only: gitignored, untracked, and refused at the push boundary in
+# the parent repository. If it is tracked here, this worktree predates that rule, and
+# starting a candidate would produce deliverables that could be committed by accident.
+require_local_only() {
+  local tracked
+  tracked=$(git -C "$ROOT_DIR" ls-files docs/app_comparison 2>/dev/null | head -5)
+  if [[ -n "$tracked" ]]; then
+    die "docs/app_comparison is tracked in this worktree, so it is not local-only:
+$tracked
+     It must never be committed or pushed (docs/app_comparison/LOCAL-ONLY.md).
+     Fix this worktree once with:  git rm -r --cached docs/app_comparison
+     and confirm:                  git ls-files docs/app_comparison   # must print nothing"
+  fi
+}
+
 usage() {
   cat >&2 <<'EOF'
 Usage:
@@ -98,6 +113,7 @@ open_row() { py_read | awk -F'\t' '$4 == "in-progress" { print $2 }'; }
 
 # ---------------------------------------------------------------- commands
 cmd_start() {
+  require_local_only
   local app=${1:-} slug=${2:-} existing
   [[ -n "$app" ]] || usage
   [[ -n "$slug" ]] || slug=$(slugify "$app")
@@ -153,6 +169,7 @@ cmd_status() {
 }
 
 cmd_finish() {
+  require_local_only
   local slug=${1:-} missing=() f row status
   [[ -n "$slug" ]] || usage
   row=$(py_read "$slug")
@@ -178,9 +195,9 @@ cmd_finish() {
   local n; n=$(py_set_files "$slug")
   note "closed: $slug  ($n/4 deliverables, FINDINGS.md updated)"
   note ""
-  note "Commit it (never to main):"
-  note "  git add docs/app_comparison/$slug docs/app_comparison/PROCESS_STATE.md docs/app_comparison/FINDINGS.md"
-  note "  git commit -m 'docs(app-comparison): candidate <N> $slug — <mode> inspection'"
+  note "Commit it in the LOCAL-ONLY repository — never in the AnxietyWatch2 repo (LOCAL-ONLY.md):"
+  note "  git -C docs/app_comparison add -A"
+  note "  git -C docs/app_comparison commit -m 'research(app-comparison): candidate <N> $slug — <mode> inspection'"
 }
 
 cmd_lab() {

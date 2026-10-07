@@ -61,3 +61,11 @@ clients/apple/Packages/*/.build/
 docs/design/pi-panel/direction-a-clinical/status.json
 docs/design/pi-panel/direction-a-clinical/vitals_status.json
 docs/design/pi-panel/direction-a-clinical/vitals_h10_history.json
+
+# Competitive-research working package. It holds third-party quotation, vendor
+# screenshots-free extracts and unpublished analysis; it is deliberately never
+# committed and never pushed. It lives on disk with its own local-only git
+# repository (work tree here, history in $HOME/aw2research/app-comparison.git),
+# which has no remote and no relationship to this one.
+# See docs/app_comparison/LOCAL-ONLY.md.
+docs/app_comparison/

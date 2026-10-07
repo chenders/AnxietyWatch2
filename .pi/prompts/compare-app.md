@@ -36,8 +36,11 @@ Then:
 8. **Update `FINDINGS.md`** (its §1 row, the §2 matrix cells you can fill) and `PROCESS_STATE.md`.
 9. `scripts/compare-one-app.sh finish <slug>` — it verifies all four deliverables exist and that
    `FINDINGS.md` names the candidate, then prints the commit command.
-10. Commit with `Co-Authored-By: OpenAI <noreply@openai.com>`, staging only the candidate directory plus
-    `PROCESS_STATE.md` and `FINDINGS.md`. Never commit to `main`; never use `git add -A`.
+10. Commit **in the local-only repository**, never in the AnxietyWatch2 repository and never pushed to
+    GitHub (`docs/app_comparison/LOCAL-ONLY.md`):
+    `git -C docs/app_comparison add -A` then
+    `git -C docs/app_comparison commit -m 'research(app-comparison): candidate <N> <slug> — <mode> inspection'`.
+    Never `git add -f docs/app_comparison`, never `git add -A` in the parent repository, never to `main`.
 
 Hard limits, which are harm limits and not investigation limits: no other person's credentials or
 accounts; no real user data sent to a vendor service; no destructive or write actions against a vendor's
