@@ -114,8 +114,9 @@ From the published README:
 - Created 2020-03-26 in response to COVID-19; data pushed through 2022-07-22; CC0-1.0.
 - Collected from **users with positive COVID-19 status** who tracked symptoms, HRV, and connected-gadget
   data. HRV came from "any Bluetooth-enabled heart rate monitor or with a smartphone camera".
-- Notably includes "**Clinically validated physical and mental health assessments**" — a feature
-  "created specifically for this project", where participants added symptom and test-result information.
+- Notably includes "Clinically validated physical and mental health assessments" — the README's own
+  words are "We created a feature specifically for this project, where people would add information
+  about symptoms and test results."
 - Dataset released as CSV with a published `datatypes.md` schema.
 - The vendor states the collection basis was **non-commercial**.
 - **Citation asymmetry worth noting:** the vendor's own resulting paper (below) is a **preprint**,
@@ -167,8 +168,9 @@ not taken from the vendor's page.
 The toolchain was validated against a disposable emulator on the `bearable` pass
 (mitmdump 12.2.3 LISTEN on `127.0.0.1:8080`; AVD `pixel_4_w_gapps`, Android 12 / SDK 31; proxy
 `10.0.2.2:8080` set and read back; HTTP flows captured and read back; `google.com/gen_204` and
-`connectivitycheck.gstatic.com/generate_204` observed returning 204; HTTPS failing with "client does
-not trust the proxy's certificate" as expected without a CA; proxy and emulator then removed and
+`connectivitycheck.gstatic.com/generate_204` observed returning 204; HTTPS failing as designed without a
+CA (the client refused the proxy certificate, recorded in the validation log at the time); proxy and
+emulator then removed and
 verified gone). That validation stands, and is not re-run here because there is no target artifact to
 exercise. See `../bearable/bearable_IMPLEMENTATION_INSPECTION.md` §4.1 for the full record.
 

@@ -20,8 +20,8 @@ AnxietyWatch's central methodological commitment — measure against *this perso
 a population threshold — and it is the only one that both publishes the research behind its accuracy
 claim and states the limitation of that commitment in its own documentation. Its PPG work was validated
 against **Polar H10**, the same reference sensor AnxietyWatch uses, with the paired dataset released
-under CC0 and the method published in a peer-reviewed journal. On the question "did anyone else build
-the personal-baseline idea," the answer is yes, and Welltory built it well enough to ship to millions.
+under CC0 and the method published in a peer-reviewed journal. On the question *did anyone else build
+the personal-baseline idea*, the answer is yes, and Welltory built it well enough to ship to millions.
 
 **Most important unknown.** *Which rule governs the verdict a user actually sees.* Welltory markets a
 self-learning personal baseline and simultaneously documents that a **fixed medical threshold** overrides
@@ -76,7 +76,7 @@ Carried forward from `welltory_IMPLEMENTATION_INSPECTION.md` §6, with dispositi
 |---|---|---|---|---|
 | 1 | Personal-baseline algorithm instead of one-size-fits-all thresholds | No analysis code published anywhere in the vendor's 13 public repos | None | **U — unresolved by inspection**, consistent with an unpublished closed engine |
 | 2 | A fixed medical threshold overrides the baseline for chronic conditions | No code; the mechanism is described only in the vendor's article | None | **N — vendor-documented limitation.** Treated as the vendor's own statement, not as an inspected fact |
-| 3 | "Phone camera PPG equals Polar chest straps"; store copy says "as accurate as ECGs" | **Public CC0 dataset with Polar H10 ground truth** (21 recordings / 13 healthy adults 25–35, resting, finger-on-camera, 68–112 s) + peer-reviewed method paper (Sensors 2021, 21:6798) | None | **B — public claim, narrowed by its own evidence.** The dataset supports *short resting finger-on-camera* PPG; the store wording generalises past it |
+| 3 | *Phone camera PPG equals Polar chest straps*; store copy says "as accurate as ECGs" | **Public CC0 dataset with Polar H10 ground truth** (21 recordings / 13 healthy adults 25–35, resting, finger-on-camera, 68–112 s) + peer-reviewed method paper (Sensors 2021, 21:6798) | None | **B — public claim, narrowed by its own evidence.** The dataset supports *short resting finger-on-camera* PPG; the store wording generalises past it |
 | 4 | Research validated Welltory for HRV in elite endurance athletes (Apr 2022) | **Not located** | None | **U — unverified** |
 | 5 | Presented at the 41st IEEE EMBC, Berlin | Not verified | None | **U — unverified** |
 | 6 | "Backed by over 25,000 studies on PubMed" | Refers to HRV literature generally, not to Welltory | None | **Misleading framing**, not a validity claim |
@@ -265,7 +265,7 @@ repeatedly.
 - **v2 target** — plus aircraft-overflight and environmental-noise correlation as possible sleep
   interrupters. **[V2 specified target]**
 - **Welltory** — **weather is automatic and real**: temperature, humidity and atmospheric pressure are
-  transferred from a weather service based on device location, "connected for all users automatically".
+  transferred from a weather service based on device location, "automatically connected for all users".
   **[A — documented]** This is closer to v1's barometric context than Bearable's manual factors, and in
   one respect better: it needs no sensor. Indoor environment (air quality, CO₂, indoor climate) is
   supported through Netatmo, Foobot and Withings hardware — a coverage AnxietyWatch does not claim.
@@ -372,7 +372,7 @@ sophisticated enough that users would reasonably trust its verdicts.
 **Reading.** Welltory's disclosure quality is genuinely good and should be credited: it names
 advertising partners rather than burying them, addresses MHMDA, and separates health data from ad data.
 But disclosure is not the same as minimisation. A user comparing Welltory to AnxietyWatch is comparing
-"a detailed honest account of data leaving the device" with "the data does not leave the device." Those
+*a detailed honest account of data leaving the device* with *the data that does not leave the device*. Those
 are not equivalent, and the AnxietyWatch positioning is only credible because it is architectural rather
 than a promise.
 

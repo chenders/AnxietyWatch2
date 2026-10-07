@@ -7,7 +7,7 @@ Prepared: 2026-10-06
 ## Assignment
 
 Write an evidence-first comparison of **Welltory** against AnxietyWatch v1 and AnxietyWatch2. The
-governing question for this candidate is not "how many features does Welltory have" — it has more than
+governing question for this candidate is not *how many features does Welltory have* — it has more than
 either AnxietyWatch. It is:
 
 > **Welltory publicly claims a personal-baseline HRV design, and publicly documents a fixed medical

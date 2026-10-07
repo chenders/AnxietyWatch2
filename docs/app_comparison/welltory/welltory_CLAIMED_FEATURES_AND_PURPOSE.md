@@ -161,7 +161,7 @@ which is the inverse of AnxietyWatch v1's model where the subjective rating is t
 physiology is the context. Both designs are defensible; they answer different questions.
 
 **Independently reported weakness.** A Play Store reviewer, having used the app for six months with
-twice-daily measurements, reports that it "still hasn't made a single connection", that tags cannot be
+twice-daily measurements, reports that it still has not made a single connection, that tags cannot be
 edited or reorganised, and that entry timestamps cannot be corrected. The tag-editability point is in
 direct tension with the documentation's claim that the user can correct tags before saving, though the
 reviewer may be describing post-hoc editing. Recorded as **[observed]**, single report, unverified.
@@ -276,7 +276,7 @@ append-only by design and never deletes samples; Welltory's free tier is a **ret
 | Self-hosting | **No** |
 | Data location | US company; international transfers addressed in the policy |
 | Deletion | Available in app and web app, but **not self-serviceable while a Premium subscription is active** — the user must wait for expiry or contact support |
-| Platform data-safety declaration | Play Store: "may share... with third parties: Location, Personal info and 3 others"; "may collect: Personal info, Health and fitness and 3 others"; "Data is encrypted in transit" |
+| Platform data-safety declaration | Play Store: "may share these data types with third parties Location, Personal info and 3 others"; "This app may collect these data types: Personal info, Health and fitness and 3 others"; "Data is encrypted in transit" |
 
 **Net position.** Welltory's health-data handling rhetoric is strong and its policy is detailed and
 comparatively transparent — it names its advertising partners and its DPO, addresses MHMDA explicitly,
@@ -423,14 +423,15 @@ Play-Store figures are cited. The peer-reviewed papers behind the science-page c
 - **V2 specified target overlap: none.** The supervised alarm, dead-man switch and
   provenance-preserving store have no Welltory equivalent.
 - **Critical architectural difference: what happens to data over time.** AnxietyWatch's append-only
-  store and "never coerce, never clamp, never delete" rules are the inverse of a free tier that deletes
-  history at 30 days and an algorithm with a fixed threshold that overrides the personal baseline.
+  store and its rules — no clamping of an out-of-range value, no coercion of a sentinel to a number, no
+  deletion of a sample — are the inverse of a free tier that deletes history at 30 days and an algorithm
+  with a fixed threshold that overrides the personal baseline.
 - **Welltory is a complement, not a substitute.** It provides a zero-hardware HRV measurement and a
   rich contextual layer; AnxietyWatch2 provides continuous overnight capture and a monitored alarm path.
 
 ## 17. Whole product or subsystem?
 
-**Whole product for the "measure HRV, explain it, and correlate it with lifestyle" problem — and a
+**Whole product for the *measure HRV, explain it, and correlate it with lifestyle* problem — and a
 partial competitor to v1 there.** It does not compete with v1's CPAP, oximetry, overnight capture,
 medication follow-up, PDF reporting or self-hosting, and it does not compete with AnxietyWatch2 at all.
 The overlap that matters is the **baseline methodology**, where Welltory is the closest public analogue
@@ -459,8 +460,9 @@ and, on the strength of its own chronic-conditions article, also a cautionary ex
 10. **Platform feature asymmetry** — several key features are documented as iOS-only.
 
 **Unresolved questions for Prompt 2**
-- **W1** Does "sync with Fitbit, Garmin, Oura, Mi Band" in store copy mean HRV, or only activity/sleep
-  context? Documentation says those devices cannot supply HRV. Which is operative?
+- **W1** Does the store copy's device list ("Sync with FitBit, Samsung, Garmin, MiFit, Polar, Mi Band,
+  Oura, Withings and other wearables") mean HRV, or only activity/sleep context? Documentation says
+  those devices cannot supply HRV. Which is operative?
 - **W2** What is the fixed "medical threshold" and how does it interact with the personal baseline?
   Under what conditions does the baseline actually govern the verdict?
 - **W3** Is there any medication, supplement or dose-tracking feature at all?
