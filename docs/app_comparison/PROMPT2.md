@@ -1,180 +1,154 @@
-# Prompt 2 — Comprehensive candidate comparison
+# PROMPT2 — the per-candidate deep dive
 
-Use this as the default second-stage prompt for a selected candidate. Replace every `{PLACEHOLDER}` before using it.
+Given one candidate that has already been through `PROMPT1.md` steps 1–4, write
+`{slug}/PROMPT_2.md` — the prompt that produces that candidate's comparison — and then execute it into
+`{slug}/{slug}_COMPARISON.md`.
 
-## Assignment
+Fill `{APP_NAME}`, `{APP_SLUG}`, `{VENDOR}`, `{ARTIFACT}` (package id / bundle id / repo + commit) from
+the candidate's own record. A prompt that leaves a placeholder unresolved is a defect.
 
-You are comparing **{APP_NAME}** with AnxietyWatch v1 and AnxietyWatch2. Produce a careful, evidence-based report at:
+---
 
-```text
-./docs/app_comparison/{APP_SLUG}/{APP_SLUG}_COMPARISON.md
-```
+## 1. Inputs, all required
 
-The report must explain both feature-level overlap and meaningful product differences in prose. A grid alone is not
-sufficient.
+| Input | Where it comes from |
+|---|---|
+| `{slug}_CLAIMED_FEATURES_AND_PURPOSE.md` | Step 1 — every claim, quoted and dated, claim ids `V-n` |
+| `{slug}_IMPLEMENTATION_INSPECTION.md` | Steps 2–4 — build, hashes, tools, class map, endpoints, and the reconciliation table |
+| AnxietyWatch v1 tree | `../AnxietyWatch` — the shipped iOS app |
+| AnxietyWatch2 tree | this repository — `crates/`, `vitals/`, `openspec/changes/`, `docs/design/` |
+| `docs/specs/AMENDMENTS.md` | **Mandatory.** Amendments supersede the original design; a task brief that contradicts one is wrong |
 
-## Read first
+Do not write the comparison from the claim file alone. If the inspection file is missing, the candidate
+is not ready: go back and inspect the artifact.
 
-Read these local files:
+---
 
-```text
-./docs/app_comparison/PROJECT-DESCRIPTIONS-AND-CATEGORIES.md
-./docs/app_comparison/{APP_SLUG}/{APP_SLUG}_CLAIMED_FEATURES_AND_PURPOSE.md
-```
+## 2. Choose the lenses
 
-Also review the candidate's cited primary sources when available. Use the research date recorded in the candidate file.
-Do not silently substitute current marketing pages for older evidence without recording the change.
+The comparison always covers the same 14 sections (§6). The lenses decide where the depth goes. Pick the
+two or three that fit this candidate; a deep dive that gives every lens equal weight is shallow in all
+of them.
 
-If this is an Android or iOS candidate, do not skip implementation inspection. Read
-`{APP_SLUG}_IMPLEMENTATION_INSPECTION.md` when present; if an authorized artifact exists but the file is absent, perform
-the inspection before finalizing or explicitly document why it could not be performed. Use it to compare public claims
-with static implementation evidence and authorized runtime observations. Treat the following as separate evidence
-classes:
+### Lens A — Evidence-first
 
-- public claim;
-- reachable behavior observed at runtime;
-- static implementation evidence that was not observed at runtime;
-- experimental, gated, dead, or unreachable code;
-- inferred behavior;
-- unknown or blocked behavior.
+For candidates whose marketing is louder than their evidence: regulated devices, "clinically validated"
+claims, a vendor-authored paper, a score with a percentage attached.
 
-The inspection record should identify the exact artifact, version/build, platform, SHA-256, tools, device/emulator,
-authorization boundary, and limitations. For an Android emulator, configure the free mitmproxy stack at `10.0.2.2:8080`
-before launching or
-installing the target app, verify mitmproxy is listening on `10.0.2.2:8080`, and record the proxy setup. Follow
-`docs/app_comparison/FREE-ANDROID-TRAFFIC-INSPECTION.md`; it may cover
-manifests/entitlements, permissions, background modes, screens, data models, APIs, BLE and HealthKit identifiers,
-local storage, exports, notifications, analytics/advertising SDKs, subscriptions, feature flags, cloud dependencies,
-and error handling. Do not treat a string, endpoint, SDK, or code path as a user-accessible feature without evidence
-that it is reachable.
+Ask: What exactly was measured, on whom, by whom, and when? Is the validation independent, and if a
+vendor employee is an author, say so in the same sentence as the claim? Does the published artifact
+validate the tier the marketing is selling, or a different one? Does an algorithm change postdate the
+validation, and is the change versioned? Is there a regulator record, and what product code did the
+regulator assign? Quote the most conservative of conflicting vendor surfaces.
 
-If an authorized artifact was unavailable or inspection was not permitted, say so explicitly in the report. Record
-blocked inspection as an evidence limitation, not as proof that the
-feature does or does not exist.
+### Lens B — Technical systems
 
-Use these AnxietyWatch status labels:
+For candidates with a real data path: sensors, sampling rates, storage, sync, derived scores, alerts.
 
-- **V1 documented/implemented:** represented as implemented by v1 code or documentation.
-- **V2 current:** present and usable in the current AnxietyWatch2 repository.
-- **V2 specified target:** fully specified in `openspec/`, but not necessarily implemented.
-- **Unresolved:** mentioned but insufficiently specified or evidenced.
+Ask: What is sampled, at what rate, on which clock, and where does the raw value go? Is the raw signal
+exportable by the user, or only the derived score? Is the "score" computed on-device or server-side, and
+can it be recomputed? What happens to a day with no data — is there an explicit not-measured state, or
+does the previous value carry forward silently? What is the failure mode of the alert path when the
+phone, the network, or the sensor is absent?
 
-Never present a V2 specified target as a currently shipped feature.
+### Lens C — Privacy and operating mode
 
-## Comparison method
+For candidates that store health data, run ads/analytics, or sell a subscription.
 
-Compare the products at the correct level. {APP_NAME} may be a mobile app, wearable ecosystem, home-monitoring product,
-cloud service, research project, or only a subsystem competitor. State whether each conclusion concerns:
+Ask: What does the client actually send, to whom, under what identity, and with what consent default?
+Separate the policy's promise from the client's behaviour from the storefront's declaration — three
+surfaces, three possible answers. What is the retention period, stated or unstated? What does deletion
+delete, and what does it explicitly not delete? What is the regional split in the consent
+configuration, and which side of it is opt-out by default? What breaks without a network?
 
-- the AnxietyWatch v1 application;
-- the AnxietyWatch2 Raspberry Pi platform;
-- the combined AnxietyWatch product vision; or
-- only a particular subsystem such as CPAP, HRV, anxiety journaling, medication tracking, pulse oximetry, aircraft/noise
-  context, AI analysis, or clinical reporting.
+### Lens D — User value and category
 
-For every important capability, classify each product as:
+For candidates whose main competitive claim is the experience: free positioning, cognition/anxiety
+tools, a category the App Store puts us in.
 
-- **Supported**
-- **Partial or indirect**
-- **Explicitly not supported**
-- **Not found in reviewed evidence**
-- **Unclear because of access, region, plan, or version limits**
+Ask: What does the user actually do on a bad day with this product, minute by minute? What does it do
+*during* an event versus after it? What is free and what is gated, and where exactly is the wall? What
+would the user lose by switching to ours, and what would they miss?
 
-Also record capability maturity: current, beta, experimental, planned, discontinued, or unknown.
+---
 
-Do not infer a feature merely because a product has a nearby feature. For example, a sleep score is not automatically
-CPAP support; an AI chatbot is not automatically longitudinal multimodal analysis; cloud sync is not self-hosting; and a
-notification is not an independent local alarm.
+## 3. Required comparison dimensions
 
-## Required report structure
+Versus **AnxietyWatch v1** (shipped) and **v2** (current + specified, always labelled as such):
 
-### 1. Executive summary
+- logging burden and subjective signal quality
+- sensor access, fidelity and provenance
+- derived-value transparency (can the user see how a number was made?)
+- correlation/analysis depth and what it may be computed over
+- real-time, overnight and always-on capability
+- alerting: channels, latency, failure behaviour, and the absent-signal case
+- clinical communication: report, export, share, and what the clinician sees
+- privacy: local-first vs cloud, export, deletion, third parties
+- cost and the shape of the paywall
+- evidence quality behind the vendor's central claim
+- what we would have to build to match it, and whether we should
 
-Give a concise answer to:
+Every "AnxietyWatch v2 does not X" statement is checked against the tree before it is written. A
+specified capability is described as specified, never as shipped, and never as a gap in the vendor's
+favour or ours.
 
-- What is {APP_NAME} primarily for?
-- Which AnxietyWatch version or subsystem is the closest comparison?
-- Where is {APP_NAME} clearly stronger?
-- Where is AnxietyWatch clearly stronger?
-- Where are they complementary rather than direct competitors?
-- What is the largest unresolved uncertainty?
+---
 
-### 2. Scope and evidence boundary
+## 4. Output contract
 
-Record the candidate's platforms, availability, region/plan restrictions, hardware requirements, research date, and
-source limitations. Separate public claims, documented behavior, independent observation, inference, and unknowns.
+Write `{slug}/{slug}_COMPARISON.md` with the 14 sections in §6, in that order, using those headings.
+Every substantive sentence carries an evidence class from `PROMPT1.md` §5. Headline findings that rest on
+a quotation reproduce the quotation and its source date.
 
-Use citations linked to the candidate evidence file. Add new sources only when necessary and record URL, title,
-publisher, date, and access date.
+**Never:** present a vendor-authored study as independent validation; present a runtime observation that
+was inferred rather than observed; present a plan, spec or proposal of ours as shipped; present a v1
+defect as a failure of the vendor's diligence; state float equality; convert a correlation into a cause;
+publish a secret.
 
-### 3. Claim-versus-implementation reconciliation
+---
 
-When implementation inspection is available, compare major public claims against static findings and authorized runtime
-observations. Identify features that are:
+## 5. Self-check before "done"
 
-- claimed and observed;
-- claimed but not observed;
-- implemented and reachable but not publicly advertised;
-- present only in experimental, gated, dead, or unreachable code; or
-- unresolved because inspection was blocked or incomplete.
+1. Every `V-n` claim from the claimed-features file appears in a verdict row and has one of the five
+   verdicts.
+2. Every coverage limit names its mechanism and what was read instead.
+3. No sentence reads "inspection not performed" or "no lawful artifact".
+4. Every `[STATIC]` finding that is described as user-visible has been checked against the class map for a
+   reachable path, or is labelled `[INFERRED]`.
+5. Both quote-check modes ran clean (`RESEARCH_METHOD.md` §5).
+6. `FINDINGS.md` and `PROCESS_STATE.md` were updated in the same commit.
 
-Include the artifact/version boundary and do not disclose credentials, private data, or sensitive exploit details. If
-inspection was unavailable, state why and how that limits the comparison.
+---
 
-### 4. Feature-level comparison
+## 6. The 14 sections
 
-Include a table with these columns:
+1. **Executive finding** — the one paragraph a decision-maker reads. Two-sided if the evidence is.
+2. **Product and availability** — what it is, who makes it, where it ships, what it costs.
+3. **System boundary and architecture** — device, app, cloud, third parties; where data crosses a boundary.
+4. **Data path and source comparison** — every signal, its origin, rate, and where it lands.
+5. **Claim-versus-contract reconciliation** — the verdict table from the inspection file, resolved.
+6. **Feature matrix** — AnxietyWatch v1 / v2 / candidate, per capability, with evidence class.
+7. **Derived values versus stored signals** — what is measured, what is computed, what is exportable.
+8. **Real-time, overnight and failure-mode behaviour** — including the absent-signal case and the alarm path.
+9. **Provenance, missingness and reproducibility** — can a third party recompute this?
+10. **Local, cloud, and privacy posture** — the three surfaces (policy, client, storefront), compared.
+11. **Alerting and the alarm path** — channels, thresholds, what happens when the phone is gone.
+12. **User-facing consequences** — what the user gets, what they lose, what they are not told.
+13. **Limitations, unverified claims and coverage gaps** — with mechanisms named.
+14. **Balanced conclusion** — what we should copy, what we should avoid, what this candidate proves about
+    the market. Then a **Related files** list.
 
-| Capability | AnxietyWatch v1 | AnxietyWatch2 current | AnxietyWatch2 specified target | {APP_NAME} | Evidence/status notes |
-|------------|-----------------|-----------------------|--------------------------------|------------|-----------------------|
+---
 
-Cover, where relevant:
+## 7. Variant catalogue (lenses in combination)
 
-- anxiety, panic, mood, symptom, and free-text journaling;
-- medication, dose timing, adherence, and personal efficacy follow-up;
-- HealthKit, Apple Watch, Polar H10, HRV, pulse, SpO₂, respiration, and blood pressure;
-- sleep, CPAP, AirSense, respiratory events, and overnight operation;
-- aircraft, environmental noise, barometric/weather context, and sleep-interruption attribution;
-- real-time streams versus nightly imports;
-- raw data, summaries, provenance, quality states, stale data, and missing data;
-- personal baselines, correlations, longitudinal analysis, and AI review;
-- lyrics/song context and other unusual personal inputs;
-- clinical reports, exports, provider sharing, and audit history;
-- local alarms, technical alarms, phone/cloud notifications, and failure independence;
-- privacy, self-hosting, data ownership, account requirements, and telemetry;
-- cost, subscriptions, hardware, electricity, and optional AI/API charges.
+| Variant | Lenses | Fits |
+|---|---|---|
+| `evidence-first` | A (+C if data leaves the device) | Regulated devices, "validated" claims, vendor papers |
+| `technical-systems` | B (+A) | Sensor platforms, always-on collection, alerting |
+| `privacy-operating-mode` | C (+D) | Ad-funded, cloud-first, subscription-gated products |
+| `user-value-category` | D (+B) | Free apps, CBT/anxiety category, journaling apps |
+| `full` | A+B+C+D | Our two closest whole-product competitors |
 
-### 5. Narrative comparison by user journey
-
-Compare concrete scenarios:
-
-1. Capturing anxiety during a panic episode
-2. Understanding a poor night's sleep
-3. Investigating whether CPAP or respiratory events mattered
-4. Testing a medication over repeated doses
-5. Finding whether an aircraft/noise event coincided with an awakening
-6. Reviewing months of data with a clinician
-7. Continuing to collect or alarm when the phone, internet, or cloud is unavailable
-
-For each scenario, explain the data path, user effort, feedback timing, and important limitations.
-
-### 6. Privacy, operating model, and cost
-
-Explain where data is collected, processed, stored, synchronized, exported, retained, and deleted. Identify cloud
-dependencies, account requirements, vendor lock-in, telemetry, model/API dependencies, and hardware dependencies.
-Distinguish free software from free operation.
-
-### 7. Balanced conclusion
-
-State:
-
-- best-fit user for {APP_NAME};
-- best-fit user for AnxietyWatch v1;
-- best-fit user for AnxietyWatch2;
-- strongest overlaps;
-- important gaps on both sides;
-- whether the products are competitors, complements, or competitors only in one subsystem;
-- which findings are well-supported and which remain uncertain.
-
-Do not describe either project as a validated diagnostic, medical device, or emergency monitor unless the evidence
-explicitly supports that claim. Do not turn correlation into causation.
+Record the chosen variant in `{slug}/PROMPT_2.md`'s first line, so the comparison's emphasis is
+reproducible rather than a matter of taste.

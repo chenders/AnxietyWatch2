@@ -1,742 +1,170 @@
-# App comparison — research method
+# RESEARCH_METHOD — how evidence is gathered, labelled and verified
 
-**Research date:** 2026-10-06/07 (session started 2026-10-05 ~17:41 PDT)
-**Execution mode:** full sequential — the whole shortlist (10 candidates), one processed end to end at a
-time, plus one further candidate (`visible`, candidate 11) selected by the owner from
-`CANDIDATE_SHORTLIST.md` §4 on 2026-10-06/07 and run through the same pipeline. The pilot (`bearable`) was
-reviewed by the owner and the run was authorised to continue. **The shortlist is exhausted: 10 of 10
-complete, and candidate 11 is complete.**
-**Governs:** `PROMPT1.md`, the five `PROMPT2*.md` variants, `CANDIDATE_SHORTLIST.md`,
-`PROCESS_STATE.md`, and every `{APP_SLUG}/` candidate directory
+This is the rule register for the app-comparison package. It governs *how* a fact becomes a finding.
+`PROMPT1.md` governs *what* is compared; this file governs whether what you write is true.
 
 ---
 
-## 1. Research date, model and tools
+## 1. Posture
 
-| Field | Value |
+**Inspection is a required step, not a permission.** Every candidate's artifact is obtained and read.
+The method below assumes the artifact is in hand; when it is not, that is a task failure to fix in step 2,
+not a category of result. The only limits recorded are technical, and each names its mechanism and what
+was read in its place (`PROMPT1.md` §2).
+
+**A candidate's findings are only as good as the bytes.** Every quotation is verified against the source
+bytes; every hash is computed, never recalled; every count is counted, never remembered.
+
+---
+
+## 2. Sourcing
+
+### 2.1 Source hierarchy
+
+When two sources disagree, the more conservative one governs, and **both are recorded with dates**:
+
+1. The artifact's own behaviour (`[OBSERVED]`)
+2. The artifact's own code and configuration (`[STATIC]`)
+3. The vendor's contractual instruments — terms, EULA, privacy policy, published spec, credential
+   documentation (`[DOCUMENTED]`)
+4. The vendor's help centre and documentation (`[DOCUMENTED]`)
+5. The vendor's marketing — website, store listings, press (`[DOCUMENTED]`)
+6. Independent records — regulator filings, trial registries, peer-reviewed papers, another vendor's
+   disclosure (`[THIRD-PARTY]`)
+
+A vendor's own material that undercuts the product's headline is a **finding**, quoted and left
+unresolved. Do not explain it away, and do not resolve it in the vendor's favour.
+
+### 2.2 What counts as an independent check
+
+| Artifact | Independent? |
 |---|---|
-| Research date | 2026-10-06 |
-| Model | `deepseek/deepseek-v4-flash` via provider `litellm` (pi coding agent, reasoning level high) |
-| Session id | `01a10ea8-4e0e-763c-8212-3009e888c2d2` |
-| Local repository | `AnxietyWatch2` (this repo), branch `fix/silence-detector-schema-preflight` |
-| Comparison baseline repo | `../AnxietyWatch` (v1) |
-| Web retrieval | `curl` against vendor sites, store listings and support articles; Bing and Mojeek for search |
-| Traffic inspection tooling (validated, not used against a target app) | mitmproxy/mitmdump **12.2.3** (Python 3.14.4, OpenSSL 3.5.5) |
-| Device tooling (validated, not used against a target app) | Android `adb` 1.0.41, Android Emulator 37.2.12.0, AVD `pixel_4_w_gapps` (Android 12 / SDK 31) |
-| Packet tooling | TShark (Wireshark) 4.6.5; `tcpdump`; `python3` |
-| PDF tooling | `pdftotext`, `pdfinfo`, `pdffonts` and `qpdf` (homebrew poppler/qpdf). **No OCR engine is installed**, which is what makes the `empatica` manual gap a blocker rather than an inconvenience |
-| Regulator data | openFDA `device/510k.json` and `device/classification.json`; 510(k) summary PDFs at `accessdata.fda.gov/cdrh_docs/pdf<YY>/K######.pdf`; the Apple lookup API (`bundleId=` form) |
-| Android SDK root | `$ANDROID_HOME` (the run used the machine's default Android SDK location) |
-| Published-client analysis (used for `mindshift`) | `curl` plus `grep -o -F` for fixed-string counts, `grep -o -E` for route extraction, a small Python extractor for the bundle's string table, and `shasum -a 256` for every artifact. **Every count is reported with its match mode**, because a case-sensitive zero and a case-insensitive zero are different findings |
-| Quote verification | A purpose-written checker (`qc2.py`; it lived in the scratch tree `/tmp/aw2research/`, so re-create it from this description — it is one file with no dependencies) that machine-compares every quoted span in a deliverable against the retrieved bytes. The corpus is the **fetched artifact tree for that candidate** (`.html`, `.js`, `.json`, `.xml`, `.txt`, `.md`, `.rst`, C/C++/ObjC, Java/Kotlin/Swift/Rust/shell/script sources, and extensionless `README`/`LICENSE`/`CHANGELOG`/`AUTHORS` — the suffix list grew because a `.py` or `.rst` quote read as MISS for a reason unrelated to the quote), the package docs, the V2 tree and the V1 tree, and **the file under check is excluded from its own corpus**. HTML/XML is tag-stripped; `\uXXXX`/`\/`/`\n`/`\r` escapes are decoded in `.js`, `.json` **and in `.html`/`.xml` whose text layer is a JS payload**; inline markup inside a quoted source string is stripped; elided quotes are split on `…`/`...` and each fragment is checked; a markdown link inside a quotation is collapsed to its label; pairing resets at every blank line and table row; `AW2_ROOT` accepts a **colon-separated list of roots** so an index file that quotes across candidates can be checked in one run. **Every file is run twice** — the full corpus, then `AW2_VENDOR_ONLY=1` with the package/V2/V1 entries dropped, because a quotation that verifies only against a sibling deliverable is a **cross-file echo, not a source check**. **A quote-verification sweep is a required pre-commit step** — see §6.1 |
+| Regulator clearance record (e.g. an openFDA 510(k) summary) and its **product-code classification** | Yes — and the classification is a *scope* fact distinct from the clearance claim |
+| Clinical trial registration (ClinicalTrials.gov, ISRCTN, …) | Yes — and a registry classification outranks the noun the vendor or the paper uses |
+| Peer-reviewed paper by authors with **no vendor affiliation** | Yes |
+| Peer-reviewed paper with vendor employees among the authors | **No.** Label it vendor-affiliated in the same sentence as the claim |
+| A vendor-published preprint, webinar, blog or "research page" | No |
+| A vendor's self-reported business figures | No |
 
-**Model caveat.** Model- and provider-rendered web summaries were treated as **leads only**. Every
-material factual claim in a candidate file was traced to a retrieved primary page or a peer-reviewed
-record, and the retrieval is dated in the evidence table. Where a page could not be retrieved, the
-failure is recorded rather than papered over (see §7).
+A vendor publishing its own numbers does not make them independent. A vendor-authored study is the
+counter-surface to the vendor's marketing — record both, unresolved.
 
-## 2. Candidate-selection rules
+### 2.3 Registers that must be checked for certain candidates
 
-The shortlist in `CANDIDATE_SHORTLIST.md` was built from the AnxietyWatch capability inventory rather
-than from app-store browsing, so that candidates were selected for *capability overlap with a stated
-project capability* rather than for popularity.
+Regulated device, clinical claim, or study-backed candidate: check the regulator record, the trial
+registry, the publication and **its corrigendum**, and the vendor's own research page. A corrigendum is
+read as its own artifact, not as a footnote to the original.
 
-Rules applied:
+---
 
-1. **Start from the capability inventory.** C1–C26 were derived from AnxietyWatch v1 documentation and
-   source and from `openspec/` specifications, each labelled V1 documented/implemented, V2 current,
-   V2 specified target, or Unresolved.
-2. **Select for overlap, not fame.** A candidate qualifies if it shares at least one mechanism with the
-   inventory — subjective logging, correlation, medication follow-up, CPAP, oximetry, HRV, alarm,
-   self-hosting, clinical reporting, environmental context.
-3. **Score on six dimensions (A–F), 0–3 each:**
-   A whole-product relevance to v1 · B subsystem overlap · C architectural contrast ·
-   D privacy/hosting contrast · E evidence availability · F differentiation value.
-4. **Separate score from rank.** The ranking is a *review order*, not a quality order. `bearable`
-   ranks first on dimension A despite not having the highest total score; `nightscout` has the highest
-   total (15) and ranks sixth. This is deliberate: the pilot needs the candidate that most closely
-   mirrors the v1 whole product, not the one that scores highest on a composite.
-5. **Reject with a reason.** Seven alternatives-considered-and-rejected candidates are listed with
-   reasons. A candidate is rejected for being a duplicate category, for having no retrievable public
-   evidence, or for being a component rather than a product.
-6. **Reachability check.** A candidate must have a resolvable public presence — but the check is run
-   against **the address the vendor itself publishes**, taken from the storefront listing (the developer
-   website and the declared privacy-policy host), never against a guessed product name. `emoods` was
-   dropped on 2026-10-06 because `emoods.net` had no DNS records; the vendor publishes
-   **`emoodtracker.com`**, which was live throughout, and the candidate was restored on 2026-10-07. **A
-   name that returns no records is evidence about the name, not about the product** — see §6.1.
+## 3. Labelling
 
-## 3. Search boundaries and assumptions
+Every substantive statement carries exactly one class (`PROMPT1.md` §5): `[DOCUMENTED]`, `[STATIC]`,
+`[OBSERVED]`, `[PUBLISHED-CLIENT]`, `[THIRD-PARTY]`, `[INFERRED]`, `[UNKNOWN]`.
 
-- **Search surfaces:** vendor product sites and support/knowledge bases, Apple App Store listings,
-  Google Play listings, vendor privacy policies and terms, public documentation, peer-reviewed
-  literature (via Crossref for metadata when publishers block direct access), and the projects' own
-  repositories for the open-source candidates.
-- **Geographic assumption:** **US storefront** for App Store and Play Store metadata and pricing.
-  Prices, plan names and availability differ by region and are not covered here.
-- **Platform assumption:** iOS and Android are treated as the relevant surfaces. macOS via the
-  Catalyst/iOS app is noted where the vendor states it; no native desktop build was assumed.
-- **Time assumption:** all findings are a snapshot dated 2026-10-06. Freemium products change tiers
-  frequently; a tier claim older than the snapshot is dated in the evidence table and must be rechecked
-  before being relied on.
-- **Language:** English-language sources only.
-- **Deliberate exclusion:** no account was created anywhere, no production service was logged into, no
-  paid tier was purchased, and therefore **no premium-gated behaviour is verified** anywhere in this
-  research. This is a standing coverage gap, not a per-candidate accident.
-- **Anthropic/Claude is not used** for this research, per the owner's provider preference. The v1
-  application's *product feature* of optional Claude analysis is reported as a feature of the product
-  under comparison; that is not a use of Anthropic tooling by the researcher.
+Rules that the run has had to learn more than once:
 
-## 4. Source-quality rules
+- **Absence of evidence is `[UNKNOWN]`, not absence.** A 404 on a URL the vendor publishes on *both*
+  storefronts is evidence of absence for that URL, and is recorded as such. A URL you guessed is not.
+- **A documented default the code does not implement is a finding** — not a rounding error in either
+  direction.
+- **A code comment is not a behaviour.** Neither is a string, a bundled SDK, a feature flag, or dead code.
+  Reachability is checked in the class map or the claim stays `[STATIC]`.
+- **A vendor's internal document is the vendor's statement**, quoted with its date.
+- **A published specification's `example` blocks may be generated rather than captured.** Say which.
+- **An undocumented value domain is a finding.** So is a sentinel that means *absent*.
+- **Never clamp.** An out-of-range value is rejected and named; a clamped reading is indistinguishable
+  from a real one downstream. Quote a vendor doing the same as a positive comparator.
+- **Missing data contributes nothing.** Three states always: measured-and-good, measured-and-bad, and
+  **not measured**. The third is never rendered, logged or scored as either of the others.
+- **A taxonomy fact belongs to its author.** If a rule is the linter's, attribute it to the linter; if a
+  classification is the regulator's, attribute it to the regulator.
+- **Do not overstate a gap in our favour, or against the vendor.** Every "we do not X" and every "they do
+  not Y" is checked against the tree or the artifact before it is written.
+- **A refuted hypothesis is not a finding.** It is a correction. Corrections are recorded, prominently,
+  where the wrong version lived — never silently rewritten.
 
-Every material statement carries an evidence class:
+---
 
-| Class | Definition |
+## 4. Quantitative discipline
+
+- **Never state float equality.** Use a tolerance: `(a - b).abs() < 1e-9`.
+- **Fixed reference timestamps.** No wall clock in an assertion.
+- **Every number is measured or counted.** A figure written from memory is a defect; a tally a reader
+  cannot reproduce from the table above it is worse than no tally.
+- **Hash everything you fetch**: SHA-256, recorded with the URL and the retrieval date. An unverified
+  hash is worse than no hash. A re-fetch that disagrees with the recorded digest is a **lifecycle finding**,
+  not a fetch error.
+- **Define a "reference count" by its match mode.** Say what was searched and where, or the count is
+  meaningless.
+- **Do not average a disagreement.** An intra-vendor count discrepancy is recorded as two numbers.
+
+---
+
+## 5. Quotation verification
+
+Every quotation in every deliverable is verified as a fixed byte string against the source it claims to
+come from. Two modes, both required:
+
+| Mode | Corpus | Answers |
+|---|---|---|
+| **Full** | Vendor artifacts + this package + the v1 tree + the v2 tree | "Is this the vendor's wording?" |
+| **Vendor-only** | Vendor artifacts only | "Or is it only the wording of another file in this package?" |
+
+Vendor-only mode exists because a quotation can pass the full check merely because a *sibling deliverable*
+reproduces the same reconstructed wording. A quote that verifies only against the package is not verified.
+
+**Triage every miss; never auto-accept it.** Three classes, plus one exception:
+
+1. **Checker artefact** — the corpus is incomplete or the normalisation is wrong. Fix the checker.
+2. **Author paraphrase wearing quotation marks** — a real defect. Fix the prose, or quote the source.
+3. **Corpus gap** — the source is gone or was never fetched. Re-fetch from the recorded URL, verify the
+   digest, and re-run. If it cannot be re-fetched, replace the quotation with attributed prose.
+4. **Exception:** this package's own superseded wording, quoted inside a correction record, stays verbatim
+   but is rendered in a code span, never in quotation marks.
+
+**The corpus is part of the evidence.** Practical requirements learned the hard way:
+
+- Index **every** text file, not a suffix list: an extensionless vendor dump is corpus. Sniff for text
+  (no NUL in the first 4 KB) rather than trusting the extension.
+- Strip markup only with well-formed tag syntax (`</?[A-Za-z][^<>]*>`). A bare `<` in prose (as in
+  `p < 0.05`) otherwise silently deletes a region of the corpus. A file count is not an integrity check.
+- Decode escape sequences in both the fragment and the corpus, for `.js` **and** `.json`; unescape HTML
+  entities twice (vendor pages double-escape them); collapse markdown links to their text; strip editorial
+  brackets **and their contents**; strip blockquote markers; keep inline-code content but drop the backticks.
+- Pair quotes per paragraph and per table row, not greedily across the file.
+- State the blind spots: quoted fragments shorter than 25 alphanumeric characters are skipped, and fenced
+  code is not checked.
+- Never silently repair a word inside a quotation. **Rewording a verbatim vendor quote to silence a
+  linter is the defect.**
+
+---
+
+## 6. Inspection modes
+
+For each candidate, record which mode produced the implementation file. The mode is a fact about coverage,
+not a verdict about permission.
+
+| Mode | What was read |
 |---|---|
-| **Public claim** | What the vendor says in marketing, store copy or a listing |
-| **Documented behaviour** | Official documentation specifying the behaviour in operational detail |
-| **Observed / independently reported** | Credible third-party or end-user report; labelled as such, never merged with vendor documentation |
-| **Static-only finding** | Implementation evidence not observed at runtime |
-| **Inference** | A labelled deduction, never presented as fact |
-| **Unknown / unverified** | Cannot be established with available access |
-| **Not supported** | A vendor-stated limitation, or a documented absence across all public surfaces examined |
-
-Hierarchy of preference: peer-reviewed record > primary legal document (privacy policy, terms) >
-vendor operational documentation > platform-declared metadata (store data-safety, entitlements) >
-vendor marketing copy > third-party or user report > search-result snippet.
-
-Rules:
-
-1. **No claim without a source.** Every row in a candidate's evidence table carries URL, publisher,
-   date, access date and a confidence label.
-2. **Absence of evidence is unknown, not proof of absence.** A finding that no CPAP feature appears
-   anywhere examined is recorded as absence-of-evidence and explicitly flagged as *not* proof that no CPAP
-   code exists in the binary.
-3. **Marketing is not evidence of behaviour.** "over 2M patients & doctors" is labelled unverifiable.
-4. **Do not extrapolate across features.** A sleep score is not CPAP support; an AI chatbot is not
-   longitudinal multimodal analysis; cloud sync is not self-hosting; a notification is not an
-   independent local alarm.
-5. **Quote the vendor's most conservative statement when statements conflict in strictness.** Bearable
-   markets medication correlation and then warns users not to make medication decisions from it; the
-   warning is the operative claim.
-6. **Separate website facts from app facts.** Bearable's website loading Google Tag Manager is a
-   *website* observation and must not be recorded as app telemetry.
-7. **Record conflicts rather than resolving them silently.** The Bearable privacy policy's "no
-   third-party sharing" versus the Play Store data-safety declaration's named sharing is recorded as
-   an open question (Q7), not smoothed over.
-8. **Peer-reviewed scope discipline.** A systematic review that *includes* a product is not evidence
-   that the product works. The Bearable citation is recorded as evidence of inclusion in an oncology
-   PRO review, with its scope stated.
-9. **Never state float equality**, and never convert correlation into causation, in any report.
-10. **Medical discipline.** No product is described as a validated diagnostic, medical device or
-    emergency monitor unless the source explicitly supports it. Where a project's own documentation
-    disclaims this, the disclaimer is reproduced.
-
-## 5. AnxietyWatch status labelling
-
-Three products exist in this comparison and are never conflated:
-
-- **V1 documented/implemented** — represented as implemented by AnxietyWatch v1 code or documentation.
-- **V2 current** — present and usable in the current AnxietyWatch2 repository.
-- **V2 specified target** — fully specified in `openspec/`, not necessarily implemented.
-- **Unresolved** — mentioned but insufficiently specified or evidenced.
-
-The rule that matters most: **a V2 specified target is never presented as a shipped feature.** The
-detector and the supervised alarm do not exist, and every report says so where relevant. The `[v2c]`
-label is also used conservatively — the project's own README states that the TimescaleDB hypertable
-chain is not claimed as verified-deployed, and the reports reflect that rather than implying a
-production system.
-
-Each conclusion also states its scope: the v1 app, the v2 Pi platform, the combined vision, or a single
-subsystem.
-
-## 6. Authorization rules for package and protocol inspection
-
-Phase 2A permits implementation inspection only under these limits:
-
-**Permitted**
-- Published source of open-source candidates.
-- A vendor-distributed build of a vendor-distributed app, where installing it is authorized.
-- An artifact extracted from a device the owner controls and authorizes.
-- An emulator that is disposable, non-personal, and authorized — for example an AVD.
-- Installing the mitmproxy CA on such a **disposable, authorized emulator only**, and only to observe
-  an app that accepts user-installed CAs.
-- **Vendor-published surfaces.** Anything the vendor itself publishes for public use, including a public
-  API reference, published datasets or research artifacts, an open-source component or GitHub
-  organisation, a public roadmap, and self-published business figures. These require no owner decision,
-  because they are public and published for third parties to read.
-
-**Prohibited — not attempted at any point**
-- Third-party APK or IPA mirrors. Redistribution is not authorization to inspect, and a mirror cannot
-  grant rights the vendor has not.
-- Defeating certificate pinning, anti-debugging, obfuscation, DRM or licence checks.
-- Circumventing platform protections (Android SafetyNet/Play Integrity, iOS integrity checks).
-- Extracting credentials, tokens, keys, personal data, or third-party private data.
-- Installing a CA on a personal or production device.
-- Creating accounts on target apps or on production health services.
-- Sending real user data to a candidate's servers.
-- Logging into production services.
-
-**Required handling when inspection is blocked:** record it as an *evidence limitation*, in a dedicated
-implementation-inspection file, with the reason, the artifact fields marked not-acquired, and a
-statement of what cannot be concluded. Never treat blocked inspection as proof that a feature does or
-does not exist, and never substitute marketing copy for verified behaviour.
-
-**Free tooling substitution.** The workflow uses mitmproxy/mitmweb on `127.0.0.1:8080` with the
-emulator proxied at `10.0.2.2:8080`, per `FREE-ANDROID-TRAFFIC-INSPECTION.md`. This replaces the
-previously documented Charles Proxy workflow (`10.0.2.2:8888`) because the Charles licence expired; the
-replacement is free and already installed. The proxy must be configured **before** the target app is
-launched or installed, and removed afterwards with the removal verified.
-
-**Encrypted-traffic honesty rule.** A hostname or IP observed without decryption is recorded as
-*encrypted traffic to host X observed*, never as *the app called API Y*. Packet-capture fallback uses
-the emulator's `-tcpdump` and TShark rather than defeating protections.
-
-**Sequencing rule.** Exactly one candidate is active at a time. No cross-candidate parallelism and no
-prefetching a later candidate's research while an earlier one is in progress.
-
-### 6.1 Inspection modes actually used
-
-Six modes have been reached, and the count is stated against the table below rather than from memory.
-Which one applies is recorded per candidate, and none is ever silently
-upgraded into another.
-
-| Mode | Meaning | Candidates |
-|---|---|---|
-| **Not performed** | No artifact of any kind was lawfully obtainable | `bearable` |
-| **Partially performed** | No product binary, but authorized vendor-published artifacts were inspected | `welltory`, `exist`, `sleephq`, `oura` |
-| **Performed** | Product source or a lawfully authorized build was inspected | `oscar` (GPLv3 source, pinned commit); `nightscout` (AGPL-3.0 source, pinned commit); `homeassistant` (Apache-2.0 source, tag `2026.9.4` / commit `9212531f…`, eleven files read and hashed) |
-| **Performed — artifact and regulator record** | Neither binary nor source nor API was obtainable. The strongest available surfaces are the vendor's own **contractual and compliance documents** and an **independent regulator's record of the vendor's own submission** | `empatica` |
-| **Performed — published client and public records** | Neither binary nor source nor API contract was obtainable. The strongest available surfaces are the vendor's own **served web client** read as text, plus **storefront metadata** and an **independent clinical registry and its peer-reviewed publication** | `mindshift` |
-| **Performed — published client, vendor organisation, vendor documentation and peer-reviewed publication** | Neither binary nor source nor API contract was obtainable, and the vendor's Terms **prohibit** reverse engineering, so the mode is closed by **contract** rather than by availability. Above `mindshift`'s surfaces the vendor also publishes a **code-hosting organisation** (readable as an artifact: repository count, fork status, commit attribution) and a **95-article help corpus**, and is itself an author of the peer-reviewed publication | `visible` |
-
-**Vendor-published artifacts differ in strength, and the difference must be stated.** Three distinguishable
-strengths have been used:
-
-- **Corroborating artifacts** (`welltory`) — CC0 datasets and research repositories that provide evidence
-  *about* the vendor's claims, from outside the product. A dataset is not the product, so these corroborate
-  and cannot confirm.
-- **Implementing artifacts** (`exist`, `sleephq`) — a public API reference that documents the product's own output
-  contract. The correlation record, the insight record, the attribute catalogue and the sparse value model
-  are the analysis layer's interface, so these are genuine static findings *of* the implementation.
-  `sleephq` extends the mode: its OpenAPI document is complete enough to enumerate every path, every
-  serializer attribute and one hash algorithm exactly (`content_hash` = MD5 of content+name, with a worked
-  example and a validation endpoint), and candid enough to document its own rate-limit buckets.
-  **`oura` extends this mode in a third direction, and adds the first case where the *contract itself* is
-  the reason a stronger mode was not attempted.** Oura publishes a complete OpenAPI 3.1 document (72
-  paths, 75 schemas, 274 resolvable `$ref`s) under a **public static path**, and its own documentation page
-  is a JavaScript shell that merely points at it. Two consequences of method:
-
-  - **The document is large enough to support internal-consistency checking as a first-class step.**
-    Reference resolution, security-scheme declaration-versus-use, path-to-schema coverage, the
-    `required`/nullable pattern of every collection model, and the complete set of bare-`type: string`
-    schemas can all be enumerated and counted. That is how the package's first **verified positive** on a
-    vendor contract was produced — and how a plausible dangling-reference hypothesis was **refuted**
-    rather than reported.
-  - **A vendor's terms can close the stronger mode by contract rather than by availability.** For
-    `bearable` the blocker was lawful acquisition; for `empatica` it was the absence of any published
-    client. For Oura the terms **prohibit** reverse engineering and defeating subscription restrictions,
-    and those clauses are quoted **verbatim** as the authorization basis. That is a third, distinct
-    reason for a limited mode and is recorded as such.
-
-  **The limit is sharper here than anywhere else in the package**: a documented contract that is internally
-  pristine can still describe behaviour nothing was observed to perform, and **no Oura endpoint — not even
-  the sandbox — was called.** Every contract finding is labelled *documented*, never *verified*.
-
-- **The implementation itself** (`oscar`, `nightscout`) — the complete product source under a licence that
-  requires publication. This is the strongest static surface available short of running the software, and
-  it is qualitatively different from the other two: every claim about how a value is decoded, rejected,
-  stored and converted can be read at a named file and line, with no inference from a contract or a
-  dataset.
-
-  **`nightscout` extends this mode in one direction `oscar` could not.** Because the project also publishes
-  documentation *about* its own implementation — system audits, formal requirements, test specifications,
-  an OpenAPI description — the implementation could be checked **against the vendor's description of
-  itself**, at a pinned commit that is also the release commit. That produced a class of finding neither
-  of the other two modes can produce: **doc/code drift inside one release**, where the
-  vendor's security audit, its API description and its changelog each disagree with the code they ship
-  with, while the requirements document beside the audit agrees with it. The same mode also produced the
-  opposite result twice, which matters just as much: a **sanitisation claim checked and found accurate**,
-  and a `TODO` claiming a fallback was broken that was **checked and refuted** — the comment was stale.
-  Had it been trusted, the package would have recorded a false defect and missed the real one.
-
-  The limit of this mode is unchanged and must be stated: **a vendor's self-audit is a claim about the
-  product, not validation of it.** Nightscout's `docs/audits/*` and `docs/requirements/*` are recorded as
-  the project's own statements, dated, and where they disagree with each other or with the code, the
-  disagreement is recorded and neither surface is preferred.
-
-**A fourth mode, instantiated by `empatica`.** The three modes above all assume an implementation surface —
-source, a published API, or a runnable binary. Empatica publishes **none of the three**: its GitHub
-organisation holds five public repos and only one is original (a documentation site, since emptied); the
-Cloud API documentation is supplied to clients only; the app is prescription-gated and iOS-only in practice,
-with no Android artifact located. What it *does* publish is a **regulated product's paperwork**, and what
-exists independently is **the regulator's own record of the vendor's own submission**. That combination is a
-stronger evidence class than marketing and a weaker one than source, so it is recorded as its own mode
-rather than folded into "partially performed".
-
-Two artifact classes are new to the package and are now first-class evidence surfaces:
-
-- **The regulator's record — queried directly, never inferred.** openFDA `device/510k.json` for every
-  clearance held by the applicant and `device/classification.json` for the **product-code definition read
-  verbatim**, plus the **510(k) summary PDF** itself. Four things this yields that no other source can: the
-  clearance **dates and applicants**; the **metric the regulator accepted** (here PPA and false-alarm rate per
-  24 h, not accuracy); the **method** by which the shipped configuration was justified (bench equivalence to
-  a predicate, plus retrospective analyses of data collected on *different* hardware); and the vendor's own
-  sentence that "**No clinical studies have been performed on the subject device**". **A product code is a
-  scope fact distinct from the fact of clearance** — the POS definition states the device "does not predict
-  seizure onsets, and is not intended as a standalone seizure monitoring device", which narrows the claim in
-  the regulator's language. Never interpret a product code without querying the classification API.
-- **The contract — a recordable counter-surface to marketing.** The EULA is quoted as a *contract*, a
-  different instrument class from a marketing page, and the disagreement between the two is recorded
-  unresolved and without any implication of bad faith. The same applies to a published compliance artifact
-  (an ISO 13485 certificate carrying the standard statement that it is not proof of conformity with
-  Regulation (UE) 2017/745) appearing next to a "CE Class IIa" claim: **record placement, not impropriety**.
-
-**The limit of this mode is the sharpest of the five, and it must be stated wherever it is used:**
-**no runtime behaviour of any kind is observable.** Alert latency, cancellation-window length, out-of-range
-handling, lapsed-subscription behaviour and sensor-failure behaviour are all `[UNKNOWN]`, and hypotheses
-about them are recorded as **open questions**, never as findings. This is the mode where the
-check-before-recording rule costs the most: where an implementation exists, hypotheses get tested and
-refuted; where one does not, they get recorded as gaps and nothing more.
-
-**An artifact that exists and cannot be read is a finding, and it blocks reconciliation.** Empatica's
-178-page, 112.8 MB User Manual was retrieved in full and has **no fonts and no text layer** (`pdffonts`
-returns an empty table; `pdftotext` returns 178 bytes across 178 pages; every page is a raster image). It is
-simultaneously an **accessibility** finding and a **verifiability** finding, and no further fetch can close
-it. If OCR is ever attempted it must be recorded with the tool, its version and the pages read, and the
-output labelled **OCR text, not the vendor's verbatim text**.
-
-The **documented-contract mode has a second, weaker limit that must be stated separately from the first**.
-A specification can lack the very thing a reader needs: `sleephq` publishes fields whose *types* are known
-and whose *value domains and methods* are not (`status`, `progress`, `usage`, `omitted`, `teams_type`,
-`o2_score`, the `duration_90`/`drop_90`/`drop_3`/`drop_4` family, and every `_95` percentile). Discovering
-an undefined value domain is a finding, and it is not the same finding as an absent feature. Two further
-patterns from `sleephq` are now standing checks: a documented field that is **write-only**
-(`active_energy_joules` is accepted by the journal write operations and absent from the journal
-serializer), and a specification whose `example` blocks are **generated at fetch time** rather than
-captured from a real record (its machine example carries filler values and a timestamp equal to the fetch
-moment).
-
-**A fifth mode, instantiated by `mindshift`, inverts the assumption the other four share.** Every mode above
-assumes the vendor ships *something* — source, a specification, a binary, regulated paperwork. MindShift ships
-an app nobody here may lawfully obtain, publishes no source, and publishes **no API contract at all**. What it
-*does* ship to every anonymous visitor is a **741,896-byte JavaScript client**, and what exists independently is an
-**independent clinical registry record** of a study the vendor cites everywhere. So the primary evidence
-surfaces are, in order of strength: the **published client**, the **registry and the paper**, and the
-**storefront metadata**. Three rules make this mode usable, and all three are now standing sub-checks:
-
-- **A corpus of JavaScript served to the browser is a *published client* — a static artifact, neither a binary
-  nor a runtime.** Findings from it are labelled `[FOUND IN PUBLISHED CLIENT]`, and the label is not optional.
-  It establishes what the code is **written to do**; it does not establish that any endpoint is live, that any
-  request was answered, or that any record was stored. This is the class in which the candidate's
-  first-party-analytics finding is recorded, and it is stated exactly at that level and no further.
-- **A string in the served HTML shell is not a string in the bundle.** `i.replit.com/script.js` appears in
-  **every** served document — including both 404 pages — and **0** times in the 741,896-byte client. The
-  attribution must name the **shell**, never the client. The same trap applies in reverse to the 404 copy,
-  which exists as two distinct surfaces (the served document's `Page not found`, and a separately authored
-  client string that the served document does not contain).
-- **A reference count is meaningless without its match mode.** `Sentry` case-sensitive is **20**; `sentry`
-  case-insensitive is **129**. `Clerk` is **44**; `clerk` is **505**. Every zero in this package is reported
-  with the mode that produced it, and a zero from a case-sensitive count is **never** presented as an absence
-  of the concept.
-
-**A five-way chain is what makes an absence verified rather than asserted.** Both storefronts declare
-`https://mindshiftcbt.com/privacy/` as the privacy-policy URL. That URL returns a genuine HTTP 404, and the
-absence is established by **five independent methods**, not by the one probe that happens to be convenient:
-(1) the probe, with three control paths returning 200 to prove the fetch is not broken; (2) the site's own
-**9**-URL sitemap; (3) the **13**-path SPA router table; (4) a fixed-string sweep of the whole bundle; and
-(5) a same-day re-fetch returning **byte-identical** content. **No one of these alone suffices** — a sitemap
-can omit a real page, a bundle can build a URL dynamically, and a single 404 can be transient. It is the
-conjunction that closes it. This is the strongest verified absence in the package, and the method is now the
-standard for any future question of the form *the vendor declares an artifact and the artifact is not there*.
-
-**The vendor's own paper is a first-class evidence surface, and it is the counter-surface to the vendor's own
-marketing.** Four rules:
-
-- **A vendor-funded or vendor-authored study is not independent validation**, and the funder's role is quoted
-  from the paper's own competing-interest disclosure — not inferred, and not softened. `mindshift`'s paper
-  states that its lead author "reports financial support was provided by Anxiety Canada", which is the app's
-  original co-developer. **A vendor's own funded, peer-reviewed study, set beside the vendor's own marketing,
-  is an intra-vendor conflict** — the sharpest class in the package — and it is recorded with both sides
-  quoted and left unresolved, without any implication of misconduct.
-- **An independent registry outranks the vendor's own noun.** `studyType: OBSERVATIONAL` with
-  `observationalModel: ECOLOGIC_OR_COMMUNITY` and no arms/interventions module is the authoritative descriptor,
-  even though the paper's title says "trial" and the vendor's site says "clinical trial". Both surfaces are
-  quoted and the conflict is left unresolved.
-- **A registered primary-outcome count that differs from the reported count is a sharper, separate finding
-  than the study-type noun.** The registry lists **one** primary outcome; the paper says "four primary
-  outcomes". Both quoted verbatim.
-- **A headline sample size and a verified-install sample size are not the same number, and the difference is a
-  finding.** The paper restricts its analysis to the 156 participants whose study code entry "verified that
-  they downloaded the smartphone app", so **224 of 380** never demonstrably installed the product, while every
-  marketing surface carries 380. **A corrigendum is a separate artifact and is read, not assumed** — and where
-  it corrects a measure without restating that measure's effect size, the effect size is `[UNKNOWN]`, not
-  carried over.
-
-**A sixth mode, instantiated by `visible`, extends the fifth with a vendor's own *code-hosting organisation*
-and its *documentation corpus*, and is the first mode closed by contract rather than by availability.**
-Visible ships an app nobody here may lawfully obtain, publishes no source and no API contract, and its
-published Terms state "You may not reverse engineer, decompile, or otherwise attempt to extract the source
-code of the Software" — quoted verbatim as the authorization basis, the same mechanism that closed `oura`.
-What it does publish is a **served consent configuration** (read as a published client, `[FOUND IN PUBLISHED
-CLIENT]`), a **code-hosting organisation** (`makevisible`: 2 public repositories, **both forks**, **0
-vendor-authored commits**), a **95-article help centre**, a **vendor-authored peer-reviewed paper** (npj
-Digital Medicine 9, 257 (2026), PMID 41876851, n = 4,244), and both storefront listings. Three rules came out
-of it:
-
-- **A fork's state is a fact about the mirror, not about the app.** Behind/ahead counts and local
-  modifications describe a *published dependency mirror*; `makevisible`'s two repositories are 23-behind/0-ahead
-  and byte-identical to upstream. Record this as a fact about what the organisation publishes, and never as
-  "the vendor's code" — zero vendor-authored commits means the organisation carries **no** vendor code surface.
-- **A vendor-authored paper whose co-authors include the vendor's own founder is the vendor's statement, not
-  independent validation** (the same rule as `mindshift`), and where the paper's input is the *free* tier's
-  once-daily reading while the *paid* tier's continuous monitoring is what is sold, the result is an
-  **evidence-scope** finding — not a criticism of the paper, and not a defect in the product.
-- **A vendor's own help centre can contradict the vendor's own privacy policy and its own store
-  declaration.** "All Visible data … is not shared with any third parties unless you explicitly opt in to a
-  research study" sits three pages away from a privacy policy describing Meta and Google marketing sharing
-  and a store declaration of one shared data type. Quote every surface with its date and leave the conflict
-  unresolved; do not pick a winner.
-
-**An inspection mode is not an observation.** *Performed* means the implementation was **read**. `oscar`
-was never executed: no binary was installed, no data imported, no report generated, and no CSV inspected
-as output. `nightscout` was never built, deployed or contacted: no Node process was started, no MongoDB
-instance was created, no instance — public or private — was requested, and no token, account or key was
-created. **Installing and running a candidate is a separate authorization decision from reading its
-published source**, and it has not been taken for either candidate. Static findings and runtime
-observations remain separate classes throughout the `oscar` and `nightscout` packages, and the
-runtime-observation count for both is zero.
-
-A third surface, used for `exist` and `sleephq`, is also worth checking on every remaining candidate: **self-published
-business figures** (revenue, paid-user counts). Where present, these are the only scale evidence on the
-shortlist that is neither a download count nor a marketing claim — but they remain vendor-published, and
-are never treated as independent. For `oscar` the equivalent check produced **no** scale figures at all:
-star and fork counts are not user counts, and none were used as such. **`sleephq` is the case where this
-surface is present but weaker**: the only scale figure is the vendor's own "Over 100,000 patients use
-SleepHQ in over 160 countries", against 10K+ Android installs, with no revenue published — recorded as vendor-published
-with the platform mix left as an inference rather than a reconciliation.
-
-**What vendor-published artifacts cannot do.** They reveal a documented contract, never observed
-behaviour. An API reference is not a live system; a dataset is not an accuracy test of a product; a
-published policy is not an implementation. No vendor endpoint is called without an explicit authorization
-decision, and every such finding is labelled *documented*, never *verified* or *working*.
-
-**Standing sub-checks, added as candidates taught them.** Each is now applied to every remaining
-candidate, and each has already produced a finding at least once:
-
-| Sub-check | What it looks for | First produced by |
-|---|---|---|
-| **Undocumented value domain** | A typed field with no enumeration, units, range or description is *unusable*, and that is a finding in its own right | `sleephq` |
-| **Write-only field** | A documented field accepted on write and absent from the read model | `sleephq` |
-| **Generated `example` blocks** | Specification examples that are filler or timestamped at fetch time, not captured records | `sleephq` |
-| **Vendor material undercutting the headline** | The vendor's own document arguing against its own product claim — recorded, never resolved either way | `oscar`, `sleephq` |
-| **Two vendor surfaces in conflict** | The most conservative statement governs; the conflict is recorded, not resolved | `bearable`, `sleephq` |
-| **Conflict internal to one docs site** | The same rule applied to two pages of a single vendor's site | `nightscout` |
-| **Honest boundary statement** | A limit described as a limit — recorded as a positive, not as a missing feature | `sleephq`, `nightscout` |
-| **Documented default the code does not implement** | Divergence between a published default and the implementation — a finding independent of which is safer | `nightscout` |
-| **Display unit reaching a derived statistic** | A shipped computed value whose result depends on a user display preference | `nightscout` |
-| **Falsified hypothesis** | A hypothesis checked against the artifact and refuted is **not** recorded as a finding | `nightscout` |
-| **Two answers in one source tree** | Contradictory behaviours for the same operation in one process — record both and name which path a caller takes | `nightscout` |
-| **Independent regulator artifact** | For a regulated candidate, query openFDA's 510(k) records **and** the product-code classification before characterising any regulatory claim; quote the regulation text verbatim. A product code is a scope fact distinct from the fact of clearance | `empatica` |
-| **Contract as counter-surface** | A vendor's EULA or terms quoted as a *contract*, a different instrument class from marketing; the disagreement is recorded unresolved and without implying bad faith | `empatica` |
-| **Compliance artifact disclaiming the adjacent claim** | A published certificate or audit placed beside a claim it does not bear — record placement, not impropriety; every notified body writes the MDR disclaimer | `empatica` |
-| **Mislabelled link** | A hyperlink whose text names one document and whose target is another — a directly observable documentation defect | `empatica` |
-| **Duplicated line in a published list** | A vendor's own published list repeating an entry — record the duplicate as observed, without interpreting the lifecycle of the standard | `empatica` |
-| **Absent item in a non-exhaustive published list** | Record the omission as an **observation** with the reason it is not a non-compliance finding (list not claimed exhaustive; the standard governs a different object than the product's path) | `empatica` |
-| **Artifact offered as evidence for a claim** | Whenever a vendor supplies a document *as* the support for a claim, read the document and test whether it supports **that** claim — the certificate, the cited 510(k) numbers and the instruction manual each failed this test for `empatica` | `empatica` |
-| **Undefined term in a decisive table** | An undefined term in the table carrying the performance claim (`corrected PPA`, materially lower than the raw values) — the undocumented-domain rule applied to a regulated document | `empatica` |
-| **Documentation lifecycle with an exact date** | A vendor deleting its own developer documentation (`developer.empatica.com` emptied 2025-02-18, four days after the 2025-02-14 E4 sunset) — recorded as a lifecycle fact, not a criticism | `empatica` |
-| **Image-only artifact** | A published document with no text layer — simultaneously an accessibility and a verifiability finding, and an evidence gap no further fetch can close | `empatica` |
-| **Unverified hash** | A hash table row is **computed or marked "not hashed"**; a plausible placeholder is worse than no value. A fabricated placeholder written and then replaced by computed SHA-256 values is recorded inside the `empatica` artifacts | `empatica` |
-| **Field-class sweep belongs to the FIRST pass** | Before any conclusion is drafted, enumerate the artifact's **structured classes**: enumerations, `required` lists, nullable unions, bare-`type` schemas, time formats, character-encoded fields, and any pair of fields with near-identical descriptions. `oura`'s first pass read prose and skipped this; a later sweep reversed **five verdicts**, softened a sixth, and produced nine new findings — a verification pass that *reverses* the draft's direction is recorded against the **research process**, not the vendor | `oura` |
-| **Quote verification against fetched bytes** | A **separate, required, pre-commit** step: machine-compare every quoted span against the retrieved artifacts, parsing specifications as **JSON string leaves** so `\u`-escapes cannot defeat matching, and HTML both raw and tag-stripped. Nine quotations that had survived two value-checking passes were found inexact — including a **contract clause cited as an authorization basis** whose paraphrase invented verbs. **Paraphrase inside quotation marks is the failure mode this package exists to avoid** | `oura` |
-| **Every summary tally is counted, not estimated** | A verdict tally, a claim count or a "N findings" line is reproducible **from the table it summarises**. A wrong tally is corrected in place and the correction is visible | `oura` |
-| **Intra-document range conflict** | One document stating one quantity's valid range three ways (global rule `0-100`; `[1, 100]` on a headline field; `[0, 100]` on contributors; **unstated** elsewhere) — record whether `0` is valid as contradictory within the vendor's own text | `oura` |
-| **Disagreeing character-encoded alphabets** | Several digit-string fields in one contract whose characters mean different things, where **only one can encode absence** (`class_5_min` `'0'` = non-wear vs sleep-phase/movement strings with no such code). The non-wear code, the measured `non_wear_time` duration and the nullable score are recorded as **positives** | `oura` |
-| **Retrieval failure is not absence** | An error shell (JS `__next_error__`), a WAF challenge or a 5xx is **`[UNKNOWN]`, not a 404**. Only a vendor-authored not-found document is a statement that a resource is absent — and two URLs returning byte-identical 404 documents is how that was confirmed | `oura` |
-| **Record-provenance trio** | Look for a tombstone value, a retained-rejection-with-reason value, and a per-record algorithm/method version in the same model. Present in `oura`; the honest framing is that **both systems implement V2's rules, and V2 enforces them where Oura documents them** — never equivalence | `oura` |
-| **Documented dead field** | A field whose description says it is deprecated and returns null is a **trap the documentation disarms** — record it as documented, and do not count it as an undocumented domain | `oura` |
-| **Documented default the envelope contradicts** | A response documented as one shape and declared as `anyOf` with no selection criterion — a contract ambiguity, distinct from an undocumented value | `oura` |
-| **Lifecycle fact, exact date** | A contract published but **not yet effective** at the research date (Last Updated 2026-10-02, Effective 2026-11-04, research date 2026-10-06) is a lifecycle fact, **not a defect** | `oura` |
-| **Statistic rendered as a headline in a different category** | An `r²` (or an agreement statistic) published as an "Accuracy %" — record **verbatim with both surfaces quoted**, name the basis, and do not resolve | `oura` |
-| **Evidence-classification defect** | A gallery or heading asserting independence (`Independently validated sensors`) that contains a study whose lead author was the vendor's own staff — a *classification* defect, quoted from both surfaces, with the distinction already made correctly by the vendor elsewhere | `oura` |
-| **Internal org metadata in a public contract** | A published specification carrying internal team names (`x-owner` squad names) — observable and recordable, **not** impropriety | `oura` |
-| **Intra-vendor count discrepancy** | The same quantity stated twice by one vendor across its own surfaces (`over 30 biometrics` vs `over 50 health metrics`) — record without averaging | `oura` |
-| **Multi-entity surface mapping** | Map which legal entity contracts on which surface (four entities across five surfaces) — record; do not infer intent from the spread | `oura` |
-| **Three-state model verified at every layer** | A project having the absent states in its **core** says nothing about the layers downstream. For each layer, ask separately whether it *branches* on absence: `homeassistant` has `unknown`/`unavailable` as first-class states, and its alert path nevertheless treats a sensor going offline as a **cleared condition** and sends the resolution message (`alert/entity.py:98,115-126`). Record the layer, not the platform | `homeassistant` |
-| **Nested idiom contrast in one file** | The same operation spelled two ways a few lines apart — here the invalid Python-2 `except ValueError, TypeError:` at `sensor/recorder.py:239` and the correct `with suppress(ValueError, TypeError):` at `:244` — is why a broken line reads as a **typo** rather than a deliberate choice, and it is recorded without any inference about intent | `homeassistant` |
-| **Non-parsing shipped file: verify the bytes, bound the consequence** | Confirm identical bytes across the checkout, the git object database, the upstream raw URL at the tag **and** the default branch before recording; then state the runtime consequence as **inference**. A **tension with CI left unexplained is recorded as unresolved** (`homeassistant` gap G14), never guessed at and never used rhetorically | `homeassistant` |
-| **Lint config attributed to the right linter** | A `"syntax-error"` entry in a repository's lint configuration is not a reason for a *different* linter to pass: `homeassistant` selects ruff rule `E` with no per-file ignore for the path (`pyproject.toml:658,647,862-879`) while the only `"syntax-error"` entry sits in the separate **pylint** section (`:214`). Attribute the config fact to the tool that owns it | `homeassistant` |
-| **Is the failing code tested?** | `grep` the function name in the project's own test file. `homeassistant`'s `_entity_history_to_float_and_state` is referenced by **no** test in the 56-test file that imports its module. That the function is **untested** is verified; that this is *why* the error survived is inference and is not asserted | `homeassistant` |
-| **Positive comparators recorded for the vendor** | A comparison that lists only differences is not a comparison. Record where the vendor independently reached the same conclusion as V2, and where its design is ahead: `homeassistant`'s explicit absent-state substitution instead of clamping, its **named blocker** on an un-acknowledgeable alert, its completion message armed only after a message was sent, its `mean_weight` coverage weighting and its **circular-mean** helpers are all recorded as positives | `homeassistant` |
-| **A refuted shortlist hypothesis is a correction, not a footnote** | When the inspection disproves the hypothesis the shortlist used to justify the candidate, record the correction in the candidate deliverables **and** in `PROCESS_STATE.md` **and** in `CANDIDATE_SHORTLIST.md` itself, marking the entry inline with the date rather than silently rewriting it — the superseded wording stays visible in the correction block. `homeassistant` refutes the claim that a general-purpose hub has no three-state honesty model (`CANDIDATE_SHORTLIST.md` §9); `mindshift` corrects the operator and the commercial model (§10). Both written back 2026-10-06, commit `bb9fb63` | `homeassistant`, `mindshift` |
-| **Transport-boundary statement made by the vendor** | A local-first platform that itself names its own paid cloud as the route to the remote-access case has drawn the boundary of its headline claim. Quote it verbatim and treat it as a **self-limiting claim**, not as an inconsistency: `homeassistant`'s App Store description reads "If you would like to access this app while away from home, the most secure and simple way to get started is Home Assistant Cloud", and its privacy policy places that cloud "outside the scope of this policy" | `homeassistant` |
-| **Published client as an evidence class** | A corpus of JavaScript served to the browser is a **published client** — static, not a binary and not a runtime. Label findings `[FOUND IN PUBLISHED CLIENT]`, and state them to the level of what the code is *written to do*: `mindshift`'s first-party analytics pipeline (a per-session UUID `POST`ed to `/api/analytics/session` with `credentials:"include"`, four event categories, both calls ending `.catch(()=>{})`) is recorded as a static finding that no endpoint was called and no event was stored | `mindshift` |
-| **Shell string is not a bundle string** | `i.replit.com/script.js` is in **every** served document, including both 404 pages, and **0** times in the 741,896-byte bundle — attribute the shell, never the client. The reverse trap is the 404 copy, which exists as two separate surfaces the served document does not share | `mindshift` |
-| **A reference count must state its match mode** | `Sentry` case-sensitive 20 vs `sentry` case-insensitive **129**; `Clerk` 44 vs `clerk` **505**. Every zero is reported with the mode that produced it, and no case-sensitive zero is presented as an absence of the concept | `mindshift` |
-| **Five-way verification before an absence is asserted** | When a vendor-declared URL does not resolve, close it with the probe **plus** the sitemap **plus** the router table **plus** a whole-bundle string sweep **plus** a byte-identical re-fetch. No one method suffices; it is the conjunction that makes `https://mindshiftcbt.com/privacy/` a **verified** absence rather than a transient 404 | `mindshift` |
-| **Vendor-funded study is not independent validation** | Quote the funder's role from the paper's **own competing-interest disclosure**, never infer it, and never upgrade a preprint to peer-reviewed. A vendor's own funded study set beside the vendor's own marketing is an **intra-vendor** conflict — the sharpest class in the package — recorded with both quotes and left unresolved | `mindshift` |
-| **Registry outranks the vendor's noun** | An independent registry's `studyType`/`observationalModel`/outcome counts are authoritative even against the paper's own title and the vendor's site. Record the registry **one** primary outcome against the paper's "four primary outcomes", and the `OBSERVATIONAL` registration against the noun "trial" on both other surfaces — quoted, unresolved | `mindshift` |
-| **Headline N vs verified-install n** | A sample-size claim on a marketing surface and the sample the paper actually analysed are different quantities. `mindshift`: 380 recruited vs **156** with a code-verified install, so **224 never demonstrably installed the product**, while every headline surface says 380 | `mindshift` |
-| **Corrigendum read as its own artifact** | A published corrigendum is fetched and read, not assumed. Where it corrects a measure and does **not** restate that measure's effect size (`mindshift`: Q-LES-Q-SF baseline corrected, primary conclusions "unchanged", QoL `d = 0.31` not restated), the effect size is **`[UNKNOWN]`** and is not carried over from the original | `mindshift` |
-| **Quote checker: pair per paragraph, exclude the target, extend the corpus** | A whole-document DOTALL pairing mis-pairs across table cells (spurious misses); a pure line-based pairing drops multi-line wrapped quotes (false negatives). The working design is a **state machine that resets at every blank line and every table row**. The corpus must include the **candidate's fetched artifact tree** (including `.py`/`.toml`/`.yaml` for source-inspected candidates), the package docs recursively, the V2 tree and the V1 tree, and must **explicitly exclude the target file** so a file can never verify its own quotes. HTML/XML is tag-stripped (after removing `<script>`/`<style>`), JS `\uXXXX`/`\/`/`\n` are unescaped, elided quotes are split on `…`/`...` and each fragment checked, matching is lowercase-alphanumeric, and a markdown link embedded inside a quotation is split out because it breaks verification. **Two known blind spots, both stated rather than hidden:** the checker ignores any quoted fragment shorter than **25 alphanumeric characters** (short strings produce false positives), so a short vendor phrase such as *Always Free* or *2M patients* is **not** swept and must be checked by hand; and **a corpus that omits the vendor bytes makes "0 not found" mean only "reproduced somewhere in the package"** — an internal-consistency check, not a source check, which is why every file is also run in `AW2_VENDOR_ONLY=1` mode. **Two further stated blind spots:** quoted spans **inside fenced code blocks** are not swept at all (the checker removes ``` blocks before pairing, so a command or a hook's warning text inside a fence is verified by hand — `RESEARCH_METHOD.md` §9 carries two such hook warnings, hand-checked against `.githooks/pre-push`), and a fragment's own **escape sequences** are decoded by the same `norm()` as the corpus's, so a deliverable that writes `\r\n` literally still matches the page it quotes | `mindshift`, `homeassistant` |
-| **A MISS list is triaged, never auto-accepted** | Each checker MISS is one of three things: a **checker artifact** (quote split across markdown emphasis or a table cell), an **author paraphrase wearing quote marks** — which must be reworded, not justified — or a **real defect** to fix against the source bytes. `mindshift` resolved 3 of 3: two were author
-paraphrases (reworded, not justified) and one was a markdown link embedded inside the quotation (the quote
-was split around the link and only the link-free fragments quoted). All four deliverables and both index
-files now report **0 not found** | `mindshift` |
-| **A paraphrase wearing quotation marks is the failure mode** | Reword the author's own characterisations rather than leaving them in quote marks: `mindshift` corrected "pre-**registered**" → "registered", "ambulatory" → "outpatient", a spurious `your` prefix, a dropped "all of", and a missing "ClinicalTrials.gov"; `homeassistant` reworded every author phrase and every piece of hypothetical dialogue that had been presented in quotes (*this receipt does not match anything I sent*, *V2 is better because it says so*, *No analysis of health signals*, *Adds local control and privacy*) | `mindshift`, `homeassistant` |
-| **A retrieval failure is not an absence (second form)** | A byte-identical SPA shell returned for *every* path — including `/robots.txt` and `/sitemap.xml` — is a **fetch failure**, not proof that `anxietycanada.com` publishes nothing. Record `[UNKNOWN]` and never write the omission as a finding | `mindshift` |
-| **A reachability check is about the address the vendor publishes, not the product name** | `emoods` was excluded because `emoods.net` returned no DNS records; the vendor's site is **`emoodtracker.com`**, which the App Store `sellerUrl` and the Play listing both give, and which was live throughout (HTTP 200, SHA-256 `72d41b69…`). Re-tested 2026-10-07: iOS `com.yottaram.eMoods` v1.3.28 (4.80359 / 4,236), Android **`my.tracker`** — an id containing neither the app name nor the developer — 500,000+ installs, Play data safety "No data collected". `emoods.com` is a HugeDomains parking page, so a name-and-guess search finds exactly the wrong surfaces. **NXDOMAIN at the TLD authority, from independent resolvers, is the strong form of the check** — it was obtained here from the workstation resolver, Cloudflare DoH and Google DoH alike. Corrected in `CANDIDATE_SHORTLIST.md` §4, `PROCESS_STATE.md` and §2.6 above | `emoods` |
-| **A vendor's own material that undercuts its headline is left standing** | Both quotations are given and neither is resolved: the site's "Clinically proven" / "Proven, not promised." against its own referenced paper's "Improvements were unrelated to the frequency with which participants used the MindShift app" | `mindshift` |
-| **Run the sweep twice; only the vendor-only pass can catch an echo** | The full corpus (candidate artifacts + package docs + V2 + V1) is run first, then `AW2_VENDOR_ONLY=1`, which **drops the package, V2 and V1 entries** so a quotation cannot verify merely because a sibling deliverable reproduces the same wording. That mode found the package's two worst defects: `empatica`'s `raw data and an extensive range of digital measures` against the page's **`digital biomarkers`**, and `You must have a Device that is compatible with the App` against the EULA's **`The User must have`** (the User is a defined term). Both had passed the full pass. Package-wide the vendor-only run gave **85 MISSes across 22 files**: 40 V2 product-tree quotes, 21 V1 product-tree quotes, 4 sibling-candidate vendor surfaces (`completely secure at all times`, `progressing towards SOC 2 Type II`, `not officially approved or regulated`, the FDA POS text `not intended as a standalone seizure monitoring device`), and 20 spans of this package's own normative text, inspection-mode labels, or CPython's own `SyntaxError` message — **zero unexplained**. A misquotation's correction is recorded visibly, with the superseded string in a code span (§17 of the Empatica claimed-features file) | `empatica`, `sleephq`, `homeassistant`, `nightscout`, `oura` |
-| **Escape decoding and markup stripping follow the bytes, not the extension** | `exist`'s API reference is an HTML page carrying a JS/JSON payload whose text layer reads `"text": "Last night's sleep was surprisingly long.\r\nMonday is…"`, so `.html`/`.xml` are escape-decoded exactly like `.js`/`.json`; and inline markup **inside a quoted source string** is stripped on both sides, because `oscar`'s oximeter dialog stores `bluetooth models is <span style=" font-weight:600;">probably not</span> possible yet` while the deliverable renders the same words as markdown bold. One `norm()` is applied to fragment and corpus alike, so a markup-only difference cannot read as a misquotation | `exist`, `oscar`, `oura` |
-| **A vendor's published release artifact is a check on the pinned commit** | `api.github.com/repos/nightscout/cgm-remote-monitor/releases/tags/v15.0.8` returns the release name `Release 15.0.8 Chocolate Chip Muffin`, published `2026-09-04T18:27:47Z`, with a `target_commitish` equal to the pinned commit `92d0834219aa771b5837dbcbf1baeb839a200cf6`. A repository's own release metadata is fetched and matched, rather than the tag being assumed | `nightscout` |
-| **A vendor documenting the inverse of a V2 rule is a documented behaviour, not an absence** | Bearable's two blank-entry articles say a blank **binary** factor is assumed not to have happened and is **included in correlations as "didn't happen"**, while a blank **variable** factor is excluded and `none` is a distinct value — the inverse of AnxietyWatch2's rule. Quote both, record `[doc]`, and correct the earlier "not documented / `[unknown]`" text **in the same file** once the artifact is fetched: an artifact a vendor offers as evidence of a claim must be tested against the claim it sits beside | `bearable` |
-| **Corpus roots must not nest inside one another** | `docs/app_comparison` lives inside the V2 tree, so a walk of both makes **every** package hit also match the V2 root and the `[also in: PKG,REPO]` tag says nothing about where a span really is. Prune the other roots' paths out of each root's walk; then a `[PKG]`-only tag genuinely means *only in this package*, which is what exposed the borrowed quotation below. Candidate 11's corpus went 2115 → **2061** files when this was fixed | `visible` |
-| **A sibling candidate's vendor surface is not this candidate's source** | The Visible comparison cited SleepHQ's `progressing towards SOC 2 Type II`. The quote is real — candidate 5 verified it against the vendor's bytes — but candidate 11's corpus no longer holds the SleepHQ tree, so the only match was another deliverable in this package. Replace it with **attributed prose**, not quotation marks: a reader of the Visible package cannot check a SleepHQ artifact from it. This is the sibling-candidate case of the two-mode rule — a genuine source, but not **this** candidate's | `visible` |
-| **Typography is not text — an author's rendering of markup belongs outside the quotation** | Four forms in candidate 11: two store-listing elements separated by `<br>` joined with an em-dash (`GET ALL DAY DATA` / `Pair the Visible band …` / `Only available in US and UK.`); a page heading spliced into the paragraph after it with a colon; three separate Play Data Safety cells (`App activity` / `App interactions` / `Analytics`) rendered as one arrow chain; a heading-plus-blurb card collapsed into one span. Likewise the vendor's own published-client comment `// Everyone else (US incl. CCPA states, Canada, etc.) → opt-out` had been quoted as `opt-out (US incl. CCPA states, Canada, etc.)` — a rearrangement, not a quotation | `visible` |
-| **In vendor-only mode, three classes are not defects and are counted separately** | (a) this package's own prescribed citation string — `a tester's machine path (redacted here)`; (b) an inspection-mode label from §6.1 — `performed — published client, vendor organisation, vendor documentation and peer-reviewed publication`; (c) V2 and V1 product-tree quotes, which can never match a vendor tree. Naming the class is not a claim that the span is verbatim **for a vendor** — it is the opposite: the class marks spans that make no vendor claim at all. Candidate 11: **19 MISSes = 14 V2 + 2 V1 + 3 (a)/(b), zero unexplained** | `visible` |
-| **The tag-strip must require well-formed tag syntax, or a comparison operator eats the corpus** | `<[^>]+>` treats a bare `<` as a tag start. `PROCESS_STATE.md` contains ``< 0.05`` and ``< 39`` in prose, so the corpus silently lost **~40 KB** between the first stray `<` and the next `>` on each side, and two spans the package had already verified read as MISSes. Replace with `</?[A-Za-z][^<>]*>` — real tags and inline markup are still stripped, an unpaired `<` is not a tag. **A corpus file count is not a corpus integrity check**; when a previously clean result regresses, suspect the corpus before the quotation | corpus-wide |
-| **A rule-register file's re-quotation is verified against the candidate deliverable, not the vendor bytes, once the scratch tree is cleared** | The index files re-quote findings from closed candidates. With the ten vendor trees destroyed by the `/tmp` wipe, the only match is the candidate's own deliverable (`[also in: PKG]`), which is exactly the cross-file echo the two-mode rule exists to catch. Record the class, name the limitation, and distinguish it from a vendor-verified quote: **the span is verified against a deliverable that reasoned from vendor bytes, not against the bytes.** A cross-reference to another index file's heading (`residual uncertainty — nightscout`) is package-internal and can never match any vendor tree | `visible` (index files) |
-| **Clearing the scratch tree is recovered by re-fetching to a supplementary vendor root, and the re-fetch is itself a digest check** | Add the re-fetch tree as a labelled extra root (`VENDOR2`) rather than folding it into the candidate tree — the root labels are part of the evidence, and vendor-only mode searches every `VENDOR*` root. Six of eight index-file MISSes closed: `emoodtracker.com` came back **byte-identical** to the digest recorded before the wipe (`72d41b69…`), and `exist`'s four API reference pages came back at the recorded byte sizes (43,606 / 69,161 / 32,388 / 32,736). A re-fetch that **disagrees** with the recorded digest is a lifecycle finding, not a fetch error | `visible` (index files) |
-
-## 7. What remains unverified
-
-**Standing, for every candidate**
-
-- Anything behind a premium tier, a subscription, an account, a trial, or a paywall.
-- Anything requiring a real account or a real user's data.
-- Internals of closed-source commercial apps: where processing happens, what is transmitted, what
-  bundled SDKs exist, what the binary actually contains.
-- Region-specific pricing, plan names and feature availability.
-- Whether advertised features match reachable features, for every commercial candidate.
-- Long-run behaviour: retention, deletion, vendor stability, and what happens if the service ends.
-
-**Specific to `bearable`** — see `PROCESS_STATE.md` §"Residual uncertainty — `bearable`" for Q1–Q10, most
-notably: the actual Premium price (unpublished); whether arbitrary imported metrics can enter the
-correlation engine as outcomes; missing-data semantics for partially-covered days; the exact CSV schema;
-and the unreconciled conflict between the privacy policy's no-sharing statement and the Play Store
-data-safety declaration.
-
-**Specific to `welltory`** — see §"Residual uncertainty — `welltory`" for W1–W12, most notably W2: the
-value and scope of the "fixed medical threshold" and whether it overrides the personal baseline. Also
-unretrieved: the iOS App Store listing, the April 2022 athlete-validation study, and the IEEE EMBC Berlin
-presentation.
-
-**Specific to `exist`** — see §"Residual uncertainty — `exist`" for E1–E12, most notably E6 (whether
-multiple comparisons are corrected, given hundreds of pairwise tests) and E12 (whether an attribute
-freezes at its last value when its source stops reporting, which is the decisive test of whether the
-missing-data discipline is principled or merely convenient). Also unretrieved:
-`developer.exist.io/reference/object-types-and-terminology/` (404), which would have closed E5 (the unit
-model), and the public roadmap in detail.
-
-**Specific to `sleephq`** — see §"Residual uncertainty — `sleephq`" for S1–S17. The four that decide the
-analysis comparison are **S1** (whether the session `ahi` is relayed or re-derived), **S2** (the contents
-of the eleven `jsonb` summary blocks), **S4** (what every `_95` field actually estimates) and **S3**
-(`o2_score`, `duration_90`, `drop_90`, `drop_3`, `drop_4`). All four are behind an account: a single
-authorised read-only API session would close them, and none was performed. Beyond those: **S5** (whether
-the free tier deletes or hides data past 30 days), **S6** (what AI Insights is), **S7** (whether the sleep
-alarm is supervised), **S8** (what a share link contains), and **S17** (whether the O2 Ring Pro holds any
-regulatory registration — no registry was searched, so this is *unknown*, not *absent*).
-
-**Important: no API endpoint has been called for any candidate.** Every API finding is from documentation,
-not from a live response.
-
-**Specific to `nightscout`** — see §"Residual uncertainty — `nightscout`" for N1–N14, most notably N1
-(whether the `readable` default really is in effect for an anonymous caller, and whether the public notice
-renders) and N2 (whether the A1c double-conversion defect reproduces at the pinned commit). Both are code
-readings; settling either needs a throwaway local instance, which is a separate authorization decision.
-
-**Specific to `empatica`** — see §"Residual uncertainty — `empatica`" for R1–R11. R1 is the User Manual
-(178 pages, 112.8 MB, **no text layer** — an OCR decision, not a fetch) and R2 is the 98% figure's
-provenance, which no other surface supplies. Nothing in this candidate is a runtime observation.
-
-**Specific to `oura`** — see §"Residual uncertainty — `oura`" for R1–R12, most notably R1 (per-field null
-semantics: representability is documented, *cause* is not) and R2 (the four bare-string date/time schemas
-whose difference is carried only by the type name). **No endpoint was called, including the sandbox.**
-
-**Specific to `homeassistant`** — see §"Residual uncertainty — `homeassistant`" for R1–R13. R1 (whether
-the alert false-all-clear is intended or unhandled) decides the alarm comparison, R2 (what a running
-instance does with the non-parsing module) decides the severity of finding 5, and R3 (why CI appears not to
-have caught it) is left unresolved rather than guessed at. R12 is now closed — the shortlist correction was
-written back on 2026-10-06 — and R13 records that this candidate's deliverables did not go through the
-quote-verification sweep until after they were committed: **48 MISSes, of which 33 were corpus gaps and 15
-were author phrases or hypothetical dialogue wearing quote marks, reworded rather than justified**. **No
-instance was built or contacted; the runtime-observation count is zero.**
-
-**Specific to `mindshift`** — see §"Residual uncertainty — `mindshift`" for R1–R12. R1 (whether the
-privacy policy and terms exist **inside the app**) decides the severity of the package's strongest verified
-absence; R2 (whether a controlled or comparative study exists, which decides whether "Clinically proven"
-has a source) and R3 (whether the quality-of-life effect size survived the corrigendum) are both answered
-from documents that were not read. **Every one of the four high-value questions (R1, R3, R6, R7) is behind
-the app binary**, which cannot lawfully be obtained for this candidate — the only candidate in the package
-where that is the *sole* remaining barrier. The analytics endpoints were **not** called.
-
-**Structural limitation of the whole run, and it is the single most important line in this file.** The free
-traffic-inspection toolchain (mitmproxy + a disposable emulator) was **validated against emulator system
-components and then never used against a target app**, for any of the ten candidates. Not one candidate's
-binary was lawfully obtainable within the recorded authorization policy, so **the runtime-observation count
-across the entire package is zero**. Every behavioural statement in every comparison is therefore a reading
-of source, a reading of a published client, a documented contract, an independent record, or an explicitly
-labelled inference. The toolchain's readiness is a *capability* result, not evidence about any candidate, and
-the two are not to be conflated. A first genuine target-app inspection will surface problems this validation
-could not reach.
-
-## 8. Paywalls, login requirements and inaccessible material
-
-| Blocker | Affected source | Handling |
-|---|---|---|
-| Publisher paywall / bot block (HTTP 403) | ScienceDirect article page for the Bearable citation | Metadata obtained via the Crossref API; citation verified as a systematic review of oncology PRO mHealth apps. Paper body not read — so the review's specific assessment of Bearable remains unverified (Q9) |
-| **Incorrect DOI in first retrieval attempt** | A guessed DOI (`10.1016/j.conctc.2020.100631`) resolved to a different paper | Caught by verifying title/journal against the Crossref record; the correct DOI is `10.1016/j.adro.2020.09.016`. Recorded because a wrong citation is worse than none |
-| Login-required store artifact | Bearable APK/IPA | Not obtained. No mirror used. Recorded in `bearable_IMPLEMENTATION_INSPECTION.md` |
-| Account-required app | Bearable's usable surface | Sign-up is a hard gate; the brief forbids creating accounts, so even with an artifact the observable surface would stop at registration |
-| Search engine blocking | DuckDuckGo HTML endpoint (HTTP 202/302) | Substituted Bing and Mojeek; no impact on coverage |
-| DNS failure (mis-targeted) | `emoods.net` | **The domain was never the vendor's.** Both storefronts give `emoodtracker.com`; the original drop was a process error, corrected 2026-10-07 — the candidate is available and current |
-| Partially retrieved support content | Bearable's "Are blank entries incorporated into insights?" and "What happens to factors that I leave blank?" articles | Their **existence** was recorded from the help-centre index; content was not read into the Bearable findings, and Q4 remains unresolved. On 2026-10-06/07 both article URLs were fetched (HTTP 200) **for quotation verification only**, so the two titles are corpus-checkable; the articles are still **not analysed** |
-| No vendor price publication | Bearable Premium pricing | Only the Play Store IAP range is available; recorded as a range, not a price |
-| No browser/desktop client | Bearable | Vendor-stated limitation; recorded as such |
-
-## 9. Reproducing this research
-
-```sh
-# Verify the candidate packages exist (11 complete: the ten shortlisted, plus `visible`,
-# which the owner added from `CANDIDATE_SHORTLIST.md` §4 on 2026-10-06/07)
-ls -d docs/app_comparison/*/ | wc -l              # expect 11 candidate directories
-ls -l docs/app_comparison/{bearable,welltory,exist,oscar,sleephq,nightscout,empatica,oura,homeassistant,mindshift,visible}/
-
-# The `sleephq` package: the primary artifact is the vendor's OpenAPI document
-curl -sS -o /tmp/sleephq-swagger.json https://sleephq.com/api/swagger.json
-shasum -a 256 /tmp/sleephq-swagger.json
-#   expect 9a4305e663ddc9b65c9b471e8fd04e1085f382814c3540193d85cbd8660536a4
-python3 -c "import json;d=json.load(open('/tmp/sleephq-swagger.json'));print(d['swagger'],d['host'],len(d['paths']),len(d['definitions']))"
-#   expect: 2.0 sleephq.com 21 11
-# No endpoint is called beyond fetching the published specification.
-
-# The `oscar` package: source inspection was performed at a pinned commit
-cd /tmp/aw2research && git clone --depth 1 https://gitlab.com/CrimsonNape/oscar-sql.git \
-  && cd oscar-sql && git log -1 --format='%H'   # expect 28df2e46e35e6260e186fced997edadcf001cc24
-
-# The `mindshift` package: the primary artifacts are the served client and public records.
-# Every command below is a read of a public document. No endpoint is called.
-curl -sS -o /tmp/ms_index.js https://www.mindshiftcbt.com/assets/index-BogFfh2L.js
-shasum -a 256 /tmp/ms_index.js
-#   expect 1bb1681128467a90803d37652bc7eb8d65e209a8dbdd867a5a260e8cba1ef828 (741896 bytes)
-wc -c /tmp/ms_index.js
-# The privacy-URL absence, verified five ways (see the fifth-mode note in §6.1)
-curl -sS -o /tmp/ms_privacy.html -w '%{http_code} %{size_download}\n' https://mindshiftcbt.com/privacy/
-#   expect a genuine 404 with <title>Page not found | MindShift CBT</title>
-curl -sS https://www.mindshiftcbt.com/sitemap.xml | grep -c '<loc>'
-#   expect 9 URL entries, none of which is a privacy or terms page
-grep -o -E 'path:"[^"]*"' /tmp/ms_index.js | sort -u | wc -l
-#   expect 13 SPA routes, again with no privacy or terms path
-grep -o -F 'Privacy Policy' /tmp/ms_index.js | wc -l   # expect 0
-#   NOTE: a count is meaningless without its match mode; 'sentry' is 129 case-insensitive
-#   and 20 as 'Sentry', and 'clerk' is 505 case-insensitive and 44 as 'Clerk'.
-
-# Quote verification. Two prerequisites, because the run's corpus was scratch and is gone:
-#   (a) re-fetch each artifact into /tmp/aw2research/<slug>/ from the URL in that deliverable and
-#       check its SHA-256 against the recorded digest (the deliverables carry both);
-#   (b) re-create the checker from the description in §1 — it is a single-file script, not a
-#       dependency, and the algorithm is fully specified there.
-# Then, per file:
-#   AW2_ROOT=/tmp/aw2research/<slug>                            python3 qc2.py <file>   # full corpus
-# then
-#   AW2_VENDOR_ONLY=1 AW2_ROOT=/tmp/aw2research/<slug> python3 qc2.py <file>
-# Expect "0 not found" in the FULL pass on all four files of all ten candidates and, in the recorded
-# run, on all four files of candidate 11 as well. The vendor-only pass
-# is expected to report MISSes, and they must be classified, not accepted: the recorded run gave 85
-# across 22 files — 40 V2 product-tree quotes, 21 V1 product-tree quotes, 4 sibling-candidate vendor
-# surfaces, 20 spans of the package's own normative text or mode labels (plus CPython's own
-# SyntaxError text) — with zero unexplained, and 14 more across the two index files. Candidate 11 adds
-# 19 more, classified as 14 V2 · 2 V1 · 3 package-own, zero unexplained.
-# The target file is EXCLUDED from its own corpus so a file can never verify its own quotes, and a
-# MISS is a corpus gap first: without the fetched bytes, "0 not found" would mean only that the
-# wording appears somewhere in the package.
-#   The homeassistant sweep initially reported 31 + 7 + 4 + 6 = 48 MISSes. All 31 in the claims
-#   file and two of the four in the inspection file were corpus gaps (vendor pages, and .py
-#   sources the checker did not index). The remaining 15 were author phrases or hypothetical
-#   dialogue wearing quote marks, and were reworded rather than justified.
-
-# The `homeassistant` package: the strongest mode ran with no authorization question
-# (Apache-2.0). Eleven files read and hashed at tag 2026.9.4 (commit 9212531f…).
-
-# The `visible` package (candidate 11): no binary was obtained — the Terms prohibit reverse
-# engineering — so the artifacts are published documents. Every command is a read of a public page.
-curl -sS -o /tmp/vis_privacy.html -w '%{http_code} %{size_download}\n' https://www.makevisible.com/privacy
-#   expect 200 and 68066 bytes; /privacy-policy redirects here, while /pricing and /science 404
-curl -sS 'https://itunes.apple.com/lookup?id=1624474919&country=us' | python3 -m json.tool | head -40
-#   expect bundleId com.makevisible.visible, seller Visible Health Inc., version 26.9.3, price 0
-# The paper validates the FREE tier's daily reading; quote the inputs before the AUC:
-#   https://www.nature.com/articles/s41746-026-02543-3   (npj Digital Medicine 9, 257 (2026);
-#   PMID 41876851; n = 4244) — walk-forward CV AUC 0.82-0.85 WITH morning biometrics, 0.73-0.83 without
-# The consent configuration is readable static text in the served pages; the mode name for its findings
-# is [FOUND IN PUBLISHED CLIENT], never a runtime observation.
-
-# Quote-verification corpus for candidate 11 (five roots, colon-separated; the checker prunes any
-# root nested inside another, or every package hit would also report the V2 tree; root 5 is the
-# supplementary re-fetch tree added after the scratch wipe, and vendor-only mode searches VENDOR*):
-#   AW2_ROOT="$HOME/aw2research/visible:$PWD/docs/app_comparison:$PWD:$HOME/Source/AnxietyWatch:$HOME/aw2research/refetch"
-# Recorded result — FULL: 0 not found on all four files (49 · 131 · 91 · 20 fragments checked).
-# VENDOR-ONLY: 19 MISSes, machine-classified as 14 V2 product-tree quotes, 2 V1 product-tree quotes and
-# 3 spans of this package's own prescribed citation string or inspection-mode label — zero unexplained.
-# The corpus is 2061 files after the nested-root fix (2115 before it), 2072 with the re-fetch tree.
-#
-# The two index files are swept too, and their result carries a stated limitation. With the re-fetch tree:
-#   CANDIDATE_SHORTLIST.md  11 fragments  FULL 0 not found   VENDOR-ONLY 4 "also in: PKG"
-#   PROCESS_STATE.md        94 fragments  FULL 0 not found   VENDOR-ONLY 76 "also in: PKG"
-#   RESEARCH_METHOD.md      21 fragments  FULL 0 not found   VENDOR-ONLY 16 "also in: PKG"
-# Every vendor-only MISS in the index files is a **re-quotation of a closed candidate's finding** whose
-# vendor tree no longer exists, or a package-internal heading reference. They are verified against the
-# candidate deliverable that reasoned from the vendor bytes, **not against the bytes** — a class, not a
-# silent pass. Two things were fixed rather than explained: the checker's tag-strip, which deleted ~40 KB
-# of PROCESS_STATE.md at each bare `<` comparison operator, and one author phrase wearing quotation marks
-# (`does the address the vendor gives resolve` → italic, because the two-mode sweep found no vendor copy).
-
-# Confirm no stale paid-proxy references remain anywhere in the comparison docs
-grep -RInE 'Charles|charles|10\.0\.2\.2:8888' docs/app_comparison/ || echo "clean"
-
-# Confirm the shortlist and process state are present
-ls -l docs/app_comparison/CANDIDATE_SHORTLIST.md docs/app_comparison/PROCESS_STATE.md
-
-# Public-info gate before any push (tracked files only)
-python3 scripts/check-public-info.py --self-test
-python3 scripts/check-public-info.py
-
-# The full pre-push gate, run with a synthetic push line so the ref check terminates
-printf 'refs/heads/local 0000000000000000000000000000000000000000 refs/heads/BRANCH 1111111111111111111111111111111111111111\n' \
-  | .githooks/pre-push origin "$(git config --get remote.origin.url)"
-#   exit 0, with two standing warnings that are expected and must NOT be "fixed":
-#   1. "a phone-number-shaped string is in the diff — use 555-0100..555-0199" — the `mindshift` deliverables quote
-#      the vendor's own published crisis lines verbatim (Kids Help Phone, Talk Suicide
-#      Canada and its Quebec line). Public emergency-service numbers, not personal data;
-#      the heuristic exempts only the 555-01xx fictional range. Rewording a quote to
-#      silence a linter would be the defect.
-#   2. "no .githooks/pii-denylist.local.txt — personal-term checking is off" — that file is
-#      owner-supplied and gitignored by design; it is absent in this clone, so the
-#      personal-term check did not run for this branch.
-```
-
-Free inspection stack, when a candidate becomes inspectable — full procedure in
-`FREE-ANDROID-TRAFFIC-INSPECTION.md`. Summary:
-
-```sh
-# 1. Host proxy, before the target app is launched or installed
-mitmweb --listen-host 127.0.0.1 --listen-port 8080
-
-# 2. Disposable emulator
-emulator @pixel_4_w_gapps -no-window -no-audio -no-snapshot
-
-# 3. Point the emulator at the host proxy
-adb shell settings put global http_proxy 10.0.2.2:8080
-
-# 4. Verify the proxy is listening and the setting took
-lsof -nP -iTCP:8080 -sTCP:LISTEN
-adb shell settings get global http_proxy
-
-# 5. Cleanup, verified
-adb shell settings delete global http_proxy
-adb shell settings get global http_proxy   # must print null
-```
-
-`FREE-ANDROID-TRAFFIC-INSPECTION.md` remains the authoritative procedure; the summary above is for
-orientation only.
+| **Decompiled artifact** | The package pulled/fetched and read with `jadx`/`apktool`/`baksmali`, or unpacked `.ipa` and its readable resources |
+| **Decompiled artifact + runtime** | The above, plus execution on a controlled device with proxy capture |
+| **Published source** | The vendor's own repository at a pinned commit (open-source candidates) |
+| **Published contract** | A vendor-published specification (OpenAPI, API reference, data schema), no endpoint called |
+| **Published client** | JavaScript/configuration the vendor serves to browsers, read as text |
+| **Public record** | Regulator filing, trial registry, publication, and store panels, with no artifact available |
+
+"Modes" combine: a candidate may be *decompiled artifact + published contract + public record*. Name each
+surface in the file, and name what each surface did **not** cover.
+
+---
+
+## 7. Scratch and evidence retention
+
+Working files (fetched pages, APKs, decompiled trees, capture logs, quote-checker runs) live **outside the
+repository** in a per-candidate scratch directory, and are not committed. What is committed is the
+**record**: URLs, retrieval dates, byte sizes and SHA-256 digests in the deliverable itself.
+
+Consequences to plan for: a scratch tree can be cleared by the operating system without warning. A
+deliverable that cites only a scratch path has no evidence. If a re-fetch is needed, it is a **check** —
+compare the digest, and treat a disagreement as a lifecycle finding.
