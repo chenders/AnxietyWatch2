@@ -21,8 +21,10 @@ every AnxietyWatch capability as v1 documented/implemented, v2 current, v2 speci
 
 If {APP_NAME} has an authorized Android or iOS artifact, do not skip inspection: read
 `{APP_SLUG}_IMPLEMENTATION_INSPECTION.md`, or perform the inspection before finalizing if the file is absent. For an
-Android emulator, configure the free mitmproxy stack at `10.0.2.2:8080` before launching or installing the target app, verify mitmproxy is listening,
-and record the proxy setup. Follow `docs/app_comparison/FREE-ANDROID-TRAFFIC-INSPECTION.md`. Include the artifact version/hash, inspection tools and limits, and a
+Android emulator, configure the free mitmproxy stack at `10.0.2.2:8080` before launching or installing the target app,
+verify mitmproxy is listening,
+and record the proxy setup. Follow `docs/app_comparison/FREE-ANDROID-TRAFFIC-INSPECTION.md`. Include the artifact
+version/hash, inspection tools and limits, and a
 claim-versus-implementation reconciliation. Distinguish reachable runtime behavior from static code, strings, bundled
 SDKs, endpoints, feature flags, experimental paths, dead code, and unknowns. Do not send real user data, log into
 production services, or bypass DRM, authentication, licensing, encryption, certificate pinning, anti-debugging, or

@@ -17,15 +17,21 @@ Run this workflow in **pilot mode first** unless the owner explicitly requests f
 
 1. Build and save the complete ten-candidate shortlist.
 2. Select only the highest-ranked candidate, or the specific candidate named by the owner.
-3. Process that one candidate through every applicable step: public-claims research, authorized implementation inspection, candidate-specific Prompt 2, and the eventual Prompt 2 comparison report.
+3. Process that one candidate through every applicable step: public-claims research, authorized implementation
+   inspection, candidate-specific Prompt 2, and the eventual Prompt 2 comparison report.
 4. Validate the candidate's output files and record blockers, evidence gaps, tool failures, and process improvements.
-5. Stop after that candidate. Do not begin research, decompilation, or comparison work on candidate 2 until the owner reviews the pilot and explicitly continues.
+5. Stop after that candidate. Do not begin research, decompilation, or comparison work on candidate 2 until the owner
+   reviews the pilot and explicitly continues.
 
 ### Full sequential mode
 
-After pilot approval, process candidates strictly in shortlist order. There must be exactly one **active candidate** at a time. Finish all applicable work for the active candidate before opening the next candidate's research or implementation artifact.
+After pilot approval, process candidates strictly in shortlist order. There must be exactly one **active candidate** at
+a time. Finish all applicable work for the active candidate before opening the next candidate's research or
+implementation artifact.
 
-Do not parallelize candidate research, decompilation, runtime testing, web research, or Prompt 2 generation across candidates. Do not prefetch or inspect the next app while the current app is unresolved. Subtasks for the active candidate may be organized internally, but their results must be consolidated before moving on.
+Do not parallelize candidate research, decompilation, runtime testing, web research, or Prompt 2 generation across
+candidates. Do not prefetch or inspect the next app while the current app is unresolved. Subtasks for the active
+candidate may be organized internally, but their results must be consolidated before moving on.
 
 For each candidate, “complete” means that the following exist or explicitly document why they could not be produced:
 
@@ -34,7 +40,10 @@ For each candidate, “complete” means that the following exist or explicitly 
 - `PROMPT_2.md`
 - `{APP_SLUG}_COMPARISON.md`
 
-Maintain a queue/status record in `./docs/app_comparison/PROCESS_STATE.md` with the shortlist order, active candidate, per-candidate status, start/completion timestamps, blockers, and the explicit reason for moving to the next candidate. Never mark a candidate complete based only on a model's assertion; verify the output files and record the command or inspection result used.
+Maintain a queue/status record in `./docs/app_comparison/PROCESS_STATE.md` with the shortlist order, active candidate,
+per-candidate status, start/completion timestamps, blockers, and the explicit reason for moving to the next candidate.
+Never mark a candidate complete based only on a model's assertion; verify the output files and record the command or
+inspection result used.
 
 ## Product context
 
@@ -227,9 +236,14 @@ When a candidate offers sleep or physiological monitoring, distinguish:
 
 ### Phase 2A — Authorized implementation inspection for mobile apps
 
-Public-claims research is not enough for an Android or iOS candidate when a lawful, authorized application artifact is available. Perform a separate implementation-inspection pass only when the researcher has permission to inspect that exact APK, AAB-derived APK, IPA, source build, test build, or device installation. Public availability alone is not authorization to bypass protections or access private data.
+Public-claims research is not enough for an Android or iOS candidate when a lawful, authorized application artifact is
+available. Perform a separate implementation-inspection pass only when the researcher has permission to inspect that
+exact APK, AAB-derived APK, IPA, source build, test build, or device installation. Public availability alone is not
+authorization to bypass protections or access private data.
 
-Record the artifact's app name, package/bundle identifier, version/build, source, acquisition date, SHA-256 hash, platform, device/emulator used, tools, and inspection limits. Never put credentials, tokens, private user data, or exploitable secret material in the report.
+Record the artifact's app name, package/bundle identifier, version/build, source, acquisition date, SHA-256 hash,
+platform, device/emulator used, tools, and inspection limits. Never put credentials, tokens, private user data, or
+exploitable secret material in the report.
 
 Use a layered process:
 
@@ -238,8 +252,24 @@ Use a layered process:
    structures, file formats, and documented or embedded endpoints. For Android, account for base and split APKs, DEX
    files, native libraries, and resource tables; for iOS, account for the IPA payload, Mach-O binary, embedded
    frameworks, Objective-C/Swift metadata, and resources.
-2. **Code and resource review:** decompile or disassemble only as permitted. Look for implemented screens, data models, API clients, BLE/service identifiers, HealthKit types, import/export paths, notification/alarm code, analytics/advertising SDKs, subscription gates, experiments, debug-only paths, remote configuration, authentication flows, certificate-pinning behavior, hard-coded endpoints, and error handling. A string or dead code is not proof that a feature is reachable, and a discovered secret must never be copied into the report.
-3. **Authorized runtime observation:** use only a controlled device or emulator and synthetic/local test data. For an Android emulator, configure the emulator HTTP proxy to `10.0.2.2:8080` **before launching or installing the target app**, verify that mitmproxy is listening, and record the emulator/proxy configuration in the inspection report. Do not create accounts, log into production services, submit real user data, or perform destructive actions against any server. Use the free-software procedure in `docs/app_comparison/FREE-ANDROID-TRAFFIC-INSPECTION.md`. If an authorized sandbox or proxy is used to observe attempted connections, record destinations and data categories without bypassing authentication, DRM, licensing, encryption, certificate pinning, anti-debugging, or platform protections. Do not install a proxy CA on a personal or production device, and never defeat certificate pinning. On a disposable authorized emulator, installing the mitmproxy CA may be used to inspect an app that accepts user-installed CAs; if the app pins certificates or traffic still cannot be observed, record that limitation rather than bypassing it. Block or isolate unintended production connections where possible. Exercise relevant workflows offline or in an authorized test environment, record visible behavior, background behavior, permissions, local storage, logs, and network destinations, and mark anything that cannot be observed as blocked or unknown.
+2. **Code and resource review:** decompile or disassemble only as permitted. Look for implemented screens, data models,
+   API clients, BLE/service identifiers, HealthKit types, import/export paths, notification/alarm code,
+   analytics/advertising SDKs, subscription gates, experiments, debug-only paths, remote configuration, authentication
+   flows, certificate-pinning behavior, hard-coded endpoints, and error handling. A string or dead code is not proof
+   that a feature is reachable, and a discovered secret must never be copied into the report.
+3. **Authorized runtime observation:** use only a controlled device or emulator and synthetic/local test data. For an
+   Android emulator, configure the emulator HTTP proxy to `10.0.2.2:8080` **before launching or installing the target
+   app**, verify that mitmproxy is listening, and record the emulator/proxy configuration in the inspection report. Do
+   not create accounts, log into production services, submit real user data, or perform destructive actions against any
+   server. Use the free-software procedure in `docs/app_comparison/FREE-ANDROID-TRAFFIC-INSPECTION.md`. If an authorized
+   sandbox or proxy is used to observe attempted connections, record destinations and data categories without bypassing
+   authentication, DRM, licensing, encryption, certificate pinning, anti-debugging, or platform protections. Do not
+   install a proxy CA on a personal or production device, and never defeat certificate pinning. On a disposable
+   authorized emulator, installing the mitmproxy CA may be used to inspect an app that accepts user-installed CAs; if
+   the app pins certificates or traffic still cannot be observed, record that limitation rather than bypassing it. Block
+   or isolate unintended production connections where possible. Exercise relevant workflows offline or in an authorized
+   test environment, record visible behavior, background behavior, permissions, local storage, logs, and network
+   destinations, and mark anything that cannot be observed as blocked or unknown.
 4. **Claim reconciliation:** compare public claims with static evidence and runtime evidence. Classify each feature as
    publicly claimed and observed, publicly claimed but not observed, implemented but not publicly claimed, present only
    as unreachable/experimental code, contradicted by the artifact, or unresolved.
