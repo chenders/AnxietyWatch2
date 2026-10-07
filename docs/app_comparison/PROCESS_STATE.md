@@ -28,20 +28,20 @@ candidate 11 was added by owner decision on 2026-10-06/07 from the shortlist's �
 deliverables exist and both quote-check modes are clean. No further candidate may be started without an
 owner decision; see **Owner decisions pending** §3.
 
-| # | Slug | Score | Status | Started | Completed | Blocker |
-|---|---|---|---|---|---|---|
-| 1 | `bearable` | 13 (rank 1 on dimension A) | **Complete with inspection limitation** | 2026-10-05 | 2026-10-06 | Phase 2A not performed — no lawfully authorized artifact. Public-claims research unaffected. |
-| 2 | `welltory` | 14 | **Complete with partial inspection** | 2026-10-06 | 2026-10-06 | App binary not inspected (closed source, store-only, account-gated). Vendor's **public research repos and datasets were inspected** and their citations independently verified. |
-| 3 | `exist` | 11 | **Complete with partial inspection** | 2026-10-06 | 2026-10-06 | App binary not inspected (closed source, store-only, account-gated). The vendor's **public API reference was inspected in full** — a stronger artifact than Welltory's, because it is the analysis layer's own output contract. |
-| 4 | `oscar` | 11 | **Complete with full implementation inspection** | 2026-10-06 | 2026-10-06 | None. GPLv3 source inspected at a pinned commit; no runtime observation (nothing was executed). |
-| 5 | `sleephq` | 12 | **Complete with partial inspection** | 2026-10-06 | 2026-10-06 | App binaries not inspected (closed source, store-only, account-gated; no lawful route to the APK). No vendor source exists. The vendor's **published OpenAPI specification was inspected in full** — 21 paths, 11 models, and a documented hash algorithm. **No endpoint was called.** |
-| 6 | `nightscout` | 15 | **Complete with full implementation inspection** | 2026-10-06 | 2026-10-06 | None. AGPL-3.0 source inspected at a pinned commit; no runtime observation (nothing was executed, no instance built or contacted). |
-| 7 | `empatica` | 14 | **Complete with artifact-and-regulator inspection** | 2026-10-06 | 2026-10-06 | App binary not inspected (closed source, store-only, **prescription-gated**; no lawful route to the binary, and no Android artifact located at all). No vendor source exists. **No API was inspected** — the Cloud API documentation is supplied to clients only. The inspection mode is a new one: **the vendor's own published artifacts plus an independent regulator's record of the vendor's own submission.** |
-| 8 | `oura` | 13 | **Complete with documented-contract inspection** | 2026-10-06 | 2026-10-06 | No binary and no source inspected. The Terms **prohibit** reverse engineering and circumventing subscription restrictions, so Phase 2A was closed by contract and not by accident. The vendor's **published OpenAPI 3.1 contract was inspected in full** — 72 paths, 75 schemas, 274 resolvable `$ref`s — together with its legal, trust and research surfaces. **No endpoint was called, including the sandbox.** |
-| 9 | `homeassistant` | 13 | **Complete with full published-source inspection** | 2026-10-06 | 2026-10-06 | Apache-2.0, so Phase 2A ran on **published source** at tag `2026.9.4` (`9212531f…`) with no owner decision. The state machine has first-class `unknown`/`unavailable`; the **alert path has no branch for either** and ends the alert — sending the resolution message — when the watched entity goes absent. Raw history is **hard-deleted** after `purge_keep_days` (default 10) with no tombstone; hourly statistics are **upserted**. `components/sensor/recorder.py:239` **does not parse** under Python 3, verified four ways, and the module is imported by its own test file. **No binary, no running instance, zero runtime observations.** |
-| 10 | `mindshift` | 12 | **Complete with published-client and public-records inspection** | 2026-10-06 | 2026-10-06 | App binary not inspected (closed source, store-only; no lawful route to the binary). No vendor source and **no API contract** exists. The inspected surface is the vendor's **published web client** (741,896-byte served bundle, read as text) plus public records: two storefront listings, the App Store privacy panel, the independent registration **NCT04562948**, the peer-reviewed paper **PMID 40656972** and its **corrigendum PMID 40655914**. **No endpoint was called and no runtime was observed.** |
-| 11 | `visible` | 13 (rank 4 of the §4 alternatives) | **Complete with published-client, vendor-org and publication inspection** | 2026-10-06 | 2026-10-06/07 | App binary not inspected: the Terms prohibit reverse engineering, and no inspection authorization was requested. The inspected surface is the vendor's **published client** (the served Google Consent Mode block), the vendor **GitHub organisation** `makevisible` (2 public repositories, both forks, **0 vendor-authored commits**), a **95-article** help centre, a **vendor-authored peer-reviewed paper** (npj Digital Medicine **9**, 257 (2026); PMID **41876851**; n = **4,244**), and both storefront listings. **No endpoint was called and no runtime was observed.** |
-| — | `emoods` | — | **Excluded in error; re-tested 2026-10-07; not added (owner decision)** | — | — | The exclusion rested on **`emoods.net`** (NXDOMAIN at the `.net` TLD), but the vendor publishes **`emoodtracker.com`** — the site both storefronts name — which is live: iOS `com.yottaram.eMoods` v1.3.28 (4.80359 / 4,236) and Android `my.tracker` (500,000+, Play data safety "No data collected"). Full correction in `CANDIDATE_SHORTLIST.md` §4 |
+| # | Slug | Score                 | Status                                                                    | Started    | Completed | Blocker |
+|---|---|-----------------------|---------------------------------------------------------------------------|------------|---|---|
+| 1 | `bearable` | 13 (rank 1 on dimension A) | ** Not started ** | None | None | None |
+| 2 | `welltory` | 14                    | ** Not started ** | None | None | None |
+| 3 | `exist` | 11                    | ** Not started ** | None | None | None |
+| 4 | `oscar` | 11                    | ** Not started ** | None | None | None |
+| 5 | `sleephq` | 12                    | ** Not started ** | None | None | None |
+| 6 | `nightscout` | 15                    | ** Not started ** | None | None | None |
+| 7 | `empatica` | 14                    | ** Not started ** | None | None | None |
+| 8 | `oura` | 13                    | ** Not started ** | None | None | None |
+| 9 | `homeassistant` | 13                    | ** Not started ** | None | None | None |
+| 10 | `mindshift` | 12                    | ** Not started ** | None | None | None |
+| 11 | `visible` | 13                    | ** Not started ** | None | None | None |
+| — | `emoods` | —                     | **Excluded in error; re-tested 2026-10-07; not added (owner decision)**   | —          | — | The exclusion rested on **`emoods.net`** (NXDOMAIN at the `.net` TLD), but the vendor publishes **`emoodtracker.com`** — the site both storefronts name — which is live: iOS `com.yottaram.eMoods` v1.3.28 (4.80359 / 4,236) and Android `my.tracker` (500,000+, Play data safety "No data collected"). Full correction in `CANDIDATE_SHORTLIST.md` §4 |
 
 **Sequencing rule in force.** Only one row may be **In progress**. A candidate is started only after the
 previous one's four deliverables exist and its verification command has been run.
@@ -1648,28 +1648,6 @@ file, and written back into `CANDIDATE_SHORTLIST.md` itself** (entries 9 and 10,
 ranking rows 9 and 10 and the file's Mode line), each marking the correction inline with its date and
 preserving the superseded wording, so that no hypothesis the package has disproved is left standing as a
 claim in the file that proposed it. Closed 2026-10-06; commit `bb9fb63`.
-
-4. **Delivery and review — pushed; the pull request needs owner credentials.** Candidate 11 is committed
-   as `f7dbda3`, the profile of the run is complete (11 of 11 candidates, 44 files), and the branch
-   `fix/silence-detector-schema-preflight` **has been pushed to `origin`** after `scripts/install-hooks.sh`
-   and a full `.githooks/pre-push` run. Every gate passed with **no bypass**: public-info scan,
-   generated-files-current, `cargo test --workspace`, clippy at deny levels, fuzz-target compile. The first
-   attempt was **blocked**, not bypassed — the `sk-` secret pattern matched the tail of an Intercom
-   help-article slug quoted in candidate 11's claim ledger — and the gate was repaired in its own commit
-   (`82433eb`) rather than passed with `--no-verify`. **One warning is left standing deliberately**: the
-   phone-number-shaped strings in the diff are publicly published crisis helplines quoted from the
-   vendor's own page, and rewriting them as `555-0100..555-0199` would falsify those quotations. The PII
-   denylist warning is the expected state of a clone with no `.githooks/pii-denylist.local.txt` (that file is
-   owner-supplied and gitignored by design; it is never fabricated).
-
-   **No pull request was opened.** `gh` is not authenticated (`HTTP 401: Requires authentication`), no
-   `GH_TOKEN`/`GITHUB_TOKEN` is present in the environment, and the repository is private (an
-   unauthenticated API request returns `404`), so this is a credential requirement and not a
-   judgement call. **Owner action:** `gh auth login`, then open the PR from the branch — either
-   `gh pr create --base main --head fix/silence-detector-schema-preflight`, or the compare view at
-   `https://github.com/chenders/AnxietyWatch2/compare/main...fix/silence-detector-schema-preflight`.
-   Per `AGENTS.md`, merging still requires a review of the diff from an owner-approved model or the owner;
-   this file records that the push happened and that the PR is **not** open, and claims nothing about review.
 
 ## Rules this file enforces
 
