@@ -23,8 +23,10 @@ parallelism, no prefetching a later candidate's research while an earlier one is
 Shortlist order is from `CANDIDATE_SHORTLIST.md`. The ordering is a **review order**, not a quality
 order — see `RESEARCH_METHOD.md` §2.4.
 
-**Active candidate: none — the shortlist is exhausted.** Candidates 1–10 are complete. No further candidate
-may be started without an owner decision; see **Owner decisions pending** §3.
+**Active candidate: none — candidate 11 (`visible`) is complete.** Candidates 1–10 are complete, and
+candidate 11 was added by owner decision on 2026-10-06/07 from the shortlist's §4 alternatives; its four
+deliverables exist and both quote-check modes are clean. No further candidate may be started without an
+owner decision; see **Owner decisions pending** §3.
 
 | # | Slug | Score | Status | Started | Completed | Blocker |
 |---|---|---|---|---|---|---|
@@ -38,6 +40,7 @@ may be started without an owner decision; see **Owner decisions pending** §3.
 | 8 | `oura` | 13 | **Complete with documented-contract inspection** | 2026-10-06 | 2026-10-06 | No binary and no source inspected. The Terms **prohibit** reverse engineering and circumventing subscription restrictions, so Phase 2A was closed by contract and not by accident. The vendor's **published OpenAPI 3.1 contract was inspected in full** — 72 paths, 75 schemas, 274 resolvable `$ref`s — together with its legal, trust and research surfaces. **No endpoint was called, including the sandbox.** |
 | 9 | `homeassistant` | 13 | **Complete with full published-source inspection** | 2026-10-06 | 2026-10-06 | Apache-2.0, so Phase 2A ran on **published source** at tag `2026.9.4` (`9212531f…`) with no owner decision. The state machine has first-class `unknown`/`unavailable`; the **alert path has no branch for either** and ends the alert — sending the resolution message — when the watched entity goes absent. Raw history is **hard-deleted** after `purge_keep_days` (default 10) with no tombstone; hourly statistics are **upserted**. `components/sensor/recorder.py:239` **does not parse** under Python 3, verified four ways, and the module is imported by its own test file. **No binary, no running instance, zero runtime observations.** |
 | 10 | `mindshift` | 12 | **Complete with published-client and public-records inspection** | 2026-10-06 | 2026-10-06 | App binary not inspected (closed source, store-only; no lawful route to the binary). No vendor source and **no API contract** exists. The inspected surface is the vendor's **published web client** (741,896-byte served bundle, read as text) plus public records: two storefront listings, the App Store privacy panel, the independent registration **NCT04562948**, the peer-reviewed paper **PMID 40656972** and its **corrigendum PMID 40655914**. **No endpoint was called and no runtime was observed.** |
+| 11 | `visible` | 13 (rank 4 of the §4 alternatives) | **Complete with published-client, vendor-org and publication inspection** | 2026-10-06 | 2026-10-06/07 | App binary not inspected: the Terms prohibit reverse engineering, and no inspection authorization was requested. The inspected surface is the vendor's **published client** (the served Google Consent Mode block), the vendor **GitHub organisation** `makevisible` (2 public repositories, both forks, **0 vendor-authored commits**), a **95-article** help centre, a **vendor-authored peer-reviewed paper** (npj Digital Medicine **9**, 257 (2026); PMID **41876851**; n = **4,244**), and both storefront listings. **No endpoint was called and no runtime was observed.** |
 | — | `emoods` | — | **Excluded in error; re-tested 2026-10-07; not added (owner decision)** | — | — | The exclusion rested on **`emoods.net`** (NXDOMAIN at the `.net` TLD), but the vendor publishes **`emoodtracker.com`** — the site both storefronts name — which is live: iOS `com.yottaram.eMoods` v1.3.28 (4.80359 / 4,236) and Android `my.tracker` (500,000+, Play data safety "No data collected"). Full correction in `CANDIDATE_SHORTLIST.md` §4 |
 
 **Sequencing rule in force.** Only one row may be **In progress**. A candidate is started only after the
@@ -49,22 +52,60 @@ previous one's four deliverables exist and its verification command has been run
 |---|---|---|
 | Sweep all 40 deliverable files in **full-corpus** mode | **Complete** | 40 of 40 files report `0 not found`, run as `AW2_ROOT=/tmp/aw2research/<slug> python3 qc2.py docs/app_comparison/<slug>/<file>.md` for each of the four files of each of the ten candidates |
 | Sweep both **index files** too | **Complete** | `PROCESS_STATE.md` 72 fragments · `RESEARCH_METHOD.md` 19 fragments — `0 not found` in full mode, with a combined vendor root over all ten candidate trees (they quote across candidates) |
-| Sweep all 40 in **vendor-only** mode (`AW2_VENDOR_ONLY=1`) | **Complete** | 85 MISSes across 22 files, machine-classified: **40 V2 product-tree quotes · 21 V1 product-tree quotes · 4 sibling-candidate vendor surfaces · 20 spans of this package's own normative text or inspection-mode labels (plus CPython's own `SyntaxError` message) · 0 unexplained**. The two index files add 14 more, all V1/V2 or the package's own headings and rules |
+| Sweep all 40 in **vendor-only** mode (`AW2_VENDOR_ONLY=1`) | **Complete** | 85 MISSes across 22 files, machine-classified: **40 V2 product-tree quotes · 21 V1 product-tree quotes · 4 sibling-candidate vendor surfaces · 20 spans of this package's own normative text or inspection-mode labels (plus CPython's own `SyntaxError` message) · 0 unexplained**. The three index files add **96** more in the post-wipe re-run, every one either a **re-quotation of a closed candidate's finding** (`[also in: PKG]`, its vendor tree destroyed with `/tmp`) or a package-internal heading reference — a **stated class with a stated limitation**, not a silent pass (see the sweep-corpus note below) |
 | Defects the second mode found, fixed against the vendor bytes | **Complete** | `empatica` ×2 misquotations (recorded in §17 of its claimed-features file), `sleephq` ×1 elided quote, `homeassistant` ×3, `nightscout` ×1, `oura` ×1 — commit `3ebe5da`; `bearable` in commit `88e25b7` |
 
 Per-candidate sweep commits: `5a28373` welltory · `d31d0cf` exist · `7e4b731` oscar · `1c36d35` sleephq ·
 `dc48c74` nightscout · `2d3c2ef` empatica · `bb2ece1` oura · `b84e30b` homeassistant · `83b3a30` mindshift
 · `88e25b7` bearable · `3ebe5da` the vendor-only corrections. **No candidate has an outstanding sweep.**
 
+**Candidate 11 (`visible`) — swept in both modes, committed with the candidate.** The corpus was rebuilt
+under `~/aw2research/visible/` (4 roots, 2,061 files) and the checker was rebuilt from `RESEARCH_METHOD.md`
+§1 after the `/tmp` clear. **Full mode: 0 not found on all four deliverables** (49 · 131 · 91 · 20 fragments
+checked). **Vendor-only mode: 19 MISSes, all classified — 14 V2 product-tree quotes** (`AGENTS.md:119`,
+`docs/specs/AMENDMENTS.md:62`, `docs/design/SPEC-admin-console.md:28,33`,
+`openspec/changes/resmed-air11-ble-stream/proposal.md:6`,
+`docs/reviews/2026-08-03-moonshot-r3.txt:430`) · **2 V1 product-tree quotes** · **3 spans of this package's
+own prescribed citation string or inspection-mode label** · **0 unexplained**. The sweep produced **five
+byte-level misquotations** (two body sentences and three blog titles). The other MISSes were not
+misquotations — they were spans truncated mid-sentence, two page elements spliced into one pair of quotation
+marks with a dash or an arrow, an author's rendering of table cells, a template placeholder, and three
+author-voice spans (two rhetorical questions and one refuted hypothesis) that were un-quoted. All were
+corrected against the source bytes in this commit. One quotation borrowed from a sibling candidate
+(`sleephq`, SOC 2 Type II) was replaced with prose, because in this run's corpus it verified only against
+another deliverable.
+
 **The sweep's corpus is scratch, not evidence.** The check reads the fetched vendor trees under
-`/tmp/aw2research/<slug>/`, which is where the run's artifacts lived. The machine rebooted on
-2026-10-06 and macOS cleared `/tmp`; the corpus is therefore no longer on disk, and the sweep cannot be
-re-run from a checkout alone. It is reproducible only by **re-fetching** each artifact from the URL and
-verifying the SHA-256 recorded in that candidate's deliverables, then re-running the checker described in
+`/tmp/aw2research/<slug>/`, which is where the run's artifacts lived. The machine rebooted twice on
+2026-10-06 (≈21:44 and 22:14) and macOS cleared `/tmp` both times; the corpus is therefore no longer on disk,
+and the sweep cannot be re-run from a checkout alone. Candidate 11's tree and checker were rebuilt under
+`~/aw2research/visible/` for that reason, and the eMoods scratch tree is gone as well. It is reproducible
+only by **re-fetching** each artifact from the URL and verifying the SHA-256 recorded in that candidate's
+deliverables, then re-running the checker described in
 `RESEARCH_METHOD.md` §1 (algorithm) and §9 (commands and expected results). This is why every deliverable
 carries its artifact URLs and hashes: the durable evidence is the quote plus its URL and digest, not the
 local copy. A `MISS` list stored only under `/tmp` was never evidence — quote the command and the
 expected result instead, as §9 does.
+
+**The wipe was recovered for the artifacts that can be re-fetched, and the recovery is itself a check.**
+A supplementary re-fetch tree was built at `~/aw2research/refetch/` and given its own corpus root label
+(`VENDOR2`, root 5) rather than being folded into the candidate tree, because the root labels are part of
+the evidence; vendor-only mode searches every `VENDOR*` root. `emoodtracker.com` came back **byte-identical**
+to the digest recorded before the wipe (`72d41b69…`), and `exist`'s four API reference pages came back at the
+recorded byte sizes (43,606 / 69,161 / 32,388 / 32,736). That closed **six of the eight** index-file MISSes;
+the remaining two were Bearable article *titles*, closed by fetching the help-centre index and both articles
+(fetched for quotation verification only — the articles are still not analysed, and Q4 remains unresolved).
+The Play listing for `my.tracker` did **not** come back byte-identical, which is a lifecycle fact about a
+store page and not a defect.
+
+**A regression in a previously clean result is a signal to suspect the corpus, and this time the corpus was
+at fault.** Re-running the three index files after the wipe produced misses the earlier run had cleared,
+including one heading that obviously existed in a file inside the corpus. The cause was the checker's tag
+strip: `<[^>]+>` treats a bare comparison operator as a tag start, and `PROCESS_STATE.md` contains
+``< 0.05`` and ``< 39`` in prose, so **~40 KB was silently deleted** between each stray `<` and the next `>`.
+Fixed to `</?[A-Za-z][^<>]*>`. A second miss was a real defect in this file — the author's contrastive
+phrase *does the address the vendor gives resolve* was wearing quotation marks with no vendor source; it is
+now italic. **A file count is not a corpus integrity check.**
 
 ## Pilot status
 
@@ -83,8 +124,10 @@ expected result instead, as §9 does.
 | **Candidate 8 of 10 — `oura`** | **Complete (documented-contract inspection)** | See §Candidate 8 |
 | **Candidate 9 of 10 — `homeassistant`** | **Complete (full published-source inspection)** | See §Candidate 9 |
 | **Candidate 10 of 10 — `mindshift`** | **Complete (published-client and public-records inspection)** | See §Candidate 10 |
+| **Candidate 11 — `visible`** (owner-selected, beyond the shortlist) | **Complete (published-client, vendor-org and publication inspection)** | See §Candidate 11 |
 | Pilot review by owner | **Completed** | Owner instructed the run to continue; mode switched to full sequential |
 | Full sequential run of candidates 3–10 | **Authorized and completed** | One candidate at a time; shortlist exhausted |
+| Sequential run of the owner-selected candidate 11 | **Completed** | One candidate at a time; candidate 11 added from `CANDIDATE_SHORTLIST.md` §4 by owner decision |
 
 ## Candidate 1 — `bearable`
 
@@ -1404,6 +1447,114 @@ written to do. Two hypotheses — a Segment CDP integration and a Google `gtag` 
 better crisis routing than this project is a **gap in this project**, not a defect in the candidate, and it is
 recorded as such in the comparison's §11 and §14.
 
+## Candidate 11 — `visible`
+
+**Not from the ranked ten.** Candidate 11 was selected by owner decision from `CANDIDATE_SHORTLIST.md` §4
+(Visible had been recorded there as considered-but-not-selected) on 2026-10-06/07; the §4 entry now carries a
+dated selection note. The rejection rationale was a **product-breadth** judgement — a narrower
+condition-specific audience than Bearable — and it is left standing as an observation; what the owner
+overrode was the choice of what to compare.
+
+| Deliverable | Path | Status |
+|---|---|---|
+| Claimed features and purpose | `visible/visible_CLAIMED_FEATURES_AND_PURPOSE.md` | Written — 21 sections, claim ledger **V-1…V-64**, artifact digest tables, a v1/v2 comparison, and the evidence-gap list |
+| Authorized implementation inspection | `visible/visible_IMPLEMENTATION_INSPECTION.md` | Written — **performed: published client, vendor organisation, vendor documentation and peer-reviewed publication.** Findings **I-1…I-14**, **N-1…N-5**, documentation defects **D-1…D-11**, limitations **L-1…L-4**; **zero** runtime observations |
+| Candidate-specific Prompt 2 | `visible/PROMPT_2.md` | Written — `PROMPT2-EVIDENCE-FIRST.md` base plus the `PROMPT2-PRIVACY-AND-OPERATING-MODE.md` supplementary block (the same pair chosen for `empatica` and `mindshift`), with 15 candidate-specific questions |
+| Comparison report (Prompt 2 run) | `visible/visible_COMPARISON.md` | Written — 14 sections; executive finding is deliberately two-sided |
+
+**Verification command:**
+
+```sh
+ls -l docs/app_comparison/visible/
+```
+
+**Quote verification (both modes).** Four deliverables, `AW2_ROOT` over **five** roots
+(`~/aw2research/visible`, the package, this repository, v1, and the `~/aw2research/refetch/` supplementary
+vendor tree): **full mode 0 not found on all four**;
+**vendor-only mode 19 MISSes, all classified** — 14 V2 product-tree quotes, 2 V1 product-tree quotes, 3 spans
+of this package's own prescribed citation string or inspection-mode label, **0 unexplained**. The three index
+files were swept in the same run with the same corpus: **full mode 0 not found** on all three (11 · 94 · 21
+fragments), and their vendor-only misses are the stated re-quotation class above. Commands and
+expected results are in `RESEARCH_METHOD.md` §9.
+
+**Inspection mode:** **performed — published client, vendor organisation, vendor documentation and
+peer-reviewed publication.** The app binary was **not** obtained, and Phase 2A is closed **by contract, not
+by accident**: the vendor's published Terms state “You may not reverse engineer, decompile, or otherwise
+attempt to extract the source code of the Software”. There is no vendor source and **no published API
+contract**. `[FOUND IN PUBLISHED CLIENT]` is a **static** class — the served Consent Mode block establishes
+what the code is written to do, never that a consent banner appeared or a tag fired. **The
+runtime-observation count for this candidate is zero.**
+
+**Authorization basis.** Documents served to any unauthenticated visitor (the site's HTML and the Consent
+Mode block it ships, the sitemap, the help-centre articles), both storefront listings with the iTunes Lookup
+record, the Play Data Safety panel, the vendor's **public** GitHub organisation, and the paper as published.
+**No DRM, licence or protection was circumvented; no certificate pinning was touched; no account, credential
+or token was used; no endpoint was called.**
+
+**The eight findings, in order of consequence.**
+
+1. **The published evidence validates the free tier, not the tier that is sold.** The paper's biometric input
+is a 60-second morning camera-PPG reading with evening symptom reports — the free Morning Check-in — while
+the **continuous** overnight and all-day monitoring behind the membership is labelled a **beta in the
+vendor's own Early Access Hub**: “Features in the Early Access Hub may include bugs or other issues”.
+Recorded as an evidence-scope finding, **not** as a defect in the paper.
+2. **A score-changing algorithm change shipped with no version identifier.** “An even more accurate
+Stability Score” (2026-09-23) tells members “a day that previously gave you a 4, might now give you a 3” —
+about six months after the validation the vendor cites. The hypothesis this inspection started from (that
+the vendor versions nothing at all) is **REFUTED** and is **not recorded as a finding**: the vendor
+demonstrably published “Introducing: Morning stability v1.1” and “v1.2”.
+3. **An absolute privacy sentence, four pages, two wordings, four counter-surfaces.** “All Visible data … is
+not shared with any third parties unless you explicitly opt in to a research study” (help centre) against the
+Privacy Policy's own marketing sharing (“Event data is retained by Meta and Google for up to 180 days and
+processed in accordance with a Data Processing Agreement.”; “your data is hashed on ingestion by Meta for
+enhanced security.”), the Play Data Safety declaration (**Data shared**: category **App activity**, data type
+**App interactions**, purpose **Analytics**), and the served Consent Mode block's default outside the
+EEA/UK/CH. **All surfaces quoted with dates, left unresolved.**
+4. **The paid modality is not exportable; what is derived from it is.** “the data export does not include
+your live continuous heart rate data or Heart Rate Zones”, and a clinician can only be shown a live,
+view-only link. The stored-signal-vs-derived-value axis of `COMPARISON.md` §7 falls out of this.
+5. **A documented confounder silently desensitises the alert path**, with a **manual** mitigation: beta
+blockers mean “you won't generate as many PacePoints or receive exertion notifications, even if it feels
+like you are exerting yourself”. The vendor documents it; the user must act on it.
+6. **The third state is present at the score and absent at the clinician surface.** “If you choose to get
+your Stability Score from overnight readings and forget to wear your band to bed, you will not receive a
+Stability Score that day. There is no option to take a morning reading instead.” — against “The dashboard
+only displays sections when there is information to share”, i.e. an omitted section rather than an explicit
+unknown. This is the comparison's clearest contrast with `AGENTS.md:119`.
+7. **Four age statements cannot all be true of one account-creation rule** — the Terms' 16, the help-centre
+article's 16, that same article's under-16s clause, the paper's “aged ≥18 years … were eligible for
+inclusion” alongside its participants “ranged in age from 13 to 83”, plus Apple's 12+ and Play's Everyone.
+The vendor's own mechanism (“Create an account using your own age.”) is a documented **provenance hazard**,
+not a verdict. **Unresolved.**
+8. **A measurement gated on the network.** “You have a strong and stable internet connection. If you don't,
+the heart rate reading may not start or complete.” There is no offline mode.
+
+**Recorded as positives, and they are real.** The vendor publishes a peer-reviewed paper on its own data with
+a competing-interests statement, an ethics determination and a limitations section; it labels its algorithm
+versions; it ships a genuine real-time consumer alert on continuous heart rate; it states a missing-signal
+rule that is the closest published analogue in this package to AnxietyWatch2's third state; and at least one
+of its help-centre statements is an honest boundary (“A stable score doesn't guarantee you'll feel good…”).
+None of those is shipped in V2.
+
+**Pricing was checked and no arithmetic defect was recorded.** The two headline percentages (US “Save 25%”,
+UK “Save 31%”) are computed on different bases and neither basis is stated — recorded as a **presentation**
+observation. Totals are arithmetically consistent.
+
+**Attribution correction carried in.** “250,000+” members and “Unlike fitness tracking apps, Visible is
+designed to support rest and pacing, not workouts and exercise.” are in the **store listings**, not on the
+website; and the Play member count and the Band-2.0 “Only available in US and UK.” line live in different
+surfaces. Uncited claims (two “Studies suggest…”-class statements) are recorded as **uncited**, not as
+errors.
+
+**Residual uncertainty — `visible`.** The app binary, and everything visible only through it (the alert's
+real latency, the score's actual computation, what the dashboard renders when a section is absent).
+Whether the Consent Mode block is exercised by a live tag manager. 69 of the 95 help-centre articles were
+not read. `makevisible.com/pricing` and `/science` return **404**; `/study` and `/product-demo` return
+~13 KB single-page-app shells; `/research` and `/join-research` are **byte-identical** (SHA-256
+`f0e17c9c…`). No registered trial was found with Visible as sponsor on ClinicalTrials.gov at the research
+date. The vendor **GitHub organisation** `makevisible` has 2 public repositories, **both forks, with 0
+vendor-authored commits** — a published dependency mirror, not a code surface.
+
 ## Owner decisions pending
 
 1. **Pilot review.** **Resolved** — the owner instructed the run to continue; full sequential mode is
@@ -1516,8 +1667,8 @@ claim in the file that proposed it. Closed 2026-10-06; commit `bb9fb63`.
 - **A reachability check must query the domain the vendor publishes, not a guessed name.** `emoods` was
   dropped on 2026-10-06 for having no DNS record at `emoods.net`; the vendor's actual site is
   **`emoodtracker.com`**, which both storefronts name as their developer website and privacy-policy host,
-  and which was live the whole time. The check is not "does a name resolve" but "does the address the
-  vendor gives resolve" — taken from the storefront listing itself, one per platform. **A name that returns
+  and which was live the whole time. The check is not *does a name resolve* but *does the address the
+  vendor gives resolve* — taken from the storefront listing itself, one per platform. **A name that returns
   no records is evidence about the name, not about the product.** Re-tested 2026-10-07: the candidate is
   available on both stores and current.
 - Before concluding that a candidate is uninspectable, **check every vendor-published surface**: a
@@ -1699,6 +1850,51 @@ claim in the file that proposed it. Closed 2026-10-06; commit `bb9fb63`.
   correlated as "didn't happen", while a blank **variable** factor is excluded — the inverse of
   AnxietyWatch2's rule. Quoted, recorded `[doc]`, and the earlier "not documented / `[unknown]`" text in the
   same file corrected when the articles were fetched.
+
+- **A corpus root nested inside another root makes the `[also in: …]` tag meaningless.**
+  `docs/app_comparison` lives inside the V2 tree, so every package hit also matched `REPO` and
+  `[PKG,REPO]` said nothing about whether a span was in the V2 tree or only in this package's own prose. The
+  checker now prunes every other root's path out of each root's walk. Once `[PKG]`-only means *only in this
+  package*, it immediately surfaced a borrowed quotation (below). Re-run after the fix on candidate 11:
+  **2,115 → 2,061 files**.
+- **A quotation that verifies only against a sibling candidate's deliverable is not verified here.** The
+  Visible comparison cited SleepHQ's `progressing towards SOC 2 Type II`. The quote is real — candidate 5
+  verified it against the vendor's bytes in its own sweep — but this run's corpus no longer contains the
+  SleepHQ vendor tree, so the only place it matched was another deliverable in this package. It was replaced
+  with attributed prose (*whose own documentation describes a SOC 2 Type II programme still in progress*)
+  rather than left wearing quotation marks. This is the sibling-candidate case of the two-mode rule: the
+  source is genuine, but it is not **this** candidate's source, and a reader of the Visible package would
+  have no way to check it.
+- **An author's rendering of markup structure inside quotation marks is a misquotation of form.** Four kinds
+  appeared in candidate 11: two store-listing elements separated in the source by `<br>` joined with an
+  em-dash (`GET ALL DAY DATA` / `Pair the Visible band …` / `Only available in US and UK.`); a page heading
+  spliced into the body paragraph that followed it by a colon; three separate Play Data Safety cells
+  (`App activity` / `App interactions` / `Analytics`) rendered as one arrow chain; and a heading-plus-blurb
+  card collapsed into a single quoted span. A page's **typography is not its text**: the fix is always to
+  quote the source's own spans and put the rendering outside the quotation marks. The same rule settled the
+  published-client comments, where the vendor's own `// Everyone else (US incl. CCPA states, Canada, etc.) →
+  opt-out` had been quoted as `opt-out (US incl. CCPA states, Canada, etc.)` — a rearrangement, not a
+  quotation.
+- **In the vendor-only mode, three classes are *not* defects and are counted separately so the tally stays
+  readable.** (a) this package's own prescribed citation string — `a tester's machine path (redacted here)`,
+  the PII-safe rendering reused in the `empatica`, `mindshift` and `visible` inspection files; (b) an
+  inspection-mode label from `RESEARCH_METHOD.md` §6.1 — `performed — published client, vendor organisation,
+  vendor documentation and peer-reviewed publication`; (c) V2 and V1 product-tree quotes, which exist only
+  in the repository and can never match a vendor tree. Candidate 11's vendor-only run: **19 MISSes = 14 V2 +
+  2 V1 + 3 (a)/(b), zero unexplained**. Recording the class is not the same as asserting the sentence is
+  verbatim for a vendor — it is the opposite: the class marks spans that make **no vendor claim at all**.
+- **A rule-register file re-quoting a closed candidate's finding is verified against that candidate's
+  deliverable, not against the vendor bytes.** Once the scratch trees were cleared, the only match for such a
+  span is another file in this package (`[also in: PKG]`) — the very cross-file echo the vendor-only mode
+  exists to expose. Record the class and the limitation together: the span is verified against a deliverable
+  that reasoned from vendor bytes, **not against the bytes**. Where the artifact can still be fetched, fetch
+  it into a labelled extra root and check the recorded digest instead of accepting the class; a re-fetch that
+  **disagrees** with the digest is a lifecycle finding, not a fetch error.
+- **A corpus file count is not a corpus integrity check.** When a previously clean result regresses, suspect
+  the corpus before the quotation. `PROCESS_STATE.md`'s prose comparison operators (``< 0.05``, ``< 39``)
+  were read as tag starts by the checker's `<[^>]+>` strip, silently deleting ~40 KB of the corpus and
+  turning two already-verified spans into misses. The tag pattern now requires well-formed tag syntax
+  (`</?[A-Za-z][^<>]*>`).
 
 **The full rule register, with the sub-check table and the candidate that first produced each rule, lives in
 `RESEARCH_METHOD.md` §6.1.** This list records the rules that changed a verdict or a commit; §6.1 is

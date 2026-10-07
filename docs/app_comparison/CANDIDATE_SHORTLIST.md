@@ -405,7 +405,7 @@ comparators rather than product competitors.
 | **Withings Sleep Analyzer / Somnofy** | Under-mattress and radar-based home sleep-apnea and respiratory monitoring — the closest commercial analogue to AnxietyWatch2's XE125 radar respiratory-rate work | Fails as a whole-product comparison; if added it should be added specifically as a radar/respiratory subsystem comparator, ideally after the XE125 decoder is deployed and can be compared on measured output. |
 | **Medisafe** | The best-known medication-reminder app; medication is a core AnxietyWatch capability | Reminders and adherence only, with no before/after efficacy measurement and no physiological data — it would not test AnxietyWatch's actual differentiator (dose-triggered paired N-of-1 ratings). |
 | **Apple Health Records / FHIR-based PGHD tools** | Directly relevant to AnxietyWatch v1's `FHIRLabResultParser` and clinical-record import | Apple's own tooling is not a comparable product, and the FHIR ecosystem is a standard rather than a competitor. Better covered later as a standards/interop topic than as a shortlist row. |
-| **Visible (makevisible.com)** | HRV-based pacing for ME/CFS and Long Covid — symptom + physiology + personal-baseline overlap | Strong conceptual overlap but a narrower condition-specific audience than Bearable, which already covers the same comparison dimensions with more breadth. |
+| **Visible (makevisible.com)** | HRV-based pacing for ME/CFS and Long Covid — symptom + physiology + personal-baseline overlap | Strong conceptual overlap but a narrower condition-specific audience than Bearable, which already covers the same comparison dimensions with more breadth. **Overridden on 2026-10-06/07: added as candidate 11** — the narrow-audience judgement stands as a product observation, but this is the only alternative in this section that ships a **continuous-monitoring alert** competing directly with AnxietyWatch2's alarm path *and* a **vendor-authored peer-reviewed paper** on its own data. See the note below the table. |
 | **Loop / OpenAPS / AndroidAPS** | Self-built closed-loop systems with local control and safety interlocks — architecturally instructive for the alarm path | The alerting comparison is better served by Empatica (validated alerting with clinical evidence) and the self-hosting comparison by Nightscout. Three DIY-closed-loop entries would crowd the list. |
 | **eMoods** | Would have been the strongest free, offline, no-account comparator with a printable clinician report for v1's core loop | **Selectable after all — the original "not selectable" finding rested on a domain the vendor does not publish.** Both storefronts name **`emoodtracker.com`**, which is live and current, and the app is on both stores. See the correction below. |
 
@@ -441,7 +441,36 @@ comparators rather than product competitors.
 > `dig.txt`, `doh.txt`, `site.html` (SHA-256 `72d41b69…`), `play_mytracker.html` (`5535e181…`),
 > `play_search.html`, `dev_emoods.html`, `appstore.html` (`07a0e530…`), `itunes_search.json`
 > (`1603fa38…`), `com2.txt` (the HugeDomains redirect), `wb.txt`, `wb2013.html`. Every vendor sentence and
-> data-safety label quoted above was re-verified as a fixed string against those bytes on 2026-10-07.
+> data-safety label quoted above was re-verified as a fixed string against those bytes on 2026-10-07. That
+> scratch tree has since been cleared by macOS as well (see `PROCESS_STATE.md`, “The sweep's corpus is
+> scratch, not evidence”); the durable record is the digest list in this block.
+
+> **Selection applied 2026-10-06/07 (owner decision; a selection override, not a refuted finding).** This
+> entry's *facts* were never in question — Visible is live, on both stores, and unambiguously identified.
+> What changed is the **judgement**: the row rejected it for a narrower audience than Bearable, and the
+> owner selected it anyway as candidate 11. Unlike every earlier change to this section, **no claim in this
+> row was wrong**; the rationale it recorded was a product-breadth judgement, and product breadth is not
+> what this comparison is for. Visible is the only alternative in this section carrying **both** of the two
+> things the ten candidates never combined:
+>
+> - a **shipped continuous-monitoring consumer alert** — “Get a phone notification when you are exerting or
+>   pacing ahead for the day.” (`makevisible.com/how-it-works`) — competing directly with AnxietyWatch2's
+>   specified alarm path (`klaxond` → 555 dead-man's switch → APNs); and
+> - a **vendor-authored peer-reviewed publication on the vendor's own data** — *Digital physiological
+>   biomarkers predict within-person symptom changes in complex chronic illness*, npj Digital Medicine **9**,
+>   257 (2026), DOI `10.1038/s41746-026-02543-3`, PMID **41876851**, n = **4,244** — whose competing-interests
+>   statement names the vendor's own founder among its co-authors.
+>
+> **Candidate 11 (`visible`) is therefore selected and completed** on the same four-deliverable pipeline:
+> `visible/visible_CLAIMED_FEATURES_AND_PURPOSE.md`, `visible/visible_IMPLEMENTATION_INSPECTION.md`,
+> `visible/PROMPT_2.md`, `visible/visible_COMPARISON.md`. Phase 2A is recorded **not performed**: the vendor's
+> published Terms state “You may not reverse engineer, decompile, or otherwise attempt to extract the source
+> code of the Software”, and no inspection authorization was requested for this candidate. The inspection
+> surface is instead the vendor's **published client** (the Google Consent Mode block served to every
+> browser), the vendor **GitHub organisation** `makevisible` (2 public repositories, both forks, 0
+> vendor-authored commits), the **95-article help centre**, the **vendor-affiliated paper**, and both
+> storefront listings. **No endpoint was called and no runtime was observed.** Recorded in `PROCESS_STATE.md`
+> (queue table, §Candidate 11, and the rules register).
 
 ## 5. Known limitations of this shortlist
 

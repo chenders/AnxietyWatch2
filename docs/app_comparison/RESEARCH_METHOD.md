@@ -1,9 +1,11 @@
 # App comparison — research method
 
-**Research date:** 2026-10-06 (session started 2026-10-05 ~17:41 PDT)
+**Research date:** 2026-10-06/07 (session started 2026-10-05 ~17:41 PDT)
 **Execution mode:** full sequential — the whole shortlist (10 candidates), one processed end to end at a
-time. The pilot (`bearable`) was reviewed by the owner and the run was authorised to continue. **The
-shortlist is exhausted: 10 of 10 complete.**
+time, plus one further candidate (`visible`, candidate 11) selected by the owner from
+`CANDIDATE_SHORTLIST.md` §4 on 2026-10-06/07 and run through the same pipeline. The pilot (`bearable`) was
+reviewed by the owner and the run was authorised to continue. **The shortlist is exhausted: 10 of 10
+complete, and candidate 11 is complete.**
 **Governs:** `PROMPT1.md`, the five `PROMPT2*.md` variants, `CANDIDATE_SHORTLIST.md`,
 `PROCESS_STATE.md`, and every `{APP_SLUG}/` candidate directory
 
@@ -195,7 +197,7 @@ prefetching a later candidate's research while an earlier one is in progress.
 
 ### 6.1 Inspection modes actually used
 
-Five modes have been reached, and the count is stated against the table below rather than from memory.
+Six modes have been reached, and the count is stated against the table below rather than from memory.
 Which one applies is recorded per candidate, and none is ever silently
 upgraded into another.
 
@@ -206,6 +208,7 @@ upgraded into another.
 | **Performed** | Product source or a lawfully authorized build was inspected | `oscar` (GPLv3 source, pinned commit); `nightscout` (AGPL-3.0 source, pinned commit); `homeassistant` (Apache-2.0 source, tag `2026.9.4` / commit `9212531f…`, eleven files read and hashed) |
 | **Performed — artifact and regulator record** | Neither binary nor source nor API was obtainable. The strongest available surfaces are the vendor's own **contractual and compliance documents** and an **independent regulator's record of the vendor's own submission** | `empatica` |
 | **Performed — published client and public records** | Neither binary nor source nor API contract was obtainable. The strongest available surfaces are the vendor's own **served web client** read as text, plus **storefront metadata** and an **independent clinical registry and its peer-reviewed publication** | `mindshift` |
+| **Performed — published client, vendor organisation, vendor documentation and peer-reviewed publication** | Neither binary nor source nor API contract was obtainable, and the vendor's Terms **prohibit** reverse engineering, so the mode is closed by **contract** rather than by availability. Above `mindshift`'s surfaces the vendor also publishes a **code-hosting organisation** (readable as an artifact: repository count, fork status, commit attribution) and a **95-article help corpus**, and is itself an author of the peer-reviewed publication | `visible` |
 
 **Vendor-published artifacts differ in strength, and the difference must be stated.** Three distinguishable
 strengths have been used:
@@ -370,6 +373,31 @@ marketing.** Four rules:
   it corrects a measure without restating that measure's effect size, the effect size is `[UNKNOWN]`, not
   carried over.
 
+**A sixth mode, instantiated by `visible`, extends the fifth with a vendor's own *code-hosting organisation*
+and its *documentation corpus*, and is the first mode closed by contract rather than by availability.**
+Visible ships an app nobody here may lawfully obtain, publishes no source and no API contract, and its
+published Terms state "You may not reverse engineer, decompile, or otherwise attempt to extract the source
+code of the Software" — quoted verbatim as the authorization basis, the same mechanism that closed `oura`.
+What it does publish is a **served consent configuration** (read as a published client, `[FOUND IN PUBLISHED
+CLIENT]`), a **code-hosting organisation** (`makevisible`: 2 public repositories, **both forks**, **0
+vendor-authored commits**), a **95-article help centre**, a **vendor-authored peer-reviewed paper** (npj
+Digital Medicine 9, 257 (2026), PMID 41876851, n = 4,244), and both storefront listings. Three rules came out
+of it:
+
+- **A fork's state is a fact about the mirror, not about the app.** Behind/ahead counts and local
+  modifications describe a *published dependency mirror*; `makevisible`'s two repositories are 23-behind/0-ahead
+  and byte-identical to upstream. Record this as a fact about what the organisation publishes, and never as
+  "the vendor's code" — zero vendor-authored commits means the organisation carries **no** vendor code surface.
+- **A vendor-authored paper whose co-authors include the vendor's own founder is the vendor's statement, not
+  independent validation** (the same rule as `mindshift`), and where the paper's input is the *free* tier's
+  once-daily reading while the *paid* tier's continuous monitoring is what is sold, the result is an
+  **evidence-scope** finding — not a criticism of the paper, and not a defect in the product.
+- **A vendor's own help centre can contradict the vendor's own privacy policy and its own store
+  declaration.** "All Visible data … is not shared with any third parties unless you explicitly opt in to a
+  research study" sits three pages away from a privacy policy describing Meta and Google marketing sharing
+  and a store declaration of one shared data type. Quote every surface with its date and leave the conflict
+  unresolved; do not pick a winner.
+
 **An inspection mode is not an observation.** *Performed* means the implementation was **read**. `oscar`
 was never executed: no binary was installed, no data imported, no report generated, and no CSV inspected
 as output. `nightscout` was never built, deployed or contacted: no Node process was started, no MongoDB
@@ -464,6 +492,13 @@ files now report **0 not found** | `mindshift` |
 | **Escape decoding and markup stripping follow the bytes, not the extension** | `exist`'s API reference is an HTML page carrying a JS/JSON payload whose text layer reads `"text": "Last night's sleep was surprisingly long.\r\nMonday is…"`, so `.html`/`.xml` are escape-decoded exactly like `.js`/`.json`; and inline markup **inside a quoted source string** is stripped on both sides, because `oscar`'s oximeter dialog stores `bluetooth models is <span style=" font-weight:600;">probably not</span> possible yet` while the deliverable renders the same words as markdown bold. One `norm()` is applied to fragment and corpus alike, so a markup-only difference cannot read as a misquotation | `exist`, `oscar`, `oura` |
 | **A vendor's published release artifact is a check on the pinned commit** | `api.github.com/repos/nightscout/cgm-remote-monitor/releases/tags/v15.0.8` returns the release name `Release 15.0.8 Chocolate Chip Muffin`, published `2026-09-04T18:27:47Z`, with a `target_commitish` equal to the pinned commit `92d0834219aa771b5837dbcbf1baeb839a200cf6`. A repository's own release metadata is fetched and matched, rather than the tag being assumed | `nightscout` |
 | **A vendor documenting the inverse of a V2 rule is a documented behaviour, not an absence** | Bearable's two blank-entry articles say a blank **binary** factor is assumed not to have happened and is **included in correlations as "didn't happen"**, while a blank **variable** factor is excluded and `none` is a distinct value — the inverse of AnxietyWatch2's rule. Quote both, record `[doc]`, and correct the earlier "not documented / `[unknown]`" text **in the same file** once the artifact is fetched: an artifact a vendor offers as evidence of a claim must be tested against the claim it sits beside | `bearable` |
+| **Corpus roots must not nest inside one another** | `docs/app_comparison` lives inside the V2 tree, so a walk of both makes **every** package hit also match the V2 root and the `[also in: PKG,REPO]` tag says nothing about where a span really is. Prune the other roots' paths out of each root's walk; then a `[PKG]`-only tag genuinely means *only in this package*, which is what exposed the borrowed quotation below. Candidate 11's corpus went 2115 → **2061** files when this was fixed | `visible` |
+| **A sibling candidate's vendor surface is not this candidate's source** | The Visible comparison cited SleepHQ's `progressing towards SOC 2 Type II`. The quote is real — candidate 5 verified it against the vendor's bytes — but candidate 11's corpus no longer holds the SleepHQ tree, so the only match was another deliverable in this package. Replace it with **attributed prose**, not quotation marks: a reader of the Visible package cannot check a SleepHQ artifact from it. This is the sibling-candidate case of the two-mode rule — a genuine source, but not **this** candidate's | `visible` |
+| **Typography is not text — an author's rendering of markup belongs outside the quotation** | Four forms in candidate 11: two store-listing elements separated by `<br>` joined with an em-dash (`GET ALL DAY DATA` / `Pair the Visible band …` / `Only available in US and UK.`); a page heading spliced into the paragraph after it with a colon; three separate Play Data Safety cells (`App activity` / `App interactions` / `Analytics`) rendered as one arrow chain; a heading-plus-blurb card collapsed into one span. Likewise the vendor's own published-client comment `// Everyone else (US incl. CCPA states, Canada, etc.) → opt-out` had been quoted as `opt-out (US incl. CCPA states, Canada, etc.)` — a rearrangement, not a quotation | `visible` |
+| **In vendor-only mode, three classes are not defects and are counted separately** | (a) this package's own prescribed citation string — `a tester's machine path (redacted here)`; (b) an inspection-mode label from §6.1 — `performed — published client, vendor organisation, vendor documentation and peer-reviewed publication`; (c) V2 and V1 product-tree quotes, which can never match a vendor tree. Naming the class is not a claim that the span is verbatim **for a vendor** — it is the opposite: the class marks spans that make no vendor claim at all. Candidate 11: **19 MISSes = 14 V2 + 2 V1 + 3 (a)/(b), zero unexplained** | `visible` |
+| **The tag-strip must require well-formed tag syntax, or a comparison operator eats the corpus** | `<[^>]+>` treats a bare `<` as a tag start. `PROCESS_STATE.md` contains ``< 0.05`` and ``< 39`` in prose, so the corpus silently lost **~40 KB** between the first stray `<` and the next `>` on each side, and two spans the package had already verified read as MISSes. Replace with `</?[A-Za-z][^<>]*>` — real tags and inline markup are still stripped, an unpaired `<` is not a tag. **A corpus file count is not a corpus integrity check**; when a previously clean result regresses, suspect the corpus before the quotation | corpus-wide |
+| **A rule-register file's re-quotation is verified against the candidate deliverable, not the vendor bytes, once the scratch tree is cleared** | The index files re-quote findings from closed candidates. With the ten vendor trees destroyed by the `/tmp` wipe, the only match is the candidate's own deliverable (`[also in: PKG]`), which is exactly the cross-file echo the two-mode rule exists to catch. Record the class, name the limitation, and distinguish it from a vendor-verified quote: **the span is verified against a deliverable that reasoned from vendor bytes, not against the bytes.** A cross-reference to another index file's heading (`residual uncertainty — nightscout`) is package-internal and can never match any vendor tree | `visible` (index files) |
+| **Clearing the scratch tree is recovered by re-fetching to a supplementary vendor root, and the re-fetch is itself a digest check** | Add the re-fetch tree as a labelled extra root (`VENDOR2`) rather than folding it into the candidate tree — the root labels are part of the evidence, and vendor-only mode searches every `VENDOR*` root. Six of eight index-file MISSes closed: `emoodtracker.com` came back **byte-identical** to the digest recorded before the wipe (`72d41b69…`), and `exist`'s four API reference pages came back at the recorded byte sizes (43,606 / 69,161 / 32,388 / 32,736). A re-fetch that **disagrees** with the recorded digest is a lifecycle finding, not a fetch error | `visible` (index files) |
 
 ## 7. What remains unverified
 
@@ -557,16 +592,17 @@ could not reach.
 | Account-required app | Bearable's usable surface | Sign-up is a hard gate; the brief forbids creating accounts, so even with an artifact the observable surface would stop at registration |
 | Search engine blocking | DuckDuckGo HTML endpoint (HTTP 202/302) | Substituted Bing and Mojeek; no impact on coverage |
 | DNS failure (mis-targeted) | `emoods.net` | **The domain was never the vendor's.** Both storefronts give `emoodtracker.com`; the original drop was a process error, corrected 2026-10-07 — the candidate is available and current |
-| Partially retrieved support content | Bearable's "Are blank entries incorporated into insights?" and "What happens to factors that I leave blank?" articles | Their existence is recorded; their content was not retrieved and is listed as unresolved (Q4) rather than guessed |
+| Partially retrieved support content | Bearable's "Are blank entries incorporated into insights?" and "What happens to factors that I leave blank?" articles | Their **existence** was recorded from the help-centre index; content was not read into the Bearable findings, and Q4 remains unresolved. On 2026-10-06/07 both article URLs were fetched (HTTP 200) **for quotation verification only**, so the two titles are corpus-checkable; the articles are still **not analysed** |
 | No vendor price publication | Bearable Premium pricing | Only the Play Store IAP range is available; recorded as a range, not a price |
 | No browser/desktop client | Bearable | Vendor-stated limitation; recorded as such |
 
 ## 9. Reproducing this research
 
 ```sh
-# Verify the ten candidate packages exist (10 of 10 complete; the shortlist is exhausted)
-ls -d docs/app_comparison/*/ | wc -l              # expect 10 candidate directories
-ls -l docs/app_comparison/{bearable,welltory,exist,oscar,sleephq,nightscout,empatica,oura,homeassistant,mindshift}/
+# Verify the candidate packages exist (11 complete: the ten shortlisted, plus `visible`,
+# which the owner added from `CANDIDATE_SHORTLIST.md` §4 on 2026-10-06/07)
+ls -d docs/app_comparison/*/ | wc -l              # expect 11 candidate directories
+ls -l docs/app_comparison/{bearable,welltory,exist,oscar,sleephq,nightscout,empatica,oura,homeassistant,mindshift,visible}/
 
 # The `sleephq` package: the primary artifact is the vendor's OpenAPI document
 curl -sS -o /tmp/sleephq-swagger.json https://sleephq.com/api/swagger.json
@@ -606,11 +642,13 @@ grep -o -F 'Privacy Policy' /tmp/ms_index.js | wc -l   # expect 0
 #   AW2_ROOT=/tmp/aw2research/<slug>                            python3 qc2.py <file>   # full corpus
 # then
 #   AW2_VENDOR_ONLY=1 AW2_ROOT=/tmp/aw2research/<slug> python3 qc2.py <file>
-# Expect "0 not found" in the FULL pass on all four files of all ten candidates. The vendor-only pass
+# Expect "0 not found" in the FULL pass on all four files of all ten candidates and, in the recorded
+# run, on all four files of candidate 11 as well. The vendor-only pass
 # is expected to report MISSes, and they must be classified, not accepted: the recorded run gave 85
 # across 22 files — 40 V2 product-tree quotes, 21 V1 product-tree quotes, 4 sibling-candidate vendor
 # surfaces, 20 spans of the package's own normative text or mode labels (plus CPython's own
-# SyntaxError text) — with zero unexplained, and 14 more across the two index files.
+# SyntaxError text) — with zero unexplained, and 14 more across the two index files. Candidate 11 adds
+# 19 more, classified as 14 V2 · 2 V1 · 3 package-own, zero unexplained.
 # The target file is EXCLUDED from its own corpus so a file can never verify its own quotes, and a
 # MISS is a corpus gap first: without the fetched bytes, "0 not found" would mean only that the
 # wording appears somewhere in the package.
@@ -621,6 +659,38 @@ grep -o -F 'Privacy Policy' /tmp/ms_index.js | wc -l   # expect 0
 
 # The `homeassistant` package: the strongest mode ran with no authorization question
 # (Apache-2.0). Eleven files read and hashed at tag 2026.9.4 (commit 9212531f…).
+
+# The `visible` package (candidate 11): no binary was obtained — the Terms prohibit reverse
+# engineering — so the artifacts are published documents. Every command is a read of a public page.
+curl -sS -o /tmp/vis_privacy.html -w '%{http_code} %{size_download}\n' https://www.makevisible.com/privacy
+#   expect 200 and 68066 bytes; /privacy-policy redirects here, while /pricing and /science 404
+curl -sS 'https://itunes.apple.com/lookup?id=1624474919&country=us' | python3 -m json.tool | head -40
+#   expect bundleId com.makevisible.visible, seller Visible Health Inc., version 26.9.3, price 0
+# The paper validates the FREE tier's daily reading; quote the inputs before the AUC:
+#   https://www.nature.com/articles/s41746-026-02543-3   (npj Digital Medicine 9, 257 (2026);
+#   PMID 41876851; n = 4244) — walk-forward CV AUC 0.82-0.85 WITH morning biometrics, 0.73-0.83 without
+# The consent configuration is readable static text in the served pages; the mode name for its findings
+# is [FOUND IN PUBLISHED CLIENT], never a runtime observation.
+
+# Quote-verification corpus for candidate 11 (five roots, colon-separated; the checker prunes any
+# root nested inside another, or every package hit would also report the V2 tree; root 5 is the
+# supplementary re-fetch tree added after the scratch wipe, and vendor-only mode searches VENDOR*):
+#   AW2_ROOT="$HOME/aw2research/visible:$PWD/docs/app_comparison:$PWD:$HOME/Source/AnxietyWatch:$HOME/aw2research/refetch"
+# Recorded result — FULL: 0 not found on all four files (49 · 131 · 91 · 20 fragments checked).
+# VENDOR-ONLY: 19 MISSes, machine-classified as 14 V2 product-tree quotes, 2 V1 product-tree quotes and
+# 3 spans of this package's own prescribed citation string or inspection-mode label — zero unexplained.
+# The corpus is 2061 files after the nested-root fix (2115 before it), 2072 with the re-fetch tree.
+#
+# The two index files are swept too, and their result carries a stated limitation. With the re-fetch tree:
+#   CANDIDATE_SHORTLIST.md  11 fragments  FULL 0 not found   VENDOR-ONLY 4 "also in: PKG"
+#   PROCESS_STATE.md        94 fragments  FULL 0 not found   VENDOR-ONLY 76 "also in: PKG"
+#   RESEARCH_METHOD.md      21 fragments  FULL 0 not found   VENDOR-ONLY 16 "also in: PKG"
+# Every vendor-only MISS in the index files is a **re-quotation of a closed candidate's finding** whose
+# vendor tree no longer exists, or a package-internal heading reference. They are verified against the
+# candidate deliverable that reasoned from the vendor bytes, **not against the bytes** — a class, not a
+# silent pass. Two things were fixed rather than explained: the checker's tag-strip, which deleted ~40 KB
+# of PROCESS_STATE.md at each bare `<` comparison operator, and one author phrase wearing quotation marks
+# (`does the address the vendor gives resolve` → italic, because the two-mode sweep found no vendor copy).
 
 # Confirm no stale paid-proxy references remain anywhere in the comparison docs
 grep -RInE 'Charles|charles|10\.0\.2\.2:8888' docs/app_comparison/ || echo "clean"
