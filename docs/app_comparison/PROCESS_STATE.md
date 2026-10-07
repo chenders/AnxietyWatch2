@@ -30,17 +30,17 @@ owner decision; see **Owner decisions pending** §3.
 
 | # | Slug | Score                 | Status                                                                    | Started    | Completed | Blocker |
 |---|---|-----------------------|---------------------------------------------------------------------------|------------|---|---|
-| 1 | `bearable` | 13 (rank 1 on dimension A) | ** Not started ** | None | None | None |
-| 2 | `welltory` | 14                    | ** Not started ** | None | None | None |
-| 3 | `exist` | 11                    | ** Not started ** | None | None | None |
-| 4 | `oscar` | 11                    | ** Not started ** | None | None | None |
-| 5 | `sleephq` | 12                    | ** Not started ** | None | None | None |
-| 6 | `nightscout` | 15                    | ** Not started ** | None | None | None |
-| 7 | `empatica` | 14                    | ** Not started ** | None | None | None |
-| 8 | `oura` | 13                    | ** Not started ** | None | None | None |
-| 9 | `homeassistant` | 13                    | ** Not started ** | None | None | None |
-| 10 | `mindshift` | 12                    | ** Not started ** | None | None | None |
-| 11 | `visible` | 13                    | ** Not started ** | None | None | None |
+| 1 | `bearable` | 13 (rank 1 on dimension A) | ** Not started ** | - | - | - |
+| 2 | `welltory` | 14                    | ** Not started ** | - | - | - |
+| 3 | `exist` | 11                    | ** Not started ** | - | - | - |
+| 4 | `oscar` | 11                    | ** Not started ** | - | - | - |
+| 5 | `sleephq` | 12                    | ** Not started ** | - | - | - |
+| 6 | `nightscout` | 15                    | ** Not started ** | - | - | - |
+| 7 | `empatica` | 14                    | ** Not started ** | - | - | - |
+| 8 | `oura` | 13                    | ** Not started ** | - | - | - |
+| 9 | `homeassistant` | 13                    | ** Not started ** | - | - | - |
+| 10 | `mindshift` | 12                    | ** Not started ** | - | - | - |
+| 11 | `visible` | 13                    | ** Not started ** | - | - | - |
 | — | `emoods` | —                     | **Excluded in error; re-tested 2026-10-07; not added (owner decision)**   | —          | — | The exclusion rested on **`emoods.net`** (NXDOMAIN at the `.net` TLD), but the vendor publishes **`emoodtracker.com`** — the site both storefronts name — which is live: iOS `com.yottaram.eMoods` v1.3.28 (4.80359 / 4,236) and Android `my.tracker` (500,000+, Play data safety "No data collected"). Full correction in `CANDIDATE_SHORTLIST.md` §4 |
 
 **Sequencing rule in force.** Only one row may be **In progress**. A candidate is started only after the
