@@ -1649,6 +1649,28 @@ ranking rows 9 and 10 and the file's Mode line), each marking the correction inl
 preserving the superseded wording, so that no hypothesis the package has disproved is left standing as a
 claim in the file that proposed it. Closed 2026-10-06; commit `bb9fb63`.
 
+4. **Delivery and review — pushed; the pull request needs owner credentials.** Candidate 11 is committed
+   as `f7dbda3`, the profile of the run is complete (11 of 11 candidates, 44 files), and the branch
+   `fix/silence-detector-schema-preflight` **has been pushed to `origin`** after `scripts/install-hooks.sh`
+   and a full `.githooks/pre-push` run. Every gate passed with **no bypass**: public-info scan,
+   generated-files-current, `cargo test --workspace`, clippy at deny levels, fuzz-target compile. The first
+   attempt was **blocked**, not bypassed — the `sk-` secret pattern matched the tail of an Intercom
+   help-article slug quoted in candidate 11's claim ledger — and the gate was repaired in its own commit
+   (`82433eb`) rather than passed with `--no-verify`. **One warning is left standing deliberately**: the
+   phone-number-shaped strings in the diff are publicly published crisis helplines quoted from the
+   vendor's own page, and rewriting them as `555-0100..555-0199` would falsify those quotations. The PII
+   denylist warning is the expected state of a clone with no `.githooks/pii-denylist.local.txt` (that file is
+   owner-supplied and gitignored by design; it is never fabricated).
+
+   **No pull request was opened.** `gh` is not authenticated (`HTTP 401: Requires authentication`), no
+   `GH_TOKEN`/`GITHUB_TOKEN` is present in the environment, and the repository is private (an
+   unauthenticated API request returns `404`), so this is a credential requirement and not a
+   judgement call. **Owner action:** `gh auth login`, then open the PR from the branch — either
+   `gh pr create --base main --head fix/silence-detector-schema-preflight`, or the compare view at
+   `https://github.com/chenders/AnxietyWatch2/compare/main...fix/silence-detector-schema-preflight`.
+   Per `AGENTS.md`, merging still requires a review of the diff from an owner-approved model or the owner;
+   this file records that the push happened and that the PR is **not** open, and claims nothing about review.
+
 ## Rules this file enforces
 
 - A candidate is **Complete** only when all four deliverables exist and the verification command has
