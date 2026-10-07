@@ -64,7 +64,13 @@ if [[ -n "$ADDED" ]]; then
   if grep -qE '(API_KEY|SECRET|PASSWORD|TOKEN|MASTER_KEY)[[:space:]]*[:=][[:space:]]*["'"'"']?[A-Za-z0-9_\-]{16,}' <<<"$ADDED"; then
     fail "a credential value appears in the diff"
   fi
-  grep -qE -- 'sk-[A-Za-z0-9_-]{20,}'                 <<<"$ADDED" && fail "an sk- API key appears in the diff"
+  # The key must start a token. Without the leading boundary the pattern also matches the
+  # tail of an ordinary hyphenated word, which blocked a legitimate push: an Intercom help
+  # article slug quoted in candidate 11's claim ledger ends `...-ask-you-to-record-your-
+  # symptoms-once-a-day`, and a 20-plus-character run inside that slug begins with the two
+  # letters `sk` followed by a hyphen. A real key is preceded by whitespace, a quote, `=`,
+  # `:` or line start — never by an alphanumeric character.
+  grep -qE -- '(^|[^A-Za-z0-9])sk-[A-Za-z0-9_-]{20,}' <<<"$ADDED" && fail "an sk- API key appears in the diff"
   # `--` is required: the pattern starts with dashes and grep would otherwise
   # parse it as options, error out, match nothing, and silently pass. A gate
   # that cannot fail verifies nothing.
