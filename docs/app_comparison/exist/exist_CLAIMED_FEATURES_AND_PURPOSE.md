@@ -521,7 +521,7 @@ list was not obtained. No App Store listing page was retrieved (the iTunes Looku
 
 ## 17. Whole product or subsystem?
 
-**Whole product for "aggregate everything I already track and find relationships in it" — and a partial
+**Whole product for *aggregate everything I already track and find relationships in it* — and a partial
 competitor to v1's analysis layer only.** Exist competes with v1's correlation-and-context function and
 with nothing else: it does not measure, does not record overnight, has no CPAP or oximetry domain, no
 medication semantics, no alarm, no local store, and no clinical output beyond a generic report. Against

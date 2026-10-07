@@ -8,7 +8,7 @@ Prepared: 2026-10-06
 ## Assignment
 
 Write a technical-systems comparison of **Exist** against AnxietyWatch v1 and AnxietyWatch2. The governing
-question for this candidate is not "does Exist measure more than AnxietyWatch" — it plainly does not, and
+question for this candidate is not *does Exist measure more than AnxietyWatch* — it plainly does not, and
 it measures nothing at all. It is:
 
 > **Exist publishes the correlation record it stores: a coefficient, a p-value, a sample size, a lag
@@ -83,8 +83,8 @@ Apply these to every claim in the report.
    observations**.
 2. **Never present a reverse-engineering or documentation-derived observation as a public product
    claim**, and never present a public claim as an implementation fact.
-3. **Absence of evidence is unknown, not proof of absence.** "No CPAP attribute appears in the published
-   attribute catalogue" is a finding; "Exist cannot support CPAP" is not.
+3. **Absence of evidence is unknown, not proof of absence.** *No CPAP attribute appears in the published
+   attribute catalogue* is a finding; *Exist cannot support CPAP* is not.
 4. **The API reference documents endpoints; it does not show a live system.** A documented field is a
    contract, not a verified behaviour. Do not describe any endpoint as "working".
 5. **No p-value is a product claim.** The fact that Exist computes and exposes a p-value is a finding
@@ -94,8 +94,8 @@ Apply these to every claim in the report.
 6. **Do not convert a coefficient into a causal statement**, and do not treat Exist's own causation
    disclaimer as evidence that its outputs are causally safe. Quote the disclaimer and then assess the
    structural limit: the schema is pairwise.
-7. **Require a mechanism before crediting a capability.** "Exist can uncover what happens when you don't
-   track a tag" is a marketing sentence with no published mechanism. Say so.
+7. **Require a mechanism before crediting a capability.** "Exist can even uncover what happens when you
+   don't track a tag" is a marketing sentence with no published mechanism. Say so.
 8. **Vendor-published scale figures are vendor-published.** The 940-user and revenue figures are strong
    evidence of order of magnitude precisely because they are awkward for marketing, but they are still
    self-reported.
@@ -178,7 +178,8 @@ Organise the technical comparison around these axes, which is where Exist actual
   list, documented takeover on disconnect, and history retained after disconnect.
 - **Attribute-level provenance only** — no per-sample provenance, no device identity, no quality flag.
   Contrast with AnxietyWatch's provenance requirements.
-- Correction delegated to the source service for synced data, versus "fill-once-per-date, never remove"
+- Correction delegated to the source service for synced data, versus a fill-once-per-date,
+  never-delete-vendor-managed model
   for manual data. Neither is append-only and neither has a tombstone or an audit trail.
 - Compare with AnxietyWatch's append-only samples and tombstone removal; name the difference precisely.
 

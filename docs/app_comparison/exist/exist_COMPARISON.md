@@ -119,10 +119,10 @@ table are in `exist_IMPLEMENTATION_INSPECTION.md` §6. The material rows:
 | X3 | "At least three weeks… excluding days with no data (shown as 'N/A')" | API returns sparse date/value pairs; no zero-fill, no sentinel, no null row | **Corroborated by schema** |
 | X4 | "Exist will check for correlations… across two consecutive days" | An `offset` field exists (`0` in the example); **how many lags are tested is not documented** | **Partially corroborated** → E10 |
 | X5 | "A third variable might affect both attributes" | Schema has exactly **two** attribute slots, no covariate, no model field | **Corroborated, and the limitation is structural** — the caveat honestly describes what the model cannot do |
-| X6 | "**No AI** — we won't be stuffing LLMs into Exist to hallucinate what your data means" | Insights are **typed** (`dow_sleep`), carry a period and priority, and are composed of clause fragments, not free prose | **Consistent** — the generator is unpublished, so consistency, not proof → E8 |
+| X6 | "No AI" — "won't be stuffing large language models into Exist to hallucinate what your data means" | Insights are **typed** (`dow_sleep`), carry a period and priority, and are composed of clause fragments, not free prose | **Consistent** — the generator is unpublished, so consistency, not proof → E8 |
 | X7 | "We finally turned off Google Analytics… no third-parties watching how you use the site" | Policy update history records the 2024-09-19 removal; no analytics or ad partner named; **Play declares no data shared** | **Corroborated by two independent sources** |
 | X8 | "We don't, and won't ever, sell your data" | Policy: never sold "as part of the everyday process… **but it may be transferred as part of the sale, merger, or dissolution**", with notice and opt-out | **Qualified** — absolute marketing claim, disclosed legal carve-out → E1 |
-| X9 | "Permanent deletion — everything… permanently wiped" | Policy: kept "for a commercially reasonable period, for backup and archival purposes"; payment records and support emails retained | **Qualified** — reconcilable, not identical |
+| X9 | "Permanent deletion" … "Everything about you in the Exist database is permanently wiped" | Policy: kept "for a commercially reasonable period, for backup and archival purposes"; payment records and support emails retained | **Qualified** — reconcilable, not identical |
 | X10 | "Not building features to let your boss, colleagues, or coach see your data" | No sharing, coach or clinician surface anywhere in the API, catalogue or help centre | **Consistent** |
 | X11 | "You can export it at any time" | **PDF, CSV and JSON**, plus programmatic read/write via the API | **Corroborated** |
 | X12 | "No pricing tiers, one plan gets you everything" | Structure confirmed; **price conflicts** (website $6.99 vs Play "US$6") | **Corroborated for structure, conflicting on price** |
@@ -219,8 +219,8 @@ rating is **once per day**, delivered by a notification or an email the user can
 purpose is a daily aggregate for correlation. There is no event model, no timestamp finer than a date
 (`date: "2022-05-16"` throughout the API), and no way to attach a mood to a moment. `[STATIC]`
 
-**Consequence.** Exist cannot answer "what was happening when this got worse" — only "on days like this,
-the day's rating tended to be lower". For the comparison this is the single cleanest illustration of the
+**Consequence.** Exist cannot answer *what was happening when this got worse* — only *on days like this,
+the day's rating tended to be lower*. For the comparison this is the single cleanest illustration of the
 boundary: Exist's unit of analysis is **the day**, and AnxietyWatch's is **the event**. Every downstream
 difference in this report follows from that one design choice.
 
@@ -324,10 +324,10 @@ days, and the mood feature surfaces the same day a year ago. `[STATIC]`
 **V1/V2:** longer raw retention, richer signals, immediate baselines — but a younger system with no
 comparable published discipline around statistical confidence.
 
-**Consequence.** For a user asking "what actually affects me, over a year", Exist's *statistical* posture
+**Consequence.** For a user asking *what actually affects me, over a year*, Exist's *statistical* posture
 is currently more mature than AnxietyWatch's published posture, and it is worth saying so plainly. The
-difference is that Exist can say "this relationship is strong but our confidence is low because we only
-have 40 days" and AnxietyWatch's documented engine does not expose that distinction.
+difference is that Exist can say *this relationship is strong but our confidence is low because we only
+have 40 days* and AnxietyWatch's documented engine does not expose that distinction.
 
 ## 7. Data and analysis audit
 
@@ -454,8 +454,8 @@ not asserted as a discrepancy.
 **The Sentry exception deserves emphasis.** "No telemetry" is not literally true: Sentry receives crash
 and error reports including username, phone model, OS version, and — per the policy's own wording —
 possibly attribute-related data in error logs. That is a narrow, ordinary, defensible use, and it is
-disclosed. It is still an exception, and the honest summary is **"no analytics or advertising; error
-reporting to Sentry"** rather than "no third parties".
+disclosed. It is still an exception, and the honest summary is **no analytics or advertising, plus error
+reporting to Sentry** rather than "no third parties".
 
 ### The AI refusal as a position
 
