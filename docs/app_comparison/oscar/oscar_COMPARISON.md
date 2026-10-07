@@ -337,14 +337,14 @@ architectural fact about a different kind of product, not a deficiency.
 
 | Workflow | OSCAR | v1 | v2 |
 |---|---|---|---|
-| "Review last night in detail" | **Strong.** Breath-by-breath graphs, event table, 35 daily statistics | CSV-derived summary | Raw streams + derived views |
-| "Review the last year's trend" | **Strong.** Statistics page, custom report tree, CSV export | Reports | Continuous aggregates |
-| "Find what woke me up" | Manual, post-hoc inspection | Correlations incl. aircraft/noise | Correlations + real-time context |
-| "Get help while the event is happening" | **Not possible** | Alerts | Supervised alarm (**specified target**) |
-| "Keep a contemporaneous note about how I felt" | Journal, typed later at a desk | Panic-time capture | Panic-time capture |
-| "Move my data to another tool" | **CSV, published schema, Python reader** | CSV/PDF | — |
-| "Prove my therapy is adequate to a clinician" | Device-format CSV that a clinician already recognises | Reports | Reports |
-| "Run it without an account or a server" | Yes, by construction | Yes | Yes (self-hosted) |
+| *Review last night in detail* | **Strong.** Breath-by-breath graphs, event table, 35 daily statistics | CSV-derived summary | Raw streams + derived views |
+| *Review the last year's trend* | **Strong.** Statistics page, custom report tree, CSV export | Reports | Continuous aggregates |
+| *Find what woke me up* | Manual, post-hoc inspection | Correlations incl. aircraft/noise | Correlations + real-time context |
+| *Get help while the event is happening* | **Not possible** | Alerts | Supervised alarm (**specified target**) |
+| *Keep a contemporaneous note about how I felt* | Journal, typed later at a desk | Panic-time capture | Panic-time capture |
+| *Move my data to another tool* | **CSV, published schema, Python reader** | CSV/PDF | — |
+| *Prove my therapy is adequate to a clinician* | Device-format CSV that a clinician already recognises | Reports | Reports |
+| *Run it without an account or a server* | Yes, by construction | Yes | Yes (self-hosted) |
 
 The last row is where the two projects genuinely agree, and it is worth naming: both are offline-first
 and neither requires an account. That is a shared position against candidates 1–3, not a difference
@@ -363,12 +363,12 @@ hypertable keyed by `(source, type, session_id, seq)` with the timestamp explici
 
 What each shape makes easy:
 
-- OSCAR can answer "show me the shape of the flow limitation between 03:12 and 03:14" because the
+- OSCAR can answer *show me the shape of the flow limitation between 03:12 and 03:14* because the
   waveform is a first-class stored object. **v2 can answer it for AirSense 11 because the raw flow and
   pressure signals are stored as samples**, but at sample granularity through a query, not as a
   pre-packaged series.
-- v2 can answer "how many samples did we lose last night" (`max(seq) − count(*)`) and "was this sample
-  signed" (`batch_id`), because identity is per-sample. OSCAR cannot: a lost waveform region is
+- v2 can answer *how many samples did we lose last night* (`max(seq) − count(*)`) and *was this sample
+  signed* (`batch_id`), because identity is per-sample. OSCAR cannot: a lost waveform region is
   indistinguishable from a quiet one, since the sentinel substitution in §7.2 writes the previous sample
   over it.
 
@@ -381,7 +381,7 @@ wrong *stored* value that must be recomputed and rewritten. OSCAR's design makes
 possible in a way that v2's does not — and OSCAR's own bug log shows it happening.
 
 **Fidelity markers (T4).** OSCAR's `summary_only`, `no_settings`, `events_loaded` and `enabled` flags let
-a session say "this is incomplete, and here is how". The nearest v2 equivalent is the
+a session say *this is incomplete, and here is how*. The nearest v2 equivalent is the
 `pi-prototype-storage-degraded-mode` specification plus `batch_id IS NULL` meaning "did not arrive
 signed". Mapped:
 
@@ -503,7 +503,7 @@ mutable ledger with an `undone_at` column — and it is **specified, not built**
 **The concrete failure v2 would meet without it**, since the BLE path is the one that ships first: the
 AirSense 11's clock drifts, and v2 timestamps samples from the collector's clock at arrive-time while the
 device's own session boundaries come from the device. Over months the two diverge, and there is today no
-v2 mechanism that says "this session's device clock was 40 minutes behind". OSCAR's `drift` type with an
+v2 mechanism that says *this session's device clock was 40 minutes behind*. OSCAR's `drift` type with an
 intercept and rate is the answer to exactly that, and it is implemented. This is recorded as a **live
 gap in v2 relative to OSCAR**, not as a recommendation to copy the schema.
 

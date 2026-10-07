@@ -265,7 +265,7 @@ and vice versa?
 
 **T4 — Fidelity markers.** `summary_only`, `no_settings`, `events_loaded`, `enabled` on OSCAR sessions
 versus V2's degraded-mode specification. Map each OSCAR flag to a V2 equivalent or record its absence.
-Which store is better able to say "this session is incomplete, and here is in what way"?
+Which store is better able to say *this session is incomplete, and here is in what way*?
 
 **T5 — Import idempotence.** OSCAR skips an already-present night and counts it; V2 has dedup
 requirements. Compare the two models of re-import — what makes a night "the same night" in each, and

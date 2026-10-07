@@ -656,7 +656,7 @@ telling: OSCAR reports what it excluded by source, but not what it excluded for 
 
 **Re-import is idempotent per night.** `existingSleepNights` / `existingOxiNights` cause an
 already-present night to be skipped and counted in `skippedExisting`, and the release notes describe a
-separate check for "whether the SD card being imported is same as last time". Re-importing the same
+separate check for "whether SD card being imported is same as last time". Re-importing the same
 HealthKit export does not duplicate data.
 
 **One assumption is stated rather than verified** (`applehealth_loader.cpp:364`):
@@ -667,8 +667,9 @@ HealthKit export does not duplicate data.
 
 This is a belief about Apple's behaviour used to justify importing the newest night. Nothing enforces
 it. If Apple ever publishes a partial night, OSCAR will import it as complete. Compare with this
-project's rule that "missing data holds state; it never reassures" — under which the newest night would
-be marked provisional until closed. Recorded as an assumption in code, not a defect.
+project's rule that a missing signal holds state and never reassures — "A missing signal holds state;
+it never reassures and never escalates on its own" — under which the newest night would be marked
+provisional until closed. Recorded as an assumption in code, not a defect.
 
 ### 5.5 OSCAR refuses to print numbers it cannot measure
 
@@ -684,8 +685,9 @@ Three separate places, which together make a consistent pattern:
 
    A field was renamed and existing data migrated, because the old name asserted more than the machine
    measured. The AHI arithmetic was unchanged — only the claim about what the number *means* was
-   corrected. This is a textbook application of "an inference is never presented as a measurement", and
-   it is the closest philosophical match to this project found in any candidate.
+   corrected. It is a textbook application of this project's own rule — "Never clamp an out-of-range
+   value. Reject it, name the reason, quarantine it." — and it is the closest philosophical match to this
+   project found in any candidate.
 
 2. **`OHI=`/`CHI=` are printed only when the data exists.** From
    `Notes/specs/2026-08-06-central-obstructive-hypopnea-design.md`:
@@ -693,7 +695,7 @@ Three separate places, which together make a consistent pattern:
    > Printed report (§3.3) shows `OHI=`/`CHI=` only when the day actually has OH or CH data, rather than
    > printing `0.00` for every other device. `OAHI=`/`CAHI=` always show.
 
-   A `0.00` and "this device cannot report this" are different states, and OSCAR renders them
+   A `0.00` and a device that cannot report the value at all are different states, and OSCAR renders them
    differently.
 
 3. **Capability-gated channels.** The same spec keeps the single Hypopnea channel "for devices that do
@@ -816,7 +818,7 @@ Recorded so downstream work does not treat these as settled.
 2. **The leak defects may be fixed.** The review is dated 2026-04-16 and describes code as it stood then.
    The *method* (recomputed percentiles) was confirmed in the current tree; whether the gain-handling and
    time over-accumulation defects in the review's items C and D remain was **not** re-confirmed against
-   the current source. Treat X16 and §5.2's defect list as "reported by the vendor in April 2026",
+   the current source. Treat X16 and §5.2's defect list as the vendor's own report from April 2026,
    not as "present today".
 3. **The localised-CSV-header failure was not reproduced.** It follows from `tr()` on the header tokens,
    read in this commit. Untested.
@@ -832,7 +834,7 @@ Recorded so downstream work does not treat these as settled.
    or through a base-class interface, would have been missed.
 8. **Respironics key provenance was not investigated.** The keys are in the source; where they came from
    and their legal status were not examined, and no position is taken.
-9. **The "check whether the SD card is the same as last time" logic was not located in the tree.** The
+9. **The "Check whether SD card being imported is same as last time" logic was not located in the tree.** The
    release notes describe it; the Apple Health idempotence mechanism was found instead.
 10. **Whether v1's OSCAR-CSV import has ever been exercised against real OSCAR output is unknown.** The
     header correspondence is verified from both source trees; an end-to-end run was not performed, and no

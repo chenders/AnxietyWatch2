@@ -36,8 +36,9 @@ Three findings make OSCAR worth its own package even so:
 
 2. **A single codebase demonstrates three different invalid-data policies, all of them this project
    argues about.** The ResMed EDF loader substitutes the *previous sample* for an end-of-data sentinel
-   (`c = last`), with a comment saying this "stops false error values from being displayed". The much
-   newer Apple Health loader does the opposite: it rejects an out-of-range value, **names the reason**,
+   (`c = last`), with a comment saying that "this change stops false error values from deing displayed"
+   (the vendor's typo). The much newer Apple Health loader does the opposite: it rejects an out-of-range
+   value, **names the reason**,
    and skips it — `"skipping OxygenSaturation with out-of-range value %1"` — including an explicit
    comment that "0 and negatives are no-reading sentinels, not measurements". And the summary store
    writes the number **`0.0`** for absent oximetry, hiding it only at export with `NULLIF(col, 0)`. The
