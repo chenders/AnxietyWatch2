@@ -98,10 +98,16 @@ than a provenance-tagged stream.
   and no documented always-on service.
 - **Alarm path: none.** No alarm, no escalation, no caregiver alerting. Notification troubleshooting
   is about reminders not firing, not about missed physiological events.
-- **Missing-data semantics: not documented.** A support article ("Are blank entries incorporated into
-  insights?", "What happens to factors that I leave blank?") exists, which suggests the product makes
-  a deliberate choice about blanks, but the content was not retrieved in this pass. What is clear is
-  that there is no three-state "not measured" model: a day with no entry is simply absent.
+- **Missing-data semantics: documented, and they coerce.** Two support articles answer the question
+  directly, and this package retrieved them on 2026-10-06 for the quote-verification sweep. For
+  variable factors (little / moderate / a lot) the vendor distinguishes *none* from *blank*:
+  "you have the option to mark Factors as none (didn't happen) or leave them blank (excluded from the
+  data for correlations)". For binary factors (yes / no) it does not: "days left blank are assumed to
+  be 'no' i.e. the factor didn't happen as opposed to being blank. That is, blank binary Factors are
+  included in the data for correlations as 'didn't happen'." The vendor states it plans to add a blank
+  option for binary factors. This is the precise inverse of AnxietyWatch2's rule that invalid or
+  absent data contributes nothing: a day the user did not record is entered into the correlation as a
+  measured negative. It is recorded here as a **documented behaviour**, quoted, not as a defect.
 
 ## 7. Anxiety, mood, symptom, medication and subjective input
 
@@ -279,7 +285,8 @@ and a spreadsheet can stay free indefinitely; a user who wants the analysis in t
 | B20 | Public roadmap moved to Discord/feedback form | https://changemap.co/bearable-/bearable-roadmap/ | Bearable Ltd | undated | 2026-10-06 | Medium |
 
 **Sources that could not be retrieved:** the ScienceDirect article page itself (HTTP 403; metadata
-obtained via Crossref), and the contents of the blank-entry support articles. The `emoods.net`
+obtained via Crossref). The two blank-entry support articles were retrieved on 2026-10-06 during the
+quote-verification sweep and their content is now recorded in §6. The `emoods.net`
 comparison candidate was unreachable by DNS and is excluded from the shortlist.
 
 ## 16. Key similarities and differences versus AnxietyWatch
@@ -354,8 +361,10 @@ oximetry, PDF reporting or self-hosting, and it does not compete with AnxietyWat
   enter the correlation engine as outcomes, or only the fixed Bearable outcome set?
 - U3: How does the app behave when an imported metric is missing or stale for a given day — is a
   partially-covered day treated as "no data", as zero, or as a normal observation?
-- U4: What exactly does "Are blank entries incorporated into insights?" answer? Partially-retrieved
-  question; the answer determines whether blanks are excluded or treated as low/zero.
+- U4: **Resolved 2026-10-06.** Both blank-entry support articles were retrieved for the
+  quote-verification sweep. Answer: for *variable* factors, blank means excluded and *none* means it
+  did not happen; for *binary* factors there is no blank state, so a day left blank is correlated as
+  "didn't happen". Recorded in §6 with the vendor's own sentences.
 - U5: Is any statistical significance or confidence measure shown, or only effect direction and
   magnitude?
 - U6: What are the precise contents of the CSV export (raw events vs daily aggregates; timezone and

@@ -135,7 +135,7 @@ evidence labels.
 | Aircraft / environmental-noise attribution | — | — | — | — | **[Unresolved] in all three.** No product in this comparison addresses it; see §5.5 |
 | Correlation engine | Physiological correlation engine identifying which health metrics most influence anxiety `[v1]` | — | Quality gate → personal baseline → max-not-average fusion → tier machine `[v2t]` | Factor-vs-outcome comparison: ≥3 days with, ≥3 without, timing-aware; 1–7 day effect windows `[doc]` | Bearable's engine is broader in *inputs you can define* and narrower in *what it can conclude*. No confounder control — the vendor's own "acts of kindness" example shows a false attribution surfaced to the user `[doc]` |
 | Personal physiological baselines | Yes, rolling, compared to self not population `[v1]` | Baselines per registry types `[v2c]` | Personal baseline in the tier machine `[v2t]` | **No physiological baseline** | Central architectural difference |
-| Missing-data semantics | Three-state honesty: measured-good, measured-bad, **not measured**; never interpolated `[v1]`, enforced as a project invariant `[v2c]` | Yes `[v2c]` | Extends to fusion and tiers `[v2t]` | **Not documented**; blank-entry articles exist but their content was not retrieved `[unknown]` | Q3/Q4. This is the clearest philosophical gap |
+| Missing-data semantics | Three-state honesty: measured-good, measured-bad, **not measured**; never interpolated `[v1]`, enforced as a project invariant `[v2c]` | Yes `[v2c]` | Extends to fusion and tiers `[v2t]` | **Documented, and it coerces.** Blank *variable* factors are excluded and *none* is a separate value; blank *binary* factors "are included in the data for correlations as 'didn't happen'" `[doc]` (retrieved 2026-10-06) | This is the clearest philosophical gap, and it is now a quoted documented behaviour rather than an absence
 | AI / LLM analysis | Opt-in server-side Claude analysis over a chosen date range, from an admin page on your own server `[v1]` | Server-side analysis `[v2c]` | — | **None claimed.** Free tier explicitly tells you to export CSV and use ChatGPT yourself `[doc]` | Bearable has no AI feature; it hands you a file |
 | Clinical PDF report | Yes, first-class feature `[v1]` | — | — | **No.** PDF export is an outstanding community request; recommended workflow is screenshots + CSV `[doc]` | Largest functional gap vs v1 |
 | Export | JSON/CSV date-range export; clinical PDF `[v1]` | — | — | Full CSV export on the free tier; 3/6/all-time ranges; category filtering `[doc]` | Bearable's raw export is good and ungated |
@@ -177,8 +177,9 @@ use case, and it is exactly the case AnxietyWatch was built around.
 **Bearable:** you rate your sleep quality and quantity in the check-in. If you also connect Apple
 Health or Health Connect, sleep duration may arrive automatically. Then you use the comparison graph
 (rotate the phone) to plot sleep quality against factors, or the premium Factor Effect report to rank
-which factors correlated with better or worse sleep `[doc]`. The answer is: *"on days when I did X, my
-sleep rating averaged Y."* Timing is considered, so an evening factor is not wrongly matched to a
+which factors correlated with better or worse sleep `[doc]`. The report answers a question of the form
+*on days when I did X, my sleep rating averaged Y* — an illustration of the report's shape and this
+package's own wording, not a vendor sentence. Timing is considered, so an evening factor is not wrongly matched to a
 morning outcome `[doc]`. What Bearable cannot tell you is anything about the *night itself* — no
 staging, no respiratory events, no SpO₂ trace, no awakenings.
 
@@ -202,7 +203,7 @@ A user with sleep apnea who wants to connect therapy to next-day anxiety gets no
 at all — they would need a second app (OSCAR or SleepHQ) and to hold both in their head.
 
 AnxietyWatch v1: this is a headline feature — CPAP SD-card import with AHI, leak, usage, pressure and
-event breakdowns, and explicit "connect sleep apnea treatment to next-day anxiety" framing `[v1]`.
+event breakdowns, and explicit "connects sleep apnea treatment to next-day anxiety" framing `[v1]`.
 AnxietyWatch2 current: real-time AirSense 11 live monitoring over BLE `[v2c]`.
 
 **This is the sharpest single asymmetry in the comparison.** For an apnoeic anxiety patient,
@@ -234,7 +235,8 @@ clinician.
 **Nothing in this comparison addresses this**, and that is the honest finding. AnxietyWatch2's
 project material raises aircraft and environmental-noise attribution as an idea `[Unresolved]`, with no
 specified detector, no data source and no acceptance criteria. Bearable offers manual banded factors —
-you can hand-create "aircraft noise: none/some/lots" and correlate it with sleep, which is a crude but
+you can hand-create a banded factor (the example this package uses is *aircraft noise*, rated
+none / some / lots) and correlate it with sleep, which is a crude but
 real workaround, and the vendor even suggests a similar pattern for air-quality bands `[doc]`.
 AnxietyWatch v1 records environmental sound levels via HealthKit `[v1]`, which is a signal but not an
 attribution method.

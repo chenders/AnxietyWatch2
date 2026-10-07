@@ -181,8 +181,9 @@ Do not promise that correlation proves causation.
 ## Tone and claim discipline
 
 - Do not describe either project as a validated diagnostic, medical device, or emergency monitor.
-- Bearable's own medication guidance ("correlative and not causal ... do not make any decisions about
-  your medication using Effect On reports") is the correct register. Match or exceed it.
+- Bearable's own medication guidance ("because they're correlative and not causal we recommend not
+  making any decisions about your medication using Effect On reports in Bearable") is the correct
+  register. Match or exceed it.
 - AnxietyWatch's own warning is equally binding: it is experimental, not clinically validated, and
   **its alarm does not exist yet**.
 - Where AnxietyWatch2 is simply absent rather than better, say so. Bearable is a shipped product with

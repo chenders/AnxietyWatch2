@@ -144,10 +144,11 @@ observations about the **public surfaces**, kept deliberately separate from any 
 - The public website loads Google Tag Manager and Google Ads/DoubleClick endpoints. That is a
   website analytics/ads fact, **not** evidence about the app's telemetry, and the two must not be
   conflated.
-- The Play Store data-safety declaration is inconsistent with a naive reading of "we don't share data
-  with third parties": the vendor's privacy policy qualifies sharing as opt-in via integrations,
-  while the store declaration names Location and Personal info as potentially shared. Reconciling
-  these two statements is an unresolved question (U7 in the claims file).
+- The Play Store data-safety declaration is in tension with a naive reading of the vendor's own site:
+  "Bearable does not track or share any personal data with third party companies unless you
+  specifically choose to enable that option (e.g. with Google Fit or Apple Health)", while the store
+  declaration names Location and Personal info as potentially shared. Reconciling these two statements
+  is an unresolved question (U7 in the claims file).
 - The vendor's privacy policy is unusually explicit and specific — naming the ICO registration
   (`ZB189459`), the company number, the DPO contact, and deliberately not collecting name/age/sex/
   gender. This is a positive signal about documentation quality, not a security audit.
