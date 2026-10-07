@@ -327,8 +327,8 @@ to canonical arithmetic and inspectable.
    `PublicReadinessContributors` all make every contributor nullable with no `required` list.
    `ResilienceContributors` — the newest — requires all three (`sleep_recovery`, `daytime_recovery`,
    `stress`) and does not allow null on any of them. `[DOCUMENTED CONTRACT]` **That inconsistency is a
-   finding, not a nitpick**: the newest composite is the one that cannot represent "this contributor was not
-   measured", which is exactly the state the older models can express. Record it as an observation about the
+   finding, not a nitpick**: the newest composite is the one that cannot represent *this contributor was not
+   measured*, which is exactly the state the older models can express. Record it as an observation about the
    contract; do not infer the reason.
 3. **`temperature_deviation` vs `temperature_trend_deviation`.** Two number fields, both documented in
    degrees Celsius, with near-identical descriptions and **no stated difference** — and no absolute
@@ -603,8 +603,8 @@ stated as such. (5) **Multi-source collection**, where V2 is the only candidate 
 CPAP device's 17 native types.
 
 **Direct competition: none.** Oura is a consumer wellness ring with a cloud analysis pipeline; AnxietyWatch2
-is a self-hosted multi-source collector with a specified alarm path. They overlap in "sleep and physiology
-tracking" and diverge on nearly every architectural axis. **Partial competition** on the analysis layer.
+is a self-hosted multi-source collector with a specified alarm path. They overlap in sleep and physiology
+tracking and diverge on nearly every architectural axis. **Partial competition** on the analysis layer.
 **Complementarity** is real: a user could run both, and Oura's API is the kind of source V2's registry is
 built to accept.
 

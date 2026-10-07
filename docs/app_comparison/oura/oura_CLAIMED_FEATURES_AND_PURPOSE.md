@@ -110,8 +110,8 @@ Seven findings, in order of consequence for the comparison:
    This is the fourth independent arrival at V2's patterns in this package (after `oscar`'s session
    provenance, `nightscout`'s treatments grain and `empatica`'s regulatory record) and it is the closest
    match yet: **a consumer can compute a false-positive rate from a rejected detection because the rejected
-   detection was not discarded.** The honest framing is not "V2 has these properties and Oura does not";
-   it is **"both have them, and V2 enforces them where Oura documents them"** — Oura's tombstone is a
+   detection was not discarded.** The honest framing is not *V2 has these properties and Oura does not*;
+   it is **both have them, and V2 enforces them where Oura documents them** — Oura's tombstone is a
    value in a record that could have been omitted, and V2's is a schema-level rule with no alternative.
 
 **Also recorded:** a **free-to-the-developer but membership-gated-for-the-user** API (`403` means "the
@@ -266,7 +266,8 @@ describes a real-time overnight alert, and §11.7 records that the product expre
 - **$5.99 USD/month or $69.99 USD/annually**, before tax, US members (regional pricing applies)
 - **"FSA or HSA eligible"**
 - Free first month
-- Without a membership: "the ring and app **will still function**, but the insights, personal health data,
+- Without a membership: "your Oura Ring and Oura App will still function, but the insights, personal
+  health data, and benefits you receive will be much more limited"
   and benefits … much more limited"
 
 ### 5.2 The API is free to the developer and gated for the user — two different statements, both published
@@ -370,7 +371,7 @@ consumer can obtain pre-algorithm sensor data.
 - **A headline score can be absent while its record exists.** `PublicDailySleep.required` is
   `['id', 'contributors', 'day', 'timestamp']` — **`score` is not required and is typed nullable**. The
   same is true of `PublicDailyReadiness.score` and `PublicDailyActivity.score`. So the contract can say
-  "today's sleep record exists and today's sleep score is null". Recorded as a **positive**: the composite
+  *today's sleep record exists and today's sleep score is null*. Recorded as a **positive**: the composite
   is not forced to a number when it was not computed.
 - **Every contributor field is nullable except in the resilience model.** `PublicSleepContributors`,
   `PublicActivityContributors` and `PublicReadinessContributors` declare **no `required` list** and every
@@ -701,7 +702,7 @@ supplies an example string for each.
 the phase strings).
 
 **This is the one place where the API's missingness model does not hold**, and the finding is sharper than
-"the encoding cannot express a hole": Oura solved exactly this problem **in one of the three fields and not
+*the encoding cannot express a hole*: Oura solved exactly this problem **in one of the three fields and not
 the other two**, in the same contract, with no stated reason. Recorded as an intra-document inconsistency,
 and the `class_5_min` treatment is recorded as the correct pattern.
 
@@ -989,7 +990,7 @@ reason code (see §14.6 G12).
 non-negotiable — append-only with tombstones, reject-and-name-rather-than-clamp, and no-interpolation
 missingness — are **independently present in Oura's published contract**, and Oura's version of two of them
 is expressed in the *data* rather than in *guidance*. The comparison's honest framing is therefore not
-"V2 has these properties and Oura does not"; it is **"both systems have them, and V2 enforces them where
+*V2 has these properties and Oura does not*; it is **both systems have them, and V2 enforces them where
 Oura documents them"** — Oura's tombstone is a value in a record that could also have been omitted, and
 V2's is a schema-level requirement that has no alternative. `[INFERENCE]`.
 
@@ -1173,8 +1174,8 @@ it (§11.7). Against that, §11.6 records the one feature the vendor says **is**
 proportion of variance in one signal explained by another. It is **not** a percentage of measurements
 classified correctly, and it is not an "accuracy". The page's own qualifier says so, and the headline noun
 does not. The correct reading of "99% Heart Rate Accuracy / r² compared to ECG" is *"r² = 0.99 against
-ECG"* — a strong correlation between two signals, which is not the same claim as "99% of heart-rate
-readings are correct". **Both surfaces are quoted; the discrepancy is in the noun, and it is left
+ECG"* — a strong correlation between two signals, which is not the same claim as *99% of heart-rate
+readings are correct*. **Both surfaces are quoted; the discrepancy is in the noun, and it is left
 unresolved.** This is the sharpest available instance of the standing rule that a derived statistic must
 not be confusable with the quantity it summarises.
 
@@ -1242,8 +1243,8 @@ available here.
 
 ### 11.6 The one CE-marked feature, and the boundary the vendor draws around it
 
-`[PUBLIC CLAIM]` — Terms, section "**Regulated Features**" (the terms do **not** contain the string
-"Regulated Feature: Fertile Window"; an earlier draft quoted that as a section title, and it is corrected
+`[PUBLIC CLAIM]` — Terms, section "**Regulated Features**" (the earlier draft cited a section title,
+`Regulated Feature: Fertile Window`, which the Terms do not contain; corrected
 here):
 
 - **CE marked under MDR (EU) 2017/745**; legal manufacturer **Oura Health Oy**
@@ -1261,15 +1262,16 @@ a standalone seizure monitoring device"), stated by the vendor rather than found
 
 `[PUBLIC CLAIM]` — `ouraring.com/health-radar`:
 
-- **Blood Pressure Signals** — appears "only when patterns are detected"; 30-day view; guidance
+- **Blood Pressure Signals** — "appears only when Health Radar identifies patterns that may indicate
+  cardiovascular strain"; 30-day view; guidance
 - **Nighttime Breathing** — 30-day view of sleep-related breathing patterns; prompts further evaluation;
   **explicitly not a sleep-apnea diagnosis**
 - **Symptom Radar** — early alerts for respiratory illness, "sometimes before symptoms … are even felt"
 - **Counsel Health** — "Care is provided by **Counsel's licensed physicians, not by Oura**"; prescriptions;
   live in **43 US states** (not AR, DC, KS, MS, RI, WA, WV, WI); "**not for emergency care**"
-- The suite-level footnote: Health Radar is **general wellness only**, "not [intended] to diagnose, treat,
-  cure, mitigate, **monitor**, or prevent" any condition, and "**Oura Ring and Advisor are not medical
-  devices**"
+- The suite-level footnote: Health Radar is **general wellness only**, "not intended to diagnose, treat,
+  cure, mitigate, monitor, or prevent any disease, illness, or medical condition", and "**Oura Ring and
+  Advisor are not medical devices**"
 
 `[INFERENCE]` **Symptom Radar is the closest published analogue to AnxietyWatch2's CNS risk scoring** —
 an illness-onset signal derived from physiology, surfaced before the user would have noticed, with a
@@ -1384,8 +1386,8 @@ field that resolves it was missed on the first pass.
   Recorded as observed; **no claim is made about the paper.**
 - The article states "**more than 50 MDs and PhDs**" on staff and "**trained on … over 1,200 nights of
   clinical PSG data**" `[PUBLIC CLAIM]`.
-- "**inter-scorer agreement at around 83%**" and "**94–98% sleep detection, ~90–96% sleep/wake
-  agreement**" are the *unpacked* numbers behind the "95% Sleep Staging Accuracy" phrasing the article
+- "**inter-scorer agreement at around 83%**" and "**the ring correctly detected sleep 94–98% of the time,
+  with overall sleep/wake agreement of roughly 90–96%**" are the *unpacked* numbers behind the "95% Sleep Staging Accuracy" phrasing the article
   criticises in others — the article describes its own headline's basis in a footnote rather than in the
   headline. Recorded as consistent with §11.2's finding.
 - "**While Oura is not a medical device intended to diagnose medical conditions like sleep apnea or
@@ -1609,7 +1611,7 @@ this file's conclusion — the positive ones especially.*
 
 **Summary of O-1…O-95.** Every row was classified, and **the rows recorded as *not matching or not
 reconcilable* are enumerated in full rather than tallied** — the intermediate classes ("documented-only",
-"partial", "carries a qualifier the headline does not") admit judgement that a single number would
+"partial", *carries a qualifier the headline does not*) admit judgement that a single number would
 overstate. The rows that do not match or cannot be reconciled are **O-2, O-6, O-7, O-14, O-29, O-31,
 O-33, O-36, O-52, O-61, O-81, O-84, O-85, O-86, O-88, O-89, O-90, O-91, O-92, O-93** — **20 rows** — of
 which **five (O-84, O-85, O-86, O-88, O-89) are recorded as positives** for how Oura handles deletion,
@@ -1661,8 +1663,8 @@ vendor saying a resource does not exist.
 `<html id="__next_error__">` with roughly one character of rendered text, and **no readable
 "Page not found" body**. `[UNKNOWN] across all three.` An earlier draft of this file described them as
 **404s**, which was **wrong**: a 404 page is a readable statement by the vendor, and an error shell is a
-failed retrieval. The correction matters because "the page does not exist" and "the content could not be
-retrieved" support different conclusions, and only the second is supported by the bytes. The only genuine
+failed retrieval. The correction matters because "the page does not exist" and *the content could not be
+retrieved* support different conclusions, and only the second is supported by the bytes. The only genuine
 **404** rendering in the set is `/blog/white-papers/`, which returns a readable `404 / Page not found`
 page — and that page is **byte-identical** to `/blog/inside-the-ring-developing-ouras-latest-sleep-staging-algorithm/`
 (`f015cc76…`), i.e. two different URLs render the same 404 document. The searched-for "white papers" page
@@ -1783,19 +1785,22 @@ verbatim** and they are corrected in place:
 
 | # | Was quoted as | The vendor's actual words |
 |---|---|---|
-| 1 | "(ii) reverse engineer, disassemble, decompile, decode, **or adapt**" | "(ii) reverse engineer, disassemble, decompile, decode, **adapt, or otherwise attempt to derive or gain access to any Oura Apps component** of the Services, in whole or in part" |
-| 2 | "(ix) circumvent, bypass, **remove, deactivate, impair or otherwise defeat** … or other **protections**" | "(ix) circumvent, bypass, **disable, degrade, or otherwise interfere with** any access controls … or other **technical or contractual restrictions**" |
-| 3 | "(vi) **probe, scan or test the vulnerability of the Services or any system or network**" | "(vi) **attempt to** probe, scan, or test the vulnerability of any **ŌURA system or network or to breach security or authentication measures without express authorization**" |
-| 4 | "most commercial wrist-based wearables limited to 60-65% agreement" | "most commercial wrist-based wearables **are** limited to 60-65% agreement" |
-| 5 | "**the** latest sleep staging algorithm, released in 2023" | "**Oura's** latest sleep staging algorithm , released in 2023" |
-| 6 | "we meet HIPAA requirements where we handle **PHI** for a healthcare partner" | "**We also** meet HIPAA requirements where we handle **protected health information** for a healthcare partner" |
-| 7 | "lead study author **… was** Oura's Chief Scientist at the time" | "**Hannu Kinnunen,** lead study author **and** Oura's Chief Scientist at the time" |
-| 8 | "IDs: follow a consistent format" | "**IDs**: **Unique identifiers for specific data objects** follow a consistent format" |
-| 9 | Terms, "Regulated Feature: Fertile Window" (cited as a section title) | The Terms contain **no such string**; the section is titled "**Regulated Features**" and the feature is the "**Fertile Window**" *within Cycle Insights* |
+| 1 | `(ii) reverse engineer, disassemble, decompile, decode, or adapt` | "(ii) reverse engineer, disassemble, decompile, decode, **adapt, or otherwise attempt to derive or gain access to any Oura Apps component** of the Services, in whole or in part" |
+| 2 | `(ix) circumvent, bypass, remove, deactivate, impair or otherwise defeat … or other protections` | "(ix) circumvent, bypass, **disable, degrade, or otherwise interfere with** any access controls … or other **technical or contractual restrictions**" |
+| 3 | `(vi) probe, scan or test the vulnerability of the Services or any system or network` | "(vi) **attempt to** probe, scan, or test the vulnerability of any **ŌURA system or network or to breach security or authentication measures without express authorization**" |
+| 4 | `most commercial wrist-based wearables limited to 60-65% agreement` | "most commercial wrist-based wearables **are** limited to 60-65% agreement" |
+| 5 | `the latest sleep staging algorithm, released in 2023` | "**Oura's** latest sleep staging algorithm , released in 2023" |
+| 6 | `we meet HIPAA requirements where we handle PHI for a healthcare partner` | "**We also** meet HIPAA requirements where we handle **protected health information** for a healthcare partner" |
+| 7 | `lead study author … was Oura's Chief Scientist at the time` | "**Hannu Kinnunen,** lead study author **and** Oura's Chief Scientist at the time" |
+| 8 | `IDs: follow a consistent format` | "**IDs**: **Unique identifiers for specific data objects** follow a consistent format" |
+| 9 | `Terms, Regulated Feature: Fertile Window (cited as a section title)` | The Terms contain **no such string**; the section is titled "**Regulated Features**" and the feature is the "**Fertile Window**" *within Cycle Insights* |
+
+The first column records what this package itself previously wrote, in code spans, because those words are
+**not** the vendor's and the table's whole purpose is to keep them out of quotation marks.
 
 **Items 1–3 are the serious ones.** They are quotations of a **contract clause cited as the authorization
 basis for the Phase 2A decision**, and item 2 is worse than a truncation: it invented a verb sequence
-("remove, deactivate, impair or otherwise defeat") that appears nowhere in the Terms. A paraphrase wearing
+(`remove, deactivate, impair or otherwise defeat`) that appears nowhere in the Terms. A paraphrase wearing
 quotation marks is the specific failure mode the rest of this package is built to avoid, and it survived
 the first two passes because both passes checked **values** (hashes, counts, field types) and neither
 checked **words**.
@@ -1804,6 +1809,33 @@ checked **words**.
 required** step before commit, performed against the fetched bytes with the specification parsed as JSON —
 because the artifact that supplied three of these nine quotes was a JSON document whose escapes defeat
 naive text matching. **Nine of nine were found by machine comparison; none was found by re-reading.**
+
+**Retrospective sweep (recorded 2026-10-06).** The package-wide quote-verification sweep re-ran the check
+against every oura deliverable. Its first pass reported **29 non-verifying fragments** across the four
+files. **Seven of them were a defect in the checker, not in this file**, and fixing it resolved them
+outright: an OpenAPI description is prose stored with `\n` and `\uXXXX` escapes, the check decoded those
+escapes for `.js` but not for `.json`, and so a vendor sentence spanning two JSON lines could never match.
+**A quote checker's corpus and its escape handling are part of the evidence, not a convenience.**
+
+The remaining **22** fragments are counted and classified here, and every one is accounted for:
+
+| Class | Count | Treatment |
+|---|---|---|
+| Inexact quotation of a vendor surface | **5** | Corrected in place (membership sentence; blood-pressure trigger; Health Radar footnote; sleep-detection figure; the "wearables **are** limited" line) |
+| This package's own paraphrase wearing quotation marks | **9** | Converted to italics or plain prose |
+| This package's own superseded wording, quoted as part of a correction record | **8** | Left verbatim but moved out of quotation marks into code spans (§14.9) |
+
+The five corrected quotations are: the membership sentence ("your Oura Ring and Oura App will still
+function…" — the earlier text said "the ring and app"); the blood-pressure trigger (the page says "appears
+only when Health Radar identifies patterns that may indicate cardiovascular strain"); the Health Radar
+footnote ("**not intended** to diagnose, treat, cure, mitigate, monitor, or prevent any disease, illness, or
+medical condition" — the earlier text used a bracketed insertion and dropped the objects); the sleep
+detection figure ("the ring correctly detected sleep 94–98% of the time, with overall sleep/wake agreement
+of roughly 90–96%"); and "wrist-based wearables **are** limited to 60-65% agreement".
+
+The eight superseded-wording records are the rows of the §14.9 table together with the verb sequence in the
+prose beneath it; that table's first column is now rendered in code spans precisely because it is **not**
+the vendor's text and must not look like a quotation.
 
 ---
 
