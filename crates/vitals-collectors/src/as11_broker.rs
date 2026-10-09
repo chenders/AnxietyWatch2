@@ -74,7 +74,9 @@ impl AsyncRpcTransport for BrokerRpcTransport {
                 .await
                 .write_bounded(&tx_handle, &packet, GATT_WRITE_TIMEOUT)
                 .await
-                .map_err(|_| TransportError::BrokerWriteFailed)
+                .map_err(|error| TransportError::BrokerWriteFailed {
+                    detail: error.to_string(),
+                })
         })
     }
 }
@@ -104,10 +106,24 @@ impl Air11BleTransport {
         let target = credentials.target().to_owned();
         let socket = broker_socket.as_ref();
         let mut broker = connect_broker(socket, adapter_selector, &target).await?;
-        broker
-            .connect_device_bounded(target, OPERATION_TIMEOUT)
+        if let Err(error) = broker
+            .connect_device_bounded(target.clone(), OPERATION_TIMEOUT)
             .await
-            .map_err(BluezError::Broker)?;
+        {
+            if !error.is_device_missing() {
+                return Err(BluezError::Broker(error));
+            }
+            broker
+                .release("AirSense target missing before bounded discovery")
+                .await
+                .map_err(BluezError::Broker)?;
+            discover_target(socket, adapter_selector, &target).await?;
+            broker = connect_broker(socket, adapter_selector, &target).await?;
+            broker
+                .connect_device_bounded(target, OPERATION_TIMEOUT)
+                .await
+                .map_err(BluezError::Broker)?;
+        }
 
         let tx_handle = broker
             .resolve_characteristic_bounded(SERVICE_UUID, TX_UUID, OPERATION_TIMEOUT)
@@ -348,6 +364,35 @@ async fn connect_broker(
         .await
         .map_err(BluezError::Broker)?;
     Ok(broker)
+}
+
+async fn discover_target(
+    socket: &Path,
+    adapter_selector: &str,
+    target: &str,
+) -> Result<(), BluezError> {
+    let capabilities = CapabilitySet::empty().with(Capability::Discover);
+    let mut broker = BrokerClient::connect_source(
+        Source::AirSense,
+        socket,
+        adapter_selector,
+        target,
+        capabilities,
+    )
+    .await
+    .map_err(BluezError::Broker)?;
+    broker
+        .acquire_discovery(Priority::new(2), LEASE_DEADLINE, LEASE_HOLD, target)
+        .await
+        .map_err(BluezError::Broker)?;
+    broker
+        .discover_target_bounded(target, OPERATION_TIMEOUT)
+        .await
+        .map_err(BluezError::Broker)?;
+    broker
+        .release("AirSense bounded target discovery complete")
+        .await
+        .map_err(BluezError::Broker)
 }
 
 #[cfg(test)]

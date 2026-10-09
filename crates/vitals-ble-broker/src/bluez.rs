@@ -412,7 +412,13 @@ mod runtime {
     };
     use std::{collections::HashMap, future::Future, pin::Pin, sync::Arc, time::Duration};
 
-    use bluer::{Adapter, Address, Session, gatt::remote::Characteristic};
+    use bluer::{
+        Adapter, Address, Session,
+        gatt::{
+            WriteOp,
+            remote::{Characteristic, CharacteristicWriteRequest},
+        },
+    };
     use futures::{Stream, StreamExt};
     use tokio::sync::{Mutex, OwnedMutexGuard};
 
@@ -489,13 +495,50 @@ mod runtime {
 
         fn write<'a>(&'a self, payload: &'a [u8]) -> BackendFuture<'a, Result<(), OwnerError>> {
             Box::pin(async move {
-                self.write(payload)
-                    .await
-                    .map_err(|error| OwnerError::Bluez {
-                        class: classify_bluer_error(&error),
-                        operation: "write characteristic",
-                    })
+                let flags = self.flags().await.map_err(|error| OwnerError::Bluez {
+                    class: classify_bluer_error(&error),
+                    operation: "read write characteristic flags",
+                })?;
+                let op_type = if flags.write_without_response {
+                    WriteOp::Command
+                } else if flags.write {
+                    WriteOp::Request
+                } else {
+                    return Err(OwnerError::Bluez {
+                        class: BluezFailureClass::GattRejected,
+                        operation: "write characteristic unsupported",
+                    });
+                };
+                let mtu = self.mtu().await.map_err(|error| OwnerError::Bluez {
+                    class: classify_bluer_error(&error),
+                    operation: "read write characteristic MTU",
+                })?;
+                let chunks = write_chunks(payload, mtu).ok_or(OwnerError::Bluez {
+                    class: BluezFailureClass::GattRejected,
+                    operation: "write characteristic MTU is zero",
+                })?;
+                let request = CharacteristicWriteRequest {
+                    op_type,
+                    ..CharacteristicWriteRequest::default()
+                };
+                for chunk in chunks {
+                    self.write_ext(chunk, &request)
+                        .await
+                        .map_err(|error| OwnerError::Bluez {
+                            class: classify_bluer_error(&error),
+                            operation: "write characteristic",
+                        })?;
+                }
+                Ok(())
             })
+        }
+    }
+
+    fn write_chunks(payload: &[u8], mtu: usize) -> Option<std::slice::Chunks<'_, u8>> {
+        if mtu == 0 {
+            None
+        } else {
+            Some(payload.chunks(mtu))
         }
     }
 
@@ -929,7 +972,7 @@ mod runtime {
             characteristic: &<A::Device as DeviceIo>::Characteristic,
             payload: &[u8],
         ) -> Result<(), OwnerError> {
-            self.check_lease(lease, crate::lease::Intent::Gatt)?;
+            self.check_gatt_lease(lease)?;
             let guard = self.write_guard(address).await;
             let result = characteristic.write(payload).await;
             drop(guard);
@@ -1423,6 +1466,38 @@ mod runtime {
                 )
                 .await
                 .unwrap();
+        }
+
+        #[tokio::test]
+        async fn connect_lease_authorizes_gatt_write() {
+            let (adapter, _device, characteristic) = fake_adapter();
+            let mut owner = fake_owner(adapter);
+            let connect = fake_lease(
+                &mut owner,
+                crate::lease::Source::AirSense,
+                crate::lease::Intent::Connect,
+            );
+
+            owner
+                .write(
+                    &connect,
+                    Address::new([1, 2, 3, 4, 5, 6]),
+                    &characteristic,
+                    &[9, 8, 7],
+                )
+                .await
+                .unwrap();
+        }
+
+        #[test]
+        fn gatt_write_chunks_respect_characteristic_mtu() {
+            let payload = [0_u8; 10];
+            let sizes = write_chunks(&payload, 4)
+                .unwrap()
+                .map(<[u8]>::len)
+                .collect::<Vec<_>>();
+            assert_eq!(sizes, vec![4, 4, 2]);
+            assert!(write_chunks(&payload, 0).is_none());
         }
 
         #[tokio::test]

@@ -174,7 +174,10 @@ pub enum TransportError {
     /// The characteristic write failed.
     GattWriteFailed,
     /// The broker rejected or could not complete a typed write.
-    BrokerWriteFailed,
+    BrokerWriteFailed {
+        /// Named broker blocker without the GATT payload.
+        detail: String,
+    },
     /// The characteristic write exceeded its deadline.
     GattWriteDeadline,
     /// The MTU leaves no room for an ATT value.
@@ -200,7 +203,9 @@ impl core::fmt::Display for TransportError {
             Self::WaiterStatePoisoned => f.write_str("GATT waiter state poisoned"),
             Self::WriteNotPending => f.write_str("no GATT write acknowledgement is pending"),
             Self::GattWriteFailed => f.write_str("GATT write failed"),
-            Self::BrokerWriteFailed => f.write_str("broker GATT write failed"),
+            Self::BrokerWriteFailed { detail } => {
+                write!(f, "broker GATT write failed: {detail}")
+            }
             Self::GattWriteDeadline => f.write_str("GATT write deadline expired"),
             Self::MtuTooSmall { mtu } => write!(f, "negotiated MTU={mtu} is too small"),
             Self::Envelope(error) => write!(f, "envelope encryption failed: {error}"),
@@ -372,6 +377,17 @@ mod tests {
             encode_fig(0x0102, &payload),
             Err(TransportError::FigPayloadTooLarge { .. })
         ));
+    }
+
+    #[test]
+    fn broker_write_error_names_the_underlying_blocker() {
+        let error = TransportError::BrokerWriteFailed {
+            detail: "broker response blocked: expected=OperationAccepted".to_owned(),
+        };
+        assert_eq!(
+            error.to_string(),
+            "broker GATT write failed: broker response blocked: expected=OperationAccepted"
+        );
     }
 
     #[test]

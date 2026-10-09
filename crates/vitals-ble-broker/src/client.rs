@@ -5,7 +5,7 @@
 
 #![allow(clippy::missing_errors_doc)]
 
-use std::{fmt, path::Path, time::Duration};
+use std::{collections::VecDeque, fmt, path::Path, time::Duration};
 
 use crate::protocol::{
     Acquire, ClientMessage, Hello, Operation, OperationKind, ProtocolError, Release, ServerMessage,
@@ -46,6 +46,18 @@ pub enum ClientError {
         /// Named cancellation blocker.
         detail: String,
     },
+}
+
+impl ClientError {
+    /// Return whether the broker named a missing `BlueZ` device object.
+    #[must_use]
+    pub fn is_device_missing(&self) -> bool {
+        matches!(
+            self,
+            Self::Broker { code: 4, detail }
+                if detail == "DeviceMissing" || detail.ends_with(": DeviceMissing")
+        )
+    }
 }
 
 impl fmt::Display for ClientError {
@@ -135,6 +147,7 @@ pub struct BrokerClient {
     source: Source,
     lease: BrokerLease,
     next_operation: u64,
+    pending_events: VecDeque<BrokerEvent>,
 }
 
 impl BrokerClient {
@@ -186,6 +199,7 @@ impl BrokerClient {
                 expires_at: 0,
             },
             next_operation: 1,
+            pending_events: VecDeque::new(),
         };
         client
             .send(ClientMessage::Hello(Hello {
@@ -494,35 +508,16 @@ impl BrokerClient {
     ///
     /// Returns a named transport, protocol, or broker error.
     pub async fn next_event(&mut self) -> Result<Option<BrokerEvent>, ClientError> {
+        if let Some(event) = self.pending_events.pop_front() {
+            return Ok(Some(event));
+        }
         loop {
-            match self.receive().await? {
-                ServerMessage::Frame {
-                    payload,
-                    indication,
-                    ..
-                } => {
-                    return Ok(Some(BrokerEvent::Frame {
-                        payload,
-                        indication,
-                    }));
-                }
-                ServerMessage::DeviceState {
-                    connected,
-                    services_resolved,
-                    ..
-                } => {
-                    return Ok(Some(BrokerEvent::DeviceState {
-                        connected,
-                        services_resolved,
-                    }));
-                }
-                ServerMessage::Disconnected { reason, .. } => {
-                    return Ok(Some(BrokerEvent::Disconnected { reason }));
-                }
-                ServerMessage::Error { code, detail, .. } => {
-                    return Err(ClientError::Broker { code, detail });
-                }
-                _ => {}
+            let message = self.receive().await?;
+            if let Some(event) = Self::broker_event(message.clone()) {
+                return Ok(Some(event));
+            }
+            if let ServerMessage::Error { code, detail, .. } = message {
+                return Err(ClientError::Broker { code, detail });
             }
         }
     }
@@ -569,10 +564,46 @@ impl BrokerClient {
     }
 
     async fn expect_operation(&mut self, operation_id: u64) -> Result<(), ClientError> {
-        match self.receive().await? {
-            ServerMessage::OperationAccepted { operation_id: id } if id == operation_id => Ok(()),
-            ServerMessage::Error { code, detail, .. } => Err(ClientError::Broker { code, detail }),
-            _ => Err(ClientError::UnexpectedResponse("OperationAccepted")),
+        loop {
+            let message = self.receive().await?;
+            if let Some(event) = Self::broker_event(message.clone()) {
+                self.pending_events.push_back(event);
+                continue;
+            }
+            return match message {
+                ServerMessage::OperationAccepted { operation_id: id } if id == operation_id => {
+                    Ok(())
+                }
+                ServerMessage::Error { code, detail, .. } => {
+                    Err(ClientError::Broker { code, detail })
+                }
+                _ => Err(ClientError::UnexpectedResponse("OperationAccepted")),
+            };
+        }
+    }
+
+    fn broker_event(message: ServerMessage) -> Option<BrokerEvent> {
+        match message {
+            ServerMessage::Frame {
+                payload,
+                indication,
+                ..
+            } => Some(BrokerEvent::Frame {
+                payload,
+                indication,
+            }),
+            ServerMessage::DeviceState {
+                connected,
+                services_resolved,
+                ..
+            } => Some(BrokerEvent::DeviceState {
+                connected,
+                services_resolved,
+            }),
+            ServerMessage::Disconnected { reason, .. } => {
+                Some(BrokerEvent::Disconnected { reason })
+            }
+            _ => None,
         }
     }
 
@@ -675,6 +706,25 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn device_missing_classification_is_narrow() {
+        assert!(
+            ClientError::Broker {
+                code: 4,
+                detail: "BlueZ connect device failed: DeviceMissing".to_owned(),
+            }
+            .is_device_missing()
+        );
+        assert!(
+            !ClientError::Broker {
+                code: 4,
+                detail: "BlueZ connect device failed: AuthenticationFailed".to_owned(),
+            }
+            .is_device_missing()
+        );
+        assert!(!ClientError::UnexpectedResponse("DeviceMissing").is_device_missing());
+    }
+
     #[tokio::test]
     #[allow(clippy::expect_used)]
     async fn cancellation_send_failure_is_named() {
@@ -693,6 +743,7 @@ mod tests {
                 expires_at: 10,
             },
             next_operation: 1,
+            pending_events: VecDeque::new(),
         };
         assert!(matches!(
             client.cancel_after_deadline(1, "connect").await,
@@ -715,5 +766,55 @@ mod tests {
         )
         .await;
         assert!(matches!(result, Err(ClientError::Io(_))));
+    }
+
+    #[tokio::test]
+    #[allow(clippy::expect_used)]
+    async fn write_preserves_frame_that_arrives_before_acknowledgement() {
+        let (stream, mut peer) = tokio::net::UnixStream::pair().expect("unix pair");
+        let (reader, writer) = stream.into_split();
+        let mut client = BrokerClient {
+            reader,
+            writer,
+            source: Source::AirSense,
+            lease: BrokerLease {
+                id: LeaseId::new(7),
+                generation: Generation::new(1),
+                expires_at: 30,
+            },
+            next_operation: 1,
+            pending_events: VecDeque::new(),
+        };
+        let peer_task = tokio::spawn(async move {
+            let frame = crate::encode_server(&ServerMessage::Frame {
+                lease_id: LeaseId::new(7),
+                operation_id: 9,
+                indication: false,
+                payload: vec![0x41, 0x53, 0x31, 0x31],
+            })
+            .expect("frame encoding");
+            tokio::io::AsyncWriteExt::write_all(&mut peer, &frame)
+                .await
+                .expect("frame write");
+            let acknowledgement =
+                crate::encode_server(&ServerMessage::OperationAccepted { operation_id: 1 })
+                    .expect("acknowledgement encoding");
+            tokio::io::AsyncWriteExt::write_all(&mut peer, &acknowledgement)
+                .await
+                .expect("acknowledgement write");
+        });
+
+        client
+            .write_bounded("tx", &[1, 2, 3], Duration::from_secs(1))
+            .await
+            .expect("write acknowledgement");
+        assert_eq!(
+            client.next_event().await.expect("next event"),
+            Some(BrokerEvent::Frame {
+                payload: vec![0x41, 0x53, 0x31, 0x31],
+                indication: false,
+            })
+        );
+        peer_task.await.expect("peer task");
     }
 }
