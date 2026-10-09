@@ -1,5 +1,5 @@
-#![cfg(all(feature = "linux", target_os = "linux"))]
 #![allow(clippy::panic, missing_docs)]
+#![cfg(all(feature = "linux", target_os = "linux"))]
 
 use dbus::{
     arg::{RefArg, Variant},

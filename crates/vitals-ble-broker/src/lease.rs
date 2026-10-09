@@ -676,6 +676,7 @@ impl LeaseScheduler {
     }
 
     #[cfg(test)]
+    #[cfg(target_os = "linux")]
     pub(crate) fn insert_test_lease(&mut self, lease: Lease) {
         self.active.push(lease);
     }
@@ -947,6 +948,7 @@ impl LeaseScheduler {
 }
 
 #[cfg(test)]
+#[cfg(target_os = "linux")]
 pub(crate) fn test_lease(source: Source, intent: Intent) -> Lease {
     Lease {
         id: LeaseId::new(99),
