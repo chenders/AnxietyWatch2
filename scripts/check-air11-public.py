@@ -22,9 +22,9 @@ PRIVATE_DEVICE = re.compile(r"(?i)\b(?:SleepO2-2_|ResMed\s+)[0-9]{4,}\b")
 RAW_EXTENSIONS = {".pcap", ".pcapng", ".snoop", ".hci"}
 
 REQUIRED_SERVICE_LINES = (
-    "After=bluetooth.service vitalsd.service vitals-ble-broker.service",
-    "Requires=bluetooth.service vitalsd.service vitals-ble-broker.service",
-    "EnvironmentFile=/etc/vitals/ble-broker.env",
+    "After=bluetooth.service vitalsd.service vitals-ble-broker-air11.service",
+    "Requires=bluetooth.service vitalsd.service vitals-ble-broker-air11.service",
+    "EnvironmentFile=/etc/vitals/ble-broker-air11.env",
     "User=vitals",
     "Group=vitals",
     "UMask=0077",
@@ -55,6 +55,38 @@ REQUIRED_SERVICE_LINES = (
     "RestrictAddressFamilies=AF_UNIX AF_NETLINK AF_BLUETOOTH",
     "StateDirectory=vitals/air11",
     "RuntimeDirectory=vitals-air11",
+)
+REQUIRED_BROKER_SERVICE_LINES = (
+    "After=bluetooth.service vitalsd.service",
+    "Requires=bluetooth.service",
+    "Before=vitals-air11.service",
+    "ExecStart=/usr/local/bin/vitals-ble-broker",
+    "Restart=always",
+    "RestartSec=3",
+    "EnvironmentFile=/etc/vitals/ble-broker-air11.env",
+    "Environment=VITALS_BLE_BROKER_SOCKET=/run/vitals/ble-broker-air11.sock",
+    "Environment=VITALS_BLE_BROKER_METRICS_PATH=/run/vitals/ble-broker-air11.prom",
+    "User=vitals",
+    "Group=vitals",
+    "UMask=0007",
+    "OOMScoreAdjust=-1000",
+    "MemoryMin=64M",
+    "MemoryHigh=192M",
+    "NoNewPrivileges=true",
+    "PrivateTmp=true",
+    "ProtectSystem=strict",
+    "ReadWritePaths=/run/vitals",
+    "ProtectHome=true",
+    "RestrictAddressFamilies=AF_UNIX AF_NETLINK",
+    "RestrictNamespaces=true",
+    "LockPersonality=true",
+    "MemoryDenyWriteExecute=true",
+    "SystemCallArchitectures=native",
+)
+REQUIRED_INSTALLER_TOKENS = (
+    "broker-unit)",
+    'local_path="deploy/vitals-ble-broker-air11.service"',
+    'remote_path="/etc/systemd/system/vitals-ble-broker-air11.service"',
 )
 SKIP_PATHS = {"scripts/check-public-info.py"}
 
@@ -168,7 +200,7 @@ def service_findings(text: str) -> list[str]:
     findings.extend(
         f"unexpected service environment file: {line}"
         for line in environment_files
-        if line != "EnvironmentFile=/etc/vitals/ble-broker.env"
+        if line != "EnvironmentFile=/etc/vitals/ble-broker-air11.env"
     )
     exec_lines = [line for line in text.splitlines() if line.startswith("ExecStart=")]
     if len(exec_lines) != 1:
@@ -176,6 +208,25 @@ def service_findings(text: str) -> list[str]:
     elif "--credentials %d/air11-credentials.json" not in exec_lines[0]:
         findings.append("collector ExecStart does not use the private systemd credential path")
     return findings
+
+
+def broker_service_findings(text: str) -> list[str]:
+    findings = [
+        f"missing required AirSense broker directive: {line}"
+        for line in REQUIRED_BROKER_SERVICE_LINES
+        if line not in text
+    ]
+    if re.search(r"\bhci[0-9]+\b", text):
+        findings.append("AirSense broker service uses a runtime hci alias")
+    return findings
+
+
+def installer_findings(text: str) -> list[str]:
+    return [
+        f"AirSense installer missing fixed broker-unit token: {token}"
+        for token in REQUIRED_INSTALLER_TOKENS
+        if token not in text
+    ]
 
 
 def air11_transport_findings(root: Path) -> list[str]:
@@ -295,6 +346,8 @@ def acceptance_findings(root: Path) -> list[str]:
 
 def scan(root: Path) -> list[str]:
     service = root / "deploy/vitals-air11.service"
+    broker_service = root / "deploy/vitals-ble-broker-air11.service"
+    installer = root / "scripts/install-air11-pi-artifact.sh"
     console = root / "deploy/vitals-console.service"
     findings = acceptance_findings(root)
     findings.extend(air11_transport_findings(root))
@@ -302,6 +355,14 @@ def scan(root: Path) -> list[str]:
         findings.extend(service_findings(service.read_text()))
     except OSError as error:
         findings.append(f"cannot read {service.relative_to(root)}: {error}")
+    try:
+        findings.extend(broker_service_findings(broker_service.read_text()))
+    except OSError as error:
+        findings.append(f"cannot read {broker_service.relative_to(root)}: {error}")
+    try:
+        findings.extend(installer_findings(installer.read_text()))
+    except OSError as error:
+        findings.append(f"cannot read {installer.relative_to(root)}: {error}")
     try:
         findings.extend(console_service_findings(console.read_text()))
     except OSError as error:
@@ -317,6 +378,10 @@ def self_test(root: Path) -> None:
     service = good.read_text()
     if service_findings(service):
         raise AssertionError("checked-in AirSense service does not satisfy its own gate")
+    broker = root / "deploy/vitals-ble-broker-air11.service"
+    broker_text = broker.read_text()
+    if broker_service_findings(broker_text):
+        raise AssertionError("checked-in AirSense broker service does not satisfy its own gate")
     if air11_transport_findings(root):
         raise AssertionError("checked-in AirSense worker contains direct Bluetooth access")
     if not DIRECT_AIR11_TRANSPORT.search("bluer::Session hci0"):
@@ -324,6 +389,20 @@ def self_test(root: Path) -> None:
     mutated = service.replace("ProtectHome=true", "ProtectHome=false", 1)
     if not service_findings(mutated):
         raise AssertionError("service gate did not reject a weakened ProtectHome")
+    weakened_broker = broker_text.replace("ReadWritePaths=/run/vitals", "", 1)
+    if not broker_service_findings(weakened_broker):
+        raise AssertionError("broker service gate did not reject a missing writable runtime path")
+    installer = root / "scripts/install-air11-pi-artifact.sh"
+    installer_text = installer.read_text()
+    if installer_findings(installer_text):
+        raise AssertionError("AirSense installer does not satisfy its own broker-unit gate")
+    weakened_installer = installer_text.replace(
+        'remote_path="/etc/systemd/system/vitals-ble-broker-air11.service"',
+        'remote_path="/etc/systemd/system/vitals-ble-broker.service"',
+        1,
+    )
+    if not installer_findings(weakened_installer):
+        raise AssertionError("installer gate did not reject an unexpected broker-unit destination")
     console = root / "deploy/vitals-console.service"
     console_text = console.read_text()
     if console_service_findings(console_text):

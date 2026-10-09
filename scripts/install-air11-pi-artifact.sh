@@ -6,7 +6,7 @@
 set -Eeuo pipefail
 
 usage() {
-    printf 'Usage: PI_HOST=user@host PI_PATH=/remote/project %s <collector|onboard|unit>\n' "$0"
+    printf 'Usage: PI_HOST=user@host PI_PATH=/remote/project %s <collector|onboard|unit|broker-unit>\n' "$0"
 }
 
 artifact=${1:-}
@@ -26,6 +26,12 @@ case "$artifact" in
     unit)
         local_path="deploy/vitals-air11.service"
         remote_path="/etc/systemd/system/vitals-air11.service"
+        mode=0644
+        reload=1
+        ;;
+    broker-unit)
+        local_path="deploy/vitals-ble-broker-air11.service"
+        remote_path="/etc/systemd/system/vitals-ble-broker-air11.service"
         mode=0644
         reload=1
         ;;
