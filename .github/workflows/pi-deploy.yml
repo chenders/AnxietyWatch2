@@ -35,7 +35,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Check out the exact commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
           clean: true
@@ -93,7 +93,7 @@ jobs:
             "$stage/rollback-rehearsal.json" >/dev/null
 
       - name: Preserve staged dry-run tooling as a workflow artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: vitals-dry-run-${{ github.sha }}
           if-no-files-found: error
@@ -127,7 +127,7 @@ jobs:
       contents: read
     steps:
       - name: Download the exact staged release
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: vitals-dry-run-${{ github.sha }}
           path: ${{ runner.temp }}/vitals-deploy-artifact
