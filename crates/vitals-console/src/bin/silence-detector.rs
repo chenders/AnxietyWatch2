@@ -47,8 +47,17 @@ fn parse_state(value: &str) -> Option<HealthState> {
     }
 }
 
-fn evidence_from_attempts(attempts: &[AttemptRow]) -> Evidence {
+fn evidence_from_attempts(attempts: &[AttemptRow], latest_sample_epoch_s: Option<i64>) -> Evidence {
     let latest = attempts.first();
+    let latest_attempt_epoch_s = latest.map(|attempt| epoch(attempt.started_at));
+    let latest_attempt_observation_epoch_s = latest.map(|attempt| {
+        attempt
+            .finished_at
+            .map_or_else(|| epoch(attempt.started_at), epoch)
+    });
+    let sample_is_newer = latest_sample_epoch_s.is_some_and(|sample| {
+        latest_attempt_observation_epoch_s.is_none_or(|attempt| sample > attempt)
+    });
     let last_attempt_failure = latest.and_then(|attempt| {
         if attempt.finished_at.is_some() && attempt.outcome.as_deref() != Some("succeeded") {
             Some(
@@ -74,12 +83,22 @@ fn evidence_from_attempts(attempts: &[AttemptRow]) -> Evidence {
             })
         })?
     });
-    Evidence {
-        last_attempt_epoch_s: latest.map(|attempt| epoch(attempt.started_at)),
-        last_attempt_failure,
-        last_success_epoch_s,
-        inflight,
-        learned_interval_s: None,
+    if sample_is_newer {
+        Evidence {
+            last_attempt_epoch_s: latest_sample_epoch_s,
+            last_attempt_failure: None,
+            last_success_epoch_s: latest_sample_epoch_s.or(last_success_epoch_s),
+            inflight: None,
+            learned_interval_s: None,
+        }
+    } else {
+        Evidence {
+            last_attempt_epoch_s: latest_attempt_epoch_s,
+            last_attempt_failure,
+            last_success_epoch_s,
+            inflight,
+            learned_interval_s: None,
+        }
     }
 }
 
@@ -95,6 +114,20 @@ async fn load_attempts(
     .bind(source.id().to_string())
     .fetch_all(pool)
     .await
+}
+
+async fn load_latest_sample_epoch(
+    pool: &PgPool,
+    source: VitalsSource,
+) -> Result<Option<i64>, sqlx::Error> {
+    let latest: Option<DateTime<Utc>> = sqlx::query_scalar(
+        "SELECT timestamp FROM samples WHERE source = $1 ORDER BY timestamp DESC LIMIT 1",
+    )
+    .bind(source.id())
+    .fetch_optional(pool)
+    .await?
+    .flatten();
+    Ok(latest.map(epoch))
 }
 
 async fn load_saved_status(
@@ -198,7 +231,14 @@ async fn run_once(pool: &PgPool, detector: &mut SilenceDetector, now_epoch_s: i6
                 continue;
             }
         };
-        let evidence = evidence_from_attempts(&attempts);
+        let latest_sample_epoch_s = match load_latest_sample_epoch(pool, source).await {
+            Ok(latest) => latest,
+            Err(error) => {
+                eprintln!("silence detector: sample load failed for {source:?}: {error}");
+                continue;
+            }
+        };
+        let evidence = evidence_from_attempts(&attempts, latest_sample_epoch_s);
         let policy = SourcePolicy {
             source,
             declared_absent: saved.as_ref().is_some_and(|saved| saved.declared_absent),
@@ -219,6 +259,26 @@ async fn run_once(pool: &PgPool, detector: &mut SilenceDetector, now_epoch_s: i6
 
 fn database_url_is_supported(value: &str) -> bool {
     value.starts_with("postgres://") || value.starts_with("postgresql://")
+}
+
+const STATUS_SCHEMA_PROBE: &str = "SELECT subject, state, reason, reported_at, changed_at, next_repeat_at, transition_id, \
+            declared_absent, muted_until FROM status_observations WHERE FALSE";
+const NOTIFICATION_SCHEMA_PROBE: &str = "SELECT subject, transition_id, state, reason, emitted_at, suppressed_by_mute \
+     FROM notification_events WHERE FALSE";
+const SAMPLE_SCHEMA_PROBE: &str = "SELECT source, timestamp FROM samples WHERE FALSE";
+
+async fn validate_detector_schema(pool: &PgPool) -> Result<(), String> {
+    for (object, query) in [
+        ("status_observations detector columns", STATUS_SCHEMA_PROBE),
+        ("notification_events table", NOTIFICATION_SCHEMA_PROBE),
+        ("samples source timestamp", SAMPLE_SCHEMA_PROBE),
+    ] {
+        sqlx::query(query)
+            .execute(pool)
+            .await
+            .map_err(|error| format!("{object}: {error}"))?;
+    }
+    Ok(())
 }
 
 #[tokio::main]
@@ -243,6 +303,10 @@ async fn main() {
             std::process::exit(70);
         }
     };
+    if let Err(error) = validate_detector_schema(&pool).await {
+        eprintln!("silence detector blocked: schema validation failed: {error}");
+        std::process::exit(70);
+    }
     let mut detector = SilenceDetector::default();
     loop {
         let now_epoch_s = Utc::now().timestamp();
@@ -253,7 +317,11 @@ async fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::database_url_is_supported;
+    use super::{
+        AttemptRow, NOTIFICATION_SCHEMA_PROBE, SAMPLE_SCHEMA_PROBE, STATUS_SCHEMA_PROBE,
+        database_url_is_supported, evidence_from_attempts,
+    };
+    use chrono::{DateTime, TimeDelta, Utc};
     use sqlx::postgres::PgConnectOptions;
     use std::str::FromStr;
 
@@ -283,5 +351,72 @@ mod tests {
             "host=/var/run/postgresql user=vitals dbname=vitals"
         ));
         assert!(!database_url_is_supported(""));
+    }
+
+    #[test]
+    fn sample_evidence_supersedes_missing_source_attempts() {
+        let evidence = evidence_from_attempts(&[], Some(1_700_000_000));
+        assert_eq!(evidence.last_attempt_epoch_s, Some(1_700_000_000));
+        assert_eq!(evidence.last_success_epoch_s, Some(1_700_000_000));
+        assert!(evidence.last_attempt_failure.is_none());
+        assert!(evidence.inflight.is_none());
+    }
+
+    #[test]
+    fn failed_attempt_remains_authoritative_until_a_new_sample() {
+        let started_at = DateTime::<Utc>::UNIX_EPOCH + TimeDelta::seconds(1_700_000_000);
+        let attempt = AttemptRow {
+            started_at,
+            expected_duration_s: 30,
+            finished_at: Some(started_at + TimeDelta::seconds(10)),
+            outcome: Some("failed".to_string()),
+            detail: Some("connection failed".to_string()),
+        };
+        let evidence = evidence_from_attempts(&[attempt], Some(1_700_000_005));
+        assert_eq!(
+            evidence.last_attempt_failure.as_deref(),
+            Some("connection failed")
+        );
+        assert_eq!(evidence.last_attempt_epoch_s, Some(1_700_000_000));
+    }
+
+    #[test]
+    fn sample_after_failed_attempt_clears_the_failure() {
+        let attempt = AttemptRow {
+            started_at: DateTime::<Utc>::UNIX_EPOCH + TimeDelta::seconds(1_700_000_000),
+            expected_duration_s: 30,
+            finished_at: Some(DateTime::<Utc>::UNIX_EPOCH + TimeDelta::seconds(1_700_000_010)),
+            outcome: Some("failed".to_string()),
+            detail: Some("connection failed".to_string()),
+        };
+        let evidence = evidence_from_attempts(&[attempt], Some(1_700_000_020));
+        assert!(evidence.last_attempt_failure.is_none());
+        assert_eq!(evidence.last_attempt_epoch_s, Some(1_700_000_020));
+    }
+
+    #[test]
+    fn successful_attempt_remains_authoritative_until_a_new_sample() {
+        let attempt = AttemptRow {
+            started_at: DateTime::<Utc>::UNIX_EPOCH + TimeDelta::seconds(1_700_000_000),
+            expected_duration_s: 30,
+            finished_at: Some(DateTime::<Utc>::UNIX_EPOCH + TimeDelta::seconds(1_700_000_010)),
+            outcome: Some("succeeded".to_string()),
+            detail: None,
+        };
+        let evidence = evidence_from_attempts(&[attempt], Some(1_700_000_005));
+        assert_eq!(evidence.last_attempt_epoch_s, Some(1_700_000_000));
+        assert_eq!(evidence.last_success_epoch_s, Some(1_700_000_010));
+    }
+
+    #[test]
+    fn schema_probes_cover_persisted_detector_state() {
+        assert!(SAMPLE_SCHEMA_PROBE.contains("timestamp"));
+        assert!(STATUS_SCHEMA_PROBE.contains("subject"));
+        assert!(STATUS_SCHEMA_PROBE.contains("reported_at"));
+        assert!(STATUS_SCHEMA_PROBE.contains("next_repeat_at"));
+        assert!(STATUS_SCHEMA_PROBE.contains("muted_until"));
+        assert!(NOTIFICATION_SCHEMA_PROBE.contains("notification_events"));
+        assert!(NOTIFICATION_SCHEMA_PROBE.contains("emitted_at"));
+        assert!(NOTIFICATION_SCHEMA_PROBE.contains("suppressed_by_mute"));
     }
 }

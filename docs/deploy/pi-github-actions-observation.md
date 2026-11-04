@@ -1,16 +1,17 @@
 # Pi GitHub Actions delivery observation
 
-Status: **pending final Pi verification**. Per Amendment 18, T-R8 closes on finite evidence rather than elapsed time.
+Status: **GitHub deployment observation remains historical; manual silence-detector acceptance is complete**. Per Amendment 18, T-R8 closes on finite evidence rather than elapsed time.
 
 ## Delivery under observation
 
 - Host: `$PI_HOST`
-- Merged source SHA: `0b4fd8cf5169276a131b3525b0beb35e50cec346`
-- Activation workflow: [37111157822](https://github.com/chenders/AnxietyWatch2/actions/runs/37111157822)
+- Merged source SHA: `bbc4cf85dc4d1124261c61c0365d628ba36eb5ab`
+- Activation workflow: [37113131668](https://github.com/chenders/AnxietyWatch2/actions/runs/37113131668)
 - Target: the reviewed native release set and its selected systemd units
 - Activation receipt: `/var/lib/vitals/recovery/github-deploy-latest.json`
-- Result: `activated=true`, `preflight_ok=true`, `health_ok=true`, `spool_unchanged=true`,
-  `backup_gate=true`
+- Deployment receipt: `activated=true`, `preflight_ok=true`, `health_ok=true`,
+  `spool_unchanged=true`, `backup_gate=true`; the GitHub workflow did not perform the separate
+  operator-gated silence-detector schema/runtime acceptance recorded below
 - Backup label: `20261002-213707F`
 - Recovery gate spool fingerprint: `b94eb3f373c9fdaed40e624c3fe36a21d85694925078575ad0e99f3de73ea564`
 - Rollback release retained: `/usr/local/lib/vitals/releases/2c30fc371eb4b1e7eb47347d7a82d01eac6f3093`
@@ -33,9 +34,10 @@ The spool-seal timer was stopped only for gate creation and activation, then res
 result. The reviewed helper's content-based fingerprint remained stable across the controlled writer
 restart while preserving the one 37-byte pending segment.
 
-## Post-deploy evidence
+## Historical post-deploy evidence for GitHub Actions T-R8
 
-A read-only snapshot was taken at `2026-10-03T05:33:42Z`, after a scheduled spool-seal cycle:
+A read-only snapshot was taken at `2026-10-03T05:33:42Z`, after a scheduled spool-seal cycle. This
+snapshot predates the separate operator-gated T-LA detector acceptance below:
 
 - active release: `a60304ef952575d757af4bfc6a2c551ad251f990`
 - PostgreSQL: `ready`, schema `public`, `samples` present
@@ -72,10 +74,32 @@ attempt, workflow `37109378859`, failed closed in preflight because the download
 mode `0600` while the manifest required `0644`; no live release or service state was mutated. The
 next activation, workflow `37111157822`, exposed the systemd percent-specifier defect: the service
 entered an auto-restart loop and the helper's single transient health sample incorrectly passed.
-The service was stopped manually and remains disabled. The percent escaping and stable observation
-fixes are pending deployment and direct Pi verification across multiple 30-second cycles. No
-successful silence-detector evaluation or notification delivery is inferred from the earlier green
+The activation receipt for corrected release `bbc4cf85dc4d1124261c61c0365d628ba36eb5ab` was green,
+but it did not contain the new per-service `services` evidence: the workflow invoked the
+root-owned helper installed before that release, so the strengthened helper was not actually the
+live activation controller. Direct runtime observation then found the live database lacks the
+`status_observations.next_repeat_at` column and `notification_events` table required by the daemon;
+all persistence queries failed. The repository's `silence_detector` Sqitch change exists, while automatic schema migration from
+the GitHub activation workflow is intentionally a non-goal. The separate
+`silence-detector-live-activation` change now provides operator-gated migration and helper-refresh
+procedures; the service was stopped and remains disabled until those receipts and runtime evidence
+pass. No successful silence-detector evaluation or notification delivery is inferred from any green
 activation receipt.
+
+## T-LA-4/T-LA-5 manual detector acceptance
+
+On `2026-10-04`, the operator-gated schema procedure applied the migration and repaired the `vitals`
+role grants for `notification_events`; the helper refresh receipt and schema receipt both verified.
+The H10, BLE broker, and Bluetooth prerequisite units were started for acceptance. The detector initially
+found no `attempts.kind = 'source'` rows because collectors persist durable samples rather than console
+operation attempts. The detector was corrected to use the newest persisted sample as successful source
+evidence when it is newer than an attempt failure. After deploying that correction, the final runtime
+receipt recorded three 30-second cycles, 8 persisted status observations, 8 notification events, and
+unchanged `NRestarts=0`; `silence-detector` is now `enabled`, `active/running`, with `Result=success`
+and `ExecMainStatus=0`. The final deployed detector was built from source commit `8b169e3` and
+has SHA-256 `3597bcb9362cfb053852952fb38e1794a96f468cb63d881e5a3f4628e713d9ad` at
+`/usr/local/bin/silence-detector`; the protected runtime receipt remains at
+`/var/lib/vitals/recovery/silence-detector-runtime-latest.json`.
 
 ## Manual rollback rehearsal
 
@@ -87,6 +111,14 @@ At `2026-10-03T05:32:33Z`, the operator switched from release
 The rollback exit code was `0`; release, database, runner, socket, service, and spool checks passed.
 The deployed release was restored with exit code `0`, the same checks passed, spool identity remained
 unchanged, and the spool-seal timer was restored active.
+
+## Deferred device-by-device validation
+
+The optional EMAY, BP, and Air11 collectors are **not validated** because their devices were not
+present during this acceptance. When each device is available, validate it separately: confirm its
+inventory/configuration, start only its collector and dependencies, observe real device data and
+stable service health, verify persistence and unchanged restart counts, then enable that collector.
+Their current state is deferred/not measured, not healthy or validated.
 
 ## Operator decision
 
