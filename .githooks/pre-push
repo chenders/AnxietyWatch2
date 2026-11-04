@@ -32,6 +32,10 @@ fi
 COMMITS="$(git rev-list "$RANGE" 2>/dev/null || echo '')"
 [[ -z "$COMMITS" ]] && { ok "nothing to push"; exit 0; }
 
+# The refs being pushed, read once. Gate 1 needs them, and gate 3c needs the
+# per-ref range so it inspects only the commits this push actually publishes.
+PUSH_INPUT="$(cat)"
+
 printf '\n── pre-push gates ──\n'
 
 # Scan every tracked file, not only this push's diff. Historical setup details
@@ -54,7 +58,7 @@ fi
 while read -r _ _ remote_ref _; do
   [[ "$remote_ref" == "refs/heads/main" ]] && \
     fail "push targets refs/heads/main. Open a PR instead; merges happen on GitHub."
-done < <(cat)
+done <<<"$PUSH_INPUT"
 
 # ── 2. secrets ────────────────────────────────────────────────────────────────
 # Not a general scanner — these are the shapes that have actually shown up.
@@ -64,7 +68,13 @@ if [[ -n "$ADDED" ]]; then
   if grep -qE '(API_KEY|SECRET|PASSWORD|TOKEN|MASTER_KEY)[[:space:]]*[:=][[:space:]]*["'"'"']?[A-Za-z0-9_\-]{16,}' <<<"$ADDED"; then
     fail "a credential value appears in the diff"
   fi
-  grep -qE -- 'sk-[A-Za-z0-9_-]{20,}'                 <<<"$ADDED" && fail "an sk- API key appears in the diff"
+  # The key must start a token. Without the leading boundary the pattern also matches the
+  # tail of an ordinary hyphenated word, which blocked a legitimate push: an Intercom help
+  # article slug quoted in candidate 11's claim ledger ends `...-ask-you-to-record-your-
+  # symptoms-once-a-day`, and a 20-plus-character run inside that slug begins with the two
+  # letters `sk` followed by a hyphen. A real key is preceded by whitespace, a quote, `=`,
+  # `:` or line start — never by an alphanumeric character.
+  grep -qE -- '(^|[^A-Za-z0-9])sk-[A-Za-z0-9_-]{20,}' <<<"$ADDED" && fail "an sk- API key appears in the diff"
   # `--` is required: the pattern starts with dashes and grep would otherwise
   # parse it as options, error out, match nothing, and silently pass. A gate
   # that cannot fail verifies nothing.
@@ -131,6 +141,23 @@ if [[ -n "$ADDED" ]]; then
     warn "no .githooks/pii-denylist.local.txt — personal-term checking is off"
   fi
 fi
+
+# ── 3c. the comparison package stays off the remote ───────────────────────────
+# docs/app_comparison/ holds third-party quotation and unpublished analysis. The
+# owner's instruction is that it is never committed and never pushed. It lives in
+# a separate local-only repository (see docs/app_comparison/LOCAL-ONLY.md) and the
+# path is gitignored here. `.gitignore` only stops an ordinary `git add`, so this
+# gate refuses the push. It checks the per-ref range, not origin/main..HEAD, so a
+# branch that already carries the package in its history stays pushable for other
+# work while no new comparison content can leave.
+while read -r _ local_sha _ remote_sha; do
+  case "$local_sha" in '' | 0000000000000000000000000000000000000000) continue ;; esac
+  if [[ "$remote_sha" =~ ^0+$ ]]; then REF_RANGE="$REMOTE_HEAD..$local_sha"; else REF_RANGE="$remote_sha..$local_sha"; fi
+  PKG_CHANGED="$(git diff --name-only "$REF_RANGE" -- docs/app_comparison 2>/dev/null | head -20 || true)"
+  if [[ -n "$PKG_CHANGED" ]]; then
+    fail "this push publishes docs/app_comparison, which must never reach the remote:"$'\n'"$PKG_CHANGED"$'\n'"   It is a local-only repository. Commit it there instead:"$'\n'"     git -C docs/app_comparison add -A && git -C docs/app_comparison commit -m '...'"
+  fi
+done <<<"$PUSH_INPUT"
 
 # ── 4. build junk ─────────────────────────────────────────────────────────────
 JUNK="$(git diff "$RANGE" --name-only --diff-filter=ACM | grep -E '(^|/)(a\.out|test_quick\.c|core|.*\.o|.*\.gcda|.*\.gcno)$' || true)"
