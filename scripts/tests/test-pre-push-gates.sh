@@ -176,6 +176,28 @@ git -C "$d" rm -q side-device.md
 git -C "$d" commit -qm 'remove the sensor note'
 assert_blocked "$d" 'secret merged in from a side branch is caught' 'a full device address appears'
 
+# 8. A guard that fails closed must say where. Under per-commit scanning the
+#    offending content is usually absent from the working tree — commit 12 added
+#    it and commit 40 took it out — so "appears in the diff" leaves the
+#    developer with nothing to grep for and no commit to rewrite. The message
+#    has to name the commit that introduced it.
+d="$(make_repo)"
+printf 'API_%s = "%s"\n' 'KEY' 'abcdefghij0123456789' > "$d/service.conf"
+commit_in "$d" 'add service config' service.conf
+offender="$(git -C "$d" rev-parse HEAD)"
+printf 'API_%s = ""\n' 'KEY' > "$d/service.conf"
+commit_in "$d" 'drop the inline value' service.conf
+assert_blocked "$d" 'the blocked message names the offending commit' "${offender:0:12}"
+
+# 9. One line carrying both a documented placeholder and a real address must
+#    still fail on the real one. The extraction is per line for this reason: a
+#    `grep -v` over the whole blob would discard the line for containing the
+#    placeholder and let the real address through.
+d="$(make_repo)"
+printf 'example %s vs live %s:%s\n' 'AA:BB:CC:DD:EE:FF' '11:22:33' '44:55:66' > "$d/mixed.md"
+commit_in "$d" 'document both addresses' mixed.md
+assert_blocked "$d" 'a real address beside a placeholder still fails' 'a full device address appears'
+
 printf '\n%s passed, %s failed\n' "$PASSED" "$FAILED"
 (( FAILED == 0 )) || exit 1
 printf 'pre-push gate regressions passed\n'
