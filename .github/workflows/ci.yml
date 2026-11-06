@@ -29,6 +29,10 @@ jobs:
           python3 scripts/check-air11-admin-sql.py --self-test
           bash -n scripts/air11-pi-acceptance.sh
           scripts/air11-pi-acceptance.sh --help
+      - name: Pre-push exposure gates inspect every commit
+        run: |
+          bash -n .githooks/pre-push
+          bash scripts/tests/test-pre-push-gates.sh
 
   h10-graph-performance:
     runs-on: ubuntu-latest

@@ -98,5 +98,5 @@ mis-scoped. Say that rather than grinding.
 - Update `- [ ]` → `- [x]` in `openspec/changes/*/tasks.md` **only** after running that task's
   Verify command yourself and seeing exit 0.
 - Record scope deltas and deferred findings under `## Implementation notes`.
-- Merge with `gh pr merge --squash --delete-branch`, then remove the worktree:
+- Merge with `gh pr merge --merge --delete-branch`, then remove the worktree:
   `git worktree remove ../aw2-<task>`.
