@@ -46,23 +46,40 @@ COMMITS="$(git rev-list "$RANGE" 2>/dev/null || echo '')"
 # A blob survives deletion. The only cheap moment is still before the push.
 EMPTY_TREE="$(git hash-object -t tree /dev/null)"
 
-# Added lines introduced by any single commit in this push. Args are pathspecs.
+# Added lines introduced by any single commit in this push, each prefixed with
+# the short sha of the commit that introduced it. Args are pathspecs.
+#
+# The prefix is what makes a failure actionable. The offending content is
+# usually gone from the working tree — commit 12 added it, commit 40 took it
+# out — so "appears in the diff" would send the developer grepping for
+# something that is not there, with no commit to rebase onto. None of the gate
+# patterns below are anchored with ^ in a way the prefix disturbs.
 added_lines() {
   local c
   for c in $COMMITS; do
-    if git rev-parse -q --verify "${c}^2" >/dev/null 2>&1; then
-      # Merge: --cc reports only hunks differing from every parent, i.e. the
-      # conflict resolution. Content that merely arrived through the merge is
-      # already covered by the commit that introduced it, or is already on the
-      # remote — reporting it again would block pushes over content that is
-      # not this branch's doing.
-      git diff-tree --cc --no-commit-id -U0 "$c" -- "$@"
-    elif git rev-parse -q --verify "${c}^1" >/dev/null 2>&1; then
-      git diff --diff-filter=ACM -U0 "${c}^1" "$c" -- "$@"
-    else
-      git diff --diff-filter=ACM -U0 "$EMPTY_TREE" "$c" -- "$@"
-    fi
-  done | grep '^+' | grep -v '^+++' || true
+    {
+      if git rev-parse -q --verify "${c}^2" >/dev/null 2>&1; then
+        # Merge: --cc reports only hunks differing from every parent, i.e. the
+        # conflict resolution. Content that merely arrived through the merge is
+        # already covered by the commit that introduced it, or is already on the
+        # remote — reporting it again would block pushes over content that is
+        # not this branch's doing.
+        git diff-tree --cc --no-commit-id -U0 "$c" -- "$@"
+      elif git rev-parse -q --verify "${c}^1" >/dev/null 2>&1; then
+        git diff --diff-filter=ACM -U0 "${c}^1" "$c" -- "$@"
+      else
+        git diff --diff-filter=ACM -U0 "$EMPTY_TREE" "$c" -- "$@"
+      fi
+    } | grep '^+' | grep -v '^+++' | sed "s|^|${c:0:12} |"
+  done
+  return 0
+}
+
+# Short shas of the commits whose added lines match an extended regex, as a
+# single space-separated string. Empty when nothing matches. `--` because
+# several of the patterns start with a dash.
+offending_commits() {  # regex, added-lines
+  grep -E -- "$1" <<<"$2" | cut -d' ' -f1 | sort -u | tr '\n' ' ' || true
 }
 
 # Paths added, copied or modified by any single commit in this push, deduped.
@@ -112,29 +129,30 @@ done <<<"$PUSH_INPUT"
 ADDED="$(added_lines)"
 if [[ -n "$ADDED" ]]; then
   # A key with an actual value. Empty assignments (VAR=) are fine and common.
-  if grep -qE '(API_KEY|SECRET|PASSWORD|TOKEN|MASTER_KEY)[[:space:]]*[:=][[:space:]]*["'"'"']?[A-Za-z0-9_\-]{16,}' <<<"$ADDED"; then
-    fail "a credential value appears in the diff"
-  fi
+  HIT="$(offending_commits '(API_KEY|SECRET|PASSWORD|TOKEN|MASTER_KEY)[[:space:]]*[:=][[:space:]]*["'"'"']?[A-Za-z0-9_\-]{16,}' "$ADDED")"
+  [[ -n "${HIT// /}" ]] && fail "a credential value appears in commit(s): ${HIT% }"
   # The key must start a token. Without the leading boundary the pattern also matches the
   # tail of an ordinary hyphenated word, which blocked a legitimate push: an Intercom help
   # article slug quoted in candidate 11's claim ledger ends `...-ask-you-to-record-your-
   # symptoms-once-a-day`, and a 20-plus-character run inside that slug begins with the two
   # letters `sk` followed by a hyphen. A real key is preceded by whitespace, a quote, `=`,
   # `:` or line start — never by an alphanumeric character.
-  grep -qE -- '(^|[^A-Za-z0-9])sk-[A-Za-z0-9_-]{20,}' <<<"$ADDED" && fail "an sk- API key appears in the diff"
+  HIT="$(offending_commits '(^|[^A-Za-z0-9])sk-[A-Za-z0-9_-]{20,}' "$ADDED")"
+  [[ -n "${HIT// /}" ]] && fail "an sk- API key appears in commit(s): ${HIT% }"
   # `--` is required: the pattern starts with dashes and grep would otherwise
   # parse it as options, error out, match nothing, and silently pass. A gate
   # that cannot fail verifies nothing.
-  grep -qE -- '-----BEGIN [A-Z ]*PRIVATE KEY-----'    <<<"$ADDED" && fail "a private key appears in the diff"
+  HIT="$(offending_commits '-----BEGIN [A-Z ]*PRIVATE KEY-----' "$ADDED")"
+  [[ -n "${HIT// /}" ]] && fail "a private key appears in commit(s): ${HIT% }"
   # Phone numbers outside the reserved fictional range.
   # Checked line-by-line: a diff containing both a real number and a fictional
   # 555-01xx number must not let the real one through because the second grep
   # matches on the full-text. grep -v first removes fictional lines, then
   # checks whether any phone-shaped string remains.
-  if grep -E '\b(\(?[0-9]{3}\)?[ .-]?)[0-9]{3}[ .-][0-9]{4}\b' <<<"$ADDED" \
-       | grep -qvE '555-01[0-9]{2}'; then
-    warn "a phone-number-shaped string is in the diff — use 555-0100..555-0199"
-  fi
+  PHONE_HIT="$(grep -E '\b(\(?[0-9]{3}\)?[ .-]?)[0-9]{3}[ .-][0-9]{4}\b' <<<"$ADDED" \
+                | grep -vE '555-01[0-9]{2}' | cut -d' ' -f1 | sort -u | tr '\n' ' ' || true)"
+  [[ -n "${PHONE_HIT// /}" ]] && \
+    warn "a phone-number-shaped string appears in commit(s): ${PHONE_HIT% } — use 555-0100..555-0199"
 fi
 
 # ── 3. capture artifacts ──────────────────────────────────────────────────────
@@ -165,10 +183,21 @@ if [[ -n "$ADDED" ]]; then
   # AA:BB:CC:DD:EE:FF example. Redact to the vendor OUI — it is rediscoverable
   # with `btmgmt find` in seconds, so keeping it buys nothing.
   DEVICE_ADDED="$(added_lines . ':(exclude)scripts/check-public-info.py')"
-  if grep -oiE '\b([0-9A-F]{2}:){5}[0-9A-F]{2}\b' <<<"$DEVICE_ADDED" \
-       | grep -qviE 'XX|AA:BB:CC:DD:EE:(FF|FE)'; then
-    fail "a full device address appears in the diff — redact to the OUI (00:11:22:XX:XX:XX)"
-  fi
+  # Extraction runs per line, not over the whole blob. A line carrying both a
+  # documented placeholder and a real address must still fail on the real one —
+  # the same hazard the phone check above spells out. `${line#* }` drops the
+  # commit prefix before matching so the sha cannot contribute octets.
+  DEVICE_HIT="$(
+    while IFS= read -r line; do
+      [[ -z "$line" ]] && continue
+      if grep -oiE '\b([0-9A-F]{2}:){5}[0-9A-F]{2}\b' <<<"${line#* }" \
+           | grep -qviE 'XX|AA:BB:CC:DD:EE:(FF|FE)'; then
+        printf '%s\n' "${line%% *}"
+      fi
+    done <<<"$DEVICE_ADDED" | sort -u | tr '\n' ' '
+  )"
+  [[ -n "${DEVICE_HIT// /}" ]] && \
+    fail "a full device address appears in commit(s): ${DEVICE_HIT% } — redact to the OUI (00:11:22:XX:XX:XX)"
 
   # A personal denylist that the public repo must never contain: real names,
   # street addresses, provider names, account identifiers. Kept in a gitignored
@@ -178,8 +207,9 @@ if [[ -n "$ADDED" ]]; then
   if [[ -r "$DENY" ]]; then
     while IFS= read -r term; do
       [[ -z "$term" || "$term" == \#* ]] && continue
-      if grep -qiF -- "$term" <<<"$ADDED"; then
-        fail "a denylisted personal term appears in the diff: ${term:0:2}$(printf '%*s' $(( ${#term} - 2 )) '' | tr ' ' '*')"
+      TERM_HIT="$(grep -iF -- "$term" <<<"$ADDED" | cut -d' ' -f1 | sort -u | tr '\n' ' ' || true)"
+      if [[ -n "${TERM_HIT// /}" ]]; then
+        fail "a denylisted personal term appears in commit(s) ${TERM_HIT% }: ${term:0:2}$(printf '%*s' $(( ${#term} - 2 )) '' | tr ' ' '*')"
       fi
     done < "$DENY"
   else
