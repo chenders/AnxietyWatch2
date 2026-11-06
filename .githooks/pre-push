@@ -32,6 +32,53 @@ fi
 COMMITS="$(git rev-list "$RANGE" 2>/dev/null || echo '')"
 [[ -z "$COMMITS" ]] && { ok "nothing to push"; exit 0; }
 
+# ── per-commit content scanning ───────────────────────────────────────────────
+# The exposure gates below ask "did this push ever introduce X", not "is X in
+# the final tree". They used to key off `git diff "$RANGE"`, a two-dot diff
+# between the two endpoint trees — so a branch that added a real device address
+# in commit 12 and redacted it in commit 40 netted to zero and passed the gate,
+# while the address stayed in that branch's history. Squash-merge was silently
+# containing the damage: the dirty commits never became ancestors of main and
+# the branch was deleted on merge. Under merge commits they do become permanent
+# ancestors, reachable from main in every clone, so each commit is inspected on
+# its own and the results unioned.
+#
+# A blob survives deletion. The only cheap moment is still before the push.
+EMPTY_TREE="$(git hash-object -t tree /dev/null)"
+
+# Added lines introduced by any single commit in this push. Args are pathspecs.
+added_lines() {
+  local c
+  for c in $COMMITS; do
+    if git rev-parse -q --verify "${c}^2" >/dev/null 2>&1; then
+      # Merge: --cc reports only hunks differing from every parent, i.e. the
+      # conflict resolution. Content that merely arrived through the merge is
+      # already covered by the commit that introduced it, or is already on the
+      # remote — reporting it again would block pushes over content that is
+      # not this branch's doing.
+      git diff-tree --cc --no-commit-id -U0 "$c" -- "$@"
+    elif git rev-parse -q --verify "${c}^1" >/dev/null 2>&1; then
+      git diff --diff-filter=ACM -U0 "${c}^1" "$c" -- "$@"
+    else
+      git diff --diff-filter=ACM -U0 "$EMPTY_TREE" "$c" -- "$@"
+    fi
+  done | grep '^+' | grep -v '^+++' || true
+}
+
+# Paths added, copied or modified by any single commit in this push, deduped.
+touched_paths() {
+  local c
+  for c in $COMMITS; do
+    if git rev-parse -q --verify "${c}^2" >/dev/null 2>&1; then
+      git diff-tree --cc --no-commit-id --name-only "$c" -- "$@"
+    elif git rev-parse -q --verify "${c}^1" >/dev/null 2>&1; then
+      git diff --diff-filter=ACM --name-only "${c}^1" "$c" -- "$@"
+    else
+      git diff --diff-filter=ACM --name-only "$EMPTY_TREE" "$c" -- "$@"
+    fi
+  done | sort -u
+}
+
 # The refs being pushed, read once. Gate 1 needs them, and gate 3c needs the
 # per-ref range so it inspects only the commits this push actually publishes.
 PUSH_INPUT="$(cat)"
@@ -54,7 +101,7 @@ fi
 # Gate on the REMOTE ref, not the local branch name. Checking the local branch
 # leaves a hole: `git push origin HEAD:main` or `git push origin feature:main`
 # from any branch targets refs/heads/main and would sail through. Merges happen
-# via squash-merge on GitHub, so nothing legitimate ever pushes to main.
+# through the merge button on GitHub, so nothing legitimate ever pushes to main.
 while read -r _ _ remote_ref _; do
   [[ "$remote_ref" == "refs/heads/main" ]] && \
     fail "push targets refs/heads/main. Open a PR instead; merges happen on GitHub."
@@ -62,7 +109,7 @@ done <<<"$PUSH_INPUT"
 
 # ── 2. secrets ────────────────────────────────────────────────────────────────
 # Not a general scanner — these are the shapes that have actually shown up.
-ADDED="$(git diff "$RANGE" --diff-filter=ACM -U0 | grep '^+' | grep -v '^+++' || true)"
+ADDED="$(added_lines)"
 if [[ -n "$ADDED" ]]; then
   # A key with an actual value. Empty assignments (VAR=) are fine and common.
   if grep -qE '(API_KEY|SECRET|PASSWORD|TOKEN|MASTER_KEY)[[:space:]]*[:=][[:space:]]*["'"'"']?[A-Za-z0-9_\-]{16,}' <<<"$ADDED"; then
@@ -93,7 +140,7 @@ fi
 # ── 3. capture artifacts ──────────────────────────────────────────────────────
 # These can carry live authenticated-session data. In the predecessor repo one of
 # these landing in history required a rewrite to remove.
-BADFILES="$(git diff "$RANGE" --name-only --diff-filter=ACM | grep -iE '\.(har|pcap|pcapng)$|network.*\.txt$|\.playwright-mcp/' || true)"
+BADFILES="$(touched_paths | grep -iE '\.(har|pcap|pcapng)$|network.*\.txt$|\.playwright-mcp/' || true)"
 [[ -n "$BADFILES" ]] && fail "capture artifact staged:"$'\n'"$BADFILES"
 
 # ── 3b. PHI and device identifiers ────────────────────────────────────────────
@@ -108,7 +155,7 @@ BADFILES="$(git diff "$RANGE" --name-only --diff-filter=ACM | grep -iE '\.(har|p
 # Raw capture output. bp_capture.py fsyncs real measurements to JSONL, btmon
 # writes .snoop, and the T-B1 overnight run produces night*.log — all of them
 # land in the working tree by design and none belongs in git.
-PHIFILES="$(git diff "$RANGE" --name-only --diff-filter=ACM \
+PHIFILES="$(touched_paths \
   | grep -iE '(^|/)(bp-capture|.*-capture)\.jsonl$|\.snoop$|(^|/)night[0-9]*\.log$|bpcap.*\.(log|jsonl)$' || true)"
 [[ -n "$PHIFILES" ]] && fail "raw capture output staged (contains real measurements):"$'\n'"$PHIFILES"
 
@@ -117,9 +164,7 @@ if [[ -n "$ADDED" ]]; then
   # wears. Documented placeholders are exempt: XX octets and the reserved
   # AA:BB:CC:DD:EE:FF example. Redact to the vendor OUI — it is rediscoverable
   # with `btmgmt find` in seconds, so keeping it buys nothing.
-  DEVICE_ADDED="$(git diff "$RANGE" --diff-filter=ACM -U0 -- . \
-    ':(exclude)scripts/check-public-info.py' \
-    | grep '^+' | grep -v '^+++' || true)"
+  DEVICE_ADDED="$(added_lines . ':(exclude)scripts/check-public-info.py')"
   if grep -oiE '\b([0-9A-F]{2}:){5}[0-9A-F]{2}\b' <<<"$DEVICE_ADDED" \
        | grep -qviE 'XX|AA:BB:CC:DD:EE:(FF|FE)'; then
     fail "a full device address appears in the diff — redact to the OUI (00:11:22:XX:XX:XX)"
