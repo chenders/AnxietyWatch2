@@ -149,8 +149,14 @@ owner-approved model or by the owner; GitHub/Copilot review is optional and is n
 gate. The pre-push hook blocks direct pushes.
 
 ```
-worktree → branch → commit → push → PR → local/owner review → squash-merge
+worktree → branch → commit → push → PR → local/owner review → merge commit
 ```
+
+Merges are merge commits, not squashes. Squashing collapsed a branch's commits into one commit
+authored by the merger, which dropped the per-commit `Co-Authored-By:` trailers the hook enforces
+below, and left `git merge-base --is-ancestor` unable to answer whether a branch had landed. The
+cost is that every commit on a branch becomes a permanent ancestor of `main`, so the pre-push
+exposure gates inspect each commit individually rather than the branch's net diff.
 
 ### One worktree per task
 
