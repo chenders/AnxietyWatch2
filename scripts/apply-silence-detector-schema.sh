@@ -24,7 +24,7 @@ if (( EUID != 0 )); then
     exit 1
 fi
 
-repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+repo_root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 sql_file="$repo_root/db/deploy/silence_detector.sql"
 database=${VITALS_DATABASE_NAME:-vitals}
 gate=${VITALS_BACKUP_GATE:-/var/lib/vitals/recovery/github-deploy-gate.json}

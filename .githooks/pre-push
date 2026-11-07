@@ -83,6 +83,15 @@ offending_commits() {  # regex, added-lines
 }
 
 # Paths added, copied or modified by any single commit in this push, deduped.
+#
+# SC2120: every current caller passes no pathspec, and the parameter is kept
+# anyway. It is the same signature as added_lines above, which IS called with a
+# pathspec (the check-public-info.py exclusion), and the two are read together —
+# deleting the capability from one of them to satisfy a linter would make the
+# pair asymmetric and would have to be undone by the first gate that needs to
+# scope. The empty "$@" expands to nothing, so the behaviour today is exactly
+# "all paths".
+# shellcheck disable=SC2120
 touched_paths() {
   local c
   for c in $COMMITS; do

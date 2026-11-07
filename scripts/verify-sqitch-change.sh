@@ -4,7 +4,7 @@
 # is incomplete or is not ordered after its predecessor.
 set -eu
 
-repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+repo=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 plan="$repo/db/sqitch.plan"
 [ "$#" -gt 0 ] || {
     printf '%s\n' 'FAIL: at least one Sqitch change name is required' >&2
