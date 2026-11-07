@@ -123,10 +123,25 @@ fi
 # advisory list of requirement citations whose target may not discuss the
 # subject; that tier never gates, because vocabulary cannot separate a
 # terse-but-correct citation from a wrong one.
-if $PY scripts/check-amendment-refs.py --self-test && $PY scripts/check-amendment-refs.py; then
-  ok "amendment citations resolve"
-else
-  fail "an amendment citation does not resolve to exactly one amendment"
+#
+# Conditioned on amendments being tracked, not on the index file existing. That
+# distinction matters and cuts against gate 6's warning above about conditionals
+# whose subject has vanished. If the index itself is missing while amendments
+# exist, the checker exits 2 and this gate FAILS — which is the dangerous case
+# and the one that must not be skippable. The condition is only false in a
+# repository with no amendments to cite, where the check would be vacuous; the
+# synthetic fixtures in scripts/tests/test-pre-push-gates.sh are exactly that.
+#
+# The guard is also not a way to skip the gate in this repository: ci.yml's
+# public-info job invokes the script by name with no condition at all, so
+# deleting the index or the amendments fails CI regardless of what this hook
+# decides. test-pre-push-gates.sh asserts both halves.
+if [[ -n "$(git ls-files 'docs/specs/*amendment*' | head -1)" ]]; then
+  if $PY scripts/check-amendment-refs.py --self-test && $PY scripts/check-amendment-refs.py; then
+    ok "amendment citations resolve"
+  else
+    fail "an amendment citation does not resolve to exactly one amendment"
+  fi
 fi
 
 # ── 1. never push to main directly ────────────────────────────────────────────
