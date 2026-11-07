@@ -334,8 +334,8 @@ PY
 }
 
 wait_for_air11_active() {
-    local attempt state
-    for attempt in $(seq 1 20); do
+    local state
+    for _ in $(seq 1 20); do
         state=$(unit_state "$AIR11_UNIT")
         [[ "$state" == "active" ]] && return 0
         sleep 1
