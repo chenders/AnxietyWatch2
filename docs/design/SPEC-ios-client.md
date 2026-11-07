@@ -596,7 +596,8 @@ Stage 7 is complete only when:
 6. Local check-in outcomes distinguish answered, declined, expired, and delivery unknown.
 7. The viewer presents stale caches as stale and preserves graph gaps.
 8. The eventual production networking target has no cleartext/ATS bypass; the first draft's explicit
-   Amendment 10 LAN-only HTTP exception is private-address validated and retains signed requests.
+   Amendment 10 (first-draft private-LAN transport) LAN-only HTTP exception is private-address
+   validated and retains signed requests.
    Credentials are revocable and absent from logs, backups, and diagnostic exports.
 9. Accessibility and panic-path timing pass on physical devices.
 10. With the iPhone powered off, Pi collection, detection, and local alert acceptance remain green.
@@ -617,7 +618,7 @@ Stage 7 is complete only when:
 
 | Gate | Blocks | Owner |
 |---|---|---|
-| G-IOS-AUTH — LAN/HTTPS/enrollment decision | production enrollment and writes; first-draft LAN writes follow Amendment 10 | admin roadmap T-M2a + Stage 7 T-I1 |
+| G-IOS-AUTH — LAN/HTTPS/enrollment decision | production enrollment and writes; first-draft LAN writes follow Amendment 10 (first-draft private-LAN transport) | admin roadmap T-M2a + Stage 7 T-I1 |
 | G-IOS-PROVENANCE — platform sub-provenance and identity | HealthKit payload/receiver | admin roadmap T-X3/T-X4 |
 | G-IOS-BEACON — status-beacon server contract | phone health beacon | admin roadmap T-X1/T-X2 |
 | G-IOS-RECORDS — domain schema/version ownership | journal, medication, check-in writes | admin roadmap T-M5a/T-M5b |

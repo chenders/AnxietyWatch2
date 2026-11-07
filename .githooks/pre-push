@@ -114,6 +114,36 @@ else
   fail "personal or setup-specific information is present"
 fi
 
+# AGENTS.md makes the amendment index mandatory reading, which assumes a
+# citation resolves to the decision the citing text describes. The index
+# carries two numbering series: 10-A11 and 11-A11 are still named
+# amendment-10/amendment-11 on disk, and the main series reused both numbers
+# two days later, so a bare "Amendment 10" can name either document. This gate
+# blocks on that ambiguity and on numbers with no index row. It also prints an
+# advisory list of requirement citations whose target may not discuss the
+# subject; that tier never gates, because vocabulary cannot separate a
+# terse-but-correct citation from a wrong one.
+#
+# Conditioned on amendments being tracked, not on the index file existing. That
+# distinction matters and cuts against gate 6's warning above about conditionals
+# whose subject has vanished. If the index itself is missing while amendments
+# exist, the checker exits 2 and this gate FAILS — which is the dangerous case
+# and the one that must not be skippable. The condition is only false in a
+# repository with no amendments to cite, where the check would be vacuous; the
+# synthetic fixtures in scripts/tests/test-pre-push-gates.sh are exactly that.
+#
+# The guard is also not a way to skip the gate in this repository: ci.yml's
+# public-info job invokes the script by name with no condition at all, so
+# deleting the index or the amendments fails CI regardless of what this hook
+# decides. test-pre-push-gates.sh asserts both halves.
+if [[ -n "$(git ls-files 'docs/specs/*amendment*' | head -1)" ]]; then
+  if $PY scripts/check-amendment-refs.py --self-test && $PY scripts/check-amendment-refs.py; then
+    ok "amendment citations resolve"
+  else
+    fail "an amendment citation does not resolve to exactly one amendment"
+  fi
+fi
+
 # ── 1. never push to main directly ────────────────────────────────────────────
 # Gate on the REMOTE ref, not the local branch name. Checking the local branch
 # leaves a hole: `git push origin HEAD:main` or `git push origin feature:main`
@@ -264,6 +294,17 @@ if [[ -f Cargo.toml ]]; then
   else
     fail "clippy failed:"; tail -15 /tmp/pp-clippy.$$ >&2
   fi
+  # CI gates on `cargo fmt --all --check` (.github/workflows/ci.yml) but this
+  # hook did not, so it printed "all gates passed" on trees CI then rejected.
+  # That happened twice on 2026-11-06: a dependency bump reordered imports in
+  # vitals-drain, and a crypto-bigint port left one let-binding unformatted.
+  # Both pushed green and would have failed CI. A hook that announces a verdict
+  # CI disagrees with is worse than no hook, because it is believed.
+  if cargo fmt --all --check >/tmp/pp-fmt.$$ 2>&1; then
+    ok "rustfmt clean"
+  else
+    fail "rustfmt would reformat (CI gates on this):"; tail -20 /tmp/pp-fmt.$$ >&2
+  fi
   # fuzz/ declares its own [workspace], so `cargo test --workspace` does NOT
   # compile it. A fuzz target referencing a removed constant therefore builds
   # green locally and fails only in CI — which is exactly what happened when the
@@ -275,7 +316,7 @@ if [[ -f Cargo.toml ]]; then
       fail "fuzz targets do not compile:"; tail -12 /tmp/pp-fuzz.$$ >&2
     fi
   fi
-  rm -f /tmp/pp-test.$$ /tmp/pp-clippy.$$ /tmp/pp-fuzz.$$
+  rm -f /tmp/pp-test.$$ /tmp/pp-clippy.$$ /tmp/pp-fmt.$$ /tmp/pp-fuzz.$$
 fi
 
 # ── 7. iPhone client static gates ─────────────────────────────────────────────

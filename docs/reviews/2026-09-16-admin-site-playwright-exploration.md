@@ -129,7 +129,14 @@ collector restart, which is correct conservative behavior but not yet a useful s
 history view.
 
 This means the admin surface currently supports transport/collector monitoring, not the
-full Amendment 12 therapy-session inspection requirement.
+therapy-session inspection the reviewer expected.
+
+> **Correction, 2026-11-06.** This finding originally cited a "full Amendment 12 therapy-session
+> inspection requirement." Amendment 12 is *Provider-aware song search and provider-independent
+> identity* and does not mention therapy; no accepted amendment specifies therapy-session
+> inspection. The gap the reviewer observed was real — the admin surface genuinely did not expose
+> session history — but it was measured against a requirement that is not written down anywhere.
+> See `openspec/changes/amendment-reference-integrity`.
 
 ### 3. Aircraft/noise tracking is outside the universal admin console — medium priority
 

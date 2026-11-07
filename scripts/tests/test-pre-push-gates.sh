@@ -19,6 +19,7 @@ set -uo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 HOOK="$REPO_ROOT/.githooks/pre-push"
 SCANNER="$REPO_ROOT/scripts/check-public-info.py"
+AMEND_SCANNER="$REPO_ROOT/scripts/check-amendment-refs.py"
 
 PASSED=0
 FAILED=0
@@ -46,14 +47,20 @@ make_repo() {
   git -C "$d" config commit.gpgsign false
   mkdir -p "$d/scripts" "$d/.githooks"
   cp "$SCANNER" "$d/scripts/check-public-info.py"
+  cp "$AMEND_SCANNER" "$d/scripts/check-amendment-refs.py"
   cp "$HOOK" "$d/.githooks/pre-push"
   chmod +x "$d/.githooks/pre-push"
   # The scanner is copied in, not stubbed, so the hook's own interpreter
   # resolution (`uv run python3` when uv is on PATH, bare python3 otherwise)
   # is what runs — some dev machines carry a shim that rejects bare python3,
   # and stubbing uv would hide that rather than exercise it.
+  #
+  # No docs/specs/ here, so the amendment gate's condition is false and it does
+  # not run — a fixture with no amendments has no citations to resolve. Case 10
+  # builds the opposite fixture to prove the gate is not merely inert.
   echo 'baseline' > "$d/README.md"
-  git -C "$d" add README.md scripts/check-public-info.py .githooks/pre-push
+  git -C "$d" add README.md scripts/check-public-info.py \
+    scripts/check-amendment-refs.py .githooks/pre-push
   git -C "$d" commit -qm 'baseline'
   printf '%s' "$d"
 }
@@ -197,6 +204,53 @@ d="$(make_repo)"
 printf 'example %s vs live %s:%s\n' 'AA:BB:CC:DD:EE:FF' '11:22:33' '44:55:66' > "$d/mixed.md"
 commit_in "$d" 'document both addresses' mixed.md
 assert_blocked "$d" 'a real address beside a placeholder still fails' 'a full device address appears'
+
+# 10. The amendment gate is conditioned on amendments being tracked rather than
+#     on the index existing, and the two cases below are why that is not the
+#     "conditional whose subject vanished" anti-pattern the hook warns about.
+#
+#     An amendment present with NO index is the dangerous shape: every citation
+#     in the tree silently becomes uncheckable. The checker exits 2 for it and
+#     the gate must fail, not skip.
+#     The fixture citations are assembled from fragments, exactly as the
+#     credential and device-address fixtures above are: check-amendment-refs.py
+#     scans tracked *.sh, so spelling the citation out here would be read as a
+#     real citation of an unindexed amendment and would block this file's own
+#     push. It did, twice — once for the fixtures and once for the comment that
+#     explained the fixtures. Keeping the number out of the source beats
+#     exempting scripts/tests/: a pathspec hole would be permanent, and would
+#     also stop the gate protecting anything else in this directory.
+d="$(make_repo)"
+mkdir -p "$d/docs/specs"
+printf '# Amendment %s — a decision\n\nIt decided a thing.\n' '99' \
+  > "$d/docs/specs/2026-01-01-amendment-99-a-decision.md"
+commit_in "$d" 'add an amendment but no index' docs/specs/2026-01-01-amendment-99-a-decision.md
+assert_blocked "$d" 'an amendment with no index blocks' \
+  'an amendment citation does not resolve to exactly one amendment'
+
+# 11. And with an index present, an ambiguous citation blocks — proving the gate
+#     evaluates citations rather than merely checking that files exist.
+d="$(make_repo)"
+mkdir -p "$d/docs/specs"
+printf '# Amendment %s — a decision\n\nIt decided a thing about widgets.\n' '99' \
+  > "$d/docs/specs/2026-01-01-amendment-99-a-decision.md"
+printf '# Amendment %s — another decision\n\nIt decided a thing about sprockets.\n' '99-X' \
+  > "$d/docs/specs/2026-01-02-amendment-99-x-another.md"
+cat > "$d/docs/specs/AMENDMENTS.md" <<'INDEX'
+# Amendment index
+
+| # | Title | Supersedes | Affects |
+|---|---|---|---|
+| **99** | [A decision](2026-01-01-amendment-99-a-decision.md) | x | y |
+| **99-X** | [Another decision](2026-01-02-amendment-99-x-another.md) | x | y |
+INDEX
+printf 'We follow Amendment %s here.\n' '99' > "$d/docs/guide.md"
+commit_in "$d" 'add an index and an ambiguous citation' \
+  docs/specs/2026-01-01-amendment-99-a-decision.md \
+  docs/specs/2026-01-02-amendment-99-x-another.md \
+  docs/specs/AMENDMENTS.md docs/guide.md
+assert_blocked "$d" 'an ambiguous citation blocks' \
+  'an amendment citation does not resolve to exactly one amendment'
 
 printf '\n%s passed, %s failed\n' "$PASSED" "$FAILED"
 (( FAILED == 0 )) || exit 1
