@@ -39,7 +39,7 @@ struct HistorySurface: View {
     ("spo2", "Oxygen Saturation", "%"),
     ("respiratory_rate", "Respiratory Rate", "breaths/min"),
     ("resting_hr", "Resting Heart Rate", "bpm"),
-    ("step_count", "Steps", "steps"),
+    ("step_count", "Steps", "steps")
   ]
 
   enum DateRange: String, CaseIterable {
@@ -182,7 +182,7 @@ struct HistorySurface: View {
       }
     }
     .chartXAxis {
-      AxisMarks(values: .automatic) { value in
+      AxisMarks(values: .automatic) { _ in
         AxisGridLine()
         AxisValueLabel(format: dateRange == .day ? .dateTime.hour() : .dateTime.weekday(.abbreviated))
       }
@@ -191,8 +191,8 @@ struct HistorySurface: View {
       AxisMarks { value in
         AxisGridLine()
         AxisValueLabel {
-          if let v = value.as(Double.self) {
-            Text("\(v.formatted()) \(unit)")
+          if let doubleValue = value.as(Double.self) {
+            Text("\(doubleValue.formatted()) \(unit)")
           }
         }
       }

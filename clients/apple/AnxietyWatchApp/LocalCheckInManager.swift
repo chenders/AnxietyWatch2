@@ -90,7 +90,8 @@ public enum RandomCheckInManager {
 
     // Ensure it's in the future
     if nextDate <= now {
-      nextDate = calendar.date(byAdding: .minute, value: max(15, intervalMinutes), to: now) ?? now.addingTimeInterval(900)
+      let fallback = now.addingTimeInterval(900)
+      nextDate = calendar.date(byAdding: .minute, value: max(15, intervalMinutes), to: now) ?? fallback
     }
 
     // Create notification
