@@ -451,4 +451,78 @@ mod tests {
         assert!(value.get("healthkit").is_none());
         assert!(value.get("medication").is_none());
     }
+
+    /// The APNs ES256 signer gets a known-answer test, not a round-trip test.
+    ///
+    /// This exists because the opposite was believed. The `p256` 0.13 -> 0.14
+    /// bump was held on the grounds that it moves this signer to `ecdsa` 0.17,
+    /// that the signer sits on the alert-delivery path, and that only a live
+    /// APNs round-trip could verify it. The first two are true; the conclusion
+    /// is not, because ECDSA here is deterministic.
+    ///
+    /// `SigningKey::sign` goes through `signature::Signer`, which is RFC 6979:
+    /// the nonce is derived from the key and the message, so one key and one
+    /// message have exactly one signature. (Randomised signing is a separate
+    /// `RandomizedSigner` trait this code does not use.) The expected bytes
+    /// below were produced under `p256` 0.13 and reproduce byte-for-byte under
+    /// 0.14 — so Apple receives an identical token before and after the bump,
+    /// which leaves a round-trip nothing about the bump to discover.
+    ///
+    /// What a round-trip *would* verify — claim construction, `apns-topic`
+    /// headers, token encryption, HTTP/2 transport — this change does not
+    /// touch. Letting that unanswerable question block this answerable one is
+    /// what held the bump, and with it one `cargo audit` advisory.
+    ///
+    /// The key is derived from a fixed scalar and encoded to PKCS#8 PEM inside
+    /// the test rather than committed, so no private-key blob exists in the
+    /// tree while `from_pkcs8_pem` — the exact parse the daemon performs on the
+    /// operator-supplied key — is still exercised.
+    #[test]
+    #[allow(clippy::expect_used)]
+    fn es256_signing_is_deterministic_across_the_p256_bump() {
+        use p256::ecdsa::signature::{Signer, Verifier};
+        use p256::ecdsa::{SigningKey, VerifyingKey};
+        use p256::pkcs8::{EncodePrivateKey, LineEnding};
+
+        // Declared before the first statement: `items_after_statements` is
+        // denied, and a const is an item.
+        const EXPECTED: &str = concat!(
+            "8573a2f65c492707822785305b0cbe3ff54e9ca7e820c20584760446654a81ef",
+            "908979071aecf08667c4e070e66457ec6a1de24d7a7da11575810f1aab7c1c0a"
+        );
+
+        let scalar = [7u8; 32];
+        let secret = p256::SecretKey::from_bytes(&scalar.into()).expect("fixed scalar is in range");
+        let pem = secret
+            .to_pkcs8_pem(LineEnding::LF)
+            .expect("a P-256 secret key encodes to PKCS#8");
+
+        // The daemon's own parse path, not a shortcut around it.
+        let signing_key = SigningKey::from_pkcs8_pem(&pem).expect("round-trips through PKCS#8");
+
+        let signing_input =
+            b"eyJhbGciOiJFUzI1NiIsImtpZCI6IktFWUlEIn0.eyJpc3MiOiJURUFNIiwiaWF0IjoxNzAwMDAwMDAwfQ";
+        let signature: p256::ecdsa::Signature = signing_key.sign(signing_input);
+
+        assert_eq!(
+            hex::encode(signature.to_bytes()),
+            EXPECTED,
+            "ES256 signature bytes changed; APNs would see a different token"
+        );
+
+        // Determinism itself, so a future switch to randomised signing fails
+        // here rather than quietly making the vector above meaningless.
+        let again: p256::ecdsa::Signature = signing_key.sign(signing_input);
+        assert_eq!(
+            signature.to_bytes(),
+            again.to_bytes(),
+            "signing is no longer deterministic, so the known-answer vector proves nothing"
+        );
+
+        // And that the signature is valid, not merely stable.
+        let verifying_key = VerifyingKey::from(&signing_key);
+        verifying_key
+            .verify(signing_input, &signature)
+            .expect("the signature verifies under its own public key");
+    }
 }
