@@ -1,12 +1,12 @@
 //! Crash-safe draining of COPY-binary spool segments into `PostgreSQL`.
 
-use fs4::fs_std::FileExt;
 use postgres::{Client, NoTls};
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 use vitals_core::copybin;
+use vitals_core::spool::try_lock_exclusive;
 use vitals_core::spool::{
     FIRST_ROW_OFFSET, SAMPLES_LAYOUT, SEGMENT_FORMAT_VERSION, SEGMENT_HEADER_BYTES, SEGMENT_MAGIC,
     SchemaFingerprint, samples_fingerprint,
@@ -296,7 +296,7 @@ fn complete_payload_length(file: &mut File, length: u64) -> io::Result<u64> {
 )]
 pub fn open_segment(path: &Path) -> Result<Segment, DrainError> {
     let mut file = OpenOptions::new().read(true).open(path)?;
-    if !file.try_lock_exclusive()? {
+    if !try_lock_exclusive(&file)? {
         return Err(io::Error::new(
             io::ErrorKind::WouldBlock,
             format!("{}: segment lock held by writer or drainer", path.display()),
@@ -357,7 +357,7 @@ pub fn open_segment(path: &Path) -> Result<Segment, DrainError> {
         .write(true)
         .truncate(false)
         .open(&offset_path)?;
-    if !offset_file.try_lock_exclusive()? {
+    if !try_lock_exclusive(&offset_file)? {
         return Err(io::Error::new(
             io::ErrorKind::WouldBlock,
             format!(
