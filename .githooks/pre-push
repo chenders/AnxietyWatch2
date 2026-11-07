@@ -254,12 +254,12 @@ fi
 # — so it silently did nothing from that commit onward. A conditional whose
 # subject no longer exists is a check that cannot fail.
 if [[ -f Cargo.toml ]]; then
-  if cargo test --workspace >/tmp/pp-test.$$ 2>&1; then
+  if cargo test --workspace --locked >/tmp/pp-test.$$ 2>&1; then
     ok "cargo test --workspace passes"
   else
     fail "cargo test failed:"; tail -15 /tmp/pp-test.$$ >&2
   fi
-  if cargo clippy --workspace --all-targets --all-features -- -D warnings >/tmp/pp-clippy.$$ 2>&1; then
+  if cargo clippy --workspace --all-targets --all-features --locked -- -D warnings >/tmp/pp-clippy.$$ 2>&1; then
     ok "clippy clean at deny levels"
   else
     fail "clippy failed:"; tail -15 /tmp/pp-clippy.$$ >&2
@@ -269,7 +269,7 @@ if [[ -f Cargo.toml ]]; then
   # green locally and fails only in CI — which is exactly what happened when the
   # EMAY plausibility ranges were removed.
   if [[ -f fuzz/Cargo.toml ]]; then
-    if (cd fuzz && cargo check --bins >/tmp/pp-fuzz.$$ 2>&1); then
+    if (cd fuzz && cargo check --bins --locked >/tmp/pp-fuzz.$$ 2>&1); then
       ok "fuzz targets compile"
     else
       fail "fuzz targets do not compile:"; tail -12 /tmp/pp-fuzz.$$ >&2

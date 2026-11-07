@@ -37,6 +37,17 @@ jobs:
         run: |
           bash -n scripts/audit-worktrees.sh
           bash scripts/tests/test-audit-worktrees.sh
+      # Only meaningful now that Cargo.lock is tracked: before this commit there
+      # was no committed dependency set to audit, so the same source tree gave
+      # different answers on different machines (9 advisories against a
+      # five-week-old local lockfile, 2 against a fresh resolve).
+      # Accepted advisories live in .cargo/audit.toml with a dated reason each,
+      # so shipping with a known advisory is a named decision rather than a
+      # silent one.
+      - name: Dependency advisories
+        run: |
+          cargo install cargo-audit --locked
+          cargo audit
 
   h10-graph-performance:
     runs-on: ubuntu-latest
@@ -86,11 +97,11 @@ jobs:
       - name: Format
         run: cargo fmt --all --check
       - name: Clippy
-        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+        run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
       - name: Test
         run: |
           set -o pipefail
-          cargo test --workspace --all-features --no-fail-fast 2>&1 | tee /tmp/test.out
+          cargo test --workspace --all-features --locked --no-fail-fast 2>&1 | tee /tmp/test.out
           # `cargo test` on a workspace with no tests exits 0. That is the same
           # vacuous pass the jobs above used to give, one layer down, so assert
           # the run did work rather than trusting the exit code.
