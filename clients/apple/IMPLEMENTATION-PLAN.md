@@ -17,14 +17,17 @@ Implement the three core thin-client capabilities:
 - Pi projections (ProjectionReadService, cache, Today surface)
 - Enrollment (artifact validation, Secure Enclave key, credential storage)
 - APNs registration and outcome reporting
+- **MedicationsSurface** — Quick Log section, recent doses, dose-anxiety prompt sheet
+- **HistorySurface** — projection visualization, metric/range pickers, gap markers
+- **RandomCheckInManager** — 2/day default, 8-22 active hours, UserDefaults persistence
+- **DoseFollowUpManager** — 30-minute follow-up prompts for promptable doses
 
 ### 🚧 In Progress
-- Medications surface (placeholder → needs domain commands + UI)
-- History surface (placeholder → needs projection rendering)
+- Projection fetch in HistorySurface uses sample data (needs real ProjectionReadService integration)
+- Medication domain commands (`medication_dose` write not yet wired through outbox)
 
 ### ❌ Not Started
-- Local notification infrastructure (random check-ins, dose follow-ups)
-- Medication domain commands (`medication_dose`, `medication_definition`)
+- Medication definitions fetch from Pi (needs API endpoint or registry lookup)
 
 ## Implementation Tasks
 
@@ -38,38 +41,28 @@ Implement the three core thin-client capabilities:
 
 3. Add tests in `AWDomainTests`
 
-### Phase 2: Medications Surface (AnxietyWatchApp)
+### Phase 2: Medications Surface (AnxietyWatchApp) ✅
 
-1. Create `MedicationsSurface` view with:
-   - Quick Log section (one-tap dose logging per active med)
-   - Recent doses list
-   - Pi-provided medication definitions
+Completed in PR #89:
+- Created `MedicationsSurface` view with Quick Log section, recent doses list
+- Created dose-anxiety prompt sheet for meds with `promptAnxietyOnLog`
+- Uses sample data pending `medication_dose` outbox integration
 
-2. Create `DoseAnxietyPromptView` for meds with `promptAnxietyOnLog`
+### Phase 3: History Surface (AnxietyWatchApp) ✅
 
-3. Wire to outbox and sync engine
+Completed in PR #89:
+- Created `HistorySurface` view with Charts framework
+- Metric selector (HR, SpO2, respiratory rate, resting HR, steps)
+- Date range picker (day/week/month)
+- Gap markers for missing intervals
+- Uses sample data pending ProjectionReadService integration
 
-### Phase 3: History Surface (AnxietyWatchApp)
+### Phase 4: Local Notifications (AnxietyWatchApp) ✅
 
-1. Create `HistorySurface` view with:
-   - Projection charts (HR, SpO2, etc.)
-   - Explicit gap markers
-   - Date range navigation
-
-2. Use `ProjectionReadService` with time windows
-
-### Phase 4: Local Notifications (AnxietyWatchApp)
-
-1. Create `RandomCheckInManager`:
-   - Configurable frequency (default 2/day)
-   - Active hours (default 8-22)
-   - UserDefaults persistence
-
-2. Create `DoseFollowUpManager`:
-   - 30-minute delay after promptable medications
-   - Links to triggering dose
-
-3. Wire notifications to journal capture
+Completed in PR #89:
+- `RandomCheckInManager`: 2/day default, 8-22 active hours, UserDefaults, notification categories
+- `DoseFollowUpManager`: 30-minute delay, pending follow-up tracking, dose linking
+- Swift 6 concurrency with `@preconcurrency import UserNotifications`
 
 ## Dependencies
 
