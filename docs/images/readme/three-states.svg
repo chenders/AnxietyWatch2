@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="640" viewBox="0 0 1600 640" font-family="Helvetica Neue, Helvetica, Arial, sans-serif">
+  <defs>
+    <pattern id="gapHatch" width="14" height="14" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <rect width="14" height="14" fill="#1b232d"/>
+      <line x1="0" y1="0" x2="0" y2="14" stroke="#cfd8e3" stroke-width="4" stroke-opacity="0.7"/>
+    </pattern>
+    <pattern id="chipHatch" width="10" height="10" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <rect width="10" height="10" fill="#1b232d"/>
+      <line x1="0" y1="0" x2="0" y2="10" stroke="#cfd8e3" stroke-width="3" stroke-opacity="0.7"/>
+    </pattern>
+  </defs>
+
+  <rect x="1" y="1" width="1598" height="638" rx="18" fill="#0f141a" stroke="#2a333f" stroke-width="2"/>
+
+  <text x="64" y="82" fill="#e6edf3" font-size="42" font-weight="700">Three states, not two.</text>
+  <text x="64" y="122" fill="#9aa7b4" font-size="23">Measured and fine. Measured and not fine. And not measured at all &#8212; the state most software quietly discards.</text>
+
+  <g transform="translate(0,34)">
+  <!-- personal range band -->
+  <rect x="96" y="182" width="1424" height="52" fill="#4fb3a4" fill-opacity="0.09"/>
+  <line x1="96" y1="182" x2="1520" y2="182" stroke="#4fb3a4" stroke-width="1.5" stroke-opacity="0.45" stroke-dasharray="7 7"/>
+  <line x1="96" y1="234" x2="1520" y2="234" stroke="#4fb3a4" stroke-width="1.5" stroke-opacity="0.45" stroke-dasharray="7 7"/>
+  <text x="1520" y="174" fill="#5fc0b1" font-size="19" text-anchor="end">your own recent range &#8212; not a population&#8217;s</text>
+
+  <!-- the gap: not measured -->
+  <rect x="869" y="150" width="134" height="196" fill="url(#gapHatch)"/>
+  <rect x="869" y="150" width="134" height="196" fill="none" stroke="#cfd8e3" stroke-width="3"/>
+
+  <!-- the line nobody should draw -->
+  <line x1="869" y1="288" x2="1003" y2="262" stroke="#e0644a" stroke-width="3" stroke-dasharray="9 9" stroke-opacity="0.85"/>
+  <g stroke="#e0644a" stroke-width="5" stroke-linecap="round">
+    <line x1="924" y1="263" x2="948" y2="287" />
+    <line x1="948" y1="263" x2="924" y2="287" />
+  </g>
+  <text x="936" y="392" fill="#e0644a" font-size="19" text-anchor="middle">a line drawn across a gap</text>
+  <text x="936" y="416" fill="#e0644a" font-size="19" text-anchor="middle">invents data that was never taken</text>
+  <line x1="936" y1="368" x2="936" y2="300" stroke="#e0644a" stroke-width="2" stroke-opacity="0.6"/>
+
+  <!-- trace: measured, in range -->
+  <polyline fill="none" stroke="#4fb3a4" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"
+    points="96,208 134,203 172,210 210,204 248,212 286,205 324,209 362,202 400,211 438,206 476,203 514,212 552,205 590,209 628,204 666,213 704,206 742,212 789,222"/>
+  <!-- trace: measured, out of range -->
+  <polyline fill="none" stroke="#e0644a" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"
+    points="789,222 809,244 829,262 849,276 869,288"/>
+  <!-- trace: measured, in range again -->
+  <polyline fill="none" stroke="#4fb3a4" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"
+    points="1003,262 1041,248 1079,236 1117,226 1155,218 1193,211 1231,207 1269,211 1307,204 1345,209 1383,203 1421,210 1459,205 1497,209 1520,204"/>
+
+  <!-- gap label -->
+  <text x="936" y="132" fill="#e6edf3" font-size="21" font-weight="700" text-anchor="middle">NOT MEASURED</text>
+
+  <!-- axis -->
+  <line x1="96" y1="346" x2="1520" y2="346" stroke="#39434f" stroke-width="2"/>
+  <text x="96" y="374" fill="#8795a5" font-size="19">22:00</text>
+  <text x="416" y="374" fill="#8795a5" font-size="19">00:00</text>
+  <text x="736" y="374" fill="#8795a5" font-size="19">02:00</text>
+  <text x="1056" y="374" fill="#8795a5" font-size="19">04:00</text>
+  <text x="1376" y="374" fill="#8795a5" font-size="19">06:00</text>
+
+  </g>
+
+  <!-- legend -->
+  <rect x="96" y="500" width="30" height="30" rx="6" fill="#4fb3a4"/>
+  <text x="140" y="522" fill="#c7d2de" font-size="21">measured, inside your range</text>
+
+  <rect x="500" y="500" width="30" height="30" rx="6" fill="#e0644a"/>
+  <text x="544" y="522" fill="#c7d2de" font-size="21">measured, outside it</text>
+
+  <rect x="852" y="500" width="30" height="30" rx="6" fill="url(#chipHatch)" stroke="#cfd8e3" stroke-width="2"/>
+  <text x="896" y="522" fill="#c7d2de" font-size="21">not measured &#8212; holds, never reassures</text>
+
+  <line x1="64" y1="558" x2="1536" y2="558" stroke="#242c36" stroke-width="2"/>
+  <text x="64" y="596" fill="#8795a5" font-size="19">An illustration of a design rule this repository holds itself to, not recorded data. A dead sensor is not a healthy night.</text>
+</svg>
