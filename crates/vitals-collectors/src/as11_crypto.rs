@@ -9,8 +9,8 @@
 use aes::Aes256;
 use cbc::cipher::{BlockDecryptMut, BlockEncryptMut, KeyIvInit, block_padding::NoPadding};
 use crypto_bigint::{
-    Encoding, U2048,
-    modular::runtime_mod::{DynResidue, DynResidueParams},
+    Odd, U2048,
+    modular::{FixedMontyForm, FixedMontyParams},
 };
 use hmac::{Hmac, Mac};
 use sha2::{Digest, Sha256};
@@ -33,7 +33,7 @@ pub const MAX_JSON_REQUEST_BYTES: usize = 7630;
 /// The largest JSON body that fits in [`MAX_ENCRYPTED_RESPONSE_BYTES`].
 pub const MAX_JSON_RESPONSE_BYTES: usize = 7662;
 
-const SRP_MODULUS: U2048 = U2048::from_be_hex(concat!(
+const SRP_MODULUS: Odd<U2048> = Odd::<U2048>::from_be_hex(concat!(
     "AC6BDB41324A9A9BF166DE5E1389582FAF72B6651987EE07FC3192943DB56050",
     "A37329CBB4A099ED8193E0757767A13DD52312AB4B03310DCD7F48A9DA04FD50",
     "E8083969EDB767B0CF6095179A163AB3661A05FBD5FAAAE82918A9962F0B93B",
@@ -44,7 +44,7 @@ const SRP_MODULUS: U2048 = U2048::from_be_hex(concat!(
     "BFBB694B5C803D89F7AE435DE236D525F54759B65E372FCD68EF20FA7111F9E",
     "4AFF73"
 ));
-const SRP_PARAMS: DynResidueParams<{ U2048::LIMBS }> = DynResidueParams::new(&SRP_MODULUS);
+const SRP_PARAMS: FixedMontyParams<{ U2048::LIMBS }> = FixedMontyParams::new(SRP_MODULUS);
 /// Errors produced before an `AirSense` cryptographic value may be used.
 ///
 /// Error variants intentionally contain no key, challenge, nonce, proof, or
@@ -287,8 +287,8 @@ fn big_from_hash(hash: &[u8; DIGEST_BYTES]) -> U2048 {
     U2048::from_be_slice(&padded_32(hash))
 }
 
-fn residue(value: &U2048) -> DynResidue<{ U2048::LIMBS }> {
-    DynResidue::new(value, SRP_PARAMS)
+fn residue(value: &U2048) -> FixedMontyForm<{ U2048::LIMBS }> {
+    FixedMontyForm::new(value, &SRP_PARAMS)
 }
 
 /// A deterministic SRP client state for the `AirSense` first-pairing formula.
@@ -319,7 +319,11 @@ impl SrpClient {
 
         let private_integer = U2048::from_be_slice(&padded_32(&private_key));
         let generator = residue(&U2048::from_u8(2));
-        let public_key = generator.pow(&private_integer).retrieve().to_be_bytes();
+        let public_key: [u8; SRP_PAD_BYTES] = generator
+            .pow(&private_integer)
+            .retrieve()
+            .to_be_bytes()
+            .into();
         if public_key.iter().all(|byte| *byte == 0) {
             return Err(CryptoError::InvalidArithmetic);
         }
@@ -375,9 +379,9 @@ impl SrpClient {
             return Err(CryptoError::InvalidServerPublicKey);
         }
 
-        let modulus_bytes = SRP_MODULUS.to_be_bytes();
+        let modulus_bytes: [u8; SRP_PAD_BYTES] = SRP_MODULUS.get().to_be_bytes().into();
         let generator_integer = U2048::from_u8(2);
-        let generator_bytes = generator_integer.to_be_bytes();
+        let generator_bytes: [u8; SRP_PAD_BYTES] = generator_integer.to_be_bytes().into();
         let multiplier_hash = hash_parts(&[&modulus_bytes, &generator_bytes]);
         let passkey_hash = hash_parts(&[passkey]);
         let private_hash = hash_parts(&[salt, &passkey_hash]);
@@ -401,7 +405,8 @@ impl SrpClient {
 
         let private_key_integer = U2048::from_be_slice(&padded_32(&self.private_key));
         let exponent = private_key_integer.wrapping_add(&scrambling.wrapping_mul(&private_value));
-        let shared_secret = base.pow(&exponent).retrieve().to_be_bytes();
+        let shared_secret: [u8; SRP_PAD_BYTES] =
+            base.pow(&exponent).retrieve().to_be_bytes().into();
         if shared_secret.iter().all(|byte| *byte == 0) {
             return Err(CryptoError::InvalidArithmetic);
         }

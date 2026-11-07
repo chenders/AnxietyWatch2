@@ -5,24 +5,44 @@
 # way to silence the gate. Remove the entry in the same PR that removes the
 # vulnerable dependency.
 #
-# Both current entries exist because `Cargo.lock` was untracked until this
-# commit: nothing could audit the repository's actual dependency set, so these
-# went unnoticed rather than being accepted.
+# The remaining entry exists because `Cargo.lock` was untracked until
+# task/t-lockfile-tracked: nothing could audit the repository's actual
+# dependency set, so it went unnoticed rather than being accepted.
 
 [advisories]
 ignore = [
     # crypto-bigint 0.5.5 — timing variability in operations intended to be
-    # constant-time. Reached through two paths: directly in vitals-collectors
-    # (SRP modular exponentiation for AirSense BLE), and transitively via
-    # p256 0.13 -> elliptic-curve 0.13 in vitals-console.
+    # constant-time.
     #
-    # Accepted 2026-11-07. Cleared by bumping crypto-bigint to >=0.7.6 in
-    # vitals-collectors and p256 to >=0.14 in vitals-console. The collectors
-    # half is verified by the existing known-answer tests
-    # (srp_matches_fixed_width_synthetic_vector,
-    # challenge_and_envelope_match_public_vector) and lands first. The console
-    # half pulls ecdsa 0.17 into the APNs ES256 signer, which is an alert path,
-    # so it is held pending a live APNs round-trip that cannot be run in CI.
+    # This crate was reached by two independent paths. The direct one is gone
+    # as of this commit: vitals-collectors now builds its AirSense SRP modular
+    # exponentiation on crypto-bigint 0.7, so no code in this repository calls
+    # the affected version. What remains is transitive and unreachable from any
+    # call site here — p256 0.13 -> elliptic-curve 0.13 -> crypto-bigint 0.5.5,
+    # for the APNs ES256 signer in vitals-console.
+    #
+    # Accepted 2026-11-06. Cleared by p256 >=0.14, which is held deliberately:
+    # it pulls ecdsa 0.17 into the signer on the alert-delivery path, and the
+    # only verification that matters there is a live APNs round-trip, which
+    # cannot run in CI and has not been run. Scoring that as verified is what
+    # "Unknown is not OK" forbids, so the advisory stays accepted and named
+    # rather than being closed on a green build.
+    #
+    # Two things about the gate's behaviour, both measured with cargo-audit
+    # 0.22.2 rather than assumed, because an earlier version of this comment
+    # got them wrong:
+    #
+    # This entry does not downgrade the finding, it removes it. With the entry
+    # present `cargo audit` exits 0 and prints nothing about RUSTSEC-2026-0387
+    # at all -- not even an "ignored" line. Without it, same lockfile, it exits
+    # 1 with "1 vulnerability found!". So no CI output will ever remind anyone
+    # that this decision is outstanding; this comment is the only record, which
+    # is the whole reason it has to be accurate.
+    #
+    # The ignore is keyed on the advisory ID, not on a version. If a future
+    # advisory is filed against crypto-bigint 0.7 under this same ID, this entry
+    # would suppress that too -- including on the collectors path, which is now
+    # the reachable one. Removing the entry when p256 moves is therefore not
+    # tidying; it is what keeps the gate honest about the code that runs.
     "RUSTSEC-2026-0387",
-
 ]
