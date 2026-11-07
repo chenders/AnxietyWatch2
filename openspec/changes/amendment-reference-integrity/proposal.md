@@ -84,18 +84,80 @@ announces a verdict CI disagrees with is worse than no hook, because it is belie
 - No runtime behaviour changes. The `air11.rs` edit is a `///` comment; the guard it describes is
   unchanged, because the guard was right.
 
-## Open question for the owner
+## Where the therapy-session citation came from
 
-**Should a durable therapy-session record be written as an accepted amendment?**
+An earlier draft of this proposal said three independent places believed the requirement existed,
+and that the consistency suggested a real decision had escaped the index. **That was wrong, and
+the history settles it:**
 
-This change removes the false attribution but deliberately does not invent the requirement. Three
-independent places believed such a requirement existed and shaped behaviour around it — the history
-endpoint refuses to finalize sessions, the BLE stream collector keeps its boundary provisional, and
-the admin console review treats session inspection as an unmet obligation. That consistency
-suggests a real decision was made and never written down, but which is true — a decision that
-escaped the index, or three documents that drifted into agreement — is not determinable from the
-tree. It needs the owner's intent.
+- All three citations were introduced in **one commit** — `2c30fc3`, *feat(air11): integrate ResMed
+  AirSense BLE and bedside evidence* (#64). Not three documents agreeing; one belief written three
+  times by one author in one sitting.
+- At `2c30fc3`, `docs/specs/AMENDMENTS.md` **already listed** `12` as *Provider-aware song search*
+  and `13` as *Platform-sample envelope and sub-provenance*. The correct index was in front of the
+  author.
+- `docs/specs/2026-09-16-amendment-12-provider-aware-song-search.md` was added once, in #52, and
+  has **never been renamed**. No renumbering explains the citation, unlike the `10`/`11` collision
+  above.
 
-Until then the three sites say the requirement is unwritten, which is accurate and leaves the
-conservative behaviour in place. "Unknown is not OK" applies to provenance as much as to readings:
-a requirement whose source cannot be found is not thereby satisfied, and it is not thereby void.
+So the citation was wrong when it was written. The remaining question is therefore not *"was this
+decided?"* — it was not — but *"should durable therapy-session records exist?"*, which is a
+roadmap question. No repo evidence can answer it, because the repository records what was decided
+and never what ought to be. That half is the owner's and nothing here is blocked on it: the three
+sites now say the requirement is unwritten, the conservative behaviour stands on the accepted
+"Unknown is not OK" rule rather than on a missing amendment, and `#64`'s own log shows the therapy
+lifecycle work that does exist (`persist therapy lifecycle snapshots`, `invalidate active therapy
+across collector restart`).
+
+## What the advisory tier costs, measured
+
+All 18 advisory findings on this tree were triaged by hand against their cited amendments. **All
+18 are correct citations.** With three true positives, precision is 3/21 — about **14%**.
+
+The failures are instructive, because they rule out a fix that looks obvious:
+
+- `openspec/changes/admin-console-m0/tasks.md:25` *directly quotes* Amendment 01 — "samples is a
+  hypertable, compressed, with a continuous aggregate" — and is still flagged.
+- `docs/status-updates/2026-09-18-reboot-handoff.md:95` says "APNs is never used to report phone
+  silence to the silent phone" while citing *Phone-silence escalation*.
+- `docs/design/SPEC-ios-client.md:347` says "versioned Rust `axum` API required by Amendment 07"
+  while citing *The HTTP API and admin console are Rust, not Python*.
+
+The last is the clearest: `rust`, `api` and `axum` are common across amendments, so they are
+stripped as non-distinctive and a perfect citation shares nothing measurable with its target. **No
+threshold fixes this** — the discriminating information is not present in a bare number plus
+surrounding prose.
+
+This is also why the advisory tier is **not** given an `.cargo/audit.toml`-style baseline where
+each entry carries a dated reason. That pattern fits a decision to ship with a known risk; these
+are false positives of a weak heuristic. Annotating 18 of them would add no information, would tax
+every future author, and would not move the question to authoring time — it would only make the
+gate resented and eventually bypassed.
+
+## What would prevent recurrence
+
+The triage points at the real fix, and it is a convention rather than an algorithm. Six of the
+eighteen citations already follow it:
+
+```
+Amendment 06 §2.2: the loss must be visible
+Amendment 05 §4.6
+Amendment 05 §2.1 permits only SpO₂ and respiratory rate to raise a tier
+Amendment 01's "samples is a hypertable, compressed, with a continuous aggregate"
+```
+
+Each carries a **section reference or a quoted fragment**, which makes the claim checkable by
+whoever reads it, with no heuristic involved. The three therapy-session citations carried neither —
+and an author who had to write `§N` would have had to open Amendment 12 to find the section, which
+is the moment the error becomes impossible.
+
+Requiring that of requirement-asserting citations is mechanically checkable at near-zero false
+positive rate. It is **not proposed here**, because it is a twelve-site migration and that is a
+cost decision rather than a correctness one. Recorded so the option is costed rather than
+rediscovered.
+
+## Still open
+
+**Should a durable therapy-session record be written as an accepted amendment?** Roadmap, owner's
+call, nothing blocked on it. "Unknown is not OK" applies to provenance as much as to readings: a
+requirement whose source cannot be found is not thereby satisfied, and not thereby void.
