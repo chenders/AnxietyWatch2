@@ -33,6 +33,10 @@ jobs:
         run: |
           bash -n .githooks/pre-push
           bash scripts/tests/test-pre-push-gates.sh
+      - name: Worktree audit exit-code contract
+        run: |
+          bash -n scripts/audit-worktrees.sh
+          bash scripts/tests/test-audit-worktrees.sh
 
   h10-graph-performance:
     runs-on: ubuntu-latest
