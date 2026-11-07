@@ -25,14 +25,4 @@ ignore = [
     # so it is held pending a live APNs round-trip that cannot be run in CI.
     "RUSTSEC-2026-0387",
 
-    # rsa 0.9.10 — Marvin attack, potential key recovery via timing side
-    # channel. Not reachable from any code here: it enters only through
-    # sqlx-mysql, which sqlx 0.8 pulls in unconditionally even with
-    # `features = ["postgres"]`. No MySQL connection is ever opened.
-    #
-    # Accepted 2026-11-07. `cargo audit` reports "No fixed upgrade is
-    # available!", which is true of rsa but misleading here: the crate leaves
-    # the graph entirely at sqlx 0.9, where sqlx-mysql makes rsa optional.
-    # Cleared by task/t-deps-rust-major-bump.
-    "RUSTSEC-2023-0071",
 ]
