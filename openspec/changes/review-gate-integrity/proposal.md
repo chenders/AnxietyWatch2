@@ -28,8 +28,13 @@ word-splitting silently exempted 15 space-named entries totalling ~3 GB from a s
 threshold. Both failed open and reported success. `shellcheck` catches the second class
 directly.
 
-Adoption cost is measured, not estimated: of 42 tracked shell files, 37 are already
-clean at `-S warning` and 5 carry 9 warnings between them.
+Adoption cost is measured, not estimated: of 44 tracked shell files, 39 are already
+clean at `-S warning` and 5 carry 9 warnings between them. Seven of those nine are
+`SC1007` on the deliberately-correct `CDPATH= cd -- …` idiom
+(`scripts/verify-sqitch-change.sh`, `scripts/apply-silence-detector-schema.sh`,
+`deploy/restore-verification/verify-restore.sh`) and want a justified `disable=`, not a
+rewrite. Only `SC2120` in `.githooks/pre-push` and `SC2034` in
+`scripts/air11-pi-acceptance.sh` are real defects.
 
 ## What this change does
 
