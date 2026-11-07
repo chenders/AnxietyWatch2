@@ -2,7 +2,7 @@
 
 The conductor ticks a box only after running that task's Verify command and seeing exit 0.
 
-- [ ] T-CP1 — Safe, resumable ez Share HTTP mirror · implement-complex · openai/gpt-5.6-sol
+- [x] T-CP1 — Safe, resumable ez Share HTTP mirror · implement-complex · openai/gpt-5.6-sol
 - [ ] T-CP2 — Clean-room EDF semantics, registry contract, identity and clock metadata · implement-complex
 - [ ] T-CP3 — Transactional append-only CPAP importer + attempt ledger · implement-complex
 - [ ] T-CP4 — Dedicated Wi-Fi route and hardened systemd supervision · implement-standard · **physical gate**
