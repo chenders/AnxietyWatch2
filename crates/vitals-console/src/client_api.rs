@@ -13,7 +13,7 @@ use axum::routing::{any, get, post};
 use base64::Engine;
 use chrono::{DateTime, SecondsFormat, Utc};
 use p256::ecdsa::signature::Verifier;
-use p256::elliptic_curve::sec1::ToEncodedPoint;
+use p256::elliptic_curve::sec1::ToSec1Point;
 use p256::pkcs8::DecodePublicKey;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -1746,7 +1746,7 @@ pub async fn client_enroll_handler(
             Some(API_MAJOR),
         )
     })?;
-    let public_key_sec1 = public_key.to_encoded_point(false);
+    let public_key_sec1 = public_key.to_sec1_point(false);
     let credential = crate::db::claim_mobile_credential(
         &database,
         request.enrollment_id,
