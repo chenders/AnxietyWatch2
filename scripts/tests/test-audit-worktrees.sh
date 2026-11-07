@@ -12,7 +12,8 @@ SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/audit-worktrees.sh"
 
 PASSED=0; FAILED=0; TMPDIRS=()
 cleanup() { for d in ${TMPDIRS+"${TMPDIRS[@]}"}; do
-  git -C "$d" worktree prune 2>/dev/null; rm -rf "$d" "$d-wt" 2>/dev/null; done; }
+  git -C "$d" worktree prune 2>/dev/null
+  rm -rf "$d" "$d-wt" "$d-p1" "$d-p2" 2>/dev/null; done; }
 trap cleanup EXIT
 
 ok()   { printf '  ok    %s\n' "$1"; PASSED=$((PASSED+1)); }
@@ -81,7 +82,27 @@ git -C "$d-wt" add feature.md
 git -C "$d-wt" commit -qm 'committed feature work'
 assert_exit "$d" 0 'unpushed+unmerged but committed passes'
 
-# 6. A bad base ref is a usage error (2), not a content failure (1).
+# 6. FAIL-OPEN REGRESSION: a paused rebase in a worktree whose directory
+#    basename collides with another worktree's. git appends a numeric suffix to
+#    the second admin directory (`worktrees/aw2-dup` and `worktrees/aw2-dup1`),
+#    so deriving the admin path from the basename inspects the wrong worktree.
+#    `rebase --exec false` stops with a clean working tree and index, which
+#    makes the state marker the only evidence — so a wrong lookup printed
+#    "all worktrees are safe to remove" and exited 0 over two commits of work
+#    plus the rebase's partially-applied, branch-unreachable HEAD.
+d="$(make_repo)"
+git -C "$d" worktree add -q -b dup1 "$d-p1/aw2-dup" main
+git -C "$d" worktree add -q -b dup2 "$d-p2/aw2-dup" main
+echo one > "$d-p2/aw2-dup/one.txt"
+git -C "$d-p2/aw2-dup" add one.txt; git -C "$d-p2/aw2-dup" commit -qm one
+echo two > "$d-p2/aw2-dup/two.txt"
+git -C "$d-p2/aw2-dup" add two.txt; git -C "$d-p2/aw2-dup" commit -qm two
+git -C "$d-p2/aw2-dup" rebase main --exec false >/dev/null 2>&1
+[ -z "$(git -C "$d-p2/aw2-dup" status --porcelain=v1 -uall)" ] \
+  || nope 'fixture invalid' 'paused rebase left a dirty tree; test 6 proves nothing'
+assert_exit "$d" 1 'paused rebase under a colliding worktree basename fails'
+
+# 7. A bad base ref is a usage error (2), not a content failure (1).
 d="$(make_repo)"
 ( cd "$d" && "$SCRIPT" origin/nonexistent >/dev/null 2>&1 )
 rc=$?
