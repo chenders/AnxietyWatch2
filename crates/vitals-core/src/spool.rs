@@ -29,11 +29,47 @@
 //! than inserting garbage that `Postgres` would accept.
 
 use crate::copybin;
-use fs4::fs_std::FileExt;
+// File locking comes from `std`, not from `fs4`. fs4 1.0 removed its `fs_std`
+// module because Rust 1.89 stabilised `File::{lock, try_lock, unlock}`, and this
+// workspace is on 1.97. fs4 is still used, but only for `total_space` /
+// `available_space`, which std does not provide.
+//
+// The semantics differ and the mapping is deliberate: fs4's
+// `try_lock_exclusive` returned `io::Result<bool>` with `Ok(false)` meaning
+// contended, while `std::fs::File::try_lock` returns
+// `Result<(), fs::TryLockError>` with a distinct `WouldBlock` variant. Each call
+// site below converts back to the original boolean so the surrounding
+// `WouldBlock` handling — which four tests assert on — is unchanged.
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+/// Takes an exclusive advisory lock without blocking.
+///
+/// Returns `Ok(true)` when the lock was acquired, `Ok(false)` when another
+/// holder has it, and `Err` only for a real I/O failure. That tri-state is the
+/// whole point: a caller must be able to distinguish "someone else is writing"
+/// — which is a legitimate, expected refusal — from "the filesystem is broken".
+/// Collapsing them would let a disk error read as ordinary contention and be
+/// retried forever.
+///
+/// This exists as one function rather than four inline `match`es because it is
+/// the single-writer invariant for an append-only store, and it previously lived
+/// in `fs4`, whose 1.0 release removed the `fs_std` module once Rust 1.89
+/// stabilised `File::{lock, try_lock, unlock}`. The `io::Result<bool>` shape is
+/// deliberately the one `fs4::fs_std::FileExt::try_lock_exclusive` had, so every
+/// call site's `WouldBlock` handling is unchanged by the migration.
+///
+/// # Errors
+/// Propagates a genuine locking I/O failure; contention is `Ok(false)`.
+pub fn try_lock_exclusive(file: &File) -> io::Result<bool> {
+    match file.try_lock() {
+        Ok(()) => Ok(true),
+        Err(fs::TryLockError::WouldBlock) => Ok(false),
+        Err(fs::TryLockError::Error(e)) => Err(e),
+    }
+}
 
 /// Rotate once a segment reaches this size.
 pub const MAX_SEGMENT_BYTES: u64 = 64 * 1024 * 1024;
@@ -181,7 +217,7 @@ impl Spool {
             .truncate(false)
             .write(true)
             .open(&lock_path)?;
-        let locked = writer_lock.try_lock_exclusive().map_err(|e| {
+        let locked = try_lock_exclusive(&writer_lock).map_err(|e| {
             io::Error::other(format!(
                 "{}: locking the spool directory failed: {e}",
                 lock_path.display()
@@ -249,7 +285,7 @@ impl Spool {
         };
 
         let initialized = (|| {
-            let locked = file.try_lock_exclusive().map_err(|e| {
+            let locked = try_lock_exclusive(&file).map_err(|e| {
                 io::Error::other(format!(
                     "{}: locking the staged segment failed: {e}",
                     staging_path.display()
@@ -599,7 +635,7 @@ impl Spool {
         // rotation neither releases nor reacquires it. If creation fails, this
         // Spool therefore remains the sole locked writer.
         if let Some(old) = &self.file {
-            FileExt::unlock(old)?;
+            old.unlock()?;
         }
         self.file = Some(file);
         self.path = path;
@@ -618,9 +654,9 @@ impl Drop for Spool {
         // unsynced on a clean drop would lose data no error ever mentioned.
         let _ = self.sync();
         if let Some(file) = &self.file {
-            let _ = FileExt::unlock(file);
+            let _ = file.unlock();
         }
-        let _ = FileExt::unlock(&self.writer_lock);
+        let _ = self.writer_lock.unlock();
     }
 }
 
