@@ -4,6 +4,9 @@ Operator knowledge about the machine this project is developed on. Every item be
 cost real time to learn and several were learned by shipping the bug first. Paths use
 `$HOME` and placeholders; substitute your own.
 
+The *Shell guards* section below is the design rationale for
+`scripts/audit-worktrees.sh`; change one and re-read the other.
+
 ## Time Machine
 
 ### 1. `tmutil latestbackup` returns a synthetic path, never the mount point

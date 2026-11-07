@@ -12,6 +12,9 @@
 # held uncommitted edits or untracked files, and one held a paused merge with 16
 # unresolved conflicts. Those are the only states that lose data.
 #
+# The guard discipline this script follows is written up in
+# docs/runbooks/macos-storage-and-backup.md, "Shell guards".
+#
 # What this script deliberately does NOT treat as a failure: a branch being
 # unpushed, or unmerged relative to main. With ~101 local branches that is the
 # normal state, and a gate that fires on normal states gets ignored.
@@ -33,7 +36,6 @@ BASE="${1:-origin/main}"
 git rev-parse --verify -q "$BASE" >/dev/null || {
   echo "base ref '$BASE' does not exist" >&2; exit 2; }
 
-GC="$(git rev-parse --git-common-dir)"
 unsafe=0
 
 printf '%-34s %-38s %6s %6s %-9s %s\n' \
@@ -56,13 +58,26 @@ while IFS= read -r wt; do
   # An in-progress merge/rebase/cherry-pick is the one state that removal
   # destroys irrecoverably: conflict resolution lives in the working tree and
   # the staged index, and no ref points at either.
-  wtdir="$GC/worktrees/$name"
-  state=clean
-  for marker in MERGE_HEAD CHERRY_PICK_HEAD REVERT_HEAD rebase-merge rebase-apply; do
-    if [ -e "$wtdir/$marker" ] || { [ "$wt" = "$ROOT" ] && [ -e "$GC/$marker" ]; }; then
-      state="$marker"; break
-    fi
-  done
+  #
+  # Ask the worktree where its admin directory is; never guess it from the
+  # directory's basename. git derives the admin name from the basename only at
+  # creation time and disambiguates collisions with a numeric suffix, so two
+  # worktrees named `aw2-dup` in different parents get `worktrees/aw2-dup` and
+  # `worktrees/aw2-dup1`. `git worktree move` does not rename it either.
+  # Guessing therefore reads another worktree's state, and a paused rebase
+  # leaves a clean working tree and index — the marker is the only signal there
+  # is, so a wrong lookup reports "safe to remove" over work that is not. An
+  # unresolvable admin directory is UNKNOWN, which is unsafe: a state that was
+  # not measured is never reported as a good one.
+  wtdir=$(git -C "$wt" rev-parse --absolute-git-dir 2>/dev/null) || wtdir=""
+  if [ -z "$wtdir" ] || [ ! -d "$wtdir" ]; then
+    state=UNKNOWN
+  else
+    state=clean
+    for marker in MERGE_HEAD CHERRY_PICK_HEAD REVERT_HEAD rebase-merge rebase-apply; do
+      if [ -e "$wtdir/$marker" ]; then state="$marker"; break; fi
+    done
+  fi
 
   if [ "$br" = DETACHED ]; then
     unmerged="n/a"
@@ -82,6 +97,7 @@ if [ "$unsafe" -eq 0 ]; then
   echo "all worktrees are safe to remove: every change is committed to a branch"
   exit 0
 fi
-echo "$unsafe worktree(s) hold work that exists only in the working directory." >&2
+echo "$unsafe worktree(s) hold work that exists only in the working directory," >&2
+echo "or could not be inspected at all (STATE=UNKNOWN above names which)." >&2
 echo "Removing those directories would lose it. Commit, stash, or archive first." >&2
 exit 1
