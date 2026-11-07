@@ -72,7 +72,9 @@ struct MedicationsSurface: View {
           ContentUnavailableView(
             "No Medications",
             systemImage: "pills",
-            description: Text("Medication definitions will be provided by your Pi. Enroll this device and sync to load them.")
+            description: Text(
+              "Medication definitions will be provided by your Pi. Enroll this device and sync to load them."
+            )
           )
         } else {
           medicationsForm
@@ -223,7 +225,7 @@ struct MedicationsSurface: View {
           defaultDoseMg: 1,
           promptAnxietyOnLog: false,
           isActive: true
-        ),
+        )
       ]
 
       // Load recent doses from outbox/mirror
