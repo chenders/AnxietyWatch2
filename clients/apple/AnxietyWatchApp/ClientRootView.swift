@@ -17,16 +17,10 @@ struct ClientRootView: View {
         .tabItem { Label("Today", systemImage: "heart.text.square") }
       JournalSurface()
         .tabItem { Label("Journal", systemImage: "book") }
-      PlaceholderSurface(
-        title: "Medications", systemImage: "pills",
-        message: "Medication definitions will come from the Pi."
-      )
-      .tabItem { Label("Medications", systemImage: "pills") }
-      PlaceholderSurface(
-        title: "History", systemImage: "chart.xyaxis.line",
-        message: "History will render Pi projections and explicit gaps."
-      )
-      .tabItem { Label("History", systemImage: "chart.xyaxis.line") }
+      MedicationsSurface()
+        .tabItem { Label("Medications", systemImage: "pills") }
+      HistorySurface()
+        .tabItem { Label("History", systemImage: "chart.xyaxis.line") }
       HealthSurface()
         .tabItem { Label("Health", systemImage: "heart.circle") }
       EnrollmentSurface()
