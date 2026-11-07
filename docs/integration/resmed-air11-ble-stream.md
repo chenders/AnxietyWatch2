@@ -201,11 +201,18 @@ therefore records `TherapyStop`, `MaskOff`, or `StandbyStarted` as a
 post-stop stream envelope arrived, and waits until 180 seconds when stream
 activity continued after the stop. A new start during settling resumes the
 current session rather than creating a duplicate. This in-memory projection is
-not a durable therapy-session record. No accepted amendment specifies one — this text previously
-cited Amendment 12, which is *Provider-aware song search and provider-independent identity* and
-does not mention therapy. The provisional boundary above stands on its own merits; see
-`openspec/changes/amendment-reference-integrity` for the open question of whether that requirement
-should be written down.
+not a durable therapy-session record.
+
+The projection stays provisional under the three-state rule in `AGENTS.md`: a boundary that has not
+been confirmed is *not measured*, and not-measured is never rendered as measured-and-good. That is
+why a stop event alone does not finalize a session and why continued stream activity extends the
+settling window. The rule is what the behaviour rests on — not the absence of a session record.
+
+This text previously said the projection was "not yet the durable therapy-session record required
+by Amendment 12." Amendment 12 is *Provider-aware song search and provider-independent identity*
+and does not mention therapy; no accepted amendment specifies such a record. Whether one should
+exist is an open roadmap question — see `openspec/changes/amendment-reference-integrity`. The
+settling behaviour above does not depend on its answer.
 
 Native cadence is retained in metadata. The collector does not turn repeated
 high-rate copies of a lower-rate signal into false clinical resolution.

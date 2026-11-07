@@ -1065,16 +1065,26 @@ pub async fn air11_handler(State(state): State<AppState>, headers: HeaderMap) ->
 /// GET `/api/air11/history?window_hours=48`.
 ///
 /// Returns bounded, one-minute `PostgreSQL` buckets rather than browser-session
-/// samples. The boundary is deliberately gap-bounded and provisional: no durable
-/// therapy-session record exists, so this endpoint must not pretend that a
-/// transport or time window is a finalized therapy session.
+/// samples. The boundary is deliberately gap-bounded and provisional, and the
+/// reason is the three-state rule in `AGENTS.md`: measured-and-good,
+/// measured-and-bad, and **not measured** — the third is never rendered as the
+/// first. A transport window and a time window are both *not measured* with
+/// respect to therapy-session boundaries, so presenting either as a finalized
+/// session would score an unmeasured thing as a measured one. That holds whether
+/// or not a durable session record ever exists.
 ///
-/// This comment previously attributed that requirement to Amendment 12, which is
-/// *Provider-aware song search and provider-independent identity* and says nothing
-/// about therapy. No accepted amendment specifies a durable therapy-session record,
-/// so a reader who followed the citation would have found no such constraint and
-/// might reasonably have removed this guard. The guard is correct; its stated
-/// authority was not. See `openspec/changes/amendment-reference-integrity`.
+/// Stated that way on purpose. The guard used to rest on an *absence* instead:
+/// that Amendment 12 — *Provider-aware song search and provider-independent
+/// identity* — "does not yet provide a durable therapy-session record." Both
+/// halves of that were wrong. The amendment says nothing about therapy, so a
+/// reader who followed the citation would have found no such constraint and
+/// might reasonably have removed this guard; and an invariant justified by what
+/// is missing expires the moment somebody fills the gap, whereas one justified
+/// by an accepted rule does not.
+///
+/// Whether a durable therapy-session record *should* exist is a separate, open
+/// roadmap question — see `openspec/changes/amendment-reference-integrity`. This
+/// endpoint's behaviour does not depend on its answer.
 #[expect(
     clippy::too_many_lines,
     reason = "the bounded history projection keeps validation, query, and response states together"
