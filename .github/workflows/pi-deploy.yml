@@ -64,15 +64,15 @@ jobs:
         run: |
           set -euo pipefail
           rustup run 1.97.1 cargo fmt --all -- --check
-          rustup run 1.97.1 cargo test -p vitals-decode
-          rustup run 1.97.1 cargo test -p vitals-deploy
-          rustup run 1.97.1 cargo clippy -p vitals-deploy --all-targets -- -D warnings
+          rustup run 1.97.1 cargo test -p vitals-decode --locked
+          rustup run 1.97.1 cargo test -p vitals-deploy --locked
+          rustup run 1.97.1 cargo clippy -p vitals-deploy --all-targets --locked -- -D warnings
 
       - name: Build the current native artifact set
         shell: bash
         run: |
           set -euo pipefail
-          rustup run 1.97.1 cargo build --release -p vitalsd -p vitals-drain -p vitals-console -p vitals-collectors --bins -p vitals-deploy
+          rustup run 1.97.1 cargo build --release --locked -p vitalsd -p vitals-drain -p vitals-console -p vitals-collectors --bins -p vitals-deploy
 
       - name: Generate the SHA-addressed staged release
         shell: bash
