@@ -1,7 +1,7 @@
 # Tasks: Make the review gates verifiable
 
-- [ ] T-RGI-1 — Repoint, rescope and rewrite the pre-PR reviewer against the Rust tree · implement-simple · host
-- [ ] T-RGI-2 — Gate tracked shell on shellcheck in CI · implement-simple · host
+- [x] T-RGI-1 — Repoint, rescope and rewrite the pre-PR reviewer against the Rust tree · implement-simple · host
+- [x] T-RGI-2 — Gate tracked shell on shellcheck in CI · implement-simple · host
 
 ## T-RGI-1 — Repoint, rescope and rewrite the pre-PR reviewer against the Rust tree
 
