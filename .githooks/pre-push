@@ -368,11 +368,42 @@ done
 # ── 9. Verify-command tampering ───────────────────────────────────────────────
 # A worker once rewrote a task's Verify line so its output would pass. The Verify
 # command is the contract; changing it to fit the implementation inverts that.
+#
+# One exception, and it is narrow: a *placeholder* is not a contract. Several
+# tasks in this repository ship with
+#
+#   **Verify:** must be replaced with an exact command before dispatch; task is
+#   not dispatchable until then.
+#
+# which is an instruction to write the command, not a command to satisfy.
+# Blocking its replacement made the gate forbid the one operation its own
+# failure message calls legitimate, and left `--no-verify` as the only route —
+# which is how a blanket bypass gets normalised, taking the public-information
+# and provenance gates with it.
+#
+# So a removed Verify line is permitted only when the removed text is itself a
+# placeholder. Editing a real command still fails, and the message names the
+# line so the reviewer sees exactly what changed.
 if git diff "$RANGE" --name-only | grep -q 'openspec/changes/.*/tasks.md'; then
-  if git diff "$RANGE" -- 'openspec/changes/*/tasks.md' | grep -qE '^-.*\*\*Verify:\*\*'; then
-    fail "a **Verify:** line was modified in tasks.md."
-    printf '   The Verify command is the contract. Satisfy it, do not edit it.\n' >&2
-    printf '   If it is genuinely wrong, say so in the PR and change it deliberately.\n' >&2
+  REMOVED_VERIFY="$(git diff "$RANGE" -- 'openspec/changes/*/tasks.md' \
+    | grep -E '^-.*\*\*Verify:\*\*' || true)"
+  if [[ -n "$REMOVED_VERIFY" ]]; then
+    # A placeholder says it must be replaced and names no command. Requiring
+    # both halves matters: "must be replaced" inside a real command — say a
+    # grep for that phrase — must not buy an exemption, and a backtick is how
+    # every real Verify in this repository quotes its command.
+    REAL_EDITS="$(grep -vE 'must be replaced|not dispatchable|freeze after' <<<"$REMOVED_VERIFY" || true)"
+    SUSPECT="$(grep -E 'must be replaced|not dispatchable|freeze after' <<<"$REMOVED_VERIFY" \
+      | grep -F '`' || true)"
+    if [[ -n "${REAL_EDITS// /}" || -n "${SUSPECT// /}" ]]; then
+      fail "a **Verify:** line was modified in tasks.md."
+      printf '   The Verify command is the contract. Satisfy it, do not edit it.\n' >&2
+      printf '   If it is genuinely wrong, say so in the PR and change it deliberately.\n' >&2
+      printf '   Offending removed line(s):\n' >&2
+      printf '%s\n' "$REAL_EDITS" "$SUSPECT" | grep -E '^-' | sed 's/^/     /' >&2
+    else
+      ok "Verify placeholders filled in; no real command edited"
+    fi
   fi
 fi
 

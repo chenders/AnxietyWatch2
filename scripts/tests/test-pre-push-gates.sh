@@ -252,6 +252,54 @@ commit_in "$d" 'add an index and an ambiguous citation' \
 assert_blocked "$d" 'an ambiguous citation blocks' \
   'an amendment citation does not resolve to exactly one amendment'
 
+# 12. Gate 9 draws one narrow exception: a placeholder Verify is an instruction
+#     to write a command, not a command to satisfy, so filling it in is allowed.
+#     Both halves are tested, because an exemption nobody probes is a hole.
+#
+#     The literal strings are assembled at runtime for the same reason the
+#     credential fixtures above are: this file is tracked, and a real-looking
+#     Verify line sitting in it would be read by the gate as this file's own
+#     diff.
+VERIFY='**Verify:**'
+PLACEHOLDER='must be replaced with an exact command before dispatch; task is not dispatchable until then.'
+
+d="$(make_repo)"
+mkdir -p "$d/openspec/changes/demo"
+{ printf '# Tasks\n\n## T-X1 — demo\n\n'; printf '%s %s\n' "$VERIFY" "$PLACEHOLDER"; } \
+  > "$d/openspec/changes/demo/tasks.md"
+commit_in "$d" 'queue a task with a placeholder' openspec/changes/demo/tasks.md
+git -C "$d" update-ref refs/remotes/origin/main refs/heads/feature
+{ printf '# Tasks\n\n## T-X1 — demo\n\n'; printf '%s `%s`\n' "$VERIFY" 'test 1 -eq 1'; } \
+  > "$d/openspec/changes/demo/tasks.md"
+commit_in "$d" 'fill in the placeholder' openspec/changes/demo/tasks.md
+assert_passed "$d" 'filling in a placeholder Verify is allowed'
+
+d="$(make_repo)"
+mkdir -p "$d/openspec/changes/demo"
+{ printf '# Tasks\n\n## T-X1 — demo\n\n'; printf '%s `%s`\n' "$VERIFY" 'test 1 -eq 1'; } \
+  > "$d/openspec/changes/demo/tasks.md"
+commit_in "$d" 'queue a task with a real command' openspec/changes/demo/tasks.md
+git -C "$d" update-ref refs/remotes/origin/main refs/heads/feature
+{ printf '# Tasks\n\n## T-X1 — demo\n\n'; printf '%s `%s`\n' "$VERIFY" 'true'; } \
+  > "$d/openspec/changes/demo/tasks.md"
+commit_in "$d" 'weaken the command' openspec/changes/demo/tasks.md
+assert_blocked "$d" 'editing a real Verify still blocks' 'line was modified in tasks.md'
+
+# 13. The exemption keys on BOTH halves: a real command that merely contains the
+#     placeholder wording must not buy itself an exemption.
+d="$(make_repo)"
+mkdir -p "$d/openspec/changes/demo"
+{ printf '# Tasks\n\n## T-X1 — demo\n\n'
+  printf '%s `%s`\n' "$VERIFY" 'grep -q "must be replaced" notes.md && test 1 -eq 1'; } \
+  > "$d/openspec/changes/demo/tasks.md"
+commit_in "$d" 'a real command mentioning the placeholder wording' openspec/changes/demo/tasks.md
+git -C "$d" update-ref refs/remotes/origin/main refs/heads/feature
+{ printf '# Tasks\n\n## T-X1 — demo\n\n'; printf '%s `%s`\n' "$VERIFY" 'true'; } \
+  > "$d/openspec/changes/demo/tasks.md"
+commit_in "$d" 'weaken it' openspec/changes/demo/tasks.md
+assert_blocked "$d" 'placeholder wording inside a real command is not an exemption' \
+  'line was modified in tasks.md'
+
 printf '\n%s passed, %s failed\n' "$PASSED" "$FAILED"
 (( FAILED == 0 )) || exit 1
 printf 'pre-push gate regressions passed\n'
