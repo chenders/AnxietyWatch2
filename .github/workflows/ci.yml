@@ -27,6 +27,8 @@ jobs:
           python3 scripts/check-public-info.py --self-test
           python3 scripts/check-air11-public.py --self-test
           python3 scripts/check-air11-admin-sql.py --self-test
+          python3 scripts/check-amendment-refs.py --self-test
+          python3 scripts/check-amendment-refs.py
           bash -n scripts/air11-pi-acceptance.sh
           scripts/air11-pi-acceptance.sh --help
       - name: Pre-push exposure gates inspect every commit

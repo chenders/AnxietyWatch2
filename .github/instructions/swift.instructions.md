@@ -31,10 +31,12 @@ journal/anxiety read mirror for offline history.
   use and changeable in General Settings. The temporary outbox remains excluded from backups.
 - Song search uses Genius when the approved capability exists and iTunes otherwise; queries never
   include journal text. Genius.com credentials are Pi-admin supplied and may reach the iPhone only
-  through Amendment 11's explicit encrypted opt-in flow; never log or commit them.
+  through Amendment 11's (optional direct lyrics retrieval on the iPhone) explicit encrypted
+  opt-in flow; never log or commit them.
 - Provider IDs are metadata only. Logical song identity uses the versioned canonical artist/title/album
   key; never use a Genius or iTunes ID as the record identity or sole deduplication key.
-- First-draft LAN HTTP is permitted only by Amendment 10 to a configured private address; device
+- First-draft LAN HTTP is permitted only by Amendment 10 (first-draft private-LAN transport) to a
+  configured private address; device
   signatures, enrollment approval, scoped credentials, replay IDs, and private-address validation
   remain mandatory. Do not add unsigned or shared-secret fallback.
 - Do not add HealthKit, watchOS, reminders, camera, Bluetooth, location, or tracking permissions

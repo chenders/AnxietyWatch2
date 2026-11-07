@@ -1065,9 +1065,16 @@ pub async fn air11_handler(State(state): State<AppState>, headers: HeaderMap) ->
 /// GET `/api/air11/history?window_hours=48`.
 ///
 /// Returns bounded, one-minute `PostgreSQL` buckets rather than browser-session
-/// samples. The boundary is deliberately gap-bounded and provisional: Amendment 12
-/// does not yet provide a durable therapy-session record, so this endpoint must
-/// not pretend that a transport or time window is a finalized therapy session.
+/// samples. The boundary is deliberately gap-bounded and provisional: no durable
+/// therapy-session record exists, so this endpoint must not pretend that a
+/// transport or time window is a finalized therapy session.
+///
+/// This comment previously attributed that requirement to Amendment 12, which is
+/// *Provider-aware song search and provider-independent identity* and says nothing
+/// about therapy. No accepted amendment specifies a durable therapy-session record,
+/// so a reader who followed the citation would have found no such constraint and
+/// might reasonably have removed this guard. The guard is correct; its stated
+/// authority was not. See `openspec/changes/amendment-reference-integrity`.
 #[expect(
     clippy::too_many_lines,
     reason = "the bounded history projection keeps validation, query, and response states together"
