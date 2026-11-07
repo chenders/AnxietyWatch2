@@ -1,0 +1,213 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="940" viewBox="0 0 1600 940" font-family="Helvetica Neue, Helvetica, Arial, sans-serif">
+<defs>
+  <pattern id="disagree" width="10" height="10" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+    <rect width="10" height="10" fill="#e0533f"/>
+    <line x1="0" y1="0" x2="0" y2="10" stroke="#ffd8cf" stroke-width="2" stroke-opacity="0.7"/>
+  </pattern>
+</defs>
+<rect width="1600" height="940" fill="#10151d"/>
+<text x="168" y="82" fill="#e8edf3" font-size="42" font-weight="700">One mask bit. 43% of the tested grid.</text>
+<text x="168" y="126" fill="#8794a5" font-size="24">The EMAY SleepO2 frame checksum is masked <tspan fill="#e8edf3" font-family="monospace">0x7F</tspan>, not <tspan fill="#e8edf3" font-family="monospace">0xFF</tspan>.</text>
+<text x="168" y="160" fill="#8794a5" font-size="24">Hatched red = a valid frame that an <tspan fill="#e8edf3" font-family="monospace">0xFF</tspan> decoder silently throws away.</text>
+<rect x="168" y="196" width="1330" height="470" fill="#243244"/>
+<rect x="168.00" y="196.00" width="6.48" height="470.00" fill="url(#disagree)"/>
+<rect x="173.88" y="196.00" width="6.48" height="470.00" fill="url(#disagree)"/>
+<rect x="179.77" y="196.00" width="6.48" height="470.00" fill="url(#disagree)"/>
+<rect x="185.65" y="196.00" width="6.48" height="470.00" fill="url(#disagree)"/>
+<rect x="191.54" y="196.00" width="6.48" height="470.00" fill="url(#disagree)"/>
+<rect x="197.42" y="196.00" width="6.48" height="470.00" fill="url(#disagree)"/>
+<rect x="203.31" y="196.00" width="6.48" height="470.00" fill="url(#disagree)"/>
+<rect x="209.19" y="196.00" width="6.48" height="470.00" fill="url(#disagree)"/>
+<rect x="215.08" y="196.00" width="6.48" height="470.00" fill="url(#disagree)"/>
+<rect x="220.96" y="196.00" width="6.48" height="470.00" fill="url(#disagree)"/>
+<rect x="226.85" y="196.00" width="6.48" height="470.00" fill="url(#disagree)"/>
+<rect x="232.73" y="196.00" width="6.48" height="470.00" fill="url(#disagree)"/>
+<rect x="238.62" y="196.00" width="6.48" height="470.00" fill="url(#disagree)"/>
+<rect x="244.50" y="196.00" width="6.48" height="470.00" fill="url(#disagree)"/>
+<rect x="250.39" y="196.00" width="6.48" height="470.00" fill="url(#disagree)"/>
+<rect x="256.27" y="196.00" width="6.48" height="470.00" fill="url(#disagree)"/>
+<rect x="262.16" y="196.00" width="6.48" height="470.00" fill="url(#disagree)"/>
+<rect x="268.04" y="196.00" width="6.48" height="470.00" fill="url(#disagree)"/>
+<rect x="273.93" y="196.00" width="6.48" height="470.00" fill="url(#disagree)"/>
+<rect x="279.81" y="205.22" width="6.48" height="460.78" fill="url(#disagree)"/>
+<rect x="285.70" y="214.43" width="6.48" height="451.57" fill="url(#disagree)"/>
+<rect x="291.58" y="223.65" width="6.48" height="442.35" fill="url(#disagree)"/>
+<rect x="297.47" y="232.86" width="6.48" height="433.14" fill="url(#disagree)"/>
+<rect x="303.35" y="242.08" width="6.48" height="423.92" fill="url(#disagree)"/>
+<rect x="309.24" y="251.29" width="6.48" height="414.71" fill="url(#disagree)"/>
+<rect x="315.12" y="260.51" width="6.48" height="405.49" fill="url(#disagree)"/>
+<rect x="321.01" y="269.73" width="6.48" height="396.27" fill="url(#disagree)"/>
+<rect x="326.89" y="278.94" width="6.48" height="387.06" fill="url(#disagree)"/>
+<rect x="332.78" y="288.16" width="6.48" height="377.84" fill="url(#disagree)"/>
+<rect x="338.66" y="297.37" width="6.48" height="368.63" fill="url(#disagree)"/>
+<rect x="344.55" y="306.59" width="6.48" height="359.41" fill="url(#disagree)"/>
+<rect x="350.43" y="315.80" width="6.48" height="350.20" fill="url(#disagree)"/>
+<rect x="356.32" y="325.02" width="6.48" height="340.98" fill="url(#disagree)"/>
+<rect x="362.20" y="334.24" width="6.48" height="331.76" fill="url(#disagree)"/>
+<rect x="368.09" y="343.45" width="6.48" height="322.55" fill="url(#disagree)"/>
+<rect x="373.97" y="352.67" width="6.48" height="313.33" fill="url(#disagree)"/>
+<rect x="379.86" y="361.88" width="6.48" height="304.12" fill="url(#disagree)"/>
+<rect x="385.74" y="371.10" width="6.48" height="294.90" fill="url(#disagree)"/>
+<rect x="391.63" y="380.31" width="6.48" height="285.69" fill="url(#disagree)"/>
+<rect x="397.51" y="389.53" width="6.48" height="276.47" fill="url(#disagree)"/>
+<rect x="403.40" y="398.75" width="6.48" height="267.25" fill="url(#disagree)"/>
+<rect x="409.28" y="407.96" width="6.48" height="258.04" fill="url(#disagree)"/>
+<rect x="415.17" y="417.18" width="6.48" height="248.82" fill="url(#disagree)"/>
+<rect x="421.05" y="426.39" width="6.48" height="239.61" fill="url(#disagree)"/>
+<rect x="426.94" y="435.61" width="6.48" height="230.39" fill="url(#disagree)"/>
+<rect x="432.82" y="444.82" width="6.48" height="221.18" fill="url(#disagree)"/>
+<rect x="438.71" y="454.04" width="6.48" height="211.96" fill="url(#disagree)"/>
+<rect x="444.59" y="463.25" width="6.48" height="202.75" fill="url(#disagree)"/>
+<rect x="450.48" y="472.47" width="6.48" height="193.53" fill="url(#disagree)"/>
+<rect x="456.36" y="481.69" width="6.48" height="184.31" fill="url(#disagree)"/>
+<rect x="462.25" y="490.90" width="6.48" height="175.10" fill="url(#disagree)"/>
+<rect x="468.13" y="500.12" width="6.48" height="165.88" fill="url(#disagree)"/>
+<rect x="474.02" y="509.33" width="6.48" height="156.67" fill="url(#disagree)"/>
+<rect x="479.90" y="518.55" width="6.48" height="147.45" fill="url(#disagree)"/>
+<rect x="485.79" y="527.76" width="6.48" height="138.24" fill="url(#disagree)"/>
+<rect x="491.67" y="536.98" width="6.48" height="129.02" fill="url(#disagree)"/>
+<rect x="497.56" y="546.20" width="6.48" height="119.80" fill="url(#disagree)"/>
+<rect x="503.44" y="555.41" width="6.48" height="110.59" fill="url(#disagree)"/>
+<rect x="509.33" y="564.63" width="6.48" height="101.37" fill="url(#disagree)"/>
+<rect x="515.21" y="573.84" width="6.48" height="92.16" fill="url(#disagree)"/>
+<rect x="521.10" y="583.06" width="6.48" height="82.94" fill="url(#disagree)"/>
+<rect x="526.98" y="592.27" width="6.48" height="73.73" fill="url(#disagree)"/>
+<rect x="532.87" y="601.49" width="6.48" height="64.51" fill="url(#disagree)"/>
+<rect x="538.75" y="610.71" width="6.48" height="55.29" fill="url(#disagree)"/>
+<rect x="544.64" y="619.92" width="6.48" height="46.08" fill="url(#disagree)"/>
+<rect x="550.52" y="629.14" width="6.48" height="36.86" fill="url(#disagree)"/>
+<rect x="556.41" y="638.35" width="6.48" height="27.65" fill="url(#disagree)"/>
+<rect x="562.29" y="647.57" width="6.48" height="18.43" fill="url(#disagree)"/>
+<rect x="568.18" y="656.78" width="6.48" height="9.22" fill="url(#disagree)"/>
+<rect x="1033.09" y="196.00" width="6.48" height="9.22" fill="url(#disagree)"/>
+<rect x="1038.97" y="196.00" width="6.48" height="18.43" fill="url(#disagree)"/>
+<rect x="1044.86" y="196.00" width="6.48" height="27.65" fill="url(#disagree)"/>
+<rect x="1050.74" y="196.00" width="6.48" height="36.86" fill="url(#disagree)"/>
+<rect x="1056.63" y="196.00" width="6.48" height="46.08" fill="url(#disagree)"/>
+<rect x="1062.51" y="196.00" width="6.48" height="55.29" fill="url(#disagree)"/>
+<rect x="1068.40" y="196.00" width="6.48" height="64.51" fill="url(#disagree)"/>
+<rect x="1074.28" y="196.00" width="6.48" height="73.73" fill="url(#disagree)"/>
+<rect x="1080.17" y="196.00" width="6.48" height="82.94" fill="url(#disagree)"/>
+<rect x="1086.05" y="196.00" width="6.48" height="92.16" fill="url(#disagree)"/>
+<rect x="1091.94" y="196.00" width="6.48" height="101.37" fill="url(#disagree)"/>
+<rect x="1097.82" y="196.00" width="6.48" height="110.59" fill="url(#disagree)"/>
+<rect x="1103.71" y="196.00" width="6.48" height="119.80" fill="url(#disagree)"/>
+<rect x="1109.59" y="196.00" width="6.48" height="129.02" fill="url(#disagree)"/>
+<rect x="1115.48" y="196.00" width="6.48" height="138.24" fill="url(#disagree)"/>
+<rect x="1121.36" y="196.00" width="6.48" height="147.45" fill="url(#disagree)"/>
+<rect x="1127.25" y="196.00" width="6.48" height="156.67" fill="url(#disagree)"/>
+<rect x="1133.13" y="196.00" width="6.48" height="165.88" fill="url(#disagree)"/>
+<rect x="1139.02" y="196.00" width="6.48" height="175.10" fill="url(#disagree)"/>
+<rect x="1144.90" y="196.00" width="6.48" height="184.31" fill="url(#disagree)"/>
+<rect x="1150.79" y="196.00" width="6.48" height="193.53" fill="url(#disagree)"/>
+<rect x="1156.67" y="196.00" width="6.48" height="202.75" fill="url(#disagree)"/>
+<rect x="1162.56" y="196.00" width="6.48" height="211.96" fill="url(#disagree)"/>
+<rect x="1168.44" y="196.00" width="6.48" height="221.18" fill="url(#disagree)"/>
+<rect x="1174.33" y="196.00" width="6.48" height="230.39" fill="url(#disagree)"/>
+<rect x="1180.21" y="196.00" width="6.48" height="239.61" fill="url(#disagree)"/>
+<rect x="1186.10" y="196.00" width="6.48" height="248.82" fill="url(#disagree)"/>
+<rect x="1191.98" y="196.00" width="6.48" height="258.04" fill="url(#disagree)"/>
+<rect x="1197.87" y="196.00" width="6.48" height="267.25" fill="url(#disagree)"/>
+<rect x="1203.75" y="196.00" width="6.48" height="276.47" fill="url(#disagree)"/>
+<rect x="1209.64" y="196.00" width="6.48" height="285.69" fill="url(#disagree)"/>
+<rect x="1215.52" y="196.00" width="6.48" height="294.90" fill="url(#disagree)"/>
+<rect x="1221.41" y="196.00" width="6.48" height="304.12" fill="url(#disagree)"/>
+<rect x="1227.29" y="196.00" width="6.48" height="313.33" fill="url(#disagree)"/>
+<rect x="1233.18" y="196.00" width="6.48" height="322.55" fill="url(#disagree)"/>
+<rect x="1239.06" y="196.00" width="6.48" height="331.76" fill="url(#disagree)"/>
+<rect x="1244.95" y="196.00" width="6.48" height="340.98" fill="url(#disagree)"/>
+<rect x="1250.83" y="196.00" width="6.48" height="350.20" fill="url(#disagree)"/>
+<rect x="1256.72" y="196.00" width="6.48" height="359.41" fill="url(#disagree)"/>
+<rect x="1262.60" y="196.00" width="6.48" height="368.63" fill="url(#disagree)"/>
+<rect x="1268.49" y="196.00" width="6.48" height="377.84" fill="url(#disagree)"/>
+<rect x="1274.37" y="196.00" width="6.48" height="387.06" fill="url(#disagree)"/>
+<rect x="1280.26" y="196.00" width="6.48" height="396.27" fill="url(#disagree)"/>
+<rect x="1286.14" y="196.00" width="6.48" height="405.49" fill="url(#disagree)"/>
+<rect x="1292.03" y="196.00" width="6.48" height="414.71" fill="url(#disagree)"/>
+<rect x="1297.91" y="196.00" width="6.48" height="423.92" fill="url(#disagree)"/>
+<rect x="1303.80" y="196.00" width="6.48" height="433.14" fill="url(#disagree)"/>
+<rect x="1309.68" y="196.00" width="6.48" height="442.35" fill="url(#disagree)"/>
+<rect x="1315.57" y="196.00" width="6.48" height="451.57" fill="url(#disagree)"/>
+<rect x="1321.45" y="196.00" width="6.48" height="460.78" fill="url(#disagree)"/>
+<rect x="1327.34" y="196.00" width="6.48" height="470.00" fill="url(#disagree)"/>
+<rect x="1333.22" y="196.00" width="6.48" height="470.00" fill="url(#disagree)"/>
+<rect x="1339.11" y="196.00" width="6.48" height="470.00" fill="url(#disagree)"/>
+<rect x="1344.99" y="196.00" width="6.48" height="470.00" fill="url(#disagree)"/>
+<rect x="1350.88" y="196.00" width="6.48" height="470.00" fill="url(#disagree)"/>
+<rect x="1356.76" y="196.00" width="6.48" height="470.00" fill="url(#disagree)"/>
+<rect x="1362.65" y="196.00" width="6.48" height="470.00" fill="url(#disagree)"/>
+<rect x="1368.53" y="196.00" width="6.48" height="470.00" fill="url(#disagree)"/>
+<rect x="1374.42" y="196.00" width="6.48" height="470.00" fill="url(#disagree)"/>
+<rect x="1380.30" y="196.00" width="6.48" height="470.00" fill="url(#disagree)"/>
+<rect x="1386.19" y="196.00" width="6.48" height="470.00" fill="url(#disagree)"/>
+<rect x="1392.07" y="196.00" width="6.48" height="470.00" fill="url(#disagree)"/>
+<rect x="1397.96" y="196.00" width="6.48" height="470.00" fill="url(#disagree)"/>
+<rect x="1403.84" y="196.00" width="6.48" height="470.00" fill="url(#disagree)"/>
+<rect x="1409.73" y="196.00" width="6.48" height="470.00" fill="url(#disagree)"/>
+<rect x="1415.61" y="196.00" width="6.48" height="470.00" fill="url(#disagree)"/>
+<rect x="1421.50" y="196.00" width="6.48" height="470.00" fill="url(#disagree)"/>
+<rect x="1427.38" y="196.00" width="6.48" height="470.00" fill="url(#disagree)"/>
+<rect x="1433.27" y="196.00" width="6.48" height="470.00" fill="url(#disagree)"/>
+<rect x="1439.15" y="196.00" width="6.48" height="470.00" fill="url(#disagree)"/>
+<rect x="1445.04" y="196.00" width="6.48" height="470.00" fill="url(#disagree)"/>
+<rect x="1450.92" y="196.00" width="6.48" height="470.00" fill="url(#disagree)"/>
+<rect x="1456.81" y="196.00" width="6.48" height="470.00" fill="url(#disagree)"/>
+<rect x="1462.69" y="196.00" width="6.48" height="470.00" fill="url(#disagree)"/>
+<rect x="1468.58" y="196.00" width="6.48" height="470.00" fill="url(#disagree)"/>
+<rect x="1474.46" y="196.00" width="6.48" height="470.00" fill="url(#disagree)"/>
+<rect x="1480.35" y="196.00" width="6.48" height="470.00" fill="url(#disagree)"/>
+<rect x="1486.23" y="196.00" width="6.48" height="470.00" fill="url(#disagree)"/>
+<rect x="1492.12" y="196.00" width="6.48" height="470.00" fill="url(#disagree)"/>
+<rect x="168" y="196" width="1330" height="470" fill="none" stroke="#8794a5" stroke-width="1.5"/>
+<line x1="168.0" y1="666" x2="168.0" y2="675" stroke="#8794a5" stroke-width="1.5"/>
+<text x="168.0" y="700" fill="#8794a5" font-size="20" text-anchor="middle">25</text>
+<line x1="315.1" y1="666" x2="315.1" y2="675" stroke="#8794a5" stroke-width="1.5"/>
+<text x="315.1" y="700" fill="#8794a5" font-size="20" text-anchor="middle">50</text>
+<line x1="462.2" y1="666" x2="462.2" y2="675" stroke="#8794a5" stroke-width="1.5"/>
+<text x="462.2" y="700" fill="#8794a5" font-size="20" text-anchor="middle">75</text>
+<line x1="609.4" y1="666" x2="609.4" y2="675" stroke="#8794a5" stroke-width="1.5"/>
+<text x="609.4" y="700" fill="#8794a5" font-size="20" text-anchor="middle">100</text>
+<line x1="756.5" y1="666" x2="756.5" y2="675" stroke="#8794a5" stroke-width="1.5"/>
+<text x="756.5" y="700" fill="#8794a5" font-size="20" text-anchor="middle">125</text>
+<line x1="903.6" y1="666" x2="903.6" y2="675" stroke="#8794a5" stroke-width="1.5"/>
+<text x="903.6" y="700" fill="#8794a5" font-size="20" text-anchor="middle">150</text>
+<line x1="1050.7" y1="666" x2="1050.7" y2="675" stroke="#8794a5" stroke-width="1.5"/>
+<text x="1050.7" y="700" fill="#8794a5" font-size="20" text-anchor="middle">175</text>
+<line x1="1197.9" y1="666" x2="1197.9" y2="675" stroke="#8794a5" stroke-width="1.5"/>
+<text x="1197.9" y="700" fill="#8794a5" font-size="20" text-anchor="middle">200</text>
+<line x1="1345.0" y1="666" x2="1345.0" y2="675" stroke="#8794a5" stroke-width="1.5"/>
+<text x="1345.0" y="700" fill="#8794a5" font-size="20" text-anchor="middle">225</text>
+<line x1="1492.1" y1="666" x2="1492.1" y2="675" stroke="#8794a5" stroke-width="1.5"/>
+<text x="1492.1" y="700" fill="#8794a5" font-size="20" text-anchor="middle">250</text>
+<line x1="159" y1="661.4" x2="168" y2="661.4" stroke="#8794a5" stroke-width="1.5"/>
+<text x="150" y="668.4" fill="#8794a5" font-size="20" text-anchor="end">50</text>
+<line x1="159" y1="569.2" x2="168" y2="569.2" stroke="#8794a5" stroke-width="1.5"/>
+<text x="150" y="576.2" fill="#8794a5" font-size="20" text-anchor="end">60</text>
+<line x1="159" y1="477.1" x2="168" y2="477.1" stroke="#8794a5" stroke-width="1.5"/>
+<text x="150" y="484.1" fill="#8794a5" font-size="20" text-anchor="end">70</text>
+<line x1="159" y1="384.9" x2="168" y2="384.9" stroke="#8794a5" stroke-width="1.5"/>
+<text x="150" y="391.9" fill="#8794a5" font-size="20" text-anchor="end">80</text>
+<line x1="159" y1="292.8" x2="168" y2="292.8" stroke="#8794a5" stroke-width="1.5"/>
+<text x="150" y="299.8" fill="#8794a5" font-size="20" text-anchor="end">90</text>
+<line x1="159" y1="200.6" x2="168" y2="200.6" stroke="#8794a5" stroke-width="1.5"/>
+<text x="150" y="207.6" fill="#8794a5" font-size="20" text-anchor="end">100</text>
+<text x="833" y="734" fill="#8794a5" font-size="22" text-anchor="middle">pulse rate (bpm)</text>
+<text x="46" y="431" fill="#8794a5" font-size="22" text-anchor="middle" transform="rotate(-90 46 431)">SpO₂ (%)</text>
+<rect x="256.3" y="196.0" width="53.0" height="55.3" fill="none" stroke="#f0b429" stroke-width="3"/>
+<line x1="309.2" y1="223.6" x2="691.8" y2="223.6" stroke="#f0b429" stroke-width="2"/>
+<rect x="692" y="204" width="660" height="80" rx="6" fill="#10151d" fill-opacity="0.9" stroke="#f0b429" stroke-width="1.5"/>
+<text x="712" y="238" fill="#f0b429" font-size="25" font-weight="700">ASLEEP · PR 40–48, SpO₂ 95–100</text>
+<text x="712" y="270" fill="#f0b429" font-size="22">every frame in this box is thrown away by the wrong mask</text>
+<circle cx="444.6" cy="255.9" r="9" fill="none" stroke="#e8edf3" stroke-width="3"/>
+<line x1="444.6" y1="264.9" x2="568.2" y2="329.6" stroke="#e8edf3" stroke-width="2"/>
+<rect x="580" y="325" width="700" height="122" rx="6" fill="#10151d" fill-opacity="0.9" stroke="#8794a5" stroke-width="1.5"/>
+<text x="600" y="346" fill="#e8edf3" font-size="24" font-weight="700">AWAKE, SITTING UP</text>
+<text x="600" y="379" fill="#8794a5" font-size="22">A typical awake reading, like the 27-frame live capture</text>
+<text x="600" y="413" fill="#8794a5" font-size="22">and the reference frame. Both masks verify them identically.</text>
+<rect x="168" y="772" width="26" height="26" fill="url(#disagree)"/>
+<text x="206" y="792" fill="#e8edf3" font-size="23">masks disagree — <tspan font-weight="700">4,998 of 11,526 readings (43%)</tspan></text>
+<rect x="808" y="772" width="26" height="26" fill="#243244" stroke="#8794a5"/>
+<text x="846" y="792" fill="#e8edf3" font-size="23">masks agree — a wrong decoder looks perfect here</text>
+<text x="168" y="848" fill="#8794a5" font-size="22">The correct mask came from decompiling the vendor app. No frame captured from an awake subject could ever have proved it.</text>
+<text x="168" y="882" fill="#8794a5" font-size="19" font-family="monospace">crates/vitals-decode/src/emay.rs  ·  grid: pulse 25–250 bpm × SpO₂ 50–100%</text>
+</svg>
