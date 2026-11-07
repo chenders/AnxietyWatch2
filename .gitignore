@@ -26,7 +26,6 @@ corpus/
 .idea/shelf/
 .idea/httpRequests/
 target/
-Cargo.lock
 
 # cargo-fuzz
 fuzz/target/
