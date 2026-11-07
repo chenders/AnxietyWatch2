@@ -419,11 +419,11 @@ mod tests {
     const SCOPES: [&str; 2] = ["submit_domain_records", "read_credential_status"];
 
     fn valid_key() -> [u8; 65] {
-        use p256::elliptic_curve::sec1::ToEncodedPoint;
+        use p256::elliptic_curve::sec1::ToSec1Point;
         let private_key = p256::SecretKey::from_slice(&[1_u8; 32]).unwrap();
         private_key
             .public_key()
-            .to_encoded_point(false)
+            .to_sec1_point(false)
             .as_bytes()
             .try_into()
             .unwrap()
