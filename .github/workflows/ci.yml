@@ -78,6 +78,41 @@ jobs:
         run: |
           python -m pytest -q vitals/tools/tests/test_panel_vitals_status.py
           ruff check tools/panel_vitals_status.py vitals/tools/tests/test_panel_vitals_status.py
+      # The ez Share mirror's 37 tests drive an in-process hostile fixture
+      # server — traversal and `.` names, non-UTF-8 percent-encoding,
+      # cross-origin and non-ASCII redirects, Content-Encoding, oversized
+      # listing and body, header and body read timeouts including the
+      # `Connection: close` case, the run deadline, the directory/request/byte
+      # budgets, the free-space floor, depth pruning, truncated-response
+      # cleanup, a dangling symlink planted at a content path, the run lock,
+      # directory modes, manifest recovery and malformed entries, and the CLI's
+      # exit codes. Until this step existed nothing ran them:
+      # not CI, not the pre-push hook, only someone typing T-CP1's Verify line by
+      # hand. This file's own header says a test that skips in CI is a test that
+      # does not run, and that applies harder here, because the subject is an
+      # unauthenticated network client parsing attacker-controlled input on a box
+      # that also runs the alarm.
+      #
+      # The count is asserted rather than trusting the exit code alone, and the
+      # three cases were measured rather than assumed. Discovering nothing
+      # fails on its own (Python 3.12+ exits 5 for "no tests ran"), and a
+      # broken import inside a test file also fails on its own (reported as an
+      # error, exit 1). What passes silently is a file renamed out of the
+      # `test*.py` pattern: its tests simply cease to exist and the remainder
+      # report OK with exit 0 — measured at 1 of 3 ran, exit 0. Asserting the
+      # known total is what separates "13 passed" from "3 passed and 10
+      # vanished".
+      - name: CPAP ez Share mirror tests
+        run: |
+          set -o pipefail
+          python -m unittest discover -s batch/cpap_ezshare/tests -v 2>&1 | tee /tmp/ezshare.out
+          ran=$(grep -oE '^Ran [0-9]+ test' /tmp/ezshare.out | grep -oE '[0-9]+' || true)
+          echo "ez Share mirror tests ran: ${ran:-0}"
+          if [ "${ran:-0}" -lt 37 ]; then
+            echo "::error::expected at least 37 ez Share mirror tests, ran ${ran:-0} — discovery is not finding the suite"
+            exit 1
+          fi
+          python -m compileall -q batch/cpap_ezshare
 
   build-test:
     runs-on: ubuntu-latest
