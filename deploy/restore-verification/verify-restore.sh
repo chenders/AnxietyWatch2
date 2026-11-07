@@ -22,7 +22,7 @@ tables_checked=0
 mismatches='[]'
 checks='[]'
 error='verification did not complete'
-image_dev= image_ino= mount_dev= mount_ino= run_mount_dev= run_mount_ino=
+image_dev='' image_ino='' mount_dev='' mount_ino='' run_mount_dev='' run_mount_ino=''
 data_mounted=0
 run_mounted=0
 

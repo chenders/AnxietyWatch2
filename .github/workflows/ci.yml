@@ -31,6 +31,17 @@ jobs:
           python3 scripts/check-amendment-refs.py
           bash -n scripts/air11-pi-acceptance.sh
           scripts/air11-pi-acceptance.sh --help
+      # The file list comes from `git ls-files`, not an enumeration, so a script
+      # added later is covered without anyone remembering to edit this workflow.
+      # Severity stays at `warning`: the gate exists because a fail-open
+      # word-splitting bug (`for e in $(ls -A "$dir")`) shipped inside a size
+      # guard, and that is an SC2045/SC2086-class warning, not an error. Lowering
+      # the severity to make a finding go away would retire the gate's whole
+      # purpose.
+      - name: Tracked shell is statically analysed
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+          git ls-files '*.sh' '*.bash' .githooks/pre-push | xargs shellcheck -S warning
       - name: Pre-push exposure gates inspect every commit
         run: |
           bash -n .githooks/pre-push
