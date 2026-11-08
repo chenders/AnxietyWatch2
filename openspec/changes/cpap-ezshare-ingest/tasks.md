@@ -118,7 +118,7 @@ registry range; a rejected value contributes no sample and names its reason. No 
 SQL, no systemd, no network code. Every parser path gets malformed, truncated and property tests.
 Never assert float equality; compare with a tolerance.
 
-**Verify:** `test "$(basename "$PWD")" = aw2-cpap-t-cp2 && python3 -m unittest discover -s batch/cpap_edf/tests && test "$(python3 -c 'import unittest;print(unittest.defaultTestLoader.discover("batch/cpap_edf/tests").countTestCases())')" -ge 30 && python3 -m compileall -q batch/cpap_edf && python3 vitals/tools/gen_registry.py --check && rg -q '^\[source\.resmed_air11_sd\]' vitals/registry.toml && ! rg -qE 'psycopg|sqlalchemy|INSERT INTO|DELETE FROM' batch/cpap_edf && git diff --check origin/main...HEAD`
+**Verify:** `test "$(basename "$PWD")" = aw2-cpap-t-cp2 && python3 -m unittest discover -s batch/cpap_edf/tests && test "$(python3 -c 'import unittest;print(unittest.defaultTestLoader.discover("batch/cpap_edf/tests").countTestCases())')" -ge 30 && python3 -m compileall -q batch/cpap_edf && python3 vitals/tools/gen_registry.py --check && rg -q '^\[source\.resmed_air11_sd\]' vitals/registry.toml && ! rg -q 'psycopg|sqlalchemy|INSERT INTO|DELETE FROM' batch/cpap_edf && git diff --check origin/main...HEAD`
 
 **Note on this Verify line.** It deliberately does **not** pipe the suite into `tee` or `grep` to
 count tests. `python3 -m unittest … | grep -qE '^Ran …'` returns *grep's* status, so a suite that
@@ -128,6 +128,16 @@ suite runs once for its status, and `countTestCases()` is asked for the number. 
 because `unittest discover` exits 0 on a *partial* discovery — a file renamed out of the `test*.py`
 pattern takes its cases with it silently, measured at 1 of 3 ran, exit 0 — while an empty discovery
 (exit 5) and a broken import (exit 1) already fail on their own.
+
+**Correction, 2026-11-07: clause 7 was fail-open as first written.** It read
+`! rg -qE 'psycopg|...'`, and in ripgrep `-E` means `--encoding`, not extended-regex. The command
+therefore exited 2 on a flag error, the `!` turned that into a pass, and the clause asserted
+nothing — confirmed by running it against a directory that did contain `psycopg`, where it still
+passed. ripgrep's default regex already supports alternation, so the fix is to drop the flag. The
+property was never unenforced in practice: `test_no_sql_or_network_in_this_package` greps the
+package for the same needles, which is why T-CP2 could land in #93 before this correction. Recorded
+here rather than quietly amended, because the pre-push gate treats a Verify edit as tampering until
+the reason is written down.
 
 `gen_registry.py --check` is in the line because `vitals/generated/` is never hand-edited and CI
 regenerates and diffs it; a registry change that forgets to regenerate would otherwise land green
