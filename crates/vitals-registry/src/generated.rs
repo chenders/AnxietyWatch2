@@ -117,6 +117,8 @@ pub enum VitalsSource {
     AdUa651ble = 6,
     /// `polar_h10_emulator` — `internal`
     PolarH10Emulator = 7,
+    /// `resmed_air11_sd` — `sd_edf`
+    ResmedAir11Sd = 8,
 }
 
 /// How often a source is expected to deliver, declared in `registry.toml`.
@@ -318,6 +320,7 @@ impl VitalsSource {
             5 => Some(Self::ResmedAir11),
             6 => Some(Self::AdUa651ble),
             7 => Some(Self::PolarH10Emulator),
+            8 => Some(Self::ResmedAir11Sd),
             _ => None,
         }
     }
@@ -346,6 +349,7 @@ impl VitalsSource {
             Self::ResmedAir11 => Cadence::EverySeconds(1),
             Self::AdUa651ble => Cadence::OnDemand,
             Self::PolarH10Emulator => Cadence::EverySeconds(1),
+            Self::ResmedAir11Sd => Cadence::OnDemand,
         }
     }
 
@@ -408,7 +412,7 @@ pub const ALL_TYPES: [VitalsType; 43] = [
 ];
 
 /// Every source.
-pub const ALL_SOURCES: [VitalsSource; 8] = [
+pub const ALL_SOURCES: [VitalsSource; 9] = [
     VitalsSource::Emay,
     VitalsSource::PolarH10,
     VitalsSource::Healthkit,
@@ -417,4 +421,5 @@ pub const ALL_SOURCES: [VitalsSource; 8] = [
     VitalsSource::ResmedAir11,
     VitalsSource::AdUa651ble,
     VitalsSource::PolarH10Emulator,
+    VitalsSource::ResmedAir11Sd,
 ];

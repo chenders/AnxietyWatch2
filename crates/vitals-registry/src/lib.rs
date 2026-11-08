@@ -134,7 +134,12 @@ mod tests {
                 Cadence::OnDemand => on_demand += 1,
             }
         }
+        // These counts are hardcoded so that adding a source is a deliberate
+        // act rather than an accident: the test fails until someone states
+        // which kind of source they added. `resmed_air11_sd` took on_demand
+        // from 3 to 4 — the SD card is event-driven, so its age alone must
+        // never be read as a failure.
         assert_eq!(periodic, 5);
-        assert_eq!(on_demand, 3);
+        assert_eq!(on_demand, 4);
     }
 }
