@@ -115,6 +115,17 @@ Confirmed available for arm64 / Debian bookworm / PG16.
 
 Not adopted: PostGIS, pgvector, pgaudit — no use here.
 
+> **§§3.1–3.4 are superseded by [Amendment 19](2026-11-08-amendment-19-samples-storage-and-identity.md).**
+> `samples` does not become a hypertable, and the compression policy, the `samples_1min` continuous
+> aggregate and the retention policy move off it onto a standalone rollup.
+>
+> Not because this section was wrong when written — it was consistent with Amendment 04 §1, which
+> kept `timestamp` in the primary key. **Amendment 05 removed it**, making the identity stable across
+> retransmission, and `create_hypertable` requires its partition column in every unique constraint.
+> A05's `Invalidates:` list named A04 and not A01, so the conflict went unrecorded and the last four
+> sqitch changes have been undeployable ever since — which also blocked the 23 changes behind them in
+> the linear plan. The goals below are retained and re-sited; only the mechanism changes.
+
 ### 3.1 `samples` becomes a hypertable
 
 ```sql
