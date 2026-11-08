@@ -15,11 +15,20 @@ constraint on the table. `samples`' primary key is `(source, type, session_id, s
 deliberately excludes `timestamp`, per Amendment 05. Production `sqitch status` therefore listed all
 four as Undeployed — and because the plan is linear, the 23 changes after them were unreachable too.
 
-**They are not simply wrong.** Amendment 19 adopts their *goals*: `samples` does become a compressed
-hypertable with an aggregate and retention. What changes is that the ingest identity moves to its own
-`sample_identity` table so the hypertable can exist, and that the conversion happens as a verified
-copy rather than the in-place `migrate_data => TRUE` here — which Amendment 01's own revert note had
-to make *refuse* on a non-empty table, i.e. it had no way back.
+**They are not simply wrong, and the alternative was measured before being declined.** Amendment 19
+built a compressed hypertable with the identity in a separate `sample_identity` table, loaded it with
+1,043,564 real rows, and priced it: **44 GB → 13 GB, a 31 GB saving** — but the identity table costs
+125 bytes/row (11.9 GB at scale, *more* than the 7.4 GB index it replaces), and the hypertable
+accepts a replayed row **silently**, where today's `samples` rejects it unconditionally. On a disk
+with 3.3 TB free, that trade was declined.
 
-When Amendment 19 Phase 3 is implemented, the replacements will be new changes with new names. These
-files are history and must not be re-added to the plan.
+So `samples` remains a plain, uncompressed table **knowingly**: 23.9 GB of `extra` stays
+uncompressed because the only mechanism that would compress it requires giving up unconditional
+duplicate rejection on the table holding the data.
+
+That verdict could change. If identity can be stored as `(source, type, session_id, seq_lo, seq_hi)`
+ranges rather than one row per sample, the identity cost collapses and the option is worth
+re-costing — see Amendment 19 §3.2.
+
+These files are history. Any future replacement will be new changes with new names; nothing here
+should be re-added to the plan.
