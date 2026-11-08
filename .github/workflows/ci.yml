@@ -50,6 +50,17 @@ jobs:
         run: |
           bash -n scripts/audit-worktrees.sh
           bash scripts/tests/test-audit-worktrees.sh
+      # AGENTS.md makes the amendment index mandatory reading, so an index that
+      # disagrees with the files on disk misleads every worker who obeys the
+      # scoping rule. Nothing ran this verifier until now: its only callers were
+      # three task Verify lines, and it had been failing on a correct index for
+      # two months because its row pattern could not see the suffixed A11
+      # series. A verifier nothing verifies drifts.
+      - name: Amendment index agrees with the amendment files
+        run: |
+          bash -n scripts/verify-amendment-index.sh
+          bash scripts/verify-amendment-index.sh
+          bash scripts/tests/test-amendment-index.sh
       # Only meaningful now that Cargo.lock is tracked: before this commit there
       # was no committed dependency set to audit, so the same source tree gave
       # different answers on different machines (9 advisories against a
