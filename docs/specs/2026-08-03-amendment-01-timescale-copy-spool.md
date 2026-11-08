@@ -115,9 +115,10 @@ Confirmed available for arm64 / Debian bookworm / PG16.
 
 Not adopted: PostGIS, pgvector, pgaudit — no use here.
 
-> **§§3.1–3.4 are superseded by [Amendment 19](2026-11-08-amendment-19-samples-storage-and-identity.md).**
-> `samples` does not become a hypertable, and the compression policy, the `samples_1min` continuous
-> aggregate and the retention policy move off it onto a standalone rollup.
+> **The mechanism below is superseded by [Amendment 19](2026-11-08-amendment-19-samples-storage-and-identity.md).
+> The goal is not.** `samples` does become a compressed hypertable with an aggregate and retention —
+> but the ingest identity moves to its own `sample_identity` table so the hypertable can exist at
+> all, and the conversion is a verified copy rather than the in-place `migrate_data => TRUE` below.
 >
 > Not because this section was wrong when written — it was consistent with Amendment 04 §1, which
 > kept `timestamp` in the primary key. **Amendment 05 removed it**, making the identity stable across
