@@ -31,9 +31,11 @@ Two findings surfaced by T-M0b's scratch-replay Verify, recorded here for the op
    the 23 changes *after* the four undeployable ones were unreachable too — which is why this task
    had to verify by direct script application rather than by deploying. The four changes are now
    out of the plan and preserved under `db/superseded/`, `attempts` is re-parented onto `samples`,
-   and the plan is 26 changes with every dependency resolving. Identity is unchanged; Amendment 19
-   moves it to its own table so `samples` can become a compressed hypertable by verified copy
-   rather than by the in-place conversion that could not deploy and could not be reverted.
+   and the plan is 26 changes with every dependency resolving. Identity is unchanged and stays
+   enforced on `samples` itself. Amendment 19 built the alternative — a compressed hypertable with
+   identity in a separate table — and **declined it on measured price**: 31 GB saved, but the
+   identity table costs more than the index it replaces and the data table loses unconditional
+   duplicate rejection. `samples` therefore stays a plain, uncompressed table knowingly.
 2. **The plan cannot replay onto a sibling scratch database** even up to the deployed point:
    pg_cron binds to cron.database_name = vitals. Physical restores (pgBackRest) are unaffected;
    dev-environment and from-scratch tooling are. T-M0b's four changes were therefore verified by
