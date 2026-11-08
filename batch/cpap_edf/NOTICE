@@ -1,0 +1,35 @@
+Clean-room format and documentation sources
+===========================================
+
+This package decodes EDF files written by a ResMed AirSense 11 to SD card. It
+was implemented from the published European Data Format specification and from
+project documentation, with no third-party runtime dependency:
+
+* The EDF/EDF+ specification published at edfplus.info, which defines the
+  256-byte header record, the ns x 256-byte signal header block, the ASCII
+  field widths, and the little-endian 16-bit data records.
+* docs/integration/hms-cpap-ezshare-integration.md
+* docs/integration/resmed-air11-ble-stream.md, for the channel set and the
+  canonical units already settled for the Bluetooth path.
+* vitals/registry.toml, the single source of truth for every type, canonical
+  unit and valid range.
+* openspec/changes/cpap-ezshare-ingest/{proposal,design,tasks}.md
+
+No OSCAR or hms-cpap implementation code was read or copied. OSCAR is
+GPL-licensed and this project does not copy GPL implementation code; its
+documentation of ResMed's *file formats* informed the channel label and
+dimension spellings in channels.py, which the change proposal explicitly
+permits as formats-only.
+
+No third-party EDF library is used. pyedflib and cpap-py were both considered
+and rejected: see the frozen decision recorded under T-CP2 in
+openspec/changes/cpap-ezshare-ingest/tasks.md. The short form is that these
+bytes arrive from an untrusted SD card over unauthenticated HTTP, and handing
+them to a compiled C extension would reverse the memory-safety property the
+mirror in batch/cpap_ezshare exists to establish.
+
+Python standard-library modules are the only runtime dependencies: dataclasses,
+hashlib, pathlib, re and tomllib.
+
+ResMed, AirSense and ez Share names identify their respective products. No
+affiliation or endorsement is implied.

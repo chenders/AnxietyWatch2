@@ -113,6 +113,21 @@ jobs:
             exit 1
           fi
           python -m compileall -q batch/cpap_ezshare
+      # Same reasoning as the step above, and the same count assertion. The
+      # expectations in this suite are derived by hand from the EDF
+      # specification rather than from the parser under test, which is the only
+      # arrangement in which a parser test proves anything.
+      - name: CPAP EDF semantics tests
+        run: |
+          set -o pipefail
+          python -m unittest discover -s batch/cpap_edf/tests -v 2>&1 | tee /tmp/cpapedf.out
+          ran=$(grep -oE '^Ran [0-9]+ test' /tmp/cpapedf.out | grep -oE '[0-9]+' || true)
+          echo "CPAP EDF tests ran: ${ran:-0}"
+          if [ "${ran:-0}" -lt 68 ]; then
+            echo "::error::expected at least 68 CPAP EDF tests, ran ${ran:-0} — discovery is not finding the suite"
+            exit 1
+          fi
+          python -m compileall -q batch/cpap_edf
 
   build-test:
     runs-on: ubuntu-latest
