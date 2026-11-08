@@ -25,6 +25,15 @@ Two findings surfaced by T-M0b's scratch-replay Verify, recorded here for the op
    Amendment 01's "samples is a hypertable, compressed, with a continuous aggregate" does not
    describe the running system. This contradiction needs its own amendment-level decision;
    nobody resolved it silently tonight.
+
+   **Resolved 2026-11-08 by [Amendment 19](../../../docs/specs/2026-11-08-amendment-19-samples-storage-and-identity.md),
+   via T-M3a.** The finding was right and it was worse than recorded: because the plan is linear,
+   the 23 changes *after* the four undeployable ones were unreachable too — which is why this task
+   had to verify by direct script application rather than by deploying. The four changes are now
+   out of the plan and preserved under `db/superseded/`, `attempts` is re-parented onto `samples`,
+   and the plan is 26 changes with every dependency resolving. Identity is unchanged; Amendment 19
+   moves it to its own table so `samples` can become a compressed hypertable by verified copy
+   rather than by the in-place conversion that could not deploy and could not be reverted.
 2. **The plan cannot replay onto a sibling scratch database** even up to the deployed point:
    pg_cron binds to cron.database_name = vitals. Physical restores (pgBackRest) are unaffected;
    dev-environment and from-scratch tooling are. T-M0b's four changes were therefore verified by
