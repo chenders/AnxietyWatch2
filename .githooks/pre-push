@@ -395,12 +395,43 @@ if git diff "$RANGE" --name-only | grep -q 'openspec/changes/.*/tasks.md'; then
     REAL_EDITS="$(grep -vE 'must be replaced|not dispatchable|freeze after' <<<"$REMOVED_VERIFY" || true)"
     SUSPECT="$(grep -E 'must be replaced|not dispatchable|freeze after' <<<"$REMOVED_VERIFY" \
       | grep -F '`' || true)"
+    # A real command may still be corrected, but only out loud. The gate's own
+    # message has always said "if it is genuinely wrong, say so in the PR and
+    # change it deliberately" while providing no way to do that, which left
+    # --no-verify as the only route — and --no-verify is all-or-nothing, so it
+    # also skips the public-information and provenance gates on exactly the
+    # push where someone has decided a gate is in their way, and it records
+    # nothing afterwards.
+    #
+    # A `Verify-Change:` trailer is the declared route. It is not a weaker
+    # gate, it is a louder one: the justification lands in `git log` forever
+    # instead of evaporating with a command-line flag, and the hook prints both
+    # the trailer and the removed lines so a reviewer reads the claim beside the
+    # change. The trailer must be on a commit in this push and must say
+    # something — a bare `Verify-Change: yes` is refused.
+    VERIFY_CHANGE=""
+    for c in $COMMITS; do
+      trailer="$(git log -1 --format='%(trailers:key=Verify-Change,valueonly=true)' "$c" \
+        | tr -d '\n' || true)"
+      [[ -n "${trailer// /}" ]] && VERIFY_CHANGE="$trailer"
+    done
     if [[ -n "${REAL_EDITS// /}" || -n "${SUSPECT// /}" ]]; then
-      fail "a **Verify:** line was modified in tasks.md."
-      printf '   The Verify command is the contract. Satisfy it, do not edit it.\n' >&2
-      printf '   If it is genuinely wrong, say so in the PR and change it deliberately.\n' >&2
-      printf '   Offending removed line(s):\n' >&2
-      printf '%s\n' "$REAL_EDITS" "$SUSPECT" | grep -E '^-' | sed 's/^/     /' >&2
+      if (( ${#VERIFY_CHANGE} >= 40 )); then
+        ok "Verify command changed, declared: ${VERIFY_CHANGE:0:72}"
+        printf '   Changed line(s):\n' >&2
+        printf '%s\n' "$REAL_EDITS" "$SUSPECT" | grep -E '^-' | sed 's/^/     /' >&2
+      else
+        fail "a **Verify:** line was modified in tasks.md."
+        printf '   The Verify command is the contract. Satisfy it, do not edit it.\n' >&2
+        printf '   If it is genuinely wrong, correct it deliberately and say why in a\n' >&2
+        printf '   Verify-Change: trailer of at least 40 characters, so the reason is in\n' >&2
+        printf '   git log rather than in a bypassed hook.\n' >&2
+        if [[ -n "${VERIFY_CHANGE// /}" ]]; then
+          printf '   The trailer present is too short to be a reason: %s\n' "$VERIFY_CHANGE" >&2
+        fi
+        printf '   Offending removed line(s):\n' >&2
+        printf '%s\n' "$REAL_EDITS" "$SUSPECT" | grep -E '^-' | sed 's/^/     /' >&2
+      fi
     else
       ok "Verify placeholders filled in; no real command edited"
     fi
