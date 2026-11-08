@@ -308,16 +308,41 @@ class DecodeTests(unittest.TestCase):
         self.assertTrue(any("at the caller's limit" in r for r in result.rejections))
 
     def test_no_sql_or_network_in_this_package(self) -> None:
-        """Scope discipline, asserted rather than trusted."""
+        """Scope discipline, asserted rather than trusted.
+
+        The needles are assembled from fragments because this file is tracked
+        and T-CP2's own Verify line greps the whole package for these exact
+        strings -- spelling them literally here would make this test's source
+        the thing that fails the check. That has now happened three times in
+        this repository: the amendment-citation fixtures, the comment that
+        explained those fixtures, and this. The shape is general: a check for a
+        forbidden string, written inside the tree it checks, is its own first
+        false positive.
+
+        Excluding this file by name instead would have been the weaker fix. It
+        would leave the repository-level grep failing while the test passed,
+        which is the two-sources-of-truth problem the exclusion was meant to
+        avoid.
+        """
         root = Path(__file__).resolve().parents[1]
-        forbidden = ("psycopg", "sqlalchemy", "INSERT INTO", "DELETE FROM", "socket", "urllib")
+        forbidden = tuple(head + tail for head, tail in (
+            ("psy", "copg"),
+            ("sql", "alchemy"),
+            ("INSERT", " INTO"),
+            ("DELETE", " FROM"),
+            ("sock", "et"),
+            ("url", "lib"),
+        ))
+        checked = 0
         for path in sorted(root.rglob("*.py")):
-            if path.name == "test_semantics.py":
-                continue
             text = path.read_text(encoding="utf-8")
+            checked += 1
             for needle in forbidden:
                 with self.subTest(path=path.name, needle=needle):
                     self.assertNotIn(needle, text)
+        # No file is skipped, so the count is an assertion that the walk found
+        # the package rather than an empty directory.
+        self.assertGreaterEqual(checked, 8, f"only {checked} python files walked under {root}")
 
 
 if __name__ == "__main__":

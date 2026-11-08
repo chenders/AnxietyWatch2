@@ -300,6 +300,37 @@ commit_in "$d" 'weaken it' openspec/changes/demo/tasks.md
 assert_blocked "$d" 'placeholder wording inside a real command is not an exemption' \
   'line was modified in tasks.md'
 
+# 14. A real Verify command may be corrected, but only with the reason in a
+#     Verify-Change: trailer. Three cases, because the value of the declared
+#     route is entirely in it not being a rubber stamp.
+real_verify_repo() {  # returns a repo whose pushed commit edits a real Verify
+  local d
+  d="$(make_repo)"
+  mkdir -p "$d/openspec/changes/demo"
+  { printf '# Tasks\n\n## T-X1 — demo\n\n'; printf '%s `%s`\n' "$VERIFY" 'test 1 -eq 1'; } \
+    > "$d/openspec/changes/demo/tasks.md"
+  commit_in "$d" 'queue a task' openspec/changes/demo/tasks.md
+  git -C "$d" update-ref refs/remotes/origin/main refs/heads/feature
+  { printf '# Tasks\n\n## T-X1 — demo\n\n'; printf '%s `%s`\n' "$VERIFY" 'test 2 -eq 2'; } \
+    > "$d/openspec/changes/demo/tasks.md"
+  printf '%s' "$d"
+}
+
+d="$(real_verify_repo)"
+git -C "$d" add openspec/changes/demo/tasks.md
+git -C "$d" commit -q -m "$(printf 'correct the command\n\nVerify-Change: the first form used rg -qE, where -E means --encoding, so it exited 2 and the negation passed unconditionally.\n')"
+assert_passed "$d" 'a declared Verify-Change is allowed'
+
+d="$(real_verify_repo)"
+git -C "$d" add openspec/changes/demo/tasks.md
+git -C "$d" commit -q -m "$(printf 'correct the command\n\nVerify-Change: yes\n')"
+assert_blocked "$d" 'a too-short Verify-Change is refused' 'too short to be a reason'
+
+d="$(real_verify_repo)"
+git -C "$d" add openspec/changes/demo/tasks.md
+git -C "$d" commit -q -m 'correct the command with no declaration at all'
+assert_blocked "$d" 'an undeclared Verify edit still blocks' 'line was modified in tasks.md'
+
 printf '\n%s passed, %s failed\n' "$PASSED" "$FAILED"
 (( FAILED == 0 )) || exit 1
 printf 'pre-push gate regressions passed\n'
