@@ -524,6 +524,28 @@
       "cadence": {
         "expected_cadence_s": 1
       }
+    },
+    "resmed_air11_sd": {
+      "id": 8,
+      "transport": "sd_edf",
+      "provides": [
+        "patient_flow",
+        "mask_pressure",
+        "inspiratory_pressure",
+        "expiratory_pressure",
+        "leak",
+        "tidal_volume",
+        "minute_ventilation",
+        "respiratory_rate",
+        "ie_ratio",
+        "snore_index",
+        "flow_limitation",
+        "spo2",
+        "hr"
+      ],
+      "cadence": {
+        "on_demand": true
+      }
     }
   }
 }
