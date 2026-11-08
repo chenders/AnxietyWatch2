@@ -327,3 +327,25 @@ provides = [
 # Device-native leak is L/s and tidal volume is L; the registry stores L/min and mL.
 conversion = { leak = 60.0, tidal_volume = 1000.0 }
 expected_cadence_s = 1
+
+[source.resmed_air11_sd]
+id = 8
+transport = "sd_edf"
+# The same therapy signals as the BLE path, arriving as EDF on the SD card. The
+# types are not redeclared: one measurement has one type id regardless of how it
+# reached us, and duplicating them under new names would split the same
+# physiology across two identities.
+provides = [
+    "patient_flow", "mask_pressure", "inspiratory_pressure", "expiratory_pressure",
+    "leak", "tidal_volume", "minute_ventilation", "respiratory_rate", "ie_ratio",
+    "snore_index", "flow_limitation", "spo2", "hr",
+]
+# No `conversion` map here, deliberately, and the contrast with resmed_air11
+# above is the point. On the BLE path the wire format carries implicit units, so
+# a fixed per-source factor is the only option. EDF instead states each signal's
+# physical dimension inside the file, so batch/cpap_edf converts per signal from
+# the unit the file declares and rejects one it does not recognise. A fixed
+# factor would silently mis-scale by 60x the day ResMed writes L/min where it
+# used to write L/s -- and a mis-scaled leak reading is indistinguishable from a
+# real one downstream.
+on_demand = true
