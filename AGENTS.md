@@ -149,6 +149,31 @@ Gate G1 is absolute: **never apply `dtoverlay=disable-bt` until the Sena dongle 
 If you change a threshold, a sort order, a filter, or an interface, update every `///` comment and
 doc in the same commit. A plan doc that does not reflect what shipped is a defect.
 
+## Autonomy
+
+**Do the work. Do not ask for confirmation on anything reversible, gated by a test, or
+already covered by a rule in this file.** Many commits with no questions is the expected
+shape of a session, not a risk.
+
+Stop and ask only for:
+
+- the destructive actions named under *Destructive actions* below;
+- accepting an amendment, which amendment 08 reserves to the owner;
+- a threshold that encodes a clinical or cost judgement no measurement settles;
+- a case where proceeding under any assumption would be unsafe, or would make the work
+  useless if the assumption turned out wrong.
+
+Everything else is yours. Do it, then report what was done and what it cost.
+
+A question is cheap for you and expensive for the owner: it moves a decision that is yours
+onto him while looking like care. *"Shall I push this?"* about a tested, reversible change is
+not diligence — it is abdication. Prefer handing over a finished, reversible thing to asking
+permission to begin one.
+
+When something genuinely does need him, batch it into one decision point rather than stopping
+repeatedly. A run of consequential decisions is not a licence to make asking the default for
+the next reversible one.
+
 ## Workflow — every change ships this way
 
 **Nothing lands on `main` except through a reviewed PR.** Review may be performed locally by an
