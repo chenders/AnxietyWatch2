@@ -39,5 +39,31 @@
 #                      one about this bump, which cost an accepted advisory for a
 #                      day.
 
+#   RUSTSEC-2026-0459  libsqlite3-sys 0.30.1, SQLite CVE-2026-119375. Accepted
+#                      2026-11-09, and this one is accepted rather than cleared
+#                      because the dependency is not ours to remove: it is in
+#                      Cargo.lock only because the lockfile records the union of
+#                      sqlx's optional backends. `vitals-console` declares
+#                      `default-features = false` with `postgres` and no sqlite
+#                      feature, so sqlx-sqlite is never enabled.
+#
+#                      The claim is checkable three ways, not asserted:
+#                        cargo tree -i libsqlite3-sys --target all   -> nothing to print
+#                        no Cargo.toml in the workspace names sqlite or rusqlite
+#                        after `cargo build --workspace --all-targets`, no
+#                        libsqlite3 artifact exists anywhere under target/
+#                      So the vulnerable C SQLite is never compiled, linked or
+#                      reachable. Amendment 01 dropped SQLite from this project
+#                      entirely; this is a lockfile shadow of that decision.
+#
+#                      Not fixed by bumping: `cargo update -p libsqlite3-sys`
+#                      reaches only 0.37.0 under the pinned toolchain, and the
+#                      advisory needs >= 0.39.0. Bumping to a still-vulnerable
+#                      version would add lockfile churn and read as a fix.
+#                      Clears when sqlx stops listing sqlite among its optional
+#                      backends, or when the toolchain moves far enough to reach
+#                      0.39 -- whichever first. Re-check the three commands above
+#                      before renewing this entry.
+
 [advisories]
-ignore = []
+ignore = ["RUSTSEC-2026-0459"]
