@@ -67,6 +67,14 @@ jobs:
         run: |
           bash -n scripts/tests/test-sqitch-verify-asserts.sh
           bash scripts/tests/test-sqitch-verify-asserts.sh
+      # Two zero-byte files named `[^` and `]*` reached main in 79201d3 -- the
+      # halves of a character class split by an unquoted expansion. Nothing
+      # failed at the time: empty files emit no error and `git add -A` swept
+      # them in. This is the backstop.
+      - name: Tracked filenames are shell-safe
+        run: |
+          bash -n scripts/tests/test-tracked-filenames.sh
+          bash scripts/tests/test-tracked-filenames.sh
       # AGENTS.md makes the amendment index mandatory reading, so an index that
       # disagrees with the files on disk misleads every worker who obeys the
       # scoping rule. Nothing ran this verifier until now: its only callers were
