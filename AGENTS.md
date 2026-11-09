@@ -128,11 +128,18 @@ dropping tables, or anything that touches `/boot/firmware`.
 
 Never use an ambiguous multi-source `scp` or an ad-hoc `install` destination. In particular,
 `/dev/null` is a device node, never a copy destination. Use `scripts/install-air11-pi-artifact.sh`
-for AirSense binaries and its unit: it has an allowlist of destination paths, copies first to a
-regular file under `/tmp`, validates the temporary file, installs only to the selected allowlisted
-path, and verifies the resulting type/mode/owner. If that helper cannot be used, stop rather than
-constructing a replacement command inline. Verify `/dev/null` remains a character device after any
-Pi deployment command.
+for every artifact it allowlists — the AirSense collector, onboard tool and unit, and
+`vitals/registry.toml`: it has an allowlist of destination paths, copies first to a regular file
+under `/tmp`, validates the temporary file, installs only to the selected allowlisted path, and
+verifies the resulting type/mode/owner. If that helper cannot be used, stop rather than constructing
+a replacement command inline. Verify `/dev/null` remains a character device after any Pi deployment
+command.
+
+**Adding a destination is the sanctioned path; working around the allowlist is not.** Extend the
+`case` in that script, add the local path to the tree, and let
+`scripts/tests/test-install-pi-artifact.sh` check the result. That test refuses any entry pointing at
+a device node or a directory, so the allowlist cannot be widened into the shape this rule exists to
+forbid.
 
 Gate G1 is absolute: **never apply `dtoverlay=disable-bt` until the Sena dongle is verified UP as
 `hci1`.** It removes the onboard controller and leaves the box with no Bluetooth at all.
