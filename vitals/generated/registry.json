@@ -518,6 +518,9 @@
       "indication": true,
       "cadence": {
         "on_demand": true
+      },
+      "liveness": {
+        "max_event_age_s": 2592000
       }
     },
     "polar_h10_emulator": {

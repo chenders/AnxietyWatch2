@@ -105,6 +105,15 @@ pub struct Air11Status {
     pub duplicates: u64,
     /// Number of malformed, out-of-range, or source-position failures.
     pub quarantined: u64,
+    /// Why the most recent quarantine happened, and when.
+    ///
+    /// Separate from `blocker`, which the next successful batch clears. That
+    /// left `quarantined: 1` beside `blocker: null` — a guard reporting *that*
+    /// it fired without *why*, which AGENTS.md forbids. These two fields are
+    /// never cleared by a success, so the reason outlives the recovery.
+    pub last_quarantine_detail: Option<String>,
+    /// Host receipt time of the most recent quarantine, epoch microseconds.
+    pub last_quarantine_unix_micros: Option<i64>,
     /// Number of envelopes dropped before journaling; normally zero.
     pub dropped: u64,
     /// Whether the last append failure left durability unknown.
@@ -170,6 +179,8 @@ impl Default for Air11Status {
             unavailable: 0,
             duplicates: 0,
             quarantined: 0,
+            last_quarantine_detail: None,
+            last_quarantine_unix_micros: None,
             dropped: 0,
             durability_unknown: false,
             last_host_receipt_unix_micros: None,

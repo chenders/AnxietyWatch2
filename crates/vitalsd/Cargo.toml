@@ -10,6 +10,7 @@ repository.workspace = true
 [dependencies]
 vitals-core = { path = "../vitals-core" }
 vitals-proto = { path = "../vitals-proto" }
+vitals-registry = { path = "../vitals-registry" }
 ciborium = "0.2"
 serde = { version = "1", features = ["derive"] }
 # Current-thread runtime only: a single writer needs no locking, and that is the

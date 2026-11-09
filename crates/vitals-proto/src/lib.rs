@@ -157,12 +157,24 @@ pub enum ErrorKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Liveness {
-    /// A sample arrived within the expected cadence.
+    /// A sample arrived within the source's declared `max_sample_arrival_s`.
     Live,
-    /// Nothing has arrived within the cadence. Carries the age in `SourceHealth`.
+    /// Nothing arrived within that bound. Carries the age in `SourceHealth`.
     Stale,
     /// Nothing has ever arrived from this source in this process's lifetime.
     NeverSeen,
+    /// A sample arrived, but the source declares no arrival bound, so there is
+    /// no basis for calling it fresh or stale.
+    ///
+    /// The third state of the three-state rule, applied to the *judgement*
+    /// rather than the sample. This variant exists because its absence forced
+    /// a fallback: `vitalsd` carried a hardcoded, source-independent two-minute
+    /// constant so that every source could be labelled one of the other three.
+    /// That constant was a fourth staleness quantity measuring the same thing
+    /// as `max_sample_arrival_s` with a different number, and it rendered
+    /// `Stale` beside the console's `Live` on one card for any age between
+    /// 121s and the `AirSense`'s declared 300s.
+    Unbounded,
 }
 
 /// One source's liveness.

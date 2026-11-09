@@ -60,7 +60,10 @@ def optional_u32(value: int | None) -> str:
     registry.toml, and if it spelled `None` differently from the emitter the
     check would pass on output it had not actually verified.
     """
-    return "None" if value is None else f"Some({value})"
+    # Underscore-separated: clippy denies `unreadable_literal`, and a generated
+    # file is linted like any other source. `2_592_000` also reads as a
+    # duration where `2592000` reads as noise.
+    return "None" if value is None else f"Some({value:_})"
 
 
 def _pascal(name: str) -> str:
@@ -249,10 +252,25 @@ def _check_cadence(sources: tuple[Source, ...]) -> None:
 # represent.
 _U32_MAX = 2**32 - 1
 
-# No liveness bound above this is a bound. A week of silence scoring as healthy
-# is the defect this whole module exists to prevent, and `u32::MAX` passed every
+# No STREAM bound above this is a bound. A week of silence scoring as healthy is
+# the defect this whole module exists to prevent, and `u32::MAX` passed every
 # ordering and positivity check while restoring it exactly.
-_BOUND_CEILING_S = 7 * 24 * 3600
+#
+# Applies to the bounds that measure a continuous quantity: stream arrival,
+# stream silence, and transport contact.
+_STREAM_CEILING_S = 7 * 24 * 3600
+
+# `max_event_age_s` gets its own, larger ceiling because it measures a different
+# physical quantity: the age of a DISCRETE event, paced by a person rather than
+# by a device. A home blood-pressure cuff is idle for weeks by design -- so a
+# one-week
+# ceiling rejects every honest value and forces the field to stay undeclared,
+# which leaves the card asserting LIVE on month-old evidence.
+#
+# One ceiling for both was the conflation this module exists to prevent,
+# committed in the guard itself. 90 days still bounds: it trips on any gap
+# beyond a quarter, and a bound that can never trip is not one.
+_EVENT_AGE_CEILING_S = 90 * 24 * 3600
 
 # A failure bound must sit this many multiples above the staleness bound, or the
 # grace period the pair exists to provide never applies. `(1799, 1800)` passed
@@ -284,12 +302,13 @@ def _check_liveness_bounds(s: Source) -> None:
                 f"source {s.name} has {name} {value} above u32::MAX "
                 f"{_U32_MAX}; the generated accessor cannot represent it"
             )
-        if value > _BOUND_CEILING_S:
+        ceiling = _EVENT_AGE_CEILING_S if name == "max_event_age_s" else _STREAM_CEILING_S
+        if value > ceiling:
             raise ValueError(
                 f"source {s.name} has {name} {value}s above the ceiling "
-                f"{_BOUND_CEILING_S}s ({_BOUND_CEILING_S // 86400} days); a "
-                "bound that long is not a bound — silence past it would score "
-                "as healthy, which is the defect these fields exist to stop"
+                f"{ceiling}s ({ceiling // 86400} days); a bound that long is "
+                "not a bound — silence past it would score as healthy, which "
+                "is the defect these fields exist to stop"
             )
 
     # §2.5: an on-demand source is never time-degraded *to failing*. Rejected
