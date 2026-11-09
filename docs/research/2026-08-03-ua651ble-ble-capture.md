@@ -12,10 +12,10 @@ cuff's internal buffer over one connection, decoded live.
 > (`00:09:1F:XX:XX:XX`) — the vendor half is not identifying, the device half is, and it is
 > rediscoverable with `sudo btmgmt find` in seconds, so recording it bought nothing.
 >
-> The byte layout is the hardware's, kept verbatim, and the readings are substituted: a fixture whose provenance is "I made
-> it up from the spec" is exactly what produced the `0xF14A → 7.4` error in T-D2's brief. They carry
-> no identity on their own. If this repo goes public, swap the mantissas and keep the flags and
-> lengths — the byte *layout* is what the tests exercise.
+> The byte *layout* below is the hardware's, verbatim — a fixture whose provenance is "I made it up
+> from the spec" is exactly what produced the `0xF14A → 7.4` error in T-D2's brief. The *readings*
+> are substituted: the captured values were the owner's own blood pressure. Flags, lengths
+> and exponents are unchanged and status is set to `0x0000`, which is everything the tests exercise.
 
 ---
 
@@ -27,7 +27,7 @@ All four are 11 bytes, `flags = 0x14`:
 |---|---|---|---|---|---|
 | 1 | `1476004c005a003e000000` | 118 | 76 | 90 | 62 |
 | 2 | `147a004e005d0040000000` | 122 | 78 | 93 | 64 |
-| 3 | `1484005600650044000000` | 132 | 86 | 101 | 68 |
+| 3 | `1474004a0058003c000000` | 116 | 74 | 88 | 60 |
 | 4 | `14780050005d0046000000` | 120 | 80 | 93 | 70 |
 
 `status` is a 16-bit field (body movement, cuff fit, irregular pulse, among others); the fixtures use `0x0000`.
