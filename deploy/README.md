@@ -52,6 +52,26 @@ That ACL is **not** captured by anything declarative. Neither was the operator's
 
 Their scripts are in [`../scripts/pi/`](../scripts/pi/).
 
+### One deliberate divergence from the deployed copy
+
+`scripts/pi/verify-restore.sh` differs from `/usr/local/bin/verify-restore.sh` by exactly one line.
+CI runs `shellcheck -S warning` over every file in `git ls-files`, so tracking the script brought it
+into that gate, and it failed `SC1007` five times on:
+
+```sh
+image_dev= image_ino= mount_dev= mount_ino= run_mount_dev= run_mount_ino=
+```
+
+Those are now spelled `=''`, which is semantically identical in bash. The intent was to capture
+these files byte-for-byte so the repo copy documents what actually runs, and that intent loses to the
+gate here — a tracked script that cannot pass the repo's own static analysis is worse than a
+one-line difference.
+
+**The Pi has not been updated to match.** Doing so means installing a script over working backup
+machinery, and `AGENTS.md` says to use a named install helper or stop rather than construct one
+inline. There is no helper for `/usr/local/bin` shell, so this is left for a deliberate deploy. The
+divergence is one cosmetic line; record it here if it grows.
+
 ## Caveats recorded with the capture
 
 **`vitals-emay.service` has no source.** Its `ExecStart=/usr/local/bin/emay-collector` is a stripped
