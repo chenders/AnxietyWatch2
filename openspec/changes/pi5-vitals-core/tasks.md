@@ -1725,7 +1725,7 @@ the PR was opened:
   `vitals-bp-autoconnect.service` (root oneshot, `btmgmt add-device -a 2`, Before= the collector).
   The first draft claimed bluetoothd repopulates the accept list for trusted devices — the
   pre-PR reviewer flagged exactly this, the dismissal was based on stale pre-reboot evidence,
-  and a real 141/96 reading proved the reviewer right on 2026-08-07 (post-reboot: action 0,
+  and a real reading proved the reviewer right on 2026-08-07 (post-reboot: action 0,
   absent from white_list, reading never connected; recovered from cuff memory after the fix).
   The trust flag stays asserted as belt and braces.
 - **Step 5 (cuff clock) is deferred with the physical tasks** — status recorded in the capture
