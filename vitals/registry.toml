@@ -370,23 +370,24 @@ expected_cadence_s = 1
 # reads Expected -- see max_link_silence_s below for why that matters.
 max_sample_arrival_s = 300
 sample_silence_failure_s = 1800
-# NOT DECLARED YET: max_link_silence_s, the bound on transport contact.
+# NOT DECLARED: max_link_silence_s, the bound on transport contact.
 #
-# This is the bound that would actually have caught the ten-day outage, and it
-# is the only one that can escalate while the device is legitimately idle. It is
-# left undeclared because the number requires one measurement nobody has taken:
-# the envelope interval while the device is in STANDBY.
+# Not needed here, and that conclusion replaces an earlier one that was wrong.
+# This device streams CONTINUOUSLY while powered and paired: hourly row counts
+# for type 10 over two full pre-outage days (2026-10-21 and 10-22, local time)
+# are populated in 48 of 48 hours at ~84,000 rows/hour, minimum 79,636 -- a
 #
-# Why it cannot be guessed: this is a therapy device, not a continuous monitor.
-# sample-derived bound can separate "idle and healthy" from "collector dead"
-# during the idle hours it stores nothing; a 1800s sample bound applied
-# without the activity gate produces 62 FAILING notifications on an ordinary
-# day. Transport contact can separate them, because `process_envelope` bumps the
-# receipt timestamp before any decode, so envelopes count even when they carry
-# nothing storable. Measured rate: 4.74 envelopes/s, steady across
-# the same 18-minute window. The standby rate is the open question, and if it
-# turns out to be zero then this channel is therapy-gated too and the escalation
-# has to come from somewhere else.
+# would false-alarm all day. That came from two compounding mistakes: a three-day
+# only populated hours were the ~2.5 hours since the collector was restarted;
+# and an average over a window that contained the ten-day outage itself, which
+# of course reads low. Both are corrected above.
+#
+# So sample silence alone is unambiguous evidence for this source, and
+# sample_silence_failure_s carries detection: a repeat of the 2026-10-30 outage
+# is FAILING within half an hour. max_link_silence_s stays undeclared until a
+# device actually needs it -- one that stops producing legitimately, where
+# sample silence cannot distinguish idle from dead. Measured envelope rate,
+# for whoever declares it: 4.77/s, steady across two separate windows.
 
 [source.resmed_air11_sd]
 id = 8

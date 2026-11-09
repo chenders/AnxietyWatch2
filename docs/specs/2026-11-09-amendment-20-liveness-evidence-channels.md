@@ -60,15 +60,22 @@ the original defect exactly for `polar_h10` and `polar_h10_emulator` — same st
 the reason string changed — while reading as though it had been fixed. **Not having a measurement is
 a fact to expose, not a gap to fill with the nearest available number.**
 
-### 2. Silence only counts while the source should be producing
+### 2. Only an *observed* idle state suppresses a silence verdict
 
 A third state is added for the question *"should data be arriving right now?"*: `Expected`, `Idle`,
-`Unknown`. Only `Expected` licenses a silence-derived verdict. An unobserved gate behaves as `Idle`.
+`Unknown`. It exists for devices that are legitimately silent some of the time — an SD-card import, a
+cuff, a therapy device that only streams while in use.
 
-This is not a refinement; without it the bounds in §1 are actively harmful. The `AirSense` is a
-therapy device, not a continuous monitor. Hourly row counts across three days show samples in two
-without the gate produces **62 `FAILING` notifications on an ordinary day** — the same
-"outage and healthy are indistinguishable" defect, inverted, and a card nobody believes.
+**`Unknown` does not suppress.** It falls back to the registry declaration, because declaring
+`sample_silence_failure_s` *is* the assertion that this source produces continuously. A device that
+is genuinely intermittent declares no silence bound, or reports its activity.
+
+Getting that backwards is a defect this amendment already shipped once and is corrected here. The
+first draft treated "not measured" as equivalent to "idle", which let a missing gate veto a declared
+bound and measured silence — and since nothing reports activity today, every source sat at the
+`Unknown` default and no silence bound could ever fire. That disabled the only escalation that
+detects a dead collector. The three-state rule says a missing signal never escalates *on its own*; it
+does not say a missing signal may silence evidence that does exist.
 
 ### 3. Transport contact is a third evidence channel
 
@@ -76,15 +83,14 @@ without the gate produces **62 `FAILING` notifications on an ordinary day** — 
 host receipt time of the last BLE envelope. It is the **only** bound permitted to escalate while a
 source is `Idle`.
 
-It exists because no sample-derived rule can distinguish "idle and healthy" from "collector dead"
-during the idle hours a CPAP stores nothing. Transport contact can: `process_envelope`
-records receipt before any decode, so an envelope counts even when it carries nothing storable.
-Measured envelope rate: 4.74/s, steady over 18 minutes.
+It is the fallback for a device that stops producing legitimately, where sample silence cannot
+distinguish idle from dead. `process_envelope` records receipt before any decode, so an envelope
+counts even when it carries nothing storable. Measured rate: 4.77/s, steady across two separate
+windows.
 
-**No value is declared yet.** The number requires the standby envelope interval, which has not been
-measured — the measurement window did not include the device's idle periods. Until it is declared, the
-`AirSense` cannot escalate on transport silence, and a repeat of the original outage would still go
-undetected. That gap is recorded here rather than closed with a guess.
+**No value is declared, and the `AirSense` does not need one.** That device streams continuously —
+see the measurement correction below — so `sample_silence_failure_s` carries detection for it. This
+field stays undeclared until a device needs it, rather than being given a number to look complete.
 
 ### 4. On-demand sources are bounded by event age, not stream arrival
 
@@ -153,15 +159,21 @@ behaviour.
 
 ---
 
-## Measurement method, corrected
+## Measurement method, corrected twice
 
-The first draft of this amendment justified its bounds with "18,650,231 inter-sample gaps since
-2026-10-20: p50 0 s, p99 0 s". That measured the wrong distribution. `samples.timestamp` is host
-receipt at collection, so batching does not create gaps in it, and the quantity the detector
-compares is `now() - max(samples.timestamp)` — **store-arrival lag**.
+**First error — the wrong distribution.** The first draft justified its bounds with "18,650,231
+inter-sample gaps since 2026-10-20: p50 0 s, p99 0 s". `samples.timestamp` is host receipt at
+collection, so batching does not create gaps in it; the quantity the detector compares is
+`now() - max(samples.timestamp)` — **store-arrival lag**. Percentiles of the wrong distribution.
 
-The same figure also refutes the claim it was offered to support. 18.65M rows over a ~743,000 s
-streaming that window would hold roughly 60M rows.
+being reasoned about in PST, and the only populated hours were the ~2.5 hours since the collector had
+been restarted.
+
+(2026-10-21/10-22, local time) are populated in **48 of 48 hours at ~84,000 rows/hour**, minimum
+79,636. The device streams continuously at 23.3 rows/s while powered and paired: a **100% duty
+cycle**. The "62 false `FAILING` notifications a day" concern was therefore unfounded, and
+`sample_silence_failure_s = 1800` is well justified — a repeat of the 2026-10-30 outage is `FAILING`
+within half an hour.
 
 **Any liveness bound must be derived from the quantity the evaluator actually compares, measured at
 the cadence it actually runs.** The declared values come from polling `now() - max(timestamp)` every
@@ -174,14 +186,18 @@ the cadence it actually runs.** The declared values come from polling `now() - m
 
 | Open item | Consequence today |
 |---|---|
-| `max_link_silence_s` undeclared (needs the standby envelope interval) | A repeat of the original outage is still not detected |
-| `activity` and `last_link_epoch_s` not read from the collector status file | The activity gate is always `Unknown`, so no sample-derived escalation fires for any source |
+| `max_link_silence_s` undeclared | None for the `AirSense`, which streams continuously; needed only for a device that stops producing legitimately |
+| `activity` and `last_link_epoch_s` not read from the collector status file | No effect on escalation — `Unknown` falls back to the declaration. An observed `Idle` would be needed only for an intermittent device |
 | Nothing writes attempt rows | Seven of nine sources report `UNKNOWN / "never completed an attempt"`. Honest, and not useful |
 | Arrival bounds measured for `resmed_air11` only | Every other source's sample channel is silent, correctly |
 | `expected_cadence_s` still carries two meanings (sample rate for `polar_h10`, sync interval for `healthkit`) | Not split here; no longer load-bearing for staleness |
 | Six `AirSense` clinical channels reporting null with no tombstone and no log line | `respiratory_rate`, `leak`, `tidal_volume`, `minute_ventilation`, `snore_index`, `flow_limitation` are not being stored, invisibly. Separate defect |
 
-The first three are the reason this amendment does not claim the outage is now detectable. It claims
-the evaluator no longer reports a healthy source as stale, no longer reports a measured source as
-never-measured, no longer calls an idle device broken, and no longer has a path that silently invents
-a threshold.
+With the activity fallback corrected, **the 2026-10-30 outage is now detectable within 1800 seconds**
+and there is a regression test that replays it. What remains open is breadth, not detection: six of
+nine sources have no measured arrival bound, and nothing writes attempt rows, so those sources report
+`UNKNOWN / "never completed an attempt"` — honest, and not yet useful.
+
+Beyond that, the evaluator no longer reports a healthy source as stale, no longer reports a measured
+source as never-measured, no longer calls an observed-idle device broken, and has no path that
+silently invents a threshold.

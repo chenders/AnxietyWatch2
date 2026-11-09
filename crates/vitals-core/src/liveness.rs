@@ -71,12 +71,11 @@ pub struct Bounds {
     /// Beyond this age with no transport-level contact at all, the source is
     /// `Failing` — **regardless of whether it should be producing data**.
     ///
-    /// This is the only bound that can escalate while a source is legitimately
-    /// idle, and it is the one that actually catches the failure this module
-    /// was written for. A CPAP stores no samples between therapy sessions, so
-    /// no sample-derived bound can tell "asleep and healthy" from "collector
-    /// dead" during the day. Transport contact can: the device keeps sending
-    /// envelopes in standby even though they store nothing.
+    /// The only bound that can escalate while a source is observed idle, which
+    /// makes it the fallback for a device that genuinely stops producing. The
+    /// `AirSense` does not need it — measurement showed it streams
+    /// continuously — so `sample_silence_failure_s` carries detection there and
+    /// this stays undeclared until a device needs it.
     ///
     /// Measured against [`Evidence::last_link_epoch_s`], which is a different
     /// quantity from every sample timestamp in this struct — and the whole
@@ -100,20 +99,29 @@ impl Bounds {
 
 /// Whether a source is currently expected to be producing data.
 ///
-/// Three states, because the second one is otherwise indistinguishable from the
-/// third and both get mistaken for the first. A CPAP between therapy sessions
-/// is **legitimately** silent; judging it against an arrival bound turns every
-/// ordinary day into an alarm, and the measurement that was supposed to justify
+/// Exists for devices that are *legitimately* silent some of the time — an
+/// SD-card import, a cuff, a therapy device that only streams while in use.
+/// Judging those against an arrival bound would turn ordinary non-use into an
+/// alarm.
+///
+/// Only an **observed** [`Activity::Idle`] suppresses a silence verdict.
+/// [`Activity::Unknown`] does not, and getting that backwards is a defect this
+/// type already shipped once: treating "not measured" as equivalent to "idle"
+/// let a missing gate veto a declared bound and measured silence, which is the
+/// escalation that detects a dead collector. The three-state rule says a
+/// missing signal never escalates *on its own* — it does not say a missing
+/// signal may silence evidence that does exist.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Activity {
     /// Samples should be arriving now, so their absence means something.
     Expected,
-    /// The source is legitimately idle. Silence is not a fault and arrival
+    /// **Observed** to be legitimately idle. Silence is not a fault and arrival
     /// bounds do not apply; a *fresh* sample still proves production.
     Idle,
-    /// Not measured. Treated like [`Activity::Idle`] for escalation, because
-    /// an unobserved gate must never be read as [`Activity::Expected`] — that
-    /// would let a missing signal escalate on its own.
+    /// Not measured. Falls back to the registry declaration: declaring
+    /// `sample_silence_failure_s` *is* the statement that this source produces
+    /// continuously, so silence past it is a fault. A device that is genuinely
+    /// intermittent declares no silence bound, or reports its activity.
     #[default]
     Unknown,
 }
@@ -121,7 +129,7 @@ pub enum Activity {
 impl Activity {
     /// Whether silence may be read as evidence of failure.
     const fn silence_is_meaningful(self) -> bool {
-        matches!(self, Self::Expected)
+        !matches!(self, Self::Idle)
     }
 }
 
@@ -160,10 +168,10 @@ pub struct Evidence {
     /// envelope.
     ///
     /// Not a sample timestamp. An envelope arrives whether or not it carries
-    /// anything storable, so this channel keeps running while the device sits
-    /// in standby. That makes it the only evidence that separates "idle and
-    /// healthy" from "collector dead" during the idle hours a CPAP is
-    /// not in use.
+    /// anything storable, so this channel keeps running even when a device
+    /// stores nothing. That makes it the only evidence that separates "idle and
+    /// healthy" from "collector dead" for a device that stops producing
+    /// legitimately. The `AirSense` is not one: it streams continuously.
     pub last_link_epoch_s: Option<i64>,
     /// Whether samples should be arriving right now.
     ///
@@ -252,8 +260,9 @@ enum SampleVerdict {
     /// Past the arrival bound while the source was not expected to produce.
     ///
     /// Distinct from [`SampleVerdict::Stale`] because the operator reading the
-    /// healthy day, and rendering that as staleness is how a card nobody
-    /// believes gets built.
+    /// card needs to know *which*. Rendering legitimate non-use as staleness is
+    /// how a card nobody believes gets built. Reached only on an **observed**
+    /// idle state, never on an unmeasured one.
     Idle {
         /// Age of the newest sample, in seconds.
         age_s: i64,
@@ -306,10 +315,11 @@ fn sample_verdict(now_epoch_s: i64, bounds: Bounds, evidence: &Evidence) -> Samp
         };
     }
 
-    // Past the bound. Silence is only evidence when the source was supposed to
-    // be producing: a CPAP stores nothing between therapy sessions, and
-    // judging that against an arrival bound marks roughly the idle hours of
-    // every healthy day as broken.
+    // Past the bound. Silence stops being evidence only when the source is
+    // *observed* idle. An unmeasured gate falls through to the declaration:
+    // declaring a silence bound is the assertion that silence means something,
+    // and letting `Unknown` suppress it disabled the escalation entirely,
+    // because nothing reports activity today.
     if !evidence.activity.silence_is_meaningful() {
         return SampleVerdict::Idle { age_s: age };
     }
@@ -516,9 +526,10 @@ fn interval_state(
 ///    stores nothing between therapy sessions, so [`Activity`] gates every
 ///    silence-derived verdict. An unobserved gate never licenses escalation.
 /// 9. **Transport contact is a third channel** and the only one that may
-///    escalate on an idle source, because the device answers in standby even
-///    though it stores nothing. This is what detects a dead collector during
-///    the idle hours no sample-derived rule can see.
+///    escalate on an *observed* idle source, because the device answers on the
+///    radio even when it stores nothing. Needed only for a device that stops
+///    producing legitimately; the `AirSense` streams continuously, so its
+///    sample bound carries detection.
 #[must_use]
 pub fn evaluate(now_epoch_s: i64, bounds: Bounds, evidence: &Evidence) -> Assertion {
     // 1. Never observed. A sample or a contact counts as observation — without
@@ -1048,8 +1059,9 @@ mod tests {
         assert!(!assertion.reason.contains("expect <= 1s"));
     }
 
-    /// A CPAP stores nothing between therapy sessions. Judging that against an
-    /// the real detector. Idle is its own answer and never escalates.
+    /// A source observed to be legitimately idle is not stale, and silence
+    /// while idle is not a fault. The `AirSense` turns out not to need this —
+    /// it streams 24/7 — but an SD-card import or a cuff does.
     #[test]
     fn an_idle_source_is_not_stale_and_never_escalates() {
         let bounds = Bounds {
@@ -1073,16 +1085,58 @@ mod tests {
             "no sample for 50000s; source idle, not a fault"
         );
 
-        // An unobserved gate must behave like idle, never like `Expected`: a
-        // missing signal does not escalate on its own.
-        assert_eq!(at(Activity::Unknown).state, HealthState::Unknown);
+        // Both of these must escalate. `Unknown` falls back to the registry
+        // declaration rather than suppressing it — which is what makes the
+        // 2026-10-30 outage detectable within half an hour instead of never.
+        // This test previously asserted `Unknown` behaves like `Idle`, which
+        // disabled the escalation entirely: nothing reports activity today, so
+        // every source sat at the `Unknown` default and no declared silence
+        // bound could ever fire.
         assert_eq!(at(Activity::Expected).state, HealthState::Failing);
+        assert_eq!(at(Activity::Unknown).state, HealthState::Failing);
     }
 
-    /// Transport contact is the only channel that may escalate on an idle
-    /// source, and it is the one that actually catches the failure: the device
-    /// answers in standby even though it stores nothing, so the idle hours of
-    /// legitimate sample silence still has a live heartbeat underneath it.
+    /// The outage, replayed end to end against the measured configuration.
+    ///
+    /// The `AirSense` writes ~84,000 rows/hour on its 25 Hz channels, every
+    /// hour of every day — measured over two full pre-outage days, 48 of 48
+    /// hours populated, minimum 79,636. So sample silence is unambiguous
+    /// evidence rather than a therapy gap, and nothing reports activity, so
+    /// this runs at the `Unknown` default: the configuration that must fire.
+    #[test]
+    fn the_outage_is_detected_within_the_failure_bound() {
+        let bounds = Bounds {
+            max_sample_arrival_s: Some(300),
+            sample_silence_failure_s: Some(1_800),
+            ..Bounds::from_cadence(Cadence::EverySeconds(1))
+        };
+        let after = |silence_s: i64| {
+            let evidence = Evidence {
+                last_sample_epoch_s: Some(NOW - silence_s),
+                ..Default::default()
+            };
+            evaluate(NOW, bounds, &evidence).state
+        };
+
+        assert_eq!(after(35), HealthState::Live, "ordinary commit lag");
+        assert_eq!(
+            after(301),
+            HealthState::Unknown,
+            "past arrival, not a fault yet"
+        );
+        assert_eq!(
+            after(1_801),
+            HealthState::Failing,
+            "half an hour of silence"
+        );
+        // The real thing: 921,331s, which scored `Unknown` for ten days.
+        assert_eq!(after(921_331), HealthState::Failing);
+    }
+
+    /// Transport contact is the only channel that may escalate on an observed
+    /// idle source: the device answers on the radio even when it stores
+    /// nothing, so legitimate sample silence still has a heartbeat underneath
+    /// it.
     #[test]
     fn lost_transport_contact_escalates_even_when_idle() {
         let bounds = Bounds {
