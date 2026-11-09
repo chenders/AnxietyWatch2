@@ -248,7 +248,6 @@ See [Amendment 17](docs/specs/2026-09-22-amendment-17-iphone-ble-mobility-relay.
 | [`vitals/`](vitals/) | Registry source plus generated Rust, SQL, and JSON |
 | [`db/`](db/) | Sqitch deploy, revert, and verify migrations |
 | [`fuzz/`](fuzz/) | `cargo-fuzz` targets for hostile radio input |
-| [`firmware/`](firmware/) | Zephyr/nRF52840 sensor emulators and scripted desaturation |
 | [`deploy/`](deploy/) | Native service definitions, restore verification, stopgap panel |
 | [`docs/specs/`](docs/specs/) | Accepted architecture amendments |
 | [`docs/design/`](docs/design/) | Theory of operation and interface research |

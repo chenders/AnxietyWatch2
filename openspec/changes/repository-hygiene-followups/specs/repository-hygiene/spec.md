@@ -28,7 +28,7 @@ Deleting sensitive material at the tip SHALL NOT be reported as removing it. Bef
 ### Requirement: Every tracked unit SHALL have a planning owner or a live caller
 Code, tools and design artifacts SHALL be owned by an openspec change or amendment, or be invoked by CI, a hook, a deploy unit or a Verify line. A unit with neither SHALL be removed or given an owner, not left to look current.
 
-#### Scenario: An emulator no change owns
-- **GIVEN** a firmware tree that no change references and no CI job builds
+#### Scenario: A tool no change owns
+- **GIVEN** a directory that no change references and no CI job builds or runs
 - **WHEN** the inventory finds it
 - **THEN** the owner decides to own it in a change or remove it
