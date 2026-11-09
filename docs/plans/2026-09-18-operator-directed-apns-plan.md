@@ -136,7 +136,7 @@ states.
 
 **Owner:** T-I18 with T-I22
 
-On `theodore` and any additional actually registered device, measure and record only observed facts:
+On the owner's iPhone and any additional actually registered device, measure and record only observed facts:
 
 - authorization allowed and denied;
 - token registration and rotation;
