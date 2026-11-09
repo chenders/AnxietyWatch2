@@ -20,7 +20,7 @@
 //!
 //! ```text
 //! PR 40-48 · SpO₂ 95-100   masks DISAGREE   <- sleeping
-//! PR 85    · SpO₂ 92       masks agree      <- awake, sitting up
+//! PR 70    · SpO₂ 97       masks agree      <- awake, sitting up
 //! ```
 //!
 //! So an `0xFF`-masked decoder works perfectly during setup and testing, then
@@ -29,8 +29,8 @@
 //! the job it is worn for.
 //!
 //! This was nearly missed twice. The single reference frame in the protocol
-//! notes and a live 27-frame capture on 2026-08-03 were both from an awake
-//! subject, so both fall in the agreeing region and verify
+//! notes and a live 27-frame capture on 2026-08-03 both fall in the agreeing
+//! region and verify
 //! identically under either mask. **`0x7F` is correct because it came from
 //! decompiling the vendor application, not because any captured frame
 //! demonstrated it** — and no frame captured from an awake subject ever will.
@@ -241,15 +241,16 @@ mod tests {
     const DEVICE_LAYOUT_FRAME: [u8; 8] = [0xEB, 0x01, 0x05, 0x46, 0x61, 0x7F, 0x00, 0x17];
 
     #[test]
-    fn decodes_a_frame_captured_from_the_device() {
+    fn decodes_a_frame_in_the_device_layout() {
         let r = decode_data(&DEVICE_LAYOUT_FRAME).expect("decodes");
         assert_eq!(r.pulse_bpm, Some(70));
         assert_eq!(r.spo2, Some(97));
         assert!(r.is_measurement());
     }
 
-    /// The gotcha this decoder exists to get right. With a 0xFF mask the
-    /// captured frame's checksum would not verify at all.
+    /// The gotcha this decoder exists to get right. A frame from an awake
+    /// subject cannot show it -- its checksum verifies under either mask -- so
+    /// the test builds one whose payload sum sets bit 7.
     #[test]
     fn checksum_is_masked_with_0x7f_not_0xff() {
         assert!(checksum_ok(&DEVICE_LAYOUT_FRAME));
