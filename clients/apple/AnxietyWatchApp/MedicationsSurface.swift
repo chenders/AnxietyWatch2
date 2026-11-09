@@ -73,7 +73,9 @@ struct MedicationsSurface: View {
             "No Medications",
             systemImage: "pills",
             description: Text(
-              "Medication definitions will be provided by your Pi. Enroll this device and sync to load them."
+              runtime.isEnrolled
+                ? "Your Pi does not provide medication definitions yet, so doses cannot be logged from this phone."
+                : "Medication definitions will be provided by your Pi. Enroll this device and sync to load them."
             )
           )
         } else {
@@ -205,28 +207,12 @@ struct MedicationsSurface: View {
     isLoading = true
     defer { isLoading = false }
 
-    // Load medication definitions from Pi (placeholder — needs API implementation)
-    // For now, return sample data if enrolled
+    // The Pi does not serve medication definitions yet, and the phone never
+    // creates them. Until it does, there are none: an invented list would be
+    // rendered as if it were the user's real regimen.
     if runtime.isEnrolled {
-      // TODO: Fetch from Pi via projections or dedicated endpoint
-      definitions = [
-        MedicationDefinition(
-          id: UUID(),
-          name: "Lorazepam",
-          category: "benzodiazepine",
-          defaultDoseMg: 0.5,
-          promptAnxietyOnLog: true,
-          isActive: true
-        ),
-        MedicationDefinition(
-          id: UUID(),
-          name: "Sertraline",
-          category: "SSRI",
-          defaultDoseMg: 50,
-          promptAnxietyOnLog: false,
-          isActive: true
-        )
-      ]
+      // TODO: Fetch definitions from the Pi once an endpoint exists.
+      definitions = []
 
       // Load recent doses from outbox/mirror
       do {
