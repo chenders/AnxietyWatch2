@@ -9,11 +9,13 @@ use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
 use vitals_proto::{Health, HeartbeatInputs, Liveness, SourceHealth, SubscriberHealth, WireSample};
 
-/// How long a source may be silent before it is `Stale`.
-///
-/// Per-source cadences belong in the registry once sources differ enough to
-/// need them; one conservative default is honest until then.
-pub const DEFAULT_STALE_AFTER: Duration = Duration::from_mins(2);
+// DEFAULT_STALE_AFTER was here: a hardcoded, source-independent two-minute
+// staleness bound. It is deleted rather than retuned, because a single number
+// is right for at most one source. Staleness now comes from the source's
+// declared `max_sample_arrival_s` in the registry, and a source that declares
+// none is reported `Unbounded` rather than being judged against an invented
+// threshold. See AGENTS.md: the unit and valid range come from
+// vitals/registry.toml, never hardcoded.
 
 /// Freshness limit for the heartbeat's inputs (amendment 05 §2.1).
 pub const HEARTBEAT_MAX_AGE: Duration = Duration::from_secs(30);
@@ -69,7 +71,6 @@ pub struct State {
     total_samples: u64,
     spool_bytes: u64,
     subscribers: Vec<Subscriber>,
-    stale_after: Duration,
 
     /// Set by the monitoring-window controller. Defaults to **false**: the
     /// heartbeat is unconditional outside a window, so defaulting to `true`
@@ -106,20 +107,10 @@ impl State {
             total_samples: 0,
             spool_bytes: 0,
             subscribers: Vec::new(),
-            stale_after: DEFAULT_STALE_AFTER,
             monitoring_window_active: false,
             last_tier_evaluation: None,
             primary_sources,
         }
-    }
-
-    /// Overrides the staleness threshold.
-    ///
-    /// Used by tests today; the real cadence belongs per-source in the registry
-    /// once sources differ enough to need one.
-    #[cfg(test)]
-    pub(crate) const fn set_stale_after(&mut self, d: Duration) {
-        self.stale_after = d;
     }
 
     /// Records that samples were appended.
@@ -168,17 +159,38 @@ impl State {
             .map(|sub| sub.id)
     }
 
-    fn liveness_of(&self, st: &SourceState, now: Instant) -> (Liveness, Option<u64>) {
+    /// The declared arrival bound for a source, or `None` when it has not been
+    /// measured — including for an id the registry does not know.
+    ///
+    /// An unknown id yields `None` rather than a default, so a sample claiming
+    /// a source that does not exist cannot be judged fresh.
+    fn arrival_bound(source: i32) -> Option<Duration> {
+        vitals_registry::VitalsSource::from_id(source)
+            .and_then(vitals_registry::VitalsSource::max_sample_arrival_s)
+            .map(|secs| Duration::from_secs(u64::from(secs)))
+    }
+
+    fn liveness_of(
+        source: i32,
+        st: &SourceState,
+        now: Instant,
+    ) -> (Liveness, Option<u64>, Option<u64>) {
         match st.last_sample {
-            None => (Liveness::NeverSeen, None),
+            None => (Liveness::NeverSeen, None, None),
             Some(t) => {
                 let age = now.saturating_duration_since(t);
-                let l = if age > self.stale_after {
+                let Some(limit) = Self::arrival_bound(source) else {
+                    // Measured, but nothing declares how fresh is fresh. Saying
+                    // `Live` would reassure on no evidence and `Stale` would
+                    // accuse on none.
+                    return (Liveness::Unbounded, Some(age.as_secs()), None);
+                };
+                let l = if age > limit {
                     Liveness::Stale
                 } else {
                     Liveness::Live
                 };
-                (l, Some(age.as_secs()))
+                (l, Some(age.as_secs()), Some(limit.as_secs()))
             }
         }
     }
@@ -213,12 +225,12 @@ impl State {
             .sources
             .iter()
             .map(|(&source, st)| {
-                let (liveness, age) = self.liveness_of(st, now);
+                let (liveness, age, limit) = Self::liveness_of(source, st, now);
                 if liveness == Liveness::Stale {
                     degraded.push(format!(
                         "source {source} is stale: {}s since last sample (limit {}s)",
                         age.unwrap_or(0),
-                        self.stale_after.as_secs()
+                        limit.unwrap_or(0)
                     ));
                 }
                 SourceHealth {
@@ -280,6 +292,8 @@ mod tests {
 
     const SPO2: i32 = 2;
     const HR: i32 = 1;
+    /// `resmed_air11` — the one source with a measured arrival bound (300s).
+    const AIR11: i32 = 5;
 
     fn sample(source: i32, r#type: i32) -> WireSample {
         WireSample {
@@ -310,31 +324,59 @@ mod tests {
         assert_eq!(h.heartbeat.primary_sample_age_secs, None);
     }
 
+    /// Staleness is judged against the source's own declared bound, and the
+    /// message names that bound rather than a process-wide constant.
     #[test]
-    fn silence_becomes_stale_and_names_itself() {
+    fn silence_becomes_stale_and_names_the_declared_limit() {
         let mut s = state();
-        s.set_stale_after(Duration::from_secs(10));
         let t0 = Instant::now();
-        s.record_appended(&[sample(HR, 1)], 0, t0);
+        s.record_appended(&[sample(AIR11, 1)], 0, t0);
 
-        let later = t0 + Duration::from_secs(11);
-        let h = s.health(later);
+        // AirSense declares max_sample_arrival_s = 300, measured from its real
+        // store-arrival lag (p50 35s, max 44s).
+        let h = s.health(t0 + Duration::from_secs(301));
         assert_eq!(h.sources.first().map(|s| s.liveness), Some(Liveness::Stale));
-        assert!(h.degraded.iter().any(|d| d.contains("source 1 is stale")));
+        assert!(h.degraded.iter().any(|d| d.contains("source 5 is stale")));
         assert!(
-            h.degraded.iter().any(|d| d.contains("limit 10s")),
-            "must name the limit too"
+            h.degraded.iter().any(|d| d.contains("limit 300s")),
+            "the limit must be the source's declared bound, not a constant"
         );
     }
 
     #[test]
-    fn a_live_source_is_not_degraded() {
+    fn a_source_within_its_declared_bound_is_live_and_not_degraded() {
         let mut s = state();
         let t0 = Instant::now();
-        s.record_appended(&[sample(HR, 1)], 0, t0);
-        let h = s.health(t0 + Duration::from_secs(1));
+        s.record_appended(&[sample(AIR11, 1)], 0, t0);
+        let h = s.health(t0 + Duration::from_secs(299));
         assert_eq!(h.sources.first().map(|s| s.liveness), Some(Liveness::Live));
         assert!(h.degraded.is_empty());
+    }
+
+    /// A source with no measured arrival bound is neither fresh nor stale.
+    ///
+    /// Before this, a hardcoded two-minute constant labelled every such source
+    /// `Stale` past 120s — including on the same card where the console, using
+    /// the declared 300s, said `Live`. Two numbers for one quantity.
+    #[test]
+    fn a_source_with_no_declared_bound_is_unbounded_not_stale() {
+        let mut s = state();
+        let t0 = Instant::now();
+        // polar_h10 declares expected_cadence_s but no max_sample_arrival_s.
+        s.record_appended(&[sample(HR, 1)], 0, t0);
+
+        for age in [1_u64, 121, 3_600, 921_331] {
+            let h = s.health(t0 + Duration::from_secs(age));
+            assert_eq!(
+                h.sources.first().map(|s| s.liveness),
+                Some(Liveness::Unbounded),
+                "age {age}s must stay Unbounded without a declared bound"
+            );
+            assert!(
+                h.degraded.is_empty(),
+                "an unjudgeable source must not be reported degraded at {age}s"
+            );
+        }
     }
 
     /// HR and HRV corroborate but must never launder a missing primary into
