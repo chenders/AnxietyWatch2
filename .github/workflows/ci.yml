@@ -50,6 +50,15 @@ jobs:
         run: |
           bash -n scripts/audit-worktrees.sh
           bash scripts/tests/test-audit-worktrees.sh
+      # The installer's allowlist is what makes an ad-hoc destination
+      # unrepresentable, and nothing tested it until a registry target was
+      # added. The test fails if any entry targets a device node or a
+      # directory, or if the /dev/null verification is dropped.
+      - name: Pi artifact allowlist contract
+        run: |
+          bash -n scripts/install-air11-pi-artifact.sh
+          scripts/install-air11-pi-artifact.sh --help
+          bash scripts/tests/test-install-pi-artifact.sh
       # AGENTS.md makes the amendment index mandatory reading, so an index that
       # disagrees with the files on disk misleads every worker who obeys the
       # scoping rule. Nothing ran this verifier until now: its only callers were
