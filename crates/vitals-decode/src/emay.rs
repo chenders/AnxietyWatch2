@@ -29,8 +29,8 @@
 //! the job it is worn for.
 //!
 //! This was nearly missed twice. The single reference frame in the protocol
-//! notes (`PR 62, SpO₂ 95`, sum `0x20D`) and a live 27-frame capture on
-//! 2026-08-03 (`PR 85, SpO₂ 92`) both fall in the agreeing region and verify
+//! notes and a live 27-frame capture on 2026-08-03 were both from an awake
+//! subject, so both fall in the agreeing region and verify
 //! identically under either mask. **`0x7F` is correct because it came from
 //! decompiling the vendor application, not because any captured frame
 //! demonstrated it** — and no frame captured from an awake subject ever will.
@@ -236,14 +236,15 @@ pub const fn response_opcode(command: u8) -> u8 {
 mod tests {
     use super::*;
 
-    /// Captured from the device: PR 62, `SpO2` 95.
-    const REAL_FRAME: [u8; 8] = [0xEB, 0x01, 0x05, 0x3E, 0x5F, 0x7F, 0x00, 0x0D];
+    /// The device's frame layout (header, length, PR, `SpO2`, PI, padding, 0x7F-masked
+    /// sum) with substituted readings -- PR 70, `SpO2` 97 -- not a person's measurement.
+    const DEVICE_LAYOUT_FRAME: [u8; 8] = [0xEB, 0x01, 0x05, 0x46, 0x61, 0x7F, 0x00, 0x17];
 
     #[test]
     fn decodes_a_frame_captured_from_the_device() {
-        let r = decode_data(&REAL_FRAME).expect("decodes");
-        assert_eq!(r.pulse_bpm, Some(62));
-        assert_eq!(r.spo2, Some(95));
+        let r = decode_data(&DEVICE_LAYOUT_FRAME).expect("decodes");
+        assert_eq!(r.pulse_bpm, Some(70));
+        assert_eq!(r.spo2, Some(97));
         assert!(r.is_measurement());
     }
 
@@ -251,10 +252,10 @@ mod tests {
     /// captured frame's checksum would not verify at all.
     #[test]
     fn checksum_is_masked_with_0x7f_not_0xff() {
-        assert!(checksum_ok(&REAL_FRAME));
+        assert!(checksum_ok(&DEVICE_LAYOUT_FRAME));
 
-        // The captured frame cannot demonstrate the difference: its payload
-        // sums to 0x20D, and 0x20D & 0x7F == 0x20D & 0xFF == 0x0D. The masks
+        // The layout frame cannot demonstrate the difference: its payload
+        // sums to 0x217, and 0x217 & 0x7F == 0x217 & 0xFF == 0x17. The masks
         // only diverge when bit 7 of the sum is set, which is why a decoder
         // written with 0xFF can pass a hand-check against one real frame and
         // still be wrong.
@@ -283,7 +284,7 @@ mod tests {
 
     #[test]
     fn a_corrupt_checksum_is_rejected() {
-        let mut bad = REAL_FRAME;
+        let mut bad = DEVICE_LAYOUT_FRAME;
         if let Some(last) = bad.last_mut() {
             *last ^= 0x01;
         }
@@ -292,7 +293,7 @@ mod tests {
 
     #[test]
     fn a_corrupt_payload_is_rejected() {
-        let mut bad = REAL_FRAME;
+        let mut bad = DEVICE_LAYOUT_FRAME;
         if let Some(b) = bad.get_mut(4) {
             *b = 0x60; // SpO2 96 without fixing the checksum
         }
@@ -448,8 +449,8 @@ mod tests {
     fn wrong_length_is_rejected() {
         assert!(decode_data(&[]).is_none());
         assert!(decode_data(&[0xEB]).is_none());
-        assert!(decode_data(REAL_FRAME.get(..7).expect("short")).is_none());
-        let mut long = REAL_FRAME.to_vec();
+        assert!(decode_data(DEVICE_LAYOUT_FRAME.get(..7).expect("short")).is_none());
+        let mut long = DEVICE_LAYOUT_FRAME.to_vec();
         long.push(0x00);
         assert!(decode_data(&long).is_none());
     }
@@ -462,26 +463,26 @@ mod tests {
         assert_eq!(response_opcode(0x86), 0xF6);
     }
 
-    /// Captured live on 2026-08-03: one notification carrying two whole records
-    /// and the head of a third. A decoder requiring exactly 8 bytes rejects the
+    /// The shape captured live on 2026-08-03 -- one notification carrying two whole
+    /// records and the head of a third -- with substituted readings. A decoder requiring exactly 8 bytes rejects the
     /// entire thing.
     const COALESCED: [u8; 20] = [
-        0xEB, 0x01, 0x05, 0x50, 0x5C, 0x7F, 0x00, 0x1C, // PR 80, SpO2 92
-        0xEB, 0x01, 0x05, 0x50, 0x5B, 0x7F, 0x00, 0x1B, // PR 80, SpO2 91
-        0xEB, 0x01, 0x05, 0x4F, // partial
+        0xEB, 0x01, 0x05, 0x48, 0x60, 0x7F, 0x00, 0x18, // PR 72, SpO2 96
+        0xEB, 0x01, 0x05, 0x48, 0x5F, 0x7F, 0x00, 0x17, // PR 72, SpO2 95
+        0xEB, 0x01, 0x05, 0x48, // partial
     ];
 
     #[test]
     fn a_coalesced_notification_yields_every_whole_frame() {
         let (first, used) = scan_frame(&COALESCED).expect("first frame");
         assert_eq!(used, 8);
-        assert_eq!(first.pulse_bpm, Some(0x50));
-        assert_eq!(first.spo2, Some(0x5C));
+        assert_eq!(first.pulse_bpm, Some(0x48));
+        assert_eq!(first.spo2, Some(0x60));
 
         let rest = COALESCED.get(used..).expect("rest");
         let (second, used2) = scan_frame(rest).expect("second frame");
         assert_eq!(used2, 8);
-        assert_eq!(second.spo2, Some(0x5B));
+        assert_eq!(second.spo2, Some(0x5F));
 
         // The trailing partial record yields nothing yet, and must not be
         // discarded — its remaining bytes arrive in the next notification.
@@ -493,7 +494,7 @@ mod tests {
     /// A record split across two notifications must survive reassembly.
     #[test]
     fn a_frame_split_across_notifications_is_recovered() {
-        let (head, tail) = REAL_FRAME.split_at(3);
+        let (head, tail) = DEVICE_LAYOUT_FRAME.split_at(3);
         assert!(scan_frame(head).is_none(), "not enough bytes yet");
         let mut buf = [0u8; 8];
         if let Some(d) = buf.get_mut(..3) {
@@ -504,7 +505,7 @@ mod tests {
         }
         let (r, used) = scan_frame(&buf).expect("reassembled");
         assert_eq!(used, 8);
-        assert_eq!(r.pulse_bpm, Some(62));
+        assert_eq!(r.pulse_bpm, Some(70));
     }
 
     /// Leading garbage must be skipped, not allowed to hide the good records
@@ -515,11 +516,11 @@ mod tests {
         buf[0] = 0xAA;
         buf[1] = 0xBB;
         if let Some(dst) = buf.get_mut(3..) {
-            dst.copy_from_slice(&REAL_FRAME);
+            dst.copy_from_slice(&DEVICE_LAYOUT_FRAME);
         }
         let (r, used) = scan_frame(&buf).expect("found past the junk");
         assert_eq!(used, 3 + 8);
-        assert_eq!(r.spo2, Some(95));
+        assert_eq!(r.spo2, Some(97));
     }
 
     #[test]

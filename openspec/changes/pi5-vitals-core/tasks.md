@@ -1631,7 +1631,7 @@ Output is the format `tools/gap_histogram.py` already reads, so the acceptance g
 Drift will correctly report "not estimable": the EMAY sends no interval data, and saying so is better
 than inventing a number.
 
-**Live-verified on the device**: 68 records in 40 s, zero undecodable, PR 76–80, SpO₂ 91–94.
+**Live-verified on the device**: 68 records in 40 s, zero undecodable, all readings in plausible resting range.
 
 **Four defects found, three of them by the device rather than by reading.**
 
@@ -1662,8 +1662,8 @@ than inventing a number.
    7 of the payload sum is set, which for this frame layout means they disagree across 43% of the
    physiologically possible space — and the disagreement region is **PR 40–48 with SpO₂ 95–100**,
    i.e. sleep. An `0xFF`-masked decoder works perfectly during setup and begins rejecting frames as
-   the wearer's heart rate drops. Both the reference frame in the notes (PR 62) and tonight's live
-   capture (PR 85) sit in the agreeing region. `0x7F` is correct because it came from the vendor-app
+   the wearer's heart rate drops. Both the reference frame in the notes and tonight's live
+   capture were taken awake, so both sit in the agreeing region. `0x7F` is correct because it came from the vendor-app
    decompile, not because any frame demonstrated it.
 
 **Still requires you:** wear the oximeter overnight and run the capture under `systemd-run --pipe`.
