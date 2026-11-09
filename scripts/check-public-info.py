@@ -139,6 +139,7 @@ def scan(root: Path) -> list[str]:
     findings: list[str] = []
     for file_path in tracked_files(root):
         relative = file_path.relative_to(root).as_posix()
+        findings.extend(path_findings(relative))
         if relative in ALLOW_PATHS or relative in SKIP_PATHS:
             continue
         try:
@@ -149,6 +150,29 @@ def scan(root: Path) -> list[str]:
     return findings
 
 
+def path_findings(relative: str) -> list[str]:
+    """Apply the rules to a tracked path itself, not only to its contents.
+
+    A private hostname in a file *name* is as public as one in the text, and
+    content scanning never looks at names: two status-update files carried
+    the Pi's hostname in their names, passing this scanner for two months.
+    """
+    findings: list[str] = []
+    for rule in RULES:
+        for match in rule.pattern.finditer(relative):
+            value = match.group(0)
+            if cpi_placeholder(rule.name, value):
+                continue
+            findings.append(f"{relative}: path name: {rule.message}: {value}")
+    return findings
+
+
+def cpi_placeholder(rule_name: str, value: str) -> bool:
+    return rule_name == "full-device-address" and (
+        "XX" in value.upper() or value.upper() in PLACEHOLDER_MACS
+    )
+
+
 def self_test() -> None:
     bad = {
         "a.md": "ssh jane@bedroom-pi true",
@@ -157,10 +181,16 @@ def self_test() -> None:
         "d.md": "http://192.168.50.7:4000/ui",
         "e.md": "sensor 11:22:33:44:55:66",
         "f.md": "SleepO2-2_1234",
-        "g.md": "private host minidude",
-        "h.md": "User=chris",
-        "i.md": "plugin chris.opsx-dev-layout",
+        # Assembled from fragments, like RULES: this file must not contain the
+        # identifiers it exists to keep out, even inside its own fixtures.
+        "g.md": "private host " + "mini" + "dude",
+        "h.md": "User=" + "chris",
+        "i.md": "plugin " + "chris" + ".opsx-dev-layout",
     }
+    if not path_findings("docs/status-updates/2026-01-01-" + "mini" + "dude" + "-plan.md"):
+        raise AssertionError("scanner missed a private hostname in a path name")
+    if path_findings("docs/status-updates/2026-01-01-pi-host-plan.md"):
+        raise AssertionError("scanner rejected a placeholder path name")
     for path, text in bad.items():
         if not findings_for(path, text):
             raise AssertionError(f"scanner missed fixture: {text}")
