@@ -81,8 +81,8 @@ fn evidence_from_attempts(attempts: &[AttemptRow], latest_sample_epoch_s: Option
     // held a single row, that substitution was the *only* path that ever
     // produced evidence. For a source declaring one sample per second, the
     // ordinary lag between collection and commit then read as stale (measured
-    // 2026-11-09: 5s–36s on a ~30s commit cycle), so a ten-day outage produced
-    // no state transition to notice.
+    // 2026-11-09, n=36: p50 35s, max 44s, on a ~30s commit cycle), so a ten-day
+    // outage produced no state transition to notice.
     Evidence {
         last_attempt_epoch_s: latest_attempt_epoch_s,
         last_attempt_failure,
