@@ -1,0 +1,10 @@
+[Unit]
+Description=Keep the active vitals spool visible to the drainer
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=60s
+Unit=vitals-spool-seal.service
+
+[Install]
+WantedBy=timers.target

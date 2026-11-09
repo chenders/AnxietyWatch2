@@ -1,0 +1,17 @@
+[Unit]
+Description=Bring up and verify the BLE adapter
+After=bluetooth.service
+Wants=bluetooth.service
+# Collectors must never start against a dead adapter.
+Before=vitalsd.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/vitals-bt-up
+RemainAfterExit=yes
+# The failure must be visible, not absorbed.
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
