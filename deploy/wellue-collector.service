@@ -1,0 +1,35 @@
+# Wellue/Viatom KS-60FWB BLE collector.
+# Configure WELLUE_MAC in /etc/anxietywatch/wellue.env before enabling.
+# The collector writes real observations to vitalsd and a durable raw journal;
+# the protocol and safety use remain provisional until live validation.
+[Unit]
+Description=Wellue KS-60FWB oximeter collector
+After=bluetooth.target vitalsd.service
+Requires=bluetooth.target vitalsd.service
+
+[Service]
+Type=simple
+User=vitals
+Group=vitals
+SupplementaryGroups=bluetooth
+EnvironmentFile=-/etc/anxietywatch/wellue.env
+Environment=VITALSD_SOCKET=/run/vitals/vitalsd.sock
+Environment=VITALS_STATE=/var/lib/vitals
+Environment=WELLUE_RAW_LOG=/var/lib/vitals/raw/wellue-ks60fwb.log
+Environment=WELLUE_STATUS_JSON=/var/lib/vitals/wellue-status.json
+ExecStart=/usr/local/bin/wellue-collector
+Restart=always
+RestartSec=10
+OOMScoreAdjust=-1000
+MemoryMin=32M
+MemoryHigh=128M
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/var/lib/vitals
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

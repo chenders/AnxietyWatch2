@@ -1,0 +1,8 @@
+[Unit]
+Description=Seal the active vitals spool segment for low-latency projections
+After=vitalsd.service
+Requires=vitalsd.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/libexec/vitals-spool-seal
