@@ -10,7 +10,25 @@ use vitals_core::liveness::{Bounds, Cadence, Evidence, HealthState, evaluate};
 use vitals_registry::VitalsSource;
 
 /// Minimum time between repeated notifications for one unchanged state.
-pub const DEFAULT_REPEAT_INTERVAL_S: i64 = 900;
+/// Minimum time between repeated notifications for one unchanged state.
+///
+/// 3600, not 900. Amendment 14 is **accepted** and binds phone-silence
+/// reminders to "at most one per hour"; 900 violated it by 4x, and the
+/// detector routes the phone condition through this same interval. Amendments
+/// supersede the original design, so the code moves, not the amendment.
+///
+/// This is a floor on *repeats of an unchanged state*, not on transitions — a
+/// state change still emits immediately. Erring toward fewer emails is the
+/// right direction under the habituation bound in SPEC-admin-console §2.6: a
+/// condition that mails hourly and also shows on the console and the bedside
+/// panel is surfaced; one that mails every fifteen minutes is ignored.
+pub const DEFAULT_REPEAT_INTERVAL_S: i64 = 3600;
+
+// Compile-time, not a test: `Default` builds the struct directly rather than
+// through the fallible `new`, so this is what guarantees the constant is a
+// legal interval and honours amendment 14's one-per-hour bound.
+const _: () = assert!(DEFAULT_REPEAT_INTERVAL_S > 0);
+const _: () = assert!(DEFAULT_REPEAT_INTERVAL_S >= 3600);
 
 /// A source's operator configuration for one detector observation.
 #[derive(Debug, Clone, Copy)]
@@ -83,18 +101,39 @@ pub struct SilenceDetector {
 
 impl Default for SilenceDetector {
     fn default() -> Self {
-        Self::new(DEFAULT_REPEAT_INTERVAL_S)
+        // Constructed directly rather than through `new`, which now returns a
+        // `Result`: `DEFAULT_REPEAT_INTERVAL_S` is a compile-time constant and
+        // `the_default_repeat_interval_is_positive` pins it, so there is no
+        // fallible step to unwrap here.
+        Self {
+            statuses: HashMap::new(),
+            repeat_interval_s: DEFAULT_REPEAT_INTERVAL_S,
+        }
     }
 }
 
 impl SilenceDetector {
     /// Create a detector with a positive repeat interval.
-    #[must_use]
-    pub fn new(repeat_interval_s: i64) -> Self {
-        Self {
-            statuses: HashMap::new(),
-            repeat_interval_s: repeat_interval_s.max(1),
+    ///
+    /// Rejects a non-positive interval by name rather than clamping it. The
+    /// previous `.max(1)` turned a misconfigured `0` into a one-second email
+    /// loop — a clamped value is indistinguishable from a real one, which is
+    /// why AGENTS.md forbids clamping.
+    ///
+    /// # Errors
+    ///
+    /// Returns the rejected value by name when `repeat_interval_s` is not
+    /// positive.
+    pub fn new(repeat_interval_s: i64) -> Result<Self, String> {
+        if repeat_interval_s <= 0 {
+            return Err(format!(
+                "repeat interval must be positive, got {repeat_interval_s}s"
+            ));
         }
+        Ok(Self {
+            statuses: HashMap::new(),
+            repeat_interval_s,
+        })
     }
 
     /// Restore a previously persisted status before the next observation.
@@ -258,6 +297,11 @@ fn state_name(state: HealthState) -> &'static str {
 
 #[cfg(test)]
 mod tests {
+    #![expect(
+        clippy::unwrap_used,
+        reason = "`SilenceDetector::new` is fallible only for a non-positive interval; unwrap is the assertion that these fixed fixtures are valid"
+    )]
+
     use super::*;
 
     const NOW: i64 = 10_000;
@@ -277,7 +321,7 @@ mod tests {
 
     #[test]
     fn silence_silent_phone_emits_once_then_jittered_repeat() {
-        let mut detector = SilenceDetector::new(100);
+        let mut detector = SilenceDetector::new(100).unwrap();
         let stale = evidence(NOW - 61, None);
         let (first, first_event) = detector.observe(
             NOW,
@@ -376,5 +420,35 @@ mod tests {
         let (again, no_duplicate) = restarted.observe(NOW + 1, policy, &stale, 0);
         assert_eq!(again.transition_id, saved.transition_id);
         assert!(no_duplicate.is_none());
+    }
+
+    /// `Default` must carry the amendment-14 interval, not a second number.
+    ///
+    /// The bound itself is asserted at compile time above the constant; this
+    /// pins that the default path actually uses it.
+    #[test]
+    fn the_default_detector_uses_the_declared_interval() {
+        assert_eq!(
+            SilenceDetector::default().repeat_interval_s,
+            DEFAULT_REPEAT_INTERVAL_S
+        );
+    }
+
+    /// A non-positive interval is rejected by name, not clamped to 1.
+    ///
+    /// `.max(1)` turned a misconfigured `0` into a one-second email loop, and
+    /// a clamped value is indistinguishable from a real one.
+    #[test]
+    fn a_non_positive_repeat_interval_is_rejected_by_name() {
+        for bad in [0_i64, -1, i64::MIN] {
+            let err = SilenceDetector::new(bad)
+                .err()
+                .unwrap_or_else(|| String::from("accepted a non-positive interval"));
+            assert!(
+                err.contains("must be positive") && err.contains(&bad.to_string()),
+                "the blocker must name the value that blocked it; got {err:?}"
+            );
+        }
+        assert!(SilenceDetector::new(1).is_ok());
     }
 }

@@ -512,3 +512,57 @@ def test_source_id_reuse_guard_is_emitted(registry: Registry) -> None:
     assert "ids are permanent" in sql
     # The guard must precede every upsert, or it protects nothing.
     assert sql.index("RAISE EXCEPTION") < sql.index("INSERT INTO vitals_source")
+
+
+def test_event_age_and_stream_bounds_have_different_ceilings() -> None:
+    """One ceiling for both was the conflation this module exists to prevent.
+
+    `max_event_age_s` measures a discrete, human-paced event; the others
+    measure a continuous stream. A home blood-pressure cuff is idle for weeks
+    by design -- 89 measured gaps have a maximum of 23.8 days -- so a one-week
+    ceiling rejects every honest value and forces the field to stay undeclared,
+    leaving the card asserting LIVE on month-old evidence.
+    """
+    from gen_registry import Source, _check_liveness_bounds
+
+    thirty_days = 30 * 24 * 3600
+
+    # Accepted for a discrete event...
+    _check_liveness_bounds(
+        Source(
+            name="ad_ua651ble",
+            id=6,
+            transport="ble",
+            provides=(),
+            on_demand=True,
+            max_event_age_s=thirty_days,
+        )
+    )
+
+    # ...and still rejected for a continuous stream, where a month of silence
+    # scoring as healthy is the original defect.
+    with pytest.raises(ValueError, match=re.escape("above the ceiling")):
+        _check_liveness_bounds(
+            Source(
+                name="probe",
+                id=99,
+                transport="ble",
+                provides=(),
+                expected_cadence_s=1,
+                max_sample_arrival_s=thirty_days,
+            )
+        )
+
+    # And the event ceiling is still a ceiling: a bound that can never trip is
+    # not a bound.
+    with pytest.raises(ValueError, match=re.escape("above the ceiling")):
+        _check_liveness_bounds(
+            Source(
+                name="probe",
+                id=99,
+                transport="ble",
+                provides=(),
+                on_demand=True,
+                max_event_age_s=400 * 24 * 3600,
+            )
+        )

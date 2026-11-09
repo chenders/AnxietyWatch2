@@ -329,6 +329,30 @@ service = "0x1810"
 indication = true
 provides = ["bp_systolic", "bp_diastolic", "bp_map", "hr"]
 on_demand = true
+# Beyond 30 days, the newest cuff reading stops certifying the source. Past it
+# the card reads UNKNOWN, never FAILING -- an unused cuff is not a broken one.
+#
+# Measured 2026-11-09 over 89 gaps between consecutive stored readings
+# (2026-08-06 to 2026-09-29, 90 distinct readings, local time): p50 60s,
+# p90 22,144s, max 2,058,615s = 23.8 days. The sub-minute clusters are backlog
+# drains, not readings -- the cuff sends no device timestamp, so `timestamp` is
+# host receipt, which is the quantity the evaluator compares. Replayed over the
+# whole history this bound never trips while the cuff is in use; 14 days would
+# trip twice and 7 days at least four times.
+#
+# The 30 days comes from the conventional home-BP review window: AHA/ACC 2017
+# and ESH describe HBPM as structured runs -- duplicate morning and evening
+# readings over about a week -- preceding a clinician review weeks to months
+# apart. The cuff is idle between runs by design. That justifies "about a
+# month", not an exact second.
+#
+# It is deliberately BELOW the longest legitimate gap, which is open-ended
+# because using the cuff is the owner's choice. The usual rule is that a bound
+# under the observed floor is worse than none; it does not apply here because
+# the trip is to UNKNOWN and alarms nothing. With no bound the card asserts
+# LIVE on 41-day-old evidence -- a false health claim. A true non-assertion
+# beats a false assertion even when the silence is deliberate.
+max_event_age_s = 2592000
 
 # Synthetic pipeline-exercise data. A distinct id so emulator beats can never
 # be mistaken for, or aggregated with, a physical measurement — provenance by
