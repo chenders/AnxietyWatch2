@@ -90,12 +90,12 @@ fn evidence_from_attempts(attempts: &[AttemptRow], latest_sample_epoch_s: Option
         inflight,
         last_sample_epoch_s: latest_sample_epoch_s,
         // `last_link_epoch_s` and `activity` come from the collector's status
-        // file, which this binary does not read yet. Defaulting them is safe in
-        // the only direction that matters: an unobserved activity gate never
-        // licenses escalation, and an absent contact timestamp contributes
-        // nothing. It does mean the AirSense cannot yet escalate on transport
-        // silence, which is the gap that leaves the original outage undetected
-        // -- see max_link_silence_s in registry.toml.
+        // file, which this binary does not read yet. Defaulting them is safe:
+        // an absent contact timestamp contributes nothing, and an unmeasured
+        // activity gate falls back to the registry declaration rather than
+        // vetoing it -- so a declared sample_silence_failure_s still fires.
+        // Getting that fallback backwards would disable the escalation
+        // entirely, since nothing reports activity today.
         ..Default::default()
     }
 }
