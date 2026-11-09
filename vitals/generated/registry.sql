@@ -4,6 +4,82 @@
 -- Ids are permanent: ON CONFLICT UPDATE so a renamed unit or widened
 -- range propagates, but an id is never reused or renumbered.
 
+-- Type ids are permanent, and so are their units and ranges.
+DO $$
+DECLARE
+    conflict RECORD;
+    row_count BIGINT;
+BEGIN
+    IF to_regclass('samples') IS NULL OR to_regclass('vitals_type') IS NULL THEN
+        RETURN;  -- fresh database: nothing to protect yet
+    END IF;
+    FOR conflict IN
+        SELECT stored.id,
+               stored.name AS stored_name, declared.name AS declared_name,
+               stored.unit AS stored_unit, declared.unit AS declared_unit
+        FROM vitals_type AS stored
+        JOIN (VALUES
+        (1, 'hr', 'bpm', 20.0, 250.0),
+        (2, 'spo2', 'percent', 50.0, 100.0),
+        (3, 'accel', 'g', -16.0, 16.0),
+        (4, 'hrv_rmssd', 'ms', 1.0, 500.0),
+        (5, 'rr_interval', 'seconds', 0.2, 3.0),
+        (6, 'bp_systolic', 'mmHg', 50.0, 260.0),
+        (7, 'bp_diastolic', 'mmHg', 30.0, 160.0),
+        (8, 'bp_map', 'mmHg', 40.0, 200.0),
+        (9, 'sleep_stage', 'stage_code', 0.0, 4.0),
+        (10, 'resting_hr', 'bpm', 20.0, 250.0),
+        (11, 'respiratory_rate', 'breaths/min', 1.0, 100.0),
+        (12, 'wrist_temperature', 'degC', -20.0, 60.0),
+        (13, 'step_count', 'count', 0.0, 1000000.0),
+        (14, 'active_energy', 'kcal', 0.0, 100000.0),
+        (15, 'exercise_time', 'min', 0.0, 1440.0),
+        (16, 'environmental_audio', 'dBASPL', 0.0, 200.0),
+        (17, 'blood_glucose', 'mg/dL', 1.0, 1000.0),
+        (18, 'vo2_max', 'mL/kg*min', 1.0, 150.0),
+        (19, 'walking_hr', 'bpm', 20.0, 250.0),
+        (20, 'headphone_audio', 'dBASPL', 0.0, 200.0),
+        (21, 'walking_steadiness', 'percent', 0.0, 100.0),
+        (22, 'afib_burden', 'percent', 0.0, 100.0),
+        (23, 'walking_speed', 'm/s', 0.0, 20.0),
+        (24, 'walking_step_length', 'm', 0.0, 5.0),
+        (25, 'walking_double_support', 'percent', 0.0, 100.0),
+        (26, 'walking_asymmetry', 'percent', 0.0, 100.0),
+        (27, 'time_in_daylight', 'min', 0.0, 1440.0),
+        (28, 'physical_effort', 'kcal/kg*hr', 0.0, 100.0),
+        (29, 'body_mass', 'kg', 0.1, 500.0),
+        (30, 'patient_flow', 'L/s', -20.0, 20.0),
+        (31, 'mask_pressure', 'cmH2O', 0.0, 50.0),
+        (32, 'mask_pressure_2s', 'cmH2O', 0.0, 50.0),
+        (33, 'inspiratory_pressure', 'cmH2O', 0.0, 50.0),
+        (34, 'expiratory_pressure', 'cmH2O', 0.0, 50.0),
+        (35, 'leak', 'L/min', 0.0, 300.0),
+        (36, 'tidal_volume', 'mL', 0.0, 5000.0),
+        (37, 'minute_ventilation', 'L/min', 0.0, 60.0),
+        (38, 'target_minute_ventilation', 'L/min', 0.0, 60.0),
+        (39, 'ie_ratio', 'ratio', 0.0, 10.0),
+        (40, 'snore_index', 'index', 0.0, 100.0),
+        (41, 'flow_limitation', 'ratio', 0.0, 1.0),
+        (42, 'inspiratory_duration', 'seconds', 0.0, 10.0),
+        (43, 'trigger_cycle_event', 'code', 0.0, 255.0)
+        ) AS declared(id, name, unit, range_lo, range_hi)
+          ON declared.id = stored.id
+        WHERE stored.name <> declared.name
+           OR stored.unit <> declared.unit
+           OR stored.range_lo <> declared.range_lo
+           OR stored.range_hi <> declared.range_hi
+    LOOP
+        SELECT count(*) INTO row_count
+        FROM samples WHERE type = conflict.id;
+        IF row_count > 0 THEN
+            RAISE EXCEPTION
+                'type id % holds % sample rows as ''%'' in % but registry.toml now declares ''%'' in %: type ids, units and ranges are permanent. Overwriting them reinterprets every stored value.',
+                conflict.id, row_count, conflict.stored_name, conflict.stored_unit,
+                conflict.declared_name, conflict.declared_unit;
+        END IF;
+    END LOOP;
+END $$;
+
 -- Ids are permanent. This is the guard, not the comment above it.
 DO $$
 DECLARE
