@@ -1663,7 +1663,7 @@ than inventing a number.
    physiologically possible space — and the disagreement region is **PR 40–48 with SpO₂ 95–100**,
    i.e. sleep. An `0xFF`-masked decoder works perfectly during setup and begins rejecting frames as
    the wearer's heart rate drops. Both the reference frame in the notes and tonight's live
-   capture sit in the agreeing region. `0x7F` is correct because it came from the vendor-app
+   capture were taken awake, so both sit in the agreeing region. `0x7F` is correct because it came from the vendor-app
    decompile, not because any frame demonstrated it.
 
 **Still requires you:** wear the oximeter overnight and run the capture under `systemd-run --pipe`.
