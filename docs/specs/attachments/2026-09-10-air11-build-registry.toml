@@ -1,0 +1,200 @@
+[meta]
+version = 1
+
+[type.hr]
+id = 1
+unit = "bpm"
+range = [20.0, 250.0]
+precision = 1.0
+
+[type.spo2]
+id = 2
+unit = "percent"
+range = [50.0, 100.0]
+precision = 0.1
+
+[type.accel]
+id = 3
+unit = "g"
+range = [-16.0, 16.0]
+precision = 0.001
+
+[type.hrv_rmssd]
+id = 4
+unit = "ms"
+range = [1.0, 500.0]
+precision = 0.1
+
+[type.rr_interval]
+id = 5
+unit = "seconds"
+range = [0.2, 3.0]
+precision = 0.001
+
+[type.bp_systolic]
+id = 6
+unit = "mmHg"
+range = [50.0, 260.0]
+precision = 1.0
+
+[type.bp_diastolic]
+id = 7
+unit = "mmHg"
+range = [30.0, 160.0]
+precision = 1.0
+
+[type.bp_map]
+id = 8
+unit = "mmHg"
+range = [40.0, 200.0]
+precision = 1.0
+
+# AirSense 11 live-stream metrics. Ids are permanent; the raw stream signal
+# and native cadence are protocol metadata, while units/ranges are canonical
+# store semantics enforced by the generated registry.
+[type.respiratory_rate]
+id = 9
+unit = "bpm"
+range = [1.0, 120.0]
+precision = 0.1
+
+[type.patient_flow]
+id = 10
+unit = "L/s"
+range = [-20.0, 20.0]
+precision = 0.001
+
+[type.mask_pressure]
+id = 11
+unit = "cmH2O"
+range = [0.0, 50.0]
+precision = 0.1
+
+[type.mask_pressure_2s]
+id = 12
+unit = "cmH2O"
+range = [0.0, 50.0]
+precision = 0.1
+
+[type.inspiratory_pressure]
+id = 13
+unit = "cmH2O"
+range = [0.0, 50.0]
+precision = 0.1
+
+[type.expiratory_pressure]
+id = 14
+unit = "cmH2O"
+range = [0.0, 50.0]
+precision = 0.1
+
+[type.leak]
+id = 15
+unit = "L/min"
+range = [0.0, 300.0]
+precision = 0.1
+
+[type.tidal_volume]
+id = 16
+unit = "mL"
+range = [0.0, 5000.0]
+precision = 0.1
+
+[type.minute_ventilation]
+id = 17
+unit = "L/min"
+range = [0.0, 60.0]
+precision = 0.1
+
+[type.target_minute_ventilation]
+id = 18
+unit = "L/min"
+range = [0.0, 60.0]
+precision = 0.1
+
+[type.ie_ratio]
+id = 19
+unit = "ratio"
+range = [0.0, 10.0]
+precision = 0.01
+
+[type.snore_index]
+id = 20
+unit = "index"
+range = [0.0, 100.0]
+precision = 0.1
+
+[type.flow_limitation]
+id = 21
+unit = "ratio"
+range = [0.0, 1.0]
+precision = 0.01
+
+[type.inspiratory_duration]
+id = 22
+unit = "seconds"
+range = [0.0, 10.0]
+precision = 0.001
+
+[type.trigger_cycle_event]
+id = 23
+unit = "code"
+range = [0.0, 255.0]
+precision = 1.0
+
+[source.emay]
+id = 0
+transport = "ble"
+provides = ["spo2", "hr"]
+expected_cadence_s = 60
+
+[source.polar_h10]
+id = 1
+transport = "ble"
+service = "0x180D"
+provides = ["hr", "rr_interval"]
+# The H10 emits Heart Rate Measurement notifications at approximately 1 Hz,
+# including when a packet contains HR but no RR interval.
+expected_cadence_s = 1
+
+[source.healthkit]
+id = 2
+transport = "push"
+provides = ["hr", "hrv_rmssd"]
+# §9b guess, awaiting measurement: real sync cadence on this install.
+expected_cadence_s = 21600
+
+[source.derived]
+id = 3
+transport = "internal"
+provides = ["hrv_rmssd"]
+on_demand = true
+
+[source.ad_ua651ble]
+id = 6
+transport = "ble"
+service = "0x1810"
+indication = true
+provides = ["bp_systolic", "bp_diastolic", "bp_map", "hr"]
+on_demand = true
+
+# Synthetic pipeline-exercise data. A distinct id so emulator beats can never
+# be mistaken for, or aggregated with, a physical measurement — provenance by
+# key, not by a free-text marker an env var might forget to set.
+[source.polar_h10_emulator]
+id = 7
+transport = "internal"
+provides = ["hr", "rr_interval"]
+expected_cadence_s = 1
+
+[source.resmed_air11]
+id = 5
+transport = "ble"
+service = "0xFD56"
+provides = [
+    "hr", "spo2", "respiratory_rate", "patient_flow", "mask_pressure",
+    "mask_pressure_2s", "inspiratory_pressure", "expiratory_pressure", "leak",
+    "tidal_volume", "minute_ventilation", "target_minute_ventilation", "ie_ratio",
+    "snore_index", "flow_limitation", "inspiratory_duration", "trigger_cycle_event",
+]
+expected_cadence_s = 1
