@@ -1,0 +1,26 @@
+[Unit]
+# bp-collector reacts to a connection but never makes one, and the kernel LE
+# auto-connect path it relies on is suspended for as long as emay-live holds a
+# continuous discovery -- which is all night, exactly when both are wanted.
+# See the header of vitals-bp-connect for the full diagnosis.
+Description=Connect the A&D cuff when it advertises (bp-collector never does)
+After=bluetooth.service
+Requires=bluetooth.service
+# Before, not Wants: the collector must already be listening when the link
+# comes up, or the indications arrive with nothing subscribed.
+Before=vitals-bp.service
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/vitals/bp-collector.env
+ExecStart=/usr/local/bin/vitals-bp-connect
+Restart=always
+RestartSec=5
+# Only needs the system bus. No CAP_NET_ADMIN here -- unlike the btmgmt
+# oneshot this replaces, connecting a bonded device is an unprivileged
+# operation, so this does not run as root.
+User=vitals
+Group=bluetooth
+
+[Install]
+WantedBy=multi-user.target

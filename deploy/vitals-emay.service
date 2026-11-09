@@ -1,0 +1,58 @@
+# SANITIZED TEMPLATE — NOT DEPLOYABLE VERBATIM.
+#
+# scripts/check-public-info.py --fix replaced a personal account name with
+# `pi-user` and a home directory with `$HOME`. systemd does NOT expand `$HOME`
+# in ReadWritePaths= or Environment=: it would be taken literally, the unit
+# would write to a directory named `$HOME`, and the panel status file would
+# silently stop updating. Substitute the real account and an absolute path (or
+# systemd's `%h` specifier) at deploy time.
+#
+# This unit also runs as a human login account rather than the `vitals` service
+# user that every other collector uses, which is a hardening gap recorded with
+# the capture — see deploy/README.md.
+# Durable EMAY SleepO2 collector. It downloads source-identified stored sessions,
+# appends them through vitalsd, then keeps the anonymous live stream display-only.
+# Configure EMAY_MAC in /etc/default/vitals-emay. The status path below is the
+# input consumed by the existing panel-status-merge unit.
+[Unit]
+Description=EMAY SleepO2 durable stored-session collector
+After=bluetooth.target vitalsd.service
+Requires=bluetooth.target vitalsd.service
+
+[Service]
+Type=simple
+User=pi-user
+Group=pi-user
+SupplementaryGroups=vitals
+EnvironmentFile=-/etc/default/vitals-emay
+Environment=VITALS_SOCKET=/run/vitals/vitalsd.sock
+Environment=EMAY_STATUS_JSON=$HOME/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical/emay_status.json
+ExecStart=/usr/local/bin/emay-collector
+# The collector handles SIGINT by sending the verified stop-realtime command;
+# a normal unit stop must not strand the ring in live mode.
+KillSignal=SIGINT
+TimeoutStopSec=15s
+Restart=always
+RestartSec=20
+
+# The collector is part of the safety path and must not be the first process
+# reclaimed under memory pressure. PostgreSQL and Docker use positive scores.
+OOMScoreAdjust=-1000
+MemoryMin=32M
+MemoryHigh=192M
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=$HOME/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

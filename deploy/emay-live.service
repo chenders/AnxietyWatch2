@@ -1,0 +1,41 @@
+# SANITIZED TEMPLATE — NOT DEPLOYABLE VERBATIM.
+#
+# scripts/check-public-info.py --fix replaced a personal account name with
+# `pi-user` and a home directory with `$HOME`. systemd does NOT expand `$HOME`
+# in ReadWritePaths= or Environment=: it would be taken literally, the unit
+# would write to a directory named `$HOME`, and the panel status file would
+# silently stop updating. Substitute the real account and an absolute path (or
+# systemd's `%h` specifier) at deploy time.
+#
+# This unit also runs as a human login account rather than the `vitals` service
+# user that every other collector uses, which is a hardening gap recorded with
+# the capture — see deploy/README.md.
+# Stopgap: EMAY SleepO2 capture, writing a status file the bedside panel polls.
+# See deploy/stopgap/README.md. This carries no alarm and no detection.
+[Unit]
+Description=EMAY SleepO2 live capture (stopgap, display only)
+After=bluetooth.target
+Requires=bluetooth.target
+
+[Service]
+Type=simple
+User=pi-user
+# Set EMAY_MAC with `systemctl edit emay-live`. Without it the binary exits 64
+# and says so, rather than starting and silently capturing nothing.
+# Written INTO the checkout, next to the page that reads it. That path is
+# gitignored, so runtime data never dirties the working tree and `git pull`
+# never conflicts with it.
+Environment=EMAY_STATUS_JSON=$HOME/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical/emay_status.json
+ExecStart=/usr/local/bin/emay-spike
+# The ring powers down when it is not worn, so "not found" is a normal
+# state, not a fault. Restart rather than give up: the run should
+# resume by itself when it goes back on a finger.
+Restart=always
+RestartSec=20
+# stdout is one line per frame, which is the gap_histogram.py format. Keeping it
+# in the journal costs little and means a night is still reconstructable.
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

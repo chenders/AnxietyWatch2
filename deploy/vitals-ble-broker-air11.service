@@ -1,0 +1,33 @@
+[Unit]
+Description=Dedicated BlueZ broker for the ResMed AirSense 11 collector
+After=bluetooth.service vitalsd.service
+Requires=bluetooth.service
+Before=vitals-air11.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/vitals-ble-broker
+Restart=always
+RestartSec=3
+EnvironmentFile=/etc/vitals/ble-broker-air11.env
+Environment=VITALS_BLE_BROKER_SOCKET=/run/vitals/ble-broker-air11.sock
+Environment=VITALS_BLE_BROKER_METRICS_PATH=/run/vitals/ble-broker-air11.prom
+User=vitals
+Group=vitals
+UMask=0007
+OOMScoreAdjust=-1000
+MemoryMin=64M
+MemoryHigh=192M
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/run/vitals
+ProtectHome=true
+RestrictAddressFamilies=AF_UNIX AF_NETLINK
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target
