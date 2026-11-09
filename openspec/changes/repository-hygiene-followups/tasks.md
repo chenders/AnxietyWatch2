@@ -3,7 +3,7 @@
 Independent unless a task says otherwise; no required order. Items marked **owner call** carry
 a decision only the owner can make. Each Verify exits 0 only when the task is done.
 
-- [ ] T-RH-1 — Purge the owner's health data from history · ops · host · **owner call**
+- [ ] T-RH-1 — Purge the owner's health data from history · superseded by `history-phi-purge` (owner decided 2026-11-09: purge)
 - T-RH-2 — withdrawn (2026-11-09; owner decision, not tracked here)
 - [ ] T-RH-3 — Follow every deployed unit in the log follower · implement-simple · host
 - [ ] T-RH-4 — Remove the C/CMake build from HERDR-GUIDE and close the guard gap · implement-simple · host
@@ -17,6 +17,8 @@ a decision only the owner can make. Each Verify exits 0 only when the task is do
 ---
 
 ### T-RH-1 — Purge the owner's health data from history
+
+**Superseded** by `openspec/changes/history-phi-purge`: on 2026-11-09 the owner decided to purge, and that change carries the plan. This task closes when its T-HP-6 does.
 
 **Depends:** none · **Review required:** yes · **Owner call**
 
