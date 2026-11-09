@@ -3103,6 +3103,7 @@ dependencies = [
  "tokio",
  "vitals-core",
  "vitals-proto",
+ "vitals-registry",
 ]
 
 [[package]]

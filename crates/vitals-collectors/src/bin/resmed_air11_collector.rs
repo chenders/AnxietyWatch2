@@ -644,6 +644,13 @@ impl Collector {
     fn quarantine(&mut self, detail: String) -> Result<(), FatalFailure> {
         self.status.quarantined = self.status.quarantined.saturating_add(1);
         self.status.measurement_state = MeasurementState::Quarantined;
+        // `blocker` is cleared by the next successful batch, which left
+        // `quarantined: N` beside `blocker: null` -- a guard reporting that it
+        // fired without saying why. These two outlive the recovery, and the
+        // log line means the reason survives even a status-file rewrite.
+        eprintln!("resmed-air11-collector: quarantined a frame: {detail}");
+        self.status.last_quarantine_detail = Some(detail.clone());
+        self.status.last_quarantine_unix_micros = host_receipt().map(|(_, micros)| micros).ok();
         self.status.blocker = Some(detail);
         self.publish()
     }
