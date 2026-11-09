@@ -1,12 +1,18 @@
 #!/usr/bin/env bash
-# Install one allowlisted AirSense artifact on the Pi.
+# Install one allowlisted Pi artifact.
 #
 # This deliberately does not accept arbitrary source or destination paths.
 # Copy to a regular /tmp file first, then install to one fixed destination.
+#
+# The allowlist is the mechanism, so a new destination is added here
+# deliberately and reviewed rather than worked around with an inline scp. It
+# started as AirSense-only and the filename still says so; `registry` was added
+# when the deployed registry.toml was found to be three months stale and missing
+# four of nine sources, including the one that wrote almost every row.
 set -Eeuo pipefail
 
 usage() {
-    printf 'Usage: PI_HOST=user@host PI_PATH=/remote/project %s <collector|onboard|unit>\n' "$0"
+    printf 'Usage: PI_HOST=user@host PI_PATH=/remote/project %s <collector|onboard|unit|registry>\n' "$0"
 }
 
 artifact=${1:-}
@@ -28,6 +34,17 @@ case "$artifact" in
         remote_path="/etc/systemd/system/vitals-air11.service"
         mode=0644
         reload=1
+        ;;
+    # Reference data, not code: the single source of truth for source ids,
+    # type ids, units and ranges. The cold export embeds a copy in every
+    # monthly bundle so an archive can be read without project code, which
+    # means a stale file here silently produces archives that cannot describe
+    # their own contents.
+    registry)
+        local_path="vitals/registry.toml"
+        remote_path="/usr/local/share/vitals/registry.toml"
+        mode=0644
+        reload=0
         ;;
     -h|--help)
         usage
