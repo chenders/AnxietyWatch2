@@ -34,7 +34,7 @@ than replying only with a short acknowledgement.
 - Watcher log: `/tmp/pi-host-after-reboot-watcher.log`
 - Watcher PID: recorded in `/tmp/pi-host-after-reboot-watcher.pid` (currently `60900`).
 - Local evidence root: `~/pi-host-reboot-evidence/`
-- SSH polling target: `chris@pi-host`, every two seconds.
+- SSH polling target: `$PI_HOST`, every two seconds.
 - No compilation, migration, schema change, sample deletion, spool deletion, offset change, or
   watchdog change is part of the first connection action.
 
