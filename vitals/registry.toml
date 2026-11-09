@@ -291,8 +291,33 @@ transport = "internal"
 provides = ["hrv_rmssd"]
 on_demand = true
 
-[source.acconeer_xe125]
+# RETIRED, but id 4 is permanently its own. The Wellue KS-60FWB wrote 156,201
+# rows between 2026-08-30 and 2026-09-17: 52,071 hr, 52,071 spo2 and 52,059
+# respiratory_rate. It was then removed from this file and id 4 was reassigned
+# to acconeer_xe125 (#56, 2026-09-28), which declares only respiratory_rate and
+# is a 60 GHz radar sensor -- a device that cannot measure SpO2 at all, because
+# that requires optical pulse oximetry.
+#
+# So those rows were left attributed to a source that could not have produced
+# them, and `vitals_source` on the Pi still held the old name, which is the only
+# reason the reuse was detectable. Reconciliation would have erased it:
+# registry.sql upserts with ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name,
+# which cannot tell a rename from a reuse.
+#
+# Ids are permanent. A retired device keeps its id forever and the replacement
+# takes the next free one. The guard is in the generated registry.sql, not in
+# the generator: only the database knows whether an id has rows, so the check
+# has to run where that is knowable, and it raises with the id, the stored name
+# and the row count rather than skipping quietly.
+[source.wellue_ks60fwb]
 id = 4
+transport = "ble"
+provides = ["hr", "spo2", "respiratory_rate"]
+on_demand = true
+retired = true
+
+[source.acconeer_xe125]
+id = 9
 transport = "usb_serial"
 provides = ["respiratory_rate"]
 on_demand = true
@@ -327,6 +352,45 @@ provides = [
 # Device-native leak is L/s and tidal volume is L; the registry stores L/min and mL.
 conversion = { leak = 60.0, tidal_volume = 1000.0 }
 expected_cadence_s = 1
+# Sample-arrival bounds, a different physical quantity from expected_cadence_s
+# above. That field is the sample RATE (this device streams at 1 Hz). These
+# bound how long the newest STORED sample may lag before liveness stops calling
+# the source healthy -- store-arrival lag, not inter-sample spacing. Comparing a
+# sample age against the rate is what let 921,331s of silence read exactly like
+# healthy operation.
+#
+# Measured 2026-11-09 by polling `now() - max(samples.timestamp)` every 30s for
+# 18 minutes during therapy -- the quantity the detector actually compares,
+# rather than the inter-sample gap distribution, which is blind to arrival lag
+# because `timestamp` is host receipt at collection and batching does not create
+# gaps in it. n=36: min 5s, p50 35s, p90 42s, max 44s, mean 24.2s. Sawtooths on
+# roughly a 30s commit cycle. 300s is ~6.8x the observed maximum.
+#
+# 1800s is 50x the observed maximum and only escalates while the activity gate
+# reads Expected -- see max_link_silence_s below for why that matters.
+max_sample_arrival_s = 300
+sample_silence_failure_s = 1800
+# NOT DECLARED: max_link_silence_s, the bound on transport contact.
+#
+# Not needed here, and that conclusion replaces an earlier one that was wrong.
+# This device streams CONTINUOUSLY while powered and paired: hourly row counts
+# for type 10 over two full pre-outage days (2026-10-21 and 10-22, local time)
+# are populated in 48 of 48 hours at ~84,000 rows/hour, minimum 79,636 -- a
+# 100% duty cycle at 23.3 rows/s, not a therapy-gated one.
+#
+# An earlier draft claimed a 31% duty cycle and used it to argue these bounds
+# would false-alarm all day. That came from two compounding mistakes: a three-day
+# hourly histogram read in UTC while reasoning in PST, over a window where the
+# only populated hours were the ~2.5 hours since the collector was restarted;
+# and an average over a window that contained the ten-day outage itself, which
+# of course reads low. Both are corrected above.
+#
+# So sample silence alone is unambiguous evidence for this source, and
+# sample_silence_failure_s carries detection: a repeat of the 2026-10-30 outage
+# is FAILING within half an hour. max_link_silence_s stays undeclared until a
+# device actually needs it -- one that stops producing legitimately, where
+# sample silence cannot distinguish idle from dead. Measured envelope rate,
+# for whoever declares it: 4.77/s, steady across two separate windows.
 
 [source.resmed_air11_sd]
 id = 8
