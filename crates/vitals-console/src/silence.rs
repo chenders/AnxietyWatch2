@@ -6,7 +6,7 @@
 //! the observation time and persist the returned status/event.
 
 use std::collections::HashMap;
-use vitals_core::liveness::{Cadence, Evidence, HealthState, evaluate};
+use vitals_core::liveness::{Bounds, Cadence, Evidence, HealthState, evaluate};
 use vitals_registry::VitalsSource;
 
 /// Minimum time between repeated notifications for one unchanged state.
@@ -127,11 +127,17 @@ impl SilenceDetector {
         evidence: &Evidence,
         jitter_s: i64,
     ) -> (StatusObservation, Option<NotificationEvent>) {
-        let cadence = match policy.source.expected_cadence() {
-            vitals_registry::Cadence::EverySeconds(seconds) => Cadence::EverySeconds(seconds),
-            vitals_registry::Cadence::OnDemand => Cadence::OnDemand,
+        let bounds = Bounds {
+            max_sample_arrival_s: policy.source.max_sample_arrival_s(),
+            sample_silence_failure_s: policy.source.sample_silence_failure_s(),
+            max_event_age_s: policy.source.max_event_age_s(),
+            max_link_silence_s: policy.source.max_link_silence_s(),
+            ..Bounds::from_cadence(match policy.source.expected_cadence() {
+                vitals_registry::Cadence::EverySeconds(seconds) => Cadence::EverySeconds(seconds),
+                vitals_registry::Cadence::OnDemand => Cadence::OnDemand,
+            })
         };
-        let assertion = evaluate(now_epoch_s, cadence, evidence);
+        let assertion = evaluate(now_epoch_s, bounds, evidence);
         let previous = self.statuses.get(&policy.source).cloned();
         let state_changed = previous
             .as_ref()
@@ -257,12 +263,15 @@ mod tests {
     const NOW: i64 = 10_000;
 
     fn evidence(attempt: i64, failure: Option<&str>) -> Evidence {
+        // These tests exercise the detector's scheduling and transition
+        // identity, not the arrival rule, so the sample, contact and activity
+        // channels are left absent on purpose — the sources they use declare
+        // no arrival bounds, and absent contributes nothing.
         Evidence {
             last_attempt_epoch_s: Some(attempt),
             last_attempt_failure: failure.map(str::to_string),
             last_success_epoch_s: Some(attempt),
-            inflight: None,
-            learned_interval_s: None,
+            ..Default::default()
         }
     }
 

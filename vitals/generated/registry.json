@@ -458,10 +458,12 @@
         "on_demand": true
       }
     },
-    "acconeer_xe125": {
+    "wellue_ks60fwb": {
       "id": 4,
-      "transport": "usb_serial",
+      "transport": "ble",
       "provides": [
+        "hr",
+        "spo2",
         "respiratory_rate"
       ],
       "cadence": {
@@ -497,6 +499,10 @@
       "service": "0xFD56",
       "cadence": {
         "expected_cadence_s": 1
+      },
+      "liveness": {
+        "max_sample_arrival_s": 300,
+        "sample_silence_failure_s": 1800
       }
     },
     "ad_ua651ble": {
@@ -542,6 +548,16 @@
         "flow_limitation",
         "spo2",
         "hr"
+      ],
+      "cadence": {
+        "on_demand": true
+      }
+    },
+    "acconeer_xe125": {
+      "id": 9,
+      "transport": "usb_serial",
+      "provides": [
+        "respiratory_rate"
       ],
       "cadence": {
         "on_demand": true

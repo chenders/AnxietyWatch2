@@ -53,6 +53,16 @@ BANNER_RS = "// GENERATED FROM registry.toml — DO NOT EDIT"
 BANNER_SQL = "-- GENERATED FROM registry.toml — DO NOT EDIT"
 
 
+def optional_u32(value: int | None) -> str:
+    """Render an optional bound as the Rust literal the accessor returns.
+
+    Module scope on purpose: `validate()` checks the emitted arms against
+    registry.toml, and if it spelled `None` differently from the emitter the
+    check would pass on output it had not actually verified.
+    """
+    return "None" if value is None else f"Some({value})"
+
+
 def _pascal(name: str) -> str:
     """snake_case -> PascalCase. `bp_systolic` -> `BpSystolic`,
     `ad_ua651ble` -> `AdUa651ble`, `polar_h10` -> `PolarH10`."""
@@ -85,7 +95,17 @@ class Source:
     service: str | None = None
     indication: bool = False
     expected_cadence_s: int | None = None
+    max_sample_arrival_s: int | None = None
+    sample_silence_failure_s: int | None = None
+    max_event_age_s: int | None = None
+    max_link_silence_s: int | None = None
     on_demand: bool = False
+    # A device no longer in service. Its id stays declared forever so historical
+    # rows keep resolving to the thing that wrote them, but it is excluded from
+    # liveness monitoring: a retired source is absent by declaration, not
+    # broken, and a card reporting it Unknown forever trains the operator to
+    # ignore cards.
+    retired: bool = False
     conversions: tuple[tuple[str, float], ...] = ()
 
     @property
@@ -143,7 +163,12 @@ class Registry:
                         service=d.get("service"),
                         indication=bool(d.get("indication", False)),
                         expected_cadence_s=d.get("expected_cadence_s"),
+                        max_sample_arrival_s=d.get("max_sample_arrival_s"),
+                        sample_silence_failure_s=d.get("sample_silence_failure_s"),
+                        max_event_age_s=d.get("max_event_age_s"),
+                        max_link_silence_s=d.get("max_link_silence_s"),
                         on_demand=bool(d.get("on_demand", False)),
+                        retired=bool(d.get("retired", False)),
                         conversions=tuple(
                             (type_name, float(factor))
                             for type_name, factor in d.get("conversion", {}).items()
@@ -215,6 +240,100 @@ def _check_cadence(sources: tuple[Source, ...]) -> None:
                 f"source {s.name} has non-positive expected_cadence_s "
                 f"{s.expected_cadence_s}"
             )
+        _check_liveness_bounds(s)
+
+
+# The widest bound the emitted `Option<u32>` can hold. A declaration above this
+# is accepted by every other check and then fails to compile, which is a loud
+# failure but the wrong one — the generator should reject the number it cannot
+# represent.
+_U32_MAX = 2**32 - 1
+
+# No liveness bound above this is a bound. A week of silence scoring as healthy
+# is the defect this whole module exists to prevent, and `u32::MAX` passed every
+# ordering and positivity check while restoring it exactly.
+_BOUND_CEILING_S = 7 * 24 * 3600
+
+# A failure bound must sit this many multiples above the staleness bound, or the
+# grace period the pair exists to provide never applies. `(1799, 1800)` passed
+# ordering and gave a one-second grace band.
+_MIN_ESCALATION_MARGIN = 2
+
+
+def _check_liveness_bounds(s: Source) -> None:
+    """The liveness bounds are coherent, and belong to the right cadence kind.
+
+    Each rule here was a defect that passed review: a `u32::MAX` pair that
+    restored the original bug, a one-second grace band, an arrival bound below
+    the source's own production rate, and a silence-failure bound on an
+    on-demand source — which SPEC §2.5 forbids outright, because an SD-card
+    import or a blood-pressure cuff that has not been used is not failing.
+    """
+    for name, value in (
+        ("max_sample_arrival_s", s.max_sample_arrival_s),
+        ("sample_silence_failure_s", s.sample_silence_failure_s),
+        ("max_event_age_s", s.max_event_age_s),
+        ("max_link_silence_s", s.max_link_silence_s),
+    ):
+        if value is None:
+            continue
+        if value <= 0:
+            raise ValueError(f"source {s.name} has non-positive {name} {value}")
+        if value > _U32_MAX:
+            raise ValueError(
+                f"source {s.name} has {name} {value} above u32::MAX "
+                f"{_U32_MAX}; the generated accessor cannot represent it"
+            )
+        if value > _BOUND_CEILING_S:
+            raise ValueError(
+                f"source {s.name} has {name} {value}s above the ceiling "
+                f"{_BOUND_CEILING_S}s ({_BOUND_CEILING_S // 86400} days); a "
+                "bound that long is not a bound — silence past it would score "
+                "as healthy, which is the defect these fields exist to stop"
+            )
+
+    # §2.5: an on-demand source is never time-degraded *to failing*. Rejected
+    # here by name as well as exempted in the evaluator, because the evaluator
+    # is the wrong place to learn that a declaration was meaningless.
+    if s.on_demand and s.sample_silence_failure_s is not None:
+        raise ValueError(
+            f"source {s.name} is on_demand and declares "
+            f"sample_silence_failure_s {s.sample_silence_failure_s}; SPEC §2.5 "
+            "says on-demand sources are never time-degraded to failing. Use "
+            "max_link_silence_s if the transport itself can be proven dead."
+        )
+    # The mirror: event age bounds a discrete event, which is what on-demand
+    # sources have. An interval source's staleness is max_sample_arrival_s.
+    if not s.on_demand and s.max_event_age_s is not None:
+        raise ValueError(
+            f"source {s.name} declares expected_cadence_s and "
+            f"max_event_age_s {s.max_event_age_s}; event age is the on-demand "
+            "quantity — an interval source uses max_sample_arrival_s"
+        )
+
+    if s.max_sample_arrival_s is not None:
+        # An arrival bound below the production rate can never be satisfied:
+        # the source would be stale between every pair of samples. This is the
+        # check that catches a sample *rate* being pasted in as an arrival
+        # bound, which is the original defect in its purest form.
+        if s.expected_cadence_s is not None and s.max_sample_arrival_s < s.expected_cadence_s:
+            raise ValueError(
+                f"source {s.name} has max_sample_arrival_s "
+                f"{s.max_sample_arrival_s} below expected_cadence_s "
+                f"{s.expected_cadence_s}; a source cannot arrive faster than "
+                "it produces, so this bound can never be met"
+            )
+        if s.sample_silence_failure_s is not None:
+            floor = _MIN_ESCALATION_MARGIN * s.max_sample_arrival_s
+            if s.sample_silence_failure_s < floor:
+                raise ValueError(
+                    f"source {s.name} has sample_silence_failure_s "
+                    f"{s.sample_silence_failure_s} below {floor} "
+                    f"({_MIN_ESCALATION_MARGIN}x max_sample_arrival_s "
+                    f"{s.max_sample_arrival_s}); the bounds must leave a real "
+                    "grace period in which the state is UNKNOWN before it "
+                    "escalates, or the pair does nothing"
+                )
 
 
 # ── emitters ─────────────────────────────────────────────────────────────────
@@ -269,6 +388,29 @@ def emit_rust(reg: Registry) -> str:
         f"            {s.id} => Some(Self::{s.rust_variant})," for s in reg.sources)
     cadences = "\n".join(
         f"            Self::{s.rust_variant} => {s.cadence}," for s in reg.sources)
+
+    # One arm per variant, like the cadences above, so adding a source without
+    # considering its sample-arrival bounds cannot compile to a default.
+    arrival_bounds = "\n".join(
+        f"            Self::{s.rust_variant} => {optional_u32(s.max_sample_arrival_s)},"
+        for s in reg.sources
+    )
+    retired_arms = "\n".join(
+        f"            Self::{s.rust_variant} => {str(s.retired).lower()},"
+        for s in reg.sources
+    )
+    event_age_bounds = "\n".join(
+        f"            Self::{s.rust_variant} => {optional_u32(s.max_event_age_s)},"
+        for s in reg.sources
+    )
+    link_bounds = "\n".join(
+        f"            Self::{s.rust_variant} => {optional_u32(s.max_link_silence_s)},"
+        for s in reg.sources
+    )
+    silence_bounds = "\n".join(
+        f"            Self::{s.rust_variant} => {optional_u32(s.sample_silence_failure_s)},"
+        for s in reg.sources
+    )
     conversions = "\n".join(
         f"            (Self::{s.rust_variant}, VitalsType::{_pascal(type_name)}) => {rust_float(factor)},"
         for s in reg.sources
@@ -385,6 +527,86 @@ impl VitalsSource {{
         }}
     }}
 
+    /// How stale the newest stored sample may be before liveness stops
+    /// treating this source as healthy, from `registry.toml`.
+    ///
+    /// `None` means no honest bound exists and sample arrival contributes
+    /// nothing — the spec's rule for legitimately variable cadence. This is a
+    /// different quantity from `expected_cadence`, which is the sample rate
+    /// and is also the H10 reconnect idle timeout; comparing a sample age
+    /// against that rate is what made a ten-day outage indistinguishable from
+    /// healthy operation.
+    #[must_use]
+    #[allow(clippy::match_same_arms)]
+    pub const fn max_sample_arrival_s(self) -> Option<u32> {{
+        match self {{
+{arrival_bounds}
+        }}
+    }}
+
+    /// Beyond this sample age, silence is positive evidence of failure.
+    ///
+    /// At least twice `max_sample_arrival_s` when present, and never declared
+    /// on an on-demand source; the generator rejects both cases by name, so a
+    /// source cannot escalate to failing before it has degraded to unknown and
+    /// an unused device is never called broken.
+    #[must_use]
+    #[allow(clippy::match_same_arms)]
+    pub const fn sample_silence_failure_s(self) -> Option<u32> {{
+        match self {{
+{silence_bounds}
+        }}
+    }}
+
+    /// Whether this source is retired: declared only so historical rows keep
+    /// resolving to the device that wrote them.
+    ///
+    /// A retired source is **absent by declaration**, not broken. It is excluded
+    /// from liveness monitoring, because a card reporting `Unknown` forever for a
+    /// device nobody owns any more teaches the operator to ignore cards — and the
+    /// whole point of the three-state rule is that a card is worth reading.
+    ///
+    /// Its id is never reused. Reassigning id 4 from a pulse oximeter to a radar
+    /// sensor left 52,071 `spo2` rows attributed to a device that cannot measure
+    /// blood oxygen at all, because that needs optical pulse oximetry.
+    #[must_use]
+    #[allow(clippy::match_same_arms)]
+    pub const fn is_retired(self) -> bool {{
+        match self {{
+{retired_arms}
+        }}
+    }}
+
+    /// Beyond this age, an on-demand source's newest event stops certifying it.
+    ///
+    /// An on-demand quantity only: it bounds the age of a discrete event (a
+    /// cuff reading, an SD-card import), not the arrival of a stream. The
+    /// generator rejects it on a source that declares `expected_cadence_s`,
+    /// because conflating the two is what compared a stream-arrival bound
+    /// against an attempt timestamp.
+    #[must_use]
+    #[allow(clippy::match_same_arms)]
+    pub const fn max_event_age_s(self) -> Option<u32> {{
+        match self {{
+{event_age_bounds}
+        }}
+    }}
+
+    /// Beyond this age with no transport contact, the source is failing —
+    /// whether or not it was due to produce anything.
+    ///
+    /// The only bound that escalates on a legitimately idle source, and the
+    /// one that can actually catch a dead collector on a device that only
+    /// produces data while in use. A CPAP stores nothing for the idle hours a
+    /// day; it answers on the radio throughout.
+    #[must_use]
+    #[allow(clippy::match_same_arms)]
+    pub const fn max_link_silence_s(self) -> Option<u32> {{
+        match self {{
+{link_bounds}
+        }}
+    }}
+
     /// Source-to-canonical conversion factor from `registry.toml`.
     #[must_use]
     pub const fn conversion(self, r#type: VitalsType) -> f64 {{
@@ -405,6 +627,57 @@ pub const ALL_SOURCES: [VitalsSource; {len(reg.sources)}] = [
 {chr(10).join(f"    VitalsSource::{s.rust_variant}," for s in reg.sources)}
 ];
 """
+
+
+def _emit_source_reuse_guard(reg: Registry) -> list[str]:
+    """Refuse to rename a source id that already has sample rows.
+
+    The upserts below cannot tell a rename from a reuse: both are
+    `ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name`. Source id 4 was
+    reassigned from `wellue_ks60fwb` to `acconeer_xe125` while holding 156,201
+    rows, and the only reason that was ever detectable is that reconciliation
+    had not run since. The next run would have relabelled 52,071 `spo2` rows as
+    coming from a radar sensor that cannot measure SpO2.
+
+    This runs before any upsert and raises with the id, the stored name, the
+    declared name and the row count. The row count is only computed for ids
+    whose name actually differs, so the normal path costs one index lookup per
+    source. Failing closed is correct; a `WHERE` clause on the `DO UPDATE` would
+    fail closed *silently*, which is not.
+    """
+    values = ",\n        ".join(f"({s.id}, '{s.name}')" for s in reg.sources)
+    return [
+        "-- Ids are permanent. This is the guard, not the comment above it.",
+        "DO $$",
+        "DECLARE",
+        "    conflict RECORD;",
+        "    row_count BIGINT;",
+        "BEGIN",
+        "    IF to_regclass('samples') IS NULL THEN",
+        "        RETURN;  -- fresh database: nothing to protect yet",
+        "    END IF;",
+        "    FOR conflict IN",
+        "        SELECT stored.id, stored.name AS stored_name, declared.name AS declared_name",
+        "        FROM vitals_source AS stored",
+        "        JOIN (VALUES",
+        f"        {values}",
+        "        ) AS declared(id, name) ON declared.id = stored.id",
+        "        WHERE stored.name <> declared.name",
+        "    LOOP",
+        "        SELECT count(*) INTO row_count",
+        "        FROM samples WHERE source = conflict.id;",
+        "        IF row_count > 0 THEN",
+        "            RAISE EXCEPTION",
+        "                'source id % holds % sample rows as ''%'' but registry.toml "
+        "now declares ''%'': ids are permanent. Retire the old name (retired = true, "
+        "same id) and give the new device the next free id.',",
+        "                conflict.id, row_count, conflict.stored_name, "
+        "conflict.declared_name;",
+        "        END IF;",
+        "    END LOOP;",
+        "END $$;",
+        "",
+    ]
 
 
 def emit_sql(reg: Registry) -> str:
@@ -428,6 +701,7 @@ def emit_sql(reg: Registry) -> str:
         "-- Ids are permanent: ON CONFLICT UPDATE so a renamed unit or widened",
         "-- range propagates, but an id is never reused or renumbered.",
         "",
+        *_emit_source_reuse_guard(reg),
     ]
     for t in reg.types:
         out += [
@@ -474,11 +748,47 @@ def emit_json(reg: Registry) -> str:
                     if s.expected_cadence_s is not None
                     else {"on_demand": True}
                 ),
+                # The liveness bounds belong here too. While they existed only
+                # in generated.rs, every non-Rust consumer still saw
+                # `expected_cadence_s` as the sole staleness-relevant number —
+                # which for the 1 Hz sources is a sample *rate*, and is exactly
+                # the comparison that made a ten-day outage look healthy. A
+                # second implementation of the bug in the phone client is still
+                # the bug.
+                **(
+                    {"liveness": _liveness_json(s)}
+                    if any(
+                        bound is not None
+                        for bound in (
+                            s.max_sample_arrival_s,
+                            s.sample_silence_failure_s,
+                            s.max_event_age_s,
+                            s.max_link_silence_s,
+                        )
+                    )
+                    else {}
+                ),
             }
             for s in reg.sources
         },
     }
     return json.dumps(doc, indent=2, sort_keys=False) + "\n"
+
+
+def _liveness_json(s: Source) -> dict[str, int]:
+    """Only the bounds this source actually declares.
+
+    Absent means "not measured" and must stay absent rather than appear as a
+    zero or a default: a consumer reading `0` would treat every sample as
+    overdue, and one reading a default would invent a threshold nobody set.
+    """
+    declared = (
+        ("max_sample_arrival_s", s.max_sample_arrival_s),
+        ("sample_silence_failure_s", s.sample_silence_failure_s),
+        ("max_event_age_s", s.max_event_age_s),
+        ("max_link_silence_s", s.max_link_silence_s),
+    )
+    return {name: value for name, value in declared if value is not None}
 
 
 # ── validation ───────────────────────────────────────────────────────────────
@@ -518,11 +828,64 @@ def validate(reg: Registry, out_dir: Path) -> None:
         if expected_arm not in rust:
             problems.append(
                 f"generated.rs: no cadence arm for source {s.name}")
+        # The liveness-bound arms are load-bearing for the same law, and were
+        # initially left out of this check. If the bound f-strings regressed to
+        # emitting `None` for every source, `--check` would pass -- it only
+        # diffs the generator against itself -- and the AirSense would silently
+        # return to the pre-fix behaviour with nothing failing. So the *value*
+        # is checked here, against registry.toml.
+        for arm_label, value in (
+            ("max_sample_arrival_s", s.max_sample_arrival_s),
+            ("sample_silence_failure_s", s.sample_silence_failure_s),
+            ("max_event_age_s", s.max_event_age_s),
+            ("max_link_silence_s", s.max_link_silence_s),
+        ):
+            arm = f"Self::{s.rust_variant} => {optional_u32(value)},"
+            if arm not in rust:
+                problems.append(
+                    f"generated.rs: no {arm_label} arm for source {s.name} "
+                    f"(expected {optional_u32(value)})"
+                )
+        retired_arm = f"Self::{s.rust_variant} => {str(s.retired).lower()},"
+        if retired_arm not in rust:
+            problems.append(f"generated.rs: no is_retired arm for source {s.name}")
+        # registry.json is the phone client's only view of the registry. While
+        # the bounds existed solely in generated.rs, every non-Rust consumer
+        # still saw `expected_cadence_s` as the sole staleness number -- a
+        # sample rate for the 1 Hz sources, which is the original defect.
+        declared = _liveness_json(s)
+        if declared and doc["source"][s.name].get("liveness") != declared:
+            problems.append(
+                f"registry.json: source {s.name} liveness bounds do not match "
+                f"registry.toml (expected {declared})"
+            )
+        if not declared and "liveness" in doc["source"].get(s.name, {}):
+            problems.append(
+                f"registry.json: source {s.name} declares no liveness bounds "
+                "but the artifact carries some — absent must stay absent "
+                "rather than becoming a default nobody set"
+            )
 
     if "pub enum Cadence" not in rust:
         problems.append("generated.rs: Cadence enum missing")
-    if "pub const fn expected_cadence(self) -> Cadence" not in rust:
-        problems.append("generated.rs: expected_cadence method missing")
+    for method in (
+        "pub const fn expected_cadence(self) -> Cadence",
+        "pub const fn max_sample_arrival_s(self) -> Option<u32>",
+        "pub const fn sample_silence_failure_s(self) -> Option<u32>",
+        "pub const fn max_event_age_s(self) -> Option<u32>",
+        "pub const fn max_link_silence_s(self) -> Option<u32>",
+        "pub const fn is_retired(self) -> bool",
+    ):
+        if method not in rust:
+            problems.append(f"generated.rs: {method} missing")
+
+    # The id-reuse guard must reach the artifact, or a reassignment silently
+    # relabels historical rows. Source id 4 already lost its identity this way.
+    for fragment in ("RAISE EXCEPTION", "ids are permanent"):
+        if fragment not in sql:
+            problems.append(
+                f"registry.sql: id-reuse guard missing ({fragment!r} not found)"
+            )
 
     # The inverse of the old check. Structure here would collide with sqitch,
     # and the two disagreed on the primary key.

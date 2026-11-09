@@ -378,3 +378,137 @@ def test_check_fails_when_artifacts_absent(
     monkeypatch.setattr(gr, "ARTIFACT_DESTS", dests)
     monkeypatch.setattr(gr, "ARTIFACTS", tuple(dests))
     assert main(["--check", "--registry", str(reg_path)]) == 1
+
+
+# ── liveness bounds ──────────────────────────────────────────────────────────
+#
+# Each case below was ACCEPTED by an earlier version of this generator and
+# found during review. They are not hypothetical: the `u32::MAX` pair restores
+# the original ten-day-outage behaviour exactly, and the on-demand silence
+# bound makes an unused blood-pressure cuff report FAILING, which SPEC §2.5
+# forbids outright.
+@pytest.mark.parametrize(
+    ("label", "fields", "expected_fragment"),
+    [
+        (
+            "a u32::MAX pair passes ordering and positivity and means nothing",
+            dict(
+                expected_cadence_s=1,
+                max_sample_arrival_s=2**32 - 2,
+                sample_silence_failure_s=2**32 - 1,
+            ),
+            "above the ceiling",
+        ),
+        (
+            "a one-second grace band defeats the pair's whole purpose",
+            dict(
+                expected_cadence_s=1,
+                max_sample_arrival_s=1799,
+                sample_silence_failure_s=1800,
+            ),
+            "grace period",
+        ),
+        (
+            "on-demand sources are never time-degraded to failing",
+            dict(on_demand=True, max_sample_arrival_s=300, sample_silence_failure_s=1800),
+            "never time-degraded",
+        ),
+        (
+            "an arrival bound below the production rate can never be met",
+            dict(
+                expected_cadence_s=21600,
+                max_sample_arrival_s=1,
+                sample_silence_failure_s=2,
+            ),
+            "cannot arrive faster than it produces",
+        ),
+        (
+            "event age is the on-demand quantity, not an interval one",
+            dict(expected_cadence_s=60, max_event_age_s=3600),
+            "event age is the on-demand quantity",
+        ),
+        (
+            "a bound the emitted Option<u32> cannot hold",
+            dict(expected_cadence_s=1, max_sample_arrival_s=5_000_000_000),
+            "above u32::MAX",
+        ),
+        (
+            "a negative bound",
+            dict(expected_cadence_s=1, max_link_silence_s=-1),
+            "non-positive",
+        ),
+    ],
+)
+def test_incoherent_liveness_bounds_are_rejected_by_name(
+    label: str, fields: dict[str, object], expected_fragment: str
+) -> None:
+    from gen_registry import Source, _check_liveness_bounds
+
+    source = Source(name="probe", id=99, transport="ble", provides=(), **fields)
+    with pytest.raises(ValueError, match=re.escape(expected_fragment)):
+        _check_liveness_bounds(source)
+
+
+def test_the_declared_airsense_bounds_are_accepted() -> None:
+    """The guard must not be so strict it rejects the measured configuration.
+
+    A gate that rejects everything is as useless as one that accepts
+    everything, and only this direction proves the rules are satisfiable.
+    """
+    from gen_registry import Source, _check_liveness_bounds
+
+    _check_liveness_bounds(
+        Source(
+            name="resmed_air11",
+            id=5,
+            transport="ble",
+            provides=(),
+            expected_cadence_s=1,
+            max_sample_arrival_s=300,
+            sample_silence_failure_s=1800,
+        )
+    )
+
+
+def test_liveness_bounds_reach_registry_json(registry: Registry) -> None:
+    """registry.json is the phone client's only view of the registry.
+
+    While the bounds existed solely in generated.rs, every non-Rust consumer
+    still saw `expected_cadence_s` as the sole staleness-relevant number --
+    which for a 1 Hz source is a sample *rate*. A second implementation of the
+    same defect in the phone client is still the defect.
+    """
+    doc = json.loads(emit_json(registry))
+    for source in registry.sources:
+        declared = {
+            name: value
+            for name, value in (
+                ("max_sample_arrival_s", source.max_sample_arrival_s),
+                ("sample_silence_failure_s", source.sample_silence_failure_s),
+                ("max_event_age_s", source.max_event_age_s),
+                ("max_link_silence_s", source.max_link_silence_s),
+            )
+            if value is not None
+        }
+        entry = doc["source"][source.name]
+        if declared:
+            assert entry["liveness"] == declared
+        else:
+            # Absent must stay absent. A zero would make every sample overdue
+            # and a default would invent a threshold nobody set.
+            assert "liveness" not in entry
+
+
+def test_source_id_reuse_guard_is_emitted(registry: Registry) -> None:
+    """The upserts cannot tell a rename from an id reuse.
+
+    Source id 4 was reassigned from `wellue_ks60fwb` to `acconeer_xe125` while
+    holding 156,201 rows, 52,071 of them `spo2` -- a measurement the new device
+    physically cannot make. Reconciliation had simply not run yet, which is the
+    only reason it stayed detectable.
+    """
+    sql = emit_sql(registry)
+    assert "RAISE EXCEPTION" in sql
+    assert "ids are permanent" in sql
+    # The guard must precede every upsert, or it protects nothing.
+    assert sql.index("RAISE EXCEPTION") < sql.index("INSERT INTO vitals_source")

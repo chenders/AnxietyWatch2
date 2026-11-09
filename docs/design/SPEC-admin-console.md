@@ -222,13 +222,40 @@ The three-state rule needs these pinned down or it cannot be implemented uniform
 |---|---|
 | **Cadence measures what?** | Attempts. "Last success age" is a second, separately rendered fact — a source attempting every 10 min and failing every time is `FAILING`, not `UNKNOWN` |
 | **Stale *and* last-seen-failing** | `FAILING` wins. Promotion order is `FAILING` > `UNKNOWN` > `LIVE` |
-| **Event-driven sources** (manual upload, SD card) | Declared **on-demand**: state is the outcome and age of the last event, never time-degraded. Labelled as on-demand so an old timestamp does not read as a fault |
+| **Event-driven sources** (manual upload, SD card) | Declared **on-demand**: state is the outcome and age of the last event, never time-degraded *to failing*. Labelled as on-demand so an old timestamp does not read as a fault — but beyond `max_sample_arrival_s` it reports `UNKNOWN`, not `LIVE`. Not reading as a fault is not a licence to read as healthy: two sources were reporting `LIVE` on successes weeks old |
+| **Sample arrival** (added 2026-11-08) | A stored sample is **independent evidence**, declared separately from cadence as `max_sample_arrival_s` and `sample_silence_failure_s`. Within the first bound it establishes `LIVE` **even with no attempt ever recorded**; beyond the second it is `FAILING`. Between them, `UNKNOWN`. An interval source that declares neither falls back to its attempt cadence for the first bound and gets no second one — so it cannot escalate on silence until someone measures it. Seven of eight sources are in that state today, and the fallback is what keeps them reporting rather than permanently `UNKNOWN` |
+| **Which quantity a reason names** | The reason string names the quantity it measured, not a quantity it assumed: `"sample 10s ago, expect <= 60s"`, `"no sample for 1000s, expect <= 1s"`. "No attempt for 1000s" when nothing writes attempts is a fabricated measurement, and a source with a stale sample is **measured-and-stale**, never "never observed" |
 | **In-flight work** | Every attempt record carries an expected duration. An attempt still running past it degrades to `UNKNOWN` — otherwise a killed process renders as "running" forever, which is precisely the gen-1 defect in §4.7 |
 | **Legitimately variable cadence** | Declare the *upper bound*. If no honest bound exists, the source is on-demand |
 
 **Cadence is visible, auditable config** (§4.9), and **the expectation renders next to the age** —
 "4m ago · expect ≤ 10m". Age alone lets a loosened cadence silently recreate gen-1: a source declared
 at 7 days shows 5 silent days as `LIVE`, which is the original incident laundered through config.
+
+> **Why sample arrival is a separate quantity, recorded 2026-11-08 after a ten-day outage.**
+>
+> "Cadence measures attempts" above is right, and nothing has ever written an attempt row — the
+> `attempts` table has been empty since it was created. The silence detector compensated by
+> substituting the newest sample's timestamp into the attempt field whenever it was newer, then
+> comparing it against `expected_cadence_s`, which is the **sample rate** (1/s for the AirSense) and
+> is also the H10 reconnect idle timeout.
+>
+> So a healthy source was always "stale" -- store-arrival lag measured 5s-36s on a ~30s commit
+> cycle, against a declared bound of 1s -- and
+> **five of eight sources had never once reported `LIVE`**. When the AirSense collector died on
+> 2026-10-30, the state did not change — it was already `UNKNOWN` — so there was no transition to
+> alert on. Ten days of total data loss and healthy operation rendered identically. The detector
+> emitted 15,628 `unknown` events into a table with no consumer.
+>
+> Two separate failures made that possible, and both are fixed above: a unit mismatch (sample age
+> judged against an attempt cadence), and an unbounded `UNKNOWN` (921,331 seconds of silence scoring
+> the same as a brief gap). The second is the subtler one — the three-state rule says a missing
+> signal "never escalates on its own", and that is right for *absence of evidence*. Silence three
+> orders of magnitude past a declared bound is **evidence of absence**, which is measured-and-bad.
+>
+> Bounds are declared per source from measurement, not taste. The AirSense pair (300s / 1800s) comes
+> from 18,650,231 observed inter-sample gaps: p50 0s, p99 0s, and exactly one gap above an hour in
+> three weeks — the outage itself.
 
 ### 2.5b The three states are for health assertions only
 

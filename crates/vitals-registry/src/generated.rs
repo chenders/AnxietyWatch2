@@ -109,8 +109,8 @@ pub enum VitalsSource {
     Healthkit = 2,
     /// `derived` — `internal`
     Derived = 3,
-    /// `acconeer_xe125` — `usb_serial`
-    AcconeerXe125 = 4,
+    /// `wellue_ks60fwb` — `ble`
+    WellueKs60fwb = 4,
     /// `resmed_air11` — `ble`, service `0xFD56`
     ResmedAir11 = 5,
     /// `ad_ua651ble` — `ble`, service `0x1810` (indication)
@@ -119,6 +119,8 @@ pub enum VitalsSource {
     PolarH10Emulator = 7,
     /// `resmed_air11_sd` — `sd_edf`
     ResmedAir11Sd = 8,
+    /// `acconeer_xe125` — `usb_serial`
+    AcconeerXe125 = 9,
 }
 
 /// How often a source is expected to deliver, declared in `registry.toml`.
@@ -316,11 +318,12 @@ impl VitalsSource {
             1 => Some(Self::PolarH10),
             2 => Some(Self::Healthkit),
             3 => Some(Self::Derived),
-            4 => Some(Self::AcconeerXe125),
+            4 => Some(Self::WellueKs60fwb),
             5 => Some(Self::ResmedAir11),
             6 => Some(Self::AdUa651ble),
             7 => Some(Self::PolarH10Emulator),
             8 => Some(Self::ResmedAir11Sd),
+            9 => Some(Self::AcconeerXe125),
             _ => None,
         }
     }
@@ -345,11 +348,137 @@ impl VitalsSource {
             Self::PolarH10 => Cadence::EverySeconds(1),
             Self::Healthkit => Cadence::EverySeconds(21600),
             Self::Derived => Cadence::OnDemand,
-            Self::AcconeerXe125 => Cadence::OnDemand,
+            Self::WellueKs60fwb => Cadence::OnDemand,
             Self::ResmedAir11 => Cadence::EverySeconds(1),
             Self::AdUa651ble => Cadence::OnDemand,
             Self::PolarH10Emulator => Cadence::EverySeconds(1),
             Self::ResmedAir11Sd => Cadence::OnDemand,
+            Self::AcconeerXe125 => Cadence::OnDemand,
+        }
+    }
+
+    /// How stale the newest stored sample may be before liveness stops
+    /// treating this source as healthy, from `registry.toml`.
+    ///
+    /// `None` means no honest bound exists and sample arrival contributes
+    /// nothing — the spec's rule for legitimately variable cadence. This is a
+    /// different quantity from `expected_cadence`, which is the sample rate
+    /// and is also the H10 reconnect idle timeout; comparing a sample age
+    /// against that rate is what made a ten-day outage indistinguishable from
+    /// healthy operation.
+    #[must_use]
+    #[allow(clippy::match_same_arms)]
+    pub const fn max_sample_arrival_s(self) -> Option<u32> {
+        match self {
+            Self::Emay => None,
+            Self::PolarH10 => None,
+            Self::Healthkit => None,
+            Self::Derived => None,
+            Self::WellueKs60fwb => None,
+            Self::ResmedAir11 => Some(300),
+            Self::AdUa651ble => None,
+            Self::PolarH10Emulator => None,
+            Self::ResmedAir11Sd => None,
+            Self::AcconeerXe125 => None,
+        }
+    }
+
+    /// Beyond this sample age, silence is positive evidence of failure.
+    ///
+    /// At least twice `max_sample_arrival_s` when present, and never declared
+    /// on an on-demand source; the generator rejects both cases by name, so a
+    /// source cannot escalate to failing before it has degraded to unknown and
+    /// an unused device is never called broken.
+    #[must_use]
+    #[allow(clippy::match_same_arms)]
+    pub const fn sample_silence_failure_s(self) -> Option<u32> {
+        match self {
+            Self::Emay => None,
+            Self::PolarH10 => None,
+            Self::Healthkit => None,
+            Self::Derived => None,
+            Self::WellueKs60fwb => None,
+            Self::ResmedAir11 => Some(1800),
+            Self::AdUa651ble => None,
+            Self::PolarH10Emulator => None,
+            Self::ResmedAir11Sd => None,
+            Self::AcconeerXe125 => None,
+        }
+    }
+
+    /// Whether this source is retired: declared only so historical rows keep
+    /// resolving to the device that wrote them.
+    ///
+    /// A retired source is **absent by declaration**, not broken. It is excluded
+    /// from liveness monitoring, because a card reporting `Unknown` forever for a
+    /// device nobody owns any more teaches the operator to ignore cards — and the
+    /// whole point of the three-state rule is that a card is worth reading.
+    ///
+    /// Its id is never reused. Reassigning id 4 from a pulse oximeter to a radar
+    /// sensor left 52,071 `spo2` rows attributed to a device that cannot measure
+    /// blood oxygen at all, because that needs optical pulse oximetry.
+    #[must_use]
+    #[allow(clippy::match_same_arms)]
+    pub const fn is_retired(self) -> bool {
+        match self {
+            Self::Emay => false,
+            Self::PolarH10 => false,
+            Self::Healthkit => false,
+            Self::Derived => false,
+            Self::WellueKs60fwb => true,
+            Self::ResmedAir11 => false,
+            Self::AdUa651ble => false,
+            Self::PolarH10Emulator => false,
+            Self::ResmedAir11Sd => false,
+            Self::AcconeerXe125 => false,
+        }
+    }
+
+    /// Beyond this age, an on-demand source's newest event stops certifying it.
+    ///
+    /// An on-demand quantity only: it bounds the age of a discrete event (a
+    /// cuff reading, an SD-card import), not the arrival of a stream. The
+    /// generator rejects it on a source that declares `expected_cadence_s`,
+    /// because conflating the two is what compared a stream-arrival bound
+    /// against an attempt timestamp.
+    #[must_use]
+    #[allow(clippy::match_same_arms)]
+    pub const fn max_event_age_s(self) -> Option<u32> {
+        match self {
+            Self::Emay => None,
+            Self::PolarH10 => None,
+            Self::Healthkit => None,
+            Self::Derived => None,
+            Self::WellueKs60fwb => None,
+            Self::ResmedAir11 => None,
+            Self::AdUa651ble => None,
+            Self::PolarH10Emulator => None,
+            Self::ResmedAir11Sd => None,
+            Self::AcconeerXe125 => None,
+        }
+    }
+
+    /// Beyond this age with no transport contact, the source is failing —
+    /// whether or not it was due to produce anything.
+    ///
+    /// The only bound that escalates on a legitimately idle source, and the
+    /// one that can actually catch a dead collector on a device that only
+    /// produces data while in use. A CPAP stores nothing for the idle hours a
+    /// day; it answers on the radio throughout.
+    #[must_use]
+    #[allow(clippy::match_same_arms)]
+    pub const fn max_link_silence_s(self) -> Option<u32> {
+        match self {
+            Self::Emay => None,
+            Self::PolarH10 => None,
+            Self::Healthkit => None,
+            Self::Derived => None,
+            Self::WellueKs60fwb => None,
+            Self::ResmedAir11 => None,
+            Self::AdUa651ble => None,
+            Self::PolarH10Emulator => None,
+            Self::ResmedAir11Sd => None,
+            Self::AcconeerXe125 => None,
         }
     }
 
@@ -412,14 +541,15 @@ pub const ALL_TYPES: [VitalsType; 43] = [
 ];
 
 /// Every source.
-pub const ALL_SOURCES: [VitalsSource; 9] = [
+pub const ALL_SOURCES: [VitalsSource; 10] = [
     VitalsSource::Emay,
     VitalsSource::PolarH10,
     VitalsSource::Healthkit,
     VitalsSource::Derived,
-    VitalsSource::AcconeerXe125,
+    VitalsSource::WellueKs60fwb,
     VitalsSource::ResmedAir11,
     VitalsSource::AdUa651ble,
     VitalsSource::PolarH10Emulator,
     VitalsSource::ResmedAir11Sd,
+    VitalsSource::AcconeerXe125,
 ];

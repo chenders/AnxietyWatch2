@@ -29,6 +29,7 @@ wins**. If you find a contradiction, report it rather than implementing either v
 | **16** | [Operator-directed APNs messages](2026-09-18-amendment-16-operator-directed-apns.md) | first-draft remote-notification deferral and the deferred Stage 7 alarm-push client follow-up; preserves Amendment 14's no-loop phone-silence rule | T-M6a–T-M6e, T-I22 |
 | **17** | [Opt-in iPhone BLE mobility relay](2026-09-22-amendment-17-iphone-ble-mobility-relay.md) | Stage 7's blanket exclusion of iPhone BLE sessions and the ordinary-sync socket/keep-alive wording, only for a bounded mobility relay | T-I3, T-I18, T-I20, T-I21, T-I23 |
 | **18** | [Deployment acceptance is evidence-based, not time-based](2026-09-28-amendment-18-deployment-evidence-not-time.md) | the undefined Pi deployment observation-period gate | Pi GitHub Actions deployment T-R8 |
+| **20** | [Liveness has three evidence channels, and ids are permanent](2026-11-09-amendment-20-liveness-evidence-channels.md) | §2.5's single-quantity liveness comparison, its unbounded UNKNOWN, its on-demand rule, and the reuse of source id 4 | silence detector, console health view, `vitals/registry.toml` |
 | **10-A11** | [AirSense acceptance scope](2026-09-13-amendment-10-air11-acceptance-scope.md) | T-A11-6's unrelated host-health gates | T-A11-6 |
 | **11-A11** | [H10 live gate](2026-09-13-amendment-11-h10-live-gate.md) | Amendment 10's treatment of H10 as optional for T-A11-6 | T-A11-6 |
 | — | [C vs Rust evaluation](2026-08-03-c-vs-rust-evaluation.md) | the C11 decision | all code tasks |
@@ -175,6 +176,18 @@ switcher is the precedent and needs no change.
 `kani` (prove decoders panic-free) · `rppal` (GPIO) · `fs4` (spool locking) · `sqlx`
 (compile-time-checked queries) · `metrics` (Prometheus) · `tokio` · `bluer` (BlueZ) ·
 `tokio-postgres` with the `binary-copy` feature.
+
+### Liveness evidence
+
+**Amendment 20 splits liveness into three evidence channels and makes source ids permanent.**
+Attempt cadence, sample arrival and transport contact are separate physical quantities; comparing a
+sample age against `expected_cadence_s` — a sample *rate* for the 1 Hz sources — is what let a
+ten-day total-data-loss outage render identically to healthy operation while the detector emitted
+15,628 events saying nothing had changed. An undeclared bound now contributes **nothing** rather
+than falling back to the cadence, silence counts only while a declared activity gate says data
+should be arriving, and `UNKNOWN` gains an upper bound so sustained silence is evidence of absence.
+Source id 4, reassigned while holding 156,201 rows, is restored to its original device; the
+reuse guard is in the generated SQL, because only the database knows whether an id has rows.
 
 ### Deployment acceptance
 
