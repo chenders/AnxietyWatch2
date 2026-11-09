@@ -4,6 +4,42 @@
 -- Ids are permanent: ON CONFLICT UPDATE so a renamed unit or widened
 -- range propagates, but an id is never reused or renumbered.
 
+-- Ids are permanent. This is the guard, not the comment above it.
+DO $$
+DECLARE
+    conflict RECORD;
+    row_count BIGINT;
+BEGIN
+    IF to_regclass('samples') IS NULL THEN
+        RETURN;  -- fresh database: nothing to protect yet
+    END IF;
+    FOR conflict IN
+        SELECT stored.id, stored.name AS stored_name, declared.name AS declared_name
+        FROM vitals_source AS stored
+        JOIN (VALUES
+        (0, 'emay'),
+        (1, 'polar_h10'),
+        (2, 'healthkit'),
+        (3, 'derived'),
+        (4, 'wellue_ks60fwb'),
+        (5, 'resmed_air11'),
+        (6, 'ad_ua651ble'),
+        (7, 'polar_h10_emulator'),
+        (8, 'resmed_air11_sd'),
+        (9, 'acconeer_xe125')
+        ) AS declared(id, name) ON declared.id = stored.id
+        WHERE stored.name <> declared.name
+    LOOP
+        SELECT count(*) INTO row_count
+        FROM samples WHERE source = conflict.id;
+        IF row_count > 0 THEN
+            RAISE EXCEPTION
+                'source id % holds % sample rows as ''%'' but registry.toml now declares ''%'': ids are permanent. Retire the old name (retired = true, same id) and give the new device the next free id.',
+                conflict.id, row_count, conflict.stored_name, conflict.declared_name;
+        END IF;
+    END LOOP;
+END $$;
+
 INSERT INTO vitals_type (id, name, unit, range_lo, range_hi, precision)
 VALUES (1, 'hr', 'bpm', 20.0, 250.0, 1.0)
 ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, unit = EXCLUDED.unit,
@@ -237,7 +273,7 @@ VALUES (3, 'derived', 'internal')
 ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name,
     transport = EXCLUDED.transport;
 INSERT INTO vitals_source (id, name, transport)
-VALUES (4, 'acconeer_xe125', 'usb_serial')
+VALUES (4, 'wellue_ks60fwb', 'ble')
 ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name,
     transport = EXCLUDED.transport;
 INSERT INTO vitals_source (id, name, transport)
@@ -254,5 +290,9 @@ ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name,
     transport = EXCLUDED.transport;
 INSERT INTO vitals_source (id, name, transport)
 VALUES (8, 'resmed_air11_sd', 'sd_edf')
+ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name,
+    transport = EXCLUDED.transport;
+INSERT INTO vitals_source (id, name, transport)
+VALUES (9, 'acconeer_xe125', 'usb_serial')
 ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name,
     transport = EXCLUDED.transport;

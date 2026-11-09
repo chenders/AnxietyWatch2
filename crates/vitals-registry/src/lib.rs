@@ -25,8 +25,28 @@ mod tests {
         assert_eq!(VitalsType::BpSystolic.id(), 6);
         assert_eq!(VitalsType::RespiratoryRate.id(), 11);
         assert_eq!(VitalsSource::Emay.id(), 0);
-        assert_eq!(VitalsSource::AcconeerXe125.id(), 4);
         assert_eq!(VitalsSource::AdUa651ble.id(), 6);
+        // Id 4 belongs to the Wellue KS-60FWB permanently: it wrote 156,201
+        // rows under that id, 52,071 of them `spo2`. It was reassigned to
+        // `acconeer_xe125` in #56 -- a radar sensor that cannot measure SpO2 --
+        // which left those rows attributed to a device that could not have
+        // produced them. The reassignment is undone here; 9 is the next free
+        // id, and this pair of assertions is what makes a repeat a build
+        // failure rather than a relabelling.
+        assert_eq!(VitalsSource::WellueKs60fwb.id(), 4);
+        assert_eq!(VitalsSource::AcconeerXe125.id(), 9);
+    }
+
+    /// A retired source stays declared so historical rows keep resolving, and
+    /// stays out of liveness monitoring so no card reports it broken.
+    #[test]
+    fn retired_sources_are_declared_but_not_monitored() {
+        assert!(VitalsSource::WellueKs60fwb.is_retired());
+        for source in ALL_SOURCES {
+            if source != VitalsSource::WellueKs60fwb {
+                assert!(!source.is_retired(), "{source:?} unexpectedly retired");
+            }
+        }
     }
 
     /// The wire and the database both hand us plain integers. An unknown id is
@@ -138,8 +158,9 @@ mod tests {
         // act rather than an accident: the test fails until someone states
         // which kind of source they added. `resmed_air11_sd` took on_demand
         // from 3 to 4 — the SD card is event-driven, so its age alone must
-        // never be read as a failure.
+        // never be read as a failure. Restoring the retired `wellue_ks60fwb`
+        // at its permanent id 4 took it from 4 to 5.
         assert_eq!(periodic, 5);
-        assert_eq!(on_demand, 4);
+        assert_eq!(on_demand, 5);
     }
 }
