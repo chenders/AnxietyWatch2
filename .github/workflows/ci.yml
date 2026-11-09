@@ -59,6 +59,14 @@ jobs:
           bash -n scripts/install-air11-pi-artifact.sh
           scripts/install-air11-pi-artifact.sh --help
           bash scripts/tests/test-install-pi-artifact.sh
+      # `[deploy] verify = true` runs each sqitch verify script as its change
+      # deploys, so a script that cannot fail is false assurance. One was in
+      # that state and caused a change to be recorded as deployed while its
+      # schema did not exist.
+      - name: Sqitch verify scripts can fail
+        run: |
+          bash -n scripts/tests/test-sqitch-verify-asserts.sh
+          bash scripts/tests/test-sqitch-verify-asserts.sh
       # AGENTS.md makes the amendment index mandatory reading, so an index that
       # disagrees with the files on disk misleads every worker who obeys the
       # scoping rule. Nothing ran this verifier until now: its only callers were
