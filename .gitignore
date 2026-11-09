@@ -10,6 +10,10 @@ tmp/
 # `git add -A` sweeping it in. scripts/check-tracked-paths.py also rejects it.
 .remember/
 
+# Withheld from the repository pending owner review (2026-11-09). Not deleted:
+# kept outside the tree. scripts/check-tracked-paths.py also rejects it.
+/firmware/
+
 build/
 build-*/
 cmake-build-*/

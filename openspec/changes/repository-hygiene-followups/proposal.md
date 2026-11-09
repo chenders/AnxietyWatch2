@@ -22,13 +22,7 @@ user id. The repository is private, so the exposure is everyone with clone acces
 permanent. AGENTS.md forbids rewriting `main` without the owner. GitHub also retains
 `refs/pull/*` and cached views of every merged PR, which a history rewrite does not touch.
 
-**2. Two firmware emulators have no planning owner.** `firmware/polar-h10-emu` and
-`firmware/emay-sleepo2-emu` are real-radio emulator rigs (the alternative AGENTS.md prefers
-to mocking BlueZ), listed in the README map, but no openspec change owns them, no CI job
-builds them, and both READMEs still describe the gen-1 iOS harness. Their sibling
-`firmware/oura-emu` was removed on this branch as unambiguously dead.
-
-**3. Small drifts found by the inventory.** The log follower's hardcoded unit list misses
+**2. Small drifts found by the inventory.** The log follower's hardcoded unit list misses
 four collectors; `docs/HERDR-GUIDE.md` still documents the C/CMake build and the CI guard
 meant to catch that misses `cmake --build`; two test files exist that nothing runs; the
 restore-verification files exist in two diverged copies; the console's bind address is a

@@ -4,7 +4,7 @@ Independent unless a task says otherwise; no required order. Items marked **owne
 a decision only the owner can make. Each Verify exits 0 only when the task is done.
 
 - [ ] T-RH-1 — Purge the owner's health data from history · ops · host · **owner call**
-- [ ] T-RH-2 — Give the two firmware emulators an owner, or remove them · decide · host · **owner call**
+- T-RH-2 — withdrawn (2026-11-09; owner decision, not tracked here)
 - [ ] T-RH-3 — Follow every deployed unit in the log follower · implement-simple · host
 - [ ] T-RH-4 — Remove the C/CMake build from HERDR-GUIDE and close the guard gap · implement-simple · host
 - [ ] T-RH-5 — Run the two tests nothing runs · implement-simple · host
@@ -47,33 +47,6 @@ test -z "$(git rev-list --all -- health.jpg healthkit.jpg h10_vitals.mp4 aw2-ios
 ```
 
 **Context budget:** 1 file; the work is a history operation, not an edit.
-
----
-
-### T-RH-2 — Give the two firmware emulators an owner, or remove them
-
-**Depends:** none · **Review required:** no · **Owner call**
-
-**Amends:** none.
-
-**Reads:** `firmware/polar-h10-emu/README.md`, `firmware/emay-sleepo2-emu/README.md`,
-`README.md` (Repository map).
-
-**Do:** Both are nRF52840 rigs that drive the collectors over a real radio, including a
-scripted desaturation — the approach AGENTS.md prefers to mocking BlueZ. No openspec change
-owns them, CI builds neither, and both READMEs still describe the gen-1 iOS harness.
-
-**Owner call:** keep or remove. If kept, open a change (e.g. `ble-emulator-rigs`) that defines
-the acceptance run against the Pi collectors and says whether CI builds them, and update both
-READMEs. If removed, `git rm -r` both and drop the README `firmware/` row.
-
-**Verify:**
-```sh
-{ test ! -e firmware/polar-h10-emu && test ! -e firmware/emay-sleepo2-emu && ! grep -qF '(firmware/)' README.md; } \
-  || grep -lE 'firmware/(polar-h10|emay-sleepo2)-emu' openspec/changes/*/tasks.md | grep -v repository-hygiene-followups | grep -q .
-```
-
-**Context budget:** 3 files.
 
 ---
 

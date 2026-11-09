@@ -124,7 +124,7 @@ plain remote-GPIO infrastructure.
 
 **The licence, verbatim from ESPHome's LICENSE:** the C++/runtime codebase (`.c .cpp .h .hpp .tcc
 .ino`) is **GPLv3**; the Python codebase and everything else is **MIT**. So generated ESP32 firmware
-is GPLv3-encumbered, and vendoring ESPHome C++ components into `firmware/` would be too. Talking to a
+is GPLv3-encumbered, and vendoring ESPHome C++ components into this repository would be too. Talking to a
 device over the wire creates no obligation.
 
 **Two hazards for a standalone (non-HA) deployment, both documented:**

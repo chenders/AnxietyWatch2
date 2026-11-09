@@ -56,7 +56,7 @@ from pathlib import Path, PurePosixPath
 # The only files allowed at the repository root.
 ROOT_FILES = frozenset(
     {
-        ".clang-format",  # firmware/ is Zephyr C
+        ".clang-format",
         ".editorconfig",
         ".gitignore",
         ".swiftlint.yml",
@@ -87,7 +87,6 @@ ROOT_DIRS = frozenset(
         "db",
         "deploy",
         "docs",
-        "firmware",
         "fuzz",
         "openspec",
         "scripts",
