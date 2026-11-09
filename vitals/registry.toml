@@ -393,9 +393,18 @@ sample_silence_failure_s = 1800
 # NOT DECLARED: max_link_silence_s, the bound on transport contact.
 #
 # Not needed here, and that conclusion replaces an earlier one that was wrong.
-# This device streams CONTINUOUSLY while powered and paired: hourly row counts
-# for type 10 over two full pre-outage days (2026-10-21 and 10-22, local time)
-# are populated in 48 of 48 hours at ~84,000 rows/hour, minimum 79,636 -- a
+# The BLE STREAM runs continuously while the device is powered and paired:
+# hourly row counts for type 10 over two full pre-outage days (2026-10-21 and
+# 10-22, local time) are populated in 48 of 48 hours at ~84,000 rows/hour,
+# minimum 79,636 -- 23.3 rows/s with no gaps.
+#
+# That is the stream, NOT the device's clinical output. Outside therapy the
+# waveform channels carry a flat line (patient_flow constant at -0.02, the
+# pressures at 0.0) and the six therapy-derived channels -- respiratory_rate,
+# leak, tidal_volume, minute_ventilation, snore_index, flow_limitation -- are
+# sent as explicit JSON null and store nothing. So sample silence still means
+# the collector died, which is what these bounds detect; it does not mean the
+# patient stopped breathing.
 #
 # would false-alarm all day. That came from two compounding mistakes: a three-day
 # only populated hours were the ~2.5 hours since the collector was restarted;

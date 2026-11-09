@@ -648,6 +648,76 @@ pub const ALL_SOURCES: [VitalsSource; {len(reg.sources)}] = [
 """
 
 
+def _emit_type_reuse_guard(reg: Registry) -> list[str]:
+    """Refuse to relabel a type id that already has sample rows.
+
+    The source guard below was written first and left this half open, which
+    was nearly fatal. A Pi-local unmerged worktree built the deployed AirSense
+    collector against a registry declaring its types at ids 9-23; main's #52
+    independently assigned ids 9-29 to HealthKit types. Both have committed
+    rows in `samples.type`: roughly 103 million AirSense rows and ~14 thousand
+    HealthKit rows share ids 9-21, so id 15 means both minutes and L/min.
+
+    Applying this artifact without the guard would run
+    `ON CONFLICT (id) DO UPDATE SET name, unit, range_lo, range_hi` across
+    those ids and overwrite the unit and range of 103 million rows in one
+    statement. Unlike a source rename, that destroys the only remaining record
+    of what the values mean -- a `patient_flow` reading of -0.02 L/s silently
+    becomes a resting heart rate of -0.02 bpm, inside the declared range for
+    neither.
+
+    The unit and range are checked as well as the name, because a type whose
+    name is stable but whose unit changed is the dimensional defect this
+    project is built to prevent.
+    """
+    values = ",\n        ".join(
+        f"({t.id}, '{t.name}', '{t.unit}', {t.range_lo}, {t.range_hi})" for t in reg.types
+    )
+    return [
+        "-- Type ids are permanent, and so are their units and ranges.",
+        "DO $$",
+        "DECLARE",
+        "    conflict RECORD;",
+        "    row_count BIGINT;",
+        "BEGIN",
+        "    IF to_regclass('samples') IS NULL OR to_regclass('vitals_type') IS NULL THEN",
+        "        RETURN;  -- fresh database: nothing to protect yet",
+        "    END IF;",
+        "    FOR conflict IN",
+        "        SELECT stored.id,",
+        "               stored.name AS stored_name, declared.name AS declared_name,",
+        "               stored.unit AS stored_unit, declared.unit AS declared_unit",
+        "        FROM vitals_type AS stored",
+        "        JOIN (VALUES",
+        f"        {values}",
+        "        ) AS declared(id, name, unit, range_lo, range_hi)",
+        "          ON declared.id = stored.id",
+        "        WHERE stored.name <> declared.name",
+        "           OR stored.unit <> declared.unit",
+        "           OR stored.range_lo <> declared.range_lo",
+        "           OR stored.range_hi <> declared.range_hi",
+        "    LOOP",
+        "        SELECT count(*) INTO row_count",
+        "        FROM samples WHERE type = conflict.id;",
+        "        IF row_count > 0 THEN",
+        "            RAISE EXCEPTION",
+        "                'type id % holds % sample rows as ''%'' in % but registry.toml "
+        "now declares ''%'' in %: type ids, units and ranges are permanent. Overwriting "
+        "them reinterprets every stored value.',",
+        "                conflict.id, row_count, conflict.stored_name, conflict.stored_unit,",
+        "                conflict.declared_name, conflict.declared_unit;",
+        "        END IF;",
+        "    END LOOP;",
+        "END $$;",
+        "",
+    ]
+
+
+def _emit_identity_guards(reg: Registry) -> list[str]:
+    """Both lookup tables, guarded before any upsert runs."""
+    return _emit_type_reuse_guard(reg) + _emit_source_reuse_guard(reg)
+
+
 def _emit_source_reuse_guard(reg: Registry) -> list[str]:
     """Refuse to rename a source id that already has sample rows.
 
@@ -720,7 +790,7 @@ def emit_sql(reg: Registry) -> str:
         "-- Ids are permanent: ON CONFLICT UPDATE so a renamed unit or widened",
         "-- range propagates, but an id is never reused or renumbered.",
         "",
-        *_emit_source_reuse_guard(reg),
+        *_emit_identity_guards(reg),
     ]
     for t in reg.types:
         out += [
@@ -900,10 +970,24 @@ def validate(reg: Registry, out_dir: Path) -> None:
 
     # The id-reuse guard must reach the artifact, or a reassignment silently
     # relabels historical rows. Source id 4 already lost its identity this way.
-    for fragment in ("RAISE EXCEPTION", "ids are permanent"):
+    for fragment in (
+        "RAISE EXCEPTION",
+        "ids are permanent",
+        "Type ids are permanent",
+        "FROM vitals_type AS stored",
+        "FROM vitals_source AS stored",
+    ):
         if fragment not in sql:
             problems.append(
                 f"registry.sql: id-reuse guard missing ({fragment!r} not found)"
+            )
+    # Both guards must precede every upsert, or they protect nothing.
+    for table in ("vitals_type", "vitals_source"):
+        guard_at = sql.find(f"FROM {table} AS stored")
+        upsert_at = sql.find(f"INSERT INTO {table} ")
+        if guard_at < 0 or upsert_at < 0 or guard_at > upsert_at:
+            problems.append(
+                f"registry.sql: the {table} identity guard does not precede its upserts"
             )
 
     # The inverse of the old check. Structure here would collide with sqitch,

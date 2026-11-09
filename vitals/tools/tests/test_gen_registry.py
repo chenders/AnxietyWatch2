@@ -514,6 +514,49 @@ def test_source_id_reuse_guard_is_emitted(registry: Registry) -> None:
     assert sql.index("RAISE EXCEPTION") < sql.index("INSERT INTO vitals_source")
 
 
+def test_type_identity_guard_is_emitted_and_precedes_upserts(registry: Registry) -> None:
+    """A type id's name, unit and range are permanent once rows exist.
+
+    The source guard was written first and left this half open, which was
+    nearly fatal: `samples.type` holds two numbering schemes, and
+    `ON CONFLICT (id) DO UPDATE SET name, unit, range_lo, range_hi` across ids
+    9-21 would reinterpret ~103 million stored values in one statement. A
+    `patient_flow` reading of -0.02 L/s would silently become a resting heart
+    rate of -0.02 bpm.
+    """
+    sql = emit_sql(registry)
+    assert "Type ids are permanent" in sql
+    assert "FROM vitals_type AS stored" in sql
+    # The unit and range are checked as well as the name: a type whose name is
+    # stable but whose unit changed is the dimensional defect this project
+    # exists to prevent.
+    assert "stored.unit <> declared.unit" in sql
+    assert "stored.range_lo <> declared.range_lo" in sql
+    assert sql.index("FROM vitals_type AS stored") < sql.index("INSERT INTO vitals_type ")
+
+
+def test_both_identity_guards_run_before_any_upsert(registry: Registry) -> None:
+    """Either guard running after its upserts would protect nothing."""
+    sql = emit_sql(registry)
+    for table in ("vitals_type", "vitals_source"):
+        assert sql.index(f"FROM {table} AS stored") < sql.index(f"INSERT INTO {table} ")
+
+
+def test_validate_rejects_output_missing_the_type_guard(
+    registry: Registry, tmp_path: Path
+) -> None:
+    """`--check` only diffs the generator against itself, so the guard's
+    presence is asserted here against registry.toml instead."""
+    out = tmp_path / "artifacts"
+    out.mkdir()
+    (out / "generated.rs").write_text(emit_rust(registry), encoding="utf-8")
+    (out / "registry.json").write_text(emit_json(registry), encoding="utf-8")
+    (out / "registry.sql").write_text(
+        emit_sql(registry).replace("Type ids are permanent", "-- removed"), encoding="utf-8"
+    )
+    with pytest.raises(ValueError, match="id-reuse guard missing"):
+        validate(registry, out)
+
 def test_event_age_and_stream_bounds_have_different_ceilings() -> None:
     """One ceiling for both was the conflation this module exists to prevent.
 
