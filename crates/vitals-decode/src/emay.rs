@@ -29,8 +29,8 @@
 //! the job it is worn for.
 //!
 //! This was nearly missed twice. The single reference frame in the protocol
-//! notes and a live 27-frame capture on 2026-08-03 were both from an awake
-//! subject, so both fall in the agreeing region and verify
+//! notes and a live 27-frame capture on 2026-08-03 both fall in the agreeing
+//! region and verify
 //! identically under either mask. **`0x7F` is correct because it came from
 //! decompiling the vendor application, not because any captured frame
 //! demonstrated it** — and no frame captured from an awake subject ever will.
@@ -248,8 +248,9 @@ mod tests {
         assert!(r.is_measurement());
     }
 
-    /// The gotcha this decoder exists to get right. With a 0xFF mask the
-    /// captured frame's checksum would not verify at all.
+    /// The gotcha this decoder exists to get right. A frame from an awake
+    /// subject cannot show it -- its checksum verifies under either mask -- so
+    /// the test builds one whose payload sum sets bit 7.
     #[test]
     fn checksum_is_masked_with_0x7f_not_0xff() {
         assert!(checksum_ok(&DEVICE_LAYOUT_FRAME));
