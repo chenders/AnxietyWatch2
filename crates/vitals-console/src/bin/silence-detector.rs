@@ -50,14 +50,6 @@ fn parse_state(value: &str) -> Option<HealthState> {
 fn evidence_from_attempts(attempts: &[AttemptRow], latest_sample_epoch_s: Option<i64>) -> Evidence {
     let latest = attempts.first();
     let latest_attempt_epoch_s = latest.map(|attempt| epoch(attempt.started_at));
-    let latest_attempt_observation_epoch_s = latest.map(|attempt| {
-        attempt
-            .finished_at
-            .map_or_else(|| epoch(attempt.started_at), epoch)
-    });
-    let sample_is_newer = latest_sample_epoch_s.is_some_and(|sample| {
-        latest_attempt_observation_epoch_s.is_none_or(|attempt| sample > attempt)
-    });
     let last_attempt_failure = latest.and_then(|attempt| {
         if attempt.finished_at.is_some() && attempt.outcome.as_deref() != Some("succeeded") {
             Some(
@@ -83,22 +75,28 @@ fn evidence_from_attempts(attempts: &[AttemptRow], latest_sample_epoch_s: Option
             })
         })?
     });
-    if sample_is_newer {
-        Evidence {
-            last_attempt_epoch_s: latest_sample_epoch_s,
-            last_attempt_failure: None,
-            last_success_epoch_s: latest_sample_epoch_s.or(last_success_epoch_s),
-            inflight: None,
-            learned_interval_s: None,
-        }
-    } else {
-        Evidence {
-            last_attempt_epoch_s: latest_attempt_epoch_s,
-            last_attempt_failure,
-            last_success_epoch_s,
-            inflight,
-            learned_interval_s: None,
-        }
+    // The sample timestamp goes in its own field. It used to be substituted
+    // into `last_attempt_epoch_s` whenever it was newer, which compared a
+    // sample age against an attempt cadence — and because `attempts` has never
+    // held a single row, that substitution was the *only* path that ever
+    // produced evidence. For a source declaring one sample per second, the
+    // ordinary lag between collection and commit then read as stale (measured
+    // 2026-11-09, n=36: p50 35s, max 44s, on a ~30s commit cycle), so a ten-day
+    // outage produced no state transition to notice.
+    Evidence {
+        last_attempt_epoch_s: latest_attempt_epoch_s,
+        last_attempt_failure,
+        last_success_epoch_s,
+        inflight,
+        last_sample_epoch_s: latest_sample_epoch_s,
+        // `last_link_epoch_s` and `activity` come from the collector's status
+        // file, which this binary does not read yet. Defaulting them is safe:
+        // an absent contact timestamp contributes nothing, and an unmeasured
+        // activity gate falls back to the registry declaration rather than
+        // vetoing it -- so a declared sample_silence_failure_s still fires.
+        // Getting that fallback backwards would disable the escalation
+        // entirely, since nothing reports activity today.
+        ..Default::default()
     }
 }
 
@@ -241,7 +239,13 @@ async fn run_once(pool: &PgPool, detector: &mut SilenceDetector, now_epoch_s: i6
         let evidence = evidence_from_attempts(&attempts, latest_sample_epoch_s);
         let policy = SourcePolicy {
             source,
-            declared_absent: saved.as_ref().is_some_and(|saved| saved.declared_absent),
+            // A retired source is absent by declaration -- the device is gone,
+            // so it is not failing and must not emit. The operator flag means
+            // the same thing for a device that is present but deliberately
+            // unmonitored, so they fold together here rather than becoming two
+            // suppression paths that can disagree.
+            declared_absent: source.is_retired()
+                || saved.as_ref().is_some_and(|saved| saved.declared_absent),
             mute_until_epoch_s: saved.as_ref().and_then(|saved| saved.muted_until_epoch_s),
         };
         let (status, event) = detector.observe(now_epoch_s, policy, &evidence, jitter_seconds());
@@ -353,17 +357,53 @@ mod tests {
         assert!(!database_url_is_supported(""));
     }
 
+    // The four tests below used to pin the substitution rather than catch it.
+    // Their old names said so -- "supersedes missing source attempts",
+    // "remains authoritative until a new sample", "clears the failure" -- and
+    // two of them passed only because their sample happened to be *older* than
+    // their attempt, so the substitution never fired. That is why a suite of
+    // 208 tests stayed green through a ten-day outage: it was asserting the
+    // defect. Each now pins the separation instead.
+
+    /// An empty `attempts` table means no attempt was observed. Reporting a
+    /// sample timestamp as an attempt timestamp invents a measurement, and
+    /// `attempts` has never held a row, so this was the live case.
     #[test]
-    fn sample_evidence_supersedes_missing_source_attempts() {
+    fn sample_evidence_does_not_fabricate_an_attempt() {
         let evidence = evidence_from_attempts(&[], Some(1_700_000_000));
-        assert_eq!(evidence.last_attempt_epoch_s, Some(1_700_000_000));
-        assert_eq!(evidence.last_success_epoch_s, Some(1_700_000_000));
+        assert_eq!(evidence.last_attempt_epoch_s, None);
+        assert_eq!(evidence.last_success_epoch_s, None);
+        assert_eq!(evidence.last_sample_epoch_s, Some(1_700_000_000));
         assert!(evidence.last_attempt_failure.is_none());
         assert!(evidence.inflight.is_none());
     }
 
+    /// Data arriving after a failed attempt does not retract the failure.
+    /// §2.5 puts FAILING above LIVE precisely because the drainer can flush a
+    /// spool while the collector is still broken, so arriving samples are not
+    /// evidence that collection recovered. A real recovery writes a success
+    /// row; until collectors write attempt rows at all, `attempts` stays empty
+    /// and there are no failure rows to retract either way.
     #[test]
-    fn failed_attempt_remains_authoritative_until_a_new_sample() {
+    fn a_recorded_failure_survives_a_newer_sample() {
+        let attempt = AttemptRow {
+            started_at: DateTime::<Utc>::UNIX_EPOCH + TimeDelta::seconds(1_700_000_000),
+            expected_duration_s: 30,
+            finished_at: Some(DateTime::<Utc>::UNIX_EPOCH + TimeDelta::seconds(1_700_000_010)),
+            outcome: Some("failed".to_string()),
+            detail: Some("connection failed".to_string()),
+        };
+        let evidence = evidence_from_attempts(&[attempt], Some(1_700_000_020));
+        assert_eq!(
+            evidence.last_attempt_failure.as_deref(),
+            Some("connection failed")
+        );
+        assert_eq!(evidence.last_attempt_epoch_s, Some(1_700_000_000));
+        assert_eq!(evidence.last_sample_epoch_s, Some(1_700_000_020));
+    }
+
+    #[test]
+    fn a_failed_attempt_and_a_sample_occupy_separate_fields() {
         let started_at = DateTime::<Utc>::UNIX_EPOCH + TimeDelta::seconds(1_700_000_000);
         let attempt = AttemptRow {
             started_at,
@@ -378,24 +418,11 @@ mod tests {
             Some("connection failed")
         );
         assert_eq!(evidence.last_attempt_epoch_s, Some(1_700_000_000));
+        assert_eq!(evidence.last_sample_epoch_s, Some(1_700_000_005));
     }
 
     #[test]
-    fn sample_after_failed_attempt_clears_the_failure() {
-        let attempt = AttemptRow {
-            started_at: DateTime::<Utc>::UNIX_EPOCH + TimeDelta::seconds(1_700_000_000),
-            expected_duration_s: 30,
-            finished_at: Some(DateTime::<Utc>::UNIX_EPOCH + TimeDelta::seconds(1_700_000_010)),
-            outcome: Some("failed".to_string()),
-            detail: Some("connection failed".to_string()),
-        };
-        let evidence = evidence_from_attempts(&[attempt], Some(1_700_000_020));
-        assert!(evidence.last_attempt_failure.is_none());
-        assert_eq!(evidence.last_attempt_epoch_s, Some(1_700_000_020));
-    }
-
-    #[test]
-    fn successful_attempt_remains_authoritative_until_a_new_sample() {
+    fn a_successful_attempt_and_a_sample_occupy_separate_fields() {
         let attempt = AttemptRow {
             started_at: DateTime::<Utc>::UNIX_EPOCH + TimeDelta::seconds(1_700_000_000),
             expected_duration_s: 30,
@@ -406,6 +433,7 @@ mod tests {
         let evidence = evidence_from_attempts(&[attempt], Some(1_700_000_005));
         assert_eq!(evidence.last_attempt_epoch_s, Some(1_700_000_000));
         assert_eq!(evidence.last_success_epoch_s, Some(1_700_000_010));
+        assert_eq!(evidence.last_sample_epoch_s, Some(1_700_000_005));
     }
 
     #[test]

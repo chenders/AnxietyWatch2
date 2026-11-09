@@ -204,13 +204,14 @@ pub async fn health_handler(State(state): State<AppState>) -> Json<HealthView> {
             .as_ref()
             .and_then(|sources| sources.iter().find(|s| s.source == source.id()));
 
-        let mut evidence = Evidence {
-            last_attempt_epoch_s: None,
-            last_attempt_failure: None,
-            last_success_epoch_s: None,
-            inflight: None,
-            learned_interval_s: None,
-        };
+        // `activity` and `last_link_epoch_s` are left at their "not measured"
+        // defaults. Both are available from the collector's status file -- the
+        // air11 API already reads `therapy_state` and
+        // `last_host_receipt_unix_micros` from it -- but plumbing them here is
+        // its own change, and defaulting them cannot produce a false alarm:
+        // an unobserved activity gate never licenses escalation and an absent
+        // contact timestamp contributes nothing.
+        let mut evidence = Evidence::default();
 
         let mut observation_age_s = None;
         let mut raw_liveness = None;
@@ -222,9 +223,12 @@ pub async fn health_handler(State(state): State<AppState>) -> Json<HealthView> {
                 // malformed report must not evaluate as a fresh sample.
                 if let Ok(age_i) = i64::try_from(age) {
                     observation_age_s = Some(age);
-                    let timestamp = now_s.saturating_sub(age_i);
-                    evidence.last_attempt_epoch_s = Some(timestamp);
-                    evidence.last_success_epoch_s = Some(timestamp);
+                    // A sample age is sample evidence. It used to be
+                    // written into last_attempt_epoch_s and
+                    // last_success_epoch_s, which compared it against the
+                    // attempt cadence -- the same unit error the silence
+                    // detector made, at a second site.
+                    evidence.last_sample_epoch_s = Some(now_s.saturating_sub(age_i));
                 } else {
                     evidence.last_attempt_failure = Some(format!(
                         "daemon reported an impossible sample age ({age}s): treated as unmeasurable"
@@ -245,7 +249,14 @@ pub async fn health_handler(State(state): State<AppState>) -> Json<HealthView> {
             }
         }
 
-        let mut assertion = evaluate(now_s, core_cadence, &evidence);
+        let bounds = vitals_core::liveness::Bounds {
+            max_sample_arrival_s: source.max_sample_arrival_s(),
+            sample_silence_failure_s: source.sample_silence_failure_s(),
+            max_event_age_s: source.max_event_age_s(),
+            max_link_silence_s: source.max_link_silence_s(),
+            ..vitals_core::liveness::Bounds::from_cadence(core_cadence)
+        };
+        let mut assertion = evaluate(now_s, bounds, &evidence);
         if source == VitalsSource::Healthkit {
             if let Some((_, facts)) = latest_phone_beacon.as_ref() {
                 match phone_fact_state(facts) {
@@ -271,7 +282,14 @@ pub async fn health_handler(State(state): State<AppState>) -> Json<HealthView> {
             .map(chrono::DateTime::to_rfc3339);
         let muted_by = cm.and_then(|c| c.muted_by.clone());
 
-        let state_str = if is_configured {
+        // A retired source stays in the view -- nothing may silently vanish
+        // from monitoring -- but it is labelled rather than evaluated. It has
+        // no device behind it, so `Unknown` would be a health claim about
+        // something that is not there, and a permanently-Unknown card is how
+        // an operator learns to stop reading cards.
+        let state_str = if source.is_retired() {
+            "RETIRED"
+        } else if is_configured {
             match assertion.state {
                 vitals_core::liveness::HealthState::Live => "Live",
                 vitals_core::liveness::HealthState::Failing => "Failing",
@@ -280,6 +298,11 @@ pub async fn health_handler(State(state): State<AppState>) -> Json<HealthView> {
         } else {
             "NOT_CONFIGURED"
         };
+        if source.is_retired() {
+            assertion.reason =
+                "retired: declared only so historical rows resolve to it".to_string();
+            assertion.degrade_deadline_epoch_s = None;
+        }
 
         source_views.push(SourceHealthView {
             id: source.id(),
@@ -893,12 +916,21 @@ mod tests {
             "health view must left-join every registry source"
         );
         for source in ALL_SOURCES {
+            let view = sources
+                .iter()
+                .find(|view| view["id"] == source.id() && view["name"] == format!("{source:?}"));
             assert!(
-                sources
-                    .iter()
-                    .any(|view| view["id"] == source.id() && view["name"] == format!("{source:?}")),
+                view.is_some(),
                 "registry source {source:?} disappeared from health view"
             );
+            // Retired sources stay visible but are never given a health state:
+            // there is no device to assert anything about.
+            let state = view.map(|view| view["state"].clone()).unwrap_or_default();
+            if source.is_retired() {
+                assert_eq!(state, "RETIRED", "{source:?} must render retired");
+            } else {
+                assert_ne!(state, "RETIRED", "{source:?} is not retired");
+            }
         }
     }
 
@@ -1037,17 +1069,37 @@ mod tests {
         assert_registry_census(sources);
 
         // Find Emay (a)
+        //
+        // `Unknown`, not `Live`, and that is the honest answer rather than a
+        // regression. The daemon reports only `last_sample_age_secs`. That age
+        // used to be written into `last_attempt_epoch_s` and compared against
+        // `expected_cadence_s` -- reporting against a quantity that had not
+        // been measured, since `attempts` has never held a row. Emay has no
+        // measured `max_sample_arrival_s`, so the sample channel now says
+        // nothing and the attempt channel says what is true: no attempt was
+        // ever recorded.
+        //
+        // In production this changes nothing: Emay's newest row is from
+        // 2026-10-30, so it was already `Unknown` on age. What is removed is
+        // the case where a fresh sample would have reported `Live` on behalf
+        // of a collector that had not run. Declaring an arrival bound (needs
+        // measurement, and Emay has produced nothing for ten days to measure)
+        // or writing attempt rows -- the next task -- restores a useful
+        // answer. Contract (e) still holds for every reason that names a
+        // threshold at all.
         let emay = sources.iter().find(|s| s["name"] == "Emay").unwrap();
-        assert_eq!(emay["state"], "Live");
+        assert_eq!(emay["state"], "Unknown");
         assert_eq!(emay["observation_age_s"], 10);
-        assert!(emay["degrade_deadline_epoch_s"].is_number());
-        assert_eq!(emay["reason"], "10s ago, expect <= 60s"); // (e) reason strings name value + threshold
+        assert_eq!(emay["reason"], "never completed an attempt");
 
         // Find PolarH10 (b)
         let polar = sources.iter().find(|s| s["name"] == "PolarH10").unwrap();
         assert_eq!(polar["state"], "Unknown"); // never FAILING
         assert_eq!(polar["observation_age_s"], 1000);
-        assert_eq!(polar["reason"], "no attempt for 1000s, expect <= 1s"); // (e)
+        // Critically *not* "expect <= 1s": that 1 is a sample rate, and
+        // judging a sample age against it is the defect being removed.
+        assert_eq!(polar["reason"], "never completed an attempt");
+        assert!(!polar["reason"].as_str().unwrap().contains("1s"));
 
         // Find Healthkit (b)
         let hk = sources.iter().find(|s| s["name"] == "Healthkit").unwrap();
