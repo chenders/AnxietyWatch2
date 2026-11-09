@@ -22,7 +22,11 @@ tables_checked=0
 mismatches='[]'
 checks='[]'
 error='verification did not complete'
-image_dev= image_ino= mount_dev= mount_ino= run_mount_dev= run_mount_ino=
+# SC1007 wants explicit '' for these. Semantically identical in bash; spelled
+# out so tracked shell passes `shellcheck -S warning`, which CI applies to every
+# file in `git ls-files`. (A comment starting with the tool's own name is parsed
+# as a directive and fails with SC1073, which is why this one does not.)
+image_dev='' image_ino='' mount_dev='' mount_ino='' run_mount_dev='' run_mount_ino=''
 data_mounted=0
 run_mounted=0
 
