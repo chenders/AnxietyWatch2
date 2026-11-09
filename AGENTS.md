@@ -38,6 +38,10 @@ in full before starting.
 - **Never commit to `main`.** Branch first: `git checkout -b <name> main`.
 - Use `git pull --rebase`. Never `git reset --hard`, `git checkout -B`, or `git switch -C`.
 - Stage specific files by name. Never `git add -A` or `git add .`.
+- Session state — prompts for another model, repo snapshots, screenshots, exports of a doc that is
+  already tracked — stays out of the tree. CI's `scripts/check-tracked-paths.py` allowlists the root
+  files, the top-level directories, and where binary files may live; a new entry is a deliberate
+  edit to that list, in the same commit, with the reason.
 - Commit after every task.
 - Install the repository hooks with `scripts/install-hooks.sh` before pushing and run the full
   `.githooks/pre-push` gate for every push; do not use `--no-verify` to bypass the public-information
