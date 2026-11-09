@@ -213,6 +213,12 @@ mod tests {
     /// against the table in `db/deploy/samples.sql`. Ground truth, not this
     /// encoder's own output — self-consistency is not correctness, and an
     /// encoder tested against itself agrees with itself about the wrong epoch.
+    ///
+    /// One field was edited after capture: the first row's `value` float8 is
+    /// now 118.0 (`405d800000000000`), replacing a real reading, so the
+    /// fixture no longer carries health data. `float8send` is a plain
+    /// IEEE-754 big-endian double, so the edit is exactly what `PostgreSQL`
+    /// emits for 118.0; every other byte, the epoch included, is as captured.
     const REFERENCE: &str = concat!(
         "5047434f50590aff0d0a000000000000000000",
         "0009",
@@ -227,7 +233,7 @@ mod tests {
         "00000008",
         "0002fb27fbc96f00",
         "00000008",
-        "4060e00000000000",
+        "405d800000000000",
         "ffffffff",
         "00000010",
         "000102030405060708090a0b0c0d0e0f",
@@ -290,7 +296,7 @@ mod tests {
                 session_id: 1,
                 seq: 0,
                 timestamp: at(1_785_783_900), // 2026-08-03T19:05:00Z
-                value: 135.0,
+                value: 118.0,
                 extra: None,
                 batch_id: None,
             },

@@ -389,7 +389,7 @@ mod tests {
             session_id: 9,
             seq,
             timestamp_unix_micros: 1_785_783_900_000_000,
-            value: 135.0,
+            value: 118.0,
             extra: None,
             batch_id: None,
         }

@@ -170,11 +170,14 @@ mod tests {
 
     #[test]
     fn decodes_four_hardware_frames() {
+        // Byte layout of the four 2026-08-03 hardware frames (flags 0x14, 11 bytes,
+        // exponent 0); the readings themselves are substituted, not the owner's.
+        // See crates/vitals-decode/fixtures/ua651ble-2a35.md.
         for (raw, sys, dia, map, pulse) in [
-            ("14870059006e0043000000", 135.0, 89.0, 110.0, 67.0),
-            ("1488005c00730042000000", 136.0, 92.0, 115.0, 66.0),
-            ("1490006300790042000000", 144.0, 99.0, 121.0, 66.0),
-            ("1482005a00680043000000", 130.0, 90.0, 104.0, 67.0),
+            ("1476004c005a003e000000", 118.0, 76.0, 90.0, 62.0),
+            ("147a004e005d0040000000", 122.0, 78.0, 93.0, 64.0),
+            ("1474004a0058003c000000", 116.0, 74.0, 88.0, 60.0),
+            ("14780050005d0046000000", 120.0, 80.0, 93.0, 70.0),
         ] {
             let b = bp_decode_2a35(&hex(raw)).unwrap();
             close(b.systolic, sys);

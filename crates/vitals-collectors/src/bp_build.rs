@@ -104,8 +104,8 @@ mod tests {
     }
 
     #[test]
-    fn a_real_frame_yields_four_rows_sharing_one_seq() {
-        let m = bp_decode_2a35(&hex("14870059006e0043000000")).expect("decodes");
+    fn a_hardware_layout_frame_yields_four_rows_sharing_one_seq() {
+        let m = bp_decode_2a35(&hex("1476004c005a003e000000")).expect("decodes");
         let b = samples(&m, 7, 2, 5_000_000);
         assert_eq!(b.samples.len(), 4);
         assert!(b.rejected.is_empty());
@@ -134,13 +134,13 @@ mod tests {
 
     #[test]
     fn out_of_range_is_rejected_by_name_never_clamped() {
-        // Systolic SFLOAT 0x2087 = 135 × 10² = 13500 mmHg: in-spec
+        // Systolic SFLOAT 0x2076 = 118 × 10² = 11800 mmHg: in-spec
         // encoding, physiologically impossible.
-        let m = bp_decode_2a35(&hex("14872059006e0043000000")).expect("decodes");
+        let m = bp_decode_2a35(&hex("1476204c005a003e000000")).expect("decodes");
         let b = samples(&m, 1, 0, 0);
         assert_eq!(b.samples.len(), 3, "the other fields still land");
         assert_eq!(b.rejected.len(), 1);
-        assert!(b.rejected[0].contains("systolic=13500"));
+        assert!(b.rejected[0].contains("systolic=11800"));
         assert!(b.rejected[0].contains("50..260"));
     }
 
