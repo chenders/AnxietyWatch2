@@ -27,8 +27,8 @@ distinguish them.
    the *sample's* timestamp into `Evidence::last_attempt_epoch_s`.
 4. It then compared that age against `expected_cadence_s` — which for the `AirSense` is the **sample
    rate** of 1 Hz, and for the H10 is a **notification rate**, also 1 Hz.
-5. Store-arrival lag is 5–36 seconds (measured 2026-11-09, ~30 s commit cycle). Against a bound of
-   1 second, a perfectly healthy source is permanently stale.
+5. Store-arrival lag has p50 35 s and max 44 s (measured 2026-11-09, n=36 over 18 minutes, ~30 s
+   commit cycle). Against a bound of 1 second, a perfectly healthy source is permanently stale.
 
 So the substitution was not a shortcut that usually worked. It was the only evidence path in the
 system, and it compared a quantity in seconds-since-commit against a quantity in samples-per-second.
@@ -80,7 +80,7 @@ source is `Idle`.
 It exists because no sample-derived rule can distinguish "idle and healthy" from "collector dead"
 during the sixteen hours a day a CPAP stores nothing. Transport contact can: `process_envelope`
 records receipt before any decode, so an envelope counts even when it carries nothing storable.
-Measured in-therapy envelope rate: 4.7/s.
+Measured in-therapy envelope rate: 4.74/s, steady over 18 minutes.
 
 **No value is declared yet.** The number requires the standby envelope interval, which has not been
 measured — the device was in therapy throughout the measurement window. Until it is declared, the
@@ -167,7 +167,8 @@ streaming that window would hold roughly 60M rows.
 
 **Any liveness bound must be derived from the quantity the evaluator actually compares, measured at
 the cadence it actually runs.** The declared values come from polling `now() - max(timestamp)` every
-30 s: observed range 5–36 s, so `max_sample_arrival_s = 300` carries about 8× headroom.
+30 s for 18 minutes (n=36): min 5 s, p50 35 s, p90 42 s, max 44 s, mean 24.2 s. So
+`max_sample_arrival_s = 300` carries about 6.8× headroom over the observed maximum.
 
 ---
 

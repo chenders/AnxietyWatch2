@@ -240,8 +240,8 @@ at 7 days shows 5 silent days as `LIVE`, which is the original incident laundere
 > comparing it against `expected_cadence_s`, which is the **sample rate** (1/s for the AirSense) and
 > is also the H10 reconnect idle timeout.
 >
-> So a healthy source was always "stale" -- store-arrival lag measured 5s-36s on a ~30s commit
-> cycle, against a declared bound of 1s -- and
+> So a healthy source was always "stale" -- store-arrival lag measured p50 35s / max 44s on a ~30s
+> commit cycle (n=36), against a declared bound of 1s -- and
 > **five of eight sources had never once reported `LIVE`**. When the AirSense collector died on
 > 2026-10-30, the state did not change — it was already `UNKNOWN` — so there was no transition to
 > alert on. Ten days of total data loss and healthy operation rendered identically. The detector

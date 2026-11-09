@@ -359,12 +359,12 @@ expected_cadence_s = 1
 # sample age against the rate is what let 921,331s of silence read exactly like
 # healthy operation.
 #
-# Measured 2026-11-09 by polling `now() - max(samples.timestamp)` every 30s
-# during therapy -- the quantity the detector actually compares, rather than the
-# inter-sample gap distribution, which is blind to arrival lag because
-# `timestamp` is host receipt at collection and batching does not create gaps in
-# it. Observed lag sawtooths 5s -> 36s on roughly a 30s commit cycle. 300s is
-# ~8x the observed maximum.
+# Measured 2026-11-09 by polling `now() - max(samples.timestamp)` every 30s for
+# 18 minutes during therapy -- the quantity the detector actually compares,
+# rather than the inter-sample gap distribution, which is blind to arrival lag
+# because `timestamp` is host receipt at collection and batching does not create
+# gaps in it. n=36: min 5s, p50 35s, p90 42s, max 44s, mean 24.2s. Sawtooths on
+# roughly a 30s commit cycle. 300s is ~6.8x the observed maximum.
 #
 # 1800s is 50x the observed maximum and only escalates while the activity gate
 # reads Expected -- see max_link_silence_s below for why that matters.
@@ -385,9 +385,10 @@ sample_silence_failure_s = 1800
 # without the activity gate produces 62 FAILING notifications on an ordinary
 # day. Transport contact can separate them, because `process_envelope` bumps the
 # receipt timestamp before any decode, so envelopes count even when they carry
-# nothing storable. Measured in-therapy rate: 4.7 envelopes/s. The standby rate
-# is the open question, and if it turns out to be zero then this channel is
-# therapy-gated too and the escalation has to come from somewhere else.
+# nothing storable. Measured in-therapy rate: 4.74 envelopes/s, steady across
+# the same 18-minute window. The standby rate is the open question, and if it
+# turns out to be zero then this channel is therapy-gated too and the escalation
+# has to come from somewhere else.
 
 [source.resmed_air11_sd]
 id = 8
