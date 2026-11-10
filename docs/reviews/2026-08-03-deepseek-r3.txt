@@ -757,7 +757,7 @@
    lock, Google Cloud Storage with retention policies), it's genuinely append-only
    but requires internet — the system must work when the network is down. If it's
    a local second machine, root on the Pi can't touch it, but there is no second
-   machine (megadude is being decommissioned, Stage 6). If it's an APNs payload to
+   machine (gen1-host is being decommissioned, Stage 6). If it's an APNs payload to
    the phone, Apple's push service is the append-only log, and the phone holds the
    sequence of published heads. This is the most realistic option and it's nearly
    specified — "APNs payload" is mentioned — but the phone-side verification is

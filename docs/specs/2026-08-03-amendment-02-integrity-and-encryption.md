@@ -271,7 +271,7 @@ need both.
 
 **Recommendation: A now, B as an upgrade.** Option A is honest about what it does, takes an hour, and
 covers the realistic risks — a disk being returned, discarded, or removed. Option C is a poor fit:
-megadude is being decommissioned, so there is no second always-on host to run tang, and adding one to
+gen1-host is being decommissioned, so there is no second always-on host to run tang, and adding one to
 enable disk unlock inverts the project's own "the Pi must not depend on another machine" principle.
 
 Option B is the genuinely strong answer and worth doing once the system is otherwise stable. It is

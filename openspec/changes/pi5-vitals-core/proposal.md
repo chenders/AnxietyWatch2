@@ -12,7 +12,7 @@ A Raspberry Pi 5 on mains power with an external antenna and a real speaker has 
 ## What
 
 Relocate the **always-on radio** and the **always-on alarm** onto the Pi, and make the Pi the single
-system of record — replacing megadude. The phone keeps HealthKit access, journaling, and viewing.
+system of record — replacing gen1-host. The phone keeps HealthKit access, journaling, and viewing.
 
 This change covers **Stages 0–3 only**. It is complete when a blood pressure reading taken on the
 A&D UA-651BLE lands in Postgres on the Pi with correct provenance, recoverable from a verified
@@ -29,7 +29,7 @@ backup.
 
 ### Out of scope (follow-on changes)
 
-Stage 4 BLE fleet · Stage 5 detector + klaxon · Stage 6 megadude migration ·
+Stage 4 BLE fleet · Stage 5 detector + klaxon · Stage 6 gen1-host migration ·
 Stage 7 thin the phone · Stage 8 bedside panel
 
 ## Design reference
@@ -56,4 +56,4 @@ Two documents it amends:
 
 - Rewriting the iOS app. It is untouched by this change.
 - Any alarm behavior. `klaxond` is Stage 5.
-- Migrating megadude's forty tables. Stage 6.
+- Migrating gen1-host's forty tables. Stage 6.

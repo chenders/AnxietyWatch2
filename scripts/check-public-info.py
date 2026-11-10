@@ -61,7 +61,7 @@ RULES = (
     ),
     Rule(
         "known-private-host",
-        rx((r"\bmini", "dude", r"\b")),
+        rx((r"\b(?:mini|mega)", "dude", r"\b")),
         "private hostname",
     ),
     Rule(
@@ -125,7 +125,7 @@ def replacement(rule_name: str, value: str) -> str:
             return "SleepO2-2_XXXX"
         return "ResMed device"
     if rule_name == "known-private-host":
-        return "pi-host"
+        return "gen1-host" if value.lower().startswith("mega") else "pi-host"
     if rule_name == "setup-user":
         if value.startswith("User="):
             return "User=pi-user"
@@ -195,6 +195,7 @@ def self_test() -> None:
         # Assembled from fragments, like RULES: this file must not contain the
         # identifiers it exists to keep out, even inside its own fixtures.
         "g.md": "private host " + "mini" + "dude",
+        "m.md": "the old server " + "mega" + "dude",
         "h.md": "User=" + "chris",
         "i.md": "plugin " + "chris" + ".opsx-dev-layout",
         "j.md": "Group=" + "chris",

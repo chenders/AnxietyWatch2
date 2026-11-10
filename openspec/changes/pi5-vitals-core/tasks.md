@@ -1631,7 +1631,7 @@ Output is the format `tools/gap_histogram.py` already reads, so the acceptance g
 Drift will correctly report "not estimable": the EMAY sends no interval data, and saying so is better
 than inventing a number.
 
-**Live-verified on the device**: 68 records in 40 s, zero undecodable, all readings in plausible resting range.
+**Live-verified on the device**: 68 records in 40 s, zero undecodable.
 
 **Four defects found, three of them by the device rather than by reading.**
 
