@@ -49,6 +49,10 @@ cover.
   prototype; publishing the code does not expose the LAN. Those gaps stay tracked there.
 - The Apple Team ID in `clients/apple/Config/Shared.xcconfig`. It is embedded in every signed
   build Apple distributes and is not a secret; it stays.
+- The console's private LAN bind address in `deploy/vitals-console.service`. An RFC 1918 address
+  identifies nothing outside the LAN; moving it out of the tracked unit is already
+  `repository-hygiene-followups` T-RH-7. It is not on the personal-term denylist, which would
+  otherwise block every legitimate edit to that unit.
 
 ## Order
 
