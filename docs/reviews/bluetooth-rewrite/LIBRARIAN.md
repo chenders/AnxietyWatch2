@@ -95,7 +95,7 @@ No full Bluetooth address, credential, key, or target secret is reproduced here.
 
 **Unit:** `AnxietyWatch2/deploy/vitals-emay.service`
 
-- Starts after/requires `bluetooth.target` and `vitalsd.service`; runs as `chris` with supplementary
+- Starts after/requires `bluetooth.target` and `vitalsd.service`; runs as the operator's login account with supplementary
   group `vitals`; loads `/etc/default/vitals-emay`; passes `VITALS_SOCKET` and status path;
   restarts forever `[3-24]`.
 - Restricts address families to `AF_UNIX` `[39]` even though the binary reaches BlueZ through the

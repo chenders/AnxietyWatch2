@@ -1696,7 +1696,7 @@ Gate **G2 is open** — Group C (Postgres on NVMe, pgBackRest, restore verificat
 ### T-D6 — completion record, 2026-08-07
 
 Real cuff readings landed end-to-end before the box was ticked: six measurements (source 6, types
-6/7/8/1) committed through spool → drain → Postgres, latest 2026-08-06 20:42 PDT. Decoder fuzzed
+6/7/8/1) committed through spool → drain → Postgres. Decoder fuzzed
 clean for 24.2 M runs at 60 s under nightly/ASan on the Pi.
 
 Pre-PR review (c-pre-pr-reviewer + physio-accuracy-reviewer) drove one round of corrections before
