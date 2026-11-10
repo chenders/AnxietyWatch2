@@ -408,7 +408,9 @@ sample_silence_failure_s = 1800
 # the collector died, which is what these bounds detect; it does not mean the
 # patient stopped breathing.
 #
+# An earlier draft claimed a low duty cycle and used it to argue these bounds
 # would false-alarm all day. That came from two compounding mistakes: a three-day
+# hourly histogram read in UTC while reasoning in PST, over a window where the
 # only populated hours were the ~2.5 hours since the collector was restarted;
 # and an average over a window that contained the ten-day outage itself, which
 # of course reads low. Both are corrected above.

@@ -166,9 +166,14 @@ inter-sample gaps since 2026-10-20: p50 0 s, p99 0 s". `samples.timestamp` is ho
 collection, so batching does not create gaps in it; the quantity the detector compares is
 `now() - max(samples.timestamp)` — **store-arrival lag**. Percentiles of the wrong distribution.
 
+**Second error — a duty cycle inferred two different wrong ways.** The same 18.65M figure was then
+read as 25.4 rows/s against a declared 81 rows/s, i.e. a low duty cycle. But that window *contains
+the ten-day outage*, so the average is low for the obvious reason. A three-day hourly histogram
+appeared to confirm it — samples in two hours only — but that was read in UTC while
 being reasoned about in PST, and the only populated hours were the ~2.5 hours since the collector had
 been restarted.
 
+**What is actually true.** Hourly counts for type 10 across two full pre-outage days
 (2026-10-21/10-22, local time) are populated in **48 of 48 hours at ~84,000 rows/hour**, minimum
 79,636. The device streams continuously at 23.3 rows/s while powered and paired: a **100% duty
 cycle**. The "62 false `FAILING` notifications a day" concern was therefore unfounded, and
