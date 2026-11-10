@@ -565,7 +565,7 @@ mod tests {
             r#type: 1,
             session_id: 1,
             seq: 1,
-            timestamp_unix_micros: 1_785_783_900_123_456,
+            timestamp_unix_micros: 1_767_225_600_123_456,
             value: 1.0,
             extra: None,
             batch_id: None,
@@ -576,7 +576,7 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .expect("after epoch")
             .as_micros();
-        assert_eq!(back, 1_785_783_900_123_456);
+        assert_eq!(back, 1_767_225_600_123_456);
     }
 
     /// Times before 1970 are legal. `unsigned_abs` on a negative i64 plus the

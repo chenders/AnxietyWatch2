@@ -84,7 +84,7 @@ fn sample(source: i32, seq: i64) -> WireSample {
         r#type: 6,
         session_id: 1,
         seq,
-        timestamp_unix_micros: 1_785_783_900_000_000,
+        timestamp_unix_micros: 1_767_225_600_000_000,
         value: 118.0,
         extra: None,
         batch_id: None,

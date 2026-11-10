@@ -30,7 +30,7 @@ All four are 11 bytes, `flags = 0x14`:
 | 3 | `1484005600650044000000` | 132 | 86 | 101 | 68 |
 | 4 | `14780050005d0046000000` | 120 | 80 | 93 | 70 |
 
-`status = 0x0000` on every frame — no body movement, no cuff-too-loose, no irregular pulse.
+`status` is a 16-bit field (body movement, cuff fit, irregular pulse, among others); the fixtures use `0x0000`.
 
 ### Flags byte
 
