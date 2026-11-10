@@ -384,7 +384,7 @@ expected_cadence_s = 1
 # healthy operation.
 #
 # Measured 2026-11-09 by polling `now() - max(samples.timestamp)` every 30s for
-# 18 minutes during therapy -- the quantity the detector actually compares,
+# 18 minutes -- the quantity the detector actually compares,
 # rather than the inter-sample gap distribution, which is blind to arrival lag
 # because `timestamp` is host receipt at collection and batching does not create
 # gaps in it. n=36: min 5s, p50 35s, p90 42s, max 44s, mean 24.2s. Sawtooths on
@@ -410,7 +410,7 @@ sample_silence_failure_s = 1800
 # the collector died, which is what these bounds detect; it does not mean the
 # patient stopped breathing.
 #
-# An earlier draft claimed a 31% duty cycle and used it to argue these bounds
+# An earlier draft claimed a low duty cycle and used it to argue these bounds
 # would false-alarm all day. That came from two compounding mistakes: a three-day
 # hourly histogram read in UTC while reasoning in PST, over a window where the
 # only populated hours were the ~2.5 hours since the collector was restarted;
