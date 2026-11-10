@@ -342,7 +342,7 @@ mod tests {
     fn postgres_epoch_is_2000_not_1970() {
         assert_eq!(pg_timestamp_micros(at(946_684_800)), Ok(0));
         assert_eq!(pg_timestamp_micros(UNIX_EPOCH), Ok(-946_684_800_000_000));
-        // The captured row-0 value, independently.
+        // The row-0 value (edited, see REFERENCE), independently.
         assert_eq!(
             pg_timestamp_micros(at(1_767_225_600)),
             Ok(820_540_800_000_000)
