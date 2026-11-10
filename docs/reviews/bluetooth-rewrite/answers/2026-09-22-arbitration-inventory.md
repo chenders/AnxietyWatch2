@@ -107,7 +107,7 @@ recorded in `LIBRARIAN.md`, not treated as proof that deployed binaries are abse
 | BP stopgap | `AnxietyWatch2/deploy/stopgap/vitals-bp-connect.service` | after/requires Bluetooth, before BP, `vitals:bluetooth` `[7-26]` |
 | H10 | `aw2-air11/deploy/vitals-h10.service` | after/requires Bluetooth and vitalsd; `vitals`; restart `[3-37]` |
 | AirSense | `aw2-air11/deploy/vitals-air11.service` | after/requires Bluetooth and vitalsd; explicit `hci0`, `vitals`; restart `[1-53]` |
-| EMAY durable | `AnxietyWatch2/deploy/vitals-emay.service` | after/requires `bluetooth.target vitalsd.service`; `chris` plus `vitals`; restart `[7-24]` |
+| EMAY durable | `AnxietyWatch2/deploy/vitals-emay.service` | after/requires `bluetooth.target vitalsd.service`; operator login plus `vitals`; restart `[7-24]` |
 | EMAY legacy | `aw2-air11/deploy/stopgap/emay-live.service` | after/requires `bluetooth.target`; runs `emay-spike` `[5-32]` |
 | Wellue | `aw2-wellue-fix/deploy/wellue-collector.service` | after/requires `bluetooth.target vitalsd`; `vitals` plus Bluetooth; restart `[7-35]`; brief says disabled |
 
