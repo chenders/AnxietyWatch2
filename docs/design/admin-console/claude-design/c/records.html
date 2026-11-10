@@ -107,11 +107,11 @@
 
       <div class="cols-2">
         <section class="pane">
-          <div class="pane__hd"><h2>Edit prescription</h2><span class="caps">sertraline 100 mg</span></div>
+          <div class="pane__hd"><h2>Edit prescription</h2><span class="caps">Example medication B 100 mg</span></div>
           <div class="pane__body">
             <form class="form" data-dirty-track onsubmit="return false">
               <div class="form__row"><label for="r1" class="req">Drug</label>
-                <div><input class="input" id="r1" name="r1" value="Sertraline"></div></div>
+                <div><input class="input" id="r1" name="r1" value="Example medication B"></div></div>
               <div class="form__row"><label for="r2" class="req">Dose</label>
                 <div><input class="input" id="r2" name="r2" value="100 mg"></div></div>
               <div class="form__row"><label for="r3" class="req">Schedule</label>
@@ -187,15 +187,15 @@
 
 <div class="scrim" id="m-del" hidden data-no-escape>
   <div class="modal modal--danger" role="alertdialog" aria-modal="true" aria-labelledby="mdx-h">
-    <div class="modal__hd"><span aria-hidden="true">✕</span><h2 id="mdx-h">Delete prescription “Sertraline 100 mg”?</h2></div>
-    <form class="modal__body" data-confirm-phrase="Sertraline" onsubmit="return false">
+    <div class="modal__hd"><span aria-hidden="true">✕</span><h2 id="mdx-h">Delete prescription “Example medication B 100 mg”?</h2></div>
+    <form class="modal__body" data-confirm-phrase="Example medication B" onsubmit="return false">
       <p class="prose">Active for 274 days and referenced by 548 dose records.</p>
       <ul class="consequences">
         <li>548 dose records become unattributed. They are not deleted.</li>
         <li>Every past report that named this prescription will no longer resolve it.</li>
         <li>The dose-timing correlation is recomputed without it.</li>
       </ul>
-      <div><label class="caps" for="mdx-i">Type <span class="mono">Sertraline</span> to confirm</label>
+      <div><label class="caps" for="mdx-i">Type <span class="mono">Example medication B</span> to confirm</label>
         <input class="input" id="mdx-i" data-confirm-input autocomplete="off" placeholder="drug name"></div>
       <div class="modal__ft"><button class="btn btn--ghost" type="button" data-action="close">Cancel</button>
         <span class="grow"></span>
