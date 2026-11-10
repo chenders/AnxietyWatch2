@@ -5,7 +5,7 @@ description = "Codegen and tooling for the vitals registry"
 requires-python = ">=3.12"
 
 [dependency-groups]
-dev = ["pytest>=8.0", "ruff>=0.6"]
+dev = ["pytest>=8.0", "ruff>=0.6", "pyyaml>=6.0"]  # pyyaml: scripts/check-workflow-runners.py
 
 [tool.ruff]
 line-length = 100
