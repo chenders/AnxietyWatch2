@@ -102,7 +102,7 @@ field stays undeclared until a device needs it, rather than being given a number
   completed an attempt" for four of nine sources — measured-and-fresh read as never-measured.
 - Past a declared `max_event_age_s` the state is `UNKNOWN`, not `LIVE`. §2.5 requires only that an
   old timestamp not read as a *fault*; that is not a licence to read as healthy. Two sources were
-  reporting `LIVE` on successes 52.8 days old.
+  reporting `LIVE` on successes weeks old.
 
 `max_event_age_s` is a **separate field** from `max_sample_arrival_s`. An earlier draft used the
 latter for both, which compared a stream-arrival bound against an attempt timestamp — the same
@@ -176,7 +176,7 @@ been restarted.
 **What is actually true.** Hourly counts for type 10 across two full pre-outage days
 (2026-10-21/10-22, local time) are populated in **48 of 48 hours at ~84,000 rows/hour**, minimum
 79,636. The device streams continuously at 23.3 rows/s while powered and paired: a **100% duty
-cycle**. The "62 false `FAILING` notifications per non-use day" concern was therefore unfounded, and
+cycle**. The "62 false `FAILING` notifications a day" concern was therefore unfounded, and
 `sample_silence_failure_s = 1800` is well justified — a repeat of the 2026-10-30 outage is `FAILING`
 within half an hour.
 
