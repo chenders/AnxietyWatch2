@@ -14,8 +14,8 @@ cuff's internal buffer over one connection, decoded live.
 >
 > The byte *layout* below is the hardware's, verbatim — a fixture whose provenance is "I made it up
 > from the spec" is exactly what produced the `0xF14A → 7.4` error in T-D2's brief. The *readings*
-> are substituted: the captured values were the owner's own blood pressure. Flags, lengths,
-> exponents and status are unchanged, which is everything the tests exercise.
+> are substituted: the captured values were the owner's own blood pressure. Flags, lengths
+> and exponents are unchanged and status is set to `0x0000`, which is everything the tests exercise.
 
 ---
 
@@ -114,7 +114,7 @@ nothing unattended.
 ### 4. Reconnection to an existing bond fails on this kernel
 
 ```
-[18:56:41] Bluetooth: hci0: unexpected SMP command 0x0b from 00:09:1F:XX:XX:XX
+[hh:mm:ss] Bluetooth: hci0: unexpected SMP command 0x0b from 00:09:1F:XX:XX:XX
 ```
 
 SMP `0x0B` is Security Request — a bonded peripheral asking the central to resume encryption from
@@ -191,5 +191,5 @@ D-Bus client replaced it and is the shape `bp-collector` should take.
   so a naive UTC decode of it is off by the zone offset.*
 - The vendor service `233bf000-5a34-1b6d-975c-000d5690abe4` is unexplored.
 - `0x2A36` Intermediate Cuff Pressure was never observed; the cuff may not implement it.
-- No kPa frame, no negative SFLOAT exponent, and no measurement-status bit set — all three need
-  synthetic fixtures, since the hardware may never produce them.
+- kPa frames, negative SFLOAT exponents and measurement-status bits all need synthetic
+  fixtures; a capture cannot be relied on to produce them.

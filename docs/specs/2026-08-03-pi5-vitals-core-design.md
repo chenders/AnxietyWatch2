@@ -58,7 +58,7 @@ So v2 is not a port. It is a **relocation of two responsibilities** — the alwa
 always-on alarm — onto hardware that is mains-powered, has a real OS, an external antenna, and a
 speaker that does not brown out. Everything else stays where it is and gets thinner over time.
 
-The Pi replaces megadude as the single system of record.
+The Pi replaces gen1-host as the single system of record.
 
 ---
 
@@ -388,11 +388,11 @@ lands here, and every historical night becomes a fixture. `klaxond` with the dai
 **At the end of Stage 5 the Pi independently detects and alarms with the phone powered off.** That is
 the project's actual goal; everything after is consolidation.
 
-### Stage 6 — Migrate megadude
+### Stage 6 — Migrate gen1-host
 
 Move the remaining domain tables (journal, medications, prescriptions, pharmacies, labs, songs,
 CPAP/AS11, Oura cloud) with their Flask API and admin UI into Docker on the Pi. Cloudflare tunnel for
-remote access. Decommission megadude.
+remote access. Decommission gen1-host.
 
 ### Stage 7 — Thin the phone
 
