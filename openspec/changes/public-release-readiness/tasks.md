@@ -234,12 +234,17 @@ set -o pipefail; M="$HOME/Source/aw2-history-purge/mirror.git"; heads=$(git ls-r
 Pi has **no git clone** of the repository: `$PI_PATH` is an rsync'd tree, so it has no history,
 but rsync can carry untracked or ignored files — remove any removed path found there. The
 self-hosted runner's checkout under `/opt/actions-runner-vitals/_work/` *is* a clone (shallow);
-delete it so the next job clones the rewritten history. This amends T-HP-7, which assumed a
-clone. If the Pi is powered down this task waits; T-PR-10…T-PR-12 do not depend on it.
+delete it, and expect `pi-deploy` to re-create it from the rewritten history after T-PR-8. This
+amends T-HP-7, which assumed a clone. The Pi half of the check is `$PURGE/pi-residue-check.sh`:
+it applies every `manifest/paths.txt` entry to the Pi tree with filter-repo's rules (literal =
+that path or anything under it; `glob:`; `regex:`), requires the runner checkout, if present, to
+hold none of `old-shas.txt`, and fails closed — naming entry numbers, never values — on an unset
+`PI_HOST`/`PI_PATH`, an unreachable host, a missing tree or a refused `sudo -n`. If the Pi is
+powered down this task waits; T-PR-10…T-PR-12 do not depend on it.
 
 **Verify:**
 ```sh
-P="$HOME/Source/aw2-history-purge"; test -s "$P/old-shas.txt" && ! while read -r s; do git cat-file -e "$s^{commit}" 2>/dev/null && echo "still local: $s"; done < "$P/old-shas.txt" | grep -q . && test -n "$PI_PATH" && ssh "$PI_HOST" "test -d '$PI_PATH' && ! ls -d '$PI_PATH/firmware' '$PI_PATH'/*.jpg '$PI_PATH'/*.jpeg '$PI_PATH'/*.png '$PI_PATH'/*.PNG '$PI_PATH'/*.mp4 '$PI_PATH'/*.zip 2>/dev/null | grep -q . && sudo -n test ! -e /opt/actions-runner-vitals/_work/AnxietyWatch2"
+P="$HOME/Source/aw2-history-purge"; test -s "$P/old-shas.txt" && ! while read -r s; do git cat-file -e "$s^{commit}" 2>/dev/null && echo "still local: $s"; done < "$P/old-shas.txt" | grep -q . && bash "$P/pi-residue-check.sh"
 ```
 
 **Context budget:** none.
