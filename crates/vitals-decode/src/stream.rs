@@ -847,7 +847,8 @@ mod tests {
     use core::fmt::Write as _;
     use std::{format, string::String};
 
-    // Synthetic fixture (values substituted); it contains no pairing material, device address,
+    // Synthetic fixture: the stream shape is the device's, the values are
+    // substituted, and it contains no pairing material, device address,
     // serial, or raw capture bytes.
     const FRAME: &[u8] = include_bytes!("../fixtures/air11-stream-null.json");
 
