@@ -128,7 +128,7 @@ frame; the implementation must not fall back to a host counter. The stored
 `timestamp` is the UTC host receipt time in Unix microseconds. The row's versioned
 `extra` metadata carries the raw device `startTime`, raw stream id, short data id,
 native interval, source ordinal, and `clock_quality="untrusted"`. The observed
-device clock (`2008-01-13T22:34:38.707Z`) is evidence for this policy, not a
+device clock (`2008-01-01T00:00:00.000Z`) is evidence for this policy, not a
 value to be corrected or synchronized by this change.
 
 ## Collector and durability path

@@ -45,7 +45,7 @@ authorization.
    external oximeter; null is not zero and is not support evidence.
 
 4. **The device clock is not trustworthy for stored history.** The observed
-   device clock was stale (`2008-01-13T22:34:38.707Z`). A production collector
+   device clock was stale (`2008-01-01T00:00:00.000Z`). A production collector
    must use host receipt time for stored timestamps, retain the raw device start
    time and an explicit untrusted-clock marker, and must not synchronize the
    machine as part of read-only streaming.

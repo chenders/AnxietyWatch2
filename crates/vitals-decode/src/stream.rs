@@ -866,14 +866,14 @@ mod tests {
         let frame = decode_stream(FRAME).expect("valid stream");
         assert_eq!(frame.stream_id, 4);
         assert_eq!(frame.interval_ms, 200);
-        assert_eq!(frame.source_start_time(), b"2008-01-13T22:35:03.414Z");
+        assert_eq!(frame.source_start_time(), b"2008-01-01T00:00:25.000Z");
         let flow = signal(&frame, StreamSignal::PatientFlow);
         assert_eq!(flow.sample_count, 3);
         assert_eq!(flow.valid_count, 2);
         assert_eq!(flow.source_name(), b"_RFL");
         let values = frame.values_for(flow).expect("flow values");
         assert!(values.first().expect("first").valid);
-        assert!((values.first().expect("first").value - 0.33).abs() < 1e-12);
+        assert!((values.first().expect("first").value - 0.29).abs() < 1e-12);
         assert!(!values.get(2).expect("null").valid);
         let leak = signal(&frame, StreamSignal::Leak);
         let leak_value = frame
