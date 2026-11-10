@@ -418,11 +418,18 @@ jobs:
             fi
           done
           exit $missing
-      # Prebuilt binary rather than `cargo install cargo-fuzz --locked`, which
-      # compiled it from source on every run -- several minutes and several
-      # hundred `Compiling` lines before any fuzzing started. The coverage job
-      # below already installs cargo-llvm-cov this way.
-      - uses: taiki-e/install-action@cargo-fuzz
+      # `cargo install` is a no-op when rust-cache restored ~/.cargo/bin and
+      # compiles from source only on a cache miss. Not taiki-e/install-action:
+      # it has no cargo-fuzz release tag, and `@cargo-fuzz` resolves to a stale
+      # feature branch whose action.yml has no default tool, so it logs "no tool
+      # specified", exits 0 and installs nothing.
+      - name: Install cargo-fuzz
+        run: |
+          cargo install cargo-fuzz --locked
+          command -v cargo-fuzz >/dev/null || {
+            echo "::error::cargo-fuzz is not on PATH after install; no target can run"
+            exit 1
+          }
       - name: Run fuzz targets
         # RUSTUP_TOOLCHAIN overrides rust-toolchain.toml, which pins stable and
         # otherwise wins over the nightly toolchain action above. cargo-fuzz
@@ -445,12 +452,12 @@ jobs:
                     -max_total_time=60 -print_final_stats=1 -verbosity=0; then
                 echo "::endgroup::"
               else
-                # The crash report stays inside the collapsed group; this
-                # annotation sits outside it, so the failing target is named on
-                # the run summary and points at the group to expand.
+                # The build error or crash report stays inside the collapsed
+                # group; this annotation sits outside it, so the failing target
+                # is named on the run summary and points at the group to expand.
                 # fuzz/artifacts/ is not uploaded -- it exists only on the runner.
                 echo "::endgroup::"
-                echo "::error::fuzz target $name failed; expand the 'fuzz $name' group for the crash report and reproducer input"
+                echo "::error::fuzz target $name failed (build error or crash); expand the 'fuzz $name' group for the details and any reproducer input"
                 failed=1
               fi
             done
