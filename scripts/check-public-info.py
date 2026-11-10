@@ -31,13 +31,18 @@ RULES = (
     ),
     Rule(
         "linux-home",
-        rx((r"/", "home", r"/(?!user(?:/|\b)|pi-user(?:/|\b))[A-Za-z0-9._-]+/")),
+        rx((r"/", "home", r"/(?!user(?:/|\b)|pi-user(?:/|\b)|runner(?:/|\b))[A-Za-z0-9._-]+(?:/|\b)")),
         "absolute Linux user path; use $HOME, $PI_PATH, /opt, or a placeholder",
     ),
     Rule(
         "literal-ssh-target",
         rx((r"\b", "ssh", r"\s+(?!\"?\$)[A-Za-z0-9._-]+@[A-Za-z0-9._-]+")),
         "literal SSH user/host; use ssh \"$PI_HOST\"",
+    ),
+    Rule(
+        "user-at-private-ip",
+        rx((r"\b[A-Za-z0-9._-]+@(?:10[.]|192[.]168[.]|172[.](?:1[6-9]|2[0-9]|3[01])[.])[0-9.]*[0-9]",)),
+        "literal user@private-address; use $PI_HOST",
     ),
     Rule(
         "private-ip-url",
@@ -61,7 +66,7 @@ RULES = (
     ),
     Rule(
         "setup-user",
-        rx((r"\b(?:User=|id\s+-u\s+)", "chris", r"\b")),
+        rx((r"\b(?:User=|Group=|id\s+-u\s+)", "chris", r"\b")),
         "personal account name in deployment configuration",
     ),
     Rule(
@@ -100,8 +105,12 @@ def findings_for(path: str, text: str) -> list[str]:
 
 def replacement(rule_name: str, value: str) -> str:
     """Return a deterministic public placeholder for a scanner match."""
-    if rule_name in {"mac-home", "linux-home"}:
+    if rule_name == "mac-home":
         return "$HOME/"
+    if rule_name == "linux-home":
+        return "$HOME/" if value.endswith("/") else "$HOME"
+    if rule_name == "user-at-private-ip":
+        return "$PI_HOST"
     if rule_name == "literal-ssh-target":
         return 'ssh "$PI_HOST"'
     if rule_name == "private-ip-url":
@@ -120,6 +129,8 @@ def replacement(rule_name: str, value: str) -> str:
     if rule_name == "setup-user":
         if value.startswith("User="):
             return "User=pi-user"
+        if value.startswith("Group="):
+            return "Group=pi-user"
         return "id -u pi-user"
     if rule_name == "personal-plugin-id":
         return "project.opsx-dev-layout"
@@ -186,6 +197,9 @@ def self_test() -> None:
         "g.md": "private host " + "mini" + "dude",
         "h.md": "User=" + "chris",
         "i.md": "plugin " + "chris" + ".opsx-dev-layout",
+        "j.md": "Group=" + "chris",
+        "k.md": "the Pi is `" + "jane" + "@192.168.50.7`",
+        "l.md": "WorkingDirectory=/home/" + "jane",
     }
     if not path_findings("docs/status-updates/2026-01-01-" + "mini" + "dude" + "-plan.md"):
         raise AssertionError("scanner missed a private hostname in a path name")

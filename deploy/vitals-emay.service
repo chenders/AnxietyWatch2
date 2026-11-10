@@ -22,7 +22,7 @@ Requires=bluetooth.target vitalsd.service
 [Service]
 Type=simple
 User=pi-user
-Group=chris
+Group=pi-user
 SupplementaryGroups=vitals
 EnvironmentFile=-/etc/default/vitals-emay
 Environment=VITALS_SOCKET=/run/vitals/vitalsd.sock

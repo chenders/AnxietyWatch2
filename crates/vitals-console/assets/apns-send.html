@@ -18,7 +18,7 @@
       <form id="send-form">
         <label for="recipient-scope">Recipient scope</label><select id="recipient-scope"><option value="device">One device</option><option value="user">Every active phone for one user</option><option value="all_active">Every active phone on this Pi</option></select>
         <label for="user-id">User ID (user scope)</label><input id="user-id" type="text" placeholder="UUID">
-        <label for="device-id">Device ID</label><input id="device-id" type="text" value="b74997d1-41e0-47f9-843d-05c56ee0f64d" required>
+        <label for="device-id">Device ID</label><input id="device-id" type="text" value="" placeholder="enrolled device UUID" required>
         <label for="confirmed-count">Measured recipient count</label><input id="confirmed-count" type="number" min="0" value="1" readonly>
         <label for="payload-class">Payload class</label><input id="payload-class" type="text" value="operator_message" required>
         <label for="category">Category</label><input id="category" type="text" value="operator_test">
