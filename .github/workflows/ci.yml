@@ -106,9 +106,25 @@ jobs:
       # Accepted advisories live in .cargo/audit.toml with a dated reason each,
       # so shipping with a known advisory is a named decision rather than a
       # silent one.
+      #
+      # Prebuilt binary from RustSec's own GitHub releases. This job has no
+      # rust-cache, so `cargo install cargo-audit --locked` compiled ~290 crates
+      # from source on every run: ~374s of a ~378s step, the audit itself ~4s.
+      # `@cargo-audit` is a release tag whose action.yml defaults `tool` to
+      # cargo-audit -- unlike `@cargo-fuzz`, a stale branch that installed
+      # nothing (see fuzz-smoke).
+      - uses: taiki-e/install-action@cargo-audit
       - name: Dependency advisories
+        # The runner image's stable toolchain is enough to read Cargo.lock.
+        # Without this, rust-toolchain.toml makes rustup download the pinned
+        # toolchain and 7 components (~15s) for a job that compiles nothing.
+        env:
+          RUSTUP_TOOLCHAIN: stable
         run: |
-          cargo install cargo-audit --locked
+          command -v cargo-audit >/dev/null || {
+            echo "::error::cargo-audit is not on PATH; the install-action step installed nothing"
+            exit 1
+          }
           cargo audit
 
   h10-graph-performance:
