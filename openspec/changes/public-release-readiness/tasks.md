@@ -195,7 +195,7 @@ removed path, plus the tips of every pushed branch) for T-PR-9 and T-PR-13.
 
 **Verify:**
 ```sh
-P="$HOME/Source/aw2-history-purge"; bash "$P/verify.sh" && bash "$P/residuals.sh" "$P/mirror.git" && gitleaks git --no-banner --redact --log-opts=--all "$P/mirror.git" && test -s "$P/old-shas.txt" && { ! grep -qx 'Signatures: re-sign' "$P/records.md" || test -z "$(git --git-dir="$P/mirror.git" log --all --format=%G? | grep -vx G)"; }
+P="$HOME/Source/aw2-history-purge"; M="$P/mirror.git"; test -s "$P/records.md" && bash "$P/verify.sh" && bash "$P/residuals.sh" "$M" && gitleaks git --no-banner --redact --log-opts=--all "$M" && test -s "$P/old-shas.txt" && { ! grep -qx 'Signatures: re-sign' "$P/records.md" || { refs=$(git --git-dir="$M" for-each-ref --format='%(refname)' refs/aw2-remotes/origin/) && test -n "$refs" && test -z "$(git --git-dir="$M" log --format=%G? $refs | grep -vx G)"; }; }
 ```
 
 **Context budget:** the mirror.
@@ -230,13 +230,16 @@ set -o pipefail; M="$HOME/Source/aw2-history-purge/mirror.git"; heads=$(git ls-r
 
 **Reads:** `$PURGE/backup/` (stash and worktree lists), `scripts/sync-to-pi.sh`.
 
-**Do:** As T-HP-6 (this checkout and its worktrees, reflog expired, `gc --prune=now`) and T-HP-7
-(re-clone, never fetch into, any checkout on the Pi). If the Pi is powered down this task waits;
-T-PR-10…T-PR-12 do not depend on it.
+**Do:** As T-HP-6 for this checkout and its worktrees (reflog expired, `gc --prune=now`). The
+Pi has **no git clone** of the repository: `$PI_PATH` is an rsync'd tree, so it has no history,
+but rsync can carry untracked or ignored files — remove any removed path found there. The
+self-hosted runner's checkout under `/opt/actions-runner-vitals/_work/` *is* a clone (shallow);
+delete it so the next job clones the rewritten history. This amends T-HP-7, which assumed a
+clone. If the Pi is powered down this task waits; T-PR-10…T-PR-12 do not depend on it.
 
 **Verify:**
 ```sh
-P="$HOME/Source/aw2-history-purge"; test -s "$P/old-shas.txt" && ! while read -r s; do git cat-file -e "$s^{commit}" 2>/dev/null && echo "still local: $s"; done < "$P/old-shas.txt" | grep -q . && ssh "$PI_HOST" 'cd "$PI_PATH" && test -z "$(git rev-list --all --reflog -- firmware aw2-ios-thin-client-chatgpt-context.zip)"'
+P="$HOME/Source/aw2-history-purge"; test -s "$P/old-shas.txt" && ! while read -r s; do git cat-file -e "$s^{commit}" 2>/dev/null && echo "still local: $s"; done < "$P/old-shas.txt" | grep -q . && test -n "$PI_PATH" && ssh "$PI_HOST" "test -d '$PI_PATH' && ! ls -d '$PI_PATH/firmware' '$PI_PATH'/*.jpg '$PI_PATH'/*.jpeg '$PI_PATH'/*.png '$PI_PATH'/*.PNG '$PI_PATH'/*.mp4 '$PI_PATH'/*.zip 2>/dev/null | grep -q . && sudo -n test ! -e /opt/actions-runner-vitals/_work/AnxietyWatch2"
 ```
 
 **Context budget:** none.
@@ -275,11 +278,13 @@ set -o pipefail; for e in runs artifacts caches; do n=$(gh api "repos/chenders/A
 **Reads:** the purge manifest; `gh api` for pulls, issues, issue comments and review comments.
 
 **Do:** None of this is in git. Write `$PURGE/scan-github-text.py`: page through every PR and
-issue (title, body), issue comment (body) and review comment (body **and** `diff_hunk`), match the
-manifest's sources, residual patterns and medication terms, and print each hit as kind + id +
-count (never the value); exit 1 on any hit **or any API failure**. Edit or delete each hit's text
-through the API. Review-comment diff hunks cannot be edited: delete the comment, or list it for
-T-PR-12.
+issue (title, body), issue comment, PR review **summary** (`pulls/{n}/reviews`, body), review
+comment (body **and** `diff_hunk`) and commit comment, match the manifest's sources, residual
+patterns and medication terms, and print each hit as kind + id + count (never the value); exit 1
+on any hit **or any API failure**. Edit or delete each hit's text through the API. Review-comment
+diff hunks cannot be edited: delete the comment, or list its id in
+`$PURGE/support-request-hunks.txt` for T-PR-12. The allowlist option accepts **only**
+review-comment `diff_hunk` hits; any other kind listed there is itself a failure.
 
 **Verify:**
 ```sh
@@ -326,7 +331,8 @@ grep -qE '^GitHub support ticket: [0-9]+ \(purge confirmed [0-9]{4}-[0-9]{2}-[0-
    and removed-path rules, `residuals.sh`, or `gitleaks --log-opts=--all`;
 2. any SHA in `old-shas.txt` answers anything but 404 from
    `gh api repos/chenders/AnxietyWatch2/commits/<sha>`;
-3. `scan-github-text.py` reports a hit (no allowlist this time);
+3. `scan-github-text.py` reports a hit in any kind it scans, review summaries and commit
+   comments included (no allowlist this time);
 4. any Actions run, artifact or cache exists from before T-PR-10.
 
 **Verify:**
@@ -357,7 +363,7 @@ reachable during the flip:
 
 **Verify:**
 ```sh
-set -o pipefail; A=repos/chenders/AnxietyWatch2; gh repo view chenders/AnxietyWatch2 --json visibility --jq .visibility | grep -qx PUBLIC && gh api $A --jq '[.security_and_analysis.secret_scanning.status, .security_and_analysis.secret_scanning_push_protection.status, (.has_wiki|tostring)] | join(" ")' | grep -qx 'enabled enabled false' && gh api $A/private-vulnerability-reporting --jq .enabled | grep -qx true && gh api $A/actions/permissions/fork-pr-contributor-approval --jq .approval_policy | grep -qx all_external_contributors && gh api $A/environments/production --jq '[.protection_rules[].type] | index("required_reviewers") != null' | grep -qx true && { ! grep -qx 'Runner: moved' "$HOME/Source/aw2-history-purge/records.md" || test "$(gh api $A/actions/runners --jq .total_count)" = 0; }
+set -o pipefail; A=repos/chenders/AnxietyWatch2; gh repo view chenders/AnxietyWatch2 --json visibility --jq .visibility | grep -qx PUBLIC && gh api $A --jq '[.security_and_analysis.secret_scanning.status, .security_and_analysis.secret_scanning_push_protection.status, (.has_wiki|tostring)] | join(" ")' | grep -qx 'enabled enabled false' && gh api $A/private-vulnerability-reporting --jq .enabled | grep -qx true && gh api $A/actions/permissions/fork-pr-contributor-approval --jq .approval_policy | grep -qx all_external_contributors && gh api $A/environments/production --jq '[.protection_rules[].type] | index("required_reviewers") != null' | grep -qx true && R="$HOME/Source/aw2-history-purge/records.md" && test -s "$R" && { ! grep -qx 'Runner: moved' "$R" || test "$(gh api $A/actions/runners --jq .total_count)" = 0; }
 ```
 
 **Context budget:** none.
@@ -378,7 +384,7 @@ T-HP-9. Not a publication blocker; it keeps the result from regressing.
 
 **Verify:** as T-HP-9, and
 ```sh
-grep -qE '^Signatures: (re-sign|lifted)$' openspec/changes/public-release-readiness/tasks.md && grep -qE '^GitHub support ticket: [0-9]+' openspec/changes/public-release-readiness/tasks.md
+T=openspec/changes/public-release-readiness/tasks.md; grep -qE '^Signatures: (re-sign|lifted)$' "$T" && grep -qE '^Runner: (moved|approval-gated)$' "$T" && grep -qE '^GitHub support ticket: [0-9]+' "$T"
 ```
 
 **Context budget:** 3 files.
