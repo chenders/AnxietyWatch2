@@ -424,6 +424,12 @@ jobs:
       # feature branch whose action.yml has no default tool, so it logs "no tool
       # specified", exits 0 and installs nothing.
       - name: Install cargo-fuzz
+        # Same override as the run step below: without it this is the only cargo
+        # call in the job that resolves rust-toolchain.toml, so rustup would
+        # download the pinned toolchain (rust-cache does not keep ~/.rustup)
+        # just to build cargo-fuzz.
+        env:
+          RUSTUP_TOOLCHAIN: nightly
         run: |
           cargo install cargo-fuzz --locked
           command -v cargo-fuzz >/dev/null || {
@@ -431,7 +437,7 @@ jobs:
             exit 1
           }
       - name: Run fuzz targets
-        # RUSTUP_TOOLCHAIN overrides rust-toolchain.toml, which pins stable and
+        # RUSTUP_TOOLCHAIN overrides rust-toolchain.toml, which pins 1.97.1 and
         # otherwise wins over the nightly toolchain action above. cargo-fuzz
         # needs `-Z` flags, so without this the job fails with "the option `Z` is
         # only accepted on the nightly compiler" no matter what the action
