@@ -418,6 +418,11 @@ jobs:
             fi
           done
           exit $missing
+      # Prebuilt binary rather than `cargo install cargo-fuzz --locked`, which
+      # compiled it from source on every run -- several minutes and several
+      # hundred `Compiling` lines before any fuzzing started. The coverage job
+      # below already installs cargo-llvm-cov this way.
+      - uses: taiki-e/install-action@cargo-fuzz
       - name: Run fuzz targets
         # RUSTUP_TOOLCHAIN overrides rust-toolchain.toml, which pins stable and
         # otherwise wins over the nightly toolchain action above. cargo-fuzz
@@ -428,10 +433,28 @@ jobs:
           RUSTUP_TOOLCHAIN: nightly
         run: |
           if [ -d fuzz/fuzz_targets ] && ls fuzz/fuzz_targets/*.rs >/dev/null 2>&1; then
-            cargo install cargo-fuzz --locked
+            failed=0
             for t in fuzz/fuzz_targets/*.rs; do
-              cargo fuzz run "$(basename "$t" .rs)" -- -max_total_time=60 || exit 1
+              name=$(basename "$t" .rs)
+              # Collapse each target in the log. libFuzzer prints a progress line
+              # per exec batch, so 8 targets x 60s produced thousands of lines
+              # with nothing actionable in them. -print_final_stats=1 keeps the
+              # one summary worth reading: execs, execs/sec and coverage.
+              echo "::group::fuzz $name"
+              if cargo fuzz run "$name" -- \
+                    -max_total_time=60 -print_final_stats=1 -verbosity=0; then
+                echo "::endgroup::"
+              else
+                # The crash report stays inside the collapsed group; this
+                # annotation sits outside it, so the failing target is named on
+                # the run summary and points at the group to expand.
+                # fuzz/artifacts/ is not uploaded -- it exists only on the runner.
+                echo "::endgroup::"
+                echo "::error::fuzz target $name failed; expand the 'fuzz $name' group for the crash report and reproducer input"
+                failed=1
+              fi
             done
+            exit $failed
           else
             echo "::warning::no fuzz targets exist yet; the gate above passed only because no decoder is implemented"
           fi
