@@ -262,8 +262,8 @@ _STREAM_CEILING_S = 7 * 24 * 3600
 
 # `max_event_age_s` gets its own, larger ceiling because it measures a different
 # physical quantity: the age of a DISCRETE event, paced by a person rather than
-# by a device. A home blood-pressure cuff is idle for weeks by design -- 89
-# measured gaps between readings have a maximum of 23.8 days -- so a one-week
+# by a device. A home blood-pressure cuff is idle for weeks by design -- so a
+# one-week
 # ceiling rejects every honest value and forces the field to stay undeclared,
 # which leaves the card asserting LIVE on month-old evidence.
 #

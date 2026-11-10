@@ -562,7 +562,7 @@ def test_event_age_and_stream_bounds_have_different_ceilings() -> None:
 
     `max_event_age_s` measures a discrete, human-paced event; the others
     measure a continuous stream. A home blood-pressure cuff is idle for weeks
-    by design -- 89 measured gaps have a maximum of 23.8 days -- so a one-week
+    by design -- so a one-week
     ceiling rejects every honest value and forces the field to stay undeclared,
     leaving the card asserting LIVE on month-old evidence.
     """
