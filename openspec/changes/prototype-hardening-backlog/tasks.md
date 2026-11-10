@@ -269,7 +269,7 @@ advertises while worn should report absence as a steady named state and back off
 hard part.
 
 **Owner call:** write a replacement collector in this workspace, or retire the EMAY path.
-The oximeter has not been worn recently and the decision depends on whether it returns to use.
+The decision depends on whether the EMAY path is still needed.
 
 **Verify:** once a replacement exists in-tree:
 ```sh

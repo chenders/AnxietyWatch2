@@ -686,7 +686,7 @@ mod tests {
             r#type: 6,
             session_id: 1,
             seq,
-            timestamp: UNIX_EPOCH + Duration::from_secs(1_785_783_900),
+            timestamp: UNIX_EPOCH + Duration::from_secs(1_767_225_600),
             value: 120.0,
             extra: None,
             batch_id: None,

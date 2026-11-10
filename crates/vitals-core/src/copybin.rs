@@ -214,11 +214,13 @@ mod tests {
     /// encoder's own output — self-consistency is not correctness, and an
     /// encoder tested against itself agrees with itself about the wrong epoch.
     ///
-    /// One field was edited after capture: the first row's `value` float8 is
-    /// now 118.0 (`405d800000000000`), replacing a real reading, so the
-    /// fixture no longer carries health data. `float8send` is a plain
-    /// IEEE-754 big-endian double, so the edit is exactly what `PostgreSQL`
-    /// emits for 118.0; every other byte, the epoch included, is as captured.
+    /// Two fields were edited after capture, so the fixture carries no real
+    /// reading or reading time: the first row's `value` float8 is now 118.0
+    /// (`405d800000000000`) and its `timestamp` is now 2026-01-01T00:00:00Z
+    /// (`0002ea470ae86000`, microseconds since 2000-01-01 as a big-endian int8).
+    /// Both are exactly what `PostgreSQL` emits for those values; every other
+    /// byte is as captured, and the epoch test below checks the conversion
+    /// independently.
     const REFERENCE: &str = concat!(
         "5047434f50590aff0d0a000000000000000000",
         "0009",
@@ -231,7 +233,7 @@ mod tests {
         "00000008",
         "0000000000000000",
         "00000008",
-        "0002fb27fbc96f00",
+        "0002ea470ae86000",
         "00000008",
         "405d800000000000",
         "ffffffff",
@@ -295,7 +297,7 @@ mod tests {
                 r#type: 6,
                 session_id: 1,
                 seq: 0,
-                timestamp: at(1_785_783_900), // 2026-08-03T19:05:00Z
+                timestamp: at(1_767_225_600), // 2026-01-01T00:00:00Z
                 value: 118.0,
                 extra: None,
                 batch_id: None,
@@ -340,10 +342,10 @@ mod tests {
     fn postgres_epoch_is_2000_not_1970() {
         assert_eq!(pg_timestamp_micros(at(946_684_800)), Ok(0));
         assert_eq!(pg_timestamp_micros(UNIX_EPOCH), Ok(-946_684_800_000_000));
-        // The captured row-0 value, independently.
+        // The row-0 value (edited, see REFERENCE), independently.
         assert_eq!(
-            pg_timestamp_micros(at(1_785_783_900)),
-            Ok(839_099_100_000_000)
+            pg_timestamp_micros(at(1_767_225_600)),
+            Ok(820_540_800_000_000)
         );
     }
 

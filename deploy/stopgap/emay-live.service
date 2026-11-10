@@ -18,8 +18,8 @@ User=anxietywatch
 # this file explicitly (live=emay_status.json).
 Environment=EMAY_STATUS_JSON=/opt/anxietywatch-panel/docs/design/pi-panel/direction-a-clinical/emay_status.json
 ExecStart=/usr/local/bin/emay-spike
-# The ring powers down when it is not worn, so "not found" is the normal
-# overnight state, not a fault. Restart rather than give up: the run should
+# The ring powers down when it is not worn, so "not found" is a normal
+# state, not a fault. Restart rather than give up: the run should
 # resume by itself when it goes back on a finger.
 Restart=always
 RestartSec=20
