@@ -831,7 +831,7 @@ mod tests {
         assert_eq!(assertion.state, HealthState::Unknown);
     }
 
-    /// Sources 4 and 6 were reporting `Live` on successes 52.8 days old.
+    /// Sources 4 and 6 were reporting `Live` on successes weeks old.
     /// On-demand must not become a fault on age (§2.5) but must not reassure
     /// either — Unknown is the honest third state.
     #[test]

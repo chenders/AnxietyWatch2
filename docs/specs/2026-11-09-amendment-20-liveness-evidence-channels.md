@@ -102,7 +102,7 @@ field stays undeclared until a device needs it, rather than being given a number
   completed an attempt" for four of nine sources — measured-and-fresh read as never-measured.
 - Past a declared `max_event_age_s` the state is `UNKNOWN`, not `LIVE`. §2.5 requires only that an
   old timestamp not read as a *fault*; that is not a licence to read as healthy. Two sources were
-  reporting `LIVE` on successes 52.8 days old.
+  reporting `LIVE` on successes weeks old.
 
 `max_event_age_s` is a **separate field** from `max_sample_arrival_s`. An earlier draft used the
 latter for both, which compared a stream-arrival bound against an attempt timestamp — the same

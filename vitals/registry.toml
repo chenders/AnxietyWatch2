@@ -332,13 +332,11 @@ on_demand = true
 # Beyond 30 days, the newest cuff reading stops certifying the source. Past it
 # the card reads UNKNOWN, never FAILING -- an unused cuff is not a broken one.
 #
-# Measured 2026-11-09 over 89 gaps between consecutive stored readings
-# (2026-08-06 to 2026-09-29, 90 distinct readings, local time): p50 60s,
-# p90 22,144s, max 2,058,615s = 23.8 days. The sub-minute clusters are backlog
-# drains, not readings -- the cuff sends no device timestamp, so `timestamp` is
-# host receipt, which is the quantity the evaluator compares. Replayed over the
-# whole history this bound never trips while the cuff is in use; 14 days would
-# trip twice and 7 days at least four times.
+# Measured 2026-11-09 over the gaps between consecutive stored readings. The
+# sub-minute clusters are backlog drains, not readings -- the cuff sends no
+# device timestamp, so `timestamp` is host receipt, which is the quantity the
+# evaluator compares. Replayed over the whole history this bound never trips
+# while the cuff is in use; markedly shorter bounds trip during ordinary use.
 #
 # The 30 days comes from the conventional home-BP review window: AHA/ACC 2017
 # and ESH describe HBPM as structured runs -- duplicate morning and evening
