@@ -214,11 +214,13 @@ mod tests {
     /// encoder's own output — self-consistency is not correctness, and an
     /// encoder tested against itself agrees with itself about the wrong epoch.
     ///
-    /// One field was edited after capture: the first row's `value` float8 is
-    /// now 118.0 (`405d800000000000`), replacing a real reading, so the
-    /// fixture no longer carries health data. `float8send` is a plain
-    /// IEEE-754 big-endian double, so the edit is exactly what `PostgreSQL`
-    /// emits for 118.0; its timestamp is substituted too; every other byte is as captured.
+    /// Two fields were edited after capture, so the fixture carries no real
+    /// reading or reading time: the first row's `value` float8 is now 118.0
+    /// (`405d800000000000`) and its `timestamp` is now 2026-01-01T00:00:00Z
+    /// (`0002ea470ae86000`, microseconds since 2000-01-01 as a big-endian int8).
+    /// Both are exactly what `PostgreSQL` emits for those values; every other
+    /// byte is as captured, and the epoch test below checks the conversion
+    /// independently.
     const REFERENCE: &str = concat!(
         "5047434f50590aff0d0a000000000000000000",
         "0009",
