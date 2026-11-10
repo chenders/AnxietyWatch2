@@ -104,7 +104,7 @@ mod tests {
     }
 
     #[test]
-    fn a_real_frame_yields_four_rows_sharing_one_seq() {
+    fn a_hardware_layout_frame_yields_four_rows_sharing_one_seq() {
         let m = bp_decode_2a35(&hex("1476004c005a003e000000")).expect("decodes");
         let b = samples(&m, 7, 2, 5_000_000);
         assert_eq!(b.samples.len(), 4);

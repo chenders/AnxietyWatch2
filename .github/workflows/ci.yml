@@ -75,6 +75,12 @@ jobs:
         run: |
           bash -n scripts/tests/test-tracked-filenames.sh
           bash scripts/tests/test-tracked-filenames.sh
+      # The public-info scan reads text and silently skips what it cannot decode,
+      # so 33 root screenshots, a screen recording and a whole-repo ZIP were all
+      # invisible to it. This judges every tracked path by location and kind:
+      # root allowlists, binary-by-location, no local tool state, no *.local.
+      - name: Tracked paths are in policy
+        run: python3 scripts/check-tracked-paths.py --self-test
       # AGENTS.md makes the amendment index mandatory reading, so an index that
       # disagrees with the files on disk misleads every worker who obeys the
       # scoping rule. Nothing ran this verifier until now: its only callers were

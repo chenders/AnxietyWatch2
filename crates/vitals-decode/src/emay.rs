@@ -29,8 +29,8 @@
 //! the job it is worn for.
 //!
 //! This was nearly missed twice. The single reference frame in the protocol
-//! notes and a live 27-frame capture on
-//! 2026-08-03 both fall in the agreeing region and verify
+//! notes and a live 27-frame capture on 2026-08-03 both fall in the agreeing
+//! region and verify
 //! identically under either mask. **`0x7F` is correct because it came from
 //! decompiling the vendor application, not because any captured frame
 //! demonstrated it** — and no frame captured from an awake subject ever will.
@@ -236,7 +236,8 @@ pub const fn response_opcode(command: u8) -> u8 {
 mod tests {
     use super::*;
 
-    /// The device's frame layout with substituted readings: PR 70, `SpO2` 97.
+    /// The device's frame layout (header, length, PR, `SpO2`, PI, padding, 0x7F-masked
+    /// sum) with substituted readings -- PR 70, `SpO2` 97 -- not a person's measurement.
     const DEVICE_LAYOUT_FRAME: [u8; 8] = [0xEB, 0x01, 0x05, 0x46, 0x61, 0x7F, 0x00, 0x17];
 
     #[test]
@@ -247,13 +248,14 @@ mod tests {
         assert!(r.is_measurement());
     }
 
-    /// The gotcha this decoder exists to get right. With a 0xFF mask the
-    /// captured frame's checksum would not verify at all.
+    /// The gotcha this decoder exists to get right. A frame from an awake
+    /// subject cannot show it -- its checksum verifies under either mask -- so
+    /// the test builds one whose payload sum sets bit 7.
     #[test]
     fn checksum_is_masked_with_0x7f_not_0xff() {
         assert!(checksum_ok(&DEVICE_LAYOUT_FRAME));
 
-        // The captured frame cannot demonstrate the difference: its payload
+        // The layout frame cannot demonstrate the difference: its payload
         // sums to 0x217, and 0x217 & 0x7F == 0x217 & 0xFF == 0x17. The masks
         // only diverge when bit 7 of the sum is set, which is why a decoder
         // written with 0xFF can pass a hand-check against one real frame and
@@ -462,8 +464,8 @@ mod tests {
         assert_eq!(response_opcode(0x86), 0xF6);
     }
 
-    /// Layout captured live on 2026-08-03, readings substituted: one notification carrying two whole records
-    /// and the head of a third. A decoder requiring exactly 8 bytes rejects the
+    /// The shape captured live on 2026-08-03 -- one notification carrying two whole
+    /// records and the head of a third -- with substituted readings. A decoder requiring exactly 8 bytes rejects the
     /// entire thing.
     const COALESCED: [u8; 20] = [
         0xEB, 0x01, 0x05, 0x48, 0x60, 0x7F, 0x00, 0x18, // PR 72, SpO2 96

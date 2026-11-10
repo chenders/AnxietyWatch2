@@ -170,6 +170,11 @@ mod tests {
 
     #[test]
     fn decodes_four_hardware_frames() {
+        // Byte layout of the four 2026-08-03 hardware frames (flags 0x14, 11 bytes,
+        // exponent 0); the readings themselves are substituted, not the owner's.
+        // Frame 3's systolic low byte (0x84) has bit 7 set, so an in-range
+        // value crosses the sign-bit path.
+        // See crates/vitals-decode/fixtures/ua651ble-2a35.md.
         for (raw, sys, dia, map, pulse) in [
             ("1476004c005a003e000000", 118.0, 76.0, 90.0, 62.0),
             ("147a004e005d0040000000", 122.0, 78.0, 93.0, 64.0),

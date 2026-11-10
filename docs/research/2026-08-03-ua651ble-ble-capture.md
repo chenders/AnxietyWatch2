@@ -12,10 +12,10 @@ cuff's internal buffer over one connection, decoded live.
 > (`00:09:1F:XX:XX:XX`) — the vendor half is not identifying, the device half is, and it is
 > rediscoverable with `sudo btmgmt find` in seconds, so recording it bought nothing.
 >
-> The byte layout is the hardware's, kept verbatim, and the readings are substituted: a fixture whose provenance is "I made
-> it up from the spec" is exactly what produced the `0xF14A → 7.4` error in T-D2's brief. They carry
-> no identity on their own. If this repo goes public, swap the mantissas and keep the flags and
-> lengths — the byte *layout* is what the tests exercise.
+> The byte *layout* below is the hardware's, verbatim — a fixture whose provenance is "I made it up
+> from the spec" is exactly what produced the `0xF14A → 7.4` error in T-D2's brief. The *readings*
+> are substituted: the captured values were the owner's own blood pressure. Flags, lengths
+> and exponents are unchanged and status is set to `0x0000`, which is everything the tests exercise.
 
 ---
 

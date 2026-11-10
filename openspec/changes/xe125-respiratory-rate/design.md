@@ -5,7 +5,8 @@ approval gate).
 
 ## Context
 
-`xe125/` contains an Acconeer XE125 PB41 V1.3 evaluation board with an XM125 module. The module
+The XE125 under test (see `docs/hardware/XE125.md`) is an Acconeer XE125 PB41 V1.3 evaluation
+board with an XM125 module. The module
 contains an A121 57–64 GHz pulsed-coherent radar and an STM32L4 MCU. Acconeer's
 `acconeer-python-exploration` repository already provides a supported A121 breathing reference
 application, but AnxietyWatch2 has no source/type, capture wrapper, quality contract, or durable

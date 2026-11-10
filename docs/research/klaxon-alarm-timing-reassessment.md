@@ -37,7 +37,7 @@ Key design rules:
 - **Fast path shortens *every* rise hop**.
 - **Fast to alert, slow to clear.** Never shorten the clear window; a raised alarm stays up.
 
-## Calibration from real continuous oximetry
+## Calibration from continuous oximetry
 
 Calibrate the personalized floor from the user's own high-fidelity continuous oximetry, recorded over multiple nights. Opportunistic smartwatch readings produce spurious deep nadirs and are noise. **Do not let low-fidelity opportunistic Watch data set alarm thresholds.** In AnxietyWatch2, the `vitals-core` Spool uses strict provenance weighting to discount these samples.
 

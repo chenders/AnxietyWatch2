@@ -50,7 +50,7 @@ complete. No radar sample is promoted to the alarm path by this change.
 **Tier:** implement-standard · **Host:** either for tests, Pi for live use · **Context budget:** ~5k
 **Depends:** T-X1 · **Review required:** no
 
-**Reads:** `docs/specs/AMENDMENTS.md`, `xe125/README.md`, `pyproject.toml`
+**Reads:** `docs/specs/AMENDMENTS.md`, `docs/hardware/XE125.md`, `pyproject.toml`
 
 **Creates:** `tools/xe125_breathing.py`, `tools/tests/test_xe125_breathing.py`
 
@@ -80,7 +80,7 @@ complete. No radar sample is promoted to the alarm path by this change.
 **Tier:** human/implement-standard · **Host:** pi · **Context budget:** ~3k · **Depends:** T-X2
 **Review required:** no
 
-**Reads:** `docs/specs/AMENDMENTS.md`, `xe125/README.md`,
+**Reads:** `docs/specs/AMENDMENTS.md`, `docs/hardware/XE125.md`,
 `openspec/changes/xe125-respiratory-rate/design.md`
 
 **Creates:** `tools/verify_xe125_live.sh`, plus a recorded firmware/version note and raw session
@@ -100,7 +100,7 @@ XM125/A121 module firmware version, run a short capture, and preserve at least o
 **Tier:** human · **Host:** pi · **Context budget:** ~4k · **Depends:** T-X3
 **Review required:** yes
 
-**Reads:** `docs/specs/AMENDMENTS.md`, `xe125/README.md`,
+**Reads:** `docs/specs/AMENDMENTS.md`, `docs/hardware/XE125.md`,
 `openspec/changes/xe125-respiratory-rate/specs/xe125-respiratory-rate/spec.md`
 
 **Creates:** `tools/verify_xe125_matrix.py`, raw captures, and a measured placement/reference report.

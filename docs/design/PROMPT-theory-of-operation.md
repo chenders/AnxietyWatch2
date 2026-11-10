@@ -1,8 +1,7 @@
 # Design prompt — "Theory of operation" one-pager
 
-Paste everything below the line into Claude's design feature. Companion to
-`PROMPT-progress-map.md`: that page maps what is *built*; this one maps how the finished machine
-*works*. Bring the returned files back to `docs/design/theory-of-operation/claude-design/`.
+Paste everything below the line into Claude's design feature. This page maps how the finished
+machine *works*. Bring the returned files back to `docs/design/theory-of-operation/claude-design/`.
 
 ---
 
