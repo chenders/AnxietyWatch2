@@ -124,7 +124,7 @@ fault. Per the no-clamping rule, this is rejected with a reason, not absorbed.
 ### 6. Source ids are permanent, and the guard is in the database
 
 Source id 4 was reassigned from `wellue_ks60fwb` to `acconeer_xe125` on 2026-09-28 (#56) while
-holding **156,201 sample rows** written between 2026-08-30 and 2026-09-17 — 52,071 `hr`, 52,071
+holding **156,201 sample rows** — 52,071 `hr`, 52,071
 `spo2`, 52,059 `respiratory_rate`. `acconeer_xe125` is a 60 GHz radar sensor that declares only
 `respiratory_rate` and cannot measure blood oxygen at all, because that requires optical pulse
 oximetry.

@@ -292,7 +292,7 @@ provides = ["hrv_rmssd"]
 on_demand = true
 
 # RETIRED, but id 4 is permanently its own. The Wellue KS-60FWB wrote 156,201
-# rows between 2026-08-30 and 2026-09-17: 52,071 hr, 52,071 spo2 and 52,059
+# rows: 52,071 hr, 52,071 spo2 and 52,059
 # respiratory_rate. It was then removed from this file and id 4 was reassigned
 # to acconeer_xe125 (#56, 2026-09-28), which declares only respiratory_rate and
 # is a 60 GHz radar sensor -- a device that cannot measure SpO2 at all, because
@@ -348,7 +348,7 @@ on_demand = true
 # because using the cuff is the owner's choice. The usual rule is that a bound
 # under the observed floor is worse than none; it does not apply here because
 # the trip is to UNKNOWN and alarms nothing. With no bound the card asserts
-# LIVE on 41-day-old evidence -- a false health claim. A true non-assertion
+# LIVE on weeks-old evidence -- a false health claim. A true non-assertion
 # beats a false assertion even when the silence is deliberate.
 max_event_age_s = 2592000
 
