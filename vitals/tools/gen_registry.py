@@ -616,8 +616,8 @@ impl VitalsSource {{
     ///
     /// The only bound that escalates on a legitimately idle source, and the
     /// one that can actually catch a dead collector on a device that only
-    /// produces data while in use. A CPAP stores nothing for sixteen hours a
-    /// day; it answers on the radio throughout.
+    /// produces data while in use. A CPAP stores nothing while
+    /// idle; it answers on the radio throughout.
     #[must_use]
     #[allow(clippy::match_same_arms)]
     pub const fn max_link_silence_s(self) -> Option<u32> {{

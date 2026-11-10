@@ -96,7 +96,7 @@ tidiness and query speed, not survival, so the decision can be made on correctne
 | `extra` present on | **100%** of rows |
 | `extra` size | 28–429 bytes, **avg 241** — ≈ **23.9 GB of the 34 GB heap**, about 70% |
 | `extra` cardinality | 54,707 distinct values in 55,242 sampled rows — effectively unique per row |
-| `extra` content | JSON, e.g. `{"clock_quality":"untrusted","device_start_time":"2008-01-03T…"}`; a minority are not JSON at all, one beginning `test_origin` |
+| `extra` content | JSON, e.g. `{"clock_quality":"untrusted","device_start_time":"2008-01-01T…"}`; a minority are not JSON at all, one beginning `test_origin` |
 | Source mix | **`resmed_air11` is 99.2%** of all rows; `polar_h10` is 0.7% |
 | `samples` reloptions | defaults, so `toast_tuple_target` is 2048 and a ~331-byte row **never reaches the TOAST threshold** — `extra` is stored inline, raw, uncompressed |
 
