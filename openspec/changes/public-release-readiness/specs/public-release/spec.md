@@ -9,8 +9,16 @@ Visibility SHALL change to public only after a fresh clone from GitHub, with eve
 - **WHEN** publication is considered
 - **THEN** publication is blocked, naming the missing confirmation
 
-### Requirement: A workflow that a fork can trigger SHALL NOT run on a self-hosted runner
-Any workflow whose triggers include an event other than `push`, `workflow_dispatch` or `schedule` SHALL use only GitHub-hosted runners, and CI SHALL reject a change that violates this, naming the workflow, the job and the trigger.
+### Requirement: A fork SHALL NOT be able to reach the self-hosted runner
+Because a fork PR runs its own workflow files on `pull_request`, the runner SHALL either be removed from the repository or every external contributor's run SHALL require approval, and the runner SHALL be offline whenever the repository is public without that policy in force.
+
+#### Scenario: Visibility changes before the approval policy can be set
+- **GIVEN** a private repository with a self-hosted runner
+- **WHEN** visibility changes to public
+- **THEN** the runner is offline until the fork-PR approval policy reads all external contributors
+
+### Requirement: Default-branch workflows a fork can trigger SHALL NOT use the self-hosted runner
+As defence in depth, any workflow on the default branch whose triggers include an event other than `push`, `workflow_dispatch` or `schedule` SHALL use only GitHub-hosted runners and SHALL NOT call a remote reusable workflow; CI SHALL reject a violation, naming the workflow, the job and the trigger.
 
 #### Scenario: A new workflow targets the Pi from pull requests
 - **GIVEN** a workflow triggered by `pull_request` with a job on `[self-hosted, …]`
@@ -25,3 +33,11 @@ The force-push SHALL either carry verified signatures on every new commit, or be
 - **AND** a rewritten mirror whose commits are unsigned
 - **WHEN** the push is prepared
 - **THEN** it is not attempted until the owner has chosen re-signing or a lifted rule
+
+### Requirement: GitHub-side data SHALL be clean before publication
+Actions runs, artifacts and caches created before the rewrite SHALL be deleted, PR and issue text including review-comment diff hunks SHALL contain no removed value, and every sampled pre-rewrite commit SHA SHALL answer 404.
+
+#### Scenario: A deploy log names the host
+- **GIVEN** a workflow run whose log contains the Pi's hostname
+- **WHEN** publication is considered
+- **THEN** publication is blocked until the run is deleted

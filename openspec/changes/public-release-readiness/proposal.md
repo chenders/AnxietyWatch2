@@ -14,10 +14,10 @@ cover.
    readings in fixtures, clinical detail, device identifiers, home paths, the Pi's hostname and
    address. Only that plan's tip clean-up (#105, #107–#114) has landed; its rewrite has not.
 2. **Medication names still on the tip.** The purge manifest already replaces two medication
-   names in the iOS client's history, but the same names, and one dose, remain in the three
-   admin-console design mock-ups under `docs/design/admin-console/claude-design/`. If the iOS
-   values were the owner's regimen, these are too. They are removed from the tip first, so the
-   rewrite's "main's final tree is unchanged" proof still holds.
+   names in the iOS client's history, but the same names remain in the three admin-console design
+   mock-ups under `docs/design/admin-console/claude-design/`. If the iOS values were the owner's
+   regimen, these are too. The names are replaced on the tip first, so the rewrite's "main's final
+   tree is unchanged" proof still holds; doses stay, because without a name they identify nothing.
 3. **Withheld code in history.** `firmware/` is in history from PR #22 and pending the owner's
    legal review. It is already in the purge's path list, so the rewrite removes it; publication
    no longer depends on the review's outcome.
@@ -33,15 +33,24 @@ cover.
    change them, so publishing after a perfect rewrite would still expose the old commits through
    PR pages. Only GitHub Support can purge them, and that must finish **before** publication.
 6. **Self-hosted runner.** `pi-deploy.yml` and `pi-runner-smoke.yml` run on a self-hosted runner
-   on the Pi. Today only `push` and `workflow_dispatch` trigger them, which need write access.
-   Nothing stops a future workflow from targeting that runner from a trigger a fork can fire,
-   which on a public repository would run a stranger's code on the Pi. A CI gate makes that
-   impossible to merge.
-7. **The personal-term check is off on this machine.** The pre-push gate warns
+   on the Pi, on the owner's LAN. On a public repository a fork PR runs **its own** workflow files
+   on `pull_request` — merged or not — so it can target that runner directly; GitHub advises
+   against self-hosted runners on public repositories for this reason. A CI gate cannot stop that
+   run. The controls are to move the runner to a private repository, or to require approval for
+   every external contributor's run (an owner decision, T-PR-6), and to keep the runner offline
+   while visibility changes, because the approval policy can only be set once the repository is
+   public. The CI gate (T-PR-3) is defence in depth for workflows on the default branch.
+7. **GitHub-side data a rewrite does not touch.** 901 Actions runs, 57 artifacts and 34 caches
+   (logs readable by anyone once public; at least one deploy log names the Pi's host), and the
+   text of 117 PRs, their review comments — whose `diff_hunk` quotes old file content — and issue
+   comments, several of which carry the hostname, home paths or device-identifier-shaped strings.
+   GitHub also serves orphaned commits by SHA until it garbage-collects them.
+8. **The personal-term check is off on this machine.** The pre-push gate warns
    `no .githooks/pii-denylist.local.txt — personal-term checking is off` on every push.
-8. **Publication settings.** Fork-PR workflow approval cannot even be set while the repository
-   is private; secret scanning, push protection and private vulnerability reporting should be on
-   from the first public minute. A `SECURITY.md` says where to report.
+9. **Publication settings.** Fork-PR workflow approval cannot be set while the repository is
+   private; secret scanning, push protection and private vulnerability reporting should be on from
+   the first public minute; the wiki (editable by any user once public) goes off; the `production`
+   environment gets required reviewers. A `SECURITY.md` says where to report.
 
 ## Non-goals
 
@@ -56,8 +65,10 @@ cover.
 
 ## Order
 
-Land or close every open PR → fix the tip → enable the local gates → re-run the purge on the
-final tip and prove it → **owner: signatures decision, then push** → move every clone onto the
-new history → **owner: GitHub Support purge** → prove a fresh clone from GitHub is clean →
-**owner: make public** → turn on the publication settings. Publication is last and is the only
-step that cannot be taken back.
+Land or close every open PR → fix the tip → enable the local gates → **owner: signatures and
+runner decision** → re-run the purge on the frozen tip and prove it → **owner: push** → move every
+clone → delete Actions runs, artifacts and caches → scrub PR and comment text → **owner: GitHub
+Support purge** (PR refs, cached views, orphaned commits, uneditable diff hunks) → prove what
+GitHub serves is clean, including old SHAs answering 404 → **owner: publish**, with the runner
+offline until the approval policy is set. Publication is last and is the only step that cannot be
+taken back.

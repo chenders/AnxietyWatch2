@@ -2,22 +2,32 @@
 
 Ordered; each task depends on the one before it unless it says otherwise. `$PURGE` means
 `$HOME/Source/aw2-history-purge`, the out-of-repo directory `history-phi-purge` uses. **Nothing
-under `$PURGE` is ever copied into the repository.** Three tasks are **owner actions**; every
-other task is reversible or local and proceeds without asking.
+under `$PURGE` is ever copied into the repository.**
+
+**The tip is frozen from T-PR-7 to T-PR-8**: any commit to `main` makes the rewritten mirror
+stale and breaks the push leases. Decisions and results recorded during the freeze go to
+`$PURGE/records.md` (out of the repository, never quoting a removed value); T-PR-15 copies them
+here, and ticks the boxes, in one PR after the push.
+
+Three steps are **owner actions** and one is an **owner decision**; every other step is reversible
+or local and proceeds without asking. Every Verify that calls GitHub runs under `set -o pipefail`,
+so an unreachable API fails the check instead of passing it.
 
 - [ ] T-PR-1 — Land or close every open pull request · integrate · host
 - [ ] T-PR-2 — Remove the medication names from the design mock-ups · implement-simple · host
-- [ ] T-PR-3 — Reject self-hosted runners on fork-triggerable workflows · implement · host
+- [ ] T-PR-3 — Reject self-hosted runners on default-branch fork-triggerable workflows · implement · host
 - [ ] T-PR-4 — Add SECURITY.md · implement-simple · host
 - [ ] T-PR-5 — Turn the personal-term check on locally · ops · host
-- [ ] T-PR-6 — Re-run the purge on the final tip and prove it · implement · host
-- [ ] T-PR-7 — Choose how the push satisfies `required_signatures` · **owner decision**
+- [ ] T-PR-6 — Decide signatures and the runner's exposure · **owner decision**
+- [ ] T-PR-7 — Re-run the purge on the final tip and prove it · implement · host
 - [ ] T-PR-8 — Force-push the rewritten history · ops · host · **owner action**
 - [ ] T-PR-9 — Move every clone onto the new history · ops · host, pi
-- [ ] T-PR-10 — Ask GitHub to purge cached pull-request refs · ops · **owner action**
-- [ ] T-PR-11 — Prove a fresh clone from GitHub is clean · investigate · host
-- [ ] T-PR-12 — Make the repository public and turn on publication settings · ops · **owner action**
-- [ ] T-PR-13 — Gate every commit a PR introduces (history-phi-purge T-HP-9) · implement · host
+- [ ] T-PR-10 — Delete every Actions run, artifact and cache · ops · host
+- [ ] T-PR-11 — Scrub GitHub-side text: PR bodies, comments, review diff hunks · ops · host
+- [ ] T-PR-12 — Ask GitHub to purge what only it can reach · ops · **owner action**
+- [ ] T-PR-13 — Prove what GitHub serves is clean · investigate · host
+- [ ] T-PR-14 — Publish with no exposure window · ops · **owner action**
+- [ ] T-PR-15 — Record the results and gate every commit a PR introduces · implement · host
 
 ---
 
@@ -30,13 +40,12 @@ other task is reversible or local and proceeds without asking.
 **Reads:** `gh pr list --state open`.
 
 **Do:** A force-push rewrites the base of every open PR under it. Merge each open PR that has
-passed review and CI; close the rest with a comment saying why (Dependabot re-opens its own
-after the push). Do not open a new PR between this task and T-PR-8 except for T-PR-2…T-PR-4,
-which merge before T-PR-6 starts.
+passed review and CI; close the rest with a comment saying why (Dependabot re-opens its own after
+the push). The only PRs opened before T-PR-7 are this change's own.
 
 **Verify:**
 ```sh
-test "$(gh pr list --state open --json number --jq length)" = 0
+set -o pipefail; n=$(gh pr list --state open --json number --jq length) && test "$n" = 0
 ```
 
 **Context budget:** the open PRs.
@@ -52,21 +61,22 @@ test "$(gh pr list --state open --json number --jq length)" = 0
 **Reads:** `docs/design/admin-console/claude-design/{a,b,c}/records.html`,
 `$PURGE/manifest/replace-health.txt`.
 
-**Do:** Replace every medication name and dose in the three mock-ups with the same neutral
-placeholders the purge already uses for the iOS client, so tip and rewritten history agree. Add
-matching pairs to `$PURGE/manifest/replace-health.txt` for every historical form, and a pattern to
-`$PURGE/residuals.sh`. Name no medication in the commit message, the PR or this file.
+**Do:** Replace every medication **name** in the three mock-ups with the neutral placeholders the
+purge already uses for the iOS client, so tip and rewritten history agree. Doses stay: without a
+name a dose identifies nothing. Add matching pairs for every historical form to
+`$PURGE/manifest/replace-health.txt`, the terms to `$PURGE/manifest/medication-terms.txt`, and a
+pattern to `$PURGE/residuals.sh`. Name no medication in a commit message, a PR or this file.
 
 **Verify:**
 ```sh
-git fetch -q origin && ! git grep -qiE -f "$HOME/Source/aw2-history-purge/manifest/medication-terms.txt" origin/main
+F="$HOME/Source/aw2-history-purge/manifest/medication-terms.txt"; test -s "$F" && git fetch -q origin && ! git grep -qiE -f "$F" origin/main
 ```
 
-**Context budget:** 3 files, 2 out-of-repo files.
+**Context budget:** 3 files, 3 out-of-repo files.
 
 ---
 
-### T-PR-3 — Reject self-hosted runners on fork-triggerable workflows
+### T-PR-3 — Reject self-hosted runners on default-branch fork-triggerable workflows
 
 **Depends:** none · **Review required:** yes
 
@@ -74,12 +84,13 @@ git fetch -q origin && ! git grep -qiE -f "$HOME/Source/aw2-history-purge/manife
 
 **Reads:** `.github/workflows/*.yml`, `.github/workflows/ci.yml` (`public-info` job).
 
-**Do:** Add `scripts/check-workflow-runners.py`: for every workflow under `.github/workflows/`,
-if its triggers include anything other than `push`, `workflow_dispatch` or `schedule`, every
-job's `runs-on` must be a GitHub-hosted label. A violation names the file, the job and the
-trigger. `--self-test` must fail a `pull_request` workflow on `[self-hosted, …]` and pass the
-repository's current workflows. Run both in `public-info`, and allowlist the script in
-`scripts/check-tracked-paths.py` if its policy requires it.
+**Do:** `scripts/check-workflow-runners.py`, run in `public-info`: a workflow whose triggers
+leave {`push`, `workflow_dispatch`, `schedule`} must use GitHub-hosted labels only and must not
+call a remote reusable workflow; violations name file, job and trigger; malformed input fails
+with a named reason. **Scope, stated plainly:** this guards workflows that reach the default
+branch (`pull_request_target`, `issue_comment`, `workflow_run`, …). It does **not** stop a fork
+PR from running its *own* workflow files on `pull_request`, merged or not — that is T-PR-6's
+runner decision and T-PR-14's approval policy.
 
 **Verify:**
 ```sh
@@ -98,10 +109,9 @@ uv run python3 scripts/check-workflow-runners.py --self-test && uv run python3 s
 
 **Reads:** `README.md`, `scripts/check-tracked-paths.py` (root-file allowlist).
 
-**Do:** State that this is a LAN-only personal prototype, not a medical device; that
-vulnerabilities go through GitHub private vulnerability reporting (enabled in T-PR-12), not
-public issues; and that the known hardening gaps live in `openspec/changes/prototype-hardening-backlog`.
-Add `SECURITY.md` to the root-file allowlist in the same commit.
+**Do:** Private vulnerability reporting (enabled in T-PR-14), scope, the deliberately deferred
+gaps in `prototype-hardening-backlog`, and an accurate description of how pull requests are kept
+off the self-hosted runner. Allowlist it in `check-tracked-paths.py` in the same commit.
 
 **Verify:**
 ```sh
@@ -122,8 +132,9 @@ test -s SECURITY.md && uv run python3 scripts/check-tracked-paths.py
 `$PURGE/manifest/replace-identifiers.txt`.
 
 **Do:** Create `.githooks/pii-denylist.local.txt` (git-ignored) from the personal terms the purge
-manifest replaces — names, account names, device names, hostnames — in the format the example
-gives. It never enters the repository. The owner may add terms; none is required from him.
+manifest replaces, excluding terms the repository uses legitimately (the public GitHub handle, the
+LICENSE name) and the LAN bind address (a non-goal). The hook reads it from the root of the
+worktree it runs in, so every worktree needs its own copy.
 
 **Verify:**
 ```sh
@@ -134,53 +145,60 @@ test -s .githooks/pii-denylist.local.txt && git check-ignore -q .githooks/pii-de
 
 ---
 
-### T-PR-6 — Re-run the purge on the final tip and prove it
+### T-PR-6 — Decide signatures and the runner's exposure
 
-**Depends:** T-PR-1…T-PR-5 · **Review required:** yes
+**Depends:** T-PR-1…T-PR-5 · **Owner decision** (one decision point, two questions)
+
+**Amends:** history-phi-purge T-HP-5 (it assumed a `non_fast_forward` rule that does not exist
+and did not account for signatures).
+
+**Reads:** `gh api repos/chenders/AnxietyWatch2/rulesets/20287061`,
+`gh api repos/chenders/AnxietyWatch2/actions/runners`.
+
+**Do:** Present, with costs and a recommendation, and record the answers in `$PURGE/records.md`:
+1. **Signatures** — `required_signatures` (active, no bypass actor) rejects the unsigned commits
+   `git filter-repo` produces. *Re-sign:* sign every rewritten commit with the owner's key, setting
+   the owner as committer on commits GitHub, Dependabot or Copilot committed (a signature verifies
+   only against the committer). *Lift:* disable the rule for the one push, re-enable after; history
+   stays unsigned.
+2. **Runner** — on a public repository a fork PR can run its own workflow on `pull_request`, and
+   GitHub advises against self-hosted runners on public repositories. *Move:* re-register
+   `vitals-pi` to a private repository that owns deployment, and remove it from this one.
+   *Approval-gated:* keep it, require approval for every external contributor's run, and accept
+   that one mistaken approval runs a stranger's code on the Pi.
+
+Decided before T-PR-7 so the mirror is built once, for the chosen push.
+
+**Verify:**
+```sh
+R="$HOME/Source/aw2-history-purge/records.md"; grep -qE '^Signatures: (re-sign|lifted)$' "$R" && grep -qE '^Runner: (moved|approval-gated)$' "$R"
+```
+
+**Context budget:** none.
+
+---
+
+### T-PR-7 — Re-run the purge on the final tip and prove it
+
+**Depends:** T-PR-6 · **Review required:** yes
 
 **Amends:** history-phi-purge T-HP-3, T-HP-4 (re-run, unchanged in substance).
 
 **Reads:** `$PURGE/final.sh`, `$PURGE/verify.py`, `$PURGE/residuals.sh`.
 
-**Do:** Run `$PURGE/final.sh`: fresh `--all` backup bundle, manifest regenerated against the
-current `origin/main`, full-mirror rewrite, `verify.sh`, `residuals.sh`. Then scan every ref of
-the mirror with gitleaks. Regenerate `$PURGE/push.sh` with leases pinned to GitHub's current
-branch SHAs, and the branch list as it now is.
+**Do:** The tip is frozen from here to T-PR-8. Run `$PURGE/final.sh` (fresh `--all` backup,
+manifest regenerated against the current `origin/main`, full-mirror rewrite, `verify.sh`,
+`residuals.sh`); if T-PR-6 chose re-signing, re-sign the mirror and re-run the checks; scan every
+ref with gitleaks; regenerate `$PURGE/push.sh` with leases pinned to GitHub's current branch SHAs.
+Write `$PURGE/old-shas.txt`: a sample of pre-rewrite commit SHAs (every commit that touched a
+removed path, plus the tips of every pushed branch) for T-PR-9 and T-PR-13.
 
 **Verify:**
 ```sh
-P="$HOME/Source/aw2-history-purge"; bash "$P/verify.sh" && bash "$P/residuals.sh" "$P/mirror.git" && gitleaks git --no-banner --redact --log-opts=--all "$P/mirror.git"
+P="$HOME/Source/aw2-history-purge"; bash "$P/verify.sh" && bash "$P/residuals.sh" "$P/mirror.git" && gitleaks git --no-banner --redact --log-opts=--all "$P/mirror.git" && test -s "$P/old-shas.txt" && { ! grep -qx 'Signatures: re-sign' "$P/records.md" || test -z "$(git --git-dir="$P/mirror.git" log --all --format=%G? | grep -vx G)"; }
 ```
 
 **Context budget:** the mirror.
-
----
-
-### T-PR-7 — Choose how the push satisfies `required_signatures`
-
-**Depends:** T-PR-6 · **Owner decision**
-
-**Amends:** history-phi-purge T-HP-5 (it assumed a `non_fast_forward` rule that does not exist and
-did not account for signatures).
-
-**Reads:** `gh api repos/chenders/AnxietyWatch2/rulesets/20287061`.
-
-**Do:** Present the two options with their cost:
-- **Re-sign.** Sign every rewritten commit with the owner's key, setting the owner as committer on
-  commits that GitHub, Dependabot or Copilot committed (a signature verifies only against the
-  committer). The ruleset is never touched; those commits' committer field changes.
-- **Lift the rule.** The owner disables `required_signatures` for the one push and re-enables it
-  after. Metadata is untouched; the rewritten history is permanently unsigned.
-
-Record the choice here as `Signatures: re-sign` or `Signatures: lifted`. If re-signing, apply it
-to the mirror and re-run T-PR-6's Verify.
-
-**Verify:**
-```sh
-grep -qE '^Signatures: (re-sign|lifted)$' openspec/changes/public-release-readiness/tasks.md
-```
-
-**Context budget:** none.
 
 ---
 
@@ -193,11 +211,11 @@ grep -qE '^Signatures: (re-sign|lifted)$' openspec/changes/public-release-readin
 **Reads:** `$PURGE/push.sh`.
 
 **Do:** With no open PR, run `$PURGE/push.sh` (atomic, `--force-with-lease` per branch). If the
-owner chose to lift the rule, he restores it immediately after; the Verify checks it is back.
+rule was lifted, the owner restores it immediately after.
 
 **Verify:**
 ```sh
-git ls-remote --heads origin | while read -r sha ref; do test "$(git --git-dir="$HOME/Source/aw2-history-purge/mirror.git" rev-parse "refs/aw2-remotes/origin/${ref#refs/heads/}")" = "$sha" || { echo "mismatch: $ref"; exit 1; }; done && gh api repos/chenders/AnxietyWatch2/rulesets/20287061 --jq '.rules[].type' | grep -qx required_signatures
+set -o pipefail; M="$HOME/Source/aw2-history-purge/mirror.git"; heads=$(git ls-remote --heads origin) && test -n "$heads" && while read -r sha ref; do test "$(git --git-dir="$M" rev-parse "refs/aw2-remotes/origin/${ref#refs/heads/}")" = "$sha" || { echo "mismatch: $ref"; exit 1; }; done <<<"$heads" && gh api repos/chenders/AnxietyWatch2/rulesets/20287061 --jq '.enforcement + " " + ([.rules[].type] | join(","))' | grep -qE '^active .*required_signatures'
 ```
 
 **Context budget:** none.
@@ -213,50 +231,103 @@ git ls-remote --heads origin | while read -r sha ref; do test "$(git --git-dir="
 **Reads:** `$PURGE/backup/` (stash and worktree lists), `scripts/sync-to-pi.sh`.
 
 **Do:** As T-HP-6 (this checkout and its worktrees, reflog expired, `gc --prune=now`) and T-HP-7
-(re-clone, never fetch into, any checkout on the Pi). If the Pi is powered down, this task waits
-for it and nothing after it does: the Pi's clone is not served by GitHub.
+(re-clone, never fetch into, any checkout on the Pi). If the Pi is powered down this task waits;
+T-PR-10…T-PR-12 do not depend on it.
 
 **Verify:**
 ```sh
-test -z "$(git rev-list --all -- firmware aw2-ios-thin-client-chatgpt-context.zip)" && test "$(git count-objects -v | awk '/^count:/ {print $2}')" -lt 100
+P="$HOME/Source/aw2-history-purge"; test -s "$P/old-shas.txt" && ! while read -r s; do git cat-file -e "$s^{commit}" 2>/dev/null && echo "still local: $s"; done < "$P/old-shas.txt" | grep -q . && ssh "$PI_HOST" 'cd "$PI_PATH" && test -z "$(git rev-list --all --reflog -- firmware aw2-ios-thin-client-chatgpt-context.zip)"'
 ```
 
 **Context budget:** none.
 
 ---
 
-### T-PR-10 — Ask GitHub to purge cached pull-request refs
+### T-PR-10 — Delete every Actions run, artifact and cache
 
-**Depends:** T-PR-8 · **Owner action**
+**Depends:** T-PR-8 · **Review required:** no
+
+**Amends:** none.
+
+**Reads:** `gh api repos/chenders/AnxietyWatch2/actions/{runs,artifacts,caches}`.
+
+**Do:** On a public repository run logs are readable by anyone and artifacts by any signed-in
+user; they also quote pre-rewrite SHAs and messages, and at least one deploy log contains the
+Pi's hostname. A rewrite touches none of it. Delete every workflow run (which removes its logs
+and artifacts), any remaining artifact, and every cache. CI runs created after this point run on
+the rewritten history only.
+
+**Verify:**
+```sh
+set -o pipefail; for e in runs artifacts caches; do n=$(gh api "repos/chenders/AnxietyWatch2/actions/$e" --jq .total_count) && test "$n" = 0 || { echo "$e remaining: ${n:-api error}"; exit 1; }; done
+```
+
+**Context budget:** none.
+
+---
+
+### T-PR-11 — Scrub GitHub-side text: PR bodies, comments, review diff hunks
+
+**Depends:** T-PR-8 · **Review required:** yes
+
+**Amends:** none.
+
+**Reads:** the purge manifest; `gh api` for pulls, issues, issue comments and review comments.
+
+**Do:** None of this is in git. Write `$PURGE/scan-github-text.py`: page through every PR and
+issue (title, body), issue comment (body) and review comment (body **and** `diff_hunk`), match the
+manifest's sources, residual patterns and medication terms, and print each hit as kind + id +
+count (never the value); exit 1 on any hit **or any API failure**. Edit or delete each hit's text
+through the API. Review-comment diff hunks cannot be edited: delete the comment, or list it for
+T-PR-12.
+
+**Verify:**
+```sh
+uv run python3 -I "$HOME/Source/aw2-history-purge/scan-github-text.py" --allow-listed-for-support "$HOME/Source/aw2-history-purge/support-request-hunks.txt"
+```
+
+**Context budget:** the GitHub API.
+
+---
+
+### T-PR-12 — Ask GitHub to purge what only it can reach
+
+**Depends:** T-PR-10, T-PR-11 · **Owner action**
 
 **Amends:** history-phi-purge T-HP-8.
 
 **Reads:** GitHub's documentation on removing sensitive data from a repository.
 
-**Do:** A request is drafted (repository, PR numbers whose refs reach removed objects, the
-rewrite date) and the owner sends it from his account. Record the ticket number, then GitHub's
-confirmation, here.
+**Do:** A request is drafted for the owner to send: the repository; the cached `refs/pull/*` of
+every PR; cached views; **unreachable and orphaned commits** (GitHub serves `/commit/<sha>` until
+it garbage-collects them — `$PURGE/old-shas.txt` and filter-repo's first-changed-commit list name
+them); and the review comments from `support-request-hunks.txt`. Record the ticket number, then
+GitHub's confirmation date, in `$PURGE/records.md`.
 
 **Verify:**
 ```sh
-grep -qE '^GitHub support ticket: [0-9]+ \(purge confirmed [0-9]{4}-[0-9]{2}-[0-9]{2}\)$' openspec/changes/public-release-readiness/tasks.md
+grep -qE '^GitHub support ticket: [0-9]+ \(purge confirmed [0-9]{4}-[0-9]{2}-[0-9]{2}\)$' "$HOME/Source/aw2-history-purge/records.md"
 ```
 
 **Context budget:** none.
 
 ---
 
-### T-PR-11 — Prove a fresh clone from GitHub is clean
+### T-PR-13 — Prove what GitHub serves is clean
 
-**Depends:** T-PR-10 · **Review required:** yes
+**Depends:** T-PR-12 · **Review required:** yes
 
 **Amends:** none.
 
-**Reads:** `$PURGE/verify.py`, `$PURGE/residuals.sh`.
+**Reads:** `$PURGE/verify.py`, `$PURGE/residuals.sh`, `$PURGE/old-shas.txt`.
 
-**Do:** `git clone --mirror` from GitHub into a new directory (this fetches `refs/pull/*` too),
-then run the content rules over every blob, the residual check, the removed-path check and
-gitleaks against it. A clone, not the local mirror, is what the public would get.
+**Do:** Write `$PURGE/verify-github-clone.sh`, `set -euo pipefail`, which must fail on any of:
+1. a fresh `git clone --mirror` from GitHub (fetching `refs/pull/*`) fails `verify.py`'s content
+   and removed-path rules, `residuals.sh`, or `gitleaks --log-opts=--all`;
+2. any SHA in `old-shas.txt` answers anything but 404 from
+   `gh api repos/chenders/AnxietyWatch2/commits/<sha>`;
+3. `scan-github-text.py` reports a hit (no allowlist this time);
+4. any Actions run, artifact or cache exists from before T-PR-10.
 
 **Verify:**
 ```sh
@@ -267,37 +338,47 @@ bash "$HOME/Source/aw2-history-purge/verify-github-clone.sh"
 
 ---
 
-### T-PR-12 — Make the repository public and turn on publication settings
+### T-PR-14 — Publish with no exposure window
 
-**Depends:** T-PR-11 · **Owner action**
+**Depends:** T-PR-13 · **Owner action**
 
 **Amends:** none.
 
 **Reads:** none.
 
-**Do:** The owner changes visibility to public. Immediately after: secret scanning and push
-protection on, private vulnerability reporting on, fork-PR workflow approval set to all
-external contributors (settable only once public).
+**Do:** Fork-PR approval cannot be set while the repository is private, so the runner must not be
+reachable during the flip:
+1. take `vitals-pi` offline (stop the runner service), or confirm T-PR-6's move removed it;
+2. the owner changes visibility to public;
+3. immediately: fork-PR workflow approval → all external contributors; private vulnerability
+   reporting, secret scanning and push protection on; wiki off; required reviewers on the
+   `production` environment;
+4. only then bring the runner back, if T-PR-6 kept it.
 
 **Verify:**
 ```sh
-gh repo view chenders/AnxietyWatch2 --json visibility --jq .visibility | grep -qx PUBLIC && gh api repos/chenders/AnxietyWatch2 --jq '.security_and_analysis.secret_scanning.status, .security_and_analysis.secret_scanning_push_protection.status' | grep -c enabled | grep -qx 2 && gh api repos/chenders/AnxietyWatch2/private-vulnerability-reporting --jq .enabled | grep -qx true && gh api repos/chenders/AnxietyWatch2/actions/permissions/fork-pr-contributor-approval --jq .approval_policy | grep -qx all_external_contributors
+set -o pipefail; A=repos/chenders/AnxietyWatch2; gh repo view chenders/AnxietyWatch2 --json visibility --jq .visibility | grep -qx PUBLIC && gh api $A --jq '[.security_and_analysis.secret_scanning.status, .security_and_analysis.secret_scanning_push_protection.status, (.has_wiki|tostring)] | join(" ")' | grep -qx 'enabled enabled false' && gh api $A/private-vulnerability-reporting --jq .enabled | grep -qx true && gh api $A/actions/permissions/fork-pr-contributor-approval --jq .approval_policy | grep -qx all_external_contributors && gh api $A/environments/production --jq '[.protection_rules[].type] | index("required_reviewers") != null' | grep -qx true && { ! grep -qx 'Runner: moved' "$HOME/Source/aw2-history-purge/records.md" || test "$(gh api $A/actions/runners --jq .total_count)" = 0; }
 ```
 
 **Context budget:** none.
 
 ---
 
-### T-PR-13 — Gate every commit a PR introduces
+### T-PR-15 — Record the results and gate every commit a PR introduces
 
 **Depends:** T-PR-9 (built on the new history) · **Review required:** yes
 
-**Amends:** none — this is history-phi-purge T-HP-9, unchanged, scheduled here.
+**Amends:** history-phi-purge T-HP-9 (scheduled here, unchanged).
 
-**Reads:** as T-HP-9.
+**Reads:** `$PURGE/records.md`, and as T-HP-9.
 
-**Do:** As T-HP-9. Not a publication blocker; it keeps the result from regressing.
+**Do:** One PR: copy the T-PR-6 decisions and the T-PR-12 ticket line from `$PURGE/records.md`
+into this file (no removed value), tick every box whose Verify was run and exited 0, and do
+T-HP-9. Not a publication blocker; it keeps the result from regressing.
 
-**Verify:** as T-HP-9.
+**Verify:** as T-HP-9, and
+```sh
+grep -qE '^Signatures: (re-sign|lifted)$' openspec/changes/public-release-readiness/tasks.md && grep -qE '^GitHub support ticket: [0-9]+' openspec/changes/public-release-readiness/tasks.md
+```
 
 **Context budget:** 3 files.
