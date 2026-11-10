@@ -39,6 +39,9 @@ except ImportError:  # fail closed, and say why
 # Triggers that require write access to this repository to fire.
 SAFE_TRIGGERS = frozenset({"push", "workflow_dispatch", "schedule"})
 
+# The only reusable-workflow form whose runners this script can see.
+LOCAL_REUSABLE = "./.github/workflows/"
+
 # GitHub-hosted runner labels: ubuntu-24.04, ubuntu-latest, macos-15, windows-2025, ...
 HOSTED_LABEL = re.compile(r"^(ubuntu|macos|windows)-(latest|[0-9][0-9.]*(-arm)?)$")
 
@@ -66,7 +69,7 @@ def runner_labels(runs_on: object) -> list[str] | None:
     return None  # {group: ...} runner groups, expressions, anything else
 
 
-def check_workflow(name: str, doc: object) -> list[str]:
+def check_workflow(name: str, doc: object, local_files: set[str] | None = None) -> list[str]:
     if not isinstance(doc, dict):
         return [f"{name}: blocked: not a YAML mapping, so its triggers cannot be checked"]
     risky = sorted(t for t in triggers(doc) if t not in SAFE_TRIGGERS)
@@ -77,9 +80,23 @@ def check_workflow(name: str, doc: object) -> list[str]:
         if not isinstance(job, dict):
             found.append(f"{name}: job {job_id}: blocked: not a mapping")
             continue
-        if "uses" in job and "runs-on" not in job:
-            # Calls a reusable workflow; that file is checked on its own, and
-            # workflow_call is not a safe trigger.
+        if "uses" in job:
+            # A reusable workflow's jobs run on THIS repository's runners. A
+            # local one is checked as a file in its own right (workflow_call is
+            # not a safe trigger); a remote one cannot be checked from here.
+            target = job["uses"]
+            local = isinstance(target, str) and target.startswith(LOCAL_REUSABLE)
+            if not local:
+                found.append(
+                    f"{name}: job {job_id}: blocked: calls remote reusable workflow {target!r}, "
+                    f"whose runners cannot be checked here, and the workflow is triggerable "
+                    f"by {', '.join(risky)}"
+                )
+            elif local_files is not None and target[len(LOCAL_REUSABLE) :] not in local_files:
+                found.append(
+                    f"{name}: job {job_id}: blocked: calls {target!r}, which is not in the "
+                    f"checked workflow directory, so its runners were not checked"
+                )
             continue
         labels = runner_labels(job.get("runs-on"))
         if labels is None:
@@ -108,7 +125,7 @@ def check_dir(directory: Path) -> list[str]:
         except yaml.YAMLError as exc:
             found.append(f"{path}: blocked: does not parse as YAML: {exc}")
             continue
-        found.extend(check_workflow(str(path), doc))
+        found.extend(check_workflow(str(path), doc, {p.name for p in files}))
     return found
 
 
@@ -133,6 +150,21 @@ SELF_TESTS: list[tuple[str, str, bool]] = [
         False,
     ),
     (
+        "pr-remote-reusable",
+        "on: pull_request\njobs:\n  a:\n    uses: someone/else/.github/workflows/x.yml@main\n",
+        True,
+    ),
+    (
+        "pr-missing-local-reusable",
+        "on: pull_request\njobs:\n  a:\n    uses: ./.github/workflows/gone.yml\n",
+        True,
+    ),
+    (
+        "push-remote-reusable",
+        "on: push\njobs:\n  a:\n    uses: someone/else/.github/workflows/x.yml@main\n",
+        False,
+    ),
+    (
         "pr-reusable-caller",
         "on: pull_request\njobs:\n  a:\n    uses: ./.github/workflows/x.yml\n",
         False,
@@ -143,7 +175,7 @@ SELF_TESTS: list[tuple[str, str, bool]] = [
 def self_test() -> int:
     failures = 0
     for name, text, expect in SELF_TESTS:
-        got = bool(check_workflow(name, yaml.safe_load(text)))
+        got = bool(check_workflow(name, yaml.safe_load(text), {"x.yml"}))
         if got != expect:
             print(
                 f"self-test FAILED: {name}: expected violation={expect}, got {got}",
