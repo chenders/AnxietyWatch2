@@ -9,7 +9,7 @@ All findings must be evidence-backed. Distinguish observed facts, code observati
 ## Historical context and observed evidence
 
 - The appliance has multiple BLE sources: A&D UA-651BLE blood-pressure cuff, ResMed AirSense 11, EMAY SleepO2, Wellue/Viatom KS-60FWB, and Polar H10. The project also has a Sena UD100/CSR USB adapter history and a Pi Bluetooth adapter. Exact current controller identity must be read from code/deployment/evidence, not assumed.
-- The current Pi is `chris@192.168.1.48`. Do not perform physical actions or change services during this investigation.
+- The current Pi is `$PI_HOST`. Do not perform physical actions or change services during this investigation.
 - BP amendment rule: the BP collector must not call `Device1.Connect`; it waits for privileged/kernel autoconnect. BP frames are durable before acknowledgement because the cuff data is not reconstructible.
 - A recent live incident demonstrated cross-collector contention:
   - `wellue-collector` repeatedly attempted discovery for configured target `00:00:00:XX:XX:XX` while the device was absent.

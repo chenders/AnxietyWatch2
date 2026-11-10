@@ -2,7 +2,7 @@
   "schema_version": 1,
   "captured_at": "2026-09-19T10:35:16Z",
   "device": {
-    "label": "theodore",
+    "label": "owner-iphone",
     "os_version": "27.0",
     "status": "passed",
     "build_status": "passed",
@@ -15,7 +15,7 @@
     "provider_status": 200,
     "recipient_count": 1,
     "display_observed": true,
-    "display_observation_source": "operator report on physical device theodore",
+    "display_observation_source": "operator report on physical device owner-iphone",
     "blocker": null
   },
   "all_active_fanout": {
@@ -29,7 +29,7 @@
   "user_fanout": {
     "status": "passed",
     "message_id": "fe9b5456-6e2b-4179-8f1e-eaf5a453aa26",
-    "owner_user_id": "822182ae-cabf-4a26-96a1-fb50280c36ac",
+    "owner_user_id": "REDACTED: real server user id removed from the tracked ledger",
     "provider_status": 200,
     "recipient_count": 1,
     "is_test": true,

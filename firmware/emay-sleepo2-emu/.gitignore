@@ -1,3 +1,0 @@
-# Zephyr build output and generated DFU packages — never commit these.
-build/
-*.zip

@@ -2,7 +2,7 @@
 
 Evidence-based review of when the CNS-depression "klaxon" should fire. This research dictates the fusion engine parameters implemented in `vitals-core` for AnxietyWatch2.
 
-> A home klaxon is a *backstop*, not a treatment or a substitute for a discussion with the prescriber about the underlying meds + OSA regimen.
+> A home klaxon is a *backstop*, not a treatment or a substitute for a discussion with the prescriber about the underlying medication and sleep-breathing treatment.
 
 ## The core reframe
 
@@ -33,13 +33,13 @@ Latencies are *time from a signal-quality-valid trigger to klaxon*.
 
 Key design rules:
 - **Trigger = personalized floor OR absolute backstop (≤ 80%), take the union.**
-- **Independent RR/apnea escalation.** On CPAP + CNS depressants, SpO₂ is a *lagging* sign.
+- **Independent RR/apnea escalation.** Under PAP therapy or with respiratory-depressant medication, SpO₂ is a *lagging* sign.
 - **Fast path shortens *every* rise hop**.
 - **Fast to alert, slow to clear.** Never shorten the clear window; a raised alarm stays up.
 
-## Calibration from real continuous oximetry
+## Calibration from continuous oximetry
 
-Data collected from continuous oximeters across 18 nights shows a minimum nadir of 84%, confirming that the treated floor is normal. Opportunistic smartwatch readings showing nadirs in the 70s are noise. **Do not let low-fidelity opportunistic Watch data set alarm thresholds.** In AnxietyWatch2, the `vitals-core` Spool uses strict provenance weighting to discount these samples.
+Calibrate the personalized floor from the user's own high-fidelity continuous oximetry, recorded over multiple nights. Opportunistic smartwatch readings produce spurious deep nadirs and are noise. **Do not let low-fidelity opportunistic Watch data set alarm thresholds.** In AnxietyWatch2, the `vitals-core` Spool uses strict provenance weighting to discount these samples.
 
 ## Guardrails
 

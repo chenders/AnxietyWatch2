@@ -93,7 +93,7 @@ mod tests {
     fn decodes_typical_blood_pressure_values() {
         assert!(close(decode_sfloat(0x0076).unwrap(), 118.0));
         assert!(close(decode_sfloat(0x004A).unwrap(), 74.0));
-        assert!(close(decode_sfloat(0x0059).unwrap(), 89.0));
+        assert!(close(decode_sfloat(0x004C).unwrap(), 76.0));
     }
 
     #[test]

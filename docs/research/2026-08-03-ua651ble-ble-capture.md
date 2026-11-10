@@ -12,10 +12,10 @@ cuff's internal buffer over one connection, decoded live.
 > (`00:09:1F:XX:XX:XX`) — the vendor half is not identifying, the device half is, and it is
 > rediscoverable with `sudo btmgmt find` in seconds, so recording it bought nothing.
 >
-> The readings are real, not synthetic, and are kept verbatim: a fixture whose provenance is "I made
-> it up from the spec" is exactly what produced the `0xF14A → 7.4` error in T-D2's brief. They carry
-> no identity on their own. If this repo goes public, swap the mantissas and keep the flags and
-> lengths — the byte *layout* is what the tests exercise.
+> The byte *layout* below is the hardware's, verbatim — a fixture whose provenance is "I made it up
+> from the spec" is exactly what produced the `0xF14A → 7.4` error in T-D2's brief. The *readings*
+> are substituted: the captured values were the owner's own blood pressure. Flags, lengths,
+> exponents and status are unchanged, which is everything the tests exercise.
 
 ---
 
@@ -25,10 +25,10 @@ All four are 11 bytes, `flags = 0x14`:
 
 | # | Raw hex | Systolic | Diastolic | MAP | Pulse |
 |---|---|---|---|---|---|
-| 1 | `14870059006e0043000000` | 135 | 89 | 110 | 67 |
-| 2 | `1488005c00730042000000` | 136 | 92 | 115 | 66 |
-| 3 | `1490006300790042000000` | 144 | 99 | 121 | 66 |
-| 4 | `1482005a00680043000000` | 130 | 90 | 104 | 67 |
+| 1 | `1476004c005a003e000000` | 118 | 76 | 90 | 62 |
+| 2 | `147a004e005d0040000000` | 122 | 78 | 93 | 64 |
+| 3 | `1484005600650044000000` | 132 | 86 | 101 | 68 |
+| 4 | `14780050005d0046000000` | 120 | 80 | 93 | 70 |
 
 `status = 0x0000` on every frame — no body movement, no cuff-too-loose, no irregular pulse.
 
@@ -47,7 +47,7 @@ Layout confirmed against the SIG spec: flags, then systolic/diastolic/MAP as thr
 then the optional fields in order. With `0x14` the payload is
 `1 + 6 + 2 (pulse) + 2 (status) = 11` bytes, matching exactly, with zero trailing bytes.
 
-**The SFLOATs are all exponent 0** (`0x0087` = mantissa 135, exponent 0). No negative exponent
+**The SFLOATs are all exponent 0** (`0x0076` = mantissa 118, exponent 0). No negative exponent
 appeared, so the exponent path is unexercised by this capture — it still needs synthetic coverage.
 
 ---

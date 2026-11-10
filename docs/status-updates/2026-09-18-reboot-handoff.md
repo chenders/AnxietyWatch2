@@ -2,7 +2,7 @@
 
 **Captured:** 2026-09-18T05:19:40Z
 **Working branch:** `feature/ios-thin-client`
-**Device:** `theodore`, iOS 27.0
+**Device:** owner's iPhone, iOS 27.0
 **Pi:** `pi-host`
 
 ## Resume here

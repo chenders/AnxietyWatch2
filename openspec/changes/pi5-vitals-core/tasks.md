@@ -1631,7 +1631,7 @@ Output is the format `tools/gap_histogram.py` already reads, so the acceptance g
 Drift will correctly report "not estimable": the EMAY sends no interval data, and saying so is better
 than inventing a number.
 
-**Live-verified on the device**: 68 records in 40 s, zero undecodable, PR 76–80, SpO₂ 91–94.
+**Live-verified on the device**: 68 records in 40 s, zero undecodable, all readings in plausible resting range.
 
 **Four defects found, three of them by the device rather than by reading.**
 
@@ -1662,8 +1662,8 @@ than inventing a number.
    7 of the payload sum is set, which for this frame layout means they disagree across 43% of the
    physiologically possible space — and the disagreement region is **PR 40–48 with SpO₂ 95–100**,
    i.e. sleep. An `0xFF`-masked decoder works perfectly during setup and begins rejecting frames as
-   the wearer's heart rate drops. Both the reference frame in the notes (PR 62) and tonight's live
-   capture (PR 85) sit in the agreeing region. `0x7F` is correct because it came from the vendor-app
+   the wearer's heart rate drops. Both the reference frame in the notes and tonight's live
+   capture sit in the agreeing region. `0x7F` is correct because it came from the vendor-app
    decompile, not because any frame demonstrated it.
 
 **Still requires you:** wear the oximeter overnight and run the capture under `systemd-run --pipe`.
@@ -1725,7 +1725,7 @@ the PR was opened:
   `vitals-bp-autoconnect.service` (root oneshot, `btmgmt add-device -a 2`, Before= the collector).
   The first draft claimed bluetoothd repopulates the accept list for trusted devices — the
   pre-PR reviewer flagged exactly this, the dismissal was based on stale pre-reboot evidence,
-  and a real 141/96 reading proved the reviewer right on 2026-08-07 (post-reboot: action 0,
+  and a real reading proved the reviewer right on 2026-08-07 (post-reboot: action 0,
   absent from white_list, reading never connected; recovered from cuff memory after the fix).
   The trust flag stays asserted as belt and braces.
 - **Step 5 (cuff clock) is deferred with the physical tasks** — status recorded in the capture

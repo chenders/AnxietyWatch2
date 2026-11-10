@@ -4,7 +4,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 EVIDENCE="${1:-$ROOT/artifacts/ios-stage7-apns-evidence.json}"
-PI_SSH="${PI_SSH:-192.168.1.48}"
+PI_SSH="${PI_SSH:-${PI_HOST:?remote-apns blocked: neither PI_SSH nor PI_HOST is set (e.g. PI_HOST=user@host)}}"
 
 [[ -f "$EVIDENCE" ]] || { echo "remote-apns: missing evidence file: $EVIDENCE" >&2; exit 1; }
 
