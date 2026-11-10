@@ -17,7 +17,9 @@ Reports are read by the single maintainer. There is no response-time commitment,
   attacker-controlled by design and is fuzzed.
 - The daemon, spool and storage path, the HTTP API and admin console, and the deployment scripts.
 - The CI workflows, in particular anything that could let a pull request reach the self-hosted
-  runner (`scripts/check-workflow-runners.py` is the gate for that).
+  runner. External pull requests are kept off it by repository settings, and
+  `scripts/check-workflow-runners.py` additionally keeps default-branch workflows that a fork can
+  trigger off it.
 
 ## Known, accepted gaps
 

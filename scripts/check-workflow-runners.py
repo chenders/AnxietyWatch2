@@ -75,8 +75,11 @@ def check_workflow(name: str, doc: object, local_files: set[str] | None = None) 
     risky = sorted(t for t in triggers(doc) if t not in SAFE_TRIGGERS)
     if not risky:
         return []
+    jobs = doc.get("jobs")
+    if not isinstance(jobs, dict):
+        return [f"{name}: blocked: `jobs` is {type(jobs).__name__}, not a mapping; no job checked"]
     found = []
-    for job_id, job in (doc.get("jobs") or {}).items():
+    for job_id, job in jobs.items():
         if not isinstance(job, dict):
             found.append(f"{name}: job {job_id}: blocked: not a mapping")
             continue
@@ -132,6 +135,8 @@ def check_dir(directory: Path) -> list[str]:
 SELF_TESTS: list[tuple[str, str, bool]] = [
     # (name, workflow YAML, expect_violation)
     ("pr-on-pi", "on: pull_request\njobs:\n  a:\n    runs-on: [self-hosted, linux]\n", True),
+    ("pr-jobs-not-mapping", "on: pull_request\njobs: [a, b]\n", True),
+    ("pr-no-jobs", "on: pull_request\n", True),
     ("prt-on-pi", "on: {pull_request_target: {}}\njobs:\n  a:\n    runs-on: self-hosted\n", True),
     ("comment-on-pi", "on: [push, issue_comment]\njobs:\n  a:\n    runs-on: [self-hosted]\n", True),
     ("call-on-pi", "on: workflow_call\njobs:\n  a:\n    runs-on: [self-hosted]\n", True),
