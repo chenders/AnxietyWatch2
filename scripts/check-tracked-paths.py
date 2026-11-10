@@ -66,6 +66,7 @@ ROOT_FILES = frozenset(
         "Cargo.toml",
         "LICENSE",
         "README.md",
+        "SECURITY.md",  # where to report a vulnerability (public-release-readiness T-PR-4)
         "pyproject.toml",
         "rust-toolchain.toml",
     }

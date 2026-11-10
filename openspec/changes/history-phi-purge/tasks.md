@@ -1,11 +1,13 @@
 # Tasks: History PII/PHI purge
 
+**Scheduled by `public-release-readiness`** (2026-11-10): T-HP-3…T-HP-9 run as its T-PR-6…T-PR-13, which also correct T-HP-5 — the `main` ruleset has no `non_fast_forward` rule, and its `required_signatures` rule rejects the unsigned rewritten commits.
+
 Strictly ordered: each task depends on the one before it. `$PURGE` means
 `$HOME/Source/aw2-history-purge` — the out-of-repo working directory that holds the manifest,
 the backup and the rewritten mirror. **Nothing under `$PURGE` is ever copied into the
 repository**: it contains the values being removed.
 
-- [ ] T-HP-1 — Merge PR #105 so the tip is clean · integrate · host
+- [x] T-HP-1 — Merge PR #105 so the tip is clean · integrate · host
 - [ ] T-HP-2 — Build the purge manifest from both audits · investigate · host
 - [ ] T-HP-3 — Back up every ref before any rewrite · ops · host
 - [ ] T-HP-4 — Rewrite a full mirror and prove the result · implement · host

@@ -81,6 +81,13 @@ jobs:
       # root allowlists, binary-by-location, no local tool state, no *.local.
       - name: Tracked paths are in policy
         run: python3 scripts/check-tracked-paths.py --self-test
+      # The Pi hosts a self-hosted runner. On a public repository a trigger a
+      # fork can fire (pull_request, issue_comment, workflow_run, ...) must
+      # never reach it. System python3: Ubuntu runners ship python3-yaml.
+      - name: Fork-triggerable workflows never use the self-hosted runner
+        run: |
+          python3 scripts/check-workflow-runners.py --self-test
+          python3 scripts/check-workflow-runners.py
       # AGENTS.md makes the amendment index mandatory reading, so an index that
       # disagrees with the files on disk misleads every worker who obeys the
       # scoping rule. Nothing ran this verifier until now: its only callers were
