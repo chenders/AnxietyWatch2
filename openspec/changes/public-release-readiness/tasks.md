@@ -7,9 +7,11 @@ under `$PURGE` is ever copied into the repository.**
 **The tip is frozen from T-PR-7 to T-PR-8**: any commit to `main` makes the rewritten mirror
 stale and breaks the push leases. Decisions and results recorded during the freeze go to
 `$PURGE/records.md` (out of the repository, never quoting a removed value); T-PR-15 copies them
-here, and ticks the boxes, in one PR after the push.
+here, and ticks the boxes, in one PR after the push. **The freeze applies again to T-PR-16's
+re-run**, from its re-run of T-PR-7 until its re-push, with T-PR-16's tip PR merged and no other
+PR open; any other session's work must be pushed before that re-run starts.
 
-Three steps are **owner actions** and one is an **owner decision**; every other step is reversible
+Four steps are **owner actions** (T-PR-16's re-push included) and one is an **owner decision**; every other step is reversible
 or local and proceeds without asking. Every Verify that calls GitHub runs under `set -o pipefail`,
 so an unreachable API fails the check instead of passing it.
 
@@ -24,6 +26,7 @@ so an unreachable API fails the check instead of passing it.
 - [ ] T-PR-9 — Move every clone onto the new history · ops · host, pi
 - [ ] T-PR-10 — Delete every Actions run, artifact and cache · ops · host
 - [ ] T-PR-11 — Scrub GitHub-side text: PR bodies, comments, review diff hunks · ops · host
+- [ ] T-PR-16 — Remove what the fixture history lets a reader infer, then re-push · implement · host · **owner action** (re-push)
 - [ ] T-PR-12 — Ask GitHub to purge what only it can reach · ops · **owner action**
 - [ ] T-PR-13 — Prove what GitHub serves is clean · investigate · host
 - [ ] T-PR-14 — Publish with no exposure window · ops · **owner action**
@@ -300,9 +303,70 @@ uv run python3 -I "$HOME/Source/aw2-history-purge/scan-github-text.py" --allow-l
 
 ---
 
+### T-PR-16 — Remove what the fixture history lets a reader infer, then re-push
+
+**Depends:** T-PR-11 · **Blocks:** T-PR-12 (and so T-PR-13, T-PR-14) · **Review required:** yes ·
+**Owner action** (the re-push, as T-PR-8)
+
+**Amends:** history-phi-purge T-HP-2 (manifest additions) and T-HP-4 (re-run); re-runs T-PR-7 to
+T-PR-11 of this change.
+
+**Reads:** `$PURGE/records.md` (section T-PR-16), `$PURGE/t-pr-16-check.sh`,
+`$PURGE/manifest/replace-content-extra.txt`, `$PURGE/manifest/replace-message-extra.txt`,
+`$PURGE/manifest/blob_callback.py`, `$PURGE/residuals.sh`, `$PURGE/old-shas.txt`, `$PURGE/final.sh`;
+on `main`: `crates/vitals-decode/fixtures/ua651ble-2a35.md`, `crates/vitals-decode/src/bp.rs`,
+`crates/vitals-decode/src/emay.rs`, `README.md`, `docs/images/readme/checksum-mask-map.svg`,
+`openspec/changes/pi5-vitals-core/tasks.md`.
+
+**Why:** a tenth independent semantic audit of the history-phi-purge mirror, run before T-PR-8,
+returned PUSH-BLOCKING with three MEDIUM findings, all present in what T-PR-8 pushed. None is a
+value, a location or an identity: each is something the way the decoder fixtures were substituted,
+or wording around them, lets a reader infer about the owner's real readings. The specifics are
+recorded in `$PURGE/records.md` and the patterns in `$PURGE/t-pr-16-check.sh`, both outside the
+repository; this task deliberately does not restate them, because this file will be public.
+
+**Do:**
+1. **Tip (a normal PR, merged before the re-run):** in the BP fixture note and `bp.rs`, describe
+   the fixture frames only by what they exercise, never relative to the captured layout; in
+   `emay.rs`, state the checksum rule without any frame's sum; in `README.md` (text and image alt
+   text), the chart SVG and the pi5-vitals-core brief, describe the chart point and the checksum
+   regions without reference to any capture. Re-render the README PNG with `rsvg-convert`, after
+   first confirming that rendering the unchanged SVG reproduces the committed PNG with zero
+   differing pixels.
+2. **Manifest (`$PURGE`, never the repository):**
+   a. map every historical form of the first-substitution frame-3 values to the final substitute,
+      so no commit shows frame 3 changing;
+   b. map every historical form of the wording step 1 changes to the new wording;
+   c. add message pairs for every commit message `t-pr-16-check.sh` flags, this task's own PR
+      commits included;
+   d. regenerate `manifest/checksum-mask-map.new.png` from the new SVG (same calibration), so the
+      blob callback replaces every historical PNG with the corrected label;
+   e. add the check's patterns to `residuals.sh`, so T-PR-13's fresh mirror, `refs/pull/*`
+      included, checks them;
+   f. append to `old-shas.txt` the current tip of every GitHub branch and every commit touched by
+      a–c, so T-PR-12 and T-PR-13 cover this generation's orphans too.
+3. **Re-run, under the freeze:** T-PR-7 (fresh backup, `final.sh`, re-sign if T-PR-6 chose it,
+   gitleaks, `push.sh` with fresh leases); an independent semantic audit of the new mirror,
+   recorded in `$PURGE/records.md` as `T-PR-16 audit: clean` or `T-PR-16 audit: LOW`, proceeding
+   only if nothing above LOW remains; the owner's re-push (lifting `code_coverage` if needed, as at
+   T-PR-8); T-PR-9 (every clone and the Pi); T-PR-10 (delete the Actions runs created since, which
+   quote this generation's SHAs); T-PR-11 (scrub GitHub text, including this task's PR body and its
+   edit history).
+
+**Verify:** the check fails closed on a missing `origin/main` or any git error, and covers the tip,
+every GitHub branch's history and every commit message; `refs/pull/*` is covered by T-PR-13
+through `residuals.sh`.
+```sh
+P="$HOME/Source/aw2-history-purge"; bash "$P/t-pr-16-check.sh" && grep -qE '^T-PR-16 audit: (clean|LOW)$' "$P/records.md"
+```
+
+**Context budget:** 6 tip files and the `$PURGE` manifest.
+
+---
+
 ### T-PR-12 — Ask GitHub to purge what only it can reach
 
-**Depends:** T-PR-10, T-PR-11 · **Owner action**
+**Depends:** T-PR-10, T-PR-11, T-PR-16 · **Owner action**
 
 **Amends:** history-phi-purge T-HP-8.
 
@@ -377,7 +441,7 @@ set -o pipefail; A=repos/chenders/AnxietyWatch2; gh repo view chenders/AnxietyWa
 
 ### T-PR-15 — Record the results and gate every commit a PR introduces
 
-**Depends:** T-PR-9 (built on the new history) · **Review required:** yes
+**Depends:** T-PR-16 (built on the final history) · **Review required:** yes
 
 **Amends:** history-phi-purge T-HP-9 (scheduled here, unchanged).
 
