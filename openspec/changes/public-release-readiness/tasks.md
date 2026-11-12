@@ -9,7 +9,7 @@ stale and breaks the push leases. Decisions and results recorded during the free
 `$PURGE/records.md` (out of the repository, never quoting a removed value); T-PR-15 copies them
 here (the T-PR-16 results heading, never its private section), and ticks the boxes, in one PR after the push. **The
 freeze applies again to T-PR-16's re-run**, from its re-run of T-PR-7 until T-PR-16's Verify exits
-0: T-PR-16's tip PR and this task's PR merged with their head branches deleted before `final.sh`
+0: T-PR-16's tip PR and the PR that adds T-PR-16 merged with their head branches deleted before `final.sh`
 runs, no other PR open or branch pushed, Dependabot paused (step 1), and any other session's work
 pushed before the re-run starts.
 
@@ -316,7 +316,10 @@ uv run python3 -I "$HOME/Source/aw2-history-purge/scan-github-text.py" --allow-l
 **Amends:** history-phi-purge T-HP-2 (manifest additions) and T-HP-4 (re-run); re-runs T-PR-7 to
 T-PR-11 of this change.
 
-**Reads:** `$PURGE/records.md` (section T-PR-16), `$PURGE/t-pr-16-check.sh`, `$PURGE/final.sh`,
+**Reads:** `$PURGE/records.md` (all of it: earlier entries carry run conditions the re-run needs),
+`$PURGE/t-pr-16-check.sh`, `$PURGE/final.sh`, `$PURGE/run-push.sh`,
+`$PURGE/push-with-coverage-lifted.sh`, `$PURGE/ruleset-20287061-before.json`,
+`$PURGE/migrate-local.sh`, `$PURGE/delete-actions-data.sh`, `$PURGE/fix-github-text.py`,
 `$PURGE/rewrite.sh`, `$PURGE/assemble.sh`, `$PURGE/verify.py`, `$PURGE/residuals.sh`,
 `$PURGE/scan-github-text.py`, `$PURGE/gen-push-and-old-shas.sh`, `$PURGE/push.sh`,
 `$PURGE/old-shas.txt`, `$PURGE/resign.sh`, `$PURGE/verify.sh`, `$PURGE/pi-residue-check.sh`,
@@ -346,9 +349,12 @@ be public.
 2. **Manifest (`$PURGE`, never the repository):**
    a. design the fixture substitution pairs, every historical form of each value (encoded and
       decoded, and every table that repeats them), keeping each old commit's own tests passing;
-      record them in `$PURGE/records.md` (section T-PR-16) before applying them;
+      record them in `$PURGE/records.md` (section T-PR-16) before applying them, and run the
+      decoder crate's tests at the first commit they touch in the rewritten mirror (not checked by
+      the Verify; record the result);
    b. map every historical form of the wording step 1 changes to the new wording;
-   c. add message pairs for every commit message `t-pr-16-check.sh` flags, including messages
+   c. add message pairs for every message `t-pr-16-check.sh`'s patterns match on any ref of the
+      rewrite mirror (`git log --all`, which `residuals.sh` also scans), including messages
       wrapped across lines;
    d. make `manifest/checksum-mask-map.new.png` byte-identical to step 1's committed PNG, and key
       the blob callback to every historical chart PNG object except that one;
@@ -369,7 +375,7 @@ be public.
    h. point `resign.sh` at a current owner-signed commit on `main` for the owner's identity (the
       commit it names now is a first-generation SHA that no longer exists), recording which in
       `$PURGE/records.md`;
-   i. after the rewrite, refresh the fingerprints in `$PURGE/.gitleaksignore`: its two known
+   i. after the rewrite and re-signing, refresh the fingerprints in `$PURGE/.gitleaksignore`: its two known
       fixture findings are pinned to commit SHAs the rewrite changes.
 3. **Re-run, under the freeze:** T-PR-7 (fresh backup, `final.sh`, re-sign if T-PR-6 chose it,
    gitleaks, `push.sh` with fresh leases), recording `T-PR-16 re-run T-PR-7 Verify: exit 0`
@@ -381,7 +387,8 @@ be public.
    `T-PR-16 re-run T-PR-10: <UTC timestamp>`); T-PR-11 (scrub GitHub text, including this task's
    PR body), recording every item it edits as `T-PR-16 edited: <kind>:<id>` for T-PR-12, since
    each edit leaves its old revision in GitHub's edit history; the owner deletes those revisions in
-   the UI where GitHub allows it. Each re-run task's own Verify must exit 0; the check below runs
+   the UI, including the superseded revisions of the PR that adds T-PR-16, before T-PR-13 runs
+   (T-PR-13 fails on any matching revision still visible). Each re-run task's own Verify must exit 0; the check below runs
    them. Keep `$PURGE/mirror.git` until this task's Verify exits 0, then restore the Dependabot
    limit.
 
@@ -389,12 +396,13 @@ be public.
 of this line. The check fails closed on any git error and requires: the tip, every reachable blob
 and every commit message on GitHub's branches free of the recorded patterns (matched with
 whitespace collapsed); only the tip's chart PNG in history; `old-shas.txt` containing the first
-generation, every lease SHA and every recorded superseded PR head; the patterns in `residuals.sh`;
+generation, every recorded superseded PR head, and every commit the re-run rewrote; leases that
+name exactly GitHub's branches at this generation's SHAs; the patterns in `residuals.sh`;
 the Verify of T-PR-8 to T-PR-11 exiting 0 (so `PI_HOST` and `PI_PATH` exported and the Pi up);
 the recorded re-run of T-PR-7; a re-rendered tip chart PNG; and a last audit verdict of clean or
 LOW.
 ```sh
-P="$HOME/Source/aw2-history-purge"; test "$(shasum -a 256 "$P/t-pr-16-check.sh" | cut -d' ' -f1)" = 56a6a2bdc792457efdcc80afe4e4e230bd1e35025b014dc2493862630bfbb742 && bash "$P/t-pr-16-check.sh"
+P="$HOME/Source/aw2-history-purge"; test "$(shasum -a 256 "$P/t-pr-16-check.sh" | cut -d' ' -f1)" = 69a8b506818d771b42deaf1ec79496fbbcc99552fccd0bf1e497b91e5db42d92 && bash "$P/t-pr-16-check.sh"
 ```
 
 **Context budget:** the `$PURGE` manifest and scripts, and the tip files recorded there.
@@ -444,7 +452,8 @@ grep -qE '^GitHub support ticket: [0-9]+ \(purge confirmed [0-9]{4}-[0-9]{2}-[0-
 4. any Actions run, artifact or cache exists from before the last run of T-PR-10 (T-PR-16's
    re-run, at the time recorded in `$PURGE/records.md`, once it has happened);
 5. any revision in a PR, issue or comment's GitHub edit history (GraphQL `userContentEdits`)
-   matches the purge's patterns, unless it is listed for GitHub Support in T-PR-12.
+   that is not deleted (`deletedAt` null) matches the purge's patterns -- no exemption: a
+   revision still visible after T-PR-12 is still public.
 
 **Verify:**
 ```sh
@@ -489,8 +498,8 @@ set -o pipefail; A=repos/chenders/AnxietyWatch2; gh repo view chenders/AnxietyWa
 
 **Reads:** `$PURGE/records.md`, and as T-HP-9.
 
-**Do:** One PR: copy the T-PR-6 decisions, the T-PR-16 audit line and the T-PR-12 ticket line from
-`$PURGE/records.md` into this file (no removed value), tick every box whose Verify was run and exited 0, and do
+**Do:** One PR: copy the T-PR-6 decisions, the lines under the T-PR-16 results heading and the
+T-PR-12 ticket line from `$PURGE/records.md` into this file (no removed value), tick every box whose Verify was run and exited 0, and do
 T-HP-9. Not a publication blocker; it keeps the result from regressing.
 
 **Verify:** as T-HP-9, and
