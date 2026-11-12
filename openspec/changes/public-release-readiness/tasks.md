@@ -380,7 +380,8 @@ be public.
 3. **Re-run, under the freeze:** first pin every stash in the local checkout as
    `refs/aw2-stash/<n>` (`git update-ref refs/aw2-stash/<n> stash@{<n>}`), as the first run did by
    hand -- `rewrite.sh` carries stashes only through those refs -- and record
-   `T-PR-16 stashes pinned: <count>`; T-PR-9's re-run must restore that many. Then T-PR-7 (fresh
+   `T-PR-16 stashes pinned: <count>`; T-PR-9's re-run must restore that many, so stashes are left
+   alone until this task's Verify exits 0. Then T-PR-7 (fresh
    backup, `final.sh`, re-sign if T-PR-6 chose it,
    gitleaks, `push.sh` with fresh leases), recording `T-PR-16 re-run T-PR-7 Verify: exit 0`
    under the results heading of `$PURGE/records.md` (where every result line below also goes); an independent semantic audit of the new mirror, recorded as
@@ -392,7 +393,7 @@ be public.
    PR body), recording every item it edits as `T-PR-16 edited: <kind>:<id>` for T-PR-12, since
    each edit leaves its old revision in GitHub's edit history; the owner deletes those revisions in
    the UI, including the superseded revisions of the PR that adds T-PR-16 and the revisions left by the
-   first run's T-PR-11 edits that `$PURGE/records.md` lists, before T-PR-13 runs
+   first run's T-PR-11 edits that `$PURGE/edited-pr-bodies.txt` lists, before T-PR-13 runs
    (T-PR-13 fails on any matching revision still visible). Each re-run task's own Verify must exit 0; the check below runs
    them. Keep `$PURGE/mirror.git` until this task's Verify exits 0, then restore the Dependabot
    limit.
