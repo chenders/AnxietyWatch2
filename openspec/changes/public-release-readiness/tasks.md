@@ -377,7 +377,11 @@ be public.
       `$PURGE/records.md`;
    i. after the rewrite and re-signing, refresh the fingerprints in `$PURGE/.gitleaksignore`: its two known
       fixture findings are pinned to commit SHAs the rewrite changes.
-3. **Re-run, under the freeze:** T-PR-7 (fresh backup, `final.sh`, re-sign if T-PR-6 chose it,
+3. **Re-run, under the freeze:** first pin every stash in the local checkout as
+   `refs/aw2-stash/<n>` (`git update-ref refs/aw2-stash/<n> stash@{<n>}`), as the first run did by
+   hand -- `rewrite.sh` carries stashes only through those refs -- and record
+   `T-PR-16 stashes pinned: <count>`; T-PR-9's re-run must restore that many. Then T-PR-7 (fresh
+   backup, `final.sh`, re-sign if T-PR-6 chose it,
    gitleaks, `push.sh` with fresh leases), recording `T-PR-16 re-run T-PR-7 Verify: exit 0`
    under the results heading of `$PURGE/records.md` (where every result line below also goes); an independent semantic audit of the new mirror, recorded as
    `T-PR-16 audit: clean` or `T-PR-16 audit: LOW` (the last such line counts), proceeding only if
@@ -387,7 +391,8 @@ be public.
    `T-PR-16 re-run T-PR-10: <UTC timestamp>`); T-PR-11 (scrub GitHub text, including this task's
    PR body), recording every item it edits as `T-PR-16 edited: <kind>:<id>` for T-PR-12, since
    each edit leaves its old revision in GitHub's edit history; the owner deletes those revisions in
-   the UI, including the superseded revisions of the PR that adds T-PR-16, before T-PR-13 runs
+   the UI, including the superseded revisions of the PR that adds T-PR-16 and the revisions left by the
+   first run's T-PR-11 edits that `$PURGE/records.md` lists, before T-PR-13 runs
    (T-PR-13 fails on any matching revision still visible). Each re-run task's own Verify must exit 0; the check below runs
    them. Keep `$PURGE/mirror.git` until this task's Verify exits 0, then restore the Dependabot
    limit.
@@ -399,10 +404,10 @@ whitespace collapsed); only the tip's chart PNG in history; `old-shas.txt` conta
 generation, every recorded superseded PR head, and every commit the re-run rewrote; leases that
 name exactly GitHub's branches at this generation's SHAs; the patterns in `residuals.sh`;
 the Verify of T-PR-8 to T-PR-11 exiting 0 (so `PI_HOST` and `PI_PATH` exported and the Pi up);
-the recorded re-run of T-PR-7; a re-rendered tip chart PNG; and a last audit verdict of clean or
-LOW.
+the recorded re-run of T-PR-7; a re-rendered tip chart PNG; a last audit verdict of clean or LOW;
+and as many stashes restored as were pinned.
 ```sh
-P="$HOME/Source/aw2-history-purge"; test "$(shasum -a 256 "$P/t-pr-16-check.sh" | cut -d' ' -f1)" = 69a8b506818d771b42deaf1ec79496fbbcc99552fccd0bf1e497b91e5db42d92 && bash "$P/t-pr-16-check.sh"
+P="$HOME/Source/aw2-history-purge"; test "$(shasum -a 256 "$P/t-pr-16-check.sh" | cut -d' ' -f1)" = 2080ede13be39f6262af25845db29fc9da847f083fab892a16ab001f5fe1b280 && bash "$P/t-pr-16-check.sh"
 ```
 
 **Context budget:** the `$PURGE` manifest and scripts, and the tip files recorded there.
