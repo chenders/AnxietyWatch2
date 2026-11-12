@@ -18,9 +18,6 @@ cover.
    mock-ups under `docs/design/admin-console/claude-design/`. If the iOS values were the owner's
    regimen, these are too. The names are replaced on the tip first, so the rewrite's "main's final
    tree is unchanged" proof still holds; doses stay, because without a name they identify nothing.
-2a. **Inferences left by the fixture substitution.** A later audit of the pushed history found
-   wording and substitution order that let a reader infer things about the owner's real readings
-   (T-PR-16; specifics out of the repository).
 3. **Withheld code in history.** `firmware/` is in history from PR #22 and pending the owner's
    legal review. It is already in the purge's path list, so the rewrite removes it; publication
    no longer depends on the review's outcome.
@@ -65,6 +62,10 @@ cover.
   identifies nothing outside the LAN; moving it out of the tracked unit is already
   `repository-hygiene-followups` T-RH-7. It is not on the personal-term denylist, which would
   otherwise block every legitimate edit to that unit.
+
+A later audit of the pushed history also found wording and substitution order that let a reader
+infer things about the owner's real readings; T-PR-16 removes them before the proof (specifics
+out of the repository).
 
 ## Order
 
