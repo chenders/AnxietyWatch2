@@ -67,8 +67,9 @@ cover.
 
 Land or close every open PR → fix the tip → enable the local gates → **owner: signatures and
 runner decision** → re-run the purge on the frozen tip and prove it → **owner: push** → move every
-clone → delete Actions runs, artifacts and caches → scrub PR and comment text → **owner: GitHub
-Support purge** (PR refs, cached views, orphaned commits, uneditable diff hunks) → prove what
+clone → delete Actions runs, artifacts and caches → scrub PR and comment text → remove what
+the fixture history lets a reader infer, re-run the purge and **owner: re-push** (T-PR-16) →
+**owner: GitHub Support purge** (PR refs, cached views, orphaned commits, uneditable diff hunks) → prove what
 GitHub serves is clean, including old SHAs answering 404 → **owner: publish**, with the runner
 offline until the approval policy is set. Publication is last and is the only step that cannot be
 taken back.
