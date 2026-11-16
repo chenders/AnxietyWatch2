@@ -28,24 +28,34 @@ sample-derived verdict at all rather than falling back to the nearest available 
 - **THEN** the sample channel is silent and produces no verdict
 - **AND** no verdict is derived from `expected_cadence_s`
 
-#### Scenario: Measured silence past a declared bound
+#### Scenario: Measured sample silence past a declared bound while not idle
 
-- **GIVEN** a source declaring `sample_silence_failure_s`
+- **GIVEN** a source declaring `sample_silence_failure_s` whose activity is `Expected` or `Unknown`
+  (not observed `Idle`)
 - **WHEN** the newest stored sample is older than that bound
 - **THEN** the source is measured-bad and the reason names the age and the bound it exceeded
 
-### Requirement: Idle suppresses a silence verdict only when idle is observed
+### Requirement: Idle suppresses a sample-silence verdict only when idle is observed
 
 The evaluator SHALL treat the activity state as `Expected`, `Idle` or `Unknown`. Only an observed
-`Idle` SHALL suppress a declared silence bound. `Unknown` SHALL NOT suppress, and SHALL fall back to
-the registry declaration for that source.
+`Idle` SHALL suppress a declared sample-silence bound (`sample_silence_failure_s`). `Unknown` SHALL
+NOT suppress a sample-silence bound, and SHALL fall back to the registry declaration for that source.
+An observed `Idle` SHALL NOT suppress a transport-link silence bound (`max_link_silence_s`); that is
+the only bound permitted to escalate while a source is idle.
 
 #### Scenario: Activity state is unknown
 
 - **GIVEN** a source declaring `sample_silence_failure_s` that reports no activity
-- **WHEN** its silence bound is exceeded
-- **THEN** the silence verdict fires from the declared bound
+- **WHEN** its sample-silence bound is exceeded
+- **THEN** the sample-silence verdict fires from the declared bound
 - **AND** the unknown activity state does not veto it
+
+#### Scenario: Observed Idle suppresses sample silence only
+
+- **GIVEN** a source declaring `sample_silence_failure_s` whose activity is observed `Idle`
+- **WHEN** the newest stored sample is older than that bound
+- **THEN** the sample-silence verdict is suppressed
+- **AND** a declared `max_link_silence_s` may still escalate if its own bound is exceeded
 
 ### Requirement: A future-dated timestamp is rejected, never clamped
 

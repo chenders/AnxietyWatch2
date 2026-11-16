@@ -52,9 +52,9 @@ restore verification has completed successfully.
 ### Requirement: System health distinguishes missing evidence from healthy operation
 
 The Pi core SHALL distinguish measured-and-good, measured-and-bad, and not-measured states, and SHALL
-judge staleness only against the declared bounds from `vitals/registry.toml`. Absence of evidence
-SHALL NOT escalate on its own, and bounded evidence of absence — measured silence past a declared
-failure bound — SHALL be reported as measured-bad.
+judge sample staleness only against the declared bounds from `vitals/registry.toml`. Absence of
+evidence SHALL NOT escalate on its own. Bounded evidence of absence — measured sample silence past a
+declared failure bound — SHALL be reported as measured-bad.
 
 #### Scenario: No qualifying evidence exists for a source
 
@@ -62,9 +62,23 @@ failure bound — SHALL be reported as measured-bad.
 - **WHEN** liveness is evaluated
 - **THEN** the state is not-measured, neither healthy nor unhealthy
 
-#### Scenario: Measured silence exceeds a declared bound
+#### Scenario: Measured sample silence exceeds a declared bound while not idle
 
-- **GIVEN** a source declaring `sample_silence_failure_s`
+- **GIVEN** a source declaring `sample_silence_failure_s` whose activity is `Expected` or `Unknown`
+  (not observed `Idle`)
 - **WHEN** the newest stored sample is older than that bound
 - **THEN** the state is measured-bad and the reason names the age and the bound
 - **AND** the verdict is not derived from `expected_cadence_s`
+
+### Requirement: Observed Idle suppresses only the sample-silence verdict
+
+An observed `Idle` activity state SHALL suppress a declared `sample_silence_failure_s` verdict. It
+SHALL NOT suppress a transport-link silence bound, which is the only bound permitted to escalate
+while a source is idle. `Unknown` activity SHALL NOT suppress the sample-silence verdict.
+
+#### Scenario: Observed Idle suppresses sample silence only
+
+- **GIVEN** a source declaring `sample_silence_failure_s` whose activity is observed `Idle`
+- **WHEN** the newest stored sample is older than that bound
+- **THEN** the sample-silence verdict is suppressed
+- **AND** a declared `max_link_silence_s` may still escalate if its own bound is exceeded
