@@ -1,0 +1,7 @@
+schema: spec-driven
+created: 2026-09-26
+skip_specs: true
+goal: Prove Polar H10 acceptance on real hardware, with fresh nonzero heart-rate
+  and RR evidence, source and session identity, and durable ingest, without
+  accepting a process start, a stale Connected property, an emulator or an
+  historical sample as physical evidence.

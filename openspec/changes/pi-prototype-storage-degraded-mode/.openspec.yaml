@@ -1,0 +1,7 @@
+schema: spec-driven
+created: 2026-09-26
+skip_specs: true
+goal: Establish a named production baseline and a separately named, reversible
+  prototype degraded mode on the Pi so evidence collection can continue under
+  reduced read and write load, with an off-Pi recovery set proven before any
+  ingest or drain policy changes and a defined path back to production.

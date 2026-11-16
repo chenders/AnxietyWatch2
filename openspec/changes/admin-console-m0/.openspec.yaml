@@ -1,0 +1,7 @@
+schema: spec-driven
+created: 2026-08-07
+skip_specs: true
+goal: Deliver the admin-console M0 foundations and no UI, exactly the M0 row of
+  docs/design/SPEC-admin-console.md §3.1, so the console has its schema, its
+  pure liveness evaluator, its Rust HTTP surface and the domain-record envelope
+  before any screen is designed.
