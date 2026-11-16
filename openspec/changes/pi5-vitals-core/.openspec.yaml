@@ -1,6 +1,5 @@
 schema: spec-driven
 created: 2026-08-03
-skip_specs: true
 goal: Move the always-on radio and the always-on alarm onto the Raspberry Pi 5
   and make the Pi the single system of record, through Stages 0-3 only, ending
   at a blood-pressure reading landing in Postgres with correct provenance and a
