@@ -104,13 +104,20 @@ privileged helper and SHALL support explicit replacement.
 
 The system SHALL never return the Wi-Fi password after submit. It SHALL NOT put current or prior
 passwords in source control, PostgreSQL, attempt details, logs, process environment, command arguments,
-browser storage, rendered HTML, or general service environment files.
+browser storage, rendered HTML, or general service environment files. For a rejected setup submission,
+request logs and attempt evidence SHALL NOT contain the supplied password.
 
 #### Scenario: Password does not leak through setup or runtime surfaces
 
 - **WHEN** an operator configures or rotates the card password
 - **THEN** neither the response nor request logs, attempt evidence, database, process environment,
   command arguments, browser storage, rendered HTML, nor general service environment files contain it
+
+#### Scenario: A rejected submission carries no password
+
+- **WHEN** authentication, CSRF validation, or SSID/password bounds reject a submission
+- **THEN** no network profile changes, the response names the non-secret blocker, and neither request
+  logs nor attempt evidence contains the supplied password
 
 ### Requirement: Bounded connection testing
 
