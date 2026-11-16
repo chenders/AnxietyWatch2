@@ -51,10 +51,20 @@ restore verification has completed successfully.
 
 ### Requirement: System health distinguishes missing evidence from healthy operation
 
-The Pi core SHALL distinguish measured-and-good, measured-and-bad, and not-measured states. A missing
-signal SHALL neither reassure nor escalate on its own.
+The Pi core SHALL distinguish measured-and-good, measured-and-bad, and not-measured states, and SHALL
+judge staleness only against the declared bounds from `vitals/registry.toml`. Absence of evidence
+SHALL NOT escalate on its own, and bounded evidence of absence — measured silence past a declared
+failure bound — SHALL be reported as measured-bad.
 
-#### Scenario: No recent source sample exists
+#### Scenario: No qualifying evidence exists for a source
 
-- **WHEN** a liveness evaluation has no qualifying recent sample
-- **THEN** the state is not-measured, not healthy and not unhealthy solely due to absence
+- **GIVEN** a source with no attempt evidence, no sample evidence, and no transport contact
+- **WHEN** liveness is evaluated
+- **THEN** the state is not-measured, neither healthy nor unhealthy
+
+#### Scenario: Measured silence exceeds a declared bound
+
+- **GIVEN** a source declaring `sample_silence_failure_s`
+- **WHEN** the newest stored sample is older than that bound
+- **THEN** the state is measured-bad and the reason names the age and the bound
+- **AND** the verdict is not derived from `expected_cadence_s`
