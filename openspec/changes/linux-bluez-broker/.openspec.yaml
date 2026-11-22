@@ -1,0 +1,6 @@
+schema: spec-driven
+created: 2026-09-26
+goal: Give the Linux Bluetooth stack a single adapter-wide owner, the
+  vitals-ble-broker, that arbitrates discovery, connection admission, service
+  resolution and GATT subscriptions under typed bounded leases, so an absent
+  device can no longer hold discovery while another source waits.

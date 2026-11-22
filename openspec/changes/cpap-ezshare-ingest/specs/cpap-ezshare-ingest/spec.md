@@ -86,9 +86,7 @@ forward the card interface to the home LAN, and SHALL run the poller with bounde
 
 The system SHALL provide an authenticated admin setup flow for the ez Share SSID and Wi-Fi password.
 It SHALL store the credential only in a root-readable Pi network-manager secret store through a narrow
-privileged helper, SHALL support explicit replacement, and SHALL never return the password after submit.
-It SHALL NOT put current or prior passwords in source control, PostgreSQL, attempt details, logs, process
-environment, command arguments, browser storage, rendered HTML, or general service environment files.
+privileged helper and SHALL support explicit replacement.
 
 #### Scenario: Operator configures or rotates the card password
 
@@ -97,9 +95,27 @@ environment, command arguments, browser storage, rendered HTML, or general servi
   that replacement occurred, and subsequent API/UI state reveals the SSID and configured status but no
   password or reusable secret
 
-#### Scenario: Unauthenticated or invalid setup is rejected without leakage
+#### Scenario: Unauthenticated or invalid setup is rejected
 
 - **WHEN** authentication/CSRF validation fails or SSID/password bounds are invalid
+- **THEN** no network profile changes and the response names the non-secret blocker
+
+### Requirement: Wi-Fi passwords are never exposed or persisted outside the secret store
+
+The system SHALL never return the Wi-Fi password after submit. It SHALL NOT put current or prior
+passwords in source control, PostgreSQL, attempt details, logs, process environment, command arguments,
+browser storage, rendered HTML, or general service environment files. For a rejected setup submission,
+request logs and attempt evidence SHALL NOT contain the supplied password.
+
+#### Scenario: Password does not leak through setup or runtime surfaces
+
+- **WHEN** an operator configures or rotates the card password
+- **THEN** neither the response nor request logs, attempt evidence, database, process environment,
+  command arguments, browser storage, rendered HTML, nor general service environment files contain it
+
+#### Scenario: A rejected submission carries no password
+
+- **WHEN** authentication, CSRF validation, or SSID/password bounds reject a submission
 - **THEN** no network profile changes, the response names the non-secret blocker, and neither request
   logs nor attempt evidence contains the supplied password
 
