@@ -48,11 +48,14 @@ explicitly assigned to this task by T-HN-1.
 **Do:** Implement the approved canonical helper and environment names. Keep legacy names as
 thin compatibility entry points/aliases, document precedence, and reject conflicting old/new
 values before I/O. The current installer test stops before SSH; create an isolated fake-`ssh`/
-`scp` harness for installer/sync aliases, both variable forms, conflict rejection, identical
-allowlists, permissions, and `/dev/null` checks. Separately create a pseudo-TTY/fake-command
+`scp`/`rsync` harness for installer/sync aliases, both variable forms, conflict rejection,
+identical allowlists, permissions, and `/dev/null` checks. Isolate PATH and fail closed on any
+unexpected external command; the sync helper's `rsync --delete` must never reach a real remote.
+Separately create a pseudo-TTY/fake-command
 harness (or an explicit self-test seam) for the local acceptance wrapper's finite duration and
 confirmation gates. The eventual exact Verify must run both harnesses and prove no real remote
-or lifecycle command runs. No actual SSH, deployment, pairing, or service action belongs here. Update guides, hooks and current callers together; do not bypass
+or lifecycle command runs. No actual SSH, deployment, pairing, or service action belongs here.
+Update guides, hooks and current callers together; do not bypass
 the guarded artifact installer. Keep existing Verify contracts working.
 
 **Verify:** must be replaced with an exact command before dispatch; task is not dispatchable until then.
