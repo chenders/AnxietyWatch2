@@ -1,8 +1,12 @@
 # AnxietyWatch2
 
-**A local-first Raspberry Pi physiological monitor that can keep watch all night—and eventually sound an alarm when a phone cannot.**
+**Open-source, local-first software for collecting and storing health data from Bluetooth sensors and CPAP devices.**
 
-AnxietyWatch2 is a local-first physiological monitoring project in Rust. A Raspberry Pi 5 on the nightstand captures body-worn Bluetooth Low Energy (BLE) sensor data, preserves where every sample came from, and is being built toward the detection of nocturnal central-nervous-system (CNS) depression and an alarm that does not depend on a phone battery or the house internet. 
+AnxietyWatch2 is an experimental health-monitoring project written in Rust. It records data from supported Bluetooth Low Energy (BLE) sensors, preserves where every sample came from, and includes a read-only integration for ResMed AirSense 11. It is a local-first successor to [AnxietyWatch](https://github.com/chenders/AnxietyWatch). The broader detector and alarm system remain planned work, not available features.
+
+The software is not intrinsically tied to a particular board. Current collectors need Linux;
+the reviewed deployment and live-acceptance evidence covers the existing ARM64 prototype only.
+Other hosts need their own build and validation, not just a change of name.
 
 Between a medication warning label about breathing and a clinical sleep study months away, American healthcare often leaves a gap: nobody is watching. This project explores how to close that gap at home, in the open, with the receipts. It is designed around the concept of continuous individual monitoring rather than population-scale data collection.
 
@@ -13,7 +17,7 @@ Between a medication warning label about breathing and a clinical sleep study mo
 
 ## Should I use this?
 
-**Not as a clinically validated or emergency monitor.** The repository is experimental and the full CNS detector, supervised alarm path, and physical alarm are not complete. The ResMed AirSense 11 integration has a bounded Linux/Pi installation and read-only live-monitoring path, but it still must not be relied on for diagnosis, treatment, or emergency response.
+**Not as a clinically validated or emergency monitor.** The repository is experimental and the full CNS detector, supervised alarm path, and physical alarm are not complete. The ResMed AirSense 11 integration has a bounded Linux installation and read-only live-monitoring path, but it still must not be relied on for diagnosis, treatment, or emergency response.
 
 Use it to **read, audit, develop, or run the explicitly bounded AirSense integration** on hardware you control. Keep validated monitoring and professional care in place. The most transferable materials are the [accepted architecture amendments](docs/specs/AMENDMENTS.md), the [AirSense integration guide](docs/integration/resmed-air11-user-guide.md), the [alarm-timing reassessment](docs/research/klaxon-alarm-timing-reassessment.md), and the project's safety invariants.
 
@@ -94,18 +98,19 @@ This is the currently documented operational path. It is **read-only**: it colle
 
 ### 1. Prepare the host
 
-Use a 64-bit Linux Raspberry Pi with:
+The existing reviewed deployment path targets ARM64 (`aarch64`) Linux. These steps describe
+that prototype path, not a validated installer for arbitrary Linux computers. It needs:
 
 - Rust `1.97.1` and the pinned target in [`rust-toolchain.toml`](rust-toolchain.toml);
 - BlueZ, systemd, a working `vitalsd` Unix socket, and the existing spool/drain services;
 - PostgreSQL 16 with the project's TimescaleDB schema deployed; and
 - an operator-approved AirSense credential source and a device in app mode when discovery is required.
 
-The repository does not provide a one-command production installer. Install and configure the base Pi services through the reviewed deployment procedure first. Keep the AirSense unit disabled until the bounded acceptance run is authorized.
+The repository does not provide a one-command production installer. Configure the required services through the reviewed prototype deployment procedure first; validating another host is separate work. Keep the AirSense unit disabled until the bounded acceptance run is authorized.
 
 ### 2. Build and verify
 
-From a checkout on the Pi (or from a compatible cross-build environment):
+From a checkout on the Linux host (or from a compatible build environment):
 
 ```sh
 rustup show active-toolchain
@@ -127,16 +132,16 @@ Generated registry files must remain current:
 python3 vitals/tools/gen_registry.py --check
 ```
 
-### 3. Stage the Pi artifacts
+### 3. Install the AirSense components
 
-The allowlisted installer copies only the collector, onboarding utility, or fixed systemd unit. It uses a temporary remote directory and installs root-owned files at fixed destinations. Run it from the repository after building:
+The allowlisted installer copies only the collector, onboarding utility, or fixed systemd unit. It uses a temporary remote directory and installs root-owned files at fixed destinations. The commands below retain their existing filenames and variable names for compatibility; they are not a hardware requirement. [Host-neutral naming](openspec/changes/host-neutral-naming/proposal.md) tracks the deferred renames. Run the installer from the repository after building for the target host's architecture:
 
 ```sh
-PI_HOST=vitals@<pi-host> PI_PATH=/path/to/checkout \
+PI_HOST=vitals@<host> PI_PATH=/path/to/checkout \
   scripts/install-air11-pi-artifact.sh collector
-PI_HOST=vitals@<pi-host> PI_PATH=/path/to/checkout \
+PI_HOST=vitals@<host> PI_PATH=/path/to/checkout \
   scripts/install-air11-pi-artifact.sh onboard
-PI_HOST=vitals@<pi-host> PI_PATH=/path/to/checkout \
+PI_HOST=vitals@<host> PI_PATH=/path/to/checkout \
   scripts/install-air11-pi-artifact.sh unit
 ```
 
@@ -176,13 +181,13 @@ These are finite onboarding operations. They do not start collection or change u
 Enable the console according to the host deployment procedure, then open it only from the private LAN:
 
 ```text
-http://<private-pi-address>:8480/console/?screen=air11&dir=a
+http://<host-private-address>:8480/console/?screen=air11&dir=a
 ```
 
 The AirSense page has three presentation directions (`dir=a`, `dir=b`, and `dir=c`) over one backend view-model. The read-only kiosk is:
 
 ```text
-http://<private-pi-address>:8480/console/air11-kiosk.html
+http://<host-private-address>:8480/console/air11-kiosk.html
 ```
 
 In the admin page:
@@ -205,7 +210,7 @@ Treat an unavailable journal, database, credential, or measurement as a named bl
 
 ### 6. Run bounded live acceptance
 
-Only on the real Pi, after physical/operator authorization:
+Only on the existing validated prototype host, after operator authorization:
 
 ```sh
 scripts/air11-pi-acceptance.sh --duration 60 --require-postgres --require-h10
@@ -228,10 +233,10 @@ cargo test --workspace
 Keep raw credentials, BLE journals, EDF files, and unredacted logs outside Git. Read [AMENDMENTS.md](docs/specs/AMENDMENTS.md) before changing storage, identity, time, units, or safety behavior.
 
 An accepted optional mobility experiment allows a supported BLE sensor to reach an iPhone, then cross
-private Wi-Fi to the Pi; the Pi's condition is mirrored back through the iPhone to the existing BLE
-nRF52840 NeoPixel bracelet. This is an ambient convenience display—not an emergency detector—and the
-Pi's detector and local alarm remain independent if iOS suspends the relay. Wi-Fi bracelet hardware is
-deferred.
+private Wi-Fi to a local monitoring host; the host's status is mirrored back through the iPhone to the
+existing BLE nRF52840 NeoPixel bracelet. This is an ambient convenience display—not an emergency
+detector—and the planned detector and local alarm are designed to remain independent if iOS suspends
+the relay. Wi-Fi bracelet hardware is deferred.
 See [Amendment 17](docs/specs/2026-09-22-amendment-17-iphone-ble-mobility-relay.md).
 
 ## Engineering Invariants
@@ -260,7 +265,7 @@ See [Amendment 17](docs/specs/2026-09-22-amendment-17-iphone-ble-mobility-relay.
 - [Current task contracts](openspec/changes/pi5-vitals-core/tasks.md) — acceptance is each command's exit code.
 - [Accepted amendments](docs/specs/AMENDMENTS.md) — current decisions; these override older prose.
 - [Stage 7 Apple-client specification](docs/design/SPEC-ios-client.md) — the thin iPhone/watchOS
-  HealthKit proxy, subjective-input client, Pi-backed viewer, and its
+  HealthKit proxy, subjective-input client, local-host viewer, and its
   [execution plan](openspec/changes/ios-client-stage7/tasks.md).
 - [Contributor and agent rules](AGENTS.md) — safety invariants, scope, tests, and workflow.
 
