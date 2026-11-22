@@ -2,10 +2,11 @@
 
 ## Why
 
-AnxietyWatch2 does not require a Raspberry Pi. Reusable helpers, environment variables,
-planning directories, and reader-facing labels still use `pi` names inherited from the
-prototype deployment. These names obscure the distinction between a Linux monitoring host
-and a particular physical board.
+AnxietyWatch2's software is not intrinsically tied to Raspberry Pi hardware. The currently
+reviewed deployment and live-acceptance path is still the existing Linux/aarch64 prototype;
+other hosts require separate validation. Reusable helpers, environment variables, planning
+directories, and reader-facing labels use `pi` names inherited from that deployment. These
+names obscure the distinction between host requirements and a particular physical board.
 
 The owner requested this follow-up after making the GitHub description, topics, and README
 host-neutral. This PR records deferred work; it does not rename executable interfaces,

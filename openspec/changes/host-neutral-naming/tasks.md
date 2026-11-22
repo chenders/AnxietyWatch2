@@ -15,8 +15,11 @@ Work in order and commit after each task. No live deployment is authorized here.
 
 **Reads:** this change's `proposal.md` and `specs/host-neutral-naming/spec.md`, `AGENTS.md`,
 `README.md`, `rust-toolchain.toml`. Filename and reference discovery with `git ls-files`
-and `git grep` is permitted; enumerate additional body reads in the inventory before dispatching
-T-HN-2 or T-HN-3. Do not expand into an unbounded repository-body read.
+and `git grep` is permitted. Before classification, declare in the inventory up to six candidate
+implementation/caller body reads per bounded group, then read that group and record its evidence.
+If more groups are needed, split discovery/classification into separately scoped tasks before
+freezing the map. Also enumerate downstream body reads before dispatching T-HN-2 or T-HN-3.
+Do not classify solely from grep output or expand into an unbounded repository-body read.
 
 **Do:** Create `inventory.md` here with a row for each semantic Pi identifier/path and its
 callers, canonical replacement or intentional exception, compatibility strategy, and verification.
@@ -29,8 +32,9 @@ platform or architecture assumptions without claiming support or changing accept
 
 **Verify:** `test -s openspec/changes/host-neutral-naming/inventory.md && openspec validate host-neutral-naming --strict --no-interactive && git diff --check`
 
-**Context budget:** 5 initial files plus filename/reference search results; downstream body reads
-must be declared individually in the inventory.
+**Context budget:** 5 initial files plus filename/reference search results and one declared group
+of at most 6 candidate implementation/caller body reads. Additional groups require task splitting;
+downstream body reads must be declared individually in the inventory.
 
 ## T-HN-2 — Add neutral helper names with safe compatibility
 
@@ -43,10 +47,12 @@ explicitly assigned to this task by T-HN-1.
 
 **Do:** Implement the approved canonical helper and environment names. Keep legacy names as
 thin compatibility entry points/aliases, document precedence, and reject conflicting old/new
-values before I/O. Extend isolated fake-SSH tests to exercise both entry points and variable
-forms, conflict rejection, identical allowlists, permissions, `/dev/null` checks, finite
-acceptance and authorization boundaries. No actual SSH, deployment, pairing, or service action
-belongs in this naming task. Update guides, hooks and current callers together; do not bypass
+values before I/O. The current installer test stops before SSH; create an isolated fake-`ssh`/
+`scp` harness for installer/sync aliases, both variable forms, conflict rejection, identical
+allowlists, permissions, and `/dev/null` checks. Separately create a pseudo-TTY/fake-command
+harness (or an explicit self-test seam) for the local acceptance wrapper's finite duration and
+confirmation gates. The eventual exact Verify must run both harnesses and prove no real remote
+or lifecycle command runs. No actual SSH, deployment, pairing, or service action belongs here. Update guides, hooks and current callers together; do not bypass
 the guarded artifact installer. Keep existing Verify contracts working.
 
 **Verify:** must be replaced with an exact command before dispatch; task is not dispatchable until then.

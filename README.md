@@ -4,8 +4,9 @@
 
 AnxietyWatch2 is an experimental health-monitoring project written in Rust. It records data from supported Bluetooth Low Energy (BLE) sensors, preserves where every sample came from, and includes a read-only integration for ResMed AirSense 11. It is a local-first successor to [AnxietyWatch](https://github.com/chenders/AnxietyWatch). The broader detector and alarm system remain planned work, not available features.
 
-A Raspberry Pi is optional, not required. The current collectors need Linux and the dependencies
-listed below; this does not imply that every computer or operating system has been tested.
+The software is not intrinsically tied to a particular board. Current collectors need Linux;
+the reviewed deployment and live-acceptance evidence covers the existing ARM64 prototype only.
+Other hosts need their own build and validation, not just a change of name.
 
 Between a medication warning label about breathing and a clinical sleep study months away, American healthcare often leaves a gap: nobody is watching. This project explores how to close that gap at home, in the open, with the receipts. It is designed around the concept of continuous individual monitoring rather than population-scale data collection.
 
@@ -97,14 +98,15 @@ This is the currently documented operational path. It is **read-only**: it colle
 
 ### 1. Prepare the host
 
-Use a 64-bit Linux host with:
+The existing reviewed deployment path targets ARM64 (`aarch64`) Linux. These steps describe
+that prototype path, not a validated installer for arbitrary Linux computers. It needs:
 
 - Rust `1.97.1` and the pinned target in [`rust-toolchain.toml`](rust-toolchain.toml);
 - BlueZ, systemd, a working `vitalsd` Unix socket, and the existing spool/drain services;
 - PostgreSQL 16 with the project's TimescaleDB schema deployed; and
 - an operator-approved AirSense credential source and a device in app mode when discovery is required.
 
-The repository does not provide a one-command production installer. Install and configure the required host services through the reviewed deployment procedure first. Keep the AirSense unit disabled until the bounded acceptance run is authorized.
+The repository does not provide a one-command production installer. Configure the required services through the reviewed prototype deployment procedure first; validating another host is separate work. Keep the AirSense unit disabled until the bounded acceptance run is authorized.
 
 ### 2. Build and verify
 
@@ -208,7 +210,7 @@ Treat an unavailable journal, database, credential, or measurement as a named bl
 
 ### 6. Run bounded live acceptance
 
-Only on the target Linux host, after operator authorization:
+Only on the existing validated prototype host, after operator authorization:
 
 ```sh
 scripts/air11-pi-acceptance.sh --duration 60 --require-postgres --require-h10
